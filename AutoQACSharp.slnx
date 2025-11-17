@@ -1,3 +1,4 @@
 <Solution>
+  <Project Path="AutoQAC.Tests/AutoQAC.Tests.csproj" Id="16053e2e-a500-4d00-a954-b4176d6d3deb" />
   <Project Path="AutoQAC/AutoQAC.csproj" />
 </Solution>
