@@ -1,0 +1,46 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:AutoQAC.ViewModels"
+        x:Class="AutoQAC.Views.PartialFormsWarningDialog"
+        x:DataType="vm:PartialFormsWarningViewModel"
+        Title="Partial Forms Warning"
+        Width="500" Height="300"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner">
+
+    <Grid Margin="20" RowDefinitions="*,Auto">
+
+        <StackPanel Grid.Row="0" Spacing="15">
+            <TextBlock Text="⚠ Warning: Experimental Feature"
+                       FontSize="16" FontWeight="Bold"
+                       Foreground="Red" />
+
+            <TextBlock TextWrapping="Wrap">
+                Partial Forms cleaning is an experimental feature that may cause issues:
+            </TextBlock>
+
+            <StackPanel Margin="20,0,0,0" Spacing="5">
+                <TextBlock Text="• Only works with xEdit 4.1.5b or newer" />
+                <TextBlock Text="• Only supported for SSE and FO4" />
+                <TextBlock Text="• May cause unexpected behavior" />
+                <TextBlock Text="• Always backup your plugins first" />
+            </StackPanel>
+
+            <TextBlock TextWrapping="Wrap" FontWeight="SemiBold">
+                Do you want to enable Partial Forms cleaning?
+            </TextBlock>
+        </StackPanel>
+
+        <StackPanel Grid.Row="1"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="10">
+            <Button Content="Enable"
+                    Command="{Binding EnableCommand}"
+                    MinWidth="100" />
+            <Button Content="Cancel"
+                    Command="{Binding CancelCommand}"
+                    MinWidth="100" />
+        </StackPanel>
+    </Grid>
+</Window>

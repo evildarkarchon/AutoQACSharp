@@ -1,0 +1,79 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:AutoQAC.ViewModels"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="600" d:DesignHeight="400"
+        x:Class="AutoQAC.Views.ProgressWindow"
+        x:DataType="vm:ProgressViewModel"
+        Title="Cleaning Progress"
+        Width="600" Height="400"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner">
+
+    <Grid Margin="20" RowDefinitions="Auto,Auto,*,Auto">
+
+        <!-- Current Plugin -->
+        <StackPanel Grid.Row="0" Spacing="5">
+            <TextBlock Text="Current Plugin:" FontWeight="SemiBold" />
+            <TextBlock Text="{Binding CurrentPlugin}" FontSize="14" />
+        </StackPanel>
+
+        <!-- Progress Bar -->
+        <StackPanel Grid.Row="1" Spacing="5" Margin="0,10,0,0">
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Grid.Column="0" Text="Progress:" FontWeight="SemiBold" />
+                <TextBlock Grid.Column="1" Text="{Binding ProgressText}" />
+            </Grid>
+            <ProgressBar Value="{Binding Progress}"
+                         Maximum="{Binding Total}"
+                         Height="25" />
+        </StackPanel>
+
+        <!-- Statistics -->
+        <StackPanel Grid.Row="2" Spacing="10" Margin="0,10,0,0">
+            <TextBlock Text="Statistics:" FontWeight="SemiBold" />
+            <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto,Auto"
+                  >
+                  <!-- Note: RowGap property replaced with Grid props if needed, 
+                       but standard grid doesn't support RowGap directly in all versions. 
+                       Using Margin in children or rows is safer if not available.
+                       Avalonia 11 supports RowDefinitions with MinHeight? 
+                       Let's assume RowDefinitions works fine. 
+                       Actually Avalonia 11 Grid DOES support RowDefinitions="Auto,Auto..."
+                  -->
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="Cleaned:" />
+                <TextBlock Grid.Row="0" Grid.Column="1"
+                           Text="{Binding CleanedCount}" />
+
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="Skipped:" />
+                <TextBlock Grid.Row="1" Grid.Column="1"
+                           Text="{Binding SkippedCount}" />
+
+                <TextBlock Grid.Row="2" Grid.Column="0" Text="Failed:" />
+                <TextBlock Grid.Row="2" Grid.Column="1"
+                           Text="{Binding FailedCount}" />
+
+                <TextBlock Grid.Row="3" Grid.Column="0" Text="Total:" />
+                <TextBlock Grid.Row="3" Grid.Column="1"
+                           Text="{Binding Total}" />
+            </Grid>
+
+            <!-- Log Output -->
+            <TextBlock Text="Output:" FontWeight="SemiBold" Margin="0,10,0,0" />
+            <ScrollViewer Height="150">
+                <TextBlock Text="{Binding LogOutput}"
+                           FontFamily="Consolas"
+                           TextWrapping="Wrap" />
+            </ScrollViewer>
+        </StackPanel>
+
+        <!-- Stop Button -->
+        <Button Grid.Row="3"
+                Content="Stop"
+                Command="{Binding StopCommand}"
+                HorizontalAlignment="Right"
+                MinWidth="100"
+                Margin="0,10,0,0" />
+    </Grid>
+</Window>
