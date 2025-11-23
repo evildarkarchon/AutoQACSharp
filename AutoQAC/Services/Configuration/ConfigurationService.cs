@@ -18,7 +18,7 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
     private readonly SemaphoreSlim _fileLock = new(1, 1);
     private readonly Subject<UserConfiguration> _configChanges = new();
 
-    private const string ConfigDirectory = "AutoQAC Data";
+    private readonly string _configDirectory;
     private const string MainConfigFile = "AutoQAC Main.yaml";
     private const string UserConfigFile = "AutoQAC Config.yaml";
 
@@ -28,9 +28,10 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
 
     public IObservable<UserConfiguration> UserConfigurationChanged => _configChanges;
 
-    public ConfigurationService(ILoggingService logger)
+    public ConfigurationService(ILoggingService logger, string? configDirectory = null)
     {
         _logger = logger;
+        _configDirectory = configDirectory ?? "AutoQAC Data";
         _serializer = new SerializerBuilder()
             .WithNamingConvention(NullNamingConvention.Instance)
             .Build();
@@ -39,9 +40,9 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
             .IgnoreUnmatchedProperties()
             .Build();
             
-        if (!Directory.Exists(ConfigDirectory))
+        if (!Directory.Exists(_configDirectory))
         {
-            Directory.CreateDirectory(ConfigDirectory);
+            Directory.CreateDirectory(_configDirectory);
         }
     }
 
@@ -49,7 +50,7 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
     {
         if (_mainConfigCache != null) return _mainConfigCache;
 
-        var path = Path.Combine(ConfigDirectory, MainConfigFile);
+        var path = Path.Combine(_configDirectory, MainConfigFile);
         if (!File.Exists(path))
         {
             _logger.Warning($"Main config file not found at {path}. Creating default.");
@@ -80,7 +81,7 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
 
     public async Task<UserConfiguration> LoadUserConfigAsync(CancellationToken ct = default)
     {
-        var path = Path.Combine(ConfigDirectory, UserConfigFile);
+        var path = Path.Combine(_configDirectory, UserConfigFile);
         if (!File.Exists(path))
         {
             _logger.Information($"User config file not found at {path}. Creating default.");
@@ -108,7 +109,7 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
 
     public async Task SaveUserConfigAsync(UserConfiguration config, CancellationToken ct = default)
     {
-        var path = Path.Combine(ConfigDirectory, UserConfigFile);
+        var path = Path.Combine(_configDirectory, UserConfigFile);
         try
         {
             await _fileLock.WaitAsync(ct);
@@ -157,15 +158,11 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
         return isValid;
     }
 
-    public List<string> GetSkipList(GameType gameType)
+    public async Task<List<string>> GetSkipListAsync(GameType gameType)
     {
-        // Ensure main config is loaded. Synchronous wait is not ideal but this method is sync.
-        // Ideally should be async or cache should be preloaded.
-        // For now, if cache is null, try to load (will block).
         if (_mainConfigCache == null)
         {
-             // Warning: Blocking async code
-             _mainConfigCache = LoadMainConfigAsync().GetAwaiter().GetResult();
+             _mainConfigCache = await LoadMainConfigAsync();
         }
 
         var key = GetGameKey(gameType);
@@ -176,11 +173,11 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
         return new List<string>();
     }
 
-    public List<string> GetXEditExecutableNames(GameType gameType)
+    public async Task<List<string>> GetXEditExecutableNamesAsync(GameType gameType)
     {
         if (_mainConfigCache == null)
         {
-             _mainConfigCache = LoadMainConfigAsync().GetAwaiter().GetResult();
+             _mainConfigCache = await LoadMainConfigAsync();
         }
 
         var key = GetGameKey(gameType);

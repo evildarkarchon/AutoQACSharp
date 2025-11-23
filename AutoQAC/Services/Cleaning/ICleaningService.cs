@@ -15,7 +15,4 @@ public interface ICleaningService
 
     // Pre-cleaning validation
     Task<bool> ValidateEnvironmentAsync(CancellationToken ct = default);
-
-    // Cancel current operation
-    void StopCurrentOperation();
 }

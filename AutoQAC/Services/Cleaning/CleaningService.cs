@@ -23,8 +23,6 @@ public sealed class CleaningService : ICleaningService
     private readonly IXEditCommandBuilder _commandBuilder;
     private readonly IXEditOutputParser _outputParser;
 
-    private CancellationTokenSource? _currentOperationCts;
-
     public CleaningService(
         IConfigurationService configService,
         IGameDetectionService gameDetection,
@@ -49,10 +47,6 @@ public sealed class CleaningService : ICleaningService
         CancellationToken ct = default)
     {
         var sw = Stopwatch.StartNew();
-
-        // Link with internal cancellation
-        _currentOperationCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        var token = _currentOperationCts.Token;
 
         try
         {
@@ -96,7 +90,7 @@ public sealed class CleaningService : ICleaningService
 
             _logger.Information($"Cleaning {plugin.FileName} with timeout {timeout.TotalSeconds}s...");
 
-            var result = await _processService.ExecuteAsync(command, progress, timeout, token);
+            var result = await _processService.ExecuteAsync(command, progress, timeout, ct);
 
             sw.Stop();
 
@@ -123,8 +117,8 @@ public sealed class CleaningService : ICleaningService
                 };
             }
 
-            // 4. Parse Output
-            var stats = _outputParser.ParseOutput(result.OutputLines);
+            // 4. Parse Output (Offload to thread pool)
+            var stats = await Task.Run(() => _outputParser.ParseOutput(result.OutputLines), ct);
 
             return new CleaningResult
             {
@@ -157,11 +151,6 @@ public sealed class CleaningService : ICleaningService
                 Duration = sw.Elapsed
             };
         }
-        finally
-        {
-            _currentOperationCts?.Dispose();
-            _currentOperationCts = null;
-        }
     }
 
     public Task<bool> ValidateEnvironmentAsync(CancellationToken ct = default)
@@ -176,10 +165,5 @@ public sealed class CleaningService : ICleaningService
             return Task.FromResult(false);
         }
         return Task.FromResult(true);
-    }
-
-    public void StopCurrentOperation()
-    {
-        _currentOperationCts?.Cancel();
     }
 }

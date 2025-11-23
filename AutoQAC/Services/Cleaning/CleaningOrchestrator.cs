@@ -55,7 +55,7 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator
                 config.LoadOrderPath!, ct);
 
             // 3. Filter skip list
-            var skipList = _configService.GetSkipList(config.CurrentGameType);
+            var skipList = await _configService.GetSkipListAsync(config.CurrentGameType);
             var pluginsToClean = _pluginService.FilterSkippedPlugins(plugins, skipList);
 
             // 4. Update state - cleaning started
@@ -124,7 +124,6 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator
     {
         _logger.Information("Stop requested");
         _cleaningCts?.Cancel();
-        _cleaningService.StopCurrentOperation();
     }
 
     private async Task<bool> ValidateConfigurationAsync(CancellationToken ct)
