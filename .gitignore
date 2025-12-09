@@ -473,3 +473,4 @@ nunit-*.xml
 .gemini/
 gha-creds-*.json
 AutoQACSharp.code-workspace
+AutoQAC Data/

@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.Configuration;
+using AutoQAC.Services.GameDetection;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Services.State;
 
@@ -15,6 +16,7 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator
 {
     private readonly ICleaningService _cleaningService;
     private readonly IPluginValidationService _pluginService;
+    private readonly IGameDetectionService _gameDetectionService;
     private readonly IStateService _stateService;
     private readonly IConfigurationService _configService;
     private readonly ILoggingService _logger;
@@ -24,12 +26,14 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator
     public CleaningOrchestrator(
         ICleaningService cleaningService,
         IPluginValidationService pluginService,
+        IGameDetectionService gameDetectionService,
         IStateService stateService,
         IConfigurationService configService,
         ILoggingService logger)
     {
         _cleaningService = cleaningService;
         _pluginService = pluginService;
+        _gameDetectionService = gameDetectionService;
         _stateService = stateService;
         _configService = configService;
         _logger = logger;
@@ -54,18 +58,40 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator
             var plugins = await _pluginService.GetPluginsFromLoadOrderAsync(
                 config.LoadOrderPath!, ct);
 
-            // 3. Filter skip list
+            // 3. Detect Game (if unknown) and Update State
+            if (config.CurrentGameType == GameType.Unknown)
+            {
+                var detectedGame = _gameDetectionService.DetectFromExecutable(config.XEditExecutablePath ?? string.Empty);
+                
+                if (detectedGame == GameType.Unknown && !string.IsNullOrEmpty(config.LoadOrderPath))
+                {
+                    detectedGame = await _gameDetectionService.DetectFromLoadOrderAsync(config.LoadOrderPath, ct);
+                }
+
+                if (detectedGame != GameType.Unknown)
+                {
+                    _logger.Information($"Detected game type: {detectedGame}");
+                    _stateService.UpdateState(s => s with { CurrentGameType = detectedGame });
+                    config = _stateService.CurrentState; // Refresh local config
+                }
+                else
+                {
+                     _logger.Warning("Could not auto-detect game type. Skip list might be empty.");
+                }
+            }
+
+            // 4. Filter skip list
             var skipList = await _configService.GetSkipListAsync(config.CurrentGameType);
             var pluginsToClean = _pluginService.FilterSkippedPlugins(plugins, skipList);
 
-            // 4. Update state - cleaning started
+            // 5. Update state - cleaning started
             _stateService.StartCleaning(
                 pluginsToClean.Select(p => p.FileName).ToList());
 
-            // 5. Create cancellation token
+            // 6. Create cancellation token
             _cleaningCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
-            // 6. Process plugins SEQUENTIALLY (CRITICAL!)
+            // 7. Process plugins SEQUENTIALLY (CRITICAL!)
             foreach (var plugin in pluginsToClean)
             {
                 if (_cleaningCts.Token.IsCancellationRequested)

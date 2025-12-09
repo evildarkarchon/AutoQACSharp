@@ -8,6 +8,7 @@ using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
+using AutoQAC.Services.Plugin;
 using AutoQAC.Services.State;
 using AutoQAC.Services.UI;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -22,6 +23,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     private readonly ICleaningOrchestrator _orchestrator;
     private readonly ILoggingService _logger;
     private readonly IFileDialogService _fileDialog;
+    private readonly IPluginValidationService _pluginService;
 
     // Observable properties
     private string? _loadOrderPath;
@@ -102,13 +104,15 @@ public sealed class MainWindowViewModel : ViewModelBase
         IStateService stateService,
         ICleaningOrchestrator orchestrator,
         ILoggingService logger,
-        IFileDialogService fileDialog)
+        IFileDialogService fileDialog,
+        IPluginValidationService pluginService)
     {
         _configService = configService;
         _stateService = stateService;
         _orchestrator = orchestrator;
         _logger = logger;
         _fileDialog = fileDialog;
+        _pluginService = pluginService;
 
         // Initialize OAPHs first
         _isCleaning = _stateService.StateChanged
@@ -153,6 +157,56 @@ public sealed class MainWindowViewModel : ViewModelBase
             
         // Initialize UI from current state
         OnStateChanged(_stateService.CurrentState);
+
+        // Load saved configuration
+        InitializeAsync();
+
+        // Auto-save MO2Mode when changed
+        this.WhenAnyValue(x => x.MO2ModeEnabled)
+            .Skip(1) // Skip initial load
+            .Subscribe(async _ => await SaveConfigurationAsync());
+    }
+
+    private async void InitializeAsync()
+    {
+        try
+        {
+            var config = await _configService.LoadUserConfigAsync();
+            
+            _stateService.UpdateConfigurationPaths(
+                config.LoadOrder.File, 
+                config.ModOrganizer.Binary, 
+                config.XEdit.Binary);
+
+            _stateService.UpdateState(s => s with
+            {
+                MO2ModeEnabled = config.Settings.MO2Mode,
+                CleaningTimeout = config.Settings.CleaningTimeout,
+                MaxConcurrentSubprocesses = config.Settings.MaxConcurrentSubprocesses
+            });
+
+            // If we have a valid load order, try to load plugins
+            if (!string.IsNullOrEmpty(config.LoadOrder.File) && System.IO.File.Exists(config.LoadOrder.File))
+            {
+                try 
+                {
+                    var plugins = await _pluginService.GetPluginsFromLoadOrderAsync(config.LoadOrder.File);
+                    var pluginNames = plugins.Select(p => p.FileName).ToList();
+                    _stateService.SetPluginsToClean(pluginNames);
+                    StatusText = "Configuration loaded";
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error(ex, "Failed to parse saved load order on startup");
+                    StatusText = "Configuration loaded (Load Order parse error)";
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "Failed to initialize configuration");
+            StatusText = "Failed to load configuration";
+        }
     }
 
     private async Task ConfigureLoadOrderAsync()
@@ -164,6 +218,20 @@ public sealed class MainWindowViewModel : ViewModelBase
         if (!string.IsNullOrEmpty(path))
         {
             _stateService.UpdateConfigurationPaths(path, MO2Path, XEditPath);
+            
+            // Parse plugins from load order and update state
+            try 
+            {
+                var plugins = await _pluginService.GetPluginsFromLoadOrderAsync(path);
+                var pluginNames = plugins.Select(p => p.FileName).ToList();
+                _stateService.SetPluginsToClean(pluginNames);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, "Failed to parse selected load order");
+                StatusText = "Error parsing load order file";
+            }
+            
             await SaveConfigurationAsync();
         }
     }

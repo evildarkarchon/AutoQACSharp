@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Reactive.Subjects;
 using System.Threading;
 using System.Threading.Tasks;
@@ -165,12 +166,22 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
              _mainConfigCache = await LoadMainConfigAsync();
         }
 
+        var result = new List<string>();
         var key = GetGameKey(gameType);
+        
+        // 1. Game Specific
         if (_mainConfigCache.Data.SkipLists.TryGetValue(key, out var list))
         {
-            return list;
+            result.AddRange(list);
         }
-        return new List<string>();
+
+        // 2. Universal
+        if (_mainConfigCache.Data.SkipLists.TryGetValue("Universal", out var universalList))
+        {
+            result.AddRange(universalList);
+        }
+        
+        return result.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     }
 
     public async Task<List<string>> GetXEditExecutableNamesAsync(GameType gameType)

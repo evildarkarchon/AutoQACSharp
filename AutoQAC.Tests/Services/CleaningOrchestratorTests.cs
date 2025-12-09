@@ -6,6 +6,7 @@ using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
+using AutoQAC.Services.GameDetection;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Services.State;
 using FluentAssertions;
@@ -18,6 +19,7 @@ public sealed class CleaningOrchestratorTests
 {
     private readonly Mock<ICleaningService> _cleaningServiceMock;
     private readonly Mock<IPluginValidationService> _pluginServiceMock;
+    private readonly Mock<IGameDetectionService> _gameDetectionServiceMock;
     private readonly Mock<IStateService> _stateServiceMock;
     private readonly Mock<IConfigurationService> _configServiceMock;
     private readonly Mock<ILoggingService> _loggerMock;
@@ -27,6 +29,7 @@ public sealed class CleaningOrchestratorTests
     {
         _cleaningServiceMock = new Mock<ICleaningService>();
         _pluginServiceMock = new Mock<IPluginValidationService>();
+        _gameDetectionServiceMock = new Mock<IGameDetectionService>();
         _stateServiceMock = new Mock<IStateService>();
         _configServiceMock = new Mock<IConfigurationService>();
         _loggerMock = new Mock<ILoggingService>();
@@ -34,6 +37,7 @@ public sealed class CleaningOrchestratorTests
         _orchestrator = new CleaningOrchestrator(
             _cleaningServiceMock.Object,
             _pluginServiceMock.Object,
+            _gameDetectionServiceMock.Object,
             _stateServiceMock.Object,
             _configServiceMock.Object,
             _loggerMock.Object);
@@ -80,6 +84,49 @@ public sealed class CleaningOrchestratorTests
         _cleaningServiceMock.Verify(s => s.CleanPluginAsync(It.Is<PluginInfo>(p => p.FileName == "Plugin2.esp"), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>()), Times.Once);
         _stateServiceMock.Verify(s => s.StartCleaning(It.IsAny<List<string>>()), Times.Once);
         _stateServiceMock.Verify(s => s.FinishCleaning(), Times.Once);
+    }
+
+    [Fact]
+    public async Task StartCleaningAsync_ShouldDetectGame_WhenUnknown()
+    {
+        // Arrange
+        var appState = new AppState
+        {
+            LoadOrderPath = "plugins.txt",
+            XEditExecutablePath = "xedit.exe",
+            CurrentGameType = GameType.Unknown
+        };
+        _stateServiceMock.Setup(s => s.CurrentState).Returns(appState);
+
+        _cleaningServiceMock.Setup(s => s.ValidateEnvironmentAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var plugins = new List<PluginInfo>();
+        _pluginServiceMock.Setup(s => s.GetPluginsFromLoadOrderAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(plugins);
+
+        // Mock Executable detection failing (Unknown)
+        _gameDetectionServiceMock.Setup(d => d.DetectFromExecutable(It.IsAny<string>()))
+            .Returns(GameType.Unknown);
+        
+        // Mock Load Order detection succeeding
+        _gameDetectionServiceMock.Setup(d => d.DetectFromLoadOrderAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(GameType.Fallout4);
+
+        _configServiceMock.Setup(s => s.GetSkipListAsync(It.IsAny<GameType>()))
+            .ReturnsAsync(new List<string>());
+        
+        _pluginServiceMock.Setup(s => s.FilterSkippedPlugins(plugins, It.IsAny<List<string>>()))
+            .Returns(plugins);
+
+        // Act
+        await _orchestrator.StartCleaningAsync();
+
+        // Assert
+        _gameDetectionServiceMock.Verify(d => d.DetectFromExecutable(It.IsAny<string>()), Times.Once);
+        _gameDetectionServiceMock.Verify(d => d.DetectFromLoadOrderAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+        // We expect state update
+        _stateServiceMock.Verify(s => s.UpdateState(It.IsAny<Func<AppState, AppState>>()), Times.Once);
     }
 
     [Fact]

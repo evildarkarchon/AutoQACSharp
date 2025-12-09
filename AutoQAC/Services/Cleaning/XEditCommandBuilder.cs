@@ -54,8 +54,10 @@ public sealed class XEditCommandBuilder : IXEditCommandBuilder
         // 4. MO2 Wrapping
         if (config.MO2ModeEnabled && !string.IsNullOrEmpty(config.MO2ExecutablePath))
         {
-            // ModOrganizer.exe run "path/to/xedit" -a "args"
-            var mo2Args = $"run \"{xEditPath}\" -a \"{xEditArgs}\"";
+            // Escape quotes in xEditArgs for the -a parameter
+            // We need to ensure that quotes inside xEditArgs are escaped so they don't break the outer quotes of -a "..."
+            var escapedXEditArgs = xEditArgs.Replace("\"", "\\\"");
+            var mo2Args = $"run \"{xEditPath}\" -a \"{escapedXEditArgs}\"";
             
             return new ProcessStartInfo
             {

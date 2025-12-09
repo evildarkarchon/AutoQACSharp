@@ -72,6 +72,14 @@ public sealed class StateService : IStateService, IDisposable
         });
     }
 
+    public void SetPluginsToClean(List<string> plugins)
+    {
+        UpdateState(s => s with
+        {
+            PluginsToClean = new List<string>(plugins)
+        });
+    }
+
     public void StartCleaning(List<string> plugins)
     {
         UpdateState(s => s with
