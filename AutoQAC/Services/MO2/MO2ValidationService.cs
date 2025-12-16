@@ -9,7 +9,17 @@ public sealed class MO2ValidationService : IMO2ValidationService
     public bool IsMO2Running()
     {
         var processes = System.Diagnostics.Process.GetProcessesByName("ModOrganizer");
-        return processes.Length > 0;
+        try
+        {
+            return processes.Length > 0;
+        }
+        finally
+        {
+            foreach (var process in processes)
+            {
+                process.Dispose();
+            }
+        }
     }
 
     public Task<bool> ValidateMO2ExecutableAsync(string mo2Path)

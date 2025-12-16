@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Reactive.Concurrency;
 using System.Reactive.Subjects;
+using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
@@ -27,6 +28,7 @@ public sealed class MainWindowViewModelTests
     private readonly Mock<ILoggingService> _loggerMock;
     private readonly Mock<IFileDialogService> _fileDialogMock;
     private readonly Mock<IPluginValidationService> _pluginServiceMock;
+    private readonly Mock<IPluginLoadingService> _pluginLoadingServiceMock;
 
     public MainWindowViewModelTests()
     {
@@ -36,6 +38,13 @@ public sealed class MainWindowViewModelTests
         _loggerMock = new Mock<ILoggingService>();
         _fileDialogMock = new Mock<IFileDialogService>();
         _pluginServiceMock = new Mock<IPluginValidationService>();
+        _pluginLoadingServiceMock = new Mock<IPluginLoadingService>();
+
+        // Default setup for plugin loading service
+        _pluginLoadingServiceMock.Setup(x => x.GetAvailableGames())
+            .Returns(new List<GameType> { GameType.SkyrimSE, GameType.Fallout4 });
+        _pluginLoadingServiceMock.Setup(x => x.IsGameSupportedByMutagen(It.IsAny<GameType>()))
+            .Returns(false);
 
         RxApp.MainThreadScheduler = Scheduler.Immediate;
     }
@@ -54,7 +63,8 @@ public sealed class MainWindowViewModelTests
             _orchestratorMock.Object,
             _loggerMock.Object,
             _fileDialogMock.Object,
-            _pluginServiceMock.Object);
+            _pluginServiceMock.Object,
+            _pluginLoadingServiceMock.Object);
 
         // Manually set properties to satisfy CanExecute
         vm.LoadOrderPath = "plugins.txt";
@@ -85,7 +95,8 @@ public sealed class MainWindowViewModelTests
             _orchestratorMock.Object,
             _loggerMock.Object,
             _fileDialogMock.Object,
-            _pluginServiceMock.Object);
+            _pluginServiceMock.Object,
+            _pluginLoadingServiceMock.Object);
 
         var loadOrderPath = "plugins.txt";
         _fileDialogMock.Setup(x => x.OpenFileDialogAsync(
@@ -139,7 +150,8 @@ public sealed class MainWindowViewModelTests
             _orchestratorMock.Object,
             _loggerMock.Object,
             _fileDialogMock.Object,
-            _pluginServiceMock.Object);
+            _pluginServiceMock.Object,
+            _pluginLoadingServiceMock.Object);
 
         // Wait a bit for InitializeAsync to complete
         await Task.Delay(50);
@@ -182,7 +194,8 @@ public sealed class MainWindowViewModelTests
             _orchestratorMock.Object,
             _loggerMock.Object,
             _fileDialogMock.Object,
-            _pluginServiceMock.Object);
+            _pluginServiceMock.Object,
+            _pluginLoadingServiceMock.Object);
 
         // Configure dialog to return null (user cancelled)
         _fileDialogMock.Setup(x => x.OpenFileDialogAsync(
@@ -223,7 +236,8 @@ public sealed class MainWindowViewModelTests
             _orchestratorMock.Object,
             _loggerMock.Object,
             _fileDialogMock.Object,
-            _pluginServiceMock.Object);
+            _pluginServiceMock.Object,
+            _pluginLoadingServiceMock.Object);
 
         // Wait for InitializeAsync to complete
         await Task.Delay(50);
@@ -273,7 +287,8 @@ public sealed class MainWindowViewModelTests
             _orchestratorMock.Object,
             _loggerMock.Object,
             _fileDialogMock.Object,
-            _pluginServiceMock.Object);
+            _pluginServiceMock.Object,
+            _pluginLoadingServiceMock.Object);
 
         // Act
         vm.LoadOrderPath = loadOrder;
@@ -301,7 +316,8 @@ public sealed class MainWindowViewModelTests
             _orchestratorMock.Object,
             _loggerMock.Object,
             _fileDialogMock.Object,
-            _pluginServiceMock.Object);
+            _pluginServiceMock.Object,
+            _pluginLoadingServiceMock.Object);
 
         // Set valid paths
         vm.LoadOrderPath = "plugins.txt";
@@ -334,7 +350,8 @@ public sealed class MainWindowViewModelTests
             _orchestratorMock.Object,
             _loggerMock.Object,
             _fileDialogMock.Object,
-            _pluginServiceMock.Object);
+            _pluginServiceMock.Object,
+            _pluginLoadingServiceMock.Object);
 
         // Act
         vm.StopCleaningCommand.Execute().Subscribe();
@@ -366,7 +383,8 @@ public sealed class MainWindowViewModelTests
             _orchestratorMock.Object,
             _loggerMock.Object,
             _fileDialogMock.Object,
-            _pluginServiceMock.Object);
+            _pluginServiceMock.Object,
+            _pluginLoadingServiceMock.Object);
 
         // Act
         var newState = new AppState
@@ -387,6 +405,155 @@ public sealed class MainWindowViewModelTests
         vm.PartialFormsEnabled.Should().BeTrue();
     }
 
+    #endregion
+
+    #region Game Selection Tests
+
+    /// <summary>
+    /// Verifies that AvailableGames is populated from IPluginLoadingService.
+    /// </summary>
+    [Fact]
+    public void AvailableGames_ShouldBePopulatedFromPluginLoadingService()
+    {
+        // Arrange
+        var expectedGames = new List<GameType> { GameType.SkyrimSE, GameType.Fallout4, GameType.SkyrimLE };
+        _pluginLoadingServiceMock.Setup(x => x.GetAvailableGames())
+            .Returns(expectedGames);
+
+        var stateSubject = new BehaviorSubject<AppState>(new AppState());
+        _stateServiceMock.Setup(s => s.StateChanged).Returns(stateSubject);
+        _stateServiceMock.Setup(s => s.CurrentState).Returns(new AppState());
+
+        // Act
+        var vm = new MainWindowViewModel(
+            _configServiceMock.Object,
+            _stateServiceMock.Object,
+            _orchestratorMock.Object,
+            _loggerMock.Object,
+            _fileDialogMock.Object,
+            _pluginServiceMock.Object,
+            _pluginLoadingServiceMock.Object);
+
+        // Assert
+        vm.AvailableGames.Should().BeEquivalentTo(expectedGames);
+    }
+
+    /// <summary>
+    /// Verifies that IsMutagenSupported reflects the selected game correctly.
+    /// </summary>
+    [Fact]
+    public void IsMutagenSupported_ShouldReflectSelectedGame()
+    {
+        // Arrange
+        _pluginLoadingServiceMock.Setup(x => x.IsGameSupportedByMutagen(GameType.SkyrimSE))
+            .Returns(true);
+        _pluginLoadingServiceMock.Setup(x => x.IsGameSupportedByMutagen(GameType.Fallout3))
+            .Returns(false);
+
+        var stateSubject = new BehaviorSubject<AppState>(new AppState());
+        _stateServiceMock.Setup(s => s.StateChanged).Returns(stateSubject);
+        _stateServiceMock.Setup(s => s.CurrentState).Returns(new AppState());
+
+        var vm = new MainWindowViewModel(
+            _configServiceMock.Object,
+            _stateServiceMock.Object,
+            _orchestratorMock.Object,
+            _loggerMock.Object,
+            _fileDialogMock.Object,
+            _pluginServiceMock.Object,
+            _pluginLoadingServiceMock.Object);
+
+        // Act & Assert - Default is Unknown (not supported)
+        vm.IsMutagenSupported.Should().BeFalse();
+
+        // Note: Due to Skip(1) in the subscription, the first change is consumed.
+        // Testing the computed property directly after setting SelectedGame:
+        vm.SelectedGame = GameType.SkyrimSE;
+        vm.IsMutagenSupported.Should().BeTrue();
+
+        vm.SelectedGame = GameType.Fallout3;
+        vm.IsMutagenSupported.Should().BeFalse();
+    }
+
+    /// <summary>
+    /// Verifies that changing SelectedGame persists to configuration.
+    /// </summary>
+    [Fact]
+    public async Task SelectedGame_ShouldPersistToConfiguration_WhenChanged()
+    {
+        // Arrange
+        var stateSubject = new BehaviorSubject<AppState>(new AppState());
+        _stateServiceMock.Setup(s => s.StateChanged).Returns(stateSubject);
+        _stateServiceMock.Setup(s => s.CurrentState).Returns(new AppState());
+
+        var vm = new MainWindowViewModel(
+            _configServiceMock.Object,
+            _stateServiceMock.Object,
+            _orchestratorMock.Object,
+            _loggerMock.Object,
+            _fileDialogMock.Object,
+            _pluginServiceMock.Object,
+            _pluginLoadingServiceMock.Object);
+
+        // Act
+        vm.SelectedGame = GameType.SkyrimSE;
+
+        // Allow async subscription to execute
+        await Task.Delay(100);
+
+        // Assert
+        _configServiceMock.Verify(x => x.SetSelectedGameAsync(GameType.SkyrimSE, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    /// <summary>
+    /// Verifies that changing SelectedGame refreshes plugins via IPluginLoadingService.
+    /// </summary>
+    [Fact]
+    public async Task SelectedGame_ShouldRefreshPlugins_WhenChangedToMutagenSupportedGame()
+    {
+        // Arrange
+        var expectedPlugins = new List<PluginInfo>
+        {
+            new() { FileName = "Plugin1.esp", FullPath = "Data/Plugin1.esp" },
+            new() { FileName = "Plugin2.esp", FullPath = "Data/Plugin2.esp" }
+        };
+
+        _pluginLoadingServiceMock.Setup(x => x.IsGameSupportedByMutagen(GameType.SkyrimSE))
+            .Returns(true);
+        _pluginLoadingServiceMock.Setup(x => x.GetPluginsAsync(GameType.SkyrimSE, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expectedPlugins);
+
+        var stateSubject = new BehaviorSubject<AppState>(new AppState());
+        _stateServiceMock.Setup(s => s.StateChanged).Returns(stateSubject);
+        _stateServiceMock.Setup(s => s.CurrentState).Returns(new AppState());
+
+        var vm = new MainWindowViewModel(
+            _configServiceMock.Object,
+            _stateServiceMock.Object,
+            _orchestratorMock.Object,
+            _loggerMock.Object,
+            _fileDialogMock.Object,
+            _pluginServiceMock.Object,
+            _pluginLoadingServiceMock.Object);
+
+        // Act
+        vm.SelectedGame = GameType.SkyrimSE;
+
+        // Allow async subscription to execute
+        await Task.Delay(100);
+
+        // Assert
+        _pluginLoadingServiceMock.Verify(x => x.GetPluginsAsync(GameType.SkyrimSE, It.IsAny<CancellationToken>()), Times.Once);
+        _stateServiceMock.Verify(x => x.SetPluginsToClean(It.Is<List<string>>(list =>
+            list.Count == 2 &&
+            list.Contains("Plugin1.esp") &&
+            list.Contains("Plugin2.esp"))), Times.Once);
+    }
+
+    #endregion
+
+    #region Cleanup Tests
+
     /// <summary>
     /// Verifies proper cleanup when ViewModel is disposed.
     /// </summary>
@@ -404,7 +571,8 @@ public sealed class MainWindowViewModelTests
             _orchestratorMock.Object,
             _loggerMock.Object,
             _fileDialogMock.Object,
-            _pluginServiceMock.Object);
+            _pluginServiceMock.Object,
+            _pluginLoadingServiceMock.Object);
 
         // Act & Assert
         FluentActions.Invoking(() => vm.Dispose())

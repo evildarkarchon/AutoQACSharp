@@ -23,6 +23,13 @@ public interface IConfigurationService
     Task<List<string>> GetSkipListAsync(GameType gameType);
     Task<List<string>> GetXEditExecutableNamesAsync(GameType gameType);
 
+    // Game selection
+    Task<GameType> GetSelectedGameAsync(CancellationToken ct = default);
+    Task SetSelectedGameAsync(GameType gameType, CancellationToken ct = default);
+
+    // Settings management
+    Task ResetToDefaultsAsync(CancellationToken ct = default);
+
     // Reactive configuration changes
     IObservable<UserConfiguration> UserConfigurationChanged { get; }
 }

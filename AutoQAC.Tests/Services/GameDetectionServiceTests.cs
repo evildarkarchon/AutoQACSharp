@@ -13,12 +13,15 @@ namespace AutoQAC.Tests.Services;
 public sealed class GameDetectionServiceTests
 {
     [Theory]
-    [InlineData("SSEEdit.exe", GameType.SkyrimSpecialEdition)]
-    [InlineData("FO4Edit64.exe", GameType.Fallout4)]
-    [InlineData("FNVEdit.exe", GameType.FalloutNewVegas)]
-    [InlineData("FO3Edit.exe", GameType.Fallout3)]
-    [InlineData("FO4VREdit.exe", GameType.Fallout4VR)]
+    [InlineData("TES4Edit.exe", GameType.Oblivion)]
+    [InlineData("TES5Edit.exe", GameType.SkyrimLE)]
+    [InlineData("SSEEdit.exe", GameType.SkyrimSE)]
+    [InlineData("SkyrimVREdit.exe", GameType.SkyrimVR)]
     [InlineData("TES5VREdit.exe", GameType.SkyrimVR)]
+    [InlineData("FO3Edit.exe", GameType.Fallout3)]
+    [InlineData("FNVEdit.exe", GameType.FalloutNewVegas)]
+    [InlineData("FO4Edit64.exe", GameType.Fallout4)]
+    [InlineData("FO4VREdit.exe", GameType.Fallout4VR)]
     [InlineData("xEdit.exe", GameType.Unknown)]
     [InlineData("NotAGame.exe", GameType.Unknown)]
     [InlineData("", GameType.Unknown)]
@@ -51,7 +54,7 @@ public sealed class GameDetectionServiceTests
             var result = await service.DetectFromLoadOrderAsync(tempFile);
 
             // Assert
-            result.Should().Be(GameType.SkyrimSpecialEdition);
+            result.Should().Be(GameType.SkyrimSE);
         }
         finally
         {
@@ -248,7 +251,7 @@ SomeMod.esp
             var result = await service.DetectFromLoadOrderAsync(tempFile);
 
             // Assert
-            result.Should().Be(GameType.SkyrimSpecialEdition, "first game master encountered should determine game type");
+            result.Should().Be(GameType.SkyrimSE, "first game master encountered should determine game type");
         }
         finally
         {
@@ -317,8 +320,8 @@ SomeMod.esp
     /// Verifies that DetectFromExecutable handles partial executable name matches.
     /// </summary>
     [Theory]
-    [InlineData("SSEEdit 4.0.4.exe", GameType.SkyrimSpecialEdition)]
-    [InlineData("sseedit_backup.exe", GameType.SkyrimSpecialEdition)]
+    [InlineData("SSEEdit 4.0.4.exe", GameType.SkyrimSE)]
+    [InlineData("sseedit_backup.exe", GameType.SkyrimSE)]
     [InlineData("FO4Edit (copy).exe", GameType.Fallout4)]
     public void DetectFromExecutable_ShouldHandleVersionedNames(string fileName, GameType expected)
     {
@@ -346,7 +349,7 @@ SomeMod.esp
         var result = service.DetectFromExecutable(fullPath);
 
         // Assert
-        result.Should().Be(GameType.SkyrimSpecialEdition);
+        result.Should().Be(GameType.SkyrimSE);
     }
 
     /// <summary>
@@ -373,12 +376,14 @@ SomeMod.esp
     /// Verifies that IsValidGameType correctly identifies valid and invalid game types.
     /// </summary>
     [Theory]
-    [InlineData(GameType.SkyrimSpecialEdition, true)]
-    [InlineData(GameType.Fallout4, true)]
-    [InlineData(GameType.FalloutNewVegas, true)]
-    [InlineData(GameType.Fallout3, true)]
-    [InlineData(GameType.Fallout4VR, true)]
+    [InlineData(GameType.SkyrimLE, true)]
+    [InlineData(GameType.SkyrimSE, true)]
     [InlineData(GameType.SkyrimVR, true)]
+    [InlineData(GameType.Fallout3, true)]
+    [InlineData(GameType.FalloutNewVegas, true)]
+    [InlineData(GameType.Fallout4, true)]
+    [InlineData(GameType.Fallout4VR, true)]
+    [InlineData(GameType.Oblivion, true)]
     [InlineData(GameType.Unknown, false)]
     public void IsValidGameType_ShouldReturnCorrectResult(GameType gameType, bool expected)
     {
@@ -396,7 +401,9 @@ SomeMod.esp
     /// Verifies that GetGameDisplayName returns meaningful display names.
     /// </summary>
     [Theory]
-    [InlineData(GameType.SkyrimSpecialEdition, "Skyrim Special Edition")]
+    [InlineData(GameType.Oblivion, "The Elder Scrolls IV: Oblivion")]
+    [InlineData(GameType.SkyrimLE, "Skyrim (Legendary Edition)")]
+    [InlineData(GameType.SkyrimSE, "Skyrim Special Edition")]
     [InlineData(GameType.Fallout4, "Fallout 4")]
     [InlineData(GameType.FalloutNewVegas, "Fallout: New Vegas")]
     [InlineData(GameType.Unknown, "Unknown")]
@@ -422,7 +429,7 @@ SomeMod.esp
         var service = new GameDetectionService(Mock.Of<ILoggingService>());
 
         // Act
-        var result = service.GetDefaultLoadOrderFileName(GameType.SkyrimSpecialEdition);
+        var result = service.GetDefaultLoadOrderFileName(GameType.SkyrimSE);
 
         // Assert
         result.Should().NotBeNullOrEmpty();

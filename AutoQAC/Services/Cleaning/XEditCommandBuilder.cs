@@ -82,9 +82,11 @@ public sealed class XEditCommandBuilder : IXEditCommandBuilder
         GameType.Fallout3 => "-FO3",
         GameType.FalloutNewVegas => "-FNV",
         GameType.Fallout4 => "-FO4",
-        GameType.SkyrimSpecialEdition => "-SSE",
+        GameType.SkyrimLE => "-TES5",
+        GameType.SkyrimSE => "-SSE",
         GameType.Fallout4VR => "-FO4VR",
         GameType.SkyrimVR => "-SkyrimVR",
+        GameType.Oblivion => "-TES4",
         _ => string.Empty
     };
 }

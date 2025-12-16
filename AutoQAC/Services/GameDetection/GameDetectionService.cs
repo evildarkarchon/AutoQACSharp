@@ -15,28 +15,42 @@ public sealed class GameDetectionService : IGameDetectionService
 
     private static readonly Dictionary<string, GameType> ExecutablePatterns = new(StringComparer.OrdinalIgnoreCase)
     {
+        // Oblivion
+        { "tes4edit", GameType.Oblivion },
+        { "tes4edit64", GameType.Oblivion },
+        // Skyrim LE - note: TES5Edit can be used for both LE and SE
+        // We map to SkyrimLE for the original tool name
+        { "tes5edit", GameType.SkyrimLE },
+        { "tes5edit64", GameType.SkyrimLE },
+        // Skyrim SE - specific SSEEdit tool
+        { "sseedit", GameType.SkyrimSE },
+        { "sseedit64", GameType.SkyrimSE },
+        // Skyrim VR
+        { "skyrimvredit", GameType.SkyrimVR },
+        { "tes5vredit", GameType.SkyrimVR },
+        // Fallout 3
         { "fo3edit", GameType.Fallout3 },
         { "fo3edit64", GameType.Fallout3 },
+        // Fallout New Vegas
         { "fnvedit", GameType.FalloutNewVegas },
         { "fnvedit64", GameType.FalloutNewVegas },
+        // Fallout 4
         { "fo4edit", GameType.Fallout4 },
         { "fo4edit64", GameType.Fallout4 },
-        { "sseedit", GameType.SkyrimSpecialEdition },
-        { "sseedit64", GameType.SkyrimSpecialEdition },
-        { "tes5edit", GameType.SkyrimSpecialEdition },
+        // Fallout 4 VR
         { "fo4vredit", GameType.Fallout4VR },
-        { "fo4vredit64", GameType.Fallout4VR },
-        { "skyrimvredit", GameType.SkyrimVR },
-        { "tes5vredit", GameType.SkyrimVR }
+        { "fo4vredit64", GameType.Fallout4VR }
     };
 
     private static readonly Dictionary<string, GameType> MasterFilePatterns = new(StringComparer.OrdinalIgnoreCase)
     {
-        { "Skyrim.esm", GameType.SkyrimSpecialEdition },
+        { "Oblivion.esm", GameType.Oblivion },
+        // Skyrim.esm is shared between LE and SE - we default to SE (more common)
+        { "Skyrim.esm", GameType.SkyrimSE },
         { "Fallout3.esm", GameType.Fallout3 },
         { "FalloutNV.esm", GameType.FalloutNewVegas },
         { "Fallout4.esm", GameType.Fallout4 },
-        { "Fallout4_VR.esm", GameType.Fallout4VR }, // Assuming VR has a specific master or uses FO4
+        { "Fallout4_VR.esm", GameType.Fallout4VR },
     };
 
     public GameDetectionService(ILoggingService logger)
@@ -80,7 +94,7 @@ public sealed class GameDetectionService : IGameDetectionService
 
         try
         {
-            var lines = await File.ReadAllLinesAsync(loadOrderPath, ct);
+            var lines = await File.ReadAllLinesAsync(loadOrderPath, ct).ConfigureAwait(false);
             foreach (var line in lines)
             {
                 if (string.IsNullOrWhiteSpace(line)) continue;
@@ -116,12 +130,14 @@ public sealed class GameDetectionService : IGameDetectionService
 
     public string GetGameDisplayName(GameType gameType) => gameType switch
     {
+        GameType.Oblivion => "The Elder Scrolls IV: Oblivion",
+        GameType.SkyrimLE => "Skyrim (Legendary Edition)",
+        GameType.SkyrimSE => "Skyrim Special Edition",
+        GameType.SkyrimVR => "Skyrim VR",
         GameType.Fallout3 => "Fallout 3",
         GameType.FalloutNewVegas => "Fallout: New Vegas",
         GameType.Fallout4 => "Fallout 4",
-        GameType.SkyrimSpecialEdition => "Skyrim Special Edition",
         GameType.Fallout4VR => "Fallout 4 VR",
-        GameType.SkyrimVR => "Skyrim VR",
         _ => "Unknown"
     };
 

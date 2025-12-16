@@ -53,17 +53,17 @@ public sealed class CleaningServiceTests
         {
             FileName = "Mod.esp",
             FullPath = "Mod.esp",
-            DetectedGameType = GameType.SkyrimSpecialEdition,
+            DetectedGameType = GameType.SkyrimSE,
             IsInSkipList = false
         };
 
         // Mock State
-        var appState = new AppState { CurrentGameType = GameType.SkyrimSpecialEdition };
+        var appState = new AppState { CurrentGameType = GameType.SkyrimSE };
         _mockState.Setup(s => s.CurrentState).Returns(appState);
 
         // Mock Command Builder
         var startInfo = new System.Diagnostics.ProcessStartInfo("xEdit.exe");
-        _mockCommandBuilder.Setup(b => b.BuildCommand(plugin, GameType.SkyrimSpecialEdition))
+        _mockCommandBuilder.Setup(b => b.BuildCommand(plugin, GameType.SkyrimSE))
             .Returns(startInfo);
 
         // Mock Process Execution
@@ -110,7 +110,7 @@ public sealed class CleaningServiceTests
         {
             FileName = "Mod.esp",
             FullPath = "Mod.esp",
-            DetectedGameType = GameType.SkyrimSpecialEdition,
+            DetectedGameType = GameType.SkyrimSE,
             IsInSkipList = true // SKIPPED
         };
 
@@ -146,16 +146,16 @@ public sealed class CleaningServiceTests
         {
             FileName = "Mod.esp",
             FullPath = "Mod.esp",
-            DetectedGameType = GameType.SkyrimSpecialEdition,
+            DetectedGameType = GameType.SkyrimSE,
             IsInSkipList = false
         };
 
         // Configure state with a valid game type
-        var appState = new AppState { CurrentGameType = GameType.SkyrimSpecialEdition };
+        var appState = new AppState { CurrentGameType = GameType.SkyrimSE };
         _mockState.Setup(s => s.CurrentState).Returns(appState);
 
         // Command builder returns null - simulating build failure
-        _mockCommandBuilder.Setup(b => b.BuildCommand(plugin, GameType.SkyrimSpecialEdition))
+        _mockCommandBuilder.Setup(b => b.BuildCommand(plugin, GameType.SkyrimSE))
             .Returns((System.Diagnostics.ProcessStartInfo?)null);
 
         // Act
@@ -195,21 +195,21 @@ public sealed class CleaningServiceTests
         {
             FileName = "SlowPlugin.esp",
             FullPath = "SlowPlugin.esp",
-            DetectedGameType = GameType.SkyrimSpecialEdition,
+            DetectedGameType = GameType.SkyrimSE,
             IsInSkipList = false
         };
 
         // Configure state with timeout setting
         var appState = new AppState
         {
-            CurrentGameType = GameType.SkyrimSpecialEdition,
+            CurrentGameType = GameType.SkyrimSE,
             CleaningTimeout = 300 // 5 minute timeout
         };
         _mockState.Setup(s => s.CurrentState).Returns(appState);
 
         // Mock command builder to return valid command
         var startInfo = new System.Diagnostics.ProcessStartInfo("xEdit.exe");
-        _mockCommandBuilder.Setup(b => b.BuildCommand(plugin, GameType.SkyrimSpecialEdition))
+        _mockCommandBuilder.Setup(b => b.BuildCommand(plugin, GameType.SkyrimSE))
             .Returns(startInfo);
 
         // Mock process to return timed out result
@@ -252,17 +252,17 @@ public sealed class CleaningServiceTests
         {
             FileName = "CorruptMod.esp",
             FullPath = "CorruptMod.esp",
-            DetectedGameType = GameType.SkyrimSpecialEdition,
+            DetectedGameType = GameType.SkyrimSE,
             IsInSkipList = false
         };
 
         // Configure state
-        var appState = new AppState { CurrentGameType = GameType.SkyrimSpecialEdition };
+        var appState = new AppState { CurrentGameType = GameType.SkyrimSE };
         _mockState.Setup(s => s.CurrentState).Returns(appState);
 
         // Mock command builder
         var startInfo = new System.Diagnostics.ProcessStartInfo("xEdit.exe");
-        _mockCommandBuilder.Setup(b => b.BuildCommand(plugin, GameType.SkyrimSpecialEdition))
+        _mockCommandBuilder.Setup(b => b.BuildCommand(plugin, GameType.SkyrimSE))
             .Returns(startInfo);
 
         // Mock process to return error exit code
@@ -367,17 +367,17 @@ public sealed class CleaningServiceTests
         {
             FileName = "Mod.esp",
             FullPath = "Mod.esp",
-            DetectedGameType = GameType.SkyrimSpecialEdition,
+            DetectedGameType = GameType.SkyrimSE,
             IsInSkipList = false
         };
 
         // Configure state
-        var appState = new AppState { CurrentGameType = GameType.SkyrimSpecialEdition };
+        var appState = new AppState { CurrentGameType = GameType.SkyrimSE };
         _mockState.Setup(s => s.CurrentState).Returns(appState);
 
         // Mock command builder
         var startInfo = new System.Diagnostics.ProcessStartInfo("xEdit.exe");
-        _mockCommandBuilder.Setup(b => b.BuildCommand(plugin, GameType.SkyrimSpecialEdition))
+        _mockCommandBuilder.Setup(b => b.BuildCommand(plugin, GameType.SkyrimSE))
             .Returns(startInfo);
 
         // Mock process to throw OperationCanceledException
@@ -414,17 +414,17 @@ public sealed class CleaningServiceTests
         {
             FileName = "Mod.esp",
             FullPath = "Mod.esp",
-            DetectedGameType = GameType.SkyrimSpecialEdition,
+            DetectedGameType = GameType.SkyrimSE,
             IsInSkipList = false
         };
 
         // Configure state
-        var appState = new AppState { CurrentGameType = GameType.SkyrimSpecialEdition };
+        var appState = new AppState { CurrentGameType = GameType.SkyrimSE };
         _mockState.Setup(s => s.CurrentState).Returns(appState);
 
         // Mock command builder
         var startInfo = new System.Diagnostics.ProcessStartInfo("xEdit.exe");
-        _mockCommandBuilder.Setup(b => b.BuildCommand(plugin, GameType.SkyrimSpecialEdition))
+        _mockCommandBuilder.Setup(b => b.BuildCommand(plugin, GameType.SkyrimSE))
             .Returns(startInfo);
 
         // Mock process to throw unexpected exception

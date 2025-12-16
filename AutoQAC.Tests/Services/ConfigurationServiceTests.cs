@@ -60,7 +60,7 @@ public sealed class ConfigurationServiceTests : IDisposable
         var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
         var config = new UserConfiguration
         {
-            Settings = new PactSettings { CleaningTimeout = 999 }
+            Settings = new AutoQacSettings { CleaningTimeout = 999 }
         };
 
         // Act
@@ -118,7 +118,7 @@ public sealed class ConfigurationServiceTests : IDisposable
     {
         // Arrange
         var mainConfigContent = @"
-PACT_Data:
+AutoQAC_Data:
   XEdit_Lists:
     SSE:
       - SSEEdit.exe
@@ -129,7 +129,7 @@ PACT_Data:
         var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
 
         // Act
-        var list = await service.GetXEditExecutableNamesAsync(GameType.SkyrimSpecialEdition);
+        var list = await service.GetXEditExecutableNamesAsync(GameType.SkyrimSE);
 
         // Assert
         list.Should().Contain("SSEEdit.exe");
@@ -176,7 +176,7 @@ Settings: [not: properly: closed
     {
         // Arrange
         var corruptedYaml = @"
-PACT_Data:
+AutoQAC_Data:
   SkipLists:
     SSE
       - This is not valid YAML
@@ -204,7 +204,7 @@ PACT_Data:
     {
         // Arrange
         var mainConfigContent = @"
-PACT_Data:
+AutoQAC_Data:
   SkipLists:
     SSE:
       - Skyrim.esm
@@ -237,7 +237,7 @@ PACT_Data:
         // Arrange
         // NOTE: Use "Skip_Lists" (with underscore) as per the YamlMember alias in MainConfiguration
         var mainConfigContent = @"
-PACT_Data:
+AutoQAC_Data:
   Skip_Lists:
     SSE:
       - Skyrim.esm
@@ -254,7 +254,7 @@ PACT_Data:
         var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
 
         // Act
-        var list = await service.GetSkipListAsync(GameType.SkyrimSpecialEdition);
+        var list = await service.GetSkipListAsync(GameType.SkyrimSE);
 
         // Assert
         list.Should().Contain("Skyrim.esm", "game-specific plugins should be included");
@@ -276,7 +276,7 @@ PACT_Data:
 
         var config = new UserConfiguration
         {
-            Settings = new PactSettings { CleaningTimeout = 999 }
+            Settings = new AutoQacSettings { CleaningTimeout = 999 }
         };
 
         // Act
@@ -308,7 +308,7 @@ PACT_Data:
             LoadOrder = new LoadOrderConfig { File = loFile },
             XEdit = new XEditConfig { Binary = xEditFile },
             ModOrganizer = new ModOrganizerConfig { Binary = "NonExistent/ModOrganizer.exe" },
-            Settings = new PactSettings { MO2Mode = true }
+            Settings = new AutoQacSettings { MO2Mode = true }
         };
 
         // Act
@@ -375,7 +375,7 @@ Settings:
     {
         // Arrange
         var mainConfigContent = @"
-PACT_Data:
+AutoQAC_Data:
   SkipLists:
     SSE:
       - Skyrim.esm

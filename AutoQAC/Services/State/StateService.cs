@@ -1,16 +1,14 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
-using System.Threading;
 using AutoQAC.Models;
 
 namespace AutoQAC.Services.State;
 
 public sealed class StateService : IStateService, IDisposable
 {
-    private readonly ReaderWriterLockSlim _lock = new();
+    private readonly object _lock = new();
     private readonly BehaviorSubject<AppState> _stateSubject;
     private readonly Subject<(string plugin, CleaningStatus status)> _pluginProcessedSubject = new();
 
@@ -23,14 +21,9 @@ public sealed class StateService : IStateService, IDisposable
     {
         get
         {
-            _lock.EnterReadLock();
-            try
+            lock (_lock)
             {
                 return _stateSubject.Value;
-            }
-            finally
-            {
-                _lock.ExitReadLock();
             }
         }
     }
@@ -50,15 +43,10 @@ public sealed class StateService : IStateService, IDisposable
 
     public void UpdateState(Func<AppState, AppState> updateFunc)
     {
-        _lock.EnterWriteLock();
-        try
+        lock (_lock)
         {
             var newState = updateFunc(_stateSubject.Value);
             _stateSubject.OnNext(newState);
-        }
-        finally
-        {
-            _lock.ExitWriteLock();
         }
     }
 
@@ -148,7 +136,6 @@ public sealed class StateService : IStateService, IDisposable
 
     public void Dispose()
     {
-        _lock.Dispose();
         _stateSubject.Dispose();
         _pluginProcessedSubject.Dispose();
     }

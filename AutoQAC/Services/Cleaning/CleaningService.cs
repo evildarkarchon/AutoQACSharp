@@ -90,7 +90,7 @@ public sealed class CleaningService : ICleaningService
 
             _logger.Information($"Cleaning {plugin.FileName} with timeout {timeout.TotalSeconds}s...");
 
-            var result = await _processService.ExecuteAsync(command, progress, timeout, ct);
+            var result = await _processService.ExecuteAsync(command, progress, timeout, ct).ConfigureAwait(false);
 
             sw.Stop();
 
@@ -118,7 +118,7 @@ public sealed class CleaningService : ICleaningService
             }
 
             // 4. Parse Output (Offload to thread pool)
-            var stats = await Task.Run(() => _outputParser.ParseOutput(result.OutputLines), ct);
+            var stats = await Task.Run(() => _outputParser.ParseOutput(result.OutputLines), ct).ConfigureAwait(false);
 
             return new CleaningResult
             {

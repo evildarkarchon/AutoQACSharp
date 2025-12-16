@@ -278,12 +278,14 @@ public sealed class AppStateTests
     /// Verifies that CurrentGameType can be set to all valid game types.
     /// </summary>
     [Theory]
-    [InlineData(GameType.SkyrimSpecialEdition)]
-    [InlineData(GameType.Fallout4)]
-    [InlineData(GameType.FalloutNewVegas)]
-    [InlineData(GameType.Fallout3)]
-    [InlineData(GameType.Fallout4VR)]
+    [InlineData(GameType.SkyrimLE)]
+    [InlineData(GameType.SkyrimSE)]
     [InlineData(GameType.SkyrimVR)]
+    [InlineData(GameType.Fallout3)]
+    [InlineData(GameType.FalloutNewVegas)]
+    [InlineData(GameType.Fallout4)]
+    [InlineData(GameType.Fallout4VR)]
+    [InlineData(GameType.Oblivion)]
     [InlineData(GameType.Unknown)]
     public void CurrentGameType_ShouldAcceptAllGameTypes(GameType gameType)
     {

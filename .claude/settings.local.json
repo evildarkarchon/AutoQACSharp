@@ -1,7 +1,14 @@
 {
   "permissions": {
     "allow": [
-      "Bash(tree:*)"
+      "Bash(tree:*)",
+      "Bash(openspec validate:*)",
+      "Bash(mkdir:*)",
+      "Bash(openspec list:*)",
+      "Bash(openspec show:*)",
+      "mcp__exa__get_code_context_exa",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:mutagen-modding.github.io)"
     ],
     "deny": [],
     "ask": []

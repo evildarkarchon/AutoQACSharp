@@ -51,7 +51,7 @@ public sealed class PluginValidationService : IPluginValidationService
         
         try
         {
-            var lines = await File.ReadAllLinesAsync(loadOrderPath, ct);
+            var lines = await File.ReadAllLinesAsync(loadOrderPath, ct).ConfigureAwait(false);
             foreach (var line in lines)
             {
                 if (string.IsNullOrWhiteSpace(line)) continue;

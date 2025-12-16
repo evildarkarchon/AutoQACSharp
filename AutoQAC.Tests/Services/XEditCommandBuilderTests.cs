@@ -27,7 +27,7 @@ public class XEditCommandBuilderTests
         _stateServiceMock.Setup(x => x.CurrentState).Returns(new AppState { XEditExecutablePath = "" });
 
         // Act
-        var result = _sut.BuildCommand(new PluginInfo { FileName = "test.esp", FullPath = "/path/to/test.esp" }, GameType.SkyrimSpecialEdition);
+        var result = _sut.BuildCommand(new PluginInfo { FileName = "test.esp", FullPath = "/path/to/test.esp" }, GameType.SkyrimSE);
 
         // Assert
         result.Should().BeNull();
@@ -46,7 +46,7 @@ public class XEditCommandBuilderTests
         var plugin = new PluginInfo { FileName = "Update.esm", FullPath = "C:\\Games\\SSE\\Data\\Update.esm" };
 
         // Act
-        var result = _sut.BuildCommand(plugin, GameType.SkyrimSpecialEdition);
+        var result = _sut.BuildCommand(plugin, GameType.SkyrimSE);
 
         // Assert
         result.Should().NotBeNull();
@@ -87,7 +87,7 @@ public class XEditCommandBuilderTests
         });
 
         // Act
-        var result = _sut.BuildCommand(new PluginInfo { FileName = "foo.esp", FullPath = "foo.esp" }, GameType.SkyrimSpecialEdition);
+        var result = _sut.BuildCommand(new PluginInfo { FileName = "foo.esp", FullPath = "foo.esp" }, GameType.SkyrimSE);
 
         // Assert
         result!.Arguments.Should().Contain("-iknowwhatimdoing");
@@ -108,7 +108,7 @@ public class XEditCommandBuilderTests
         });
 
         // Act
-        var result = _sut.BuildCommand(new PluginInfo { FileName = "foo.esp", FullPath = "foo.esp" }, GameType.SkyrimSpecialEdition);
+        var result = _sut.BuildCommand(new PluginInfo { FileName = "foo.esp", FullPath = "foo.esp" }, GameType.SkyrimSE);
 
         // Assert
         result!.FileName.Should().Be(mo2Path);

@@ -29,5 +29,9 @@
     <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
     <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
     <PackageReference Include="YamlDotNet" Version="16.3.0" />
+    <!-- Mutagen packages for plugin loading -->
+    <PackageReference Include="Mutagen.Bethesda" Version="0.51.2" />
+    <PackageReference Include="Mutagen.Bethesda.Skyrim" Version="0.51.2" />
+    <PackageReference Include="Mutagen.Bethesda.Fallout4" Version="0.51.2" />
   </ItemGroup>
 </Project>

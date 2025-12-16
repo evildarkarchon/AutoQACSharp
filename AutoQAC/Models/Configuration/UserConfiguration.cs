@@ -4,6 +4,9 @@ namespace AutoQAC.Models.Configuration;
 
 public sealed class UserConfiguration
 {
+    [YamlMember(Alias = "Selected_Game")]
+    public string SelectedGame { get; set; } = "Unknown";
+
     [YamlMember(Alias = "Load_Order")]
     public LoadOrderConfig LoadOrder { get; set; } = new();
 
@@ -13,8 +16,8 @@ public sealed class UserConfiguration
     [YamlMember(Alias = "xEdit")]
     public XEditConfig XEdit { get; set; } = new();
 
-    [YamlMember(Alias = "PACT_Settings")]
-    public PactSettings Settings { get; set; } = new();
+    [YamlMember(Alias = "AutoQAC_Settings")]
+    public AutoQacSettings Settings { get; set; } = new();
 }
 
 public sealed class LoadOrderConfig
@@ -41,7 +44,7 @@ public sealed class XEditConfig
     public string? InstallPath { get; set; }
 }
 
-public sealed class PactSettings
+public sealed class AutoQacSettings
 {
     [YamlMember(Alias = "Journal_Expiration")]
     public int JournalExpiration { get; set; } = 7;

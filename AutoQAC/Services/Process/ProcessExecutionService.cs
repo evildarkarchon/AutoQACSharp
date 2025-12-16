@@ -34,7 +34,7 @@ public sealed class ProcessExecutionService : IProcessExecutionService, IDisposa
 
     public async Task<IDisposable> AcquireProcessSlotAsync(CancellationToken ct = default)
     {
-        await _processSlots.WaitAsync(ct);
+        await _processSlots.WaitAsync(ct).ConfigureAwait(false);
         return new SemaphoreReleaser(_processSlots);
     }
 
@@ -45,7 +45,7 @@ public sealed class ProcessExecutionService : IProcessExecutionService, IDisposa
         CancellationToken ct = default)
     {
         // We acquire a slot for every execution to respect the limit
-        using var slot = await AcquireProcessSlotAsync(ct);
+        using var slot = await AcquireProcessSlotAsync(ct).ConfigureAwait(false);
 
         using var process = new System.Diagnostics.Process { StartInfo = startInfo };
 
@@ -90,17 +90,18 @@ public sealed class ProcessExecutionService : IProcessExecutionService, IDisposa
         }
 
         // Wait with timeout and cancellation
-        var timeoutCts = timeout.HasValue
+        using var timeoutCts = timeout.HasValue
             ? new CancellationTokenSource(timeout.Value)
             : null;
-        
+
         // Combine tokens: User cancellation + Timeout
-        var linkedToken = timeoutCts != null
-            ? CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token).Token
-            : ct;
+        using var linkedCts = timeoutCts != null
+            ? CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token)
+            : null;
+        var linkedToken = linkedCts?.Token ?? ct;
 
         // Register cancellation callback to kill process
-        using var reg = linkedToken.Register(() => 
+        using var reg = linkedToken.Register(() =>
         {
             tcs.TrySetCanceled();
         });
@@ -114,16 +115,12 @@ public sealed class ProcessExecutionService : IProcessExecutionService, IDisposa
         {
             // Determine if it was timeout or user cancel
             timedOut = timeoutCts?.IsCancellationRequested ?? false;
-            
-            _logger.Warning(timedOut 
-                ? "Process execution timed out." 
+
+            _logger.Warning(timedOut
+                ? "Process execution timed out."
                 : "Process execution cancelled by user.");
 
-            await TerminateProcessGracefullyAsync(process);
-        }
-        finally
-        {
-            timeoutCts?.Dispose();
+            await TerminateProcessGracefullyAsync(process).ConfigureAwait(false);
         }
 
         return new ProcessResult
@@ -148,7 +145,7 @@ public sealed class ProcessExecutionService : IProcessExecutionService, IDisposa
             process.CloseMainWindow();
             
             // Wait a bit
-            await Task.Delay(2000);
+            await Task.Delay(2000).ConfigureAwait(false);
         }
         catch (Exception ex)
         {

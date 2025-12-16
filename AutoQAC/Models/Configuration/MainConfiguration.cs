@@ -5,11 +5,11 @@ namespace AutoQAC.Models.Configuration;
 
 public sealed class MainConfiguration
 {
-    [YamlMember(Alias = "PACT_Data")]
-    public PactData Data { get; set; } = new();
+    [YamlMember(Alias = "AutoQAC_Data")]
+    public AutoQacData Data { get; set; } = new();
 }
 
-public sealed class PactData
+public sealed class AutoQacData
 {
     [YamlMember(Alias = "version")]
     public string Version { get; set; } = string.Empty;

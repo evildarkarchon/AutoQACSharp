@@ -115,7 +115,7 @@ dotnet build -c Release
 Located in `AutoQAC Data/`:
 - `AutoQAC Main.yaml`: Game configurations, skip lists
 - `AutoQAC Config.yaml`: User settings, paths
-- `PACT Ignore.yaml`: Additional ignore list
+- `AutoQAC Ignore.yaml`: Additional ignore list
 
 ## Logging
 

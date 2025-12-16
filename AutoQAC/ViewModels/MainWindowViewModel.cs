@@ -1,7 +1,9 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Reactive;
+using System.Reactive.Disposables;
 using System.Reactive.Linq;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
@@ -16,7 +18,7 @@ using ReactiveUI;
 
 namespace AutoQAC.ViewModels;
 
-public sealed class MainWindowViewModel : ViewModelBase
+public sealed class MainWindowViewModel : ViewModelBase, IDisposable
 {
     private readonly IConfigurationService _configService;
     private readonly IStateService _stateService;
@@ -24,6 +26,8 @@ public sealed class MainWindowViewModel : ViewModelBase
     private readonly ILoggingService _logger;
     private readonly IFileDialogService _fileDialog;
     private readonly IPluginValidationService _pluginService;
+    private readonly IPluginLoadingService _pluginLoadingService;
+    private readonly CompositeDisposable _disposables = new();
 
     // Observable properties
     private string? _loadOrderPath;
@@ -60,6 +64,18 @@ public sealed class MainWindowViewModel : ViewModelBase
         get => _partialFormsEnabled;
         set => this.RaiseAndSetIfChanged(ref _partialFormsEnabled, value);
     }
+
+    private GameType _selectedGame = GameType.Unknown;
+    public GameType SelectedGame
+    {
+        get => _selectedGame;
+        set => this.RaiseAndSetIfChanged(ref _selectedGame, value);
+    }
+
+    public IReadOnlyList<GameType> AvailableGames { get; }
+
+    private readonly ObservableAsPropertyHelper<bool> _isMutagenSupported;
+    public bool IsMutagenSupported => _isMutagenSupported.Value;
 
     private string _statusText = "Ready";
     public string StatusText
@@ -98,6 +114,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     public ReactiveCommand<Unit, Unit> StopCleaningCommand { get; }
     public ReactiveCommand<Unit, Unit> ExitCommand { get; }
     public ReactiveCommand<Unit, Unit> ShowAboutCommand { get; }
+    public ReactiveCommand<Unit, Unit> ResetSettingsCommand { get; }
 
     public MainWindowViewModel(
         IConfigurationService configService,
@@ -105,7 +122,8 @@ public sealed class MainWindowViewModel : ViewModelBase
         ICleaningOrchestrator orchestrator,
         ILoggingService logger,
         IFileDialogService fileDialog,
-        IPluginValidationService pluginService)
+        IPluginValidationService pluginService,
+        IPluginLoadingService pluginLoadingService)
     {
         _configService = configService;
         _stateService = stateService;
@@ -113,11 +131,22 @@ public sealed class MainWindowViewModel : ViewModelBase
         _logger = logger;
         _fileDialog = fileDialog;
         _pluginService = pluginService;
+        _pluginLoadingService = pluginLoadingService;
+
+        // Initialize available games list
+        AvailableGames = _pluginLoadingService.GetAvailableGames();
 
         // Initialize OAPHs first
         _isCleaning = _stateService.StateChanged
             .Select(s => s.IsCleaning)
             .ToProperty(this, x => x.IsCleaning);
+        _disposables.Add(_isCleaning);
+
+        // IsMutagenSupported computed from SelectedGame
+        _isMutagenSupported = this.WhenAnyValue(x => x.SelectedGame)
+            .Select(g => _pluginLoadingService.IsGameSupportedByMutagen(g))
+            .ToProperty(this, x => x.IsMutagenSupported);
+        _disposables.Add(_isMutagenSupported);
 
         // Initialize commands
         ConfigureLoadOrderCommand = ReactiveCommand.CreateFromTask(ConfigureLoadOrderAsync);
@@ -126,18 +155,22 @@ public sealed class MainWindowViewModel : ViewModelBase
 
         TogglePartialFormsCommand = ReactiveCommand.Create(TogglePartialForms);
 
-        // Define canStart observable
-        var canStart = this.WhenAnyValue(
-            x => x.LoadOrderPath,
-            x => x.XEditPath,
-            x => x.IsCleaning,
-            (loadOrder, xEdit, isCleaning) =>
-                !string.IsNullOrEmpty(loadOrder) &&
+        // Define canStart observable - requires xEdit and plugins (from game detection OR load order file)
+        var hasPlugins = _stateService.StateChanged
+            .Select(s => s.PluginsToClean?.Count > 0);
+
+        var canStart = Observable.CombineLatest(
+            hasPlugins,
+            this.WhenAnyValue(x => x.XEditPath),
+            this.WhenAnyValue(x => x.IsCleaning),
+            (hasP, xEdit, isCleaning) =>
+                hasP &&
                 !string.IsNullOrEmpty(xEdit) &&
                 !isCleaning);
 
         _canStartCleaning = canStart
             .ToProperty(this, x => x.CanStartCleaning);
+        _disposables.Add(_canStartCleaning);
 
         StartCleaningCommand = ReactiveCommand.CreateFromTask(
             StartCleaningAsync,
@@ -149,33 +182,64 @@ public sealed class MainWindowViewModel : ViewModelBase
 
         ExitCommand = ReactiveCommand.Create(Exit);
         ShowAboutCommand = ReactiveCommand.Create(ShowAbout);
+        ResetSettingsCommand = ReactiveCommand.CreateFromTask(ResetSettingsAsync);
 
         // Subscribe to state changes
-        _stateService.StateChanged
+        var stateSubscription = _stateService.StateChanged
             .ObserveOn(RxApp.MainThreadScheduler)
             .Subscribe(OnStateChanged);
-            
+        _disposables.Add(stateSubscription);
+
         // Initialize UI from current state
         OnStateChanged(_stateService.CurrentState);
 
-        // Load saved configuration
-        InitializeAsync();
+        // Load saved configuration asynchronously with error handling
+        _ = InitializeAsync();
 
         // Auto-save MO2Mode when changed
-        this.WhenAnyValue(x => x.MO2ModeEnabled)
+        var mo2ModeSubscription = this.WhenAnyValue(x => x.MO2ModeEnabled)
             .Skip(1) // Skip initial load
-            .Subscribe(async _ => await SaveConfigurationAsync());
+            .Subscribe(async _ =>
+            {
+                try
+                {
+                    await SaveConfigurationAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error(ex, "Failed to auto-save MO2Mode configuration");
+                }
+            });
+        _disposables.Add(mo2ModeSubscription);
+
+        // Auto-save and refresh plugins when SelectedGame changes
+        var gameSelectionSubscription = this.WhenAnyValue(x => x.SelectedGame)
+            .Skip(1) // Skip initial load
+            .Subscribe(async gameType =>
+            {
+                try
+                {
+                    await _configService.SetSelectedGameAsync(gameType);
+                    await RefreshPluginsForGameAsync(gameType);
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error(ex, "Failed to handle game selection change");
+                    StatusText = "Error changing game selection";
+                }
+            });
+        _disposables.Add(gameSelectionSubscription);
     }
 
-    private async void InitializeAsync()
+    private async Task InitializeAsync()
     {
         try
         {
             var config = await _configService.LoadUserConfigAsync();
-            
+
             _stateService.UpdateConfigurationPaths(
-                config.LoadOrder.File, 
-                config.ModOrganizer.Binary, 
+                config.LoadOrder.File,
+                config.ModOrganizer.Binary,
                 config.XEdit.Binary);
 
             _stateService.UpdateState(s => s with
@@ -185,10 +249,16 @@ public sealed class MainWindowViewModel : ViewModelBase
                 MaxConcurrentSubprocesses = config.Settings.MaxConcurrentSubprocesses
             });
 
-            // If we have a valid load order, try to load plugins
-            if (!string.IsNullOrEmpty(config.LoadOrder.File) && System.IO.File.Exists(config.LoadOrder.File))
+            // Load saved game selection
+            var savedGame = await _configService.GetSelectedGameAsync();
+            SelectedGame = savedGame; // This will trigger the subscription which loads plugins
+
+            // If no game was saved but we have a load order file, try to detect game and load plugins
+            if (savedGame == GameType.Unknown &&
+                !string.IsNullOrEmpty(config.LoadOrder.File) &&
+                System.IO.File.Exists(config.LoadOrder.File))
             {
-                try 
+                try
                 {
                     var plugins = await _pluginService.GetPluginsFromLoadOrderAsync(config.LoadOrder.File);
                     var pluginNames = plugins.Select(p => p.FileName).ToList();
@@ -278,6 +348,68 @@ public sealed class MainWindowViewModel : ViewModelBase
         await _configService.SaveUserConfigAsync(config);
     }
 
+    private async Task RefreshPluginsForGameAsync(GameType gameType)
+    {
+        if (gameType == GameType.Unknown)
+        {
+            _stateService.SetPluginsToClean(new List<string>());
+            StatusText = "No game selected";
+            return;
+        }
+
+        _stateService.UpdateState(s => s with { CurrentGameType = gameType });
+
+        // Try Mutagen first if supported
+        if (_pluginLoadingService.IsGameSupportedByMutagen(gameType))
+        {
+            try
+            {
+                StatusText = $"Loading plugins via Mutagen for {gameType}...";
+                var plugins = await _pluginLoadingService.GetPluginsAsync(gameType);
+
+                if (plugins.Count > 0)
+                {
+                    var pluginNames = plugins.Select(p => p.FileName).ToList();
+                    _stateService.SetPluginsToClean(pluginNames);
+                    StatusText = $"Loaded {plugins.Count} plugins for {gameType}";
+                    return;
+                }
+
+                // Mutagen returned empty, might need file-based fallback
+                _logger.Information($"Mutagen returned no plugins for {gameType}, fallback to file-based");
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Mutagen failed for {gameType}: {ex.Message}");
+            }
+        }
+
+        // Fall back to file-based loading if we have a load order path
+        if (!string.IsNullOrEmpty(LoadOrderPath) && System.IO.File.Exists(LoadOrderPath))
+        {
+            try
+            {
+                StatusText = $"Loading plugins from file for {gameType}...";
+                var plugins = await _pluginLoadingService.GetPluginsFromFileAsync(LoadOrderPath);
+                var pluginNames = plugins.Select(p => p.FileName).ToList();
+                _stateService.SetPluginsToClean(pluginNames);
+                StatusText = $"Loaded {plugins.Count} plugins from file";
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, "Failed to load plugins from file");
+                StatusText = "Error loading plugins";
+            }
+        }
+        else
+        {
+            // No Mutagen support and no file path - need user to configure
+            StatusText = _pluginLoadingService.IsGameSupportedByMutagen(gameType)
+                ? $"Could not detect {gameType} installation"
+                : $"{gameType} requires a load order file";
+        }
+    }
+
     private void TogglePartialForms()
     {
         // Logic to toggle partial forms
@@ -322,6 +454,42 @@ public sealed class MainWindowViewModel : ViewModelBase
         StatusText = "AutoQAC Sharp v1.0";
     }
 
+    private async Task ResetSettingsAsync()
+    {
+        try
+        {
+            StatusText = "Resetting settings to defaults...";
+            await _configService.ResetToDefaultsAsync();
+
+            // Reload from the freshly saved defaults
+            var config = await _configService.LoadUserConfigAsync();
+
+            _stateService.UpdateConfigurationPaths(
+                config.LoadOrder.File,
+                config.ModOrganizer.Binary,
+                config.XEdit.Binary);
+
+            _stateService.UpdateState(s => s with
+            {
+                MO2ModeEnabled = config.Settings.MO2Mode,
+                CleaningTimeout = config.Settings.CleaningTimeout,
+                MaxConcurrentSubprocesses = config.Settings.MaxConcurrentSubprocesses,
+                PartialFormsEnabled = false
+            });
+
+            SelectedGame = GameType.Unknown;
+            _stateService.SetPluginsToClean(new List<string>());
+
+            StatusText = "Settings reset to defaults";
+            _logger.Information("Settings reset to defaults by user");
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "Failed to reset settings");
+            StatusText = "Error resetting settings";
+        }
+    }
+
     private void OnStateChanged(AppState state)
     {
         LoadOrderPath = state.LoadOrderPath;
@@ -331,18 +499,17 @@ public sealed class MainWindowViewModel : ViewModelBase
         PartialFormsEnabled = state.PartialFormsEnabled;
         
         // Plugins list update - optimized to avoid recreation if possible
-        // For now simple clear and add
-        if (state.PluginsToClean != null && 
-           (PluginsToClean.Count != state.PluginsToClean.Count || 
-            !PluginsToClean.Select(p => p.FileName).SequenceEqual(state.PluginsToClean)))
+        var statePlugins = state.PluginsToClean ?? new List<string>();
+        if (PluginsToClean.Count != statePlugins.Count ||
+            !PluginsToClean.Select(p => p.FileName).SequenceEqual(statePlugins))
         {
             PluginsToClean.Clear();
-            foreach (var p in state.PluginsToClean)
+            foreach (var p in statePlugins)
             {
-                PluginsToClean.Add(new PluginInfo 
-                { 
-                    FileName = p, 
-                    FullPath = p, 
+                PluginsToClean.Add(new PluginInfo
+                {
+                    FileName = p,
+                    FullPath = p,
                     DetectedGameType = state.CurrentGameType,
                     IsInSkipList = false
                 });
@@ -353,5 +520,10 @@ public sealed class MainWindowViewModel : ViewModelBase
         {
             StatusText = $"Cleaning: {state.CurrentPlugin} ({state.Progress}/{state.TotalPlugins})";
         }
+    }
+
+    public void Dispose()
+    {
+        _disposables.Dispose();
     }
 }

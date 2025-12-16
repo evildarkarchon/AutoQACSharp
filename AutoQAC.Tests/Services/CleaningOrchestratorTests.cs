@@ -51,7 +51,7 @@ public sealed class CleaningOrchestratorTests
         {
             LoadOrderPath = "plugins.txt",
             XEditExecutablePath = "xedit.exe",
-            CurrentGameType = GameType.SkyrimSpecialEdition
+            CurrentGameType = GameType.SkyrimSE
         };
 
         _stateServiceMock.Setup(s => s.CurrentState).Returns(appState);
@@ -137,7 +137,7 @@ public sealed class CleaningOrchestratorTests
         {
             LoadOrderPath = "plugins.txt",
             XEditExecutablePath = "xedit.exe",
-            CurrentGameType = GameType.SkyrimSpecialEdition
+            CurrentGameType = GameType.SkyrimSE
         };
         _stateServiceMock.Setup(s => s.CurrentState).Returns(appState);
 
@@ -169,7 +169,7 @@ public sealed class CleaningOrchestratorTests
         {
             LoadOrderPath = "plugins.txt",
             XEditExecutablePath = "xedit.exe",
-            CurrentGameType = GameType.SkyrimSpecialEdition
+            CurrentGameType = GameType.SkyrimSE
         };
         _stateServiceMock.Setup(s => s.CurrentState).Returns(appState);
 
@@ -235,7 +235,7 @@ public sealed class CleaningOrchestratorTests
         {
             LoadOrderPath = "plugins.txt",
             XEditExecutablePath = "xedit.exe",
-            CurrentGameType = GameType.SkyrimSpecialEdition
+            CurrentGameType = GameType.SkyrimSE
         };
         _stateServiceMock.Setup(s => s.CurrentState).Returns(appState);
 
@@ -316,7 +316,7 @@ public sealed class CleaningOrchestratorTests
         {
             LoadOrderPath = "plugins.txt",
             XEditExecutablePath = "xedit.exe",
-            CurrentGameType = GameType.SkyrimSpecialEdition
+            CurrentGameType = GameType.SkyrimSE
         };
         _stateServiceMock.Setup(s => s.CurrentState).Returns(appState);
 
@@ -405,7 +405,7 @@ public sealed class CleaningOrchestratorTests
         {
             LoadOrderPath = "plugins.txt",
             XEditExecutablePath = "xedit.exe",
-            CurrentGameType = GameType.SkyrimSpecialEdition
+            CurrentGameType = GameType.SkyrimSE
         };
         _stateServiceMock.Setup(s => s.CurrentState).Returns(appState);
 
@@ -485,7 +485,7 @@ public sealed class CleaningOrchestratorTests
         {
             LoadOrderPath = "plugins.txt",
             XEditExecutablePath = "xedit.exe",
-            CurrentGameType = GameType.SkyrimSpecialEdition
+            CurrentGameType = GameType.SkyrimSE
         };
         _stateServiceMock.Setup(s => s.CurrentState).Returns(appState);
 
@@ -528,7 +528,7 @@ public sealed class CleaningOrchestratorTests
         {
             LoadOrderPath = "plugins.txt",
             XEditExecutablePath = "xedit.exe",
-            CurrentGameType = GameType.SkyrimSpecialEdition
+            CurrentGameType = GameType.SkyrimSE
         };
         _stateServiceMock.Setup(s => s.CurrentState).Returns(appState);
 

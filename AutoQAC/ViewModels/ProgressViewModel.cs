@@ -1,5 +1,6 @@
 using System;
 using System.Reactive;
+using System.Reactive.Disposables;
 using System.Reactive.Linq;
 using AutoQAC.Models;
 using AutoQAC.Services.Cleaning;
@@ -8,10 +9,11 @@ using ReactiveUI;
 
 namespace AutoQAC.ViewModels;
 
-public sealed class ProgressViewModel : ViewModelBase
+public sealed class ProgressViewModel : ViewModelBase, IDisposable
 {
     private readonly IStateService _stateService;
     private readonly ICleaningOrchestrator _orchestrator;
+    private readonly CompositeDisposable _disposables = new();
 
     private string? _currentPlugin;
     public string? CurrentPlugin
@@ -75,13 +77,15 @@ public sealed class ProgressViewModel : ViewModelBase
         StopCommand = ReactiveCommand.Create(() => _orchestrator.StopCleaning());
 
         // Subscribe to state changes
-        _stateService.StateChanged
+        var stateSubscription = _stateService.StateChanged
             .ObserveOn(RxApp.MainThreadScheduler)
             .Subscribe(OnStateChanged);
+        _disposables.Add(stateSubscription);
 
-        _stateService.PluginProcessed
+        var pluginProcessedSubscription = _stateService.PluginProcessed
             .ObserveOn(RxApp.MainThreadScheduler)
             .Subscribe(OnPluginProcessed);
+        _disposables.Add(pluginProcessedSubscription);
 
         // Computed progress text
         _progressText = this.WhenAnyValue(
@@ -91,7 +95,8 @@ public sealed class ProgressViewModel : ViewModelBase
                 ? $"{current} / {total} ({current * 100 / total}%)"
                 : "0 / 0 (0%)")
             .ToProperty(this, x => x.ProgressText);
-            
+        _disposables.Add(_progressText);
+
         // Initialize from current state
         OnStateChanged(_stateService.CurrentState);
     }
@@ -109,5 +114,10 @@ public sealed class ProgressViewModel : ViewModelBase
     private void OnPluginProcessed((string plugin, CleaningStatus status) args)
     {
         LogOutput += $"[{DateTime.Now:HH:mm:ss}] {args.plugin}: {args.status}\n";
+    }
+
+    public void Dispose()
+    {
+        _disposables.Dispose();
     }
 }

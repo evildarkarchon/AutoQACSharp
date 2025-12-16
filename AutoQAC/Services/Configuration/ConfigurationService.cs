@@ -64,8 +64,8 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
 
         try
         {
-            await _fileLock.WaitAsync(ct);
-            var content = await File.ReadAllTextAsync(path, ct);
+            await _fileLock.WaitAsync(ct).ConfigureAwait(false);
+            var content = await File.ReadAllTextAsync(path, ct).ConfigureAwait(false);
             _mainConfigCache = _deserializer.Deserialize<MainConfiguration>(content);
             return _mainConfigCache;
         }
@@ -87,14 +87,14 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
         {
             _logger.Information($"User config file not found at {path}. Creating default.");
             var config = new UserConfiguration();
-            await SaveUserConfigAsync(config, ct);
+            await SaveUserConfigAsync(config, ct).ConfigureAwait(false);
             return config;
         }
 
         try
         {
-            await _fileLock.WaitAsync(ct);
-            var content = await File.ReadAllTextAsync(path, ct);
+            await _fileLock.WaitAsync(ct).ConfigureAwait(false);
+            var content = await File.ReadAllTextAsync(path, ct).ConfigureAwait(false);
             return _deserializer.Deserialize<UserConfiguration>(content);
         }
         catch (Exception ex)
@@ -113,9 +113,9 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
         var path = Path.Combine(_configDirectory, UserConfigFile);
         try
         {
-            await _fileLock.WaitAsync(ct);
+            await _fileLock.WaitAsync(ct).ConfigureAwait(false);
             var content = _serializer.Serialize(config);
-            await File.WriteAllTextAsync(path, content, ct);
+            await File.WriteAllTextAsync(path, content, ct).ConfigureAwait(false);
             _configChanges.OnNext(config);
         }
         catch (Exception ex)
@@ -163,7 +163,7 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
     {
         if (_mainConfigCache == null)
         {
-             _mainConfigCache = await LoadMainConfigAsync();
+            _mainConfigCache = await LoadMainConfigAsync().ConfigureAwait(false);
         }
 
         var result = new List<string>();
@@ -188,7 +188,7 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
     {
         if (_mainConfigCache == null)
         {
-             _mainConfigCache = await LoadMainConfigAsync();
+            _mainConfigCache = await LoadMainConfigAsync().ConfigureAwait(false);
         }
 
         var key = GetGameKey(gameType);
@@ -205,14 +205,40 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
         return new List<string>();
     }
 
+    public async Task<GameType> GetSelectedGameAsync(CancellationToken ct = default)
+    {
+        var config = await LoadUserConfigAsync(ct).ConfigureAwait(false);
+        if (Enum.TryParse<GameType>(config.SelectedGame, true, out var gameType))
+        {
+            return gameType;
+        }
+        return GameType.Unknown;
+    }
+
+    public async Task SetSelectedGameAsync(GameType gameType, CancellationToken ct = default)
+    {
+        var config = await LoadUserConfigAsync(ct).ConfigureAwait(false);
+        config.SelectedGame = gameType.ToString();
+        await SaveUserConfigAsync(config, ct).ConfigureAwait(false);
+    }
+
+    public async Task ResetToDefaultsAsync(CancellationToken ct = default)
+    {
+        _logger.Information("Resetting user configuration to defaults");
+        var defaultConfig = new UserConfiguration();
+        await SaveUserConfigAsync(defaultConfig, ct).ConfigureAwait(false);
+    }
+
     private string GetGameKey(GameType gameType) => gameType switch
     {
         GameType.Fallout3 => "FO3",
         GameType.FalloutNewVegas => "FNV",
         GameType.Fallout4 => "FO4",
-        GameType.SkyrimSpecialEdition => "SSE",
+        GameType.SkyrimLE => "Skyrim",
+        GameType.SkyrimSE => "SSE",
         GameType.Fallout4VR => "FO4VR",
         GameType.SkyrimVR => "SkyrimVR",
+        GameType.Oblivion => "Oblivion",
         _ => "Unknown"
     };
 

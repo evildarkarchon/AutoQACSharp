@@ -28,6 +28,7 @@ public sealed class MainWindowViewModelInitializationTests
     private readonly Mock<ILoggingService> _loggerMock;
     private readonly Mock<IFileDialogService> _fileDialogMock;
     private readonly Mock<IPluginValidationService> _pluginServiceMock;
+    private readonly Mock<IPluginLoadingService> _pluginLoadingServiceMock;
 
     public MainWindowViewModelInitializationTests()
     {
@@ -37,6 +38,13 @@ public sealed class MainWindowViewModelInitializationTests
         _loggerMock = new Mock<ILoggingService>();
         _fileDialogMock = new Mock<IFileDialogService>();
         _pluginServiceMock = new Mock<IPluginValidationService>();
+        _pluginLoadingServiceMock = new Mock<IPluginLoadingService>();
+
+        // Default setup for plugin loading service
+        _pluginLoadingServiceMock.Setup(x => x.GetAvailableGames())
+            .Returns(new List<GameType> { GameType.SkyrimSE, GameType.Fallout4 });
+        _pluginLoadingServiceMock.Setup(x => x.IsGameSupportedByMutagen(It.IsAny<GameType>()))
+            .Returns(false);
 
         RxApp.MainThreadScheduler = Scheduler.Immediate;
     }
@@ -54,7 +62,7 @@ public sealed class MainWindowViewModelInitializationTests
             LoadOrder = new LoadOrderConfig { File = "loadorder.txt" },
             ModOrganizer = new ModOrganizerConfig { Binary = "mo2.exe" },
             XEdit = new XEditConfig { Binary = "xedit.exe" },
-            Settings = new PactSettings { MO2Mode = true }
+            Settings = new AutoQacSettings { MO2Mode = true }
         };
 
         _configServiceMock.Setup(c => c.LoadUserConfigAsync(It.IsAny<CancellationToken>()))
@@ -67,7 +75,8 @@ public sealed class MainWindowViewModelInitializationTests
             _orchestratorMock.Object,
             _loggerMock.Object,
             _fileDialogMock.Object,
-            _pluginServiceMock.Object);
+            _pluginServiceMock.Object,
+            _pluginLoadingServiceMock.Object);
 
         // Allow async void to run
         await Task.Delay(100); 

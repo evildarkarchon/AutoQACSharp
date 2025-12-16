@@ -43,6 +43,28 @@
                 <TextBlock Text="Configuration"
                            FontSize="16" FontWeight="Bold" />
 
+                <!-- Game Selection -->
+                <Grid ColumnDefinitions="120,*,Auto">
+                    <TextBlock Grid.Column="0" Text="Game:"
+                               VerticalAlignment="Center" />
+                    <ComboBox Grid.Column="1"
+                              ItemsSource="{Binding AvailableGames}"
+                              SelectedItem="{Binding SelectedGame}"
+                              HorizontalAlignment="Stretch">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Converter={StaticResource GameTypeDisplayConverter}}" />
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <TextBlock Grid.Column="2"
+                               Text="{Binding IsMutagenSupported, StringFormat='Mutagen: {0}'}"
+                               VerticalAlignment="Center"
+                               Margin="10,0,0,0"
+                               FontSize="11"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                </Grid>
+
                 <Grid ColumnDefinitions="120,*,Auto">
                     <TextBlock Grid.Column="0" Text="Load Order:"
                                VerticalAlignment="Center" />
@@ -88,6 +110,9 @@
                     <CheckBox Content="Partial Forms (Experimental)"
                               IsChecked="{Binding PartialFormsEnabled}"
                               Command="{Binding TogglePartialFormsCommand}" />
+                    <Button Content="Reset Settings"
+                            Command="{Binding ResetSettingsCommand}"
+                            VerticalAlignment="Center" />
                 </StackPanel>
             </StackPanel>
 
