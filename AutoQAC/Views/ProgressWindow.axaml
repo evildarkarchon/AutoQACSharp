@@ -1,4 +1,4 @@
-<Window xmlns="https://github.com/avaloniaui"
+﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:AutoQAC.ViewModels"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -68,12 +68,18 @@
             </ScrollViewer>
         </StackPanel>
 
-        <!-- Stop Button -->
-        <Button Grid.Row="3"
-                Content="Stop"
-                Command="{Binding StopCommand}"
-                HorizontalAlignment="Right"
-                MinWidth="100"
-                Margin="0,10,0,0" />
+        <!-- Buttons -->
+        <StackPanel Grid.Row="3"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="10"
+                    Margin="0,10,0,0">
+            <Button Content="Stop"
+                    Command="{Binding StopCommand}"
+                    MinWidth="100" />
+            <Button Content="Close"
+                    Command="{Binding CloseCommand}"
+                    MinWidth="100" />
+        </StackPanel>
     </Grid>
 </Window>

@@ -446,4 +446,242 @@ public class StateServiceTests
     }
 
     #endregion
+
+    #region Detailed Results Tests
+
+    /// <summary>
+    /// Verifies that AddDetailedCleaningResult stores results correctly.
+    /// </summary>
+    [Fact]
+    public void AddDetailedCleaningResult_ShouldStoreResult()
+    {
+        // Arrange
+        _sut.StartCleaning(new List<string> { "test.esp" });
+        var detailedResult = new PluginCleaningResult
+        {
+            PluginName = "test.esp",
+            Status = CleaningStatus.Cleaned,
+            Success = true,
+            Duration = TimeSpan.FromSeconds(30),
+            Statistics = new CleaningStatistics
+            {
+                ItemsRemoved = 10,
+                ItemsUndeleted = 5
+            }
+        };
+
+        // Act
+        _sut.AddDetailedCleaningResult(detailedResult);
+
+        // Assert
+        var state = _sut.CurrentState;
+        state.CleanedPlugins.Should().Contain("test.esp");
+        state.Progress.Should().Be(1);
+    }
+
+    /// <summary>
+    /// Verifies that AddDetailedCleaningResult also updates basic status.
+    /// </summary>
+    [Theory]
+    [InlineData(CleaningStatus.Cleaned)]
+    [InlineData(CleaningStatus.Skipped)]
+    [InlineData(CleaningStatus.Failed)]
+    public void AddDetailedCleaningResult_ShouldUpdateBasicStatus(CleaningStatus status)
+    {
+        // Arrange
+        _sut.StartCleaning(new List<string> { "test.esp" });
+        var detailedResult = new PluginCleaningResult
+        {
+            PluginName = "test.esp",
+            Status = status,
+            Success = status == CleaningStatus.Cleaned
+        };
+
+        // Act
+        _sut.AddDetailedCleaningResult(detailedResult);
+
+        // Assert
+        var state = _sut.CurrentState;
+        switch (status)
+        {
+            case CleaningStatus.Cleaned:
+                state.CleanedPlugins.Should().Contain("test.esp");
+                break;
+            case CleaningStatus.Skipped:
+                state.SkippedPlugins.Should().Contain("test.esp");
+                break;
+            case CleaningStatus.Failed:
+                state.FailedPlugins.Should().Contain("test.esp");
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Verifies that FinishCleaningWithResults sets LastSessionResult.
+    /// </summary>
+    [Fact]
+    public void FinishCleaningWithResults_ShouldSetLastSessionResult()
+    {
+        // Arrange
+        _sut.StartCleaning(new List<string> { "test.esp" });
+        var sessionResult = new CleaningSessionResult
+        {
+            StartTime = DateTime.Now.AddMinutes(-5),
+            EndTime = DateTime.Now,
+            GameType = GameType.SkyrimSE,
+            PluginResults = new List<PluginCleaningResult>
+            {
+                new()
+                {
+                    PluginName = "test.esp",
+                    Status = CleaningStatus.Cleaned,
+                    Success = true
+                }
+            }
+        };
+
+        // Act
+        _sut.FinishCleaningWithResults(sessionResult);
+
+        // Assert
+        _sut.LastSessionResult.Should().NotBeNull();
+        _sut.LastSessionResult.Should().BeSameAs(sessionResult);
+    }
+
+    /// <summary>
+    /// Verifies that FinishCleaningWithResults resets cleaning state.
+    /// </summary>
+    [Fact]
+    public void FinishCleaningWithResults_ShouldResetCleaningState()
+    {
+        // Arrange
+        _sut.StartCleaning(new List<string> { "test.esp" });
+        _sut.UpdateState(s => s with { CurrentPlugin = "test.esp", CurrentOperation = "Cleaning" });
+
+        var sessionResult = new CleaningSessionResult();
+
+        // Act
+        _sut.FinishCleaningWithResults(sessionResult);
+
+        // Assert
+        var state = _sut.CurrentState;
+        state.IsCleaning.Should().BeFalse();
+        state.CurrentPlugin.Should().BeNull();
+        state.CurrentOperation.Should().BeNull();
+    }
+
+    /// <summary>
+    /// Verifies that FinishCleaningWithResults emits CleaningCompleted event.
+    /// </summary>
+    [Fact]
+    public void FinishCleaningWithResults_ShouldEmitCleaningCompleted()
+    {
+        // Arrange
+        CleaningSessionResult? receivedResult = null;
+        using var subscription = _sut.CleaningCompleted.Subscribe(r => receivedResult = r);
+
+        var sessionResult = new CleaningSessionResult
+        {
+            GameType = GameType.Fallout4,
+            PluginResults = Array.Empty<PluginCleaningResult>()
+        };
+
+        // Act
+        _sut.FinishCleaningWithResults(sessionResult);
+
+        // Assert
+        receivedResult.Should().NotBeNull();
+        receivedResult.Should().BeSameAs(sessionResult);
+    }
+
+    /// <summary>
+    /// Verifies that CleaningCompleted observable emits for subscribers.
+    /// </summary>
+    [Fact]
+    public void CleaningCompleted_ShouldEmitToAllSubscribers()
+    {
+        // Arrange
+        var receivedCount = 0;
+        using var sub1 = _sut.CleaningCompleted.Subscribe(_ => receivedCount++);
+        using var sub2 = _sut.CleaningCompleted.Subscribe(_ => receivedCount++);
+
+        var sessionResult = new CleaningSessionResult();
+
+        // Act
+        _sut.FinishCleaningWithResults(sessionResult);
+
+        // Assert
+        receivedCount.Should().Be(2, "both subscribers should receive the event");
+    }
+
+    /// <summary>
+    /// Verifies that StartCleaning clears previous session results.
+    /// </summary>
+    [Fact]
+    public void StartCleaning_ShouldClearPreviousSessionState()
+    {
+        // Arrange - first cleaning session
+        _sut.StartCleaning(new List<string> { "first.esp" });
+        _sut.AddDetailedCleaningResult(new PluginCleaningResult
+        {
+            PluginName = "first.esp",
+            Status = CleaningStatus.Cleaned
+        });
+
+        // Act - start a new cleaning session
+        _sut.StartCleaning(new List<string> { "second.esp" });
+
+        // Assert - state should be reset for new session
+        var state = _sut.CurrentState;
+        state.IsCleaning.Should().BeTrue();
+        state.PluginsToClean.Should().Contain("second.esp");
+        state.CleanedPlugins.Should().BeEmpty();
+        state.Progress.Should().Be(0);
+    }
+
+    /// <summary>
+    /// Verifies that LastSessionResult is null initially.
+    /// </summary>
+    [Fact]
+    public void LastSessionResult_ShouldBeNullInitially()
+    {
+        // Arrange & Act
+        var service = new StateService();
+
+        // Assert
+        service.LastSessionResult.Should().BeNull();
+    }
+
+    /// <summary>
+    /// Verifies concurrent access to AddDetailedCleaningResult is thread-safe.
+    /// </summary>
+    [Fact]
+    public async Task AddDetailedCleaningResult_ShouldBeThreadSafe()
+    {
+        // Arrange
+        const int numPlugins = 50;
+        var plugins = Enumerable.Range(0, numPlugins).Select(i => $"plugin{i}.esp").ToList();
+        _sut.StartCleaning(plugins);
+
+        // Act
+        var tasks = Enumerable.Range(0, numPlugins).Select(i => Task.Run(() =>
+        {
+            var result = new PluginCleaningResult
+            {
+                PluginName = $"plugin{i}.esp",
+                Status = (CleaningStatus)(i % 3),
+                Success = i % 3 == 0
+            };
+            _sut.AddDetailedCleaningResult(result);
+        }));
+
+        await Task.WhenAll(tasks);
+
+        // Assert
+        var state = _sut.CurrentState;
+        var totalProcessed = state.CleanedPlugins.Count + state.SkippedPlugins.Count + state.FailedPlugins.Count;
+        totalProcessed.Should().Be(numPlugins, "all detailed results should be recorded");
+    }
+
+    #endregion
 }

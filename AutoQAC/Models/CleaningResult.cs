@@ -9,6 +9,11 @@ public sealed record CleaningResult
     public CleaningStatus Status { get; init; }
     public TimeSpan Duration { get; init; }
     public CleaningStatistics? Statistics { get; init; }
+
+    /// <summary>
+    /// Indicates if the cleaning operation timed out.
+    /// </summary>
+    public bool TimedOut { get; init; }
 }
 
 public enum CleaningStatus

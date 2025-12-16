@@ -1,5 +1,6 @@
 using System;
-using System.IO;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -40,8 +41,19 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
         _logger = logger;
     }
 
-    public async Task StartCleaningAsync(CancellationToken ct = default)
+    public Task StartCleaningAsync(CancellationToken ct = default)
     {
+        return StartCleaningAsync(null, ct);
+    }
+
+    public async Task StartCleaningAsync(TimeoutRetryCallback? onTimeout, CancellationToken ct = default)
+    {
+        const int MaxRetryAttempts = 3;
+        var startTime = DateTime.Now;
+        var pluginResults = new List<PluginCleaningResult>();
+        var wasCancelled = false;
+        var gameType = GameType.Unknown;
+
         try
         {
             _logger.Information("Starting cleaning workflow");
@@ -81,6 +93,8 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
                 }
             }
 
+            gameType = config.CurrentGameType;
+
             // 4. Filter skip list
             var skipList = await _configService.GetSkipListAsync(config.CurrentGameType).ConfigureAwait(false);
             var pluginsToClean = _pluginService.FilterSkippedPlugins(plugins, skipList);
@@ -97,12 +111,17 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
                 cts = _cleaningCts;
             }
 
+            // Get timeout for retry prompts
+            var timeoutSeconds = _stateService.CurrentState.CleaningTimeout;
+            if (timeoutSeconds <= 0) timeoutSeconds = 300;
+
             // 7. Process plugins SEQUENTIALLY (CRITICAL!)
             foreach (var plugin in pluginsToClean)
             {
                 if (cts.Token.IsCancellationRequested)
                 {
                     _logger.Information("Cleaning cancelled by user");
+                    wasCancelled = true;
                     break;
                 }
 
@@ -119,14 +138,64 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
                     _logger.Debug("xEdit output: {Output}", output);
                 });
 
-                // Clean plugin
-                var result = await _cleaningService.CleanPluginAsync(
-                    plugin,
-                    progress,
-                    cts.Token).ConfigureAwait(false);
+                // Clean plugin with retry logic for timeouts
+                var pluginStopwatch = Stopwatch.StartNew();
+                CleaningResult result;
+                var attemptNumber = 0;
 
-                // Update results
-                _stateService.AddCleaningResult(plugin.FileName, result.Status);
+                do
+                {
+                    attemptNumber++;
+
+                    if (attemptNumber > 1)
+                    {
+                        _logger.Information("Retry attempt {Attempt} for plugin: {Plugin}",
+                            attemptNumber, plugin.FileName);
+                    }
+
+                    result = await _cleaningService.CleanPluginAsync(
+                        plugin,
+                        progress,
+                        cts.Token).ConfigureAwait(false);
+
+                    // If timed out and callback provided, ask user if they want to retry
+                    if (result.TimedOut && onTimeout != null && attemptNumber < MaxRetryAttempts)
+                    {
+                        var shouldRetry = await onTimeout(plugin.FileName, timeoutSeconds, attemptNumber)
+                            .ConfigureAwait(false);
+
+                        if (!shouldRetry)
+                        {
+                            _logger.Information("User chose not to retry plugin: {Plugin}", plugin.FileName);
+                            break;
+                        }
+
+                        _logger.Information("User chose to retry plugin: {Plugin}", plugin.FileName);
+                    }
+                    else
+                    {
+                        break; // No timeout or no callback or max attempts reached
+                    }
+                } while (result.TimedOut && attemptNumber < MaxRetryAttempts);
+
+                pluginStopwatch.Stop();
+
+                // Create detailed result
+                var pluginCleaningResult = new PluginCleaningResult
+                {
+                    PluginName = plugin.FileName,
+                    Status = result.Status,
+                    Success = result.Success,
+                    Message = result.TimedOut && attemptNumber >= MaxRetryAttempts
+                        ? $"Cleaning timed out after {attemptNumber} attempts."
+                        : result.Message,
+                    Duration = pluginStopwatch.Elapsed,
+                    Statistics = result.Statistics
+                };
+                pluginResults.Add(pluginCleaningResult);
+
+                // Update detailed results in state
+                _stateService.AddDetailedCleaningResult(pluginCleaningResult);
 
                 _logger.Information(
                     "Plugin {Plugin} processed: {Status} - {Message}",
@@ -135,14 +204,34 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
                     result.Message);
             }
 
-            // 8. Finish cleaning
-            _stateService.FinishCleaning();
+            // 8. Create and store session result
+            var sessionResult = new CleaningSessionResult
+            {
+                StartTime = startTime,
+                EndTime = DateTime.Now,
+                GameType = gameType,
+                WasCancelled = wasCancelled,
+                PluginResults = pluginResults
+            };
+
+            _stateService.FinishCleaningWithResults(sessionResult);
             _logger.Information("Cleaning workflow completed");
         }
         catch (Exception ex)
         {
             _logger.Error(ex, "Error during cleaning workflow");
-            _stateService.FinishCleaning();
+
+            // Still create a session result even on error
+            var sessionResult = new CleaningSessionResult
+            {
+                StartTime = startTime,
+                EndTime = DateTime.Now,
+                GameType = gameType,
+                WasCancelled = wasCancelled,
+                PluginResults = pluginResults
+            };
+
+            _stateService.FinishCleaningWithResults(sessionResult);
             throw;
         }
         finally

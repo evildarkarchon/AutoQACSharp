@@ -1,0 +1,153 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:AutoQAC.ViewModels"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        d:DesignWidth="450" d:DesignHeight="400"
+        x:Class="AutoQAC.Views.SettingsWindow"
+        x:DataType="vm:SettingsViewModel"
+        Title="Settings"
+        Width="450" Height="400"
+        MinWidth="400" MinHeight="350"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner">
+
+    <Design.DataContext>
+        <vm:SettingsViewModel />
+    </Design.DataContext>
+
+    <Grid Margin="20" RowDefinitions="*,Auto">
+
+        <!-- Settings Content -->
+        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="20">
+
+                <!-- Cleaning Settings Section -->
+                <StackPanel Spacing="10">
+                    <TextBlock Text="Cleaning Settings"
+                               FontSize="14" FontWeight="SemiBold" />
+
+                    <!-- Cleaning Timeout -->
+                    <Grid ColumnDefinitions="180,*">
+                        <TextBlock Grid.Column="0"
+                                   Text="Cleaning Timeout (seconds):"
+                                   VerticalAlignment="Center" />
+                        <StackPanel Grid.Column="1">
+                            <NumericUpDown Value="{Binding CleaningTimeout}"
+                                           Minimum="30"
+                                           Maximum="3600"
+                                           Increment="30"
+                                           FormatString="N0" />
+                            <TextBlock Text="{Binding CleaningTimeoutError}"
+                                       Foreground="Red"
+                                       FontSize="11"
+                                       IsVisible="{Binding CleaningTimeoutError,
+                                                   Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- CPU Threshold -->
+                    <Grid ColumnDefinitions="180,*">
+                        <TextBlock Grid.Column="0"
+                                   Text="CPU Threshold (%):"
+                                   VerticalAlignment="Center" />
+                        <NumericUpDown Grid.Column="1"
+                                       Value="{Binding CpuThreshold}"
+                                       Minimum="1"
+                                       Maximum="100"
+                                       Increment="5"
+                                       FormatString="N0" />
+                    </Grid>
+
+                    <!-- Max Concurrent Subprocesses -->
+                    <Grid ColumnDefinitions="180,*">
+                        <TextBlock Grid.Column="0"
+                                   Text="Max Subprocesses:"
+                                   VerticalAlignment="Center" />
+                        <NumericUpDown Grid.Column="1"
+                                       Value="{Binding MaxConcurrentSubprocesses}"
+                                       Minimum="1"
+                                       Maximum="10"
+                                       Increment="1"
+                                       FormatString="N0" />
+                    </Grid>
+                </StackPanel>
+
+                <Separator />
+
+                <!-- Journal Settings Section -->
+                <StackPanel Spacing="10">
+                    <TextBlock Text="Journal Settings"
+                               FontSize="14" FontWeight="SemiBold" />
+
+                    <!-- Journal Expiration -->
+                    <Grid ColumnDefinitions="180,*">
+                        <TextBlock Grid.Column="0"
+                                   Text="Journal Expiration (days):"
+                                   VerticalAlignment="Center" />
+                        <StackPanel Grid.Column="1">
+                            <NumericUpDown Value="{Binding JournalExpiration}"
+                                           Minimum="1"
+                                           Maximum="365"
+                                           Increment="1"
+                                           FormatString="N0" />
+                            <TextBlock Text="{Binding JournalExpirationError}"
+                                       Foreground="Red"
+                                       FontSize="11"
+                                       IsVisible="{Binding JournalExpirationError,
+                                                   Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
+
+                <Separator />
+
+                <!-- Mode Settings Section -->
+                <StackPanel Spacing="10">
+                    <TextBlock Text="Mode Settings"
+                               FontSize="14" FontWeight="SemiBold" />
+
+                    <CheckBox Content="MO2 Mode (Use Mod Organizer 2 for launching xEdit)"
+                              IsChecked="{Binding MO2Mode}" />
+                </StackPanel>
+
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Button Panel -->
+        <Grid Grid.Row="1"
+              ColumnDefinitions="Auto,*,Auto,Auto"
+              Margin="0,20,0,0">
+
+            <!-- Reset button on the left -->
+            <Button Grid.Column="0"
+                    Content="Reset to Defaults"
+                    Command="{Binding ResetToDefaultsCommand}"
+                    MinWidth="120" />
+
+            <!-- Unsaved changes indicator -->
+            <TextBlock Grid.Column="1"
+                       Text="* Unsaved changes"
+                       VerticalAlignment="Center"
+                       Margin="15,0,0,0"
+                       FontStyle="Italic"
+                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                       IsVisible="{Binding HasUnsavedChanges}" />
+
+            <!-- Save and Cancel on the right -->
+            <Button Grid.Column="2"
+                    Content="Save"
+                    Command="{Binding SaveCommand}"
+                    IsDefault="True"
+                    MinWidth="80"
+                    Margin="0,0,10,0" />
+
+            <Button Grid.Column="3"
+                    Content="Cancel"
+                    Command="{Binding CancelCommand}"
+                    IsCancel="True"
+                    MinWidth="80" />
+        </Grid>
+    </Grid>
+</Window>

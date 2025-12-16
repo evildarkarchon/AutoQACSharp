@@ -23,6 +23,13 @@ public interface IConfigurationService
     Task<List<string>> GetSkipListAsync(GameType gameType);
     Task<List<string>> GetXEditExecutableNamesAsync(GameType gameType);
 
+    // Skip list management (game-specific only, for UI editing)
+    Task<List<string>> GetGameSpecificSkipListAsync(GameType gameType, CancellationToken ct = default);
+    Task UpdateSkipListAsync(GameType gameType, List<string> skipList, CancellationToken ct = default);
+    Task AddToSkipListAsync(GameType gameType, string pluginName, CancellationToken ct = default);
+    Task RemoveFromSkipListAsync(GameType gameType, string pluginName, CancellationToken ct = default);
+    IObservable<GameType> SkipListChanged { get; }
+
     // Game selection
     Task<GameType> GetSelectedGameAsync(CancellationToken ct = default);
     Task SetSelectedGameAsync(GameType gameType, CancellationToken ct = default);

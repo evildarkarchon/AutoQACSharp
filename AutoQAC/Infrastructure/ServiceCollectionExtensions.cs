@@ -50,6 +50,7 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddUIServices(this IServiceCollection services)
     {
         services.AddSingleton<IFileDialogService, FileDialogService>();
+        services.AddSingleton<IMessageDialogService, MessageDialogService>();
         return services;
     }
 
@@ -58,6 +59,8 @@ public static class ServiceCollectionExtensions
         services.AddTransient<MainWindowViewModel>();
         services.AddTransient<ProgressViewModel>();
         services.AddTransient<PartialFormsWarningViewModel>();
+        services.AddTransient<SettingsViewModel>();
+        services.AddTransient<MessageDialogViewModel>();
         return services;
     }
 
@@ -66,6 +69,8 @@ public static class ServiceCollectionExtensions
         services.AddTransient<MainWindow>();
         services.AddTransient<ProgressWindow>();
         services.AddTransient<PartialFormsWarningDialog>();
+        services.AddTransient<SettingsWindow>();
+        services.AddTransient<MessageDialog>();
         return services;
     }
 }

@@ -101,7 +101,8 @@ public sealed class CleaningService : ICleaningService
                     Success = false,
                     Status = CleaningStatus.Failed,
                     Message = "Cleaning timed out.",
-                    Duration = sw.Elapsed
+                    Duration = sw.Elapsed,
+                    TimedOut = true
                 };
             }
 

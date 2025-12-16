@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Reactive;
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
@@ -64,7 +64,21 @@ public sealed class ProgressViewModel : ViewModelBase, IDisposable
         set => this.RaiseAndSetIfChanged(ref _logOutput, value);
     }
 
+    private bool _isCleaning;
+    public bool IsCleaning
+    {
+        get => _isCleaning;
+        set => this.RaiseAndSetIfChanged(ref _isCleaning, value);
+    }
+
     public ReactiveCommand<Unit, Unit> StopCommand { get; }
+    
+    /// <summary>
+    /// Event raised when the window should close.
+    /// </summary>
+    public event EventHandler? CloseRequested;
+    
+    public ReactiveCommand<Unit, Unit> CloseCommand { get; }
 
     private readonly ObservableAsPropertyHelper<string> _progressText;
     public string ProgressText => _progressText.Value;
@@ -74,7 +88,12 @@ public sealed class ProgressViewModel : ViewModelBase, IDisposable
         _stateService = stateService;
         _orchestrator = orchestrator;
 
-        StopCommand = ReactiveCommand.Create(() => _orchestrator.StopCleaning());
+        // StopCommand is only enabled when cleaning is in progress
+        var canStop = this.WhenAnyValue(x => x.IsCleaning);
+        StopCommand = ReactiveCommand.Create(() => _orchestrator.StopCleaning(), canStop);
+        
+        // CloseCommand raises an event to request window closure
+        CloseCommand = ReactiveCommand.Create(() => CloseRequested?.Invoke(this, EventArgs.Empty));
 
         // Subscribe to state changes
         var stateSubscription = _stateService.StateChanged
@@ -103,6 +122,7 @@ public sealed class ProgressViewModel : ViewModelBase, IDisposable
 
     private void OnStateChanged(AppState state)
     {
+        IsCleaning = state.IsCleaning;
         CurrentPlugin = state.CurrentPlugin;
         Progress = state.Progress;
         Total = state.TotalPlugins;

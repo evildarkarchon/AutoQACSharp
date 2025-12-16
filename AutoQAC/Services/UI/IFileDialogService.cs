@@ -8,4 +8,10 @@ public interface IFileDialogService
         string title,
         string filter,
         string? initialDirectory = null);
+
+    Task<string?> SaveFileDialogAsync(
+        string title,
+        string filter,
+        string? defaultFileName = null,
+        string? initialDirectory = null);
 }

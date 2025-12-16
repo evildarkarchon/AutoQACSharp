@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Reactive.Concurrency;
 using System.Reactive.Subjects;
 using System.Threading;
@@ -27,6 +29,7 @@ public sealed class MainWindowViewModelTests
     private readonly Mock<ICleaningOrchestrator> _orchestratorMock;
     private readonly Mock<ILoggingService> _loggerMock;
     private readonly Mock<IFileDialogService> _fileDialogMock;
+    private readonly Mock<IMessageDialogService> _messageDialogMock;
     private readonly Mock<IPluginValidationService> _pluginServiceMock;
     private readonly Mock<IPluginLoadingService> _pluginLoadingServiceMock;
 
@@ -37,6 +40,7 @@ public sealed class MainWindowViewModelTests
         _orchestratorMock = new Mock<ICleaningOrchestrator>();
         _loggerMock = new Mock<ILoggingService>();
         _fileDialogMock = new Mock<IFileDialogService>();
+        _messageDialogMock = new Mock<IMessageDialogService>();
         _pluginServiceMock = new Mock<IPluginValidationService>();
         _pluginLoadingServiceMock = new Mock<IPluginLoadingService>();
 
@@ -45,6 +49,10 @@ public sealed class MainWindowViewModelTests
             .Returns(new List<GameType> { GameType.SkyrimSE, GameType.Fallout4 });
         _pluginLoadingServiceMock.Setup(x => x.IsGameSupportedByMutagen(It.IsAny<GameType>()))
             .Returns(false);
+
+        // Default setup for CleaningCompleted observable
+        _stateServiceMock.Setup(s => s.CleaningCompleted)
+            .Returns(Observable.Never<CleaningSessionResult>());
 
         RxApp.MainThreadScheduler = Scheduler.Immediate;
     }
@@ -57,28 +65,37 @@ public sealed class MainWindowViewModelTests
         _stateServiceMock.Setup(s => s.StateChanged).Returns(stateSubject);
         _stateServiceMock.Setup(s => s.CurrentState).Returns(new AppState());
 
-        var vm = new MainWindowViewModel(
-            _configServiceMock.Object,
-            _stateServiceMock.Object,
-            _orchestratorMock.Object,
-            _loggerMock.Object,
-            _fileDialogMock.Object,
-            _pluginServiceMock.Object,
-            _pluginLoadingServiceMock.Object);
+        // Create temp file to satisfy File.Exists check
+        var tempFile = System.IO.Path.GetTempFileName();
+        try
+        {
+            var vm = new MainWindowViewModel(
+                _configServiceMock.Object,
+                _stateServiceMock.Object,
+                _orchestratorMock.Object,
+                _loggerMock.Object,
+                _fileDialogMock.Object,
+                _messageDialogMock.Object,
+                _pluginServiceMock.Object,
+                _pluginLoadingServiceMock.Object);
 
-        // Manually set properties to satisfy CanExecute
-        vm.LoadOrderPath = "plugins.txt";
-        vm.XEditPath = "xedit.exe";
-        
-        // Act
-        // Verify CanExecute is true
-        // var canExec = await vm.StartCleaningCommand.CanExecute.FirstAsync();
-        // canExec.Should().BeTrue(); 
-        
-        await vm.StartCleaningCommand.Execute();
+            // Manually set properties to satisfy CanExecute (use temp file path)
+            vm.LoadOrderPath = "plugins.txt";
+            vm.XEditPath = tempFile; // Use actual existing file
 
-        // Assert
-        _orchestratorMock.Verify(x => x.StartCleaningAsync(It.IsAny<CancellationToken>()), Times.Once);
+            // Act
+            await vm.StartCleaningCommand.Execute();
+
+            // Assert - verify the new overload with timeout callback is called
+            _orchestratorMock.Verify(
+                x => x.StartCleaningAsync(It.IsAny<TimeoutRetryCallback>(), It.IsAny<CancellationToken>()),
+                Times.Once);
+        }
+        finally
+        {
+            if (System.IO.File.Exists(tempFile))
+                System.IO.File.Delete(tempFile);
+        }
     }
 
     [Fact]
@@ -89,48 +106,58 @@ public sealed class MainWindowViewModelTests
         _stateServiceMock.Setup(s => s.StateChanged).Returns(stateSubject);
         _stateServiceMock.Setup(s => s.CurrentState).Returns(new AppState());
 
-        var vm = new MainWindowViewModel(
-            _configServiceMock.Object,
-            _stateServiceMock.Object,
-            _orchestratorMock.Object,
-            _loggerMock.Object,
-            _fileDialogMock.Object,
-            _pluginServiceMock.Object,
-            _pluginLoadingServiceMock.Object);
-
-        var loadOrderPath = "plugins.txt";
-        _fileDialogMock.Setup(x => x.OpenFileDialogAsync(
-                It.IsAny<string>(),
-                It.IsAny<string>(),
-                It.IsAny<string?>()))
-            .ReturnsAsync(loadOrderPath);
-
-        _configServiceMock.Setup(x => x.LoadUserConfigAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new UserConfiguration { LoadOrder = new(), XEdit = new(), ModOrganizer = new(), Settings = new() });
-
-        var expectedPlugins = new List<PluginInfo>
+        // Create temp file to satisfy File.Exists check
+        var tempFile = Path.GetTempFileName();
+        try
         {
-            new PluginInfo { FileName = "Update.esm", FullPath = "Update.esm", DetectedGameType = GameType.Unknown },
-            new PluginInfo { FileName = "Dawnguard.esm", FullPath = "Dawnguard.esm", DetectedGameType = GameType.Unknown }
-        };
+            var vm = new MainWindowViewModel(
+                _configServiceMock.Object,
+                _stateServiceMock.Object,
+                _orchestratorMock.Object,
+                _loggerMock.Object,
+                _fileDialogMock.Object,
+                _messageDialogMock.Object,
+                _pluginServiceMock.Object,
+                _pluginLoadingServiceMock.Object);
 
-        _pluginServiceMock.Setup(x => x.GetPluginsFromLoadOrderAsync(loadOrderPath, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(expectedPlugins);
+            _fileDialogMock.Setup(x => x.OpenFileDialogAsync(
+                    It.IsAny<string>(),
+                    It.IsAny<string>(),
+                    It.IsAny<string?>()))
+                .ReturnsAsync(tempFile);
 
-        // Act
-        await vm.ConfigureLoadOrderCommand.Execute();
+            _configServiceMock.Setup(x => x.LoadUserConfigAsync(It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new UserConfiguration { LoadOrder = new(), XEdit = new(), ModOrganizer = new(), Settings = new() });
 
-        // Assert
-        _stateServiceMock.Verify(x => x.UpdateConfigurationPaths(loadOrderPath, It.IsAny<string>(), It.IsAny<string>()), Times.Once);
-        _stateServiceMock.Verify(x => x.SetPluginsToClean(It.Is<List<string>>(l => l.Count == 2 && l[0] == "Update.esm")), Times.Once);
-        _configServiceMock.Verify(x => x.SaveUserConfigAsync(It.IsAny<UserConfiguration>(), It.IsAny<CancellationToken>()), Times.Once);
+            var expectedPlugins = new List<PluginInfo>
+            {
+                new PluginInfo { FileName = "Update.esm", FullPath = "Update.esm", DetectedGameType = GameType.Unknown },
+                new PluginInfo { FileName = "Dawnguard.esm", FullPath = "Dawnguard.esm", DetectedGameType = GameType.Unknown }
+            };
+
+            _pluginServiceMock.Setup(x => x.GetPluginsFromLoadOrderAsync(tempFile, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(expectedPlugins);
+
+            // Act
+            await vm.ConfigureLoadOrderCommand.Execute();
+
+            // Assert
+            _stateServiceMock.Verify(x => x.UpdateConfigurationPaths(tempFile, It.IsAny<string>(), It.IsAny<string>()), Times.Once);
+            _stateServiceMock.Verify(x => x.SetPluginsToClean(It.Is<List<string>>(l => l.Count == 2 && l[0] == "Update.esm")), Times.Once);
+            _configServiceMock.Verify(x => x.SaveUserConfigAsync(It.IsAny<UserConfiguration>(), It.IsAny<CancellationToken>()), Times.Once);
+        }
+        finally
+        {
+            if (File.Exists(tempFile))
+                File.Delete(tempFile);
+        }
     }
 
     #region Error Handling Tests
 
     /// <summary>
     /// Verifies that StartCleaningCommand handles orchestrator exceptions gracefully
-    /// and updates the status text with an error message.
+    /// and shows an error dialog.
     /// </summary>
     [Fact]
     public async Task StartCleaningCommand_ShouldHandleOrchestratorException()
@@ -144,37 +171,54 @@ public sealed class MainWindowViewModelTests
         _configServiceMock.Setup(x => x.LoadUserConfigAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new UserConfiguration { LoadOrder = new(), XEdit = new(), ModOrganizer = new(), Settings = new() });
 
-        var vm = new MainWindowViewModel(
-            _configServiceMock.Object,
-            _stateServiceMock.Object,
-            _orchestratorMock.Object,
-            _loggerMock.Object,
-            _fileDialogMock.Object,
-            _pluginServiceMock.Object,
-            _pluginLoadingServiceMock.Object);
+        // Create temp file to satisfy File.Exists check
+        var tempFile = Path.GetTempFileName();
+        try
+        {
+            var vm = new MainWindowViewModel(
+                _configServiceMock.Object,
+                _stateServiceMock.Object,
+                _orchestratorMock.Object,
+                _loggerMock.Object,
+                _fileDialogMock.Object,
+                _messageDialogMock.Object,
+                _pluginServiceMock.Object,
+                _pluginLoadingServiceMock.Object);
 
-        // Wait a bit for InitializeAsync to complete
-        await Task.Delay(50);
+            // Wait a bit for InitializeAsync to complete
+            await Task.Delay(50);
 
-        // Set valid paths to enable command
-        vm.LoadOrderPath = "plugins.txt";
-        vm.XEditPath = "xedit.exe";
+            // Set valid paths to enable command (use temp file for xEdit path)
+            vm.LoadOrderPath = "plugins.txt";
+            vm.XEditPath = tempFile;
 
-        // Configure orchestrator to throw exception
-        _orchestratorMock.Setup(x => x.StartCleaningAsync(It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new InvalidOperationException("Configuration is invalid"));
+            // Configure orchestrator to throw exception (use the new overload)
+            _orchestratorMock.Setup(x => x.StartCleaningAsync(It.IsAny<TimeoutRetryCallback>(), It.IsAny<CancellationToken>()))
+                .ThrowsAsync(new InvalidOperationException("Configuration is invalid"));
 
-        // Act
-        await vm.StartCleaningCommand.Execute();
+            // Act
+            await vm.StartCleaningCommand.Execute();
 
-        // Assert
-        vm.StatusText.Should().Contain("Error", "error message should be displayed");
-        // Verify that the StartCleaningAsync error was logged
-        // The actual log message is "StartCleaningAsync failed"
-        _loggerMock.Verify(
-            l => l.Error(It.IsAny<Exception>(), It.Is<string>(s => s.Contains("StartCleaningAsync") || s.Contains("failed"))),
-            Times.AtLeastOnce,
-            "StartCleaningAsync exception should be logged");
+            // Assert
+            vm.StatusText.Should().Contain("error", "error message should be displayed");
+
+            // Verify error dialog was shown
+            _messageDialogMock.Verify(
+                m => m.ShowErrorAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()),
+                Times.Once,
+                "Error dialog should be shown");
+
+            // Verify that the StartCleaningAsync error was logged
+            _loggerMock.Verify(
+                l => l.Error(It.IsAny<Exception>(), It.Is<string>(s => s.Contains("validation") || s.Contains("failed"))),
+                Times.AtLeastOnce,
+                "StartCleaningAsync exception should be logged");
+        }
+        finally
+        {
+            if (File.Exists(tempFile))
+                File.Delete(tempFile);
+        }
     }
 
     /// <summary>
@@ -194,6 +238,7 @@ public sealed class MainWindowViewModelTests
             _orchestratorMock.Object,
             _loggerMock.Object,
             _fileDialogMock.Object,
+            _messageDialogMock.Object,
             _pluginServiceMock.Object,
             _pluginLoadingServiceMock.Object);
 
@@ -216,7 +261,8 @@ public sealed class MainWindowViewModelTests
     }
 
     /// <summary>
-    /// Verifies that ConfigureLoadOrderCommand handles plugin parsing errors gracefully.
+    /// Verifies that ConfigureLoadOrderCommand handles plugin parsing errors gracefully
+    /// and shows an error dialog.
     /// </summary>
     [Fact]
     public async Task ConfigureLoadOrderCommand_ShouldHandlePluginParsingError()
@@ -230,39 +276,56 @@ public sealed class MainWindowViewModelTests
         _configServiceMock.Setup(x => x.LoadUserConfigAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new UserConfiguration { LoadOrder = new(), XEdit = new(), ModOrganizer = new(), Settings = new() });
 
-        var vm = new MainWindowViewModel(
-            _configServiceMock.Object,
-            _stateServiceMock.Object,
-            _orchestratorMock.Object,
-            _loggerMock.Object,
-            _fileDialogMock.Object,
-            _pluginServiceMock.Object,
-            _pluginLoadingServiceMock.Object);
+        // Create temp file to satisfy File.Exists check
+        var tempFile = Path.GetTempFileName();
+        try
+        {
+            var vm = new MainWindowViewModel(
+                _configServiceMock.Object,
+                _stateServiceMock.Object,
+                _orchestratorMock.Object,
+                _loggerMock.Object,
+                _fileDialogMock.Object,
+                _messageDialogMock.Object,
+                _pluginServiceMock.Object,
+                _pluginLoadingServiceMock.Object);
 
-        // Wait for InitializeAsync to complete
-        await Task.Delay(50);
+            // Wait for InitializeAsync to complete
+            await Task.Delay(50);
 
-        var loadOrderPath = "corrupted_plugins.txt";
-        _fileDialogMock.Setup(x => x.OpenFileDialogAsync(
-                It.IsAny<string>(),
-                It.IsAny<string>(),
-                It.IsAny<string?>()))
-            .ReturnsAsync(loadOrderPath);
+            _fileDialogMock.Setup(x => x.OpenFileDialogAsync(
+                    It.IsAny<string>(),
+                    It.IsAny<string>(),
+                    It.IsAny<string?>()))
+                .ReturnsAsync(tempFile);
 
-        // Plugin service throws exception for the corrupted file path
-        _pluginServiceMock.Setup(x => x.GetPluginsFromLoadOrderAsync(loadOrderPath, It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new InvalidOperationException("Failed to parse load order"));
+            // Plugin service throws exception for the corrupted file path
+            _pluginServiceMock.Setup(x => x.GetPluginsFromLoadOrderAsync(tempFile, It.IsAny<CancellationToken>()))
+                .ThrowsAsync(new InvalidOperationException("Failed to parse load order"));
 
-        // Act
-        await vm.ConfigureLoadOrderCommand.Execute();
+            // Act
+            await vm.ConfigureLoadOrderCommand.Execute();
 
-        // Assert
-        vm.StatusText.Should().Contain("Error", "error should be reflected in status");
-        // Verify that the ConfigureLoadOrder error was logged (matching the specific error message)
-        _loggerMock.Verify(
-            l => l.Error(It.IsAny<Exception>(), It.Is<string>(s => s.Contains("load order"))),
-            Times.AtLeastOnce,
-            "parsing error should be logged");
+            // Assert
+            vm.StatusText.Should().Contain("Error", "error should be reflected in status");
+
+            // Verify error dialog was shown
+            _messageDialogMock.Verify(
+                m => m.ShowErrorAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()),
+                Times.Once,
+                "Error dialog should be shown for parsing error");
+
+            // Verify that the ConfigureLoadOrder error was logged
+            _loggerMock.Verify(
+                l => l.Error(It.IsAny<Exception>(), It.Is<string>(s => s.Contains("load order"))),
+                Times.AtLeastOnce,
+                "parsing error should be logged");
+        }
+        finally
+        {
+            if (File.Exists(tempFile))
+                File.Delete(tempFile);
+        }
     }
 
     /// <summary>
@@ -287,6 +350,7 @@ public sealed class MainWindowViewModelTests
             _orchestratorMock.Object,
             _loggerMock.Object,
             _fileDialogMock.Object,
+            _messageDialogMock.Object,
             _pluginServiceMock.Object,
             _pluginLoadingServiceMock.Object);
 
@@ -316,6 +380,7 @@ public sealed class MainWindowViewModelTests
             _orchestratorMock.Object,
             _loggerMock.Object,
             _fileDialogMock.Object,
+            _messageDialogMock.Object,
             _pluginServiceMock.Object,
             _pluginLoadingServiceMock.Object);
 
@@ -350,6 +415,7 @@ public sealed class MainWindowViewModelTests
             _orchestratorMock.Object,
             _loggerMock.Object,
             _fileDialogMock.Object,
+            _messageDialogMock.Object,
             _pluginServiceMock.Object,
             _pluginLoadingServiceMock.Object);
 
@@ -383,6 +449,7 @@ public sealed class MainWindowViewModelTests
             _orchestratorMock.Object,
             _loggerMock.Object,
             _fileDialogMock.Object,
+            _messageDialogMock.Object,
             _pluginServiceMock.Object,
             _pluginLoadingServiceMock.Object);
 
@@ -431,6 +498,7 @@ public sealed class MainWindowViewModelTests
             _orchestratorMock.Object,
             _loggerMock.Object,
             _fileDialogMock.Object,
+            _messageDialogMock.Object,
             _pluginServiceMock.Object,
             _pluginLoadingServiceMock.Object);
 
@@ -460,6 +528,7 @@ public sealed class MainWindowViewModelTests
             _orchestratorMock.Object,
             _loggerMock.Object,
             _fileDialogMock.Object,
+            _messageDialogMock.Object,
             _pluginServiceMock.Object,
             _pluginLoadingServiceMock.Object);
 
@@ -492,6 +561,7 @@ public sealed class MainWindowViewModelTests
             _orchestratorMock.Object,
             _loggerMock.Object,
             _fileDialogMock.Object,
+            _messageDialogMock.Object,
             _pluginServiceMock.Object,
             _pluginLoadingServiceMock.Object);
 
@@ -533,6 +603,7 @@ public sealed class MainWindowViewModelTests
             _orchestratorMock.Object,
             _loggerMock.Object,
             _fileDialogMock.Object,
+            _messageDialogMock.Object,
             _pluginServiceMock.Object,
             _pluginLoadingServiceMock.Object);
 
@@ -571,6 +642,7 @@ public sealed class MainWindowViewModelTests
             _orchestratorMock.Object,
             _loggerMock.Object,
             _fileDialogMock.Object,
+            _messageDialogMock.Object,
             _pluginServiceMock.Object,
             _pluginLoadingServiceMock.Object);
 

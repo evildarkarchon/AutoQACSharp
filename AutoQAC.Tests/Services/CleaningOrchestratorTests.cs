@@ -83,7 +83,7 @@ public sealed class CleaningOrchestratorTests
         _cleaningServiceMock.Verify(s => s.CleanPluginAsync(It.Is<PluginInfo>(p => p.FileName == "Plugin1.esp"), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>()), Times.Once);
         _cleaningServiceMock.Verify(s => s.CleanPluginAsync(It.Is<PluginInfo>(p => p.FileName == "Plugin2.esp"), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>()), Times.Once);
         _stateServiceMock.Verify(s => s.StartCleaning(It.IsAny<List<string>>()), Times.Once);
-        _stateServiceMock.Verify(s => s.FinishCleaning(), Times.Once);
+        _stateServiceMock.Verify(s => s.FinishCleaningWithResults(It.IsAny<CleaningSessionResult>()), Times.Once);
     }
 
     [Fact]
@@ -149,7 +149,7 @@ public sealed class CleaningOrchestratorTests
 
         // Assert
         await act.Should().ThrowAsync<InvalidOperationException>();
-        _stateServiceMock.Verify(s => s.FinishCleaning(), Times.Once); // It calls Finish in catch block
+        _stateServiceMock.Verify(s => s.FinishCleaningWithResults(It.IsAny<CleaningSessionResult>()), Times.Once); // It calls Finish in catch block
     }
 
     #region Robustness and Cancellation Tests
@@ -220,7 +220,7 @@ public sealed class CleaningOrchestratorTests
         cleanedCount.Should().BeLessThan(5, "cancellation should stop processing before all plugins are cleaned");
 
         // FinishCleaning should be called even on cancellation
-        _stateServiceMock.Verify(s => s.FinishCleaning(), Times.Once);
+        _stateServiceMock.Verify(s => s.FinishCleaningWithResults(It.IsAny<CleaningSessionResult>()), Times.Once);
     }
 
     /// <summary>
@@ -292,16 +292,16 @@ public sealed class CleaningOrchestratorTests
             Times.Exactly(5),
             "all 5 plugins should be processed despite one failure");
 
-        // State should have been updated for all plugins
+        // State should have been updated for all plugins via AddDetailedCleaningResult
         _stateServiceMock.Verify(
-            s => s.AddCleaningResult("BadPlugin.esp", CleaningStatus.Failed),
+            s => s.AddDetailedCleaningResult(It.Is<PluginCleaningResult>(r => r.PluginName == "BadPlugin.esp" && r.Status == CleaningStatus.Failed)),
             Times.Once);
         _stateServiceMock.Verify(
-            s => s.AddCleaningResult(It.Is<string>(n => n != "BadPlugin.esp"), CleaningStatus.Cleaned),
+            s => s.AddDetailedCleaningResult(It.Is<PluginCleaningResult>(r => r.PluginName != "BadPlugin.esp" && r.Status == CleaningStatus.Cleaned)),
             Times.Exactly(4));
 
         // FinishCleaning should be called
-        _stateServiceMock.Verify(s => s.FinishCleaning(), Times.Once);
+        _stateServiceMock.Verify(s => s.FinishCleaningWithResults(It.IsAny<CleaningSessionResult>()), Times.Once);
     }
 
     /// <summary>
@@ -471,7 +471,7 @@ public sealed class CleaningOrchestratorTests
         cleanedPlugins.Count.Should().BeLessThanOrEqualTo(3,
             "StopCleaning should stop processing");
 
-        _stateServiceMock.Verify(s => s.FinishCleaning(), Times.Once);
+        _stateServiceMock.Verify(s => s.FinishCleaningWithResults(It.IsAny<CleaningSessionResult>()), Times.Once);
     }
 
     /// <summary>
@@ -514,7 +514,7 @@ public sealed class CleaningOrchestratorTests
 
         // But state lifecycle should still be complete
         _stateServiceMock.Verify(s => s.StartCleaning(It.IsAny<List<string>>()), Times.Once);
-        _stateServiceMock.Verify(s => s.FinishCleaning(), Times.Once);
+        _stateServiceMock.Verify(s => s.FinishCleaningWithResults(It.IsAny<CleaningSessionResult>()), Times.Once);
     }
 
     /// <summary>

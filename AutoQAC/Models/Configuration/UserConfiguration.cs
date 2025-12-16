@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using YamlDotNet.Serialization;
 
 namespace AutoQAC.Models.Configuration;
@@ -18,6 +19,9 @@ public sealed class UserConfiguration
 
     [YamlMember(Alias = "AutoQAC_Settings")]
     public AutoQacSettings Settings { get; set; } = new();
+
+    [YamlMember(Alias = "Skip_Lists")]
+    public Dictionary<string, List<string>> SkipLists { get; set; } = new();
 }
 
 public sealed class LoadOrderConfig

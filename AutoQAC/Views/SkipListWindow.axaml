@@ -1,0 +1,137 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:AutoQAC.ViewModels"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        d:DesignWidth="700" d:DesignHeight="500"
+        x:Class="AutoQAC.Views.SkipListWindow"
+        x:DataType="vm:SkipListViewModel"
+        Title="Skip List Management"
+        Width="700" Height="500"
+        MinWidth="600" MinHeight="400"
+        CanResize="True"
+        WindowStartupLocation="CenterOwner">
+
+    <Design.DataContext>
+        <vm:SkipListViewModel />
+    </Design.DataContext>
+
+    <Grid Margin="20" RowDefinitions="Auto,*,Auto,Auto">
+
+        <!-- Row 0: Game Selection -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10">
+            <TextBlock Text="Game:"
+                       FontWeight="SemiBold"
+                       VerticalAlignment="Center" />
+            <ComboBox ItemsSource="{Binding AvailableGames}"
+                      SelectedItem="{Binding SelectedGame}"
+                      MinWidth="200" />
+        </StackPanel>
+
+        <!-- Row 1: Main Content (Two Panels with Action Buttons) -->
+        <Grid Grid.Row="1" ColumnDefinitions="*,Auto,*" Margin="0,15,0,0">
+
+            <!-- Left: Current Skip List -->
+            <Border Grid.Column="0"
+                    BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                    BorderThickness="1"
+                    CornerRadius="4">
+                <Grid RowDefinitions="Auto,*">
+                    <TextBlock Grid.Row="0"
+                               Text="Plugins to Skip"
+                               FontWeight="SemiBold"
+                               Margin="10,8" />
+                    <ListBox Grid.Row="1"
+                             ItemsSource="{Binding SkipListEntries}"
+                             SelectedItem="{Binding SelectedEntry}"
+                             Margin="5,0,5,5"
+                             SelectionMode="Single" />
+                </Grid>
+            </Border>
+
+            <!-- Center: Action Buttons -->
+            <StackPanel Grid.Column="1"
+                        VerticalAlignment="Center"
+                        Spacing="10"
+                        Margin="15,0">
+                <Button Content="&lt;&lt; Add"
+                        Command="{Binding AddSelectedPluginCommand}"
+                        ToolTip.Tip="Add selected plugin to skip list"
+                        MinWidth="90"
+                        HorizontalContentAlignment="Center" />
+                <Button Content="Remove &gt;&gt;"
+                        Command="{Binding RemoveSelectedEntryCommand}"
+                        ToolTip.Tip="Remove selected plugin from skip list"
+                        MinWidth="90"
+                        HorizontalContentAlignment="Center" />
+            </StackPanel>
+
+            <!-- Right: Available/Loaded Plugins -->
+            <Border Grid.Column="2"
+                    BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                    BorderThickness="1"
+                    CornerRadius="4">
+                <Grid RowDefinitions="Auto,*">
+                    <TextBlock Grid.Row="0"
+                               Text="Loaded Plugins"
+                               FontWeight="SemiBold"
+                               Margin="10,8" />
+                    <ListBox Grid.Row="1"
+                             ItemsSource="{Binding AvailablePlugins}"
+                             SelectedItem="{Binding SelectedPlugin}"
+                             Margin="5,0,5,5"
+                             SelectionMode="Single" />
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- Row 2: Manual Entry -->
+        <Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="0,15,0,0">
+            <StackPanel Grid.Column="0">
+                <TextBox Text="{Binding ManualEntryText}"
+                         Watermark="Enter plugin name (e.g., MyMod.esp)" />
+                <TextBlock Text="{Binding ManualEntryError}"
+                           Foreground="Red"
+                           FontSize="11"
+                           Margin="0,4,0,0"
+                           IsVisible="{Binding ManualEntryError,
+                                       Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            </StackPanel>
+            <Button Grid.Column="1"
+                    Content="Add Manual"
+                    Command="{Binding AddManualEntryCommand}"
+                    Margin="10,0,0,0"
+                    VerticalAlignment="Top"
+                    MinWidth="100" />
+        </Grid>
+
+        <!-- Row 3: Dialog Buttons -->
+        <Grid Grid.Row="3"
+              ColumnDefinitions="*,Auto,Auto"
+              Margin="0,20,0,0">
+
+            <!-- Unsaved changes indicator -->
+            <TextBlock Grid.Column="0"
+                       Text="* Unsaved changes"
+                       VerticalAlignment="Center"
+                       FontStyle="Italic"
+                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                       IsVisible="{Binding HasUnsavedChanges}" />
+
+            <!-- Save and Cancel buttons -->
+            <Button Grid.Column="1"
+                    Content="Save"
+                    Command="{Binding SaveCommand}"
+                    IsDefault="True"
+                    MinWidth="80"
+                    Margin="0,0,10,0" />
+
+            <Button Grid.Column="2"
+                    Content="Cancel"
+                    Command="{Binding CancelCommand}"
+                    IsCancel="True"
+                    MinWidth="80" />
+        </Grid>
+    </Grid>
+</Window>

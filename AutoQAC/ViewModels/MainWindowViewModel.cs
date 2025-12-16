@@ -25,6 +25,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
     private readonly ICleaningOrchestrator _orchestrator;
     private readonly ILoggingService _logger;
     private readonly IFileDialogService _fileDialog;
+    private readonly IMessageDialogService _messageDialog;
     private readonly IPluginValidationService _pluginService;
     private readonly IPluginLoadingService _pluginLoadingService;
     private readonly CompositeDisposable _disposables = new();
@@ -115,6 +116,31 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
     public ReactiveCommand<Unit, Unit> ExitCommand { get; }
     public ReactiveCommand<Unit, Unit> ShowAboutCommand { get; }
     public ReactiveCommand<Unit, Unit> ResetSettingsCommand { get; }
+    public ReactiveCommand<Unit, Unit> ShowSettingsCommand { get; }
+    public ReactiveCommand<Unit, Unit> ShowSkipListCommand { get; }
+
+    /// <summary>
+    /// Interaction for showing the progress window during cleaning.
+    /// The window is shown non-modal and remains open until user closes it.
+    /// </summary>
+    public Interaction<Unit, Unit> ShowProgressInteraction { get; } = new();
+
+    /// <summary>
+    /// Interaction for showing the cleaning results window.
+    /// </summary>
+    public Interaction<CleaningSessionResult, Unit> ShowCleaningResultsInteraction { get; } = new();
+
+    /// <summary>
+    /// Interaction for showing the settings window.
+    /// Returns true if settings were saved, false if cancelled.
+    /// </summary>
+    public Interaction<Unit, bool> ShowSettingsInteraction { get; } = new();
+
+    /// <summary>
+    /// Interaction for showing the skip list management window.
+    /// Returns true if skip list was saved, false if cancelled.
+    /// </summary>
+    public Interaction<Unit, bool> ShowSkipListInteraction { get; } = new();
 
     public MainWindowViewModel(
         IConfigurationService configService,
@@ -122,6 +148,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
         ICleaningOrchestrator orchestrator,
         ILoggingService logger,
         IFileDialogService fileDialog,
+        IMessageDialogService messageDialog,
         IPluginValidationService pluginService,
         IPluginLoadingService pluginLoadingService)
     {
@@ -130,6 +157,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
         _orchestrator = orchestrator;
         _logger = logger;
         _fileDialog = fileDialog;
+        _messageDialog = messageDialog;
         _pluginService = pluginService;
         _pluginLoadingService = pluginLoadingService;
 
@@ -183,6 +211,12 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
         ExitCommand = ReactiveCommand.Create(Exit);
         ShowAboutCommand = ReactiveCommand.Create(ShowAbout);
         ResetSettingsCommand = ReactiveCommand.CreateFromTask(ResetSettingsAsync);
+        ShowSettingsCommand = ReactiveCommand.CreateFromTask(ShowSettingsAsync);
+        
+        // Skip list command - disabled during cleaning
+        var canShowSkipList = this.WhenAnyValue(x => x.IsCleaning)
+            .Select(cleaning => !cleaning);
+        ShowSkipListCommand = ReactiveCommand.CreateFromTask(ShowSkipListAsync, canShowSkipList);
 
         // Subscribe to state changes
         var stateSubscription = _stateService.StateChanged
@@ -284,24 +318,69 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
         var path = await _fileDialog.OpenFileDialogAsync(
             "Select Load Order File",
             "Text Files (*.txt)|*.txt|All Files (*.*)|*.*");
-            
+
         if (!string.IsNullOrEmpty(path))
         {
+            // Validate file exists
+            if (!System.IO.File.Exists(path))
+            {
+                await _messageDialog.ShowErrorAsync(
+                    "File Not Found",
+                    "The selected load order file does not exist.",
+                    $"Path: {path}");
+                return;
+            }
+
             _stateService.UpdateConfigurationPaths(path, MO2Path, XEditPath);
-            
+
             // Parse plugins from load order and update state
-            try 
+            try
             {
                 var plugins = await _pluginService.GetPluginsFromLoadOrderAsync(path);
+
+                if (plugins.Count == 0)
+                {
+                    await _messageDialog.ShowWarningAsync(
+                        "No Plugins Found",
+                        "The load order file was parsed successfully but no plugins were found.",
+                        $"File: {path}\n\nEnsure the file contains a valid list of plugin names (one per line).");
+                }
+
                 var pluginNames = plugins.Select(p => p.FileName).ToList();
                 _stateService.SetPluginsToClean(pluginNames);
+                StatusText = $"Loaded {plugins.Count} plugins from load order";
+            }
+            catch (System.IO.FileNotFoundException ex)
+            {
+                _logger.Error(ex, "Load order file not found");
+                await _messageDialog.ShowErrorAsync(
+                    "File Not Found",
+                    "The load order file could not be found.",
+                    $"Path: {path}\n\nError: {ex.Message}");
+                StatusText = "Load order file not found";
+                return;
+            }
+            catch (System.IO.IOException ex)
+            {
+                _logger.Error(ex, "Failed to read load order file");
+                await _messageDialog.ShowErrorAsync(
+                    "Read Error",
+                    "Failed to read the load order file. The file may be in use by another application.",
+                    $"Path: {path}\n\nError: {ex.Message}");
+                StatusText = "Error reading load order file";
+                return;
             }
             catch (Exception ex)
             {
                 _logger.Error(ex, "Failed to parse selected load order");
+                await _messageDialog.ShowErrorAsync(
+                    "Invalid Load Order",
+                    "Failed to parse the load order file. The file format may be invalid.",
+                    $"Path: {path}\n\nError: {ex.Message}\n\nExpected format: One plugin filename per line (e.g., 'MyMod.esp')");
                 StatusText = "Error parsing load order file";
+                return;
             }
-            
+
             await SaveConfigurationAsync();
         }
     }
@@ -336,15 +415,17 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
     {
         // Update UserConfiguration from ViewModel/State
         var config = await _configService.LoadUserConfigAsync();
-        config.LoadOrder.File = LoadOrderPath;
-        config.XEdit.Binary = XEditPath;
-        config.ModOrganizer.Binary = MO2Path;
-        config.Settings.MO2Mode = MO2ModeEnabled;
-        
-        // Partial forms setting is read-only from Main config usually, 
-        // but user config might override if allowed.
-        // For now we update state, saving might be complex if models mismatch.
-        // We just save what we have.
+
+        // Safely update configuration properties (they may be null in some configurations)
+        if (config.LoadOrder != null)
+            config.LoadOrder.File = LoadOrderPath;
+        if (config.XEdit != null)
+            config.XEdit.Binary = XEditPath;
+        if (config.ModOrganizer != null)
+            config.ModOrganizer.Binary = MO2Path;
+        if (config.Settings != null)
+            config.Settings.MO2Mode = MO2ModeEnabled;
+
         await _configService.SaveUserConfigAsync(config);
     }
 
@@ -421,17 +502,70 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
 
     private async Task StartCleaningAsync()
     {
+        // Validate xEdit path before starting
+        if (string.IsNullOrEmpty(XEditPath))
+        {
+            await _messageDialog.ShowErrorAsync(
+                "xEdit Not Configured",
+                "xEdit executable path is not configured. Please select your xEdit executable (SSEEdit, FO4Edit, etc.) before starting the cleaning process.",
+                "Go to Edit > Configure xEdit Path to select your xEdit executable.");
+            return;
+        }
+
+        if (!System.IO.File.Exists(XEditPath))
+        {
+            await _messageDialog.ShowErrorAsync(
+                "xEdit Not Found",
+                $"The configured xEdit executable was not found at the specified path.",
+                $"Path: {XEditPath}\n\nPlease verify the path is correct or select a new xEdit executable.");
+            return;
+        }
+
         try
         {
+            // Show progress window (non-modal)
+            _ = ShowProgressInteraction.Handle(Unit.Default);
+
             StatusText = "Cleaning started...";
-            await _orchestrator.StartCleaningAsync();
+            await _orchestrator.StartCleaningAsync(HandleTimeoutRetryAsync);
             StatusText = "Cleaning completed.";
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("Configuration is invalid"))
+        {
+            _logger.Error(ex, "Configuration validation failed before cleaning");
+            await _messageDialog.ShowErrorAsync(
+                "Configuration Invalid",
+                "The current configuration is invalid and cleaning cannot start.",
+                $"Please ensure:\n- xEdit path is set correctly\n- Load order file is selected\n- Game type is detected\n\nDetails: {ex.Message}");
+            StatusText = "Configuration error";
         }
         catch (Exception ex)
         {
             StatusText = $"Error: {ex.Message}";
             _logger.Error(ex, "StartCleaningAsync failed");
+            await _messageDialog.ShowErrorAsync(
+                "Cleaning Failed",
+                "An error occurred during the cleaning process.",
+                $"Error: {ex.Message}\n\nStack Trace:\n{ex.StackTrace}");
         }
+    }
+
+    /// <summary>
+    /// Handles timeout retry prompts for plugin cleaning.
+    /// </summary>
+    private async Task<bool> HandleTimeoutRetryAsync(string pluginName, int timeoutSeconds, int attemptNumber)
+    {
+        var message = $"Cleaning of '{pluginName}' timed out after {timeoutSeconds} seconds.\n\n" +
+                      $"Attempt {attemptNumber} of 3 failed.\n\n" +
+                      "Would you like to retry cleaning this plugin?";
+
+        var details = "Possible causes:\n" +
+                      "- The plugin is very large\n" +
+                      "- xEdit is processing slowly\n" +
+                      "- The system is under heavy load\n\n" +
+                      "You can increase the timeout in Edit > Settings if plugins regularly time out.";
+
+        return await _messageDialog.ShowRetryAsync("Plugin Timeout", message, details);
     }
 
     private void StopCleaning()
@@ -487,6 +621,60 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
         {
             _logger.Error(ex, "Failed to reset settings");
             StatusText = "Error resetting settings";
+        }
+    }
+
+    private async Task ShowSettingsAsync()
+    {
+        try
+        {
+            var result = await ShowSettingsInteraction.Handle(Unit.Default);
+
+            if (result)
+            {
+                // Settings were saved - reload configuration into state
+                var config = await _configService.LoadUserConfigAsync();
+
+                _stateService.UpdateState(s => s with
+                {
+                    MO2ModeEnabled = config.Settings.MO2Mode,
+                    CleaningTimeout = config.Settings.CleaningTimeout,
+                    MaxConcurrentSubprocesses = config.Settings.MaxConcurrentSubprocesses
+                });
+
+                // Update local property
+                MO2ModeEnabled = config.Settings.MO2Mode;
+
+                StatusText = "Settings saved";
+                _logger.Information("Settings updated from settings dialog");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "Failed to show or process settings dialog");
+            StatusText = "Error opening settings";
+        }
+    }
+
+    private async Task ShowSkipListAsync()
+    {
+        try
+        {
+            var result = await ShowSkipListInteraction.Handle(Unit.Default);
+
+            if (result)
+            {
+                StatusText = "Skip list saved";
+                _logger.Information("Skip list updated from skip list dialog");
+
+                // Refresh plugins to update IsInSkipList flags
+                await RefreshPluginsForGameAsync(SelectedGame);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "Failed to show or process skip list dialog");
+            StatusText = "Error opening skip list";
         }
     }
 

@@ -43,7 +43,7 @@ public sealed class ConfigurationServiceTests : IDisposable
     {
         // Arrange
         var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
-        var expectedPath = Path.Combine(_testDirectory, "AutoQAC Config.yaml");
+        var expectedPath = Path.Combine(_testDirectory, "AutoQAC Settings.yaml");
 
         // Act
         var config = await service.LoadUserConfigAsync();
@@ -154,7 +154,7 @@ LoadOrder:
   ""incomplete_key
 Settings: [not: properly: closed
 ";
-        await File.WriteAllTextAsync(Path.Combine(_testDirectory, "AutoQAC Config.yaml"), corruptedYaml);
+        await File.WriteAllTextAsync(Path.Combine(_testDirectory, "AutoQAC Settings.yaml"), corruptedYaml);
 
         var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
 
@@ -235,13 +235,20 @@ AutoQAC_Data:
     public async Task GetSkipListAsync_ShouldMergeUniversalWithGameSpecific()
     {
         // Arrange
-        // NOTE: Use "Skip_Lists" (with underscore) as per the YamlMember alias in MainConfiguration
+        // User config with skip lists (consolidated in single file)
+        var settingsContent = @"
+Selected_Game: SkyrimSE
+Skip_Lists:
+  SSE:
+    - Skyrim.esm
+    - Update.esm
+";
+        await File.WriteAllTextAsync(Path.Combine(_testDirectory, "AutoQAC Settings.yaml"), settingsContent);
+
+        // Universal entries in Main.yaml (read-only)
         var mainConfigContent = @"
 AutoQAC_Data:
   Skip_Lists:
-    SSE:
-      - Skyrim.esm
-      - Update.esm
     Universal:
       - UniversalPlugin.esm
       - AnotherUniversal.esp
@@ -257,9 +264,9 @@ AutoQAC_Data:
         var list = await service.GetSkipListAsync(GameType.SkyrimSE);
 
         // Assert
-        list.Should().Contain("Skyrim.esm", "game-specific plugins should be included");
+        list.Should().Contain("Skyrim.esm", "user skip list plugins should be included");
         list.Should().Contain("Update.esm");
-        list.Should().Contain("UniversalPlugin.esm", "universal plugins should be merged");
+        list.Should().Contain("UniversalPlugin.esm", "Universal plugins from Main.yaml should be merged");
         list.Should().Contain("AnotherUniversal.esp");
     }
 
@@ -325,7 +332,7 @@ AutoQAC_Data:
     public async Task LoadUserConfigAsync_ShouldHandleEmptyFile()
     {
         // Arrange
-        await File.WriteAllTextAsync(Path.Combine(_testDirectory, "AutoQAC Config.yaml"), "");
+        await File.WriteAllTextAsync(Path.Combine(_testDirectory, "AutoQAC Settings.yaml"), "");
 
         var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
 
@@ -353,7 +360,7 @@ XEdit:
 Settings:
   CleaningTimeout: 300
 ";
-        await File.WriteAllTextAsync(Path.Combine(_testDirectory, "AutoQAC Config.yaml"), configContent);
+        await File.WriteAllTextAsync(Path.Combine(_testDirectory, "AutoQAC Settings.yaml"), configContent);
 
         var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
 

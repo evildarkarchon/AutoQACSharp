@@ -11,10 +11,26 @@ public sealed class StateService : IStateService, IDisposable
     private readonly object _lock = new();
     private readonly BehaviorSubject<AppState> _stateSubject;
     private readonly Subject<(string plugin, CleaningStatus status)> _pluginProcessedSubject = new();
+    private readonly Subject<CleaningSessionResult> _cleaningCompletedSubject = new();
+
+    private readonly List<PluginCleaningResult> _currentSessionResults = new();
+    private DateTime _cleaningStartTime;
+    private CleaningSessionResult? _lastSessionResult;
 
     public StateService()
     {
         _stateSubject = new BehaviorSubject<AppState>(new AppState());
+    }
+
+    public CleaningSessionResult? LastSessionResult
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _lastSessionResult;
+            }
+        }
     }
 
     public AppState CurrentState
@@ -38,8 +54,11 @@ public sealed class StateService : IStateService, IDisposable
         _stateSubject.Select(s => (s.Progress, s.TotalPlugins))
                      .DistinctUntilChanged();
 
-    public IObservable<(string plugin, CleaningStatus status)> PluginProcessed => 
+    public IObservable<(string plugin, CleaningStatus status)> PluginProcessed =>
         _pluginProcessedSubject.AsObservable();
+
+    public IObservable<CleaningSessionResult> CleaningCompleted =>
+        _cleaningCompletedSubject.AsObservable();
 
     public void UpdateState(Func<AppState, AppState> updateFunc)
     {
@@ -70,6 +89,12 @@ public sealed class StateService : IStateService, IDisposable
 
     public void StartCleaning(List<string> plugins)
     {
+        lock (_lock)
+        {
+            _currentSessionResults.Clear();
+            _cleaningStartTime = DateTime.Now;
+        }
+
         UpdateState(s => s with
         {
             IsCleaning = true,
@@ -90,6 +115,34 @@ public sealed class StateService : IStateService, IDisposable
             CurrentPlugin = null,
             CurrentOperation = null
         });
+    }
+
+    public void AddDetailedCleaningResult(PluginCleaningResult result)
+    {
+        lock (_lock)
+        {
+            _currentSessionResults.Add(result);
+        }
+
+        // Also update the basic status tracking
+        AddCleaningResult(result.PluginName, result.Status);
+    }
+
+    public void FinishCleaningWithResults(CleaningSessionResult sessionResult)
+    {
+        lock (_lock)
+        {
+            _lastSessionResult = sessionResult;
+        }
+
+        UpdateState(s => s with
+        {
+            IsCleaning = false,
+            CurrentPlugin = null,
+            CurrentOperation = null
+        });
+
+        _cleaningCompletedSubject.OnNext(sessionResult);
     }
 
     public void AddCleaningResult(string plugin, CleaningStatus status)
@@ -138,5 +191,6 @@ public sealed class StateService : IStateService, IDisposable
     {
         _stateSubject.Dispose();
         _pluginProcessedSubject.Dispose();
+        _cleaningCompletedSubject.Dispose();
     }
 }

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Reactive.Concurrency;
+using System.Reactive.Linq;
 using System.Reactive.Subjects;
 using System.Threading;
 using System.Threading.Tasks;
@@ -27,6 +28,7 @@ public sealed class MainWindowViewModelInitializationTests
     private readonly Mock<ICleaningOrchestrator> _orchestratorMock;
     private readonly Mock<ILoggingService> _loggerMock;
     private readonly Mock<IFileDialogService> _fileDialogMock;
+    private readonly Mock<IMessageDialogService> _messageDialogMock;
     private readonly Mock<IPluginValidationService> _pluginServiceMock;
     private readonly Mock<IPluginLoadingService> _pluginLoadingServiceMock;
 
@@ -37,6 +39,7 @@ public sealed class MainWindowViewModelInitializationTests
         _orchestratorMock = new Mock<ICleaningOrchestrator>();
         _loggerMock = new Mock<ILoggingService>();
         _fileDialogMock = new Mock<IFileDialogService>();
+        _messageDialogMock = new Mock<IMessageDialogService>();
         _pluginServiceMock = new Mock<IPluginValidationService>();
         _pluginLoadingServiceMock = new Mock<IPluginLoadingService>();
 
@@ -45,6 +48,10 @@ public sealed class MainWindowViewModelInitializationTests
             .Returns(new List<GameType> { GameType.SkyrimSE, GameType.Fallout4 });
         _pluginLoadingServiceMock.Setup(x => x.IsGameSupportedByMutagen(It.IsAny<GameType>()))
             .Returns(false);
+
+        // Default setup for CleaningCompleted observable
+        _stateServiceMock.Setup(s => s.CleaningCompleted)
+            .Returns(Observable.Never<CleaningSessionResult>());
 
         RxApp.MainThreadScheduler = Scheduler.Immediate;
     }
@@ -75,6 +82,7 @@ public sealed class MainWindowViewModelInitializationTests
             _orchestratorMock.Object,
             _loggerMock.Object,
             _fileDialogMock.Object,
+            _messageDialogMock.Object,
             _pluginServiceMock.Object,
             _pluginLoadingServiceMock.Object);
 

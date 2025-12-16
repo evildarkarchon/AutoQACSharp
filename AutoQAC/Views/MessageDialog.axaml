@@ -1,0 +1,101 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:AutoQAC.ViewModels"
+        x:Class="AutoQAC.Views.MessageDialog"
+        x:DataType="vm:MessageDialogViewModel"
+        Title="{Binding Title}"
+        Width="450"
+        MinHeight="180"
+        MaxHeight="500"
+        SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <Grid Margin="20" RowDefinitions="Auto,*,Auto,Auto">
+        <!-- Icon and Message Row -->
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,*">
+            <!-- Icon -->
+            <TextBlock Grid.Column="0"
+                       Text="{Binding IconGlyph}"
+                       FontSize="36"
+                       Foreground="{Binding IconColor}"
+                       VerticalAlignment="Top"
+                       Margin="0,0,15,0"
+                       IsVisible="{Binding IconGlyph, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+            <!-- Message -->
+            <TextBlock Grid.Column="1"
+                       Text="{Binding Message}"
+                       TextWrapping="Wrap"
+                       VerticalAlignment="Center"
+                       FontSize="14" />
+        </Grid>
+
+        <!-- Details Section (Expandable) -->
+        <StackPanel Grid.Row="1" Margin="0,15,0,0" IsVisible="{Binding HasDetails}">
+            <Button Content="{Binding ShowDetailsExpanded, Converter={StaticResource DetailsButtonConverter}}"
+                    Command="{Binding ToggleDetailsCommand}"
+                    Classes="hyperlink"
+                    Padding="0"
+                    Background="Transparent"
+                    HorizontalAlignment="Left" />
+
+            <Border IsVisible="{Binding ShowDetailsExpanded}"
+                    Background="#1A000000"
+                    BorderBrush="#33000000"
+                    BorderThickness="1"
+                    CornerRadius="4"
+                    Margin="0,8,0,0"
+                    Padding="10"
+                    MaxHeight="150">
+                <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                              VerticalScrollBarVisibility="Auto">
+                    <TextBlock Text="{Binding Details}"
+                               FontFamily="Consolas, Courier New, monospace"
+                               FontSize="12"
+                               TextWrapping="Wrap" />
+                </ScrollViewer>
+            </Border>
+        </StackPanel>
+
+        <!-- Spacer -->
+        <Border Grid.Row="2" Height="20" />
+
+        <!-- Buttons -->
+        <StackPanel Grid.Row="3"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="10">
+
+            <Button Content="OK"
+                    Command="{Binding OkCommand}"
+                    MinWidth="85"
+                    IsVisible="{Binding ShowOkButton}"
+                    IsDefault="True" />
+
+            <Button Content="Yes"
+                    Command="{Binding YesCommand}"
+                    MinWidth="85"
+                    IsVisible="{Binding ShowYesButton}"
+                    IsDefault="True" />
+
+            <Button Content="No"
+                    Command="{Binding NoCommand}"
+                    MinWidth="85"
+                    IsVisible="{Binding ShowNoButton}" />
+
+            <Button Content="Retry"
+                    Command="{Binding RetryCommand}"
+                    MinWidth="85"
+                    IsVisible="{Binding ShowRetryButton}"
+                    IsDefault="True" />
+
+            <Button Content="Cancel"
+                    Command="{Binding CancelCommand}"
+                    MinWidth="85"
+                    IsVisible="{Binding ShowCancelButton}"
+                    IsCancel="True" />
+        </StackPanel>
+    </Grid>
+</Window>
