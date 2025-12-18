@@ -54,7 +54,7 @@ dotnet clean
 
 ## Technology Stack
 
-- **.NET 8**: Target framework
+- **.NET 9**: Target framework
 - **C# 12**: With nullable reference types enabled
 - **Avalonia UI 11.3.8**: Cross-platform XAML-based UI framework
 - **ReactiveUI**: MVVM framework for reactive programming
