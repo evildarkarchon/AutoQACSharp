@@ -115,6 +115,18 @@ public sealed record CleaningSessionResult
     }
 
     /// <summary>
+    /// Creates an empty session result for design-time use.
+    /// </summary>
+    public static CleaningSessionResult CreateEmpty() => new()
+    {
+        StartTime = DateTime.Now,
+        EndTime = DateTime.Now,
+        GameType = GameType.Unknown,
+        WasCancelled = false,
+        PluginResults = Array.Empty<PluginCleaningResult>()
+    };
+
+    /// <summary>
     /// Generates a detailed report suitable for logging or export.
     /// </summary>
     public string GenerateReport()

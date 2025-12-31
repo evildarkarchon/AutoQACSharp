@@ -1,8 +1,5 @@
-using System;
-using System.Collections.Generic;
 using AutoQAC.Models;
 using FluentAssertions;
-using Xunit;
 
 namespace AutoQAC.Tests.Models;
 
@@ -349,7 +346,7 @@ public sealed class CleaningSessionResultTests
         {
             StartTime = new DateTime(2024, 1, 15, 14, 30, 0),
             EndTime = new DateTime(2024, 1, 15, 14, 35, 0),
-            GameType = GameType.SkyrimSE
+            GameType = GameType.SkyrimSe
         };
 
         // Act
@@ -358,7 +355,7 @@ public sealed class CleaningSessionResultTests
         // Assert
         report.Should().Contain("AutoQAC Cleaning Report");
         report.Should().Contain("2024-01-15");
-        report.Should().Contain("SkyrimSE");
+        report.Should().Contain("SkyrimSe");
         report.Should().Contain("00:05:00");
     }
 

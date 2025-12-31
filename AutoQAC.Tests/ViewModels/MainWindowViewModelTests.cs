@@ -1,10 +1,5 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
 using System.Reactive.Concurrency;
 using System.Reactive.Subjects;
-using System.Threading;
-using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Models.Configuration;
@@ -17,7 +12,6 @@ using AutoQAC.ViewModels;
 using FluentAssertions;
 using Moq;
 using ReactiveUI;
-using Xunit;
 using System.Reactive.Linq;
 
 namespace AutoQAC.Tests.ViewModels;
@@ -46,7 +40,7 @@ public sealed class MainWindowViewModelTests
 
         // Default setup for plugin loading service
         _pluginLoadingServiceMock.Setup(x => x.GetAvailableGames())
-            .Returns(new List<GameType> { GameType.SkyrimSE, GameType.Fallout4 });
+            .Returns(new List<GameType> { GameType.SkyrimSe, GameType.Fallout4 });
         _pluginLoadingServiceMock.Setup(x => x.IsGameSupportedByMutagen(It.IsAny<GameType>()))
             .Returns(false);
 
@@ -458,7 +452,7 @@ public sealed class MainWindowViewModelTests
         {
             LoadOrderPath = "newpath/plugins.txt",
             XEditExecutablePath = "newpath/xedit.exe",
-            MO2ExecutablePath = "newpath/mo2.exe",
+            Mo2ExecutablePath = "newpath/mo2.exe",
             Mo2ModeEnabled = true,
             PartialFormsEnabled = true
         };
@@ -483,7 +477,7 @@ public sealed class MainWindowViewModelTests
     public void AvailableGames_ShouldBePopulatedFromPluginLoadingService()
     {
         // Arrange
-        var expectedGames = new List<GameType> { GameType.SkyrimSE, GameType.Fallout4, GameType.SkyrimLE };
+        var expectedGames = new List<GameType> { GameType.SkyrimSe, GameType.Fallout4, GameType.SkyrimLe };
         _pluginLoadingServiceMock.Setup(x => x.GetAvailableGames())
             .Returns(expectedGames);
 
@@ -513,7 +507,7 @@ public sealed class MainWindowViewModelTests
     public void IsMutagenSupported_ShouldReflectSelectedGame()
     {
         // Arrange
-        _pluginLoadingServiceMock.Setup(x => x.IsGameSupportedByMutagen(GameType.SkyrimSE))
+        _pluginLoadingServiceMock.Setup(x => x.IsGameSupportedByMutagen(GameType.SkyrimSe))
             .Returns(true);
         _pluginLoadingServiceMock.Setup(x => x.IsGameSupportedByMutagen(GameType.Fallout3))
             .Returns(false);
@@ -537,7 +531,7 @@ public sealed class MainWindowViewModelTests
 
         // Note: Due to Skip(1) in the subscription, the first change is consumed.
         // Testing the computed property directly after setting SelectedGame:
-        vm.SelectedGame = GameType.SkyrimSE;
+        vm.SelectedGame = GameType.SkyrimSe;
         vm.IsMutagenSupported.Should().BeTrue();
 
         vm.SelectedGame = GameType.Fallout3;
@@ -566,13 +560,13 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock.Object);
 
         // Act
-        vm.SelectedGame = GameType.SkyrimSE;
+        vm.SelectedGame = GameType.SkyrimSe;
 
         // Allow async subscription to execute
         await Task.Delay(100);
 
         // Assert
-        _configServiceMock.Verify(x => x.SetSelectedGameAsync(GameType.SkyrimSE, It.IsAny<CancellationToken>()), Times.Once);
+        _configServiceMock.Verify(x => x.SetSelectedGameAsync(GameType.SkyrimSe, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     /// <summary>
@@ -588,9 +582,9 @@ public sealed class MainWindowViewModelTests
             new() { FileName = "Plugin2.esp", FullPath = "Data/Plugin2.esp" }
         };
 
-        _pluginLoadingServiceMock.Setup(x => x.IsGameSupportedByMutagen(GameType.SkyrimSE))
+        _pluginLoadingServiceMock.Setup(x => x.IsGameSupportedByMutagen(GameType.SkyrimSe))
             .Returns(true);
-        _pluginLoadingServiceMock.Setup(x => x.GetPluginsAsync(GameType.SkyrimSE, It.IsAny<CancellationToken>()))
+        _pluginLoadingServiceMock.Setup(x => x.GetPluginsAsync(GameType.SkyrimSe, It.IsAny<CancellationToken>()))
             .ReturnsAsync(expectedPlugins);
 
         var stateSubject = new BehaviorSubject<AppState>(new AppState());
@@ -608,13 +602,13 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock.Object);
 
         // Act
-        vm.SelectedGame = GameType.SkyrimSE;
+        vm.SelectedGame = GameType.SkyrimSe;
 
         // Allow async subscription to execute
         await Task.Delay(100);
 
         // Assert
-        _pluginLoadingServiceMock.Verify(x => x.GetPluginsAsync(GameType.SkyrimSE, It.IsAny<CancellationToken>()), Times.Once);
+        _pluginLoadingServiceMock.Verify(x => x.GetPluginsAsync(GameType.SkyrimSe, It.IsAny<CancellationToken>()), Times.Once);
         _stateServiceMock.Verify(x => x.SetPluginsToClean(It.Is<List<string>>(list =>
             list.Count == 2 &&
             list.Contains("Plugin1.esp") &&

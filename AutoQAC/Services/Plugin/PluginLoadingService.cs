@@ -8,7 +8,6 @@ using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Environments;
-using Mutagen.Bethesda.Plugins.Order;
 
 namespace AutoQAC.Services.Plugin;
 
@@ -27,11 +26,11 @@ public sealed class PluginLoadingService : IPluginLoadingService
     /// </summary>
     private static readonly HashSet<GameType> MutagenSupportedGames = new()
     {
-        GameType.SkyrimLE,
-        GameType.SkyrimSE,
-        GameType.SkyrimVR,
+        GameType.SkyrimLe,
+        GameType.SkyrimSe,
+        GameType.SkyrimVr,
         GameType.Fallout4,
-        GameType.Fallout4VR
+        GameType.Fallout4Vr
     };
 
     public PluginLoadingService(
@@ -165,11 +164,11 @@ public sealed class PluginLoadingService : IPluginLoadingService
     /// </summary>
     private static GameRelease MapToGameRelease(GameType gameType) => gameType switch
     {
-        GameType.SkyrimLE => GameRelease.SkyrimLE,
-        GameType.SkyrimSE => GameRelease.SkyrimSE,
-        GameType.SkyrimVR => GameRelease.SkyrimVR,
+        GameType.SkyrimLe => GameRelease.SkyrimLE,
+        GameType.SkyrimSe => GameRelease.SkyrimSE,
+        GameType.SkyrimVr => GameRelease.SkyrimVR,
         GameType.Fallout4 => GameRelease.Fallout4,
-        GameType.Fallout4VR => GameRelease.Fallout4VR,
+        GameType.Fallout4Vr => GameRelease.Fallout4VR,
         _ => throw new ArgumentException($"Game {gameType} is not supported by Mutagen")
     };
 }

@@ -1,8 +1,5 @@
-using System;
-using System.Collections.Generic;
 using System.Reactive.Concurrency;
 using System.Reactive.Linq;
-using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.UI;
@@ -10,7 +7,6 @@ using AutoQAC.ViewModels;
 using FluentAssertions;
 using Moq;
 using ReactiveUI;
-using Xunit;
 
 namespace AutoQAC.Tests.ViewModels;
 
@@ -78,7 +74,7 @@ public sealed class CleaningResultsViewModelTests
         {
             StartTime = new DateTime(2024, 1, 15, 10, 0, 0),
             EndTime = new DateTime(2024, 1, 15, 10, 5, 30),
-            GameType = GameType.SkyrimSE,
+            GameType = GameType.SkyrimSe,
             WasCancelled = wasCancelled,
             PluginResults = results
         };
@@ -199,23 +195,23 @@ public sealed class CleaningResultsViewModelTests
     }
 
     [Fact]
-    public void TotalITMs_ShouldSumAllITMs()
+    public void TotalItms_ShouldSumAllItms()
     {
         // Arrange - 2 cleaned plugins with 10+0=10 and 10+1=11 ITMs
         var vm = CreateViewModel(CreateTestSessionResult(cleaned: 2));
 
         // Assert
-        vm.TotalITMs.Should().Be(21); // 10 + 11
+        vm.TotalItms.Should().Be(21); // 10 + 11
     }
 
     [Fact]
-    public void TotalUDRs_ShouldSumAllUDRs()
+    public void TotalUdrs_ShouldSumAllUdrs()
     {
         // Arrange - 2 cleaned plugins with 2+0=2 and 2+1=3 UDRs
         var vm = CreateViewModel(CreateTestSessionResult(cleaned: 2));
 
         // Assert
-        vm.TotalUDRs.Should().Be(5); // 2 + 3
+        vm.TotalUdrs.Should().Be(5); // 2 + 3
     }
 
     [Fact]

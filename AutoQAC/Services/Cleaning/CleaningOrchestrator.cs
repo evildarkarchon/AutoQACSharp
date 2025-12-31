@@ -48,7 +48,7 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
 
     public async Task StartCleaningAsync(TimeoutRetryCallback? onTimeout, CancellationToken ct = default)
     {
-        const int MaxRetryAttempts = 3;
+        const int maxRetryAttempts = 3;
         var startTime = DateTime.Now;
         var pluginResults = new List<PluginCleaningResult>();
         var wasCancelled = false;
@@ -159,7 +159,7 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
                         cts.Token).ConfigureAwait(false);
 
                     // If timed out and callback provided, ask user if they want to retry
-                    if (result.TimedOut && onTimeout != null && attemptNumber < MaxRetryAttempts)
+                    if (result.TimedOut && onTimeout != null && attemptNumber < maxRetryAttempts)
                     {
                         var shouldRetry = await onTimeout(plugin.FileName, timeoutSeconds, attemptNumber)
                             .ConfigureAwait(false);
@@ -176,7 +176,7 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
                     {
                         break; // No timeout or no callback or max attempts reached
                     }
-                } while (result.TimedOut && attemptNumber < MaxRetryAttempts);
+                } while (result.TimedOut && attemptNumber < maxRetryAttempts);
 
                 pluginStopwatch.Stop();
 
@@ -186,7 +186,7 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
                     PluginName = plugin.FileName,
                     Status = result.Status,
                     Success = result.Success,
-                    Message = result.TimedOut && attemptNumber >= MaxRetryAttempts
+                    Message = result.TimedOut && attemptNumber >= maxRetryAttempts
                         ? $"Cleaning timed out after {attemptNumber} attempts."
                         : result.Message,
                     Duration = pluginStopwatch.Elapsed,

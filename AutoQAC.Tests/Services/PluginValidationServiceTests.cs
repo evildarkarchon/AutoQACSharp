@@ -1,13 +1,8 @@
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.Plugin;
 using FluentAssertions;
 using Moq;
-using Xunit;
 
 namespace AutoQAC.Tests.Services;
 

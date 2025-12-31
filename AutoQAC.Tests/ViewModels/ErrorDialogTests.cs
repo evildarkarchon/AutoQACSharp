@@ -1,11 +1,6 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
 using System.Reactive.Concurrency;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
-using System.Threading;
-using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Models.Configuration;
@@ -18,7 +13,6 @@ using AutoQAC.ViewModels;
 using FluentAssertions;
 using Moq;
 using ReactiveUI;
-using Xunit;
 
 namespace AutoQAC.Tests.ViewModels;
 
@@ -49,7 +43,7 @@ public sealed class ErrorDialogTests
 
         // Default setup for plugin loading service
         _pluginLoadingServiceMock.Setup(x => x.GetAvailableGames())
-            .Returns(new List<GameType> { GameType.SkyrimSE, GameType.Fallout4 });
+            .Returns(new List<GameType> { GameType.SkyrimSe, GameType.Fallout4 });
         _pluginLoadingServiceMock.Setup(x => x.IsGameSupportedByMutagen(It.IsAny<GameType>()))
             .Returns(false);
 

@@ -1,11 +1,8 @@
-using System;
-using System.IO;
 using AutoQAC.Models;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.State;
 using FluentAssertions;
 using Moq;
-using Xunit;
 
 namespace AutoQAC.Tests.Services;
 
@@ -27,7 +24,7 @@ public class XEditCommandBuilderTests
         _stateServiceMock.Setup(x => x.CurrentState).Returns(new AppState { XEditExecutablePath = "" });
 
         // Act
-        var result = _sut.BuildCommand(new PluginInfo { FileName = "test.esp", FullPath = "/path/to/test.esp" }, GameType.SkyrimSE);
+        var result = _sut.BuildCommand(new PluginInfo { FileName = "test.esp", FullPath = "/path/to/test.esp" }, GameType.SkyrimSe);
 
         // Assert
         result.Should().BeNull();
@@ -46,7 +43,7 @@ public class XEditCommandBuilderTests
         var plugin = new PluginInfo { FileName = "Update.esm", FullPath = "C:\\Games\\SSE\\Data\\Update.esm" };
 
         // Act
-        var result = _sut.BuildCommand(plugin, GameType.SkyrimSE);
+        var result = _sut.BuildCommand(plugin, GameType.SkyrimSe);
 
         // Assert
         result.Should().NotBeNull();
@@ -87,7 +84,7 @@ public class XEditCommandBuilderTests
         });
 
         // Act
-        var result = _sut.BuildCommand(new PluginInfo { FileName = "foo.esp", FullPath = "foo.esp" }, GameType.SkyrimSE);
+        var result = _sut.BuildCommand(new PluginInfo { FileName = "foo.esp", FullPath = "foo.esp" }, GameType.SkyrimSe);
 
         // Assert
         result!.Arguments.Should().Contain("-iknowwhatimdoing");
@@ -103,12 +100,12 @@ public class XEditCommandBuilderTests
         _stateServiceMock.Setup(x => x.CurrentState).Returns(new AppState 
         { 
             XEditExecutablePath = xEditPath,
-            MO2ExecutablePath = mo2Path,
+            Mo2ExecutablePath = mo2Path,
             Mo2ModeEnabled = true
         });
 
         // Act
-        var result = _sut.BuildCommand(new PluginInfo { FileName = "foo.esp", FullPath = "foo.esp" }, GameType.SkyrimSE);
+        var result = _sut.BuildCommand(new PluginInfo { FileName = "foo.esp", FullPath = "foo.esp" }, GameType.SkyrimSe);
 
         // Assert
         result!.FileName.Should().Be(mo2Path);

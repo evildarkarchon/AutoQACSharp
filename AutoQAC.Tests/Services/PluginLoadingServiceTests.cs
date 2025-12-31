@@ -1,11 +1,8 @@
-using System.Collections.Generic;
-using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.Plugin;
 using FluentAssertions;
 using Moq;
-using Xunit;
 
 namespace AutoQAC.Tests.Services;
 
@@ -25,11 +22,11 @@ public sealed class PluginLoadingServiceTests
     #region IsGameSupportedByMutagen Tests
 
     [Theory]
-    [InlineData(GameType.SkyrimLE, true)]
-    [InlineData(GameType.SkyrimSE, true)]
-    [InlineData(GameType.SkyrimVR, true)]
+    [InlineData(GameType.SkyrimLe, true)]
+    [InlineData(GameType.SkyrimSe, true)]
+    [InlineData(GameType.SkyrimVr, true)]
     [InlineData(GameType.Fallout4, true)]
-    [InlineData(GameType.Fallout4VR, true)]
+    [InlineData(GameType.Fallout4Vr, true)]
     [InlineData(GameType.Fallout3, false)]
     [InlineData(GameType.FalloutNewVegas, false)]
     [InlineData(GameType.Oblivion, false)]
@@ -55,13 +52,13 @@ public sealed class PluginLoadingServiceTests
 
         // Assert
         result.Should().NotContain(GameType.Unknown);
-        result.Should().Contain(GameType.SkyrimSE);
-        result.Should().Contain(GameType.SkyrimLE);
-        result.Should().Contain(GameType.SkyrimVR);
+        result.Should().Contain(GameType.SkyrimSe);
+        result.Should().Contain(GameType.SkyrimLe);
+        result.Should().Contain(GameType.SkyrimVr);
         result.Should().Contain(GameType.Fallout3);
         result.Should().Contain(GameType.FalloutNewVegas);
         result.Should().Contain(GameType.Fallout4);
-        result.Should().Contain(GameType.Fallout4VR);
+        result.Should().Contain(GameType.Fallout4Vr);
         result.Should().Contain(GameType.Oblivion);
     }
 

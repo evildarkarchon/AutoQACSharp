@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using AutoQAC.Models;
 
 namespace AutoQAC.Models;
 
@@ -7,12 +6,12 @@ public sealed record AppState
 {
     // Configuration paths
     public string? LoadOrderPath { get; init; }
-    public string? MO2ExecutablePath { get; init; }
+    public string? Mo2ExecutablePath { get; init; }
     public string? XEditExecutablePath { get; init; }
 
     // Configuration validity
     public bool IsLoadOrderConfigured => !string.IsNullOrEmpty(LoadOrderPath);
-    public bool IsMO2Configured => !string.IsNullOrEmpty(MO2ExecutablePath);
+    public bool IsMo2Configured => !string.IsNullOrEmpty(Mo2ExecutablePath);
     public bool IsXEditConfigured => !string.IsNullOrEmpty(XEditExecutablePath);
 
     // Runtime state

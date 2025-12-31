@@ -1,7 +1,5 @@
-using System.Threading.Tasks;
 using AutoQAC.ViewModels;
 using FluentAssertions;
-using Xunit;
 using System.Reactive.Linq;
 
 namespace AutoQAC.Tests.ViewModels;

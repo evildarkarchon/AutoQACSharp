@@ -1,7 +1,5 @@
-using System.Collections.Generic;
 using AutoQAC.Models;
 using FluentAssertions;
-using Xunit;
 
 namespace AutoQAC.Tests.Models;
 
@@ -33,21 +31,21 @@ public sealed class AppStateTests
     }
 
     /// <summary>
-    /// Verifies that IsMO2Configured returns true when MO2ExecutablePath has a value.
+    /// Verifies that IsMo2Configured returns true when Mo2ExecutablePath has a value.
     /// </summary>
     [Theory]
     [InlineData("ModOrganizer.exe", true)]
     [InlineData("C:\\MO2\\ModOrganizer.exe", true)]
     [InlineData("", false)]
     [InlineData(null, false)]
-    public void IsMO2Configured_ShouldReturnCorrectValue(string? path, bool expected)
+    public void IsMo2Configured_ShouldReturnCorrectValue(string? path, bool expected)
     {
         // Arrange
-        var state = new AppState { MO2ExecutablePath = path };
+        var state = new AppState { Mo2ExecutablePath = path };
 
         // Assert
-        state.IsMO2Configured.Should().Be(expected,
-            $"MO2ExecutablePath '{path ?? "null"}' should result in IsMO2Configured = {expected}");
+        state.IsMo2Configured.Should().Be(expected,
+            $"Mo2ExecutablePath '{path ?? "null"}' should result in IsMo2Configured = {expected}");
     }
 
     /// <summary>
@@ -78,13 +76,13 @@ public sealed class AppStateTests
         var state = new AppState
         {
             LoadOrderPath = "plugins.txt",
-            MO2ExecutablePath = null,
+            Mo2ExecutablePath = null,
             XEditExecutablePath = "xEdit.exe"
         };
 
         // Assert
         state.IsLoadOrderConfigured.Should().BeTrue();
-        state.IsMO2Configured.Should().BeFalse();
+        state.IsMo2Configured.Should().BeFalse();
         state.IsXEditConfigured.Should().BeTrue();
     }
 
@@ -103,7 +101,7 @@ public sealed class AppStateTests
 
         // Assert
         state.LoadOrderPath.Should().BeNull();
-        state.MO2ExecutablePath.Should().BeNull();
+        state.Mo2ExecutablePath.Should().BeNull();
         state.XEditExecutablePath.Should().BeNull();
 
         state.IsCleaning.Should().BeFalse();
@@ -278,13 +276,13 @@ public sealed class AppStateTests
     /// Verifies that CurrentGameType can be set to all valid game types.
     /// </summary>
     [Theory]
-    [InlineData(GameType.SkyrimLE)]
-    [InlineData(GameType.SkyrimSE)]
-    [InlineData(GameType.SkyrimVR)]
+    [InlineData(GameType.SkyrimLe)]
+    [InlineData(GameType.SkyrimSe)]
+    [InlineData(GameType.SkyrimVr)]
     [InlineData(GameType.Fallout3)]
     [InlineData(GameType.FalloutNewVegas)]
     [InlineData(GameType.Fallout4)]
-    [InlineData(GameType.Fallout4VR)]
+    [InlineData(GameType.Fallout4Vr)]
     [InlineData(GameType.Oblivion)]
     [InlineData(GameType.Unknown)]
     public void CurrentGameType_ShouldAcceptAllGameTypes(GameType gameType)

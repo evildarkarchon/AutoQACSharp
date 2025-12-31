@@ -1,4 +1,3 @@
-using System;
 using AutoQAC.Infrastructure;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
@@ -10,7 +9,6 @@ using AutoQAC.Services.UI;
 using AutoQAC.ViewModels;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
-using Xunit;
 
 namespace AutoQAC.Tests.Integration;
 
@@ -26,7 +24,7 @@ public sealed class DependencyInjectionTests
         services.AddConfiguration();
         services.AddState();
         services.AddBusinessLogic();
-        services.AddUIServices();
+        services.AddUiServices();
         services.AddViewModels();
         services.AddViews();
 

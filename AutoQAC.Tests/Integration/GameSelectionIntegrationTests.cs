@@ -1,13 +1,9 @@
-using System.Collections.Generic;
-using System.IO;
-using System.Threading.Tasks;
 using AutoQAC.Infrastructure;
 using AutoQAC.Models;
 using AutoQAC.Services.Configuration;
 using AutoQAC.Services.Plugin;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
-using Xunit;
 
 namespace AutoQAC.Tests.Integration;
 
@@ -29,11 +25,11 @@ public sealed class GameSelectionIntegrationTests
         var pluginLoadingService = provider.GetRequiredService<IPluginLoadingService>();
 
         // Act & Assert - Mutagen supported games
-        pluginLoadingService.IsGameSupportedByMutagen(GameType.SkyrimSE).Should().BeTrue();
-        pluginLoadingService.IsGameSupportedByMutagen(GameType.SkyrimLE).Should().BeTrue();
-        pluginLoadingService.IsGameSupportedByMutagen(GameType.SkyrimVR).Should().BeTrue();
+        pluginLoadingService.IsGameSupportedByMutagen(GameType.SkyrimSe).Should().BeTrue();
+        pluginLoadingService.IsGameSupportedByMutagen(GameType.SkyrimLe).Should().BeTrue();
+        pluginLoadingService.IsGameSupportedByMutagen(GameType.SkyrimVr).Should().BeTrue();
         pluginLoadingService.IsGameSupportedByMutagen(GameType.Fallout4).Should().BeTrue();
-        pluginLoadingService.IsGameSupportedByMutagen(GameType.Fallout4VR).Should().BeTrue();
+        pluginLoadingService.IsGameSupportedByMutagen(GameType.Fallout4Vr).Should().BeTrue();
 
         // Not supported by Mutagen
         pluginLoadingService.IsGameSupportedByMutagen(GameType.Fallout3).Should().BeFalse();
@@ -60,7 +56,7 @@ public sealed class GameSelectionIntegrationTests
         // Assert
         availableGames.Should().NotBeEmpty();
         availableGames.Should().NotContain(GameType.Unknown);
-        availableGames.Should().Contain(GameType.SkyrimSE);
+        availableGames.Should().Contain(GameType.SkyrimSe);
         availableGames.Should().Contain(GameType.Fallout4);
         availableGames.Should().Contain(GameType.Fallout3);
         availableGames.Should().Contain(GameType.FalloutNewVegas);
@@ -88,7 +84,7 @@ public sealed class GameSelectionIntegrationTests
             var configService = provider.GetRequiredService<IConfigurationService>();
 
             // Act - Set game
-            await configService.SetSelectedGameAsync(GameType.SkyrimSE);
+            await configService.SetSelectedGameAsync(GameType.SkyrimSe);
 
             // Create new instance to verify persistence
             var configService2 = new ConfigurationService(
@@ -98,7 +94,7 @@ public sealed class GameSelectionIntegrationTests
             var loadedGame = await configService2.GetSelectedGameAsync();
 
             // Assert
-            loadedGame.Should().Be(GameType.SkyrimSE);
+            loadedGame.Should().Be(GameType.SkyrimSe);
         }
         finally
         {

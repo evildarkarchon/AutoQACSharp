@@ -1,6 +1,5 @@
 using System;
 using AutoQAC.ViewModels;
-using Avalonia.Controls;
 using ReactiveUI.Avalonia;
 using ReactiveUI;
 

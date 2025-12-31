@@ -1,9 +1,6 @@
-using System;
-using System.Collections.Generic;
 using System.Reactive.Concurrency;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
-using System.Threading.Tasks;
 using AutoQAC.Models;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.State;
@@ -11,7 +8,6 @@ using AutoQAC.ViewModels;
 using FluentAssertions;
 using Moq;
 using ReactiveUI;
-using Xunit;
 
 namespace AutoQAC.Tests.ViewModels;
 

@@ -1,13 +1,8 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.Configuration;
 using FluentAssertions;
 using Moq;
-using Xunit;
 
 namespace AutoQAC.Tests.Services;
 
@@ -80,7 +75,7 @@ AutoQAC_Data:
         var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
 
         // Act
-        var list = await service.GetGameSpecificSkipListAsync(GameType.SkyrimSE);
+        var list = await service.GetGameSpecificSkipListAsync(GameType.SkyrimSe);
 
         // Assert
         list.Should().HaveCount(2);
@@ -115,7 +110,7 @@ Skip_Lists:
         var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
 
         // Act
-        var list = await service.GetGameSpecificSkipListAsync(GameType.SkyrimSE);
+        var list = await service.GetGameSpecificSkipListAsync(GameType.SkyrimSe);
 
         // Assert
         list.Should().BeEmpty();
@@ -134,9 +129,9 @@ Skip_Lists:
         var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
 
         // Act
-        var list1 = await service.GetGameSpecificSkipListAsync(GameType.SkyrimSE);
+        var list1 = await service.GetGameSpecificSkipListAsync(GameType.SkyrimSe);
         list1.Add("ModifiedPlugin.esp");
-        var list2 = await service.GetGameSpecificSkipListAsync(GameType.SkyrimSE);
+        var list2 = await service.GetGameSpecificSkipListAsync(GameType.SkyrimSe);
 
         // Assert
         list2.Should().NotContain("ModifiedPlugin.esp", "returned list should be a copy");
@@ -154,11 +149,11 @@ Skip_Lists:
         var newSkipList = new List<string> { "NewPlugin1.esp", "NewPlugin2.esm" };
 
         // Act
-        await service.UpdateSkipListAsync(GameType.SkyrimSE, newSkipList);
+        await service.UpdateSkipListAsync(GameType.SkyrimSe, newSkipList);
 
         // Recreate service to verify file was written
         var service2 = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
-        var loadedList = await service2.GetGameSpecificSkipListAsync(GameType.SkyrimSE);
+        var loadedList = await service2.GetGameSpecificSkipListAsync(GameType.SkyrimSe);
 
         // Assert
         loadedList.Should().HaveCount(2);
@@ -180,10 +175,10 @@ Skip_Lists:
         var newSkipList = new List<string> { "NewPlugin1.esp", "NewPlugin2.esm" };
 
         // Act
-        await service.UpdateSkipListAsync(GameType.SkyrimSE, newSkipList);
+        await service.UpdateSkipListAsync(GameType.SkyrimSe, newSkipList);
 
         // Assert
-        var loadedList = await service.GetGameSpecificSkipListAsync(GameType.SkyrimSE);
+        var loadedList = await service.GetGameSpecificSkipListAsync(GameType.SkyrimSe);
         loadedList.Should().HaveCount(2);
         loadedList.Should().Contain("NewPlugin1.esp");
         loadedList.Should().Contain("NewPlugin2.esm");
@@ -200,11 +195,11 @@ Skip_Lists:
         using var subscription = service.SkipListChanged.Subscribe(g => emittedGames.Add(g));
 
         // Act
-        await service.UpdateSkipListAsync(GameType.SkyrimSE, new List<string> { "Test.esp" });
+        await service.UpdateSkipListAsync(GameType.SkyrimSe, new List<string> { "Test.esp" });
 
         // Assert
         emittedGames.Should().ContainSingle();
-        emittedGames[0].Should().Be(GameType.SkyrimSE);
+        emittedGames[0].Should().Be(GameType.SkyrimSe);
     }
 
     [Fact]
@@ -222,7 +217,7 @@ Skip_Lists:
         var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
 
         // Act
-        await service.UpdateSkipListAsync(GameType.SkyrimSE, new List<string> { "NewSkyrim.esp" });
+        await service.UpdateSkipListAsync(GameType.SkyrimSe, new List<string> { "NewSkyrim.esp" });
 
         // Assert
         var fo4List = await service.GetGameSpecificSkipListAsync(GameType.Fallout4);
@@ -245,7 +240,7 @@ AutoQAC_Data:
         var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
 
         // Act
-        await service.UpdateSkipListAsync(GameType.SkyrimSE, new List<string> { "UserSkyrim.esp" });
+        await service.UpdateSkipListAsync(GameType.SkyrimSe, new List<string> { "UserSkyrim.esp" });
 
         // Assert - Main.yaml should be unchanged
         var mainContent = await File.ReadAllTextAsync(Path.Combine(_testDirectory, "AutoQAC Main.yaml"));
@@ -270,10 +265,10 @@ Skip_Lists:
         var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
 
         // Act
-        await service.AddToSkipListAsync(GameType.SkyrimSE, "NewMod.esp");
+        await service.AddToSkipListAsync(GameType.SkyrimSe, "NewMod.esp");
 
         // Assert
-        var list = await service.GetGameSpecificSkipListAsync(GameType.SkyrimSE);
+        var list = await service.GetGameSpecificSkipListAsync(GameType.SkyrimSe);
         list.Should().Contain("NewMod.esp");
         list.Should().Contain("Skyrim.esm");
     }
@@ -291,10 +286,10 @@ Skip_Lists:
         var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
 
         // Act
-        await service.AddToSkipListAsync(GameType.SkyrimSE, "Skyrim.esm");
+        await service.AddToSkipListAsync(GameType.SkyrimSe, "Skyrim.esm");
 
         // Assert
-        var list = await service.GetGameSpecificSkipListAsync(GameType.SkyrimSE);
+        var list = await service.GetGameSpecificSkipListAsync(GameType.SkyrimSe);
         list.Should().HaveCount(1, "duplicate should not be added");
     }
 
@@ -311,10 +306,10 @@ Skip_Lists:
         var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
 
         // Act
-        await service.AddToSkipListAsync(GameType.SkyrimSE, "SKYRIM.ESM");
+        await service.AddToSkipListAsync(GameType.SkyrimSe, "SKYRIM.ESM");
 
         // Assert
-        var list = await service.GetGameSpecificSkipListAsync(GameType.SkyrimSE);
+        var list = await service.GetGameSpecificSkipListAsync(GameType.SkyrimSe);
         list.Should().HaveCount(1, "case-insensitive duplicate should not be added");
     }
 
@@ -325,7 +320,7 @@ Skip_Lists:
         var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
 
         // Act
-        Func<Task> act = () => service.AddToSkipListAsync(GameType.SkyrimSE, "");
+        Func<Task> act = () => service.AddToSkipListAsync(GameType.SkyrimSe, "");
 
         // Assert
         await act.Should().ThrowAsync<ArgumentException>();
@@ -358,10 +353,10 @@ Skip_Lists:
         var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
 
         // Act
-        await service.AddToSkipListAsync(GameType.SkyrimSE, "NewMod.esp");
+        await service.AddToSkipListAsync(GameType.SkyrimSe, "NewMod.esp");
 
         // Assert
-        var list = await service.GetGameSpecificSkipListAsync(GameType.SkyrimSE);
+        var list = await service.GetGameSpecificSkipListAsync(GameType.SkyrimSe);
         list.Should().Contain("NewMod.esp");
     }
 
@@ -383,10 +378,10 @@ Skip_Lists:
         var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
 
         // Act
-        await service.RemoveFromSkipListAsync(GameType.SkyrimSE, "ToRemove.esp");
+        await service.RemoveFromSkipListAsync(GameType.SkyrimSe, "ToRemove.esp");
 
         // Assert
-        var list = await service.GetGameSpecificSkipListAsync(GameType.SkyrimSE);
+        var list = await service.GetGameSpecificSkipListAsync(GameType.SkyrimSe);
         list.Should().NotContain("ToRemove.esp");
         list.Should().Contain("Skyrim.esm");
     }
@@ -404,10 +399,10 @@ Skip_Lists:
         var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
 
         // Act
-        await service.RemoveFromSkipListAsync(GameType.SkyrimSE, "TOREMOVE.ESP");
+        await service.RemoveFromSkipListAsync(GameType.SkyrimSe, "TOREMOVE.ESP");
 
         // Assert
-        var list = await service.GetGameSpecificSkipListAsync(GameType.SkyrimSE);
+        var list = await service.GetGameSpecificSkipListAsync(GameType.SkyrimSe);
         list.Should().BeEmpty();
     }
 
@@ -424,11 +419,11 @@ Skip_Lists:
         var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
 
         // Act
-        Func<Task> act = () => service.RemoveFromSkipListAsync(GameType.SkyrimSE, "NonExistent.esp");
+        Func<Task> act = () => service.RemoveFromSkipListAsync(GameType.SkyrimSe, "NonExistent.esp");
 
         // Assert
         await act.Should().NotThrowAsync();
-        var list = await service.GetGameSpecificSkipListAsync(GameType.SkyrimSE);
+        var list = await service.GetGameSpecificSkipListAsync(GameType.SkyrimSe);
         list.Should().HaveCount(1);
     }
 
@@ -445,10 +440,10 @@ Skip_Lists:
         var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
 
         // Act
-        await service.RemoveFromSkipListAsync(GameType.SkyrimSE, "");
+        await service.RemoveFromSkipListAsync(GameType.SkyrimSe, "");
 
         // Assert
-        var list = await service.GetGameSpecificSkipListAsync(GameType.SkyrimSE);
+        var list = await service.GetGameSpecificSkipListAsync(GameType.SkyrimSe);
         list.Should().HaveCount(1);
     }
 
@@ -476,7 +471,7 @@ AutoQAC_Data:
         var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
 
         // Act
-        var mergedList = await service.GetSkipListAsync(GameType.SkyrimSE);
+        var mergedList = await service.GetSkipListAsync(GameType.SkyrimSe);
 
         // Assert
         mergedList.Should().Contain("UserPlugin.esp", "user skip list should be included");
@@ -503,7 +498,7 @@ AutoQAC_Data:
         var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
 
         // Act
-        var mergedList = await service.GetSkipListAsync(GameType.SkyrimSE);
+        var mergedList = await service.GetSkipListAsync(GameType.SkyrimSe);
 
         // Assert
         mergedList.Should().ContainSingle(x => x.Equals("Skyrim.esm", StringComparison.OrdinalIgnoreCase));
@@ -523,7 +518,7 @@ AutoQAC_Data:
         var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
 
         // Act
-        var mergedList = await service.GetSkipListAsync(GameType.SkyrimSE);
+        var mergedList = await service.GetSkipListAsync(GameType.SkyrimSe);
 
         // Assert
         mergedList.Should().ContainSingle();
@@ -546,7 +541,7 @@ AutoQAC_Data:
         var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
 
         // Act
-        var mergedList = await service.GetSkipListAsync(GameType.SkyrimSE);
+        var mergedList = await service.GetSkipListAsync(GameType.SkyrimSe);
 
         // Assert - only Universal from Main.yaml, not SSE
         mergedList.Should().Contain("Universal.esm");
@@ -564,12 +559,12 @@ AutoQAC_Data:
         var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
 
         // Act
-        await service.AddToSkipListAsync(GameType.SkyrimSE, "FirstMod.esp");
-        await service.AddToSkipListAsync(GameType.SkyrimSE, "SecondMod.esp");
-        await service.RemoveFromSkipListAsync(GameType.SkyrimSE, "FirstMod.esp");
+        await service.AddToSkipListAsync(GameType.SkyrimSe, "FirstMod.esp");
+        await service.AddToSkipListAsync(GameType.SkyrimSe, "SecondMod.esp");
+        await service.RemoveFromSkipListAsync(GameType.SkyrimSe, "FirstMod.esp");
 
         // Assert
-        var list = await service.GetGameSpecificSkipListAsync(GameType.SkyrimSE);
+        var list = await service.GetGameSpecificSkipListAsync(GameType.SkyrimSe);
         list.Should().ContainSingle();
         list.Should().Contain("SecondMod.esp");
     }
@@ -588,8 +583,8 @@ AutoQAC_Data:
         var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
 
         // Act
-        await service.UpdateSkipListAsync(GameType.SkyrimSE, new List<string> { "NewSkyrim.esp" });
-        var mergedList = await service.GetSkipListAsync(GameType.SkyrimSE);
+        await service.UpdateSkipListAsync(GameType.SkyrimSe, new List<string> { "NewSkyrim.esp" });
+        var mergedList = await service.GetSkipListAsync(GameType.SkyrimSe);
 
         // Assert
         mergedList.Should().Contain("NewSkyrim.esp", "user skip list should be updated");
@@ -603,11 +598,11 @@ AutoQAC_Data:
         var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
 
         // Act
-        await service.AddToSkipListAsync(GameType.SkyrimSE, "SkyrimMod.esp");
+        await service.AddToSkipListAsync(GameType.SkyrimSe, "SkyrimMod.esp");
         await service.AddToSkipListAsync(GameType.Fallout4, "FalloutMod.esp");
 
         // Assert
-        var skyrimList = await service.GetGameSpecificSkipListAsync(GameType.SkyrimSE);
+        var skyrimList = await service.GetGameSpecificSkipListAsync(GameType.SkyrimSe);
         var falloutList = await service.GetGameSpecificSkipListAsync(GameType.Fallout4);
 
         skyrimList.Should().Contain("SkyrimMod.esp");

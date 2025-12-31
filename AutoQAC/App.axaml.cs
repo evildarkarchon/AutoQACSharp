@@ -1,4 +1,4 @@
-﻿using AutoQAC.Infrastructure;
+using AutoQAC.Infrastructure;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
@@ -32,7 +32,7 @@ namespace AutoQAC
             services.AddConfiguration();
             services.AddState();
             services.AddBusinessLogic();
-            services.AddUIServices();
+            services.AddUiServices();
             services.AddViewModels();
             services.AddViews();
 

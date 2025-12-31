@@ -39,7 +39,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IPluginValidationService, PluginValidationService>();
         services.AddSingleton<IPluginLoadingService, PluginLoadingService>();
         services.AddSingleton<IProcessExecutionService, ProcessExecutionService>();
-        services.AddSingleton<IMO2ValidationService, MO2ValidationService>();
+        services.AddSingleton<IMo2ValidationService, MO2ValidationService>();
         services.AddSingleton<IXEditCommandBuilder, XEditCommandBuilder>();
         services.AddSingleton<IXEditOutputParser, XEditOutputParser>();
         services.AddSingleton<ICleaningService, CleaningService>();
@@ -47,7 +47,7 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
-    public static IServiceCollection AddUIServices(this IServiceCollection services)
+    public static IServiceCollection AddUiServices(this IServiceCollection services)
     {
         services.AddSingleton<IFileDialogService, FileDialogService>();
         services.AddSingleton<IMessageDialogService, MessageDialogService>();

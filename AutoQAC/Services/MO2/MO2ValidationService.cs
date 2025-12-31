@@ -1,12 +1,11 @@
-using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
 
 namespace AutoQAC.Services.MO2;
 
-public sealed class MO2ValidationService : IMO2ValidationService
+public sealed class MO2ValidationService : IMo2ValidationService
 {
-    public bool IsMO2Running()
+    public bool IsMo2Running()
     {
         var processes = System.Diagnostics.Process.GetProcessesByName("ModOrganizer");
         try
@@ -22,7 +21,7 @@ public sealed class MO2ValidationService : IMO2ValidationService
         }
     }
 
-    public Task<bool> ValidateMO2ExecutableAsync(string mo2Path)
+    public Task<bool> ValidateMo2ExecutableAsync(string mo2Path)
     {
         if (!File.Exists(mo2Path))
             return Task.FromResult(false);
@@ -31,7 +30,7 @@ public sealed class MO2ValidationService : IMO2ValidationService
         return Task.FromResult(fileName == "modorganizer.exe");
     }
 
-    public string GetMO2RunningWarning()
+    public string GetMo2RunningWarning()
     {
         return "Warning: Mod Organizer 2 is currently running. " +
                "For best results, close MO2 before cleaning plugins.";

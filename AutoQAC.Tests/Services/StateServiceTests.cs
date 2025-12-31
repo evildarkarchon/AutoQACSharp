@@ -1,12 +1,6 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using AutoQAC.Models;
 using AutoQAC.Services.State;
 using FluentAssertions;
-using Xunit;
 
 namespace AutoQAC.Tests.Services;
 
@@ -37,7 +31,7 @@ public class StateServiceTests
 
         var state = _sut.CurrentState;
         state.LoadOrderPath.Should().Be(loadOrder);
-        state.MO2ExecutablePath.Should().Be(mo2);
+        state.Mo2ExecutablePath.Should().Be(mo2);
         state.XEditExecutablePath.Should().Be(xedit);
     }
 
@@ -528,7 +522,7 @@ public class StateServiceTests
         {
             StartTime = DateTime.Now.AddMinutes(-5),
             EndTime = DateTime.Now,
-            GameType = GameType.SkyrimSE,
+            GameType = GameType.SkyrimSe,
             PluginResults = new List<PluginCleaningResult>
             {
                 new()

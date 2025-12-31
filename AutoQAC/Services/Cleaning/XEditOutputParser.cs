@@ -10,16 +10,19 @@ public interface IXEditOutputParser
     bool IsCompletionLine(string line);
 }
 
-public sealed class XEditOutputParser : IXEditOutputParser
+public sealed partial class XEditOutputParser : IXEditOutputParser
 {
-    private static readonly Regex UndeletedPattern =
-        new(@"Undeleting:\s*(.*)", RegexOptions.Compiled);
-    private static readonly Regex RemovedPattern =
-        new(@"Removing:\s*(.*)", RegexOptions.Compiled);
-    private static readonly Regex SkippedPattern =
-        new(@"Skipping:\s*(.*)", RegexOptions.Compiled);
-    private static readonly Regex PartialFormsPattern =
-        new(@"Making Partial Form:\s*(.*)", RegexOptions.Compiled);
+    [GeneratedRegex(@"Undeleting:\s*(.*)")]
+    private static partial Regex UndeletedPattern();
+
+    [GeneratedRegex(@"Removing:\s*(.*)")]
+    private static partial Regex RemovedPattern();
+
+    [GeneratedRegex(@"Skipping:\s*(.*)")]
+    private static partial Regex SkippedPattern();
+
+    [GeneratedRegex(@"Making Partial Form:\s*(.*)")]
+    private static partial Regex PartialFormsPattern();
 
     public CleaningStatistics ParseOutput(List<string> outputLines)
     {
@@ -32,10 +35,10 @@ public sealed class XEditOutputParser : IXEditOutputParser
         {
             if (string.IsNullOrWhiteSpace(line)) continue;
 
-            if (UndeletedPattern.IsMatch(line)) undeleted++;
-            else if (RemovedPattern.IsMatch(line)) removed++;
-            else if (SkippedPattern.IsMatch(line)) skipped++;
-            else if (PartialFormsPattern.IsMatch(line)) partialForms++;
+            if (UndeletedPattern().IsMatch(line)) undeleted++;
+            else if (RemovedPattern().IsMatch(line)) removed++;
+            else if (SkippedPattern().IsMatch(line)) skipped++;
+            else if (PartialFormsPattern().IsMatch(line)) partialForms++;
         }
 
         return new CleaningStatistics

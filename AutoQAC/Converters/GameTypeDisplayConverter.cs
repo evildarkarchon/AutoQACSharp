@@ -36,13 +36,13 @@ public sealed class GameTypeDisplayConverter : IValueConverter
     /// </summary>
     public static string GetDisplayName(GameType gameType) => gameType switch
     {
-        GameType.SkyrimLE => "Skyrim (Legendary Edition)",
-        GameType.SkyrimSE => "Skyrim Special Edition",
-        GameType.SkyrimVR => "Skyrim VR",
+        GameType.SkyrimLe => "Skyrim (Legendary Edition)",
+        GameType.SkyrimSe => "Skyrim Special Edition",
+        GameType.SkyrimVr => "Skyrim VR",
         GameType.Fallout3 => "Fallout 3",
         GameType.FalloutNewVegas => "Fallout: New Vegas",
         GameType.Fallout4 => "Fallout 4",
-        GameType.Fallout4VR => "Fallout 4 VR",
+        GameType.Fallout4Vr => "Fallout 4 VR",
         GameType.Oblivion => "The Elder Scrolls IV: Oblivion",
         GameType.Unknown => "Select a Game...",
         _ => gameType.ToString()
@@ -53,13 +53,13 @@ public sealed class GameTypeDisplayConverter : IValueConverter
     /// </summary>
     private static GameType ParseFromDisplayName(string displayName) => displayName switch
     {
-        "Skyrim (Legendary Edition)" => GameType.SkyrimLE,
-        "Skyrim Special Edition" => GameType.SkyrimSE,
-        "Skyrim VR" => GameType.SkyrimVR,
+        "Skyrim (Legendary Edition)" => GameType.SkyrimLe,
+        "Skyrim Special Edition" => GameType.SkyrimSe,
+        "Skyrim VR" => GameType.SkyrimVr,
         "Fallout 3" => GameType.Fallout3,
         "Fallout: New Vegas" => GameType.FalloutNewVegas,
         "Fallout 4" => GameType.Fallout4,
-        "Fallout 4 VR" => GameType.Fallout4VR,
+        "Fallout 4 VR" => GameType.Fallout4Vr,
         "The Elder Scrolls IV: Oblivion" => GameType.Oblivion,
         _ => GameType.Unknown
     };

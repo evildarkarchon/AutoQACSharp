@@ -2,14 +2,15 @@ using System;
 using System.Collections.Generic;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
+using System.Threading;
 using AutoQAC.Models;
 
 namespace AutoQAC.Services.State;
 
 public sealed class StateService : IStateService, IDisposable
 {
-    private readonly object _lock = new();
-    private readonly BehaviorSubject<AppState> _stateSubject;
+    private readonly Lock _lock = new();
+    private readonly BehaviorSubject<AppState> _stateSubject = new(new AppState());
     private readonly Subject<(string plugin, CleaningStatus status)> _pluginProcessedSubject = new();
     private readonly Subject<CleaningSessionResult> _cleaningCompletedSubject = new();
 
@@ -17,21 +18,7 @@ public sealed class StateService : IStateService, IDisposable
     private DateTime _cleaningStartTime;
     private CleaningSessionResult? _lastSessionResult;
 
-    public StateService()
-    {
-        _stateSubject = new BehaviorSubject<AppState>(new AppState());
-    }
-
-    public CleaningSessionResult? LastSessionResult
-    {
-        get
-        {
-            lock (_lock)
-            {
-                return _lastSessionResult;
-            }
-        }
-    }
+    public CleaningSessionResult? LastSessionResult => _lastSessionResult;
 
     public AppState CurrentState
     {
@@ -47,7 +34,7 @@ public sealed class StateService : IStateService, IDisposable
     public IObservable<AppState> StateChanged => _stateSubject.AsObservable();
 
     public IObservable<bool> ConfigurationValidChanged => 
-        _stateSubject.Select(s => s.IsLoadOrderConfigured && s.IsXEditConfigured)
+        _stateSubject.Select(s => s is { IsLoadOrderConfigured: true, IsXEditConfigured: true })
                      .DistinctUntilChanged();
 
     public IObservable<(int current, int total)> ProgressChanged =>
@@ -74,7 +61,7 @@ public sealed class StateService : IStateService, IDisposable
         UpdateState(s => s with
         {
             LoadOrderPath = loadOrder,
-            MO2ExecutablePath = mo2,
+            Mo2ExecutablePath = mo2,
             XEditExecutablePath = xEdit
         });
     }
@@ -83,7 +70,7 @@ public sealed class StateService : IStateService, IDisposable
     {
         UpdateState(s => s with
         {
-            PluginsToClean = new List<string>(plugins)
+            PluginsToClean = [..plugins]
         });
     }
 
@@ -98,7 +85,7 @@ public sealed class StateService : IStateService, IDisposable
         UpdateState(s => s with
         {
             IsCleaning = true,
-            PluginsToClean = new List<string>(plugins),
+            PluginsToClean = [..plugins],
             Progress = 0,
             TotalPlugins = plugins.Count,
             CleanedPlugins = new HashSet<string>(),

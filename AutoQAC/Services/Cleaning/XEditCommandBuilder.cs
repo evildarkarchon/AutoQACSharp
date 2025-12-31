@@ -52,7 +52,7 @@ public sealed class XEditCommandBuilder : IXEditCommandBuilder
         var xEditArgs = string.Join(" ", args);
 
         // 4. MO2 Wrapping
-        if (config.Mo2ModeEnabled && !string.IsNullOrEmpty(config.MO2ExecutablePath))
+        if (config.Mo2ModeEnabled && !string.IsNullOrEmpty(config.Mo2ExecutablePath))
         {
             // Escape quotes in xEditArgs for the -a parameter
             // We need to ensure that quotes inside xEditArgs are escaped so they don't break the outer quotes of -a "..."
@@ -61,9 +61,9 @@ public sealed class XEditCommandBuilder : IXEditCommandBuilder
             
             return new ProcessStartInfo
             {
-                FileName = config.MO2ExecutablePath,
+                FileName = config.Mo2ExecutablePath,
                 Arguments = mo2Args,
-                WorkingDirectory = Path.GetDirectoryName(config.MO2ExecutablePath)
+                WorkingDirectory = Path.GetDirectoryName(config.Mo2ExecutablePath)
             };
         }
         else
@@ -82,10 +82,10 @@ public sealed class XEditCommandBuilder : IXEditCommandBuilder
         GameType.Fallout3 => "-FO3",
         GameType.FalloutNewVegas => "-FNV",
         GameType.Fallout4 => "-FO4",
-        GameType.SkyrimLE => "-TES5",
-        GameType.SkyrimSE => "-SSE",
-        GameType.Fallout4VR => "-FO4VR",
-        GameType.SkyrimVR => "-SkyrimVR",
+        GameType.SkyrimLe => "-TES5",
+        GameType.SkyrimSe => "-SSE",
+        GameType.Fallout4Vr => "-FO4VR",
+        GameType.SkyrimVr => "-SkyrimVR",
         GameType.Oblivion => "-TES4",
         _ => string.Empty
     };

@@ -239,10 +239,7 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
     public async Task<List<string>> GetSkipListAsync(GameType gameType)
     {
         // Load both configs
-        if (_mainConfigCache == null)
-        {
-            _mainConfigCache = await LoadMainConfigAsync().ConfigureAwait(false);
-        }
+        _mainConfigCache ??= await LoadMainConfigAsync().ConfigureAwait(false);
         var userConfig = await LoadUserConfigAsync().ConfigureAwait(false);
 
         var result = new List<string>();
@@ -265,10 +262,7 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
 
     public async Task<List<string>> GetXEditExecutableNamesAsync(GameType gameType)
     {
-        if (_mainConfigCache == null)
-        {
-            _mainConfigCache = await LoadMainConfigAsync().ConfigureAwait(false);
-        }
+        _mainConfigCache ??= await LoadMainConfigAsync().ConfigureAwait(false);
 
         var key = GetGameKey(gameType);
         if (_mainConfigCache.Data.XEditLists.TryGetValue(key, out var list))
@@ -376,10 +370,10 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
         GameType.Fallout3 => "FO3",
         GameType.FalloutNewVegas => "FNV",
         GameType.Fallout4 => "FO4",
-        GameType.SkyrimLE => "Skyrim",
-        GameType.SkyrimSE => "SSE",
-        GameType.Fallout4VR => "FO4VR",
-        GameType.SkyrimVR => "SkyrimVR",
+        GameType.SkyrimLe => "Skyrim",
+        GameType.SkyrimSe => "SSE",
+        GameType.Fallout4Vr => "FO4VR",
+        GameType.SkyrimVr => "SkyrimVR",
         GameType.Oblivion => "Oblivion",
         _ => "Unknown"
     };

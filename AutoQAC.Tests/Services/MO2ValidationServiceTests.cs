@@ -1,9 +1,5 @@
-using System;
-using System.IO;
-using System.Threading.Tasks;
 using AutoQAC.Services.MO2;
 using FluentAssertions;
-using Xunit;
 
 namespace AutoQAC.Tests.Services;
 
@@ -11,9 +7,9 @@ namespace AutoQAC.Tests.Services;
 /// Unit tests for <see cref="MO2ValidationService"/> covering MO2 process detection,
 /// executable validation, and warning message generation.
 ///
-/// NOTE: The IsMO2Running test is difficult to unit test reliably since it depends
-/// on actual running processes. Tests focus on the validation logic which is more
-/// testable.
+    /// NOTE: The IsMo2Running test is difficult to unit test reliably since it depends
+    /// on actual running processes. Tests focus on the validation logic which is more
+    /// testable.
 /// </summary>
 public sealed class MO2ValidationServiceTests : IDisposable
 {
@@ -46,28 +42,28 @@ public sealed class MO2ValidationServiceTests : IDisposable
         }
     }
 
-    #region ValidateMO2ExecutableAsync Tests
+    #region ValidateMo2ExecutableAsync Tests
 
     /// <summary>
-    /// Verifies that ValidateMO2ExecutableAsync returns true for a valid
+    /// Verifies that ValidateMo2ExecutableAsync returns true for a valid
     /// ModOrganizer.exe file path.
     /// </summary>
     [Fact]
-    public async Task ValidateMO2ExecutableAsync_ShouldReturnTrue_WhenPathIsValidMO2Executable()
+    public async Task ValidateMo2ExecutableAsync_ShouldReturnTrue_WhenPathIsValidMO2Executable()
     {
         // Arrange
         var mo2Path = Path.Combine(_testDirectory, "ModOrganizer.exe");
         await File.WriteAllTextAsync(mo2Path, "dummy executable content");
 
         // Act
-        var result = await _sut.ValidateMO2ExecutableAsync(mo2Path);
+        var result = await _sut.ValidateMo2ExecutableAsync(mo2Path);
 
         // Assert
         result.Should().BeTrue("ModOrganizer.exe is a valid MO2 executable name");
     }
 
     /// <summary>
-    /// Verifies that ValidateMO2ExecutableAsync returns true regardless of case
+    /// Verifies that ValidateMo2ExecutableAsync returns true regardless of case
     /// (case-insensitive validation).
     /// </summary>
     [Theory]
@@ -75,21 +71,21 @@ public sealed class MO2ValidationServiceTests : IDisposable
     [InlineData("MODORGANIZER.EXE")]
     [InlineData("ModOrganizer.EXE")]
     [InlineData("modorganizer.Exe")]
-    public async Task ValidateMO2ExecutableAsync_ShouldBeCaseInsensitive(string fileName)
+    public async Task ValidateMo2ExecutableAsync_ShouldBeCaseInsensitive(string fileName)
     {
         // Arrange
         var mo2Path = Path.Combine(_testDirectory, fileName);
         await File.WriteAllTextAsync(mo2Path, "dummy executable content");
 
         // Act
-        var result = await _sut.ValidateMO2ExecutableAsync(mo2Path);
+        var result = await _sut.ValidateMo2ExecutableAsync(mo2Path);
 
         // Assert
         result.Should().BeTrue($"'{fileName}' should be recognized as MO2 executable (case-insensitive)");
     }
 
     /// <summary>
-    /// Verifies that ValidateMO2ExecutableAsync returns false for a file
+    /// Verifies that ValidateMo2ExecutableAsync returns false for a file
     /// that exists but is not named ModOrganizer.exe.
     /// </summary>
     [Theory]
@@ -98,56 +94,56 @@ public sealed class MO2ValidationServiceTests : IDisposable
     [InlineData("OtherProgram.exe")]
     [InlineData("ModOrganizer2.exe")]
     [InlineData("ModOrganizer")]
-    public async Task ValidateMO2ExecutableAsync_ShouldReturnFalse_WhenFileIsNotMO2Executable(string fileName)
+    public async Task ValidateMo2ExecutableAsync_ShouldReturnFalse_WhenFileIsNotMO2Executable(string fileName)
     {
         // Arrange
         var path = Path.Combine(_testDirectory, fileName);
         await File.WriteAllTextAsync(path, "dummy content");
 
         // Act
-        var result = await _sut.ValidateMO2ExecutableAsync(path);
+        var result = await _sut.ValidateMo2ExecutableAsync(path);
 
         // Assert
         result.Should().BeFalse($"'{fileName}' is not a valid MO2 executable name");
     }
 
     /// <summary>
-    /// Verifies that ValidateMO2ExecutableAsync returns false when the
+    /// Verifies that ValidateMo2ExecutableAsync returns false when the
     /// file does not exist.
     /// </summary>
     [Fact]
-    public async Task ValidateMO2ExecutableAsync_ShouldReturnFalse_WhenFileDoesNotExist()
+    public async Task ValidateMo2ExecutableAsync_ShouldReturnFalse_WhenFileDoesNotExist()
     {
         // Arrange
         var nonExistentPath = Path.Combine(_testDirectory, "NonExistent", "ModOrganizer.exe");
 
         // Act
-        var result = await _sut.ValidateMO2ExecutableAsync(nonExistentPath);
+        var result = await _sut.ValidateMo2ExecutableAsync(nonExistentPath);
 
         // Assert
         result.Should().BeFalse("non-existent file should not be valid");
     }
 
     /// <summary>
-    /// Verifies that ValidateMO2ExecutableAsync returns false for empty path.
+    /// Verifies that ValidateMo2ExecutableAsync returns false for empty path.
     /// </summary>
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
-    public async Task ValidateMO2ExecutableAsync_ShouldReturnFalse_WhenPathIsEmptyOrWhitespace(string path)
+    public async Task ValidateMo2ExecutableAsync_ShouldReturnFalse_WhenPathIsEmptyOrWhitespace(string path)
     {
         // Act
-        var result = await _sut.ValidateMO2ExecutableAsync(path);
+        var result = await _sut.ValidateMo2ExecutableAsync(path);
 
         // Assert
         result.Should().BeFalse("empty or whitespace path should not be valid");
     }
 
     /// <summary>
-    /// Verifies that ValidateMO2ExecutableAsync handles paths with special characters.
+    /// Verifies that ValidateMo2ExecutableAsync handles paths with special characters.
     /// </summary>
     [Fact]
-    public async Task ValidateMO2ExecutableAsync_ShouldHandlePathsWithSpecialCharacters()
+    public async Task ValidateMo2ExecutableAsync_ShouldHandlePathsWithSpecialCharacters()
     {
         // Arrange
         var specialDir = Path.Combine(_testDirectory, "Path With Spaces", "And (Parens)");
@@ -156,7 +152,7 @@ public sealed class MO2ValidationServiceTests : IDisposable
         await File.WriteAllTextAsync(mo2Path, "dummy content");
 
         // Act
-        var result = await _sut.ValidateMO2ExecutableAsync(mo2Path);
+        var result = await _sut.ValidateMo2ExecutableAsync(mo2Path);
 
         // Assert
         result.Should().BeTrue("paths with spaces and special characters should be handled");
@@ -164,20 +160,20 @@ public sealed class MO2ValidationServiceTests : IDisposable
 
     #endregion
 
-    #region IsMO2Running Tests
+    #region IsMo2Running Tests
 
     /// <summary>
-    /// Verifies that IsMO2Running returns false when ModOrganizer is not running.
+    /// Verifies that IsMo2Running returns false when ModOrganizer is not running.
     /// NOTE: This test assumes ModOrganizer is not running during the test.
     /// If it is, this test will fail - that's expected behavior.
     /// </summary>
     [Fact]
-    public void IsMO2Running_ShouldReturnFalse_WhenModOrganizerNotRunning()
+    public void IsMo2Running_ShouldReturnFalse_WhenModOrganizerNotRunning()
     {
         // Arrange & Act
         // Note: This test is environment-dependent. If MO2 is actually running,
         // this test will correctly return true.
-        var result = _sut.IsMO2Running();
+        var result = _sut.IsMo2Running();
 
         // Assert
         // We can only assert that the method doesn't throw and returns a boolean
@@ -191,17 +187,17 @@ public sealed class MO2ValidationServiceTests : IDisposable
     }
 
     /// <summary>
-    /// Verifies that IsMO2Running properly disposes of process handles.
+    /// Verifies that IsMo2Running properly disposes of process handles.
     /// Multiple calls should not cause resource leaks.
     /// </summary>
     [Fact]
-    public void IsMO2Running_ShouldNotLeakResources_OnMultipleCalls()
+    public void IsMo2Running_ShouldNotLeakResources_OnMultipleCalls()
     {
         // Arrange & Act
         // Call multiple times to verify no resource leaks
         for (int i = 0; i < 100; i++)
         {
-            _ = _sut.IsMO2Running();
+            _ = _sut.IsMo2Running();
         }
 
         // Assert
@@ -212,16 +208,16 @@ public sealed class MO2ValidationServiceTests : IDisposable
 
     #endregion
 
-    #region GetMO2RunningWarning Tests
+    #region GetMo2RunningWarning Tests
 
     /// <summary>
-    /// Verifies that GetMO2RunningWarning returns a non-empty warning message.
+    /// Verifies that GetMo2RunningWarning returns a non-empty warning message.
     /// </summary>
     [Fact]
-    public void GetMO2RunningWarning_ShouldReturnNonEmptyWarning()
+    public void GetMo2RunningWarning_ShouldReturnNonEmptyWarning()
     {
         // Act
-        var warning = _sut.GetMO2RunningWarning();
+        var warning = _sut.GetMo2RunningWarning();
 
         // Assert
         warning.Should().NotBeNullOrEmpty("warning message should be provided");
@@ -231,10 +227,10 @@ public sealed class MO2ValidationServiceTests : IDisposable
     /// Verifies that the warning message contains relevant keywords.
     /// </summary>
     [Fact]
-    public void GetMO2RunningWarning_ShouldContainRelevantContent()
+    public void GetMo2RunningWarning_ShouldContainRelevantContent()
     {
         // Act
-        var warning = _sut.GetMO2RunningWarning();
+        var warning = _sut.GetMo2RunningWarning();
 
         // Assert
         warning.Should().Contain("Mod Organizer", "warning should mention MO2");
@@ -245,11 +241,11 @@ public sealed class MO2ValidationServiceTests : IDisposable
     /// Verifies that the warning message is consistent across multiple calls.
     /// </summary>
     [Fact]
-    public void GetMO2RunningWarning_ShouldBeConsistent()
+    public void GetMo2RunningWarning_ShouldBeConsistent()
     {
         // Act
-        var warning1 = _sut.GetMO2RunningWarning();
-        var warning2 = _sut.GetMO2RunningWarning();
+        var warning1 = _sut.GetMo2RunningWarning();
+        var warning2 = _sut.GetMo2RunningWarning();
 
         // Assert
         warning1.Should().Be(warning2, "warning message should be consistent");
@@ -260,22 +256,22 @@ public sealed class MO2ValidationServiceTests : IDisposable
     #region Edge Case Tests
 
     /// <summary>
-    /// Verifies that ValidateMO2ExecutableAsync handles null path gracefully.
+    /// Verifies that ValidateMo2ExecutableAsync handles null path gracefully.
     /// </summary>
     [Fact]
-    public async Task ValidateMO2ExecutableAsync_ShouldHandleNullPath()
+    public async Task ValidateMo2ExecutableAsync_ShouldHandleNullPath()
     {
         // Act
         // Note: Depending on implementation, this might throw ArgumentNullException
         // or return false. Either behavior is acceptable.
-        Func<Task> act = async () => await _sut.ValidateMO2ExecutableAsync(null!);
+        Func<Task> act = async () => await _sut.ValidateMo2ExecutableAsync(null!);
 
         // Assert
         // Should either return false or throw ArgumentNullException
         // We'll accept either behavior as valid
         try
         {
-            var result = await _sut.ValidateMO2ExecutableAsync(null!);
+            var result = await _sut.ValidateMo2ExecutableAsync(null!);
             result.Should().BeFalse("null path should not be valid");
         }
         catch (ArgumentNullException)
@@ -295,14 +291,14 @@ public sealed class MO2ValidationServiceTests : IDisposable
     /// Verifies validation with a directory path instead of a file path.
     /// </summary>
     [Fact]
-    public async Task ValidateMO2ExecutableAsync_ShouldReturnFalse_WhenPathIsDirectory()
+    public async Task ValidateMo2ExecutableAsync_ShouldReturnFalse_WhenPathIsDirectory()
     {
         // Arrange
         var dirPath = Path.Combine(_testDirectory, "ModOrganizer.exe");
         Directory.CreateDirectory(dirPath); // Create as directory, not file
 
         // Act
-        var result = await _sut.ValidateMO2ExecutableAsync(dirPath);
+        var result = await _sut.ValidateMo2ExecutableAsync(dirPath);
 
         // Assert
         // File.Exists returns false for directories

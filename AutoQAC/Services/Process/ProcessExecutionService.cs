@@ -47,12 +47,26 @@ public sealed class ProcessExecutionService : IProcessExecutionService, IDisposa
         // We acquire a slot for every execution to respect the limit
         using var slot = await AcquireProcessSlotAsync(ct).ConfigureAwait(false);
 
-        using var process = new System.Diagnostics.Process { StartInfo = startInfo };
+        // Extract values before creating Process to ensure proper disposal if exceptions occur
+        var fileName = startInfo.FileName;
+        var arguments = startInfo.Arguments;
+        var workingDirectory = startInfo.WorkingDirectory;
 
-        startInfo.RedirectStandardOutput = true;
-        startInfo.RedirectStandardError = true;
-        startInfo.UseShellExecute = false;
-        startInfo.CreateNoWindow = true;
+        // Create ProcessStartInfo first to ensure proper disposal if exception occurs during initialization
+        var processStartInfo = new ProcessStartInfo
+        {
+            FileName = fileName,
+            Arguments = arguments,
+            WorkingDirectory = workingDirectory,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        // Initialize Process first, then set StartInfo inside using statement to ensure proper disposal
+        using var process = new System.Diagnostics.Process();
+        process.StartInfo = processStartInfo;
 
         var outputLines = new List<string>();
         var errorLines = new List<string>();
@@ -61,11 +75,9 @@ public sealed class ProcessExecutionService : IProcessExecutionService, IDisposa
         var tcs = new TaskCompletionSource<bool>();
 
         process.OutputDataReceived += (s, e) => {
-            if (e.Data != null)
-            {
-                outputLines.Add(e.Data);
-                outputProgress?.Report(e.Data);
-            }
+            if (e.Data == null) return;
+            outputLines.Add(e.Data);
+            outputProgress?.Report(e.Data);
         };
 
         process.ErrorDataReceived += (s, e) => {
@@ -86,7 +98,7 @@ public sealed class ProcessExecutionService : IProcessExecutionService, IDisposa
         catch (Exception ex)
         {
             _logger.Error(ex, $"Failed to start process: {startInfo.FileName}");
-            return new ProcessResult { ExitCode = -1, ErrorLines = new List<string> { ex.Message } };
+            return new ProcessResult { ExitCode = -1, ErrorLines = [ex.Message] };
         }
 
         // Wait with timeout and cancellation
@@ -101,7 +113,7 @@ public sealed class ProcessExecutionService : IProcessExecutionService, IDisposa
         var linkedToken = linkedCts?.Token ?? ct;
 
         // Register cancellation callback to kill process
-        using var reg = linkedToken.Register(() =>
+        await using var reg = linkedToken.Register(() =>
         {
             tcs.TrySetCanceled();
         });
@@ -171,21 +183,15 @@ public sealed class ProcessExecutionService : IProcessExecutionService, IDisposa
         _processSlots.Dispose();
     }
 
-    private class SemaphoreReleaser : IDisposable
+    private class SemaphoreReleaser(SemaphoreSlim semaphore) : IDisposable
     {
-        private readonly SemaphoreSlim _semaphore;
         private bool _isDisposed;
-
-        public SemaphoreReleaser(SemaphoreSlim semaphore)
-        {
-            _semaphore = semaphore;
-        }
 
         public void Dispose()
         {
             if (!_isDisposed)
             {
-                _semaphore.Release();
+                semaphore.Release();
                 _isDisposed = true;
             }
         }

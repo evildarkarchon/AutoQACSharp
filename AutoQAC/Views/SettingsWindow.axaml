@@ -109,7 +109,7 @@
                                FontSize="14" FontWeight="SemiBold" />
 
                     <CheckBox Content="MO2 Mode (Use Mod Organizer 2 for launching xEdit)"
-                              IsChecked="{Binding MO2Mode}" />
+                              IsChecked="{Binding Mo2Mode}" />
                 </StackPanel>
 
             </StackPanel>

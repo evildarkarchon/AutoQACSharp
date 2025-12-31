@@ -15,10 +15,23 @@ namespace AutoQAC.ViewModels;
 /// </summary>
 public sealed class CleaningResultsViewModel : ViewModelBase
 {
-    private readonly ILoggingService _logger;
-    private readonly IFileDialogService _fileDialog;
+    private readonly ILoggingService? _logger;
+    private readonly IFileDialogService? _fileDialog;
 
     private CleaningSessionResult _sessionResult;
+
+    /// <summary>
+    /// Design-time constructor for XAML previewer.
+    /// </summary>
+    public CleaningResultsViewModel()
+    {
+        _sessionResult = CleaningSessionResult.CreateEmpty();
+        PluginResults = new ObservableCollection<PluginCleaningResult>();
+
+        // Create placeholder commands for design time
+        ExportReportCommand = ReactiveCommand.CreateFromTask(ExportReportAsync);
+        CloseCommand = ReactiveCommand.Create(() => { });
+    }
 
     public CleaningResultsViewModel(
         CleaningSessionResult sessionResult,
@@ -90,12 +103,12 @@ public sealed class CleaningResultsViewModel : ViewModelBase
     /// <summary>
     /// Total ITMs removed.
     /// </summary>
-    public int TotalITMs => SessionResult.TotalItemsRemoved;
+    public int TotalItms => SessionResult.TotalItemsRemoved;
 
     /// <summary>
     /// Total UDRs fixed.
     /// </summary>
-    public int TotalUDRs => SessionResult.TotalItemsUndeleted;
+    public int TotalUdrs => SessionResult.TotalItemsUndeleted;
 
     /// <summary>
     /// Total partial forms created.
@@ -145,6 +158,10 @@ public sealed class CleaningResultsViewModel : ViewModelBase
 
     private async Task ExportReportAsync()
     {
+        // Skip if running in design mode (no services available)
+        if (_fileDialog is null || _logger is null)
+            return;
+
         try
         {
             var defaultFileName = $"AutoQAC_Report_{SessionResult.StartTime:yyyyMMdd_HHmmss}.txt";

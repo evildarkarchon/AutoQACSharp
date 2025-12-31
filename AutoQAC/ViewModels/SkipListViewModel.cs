@@ -22,10 +22,10 @@ public sealed class SkipListViewModel : ViewModelBase, IDisposable
     private readonly CompositeDisposable _disposables = new();
 
     // Original skip list for change tracking
-    private List<string> _originalSkipList = new();
+    private List<string> _originalSkipList = [];
 
     // Valid plugin extensions
-    private static readonly string[] ValidExtensions = { ".esp", ".esm", ".esl" };
+    private static readonly string[] ValidExtensions = [".esp", ".esm", ".esl"];
 
     #region Properties
 
@@ -217,7 +217,7 @@ public sealed class SkipListViewModel : ViewModelBase, IDisposable
         AvailablePlugins.Clear();
 
         // Get loaded plugins from state
-        var loadedPlugins = _stateService.CurrentState.PluginsToClean ?? new List<string>();
+        var loadedPlugins = _stateService.CurrentState.PluginsToClean;
 
         // Filter out plugins already in skip list
         var skipSet = new HashSet<string>(SkipListEntries, StringComparer.OrdinalIgnoreCase);
@@ -293,7 +293,7 @@ public sealed class SkipListViewModel : ViewModelBase, IDisposable
         SkipListEntries.Remove(entry);
 
         // Add back to available plugins if it was loaded
-        var loadedPlugins = _stateService.CurrentState.PluginsToClean ?? new List<string>();
+        var loadedPlugins = _stateService.CurrentState.PluginsToClean;
         if (loadedPlugins.Contains(entry, StringComparer.OrdinalIgnoreCase))
         {
             AvailablePlugins.Add(entry);

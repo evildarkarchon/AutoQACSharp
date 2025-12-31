@@ -43,7 +43,7 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
     }
 
     private bool _mo2Mode;
-    public bool MO2Mode
+    public bool Mo2Mode
     {
         get => _mo2Mode;
         set => this.RaiseAndSetIfChanged(ref _mo2Mode, value);
@@ -101,15 +101,13 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
             .Select(ValidateJournalExpiration);
 
         var cpuThresholdValid = this.WhenAnyValue(x => x.CpuThreshold)
-            .Select(v => v >= 1 && v <= 100);
+            .Select(v => v is >= 1 and <= 100);
 
         var maxSubprocessesValid = this.WhenAnyValue(x => x.MaxConcurrentSubprocesses)
-            .Select(v => v >= 1 && v <= 10);
+            .Select(v => v is >= 1 and <= 10);
 
         // Aggregate validation
-        var allValid = Observable.CombineLatest(
-            cleaningTimeoutValid,
-            journalExpirationValid,
+        var allValid = cleaningTimeoutValid.CombineLatest(journalExpirationValid,
             cpuThresholdValid,
             maxSubprocessesValid,
             (ct, je, cpu, max) => ct && je && cpu && max);
@@ -120,11 +118,9 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
         _disposables.Add(_hasValidationErrors);
 
         // Track unsaved changes
-        var currentValues = Observable.CombineLatest(
-            this.WhenAnyValue(x => x.JournalExpiration),
-            this.WhenAnyValue(x => x.CleaningTimeout),
+        var currentValues = this.WhenAnyValue(x => x.JournalExpiration).CombineLatest(this.WhenAnyValue(x => x.CleaningTimeout),
             this.WhenAnyValue(x => x.CpuThreshold),
-            this.WhenAnyValue(x => x.MO2Mode),
+            this.WhenAnyValue(x => x.Mo2Mode),
             this.WhenAnyValue(x => x.MaxConcurrentSubprocesses),
             (je, ct, cpu, mo2, max) => new { je, ct, cpu, mo2, max });
 
@@ -172,7 +168,7 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
             JournalExpiration = config.Settings.JournalExpiration;
             CleaningTimeout = config.Settings.CleaningTimeout;
             CpuThreshold = config.Settings.CpuThreshold;
-            MO2Mode = config.Settings.MO2Mode;
+            Mo2Mode = config.Settings.MO2Mode;
             MaxConcurrentSubprocesses = config.Settings.MaxConcurrentSubprocesses;
         }
         catch (Exception ex)
@@ -192,7 +188,7 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
             config.Settings.JournalExpiration = JournalExpiration;
             config.Settings.CleaningTimeout = CleaningTimeout;
             config.Settings.CpuThreshold = CpuThreshold;
-            config.Settings.MO2Mode = MO2Mode;
+            config.Settings.MO2Mode = Mo2Mode;
             config.Settings.MaxConcurrentSubprocesses = MaxConcurrentSubprocesses;
 
             await _configService.SaveUserConfigAsync(config);
@@ -213,12 +209,12 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
         JournalExpiration = defaults.JournalExpiration;
         CleaningTimeout = defaults.CleaningTimeout;
         CpuThreshold = defaults.CpuThreshold;
-        MO2Mode = defaults.MO2Mode;
+        Mo2Mode = defaults.MO2Mode;
         MaxConcurrentSubprocesses = defaults.MaxConcurrentSubprocesses;
     }
 
-    private static bool ValidateCleaningTimeout(int value) => value >= 30 && value <= 3600;
-    private static bool ValidateJournalExpiration(int value) => value >= 1 && value <= 365;
+    private static bool ValidateCleaningTimeout(int value) => value is >= 30 and <= 3600;
+    private static bool ValidateJournalExpiration(int value) => value is >= 1 and <= 365;
 
     public void Dispose()
     {

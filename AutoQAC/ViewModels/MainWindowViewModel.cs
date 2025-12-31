@@ -668,7 +668,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
     {
         LoadOrderPath = state.LoadOrderPath;
         XEditPath = state.XEditExecutablePath;
-        Mo2Path = state.MO2ExecutablePath;
+        Mo2Path = state.Mo2ExecutablePath;
         Mo2ModeEnabled = state.Mo2ModeEnabled;
         PartialFormsEnabled = state.PartialFormsEnabled;
         

@@ -1,7 +1,5 @@
-using System;
 using AutoQAC.Models;
 using FluentAssertions;
-using Xunit;
 
 namespace AutoQAC.Tests.Models;
 

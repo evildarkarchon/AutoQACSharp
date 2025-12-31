@@ -1,15 +1,9 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Models.Configuration;
 using AutoQAC.Services.Configuration;
 using FluentAssertions;
 using Moq;
-using Xunit;
 
 namespace AutoQAC.Tests.Services;
 
@@ -129,7 +123,7 @@ AutoQAC_Data:
         var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
 
         // Act
-        var list = await service.GetXEditExecutableNamesAsync(GameType.SkyrimSE);
+        var list = await service.GetXEditExecutableNamesAsync(GameType.SkyrimSe);
 
         // Assert
         list.Should().Contain("SSEEdit.exe");
@@ -237,7 +231,7 @@ AutoQAC_Data:
         // Arrange
         // User config with skip lists (consolidated in single file)
         var settingsContent = @"
-Selected_Game: SkyrimSE
+Selected_Game: SkyrimSe
 Skip_Lists:
   SSE:
     - Skyrim.esm
@@ -261,7 +255,7 @@ AutoQAC_Data:
         var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
 
         // Act
-        var list = await service.GetSkipListAsync(GameType.SkyrimSE);
+        var list = await service.GetSkipListAsync(GameType.SkyrimSe);
 
         // Assert
         list.Should().Contain("Skyrim.esm", "user skip list plugins should be included");

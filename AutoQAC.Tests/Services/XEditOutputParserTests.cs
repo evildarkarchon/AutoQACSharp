@@ -1,8 +1,5 @@
-using System;
-using System.Collections.Generic;
 using AutoQAC.Services.Cleaning;
 using FluentAssertions;
-using Xunit;
 
 namespace AutoQAC.Tests.Services;
 
