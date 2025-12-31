@@ -1,0 +1,145 @@
+---
+description: C# coding standards and Avalonia UI best practices
+globs:
+  - "**/*.cs"
+  - "**/*.axaml"
+---
+
+# C# and Avalonia Guidelines
+
+## C# Code Standards
+
+### Nullable Reference Types
+
+Nullable reference types are **ENABLED** project-wide.
+
+```csharp
+// CORRECT: Explicit nullability
+public string? OptionalValue { get; set; }  // Can be null
+public string RequiredValue { get; set; }    // Never null
+
+// Use null-forgiving operator sparingly and only when certain
+var value = possiblyNull!;  // Only when you're 100% sure
+```
+
+### Naming Conventions
+
+| Element | Convention | Example |
+|---------|------------|---------|
+| Public members/types | PascalCase | `PluginInfo`, `LoadPlugins` |
+| Private fields | _camelCase | `_cleaningService`, `_isLoading` |
+| Constants | UPPER_CASE | `DEFAULT_TIMEOUT`, `MAX_RETRIES` |
+| Parameters/locals | camelCase | `pluginPath`, `cancellationToken` |
+
+### Code Organization
+
+- **One class per file**
+- File name matches class name exactly
+- Use meaningful namespaces matching folder structure
+- Keep classes focused (Single Responsibility Principle)
+
+```csharp
+// File: AutoQAC/Services/Cleaning/CleaningService.cs
+namespace AutoQAC.Services.Cleaning;
+
+public class CleaningService : ICleaningService
+{
+    // Implementation
+}
+```
+
+### Exception Handling
+
+- **Avoid catching blind exceptions** unless absolutely necessary
+- Always log exceptions with context
+- Never swallow exceptions silently
+
+```csharp
+// WRONG: Blind catch
+try { /* ... */ }
+catch (Exception) { /* silently ignored */ }
+
+// CORRECT: Specific exceptions with logging
+try { /* ... */ }
+catch (FileNotFoundException ex)
+{
+    _logger.LogWarning(ex, "Plugin file not found: {Path}", path);
+    throw;
+}
+```
+
+## Avalonia UI Guidelines
+
+### Data Binding
+
+Use compiled bindings by default:
+
+```xml
+<!-- CORRECT: Standard binding -->
+<TextBlock Text="{Binding Status}" />
+
+<!-- For complex scenarios -->
+<TextBlock Text="{CompiledBinding Status}" />
+```
+
+Avoid code-behind data access; use ViewModels.
+
+### XAML Styling
+
+- Use Fluent theme as the base
+- Define styles in `App.axaml` or separate resource dictionaries
+- Use `StyleInclude` for modular styles
+
+```xml
+<Application.Styles>
+    <FluentTheme />
+    <StyleInclude Source="/Styles/CustomStyles.axaml" />
+</Application.Styles>
+```
+
+### Controls and Layout
+
+Prefer these layout containers:
+- `Grid` for complex layouts
+- `StackPanel` for linear arrangements
+- `DockPanel` for dock-style layouts
+
+Use these for data display:
+- `ItemsControl` for simple lists
+- `ListBox` for selectable lists
+- `DataGrid` for tabular data
+
+### Dialogs and Windows
+
+```csharp
+// Modal dialog
+var result = await dialog.ShowDialog<bool>(owner);
+
+// Non-modal window
+window.Show();
+
+// Return result from dialog
+Close(true);  // Returns true to ShowDialog caller
+```
+
+## Resource Management
+
+### IDisposable Pattern
+
+Always dispose of `IDisposable` objects, especially:
+- Event subscriptions
+- File handles
+- Process objects
+
+```csharp
+// Using statement for automatic disposal
+await using var process = new Process { /* ... */ };
+
+// Or explicit disposal
+private readonly CompositeDisposable _disposables = new();
+
+public void Dispose()
+{
+    _disposables.Dispose();
+}
+```

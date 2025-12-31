@@ -1,0 +1,153 @@
+---
+description: ReactiveUI patterns, async/await rules, and thread safety guidelines
+globs:
+  - "AutoQAC/ViewModels/**/*.cs"
+  - "AutoQAC/Services/**/*.cs"
+---
+
+# Reactive Programming & Async Patterns
+
+## ReactiveUI Patterns
+
+### Commands
+
+Use `ReactiveCommand` for all commands in ViewModels:
+
+```csharp
+// Sync command
+public ReactiveCommand<Unit, Unit> ResetCommand { get; }
+ResetCommand = ReactiveCommand.Create(Reset);
+
+// Async command
+public ReactiveCommand<Unit, Unit> LoadCommand { get; }
+LoadCommand = ReactiveCommand.CreateFromTask(LoadAsync);
+
+// Command with parameter
+public ReactiveCommand<string, Unit> SelectCommand { get; }
+SelectCommand = ReactiveCommand.Create<string>(Select);
+```
+
+### Property Change Notifications
+
+Always use `RaiseAndSetIfChanged` for property setters:
+
+```csharp
+private string _status = string.Empty;
+public string Status
+{
+    get => _status;
+    set => this.RaiseAndSetIfChanged(ref _status, value);
+}
+```
+
+### Computed Properties
+
+Use `WhenAnyValue` and `ObservableAsPropertyHelper` for derived properties:
+
+```csharp
+private readonly ObservableAsPropertyHelper<bool> _canStart;
+public bool CanStart => _canStart.Value;
+
+// In constructor:
+_canStart = this.WhenAnyValue(x => x.PluginCount, count => count > 0)
+    .ToProperty(this, x => x.CanStart);
+```
+
+## Async/Await Rules
+
+### NEVER Block the UI Thread
+
+```csharp
+// WRONG: Causes deadlocks
+var result = someTask.Result;
+someTask.Wait();
+
+// CORRECT: Always await
+var result = await someTask;
+```
+
+### Async Method Naming
+
+All async methods must end with `Async` suffix:
+
+```csharp
+// CORRECT
+public async Task<PluginInfo[]> LoadPluginsAsync(CancellationToken cancellationToken)
+
+// WRONG
+public async Task<PluginInfo[]> LoadPlugins(CancellationToken cancellationToken)
+```
+
+### ConfigureAwait in Library Code
+
+Use `ConfigureAwait(false)` in service/library code (non-UI):
+
+```csharp
+// In services (non-UI code)
+var data = await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
+```
+
+### CancellationToken Support
+
+Always support cancellation for long-running operations:
+
+```csharp
+public async Task CleanPluginAsync(string plugin, CancellationToken cancellationToken = default)
+{
+    cancellationToken.ThrowIfCancellationRequested();
+    await process.WaitForExitAsync(cancellationToken);
+}
+```
+
+## Thread Safety
+
+### Cross-Thread UI Updates
+
+Use `Dispatcher.UIThread.InvokeAsync` for UI updates from background threads:
+
+```csharp
+await Dispatcher.UIThread.InvokeAsync(() =>
+{
+    Status = "Processing complete";
+    Progress = 100;
+});
+```
+
+### Avoid Lock Statements
+
+Prefer async synchronization patterns over `lock`:
+
+```csharp
+// WRONG: Can cause deadlocks with async
+private readonly object _lock = new();
+lock (_lock) { /* ... */ }
+
+// CORRECT: Use SemaphoreSlim for async code
+private readonly SemaphoreSlim _semaphore = new(1, 1);
+await _semaphore.WaitAsync(cancellationToken);
+try { /* ... */ }
+finally { _semaphore.Release(); }
+```
+
+## Error Handling
+
+- Use structured exception handling
+- Log errors appropriately
+- Show user-friendly error messages via dialogs
+- **Never swallow exceptions silently**
+
+```csharp
+try
+{
+    await CleanPluginAsync(plugin, cancellationToken);
+}
+catch (OperationCanceledException)
+{
+    _logger.LogInformation("Cleaning cancelled by user");
+}
+catch (Exception ex)
+{
+    _logger.LogError(ex, "Failed to clean plugin {Plugin}", plugin);
+    throw; // Re-throw or handle appropriately
+}
+```

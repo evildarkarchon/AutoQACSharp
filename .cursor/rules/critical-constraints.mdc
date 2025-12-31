@@ -1,0 +1,84 @@
+---
+description: CRITICAL application constraints that must never be violated
+globs:
+  - "AutoQAC/Services/Cleaning/**/*.cs"
+  - "AutoQAC/Services/Process/**/*.cs"
+alwaysApply: true
+---
+
+# CRITICAL Application Constraints
+
+## Sequential Processing Requirement
+
+> **⚠️ CRITICAL**: This application can only clean **ONE PLUGIN AT A TIME** due to xEdit's file locking mechanisms.
+
+### Rules
+
+- **NEVER** attempt parallel or concurrent cleaning operations
+- Ensure only **one xEdit process** runs at any time
+- If multiple xEdit windows open, this is a **critical bug**
+- Process plugins in a **strict sequential queue**
+
+### Correct Pattern
+
+```csharp
+// CORRECT: Sequential processing
+public async Task CleanPluginsAsync(IEnumerable<string> plugins, CancellationToken cancellationToken)
+{
+    foreach (var plugin in plugins)
+    {
+        await CleanSinglePluginAsync(plugin, cancellationToken);
+    }
+}
+```
+
+### WRONG Pattern - DO NOT USE
+
+```csharp
+// WRONG: Parallel processing - WILL CAUSE DATA CORRUPTION
+public async Task CleanPluginsAsync(IEnumerable<string> plugins, CancellationToken cancellationToken)
+{
+    // DO NOT DO THIS - xEdit cannot handle concurrent access!
+    await Task.WhenAll(plugins.Select(p => CleanSinglePluginAsync(p, cancellationToken)));
+    
+    // DO NOT DO THIS - Same problem
+    await Parallel.ForEachAsync(plugins, cancellationToken, async (p, ct) => 
+        await CleanSinglePluginAsync(p, ct));
+}
+```
+
+## Process Execution Constraints
+
+### Timeout Handling
+
+Default timeout is **300 seconds (5 minutes)** per plugin:
+
+```csharp
+using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+    cancellationToken, 
+    timeoutCts.Token
+);
+
+await process.WaitForExitAsync(linkedCts.Token);
+```
+
+### Single Process Guarantee
+
+Before starting a new xEdit process, ensure no other instance is running:
+
+```csharp
+// Ensure only one xEdit process at a time
+if (_currentProcess != null && !_currentProcess.HasExited)
+{
+    throw new InvalidOperationException("An xEdit process is already running");
+}
+```
+
+## Common Violations to Watch For
+
+1. **Using `Task.WhenAll` for plugin cleaning** - Always sequential
+2. **Using `Parallel.ForEach` or `Parallel.ForEachAsync`** - Never for cleaning
+3. **Starting multiple Process instances** - Only one at a time
+4. **Forgetting timeout handling** - Always use CancellationToken with timeout
+5. **Not waiting for process exit** - Always await `WaitForExitAsync`

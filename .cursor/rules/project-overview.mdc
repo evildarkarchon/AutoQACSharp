@@ -1,0 +1,49 @@
+---
+description: Project overview and essential information for AutoQAC development
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+# AutoQAC Project Overview
+
+## Description
+
+AutoQAC is a C# implementation of XEdit-PACT (Plugin Auto Cleaning Tool) using Avalonia UI framework with MVVM architecture. It automates the cleaning of Bethesda game plugins using xEdit tools.
+
+**Foundation Stage**: This project is currently in the foundation/infrastructure stage.
+
+## Technology Stack
+
+- **.NET 9**: Target framework
+- **C# 12**: With nullable reference types enabled
+- **Avalonia UI 11.3.8**: Cross-platform XAML-based UI framework
+- **ReactiveUI**: MVVM framework for reactive programming
+- **Fluent Design**: Microsoft Fluent theme for Avalonia
+- **YamlDotNet**: YAML configuration handling
+- **xUnit + FluentAssertions**: Testing framework
+
+## Essential Commands
+
+```bash
+# Build the project
+dotnet build
+
+# Run the application
+dotnet run --project AutoQAC
+
+# Run tests
+dotnet test
+
+# Build release version
+dotnet build -c Release
+
+# Clean build artifacts
+dotnet clean
+```
+
+## Reference Implementation
+
+The `Code_To_Port/` directory contains reference implementations (Python/Qt and Rust/Slint) for feature reference during development. This directory is **temporary** and will be removed once the C# implementation achieves feature parity.
+
+When implementing new features, check `Code_To_Port/` for equivalent functionality first.

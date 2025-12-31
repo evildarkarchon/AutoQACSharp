@@ -1,0 +1,99 @@
+---
+description: MVVM architecture pattern rules and project structure guidelines
+globs:
+  - "AutoQAC/**/*.cs"
+  - "AutoQAC/**/*.axaml"
+  - "AutoQAC/**/*.axaml.cs"
+---
+
+# MVVM Architecture Rules
+
+This project follows **strict MVVM architecture**. Violations of layer separation are bugs.
+
+## Layer Responsibilities
+
+### Models (`AutoQAC/Models/`)
+
+- Pure business logic and data structures
+- **No UI dependencies** (no Avalonia, no ReactiveUI)
+- Reusable, testable business logic
+- Data transfer objects and domain models
+
+```csharp
+// CORRECT: Pure model with no UI dependencies
+public class PluginInfo
+{
+    public string FileName { get; init; }
+    public string FilePath { get; init; }
+    public bool IsSelected { get; set; }
+}
+```
+
+### ViewModels (`AutoQAC/ViewModels/`)
+
+- Inherit from `ReactiveObject` or `ViewModelBase`
+- Presentation logic only
+- Command handling via `ReactiveCommand`
+- Property change notifications via `RaiseAndSetIfChanged`
+- **No direct UI manipulation** (no controls, no windows)
+- Communicate with Models for business logic
+
+```csharp
+// CORRECT: ViewModel with ReactiveUI patterns
+public class MainWindowViewModel : ViewModelBase
+{
+    private string _status = string.Empty;
+    public string Status
+    {
+        get => _status;
+        set => this.RaiseAndSetIfChanged(ref _status, value);
+    }
+    
+    public ReactiveCommand<Unit, Unit> StartCommand { get; }
+}
+```
+
+### Views (`AutoQAC/Views/`)
+
+- XAML files with code-behind
+- Pure UI rendering
+- Data binding to ViewModels
+- **No business logic**
+- Minimal code-behind (only UI-specific logic like window positioning)
+
+## Project Structure
+
+```
+AutoQAC/
+├── Models/                  # Business logic and data models
+│   ├── Configuration/       # Config file management (YAML)
+│   └── ...
+├── Services/                # Business services with interfaces
+├── ViewModels/              # Presentation logic
+├── Views/                   # XAML UI
+├── Infrastructure/          # Cross-cutting concerns (logging, DI)
+├── App.axaml               # Application definition
+├── App.axaml.cs            # Application startup and DI setup
+├── Program.cs              # Entry point
+└── ViewLocator.cs          # Automatic View resolution
+```
+
+## Dependency Injection
+
+- Services injected via constructor parameters
+- No static dependencies or service locators
+- Use interfaces for testability
+- Register services in `Program.cs` or `App.axaml.cs`
+
+```csharp
+// CORRECT: Constructor injection
+public class MainWindowViewModel : ViewModelBase
+{
+    private readonly ICleaningService _cleaningService;
+    
+    public MainWindowViewModel(ICleaningService cleaningService)
+    {
+        _cleaningService = cleaningService;
+    }
+}
+```

@@ -1,0 +1,119 @@
+---
+description: xEdit subprocess integration patterns and command building
+globs:
+  - "AutoQAC/Services/Cleaning/**/*.cs"
+  - "AutoQAC/Services/Process/**/*.cs"
+---
+
+# xEdit Integration
+
+The application interfaces with xEdit (SSEEdit/FO4Edit/etc.) via `System.Diagnostics.Process`.
+
+## Command Line Flags
+
+### Quick Auto Clean (QAC)
+
+Primary cleaning command:
+
+```
+-QAC -autoload "PluginName.esp"
+```
+
+### MO2 Integration
+
+When using Mod Organizer 2, wrap the command:
+
+```
+ModOrganizer.exe run "SSEEdit.exe" -QAC -autoload "PluginName.esp"
+```
+
+### Partial Forms Support
+
+Optional flags for handling Partial Forms:
+
+```
+-QAC -autoload "PluginName.esp" -iknowwhatimdoing -allowmakepartial
+```
+
+## Process Execution Pattern
+
+```csharp
+public async Task<CleaningResult> CleanPluginAsync(
+    string pluginPath, 
+    CancellationToken cancellationToken)
+{
+    var process = new Process
+    {
+        StartInfo = new ProcessStartInfo
+        {
+            FileName = xEditPath,
+            Arguments = $"-QAC -autoload \"{pluginName}\"",
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true
+        }
+    };
+
+    var outputBuilder = new StringBuilder();
+    
+    // Async output reading
+    process.OutputDataReceived += (sender, args) =>
+    {
+        if (args.Data != null)
+        {
+            outputBuilder.AppendLine(args.Data);
+            // Parse for ITMs, UDRs, deleted navmeshes
+        }
+    };
+
+    process.Start();
+    process.BeginOutputReadLine();
+
+    // Wait with timeout (5 minutes default)
+    using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+    using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+        cancellationToken, 
+        timeoutCts.Token
+    );
+
+    await process.WaitForExitAsync(linkedCts.Token);
+
+    return ParseResults(outputBuilder.ToString());
+}
+```
+
+## Output Parsing
+
+Parse xEdit output for cleaning results:
+
+- **ITMs** (Identical to Master): Records that are unchanged from master
+- **UDRs** (Undeleted and Disabled References): Deleted references that should be undeleted
+- **Deleted Navmeshes**: Navigation meshes that were deleted
+
+### Output Patterns to Match
+
+```
+Removing X ITM records
+Undeleting and Disabling X references
+Removing X deleted NavMesh records
+```
+
+## xEdit Variants
+
+The application supports multiple xEdit variants based on game:
+
+| Game | xEdit Variant |
+|------|---------------|
+| Skyrim SE/AE | SSEEdit.exe |
+| Skyrim LE | TES5Edit.exe |
+| Fallout 4 | FO4Edit.exe |
+| Fallout NV | FNVEdit.exe |
+| Oblivion | TES4Edit.exe |
+
+## Error Handling
+
+- Handle process timeout (default 300s)
+- Handle process crash/unexpected exit
+- Parse error messages from stderr
+- Log all output for debugging

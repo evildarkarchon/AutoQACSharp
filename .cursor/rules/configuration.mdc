@@ -1,0 +1,146 @@
+---
+description: Configuration file handling and logging strategy
+globs:
+  - "AutoQAC/Models/Configuration/**/*.cs"
+  - "AutoQAC/Services/Configuration/**/*.cs"
+  - "AutoQAC/Infrastructure/Logging/**/*.cs"
+---
+
+# Configuration & Logging
+
+## Configuration Files
+
+Configuration files are located in `AutoQAC Data/`:
+
+| File | Purpose |
+|------|---------|
+| `AutoQAC Main.yaml` | Game configurations, plugin skip lists |
+| `AutoQAC Config.yaml` | User settings, file paths |
+| `AutoQAC Ignore.yaml` | Additional ignore list |
+
+## YAML Handling
+
+Use **YamlDotNet** for all YAML operations:
+
+```csharp
+using YamlDotNet.Serialization;
+using YamlDotNet.Serialization.NamingConventions;
+
+public class ConfigurationService : IConfigurationService
+{
+    private readonly IDeserializer _deserializer;
+    private readonly ISerializer _serializer;
+
+    public ConfigurationService()
+    {
+        _deserializer = new DeserializerBuilder()
+            .WithNamingConvention(CamelCaseNamingConvention.Instance)
+            .Build();
+
+        _serializer = new SerializerBuilder()
+            .WithNamingConvention(CamelCaseNamingConvention.Instance)
+            .Build();
+    }
+
+    public async Task<T> LoadAsync<T>(string path, CancellationToken cancellationToken)
+    {
+        var yaml = await File.ReadAllTextAsync(path, cancellationToken);
+        return _deserializer.Deserialize<T>(yaml);
+    }
+
+    public async Task SaveAsync<T>(string path, T config, CancellationToken cancellationToken)
+    {
+        var yaml = _serializer.Serialize(config);
+        await File.WriteAllTextAsync(path, yaml, cancellationToken);
+    }
+}
+```
+
+### Error Handling for Config Files
+
+Always handle missing or malformed config files gracefully:
+
+```csharp
+public async Task<UserConfiguration> LoadUserConfigAsync(CancellationToken cancellationToken)
+{
+    var path = GetConfigPath();
+    
+    if (!File.Exists(path))
+    {
+        _logger.LogInformation("Config file not found, creating default");
+        return new UserConfiguration();
+    }
+
+    try
+    {
+        return await LoadAsync<UserConfiguration>(path, cancellationToken);
+    }
+    catch (YamlException ex)
+    {
+        _logger.LogWarning(ex, "Failed to parse config file, using defaults");
+        return new UserConfiguration();
+    }
+}
+```
+
+## Logging Strategy
+
+### Framework
+
+Use **Serilog** or **Microsoft.Extensions.Logging** for structured logging.
+
+### Configuration
+
+```csharp
+// Serilog setup
+Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Debug()
+    .WriteTo.File(
+        path: "logs/autoqac-.log",
+        rollingInterval: RollingInterval.Day,
+        retainedFileCountLimit: 7)
+    .CreateLogger();
+```
+
+### Log Levels
+
+| Level | Usage |
+|-------|-------|
+| Debug | Detailed diagnostic information |
+| Information | General operational events |
+| Warning | Unexpected but recoverable situations |
+| Error | Failures that prevent specific operations |
+| Fatal | Application-wide failures |
+
+### Logging Best Practices
+
+```csharp
+// CORRECT: Structured logging with context
+_logger.LogInformation("Cleaning plugin {PluginName}", plugin.FileName);
+_logger.LogError(ex, "Failed to clean plugin {PluginName}", plugin.FileName);
+
+// WRONG: String interpolation (loses structure)
+_logger.LogInformation($"Cleaning plugin {plugin.FileName}");
+```
+
+### What to Log
+
+- Application startup/shutdown
+- Plugin loading and cleaning operations
+- Configuration changes
+- Errors and exceptions with context
+- xEdit process output (for debugging)
+
+### What NOT to Log
+
+- Sensitive user data
+- Full file paths (use relative paths)
+- Passwords or API keys
+- Personal information
+
+### Log File Location
+
+Store rotating logs in `logs/` directory:
+- Daily rotation
+- Keep 7 days of history
+- Include timestamps and thread IDs
