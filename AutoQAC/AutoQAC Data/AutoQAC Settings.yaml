@@ -1,0 +1,16 @@
+Selected_Game: Unknown
+Load_Order:
+  File: 
+Mod_Organizer:
+  Binary: 
+  Install_Path: 
+xEdit:
+  Binary: 
+  Install_Path: 
+AutoQAC_Settings:
+  Journal_Expiration: 7
+  Cleaning_Timeout: 300
+  CPU_Threshold: 5
+  MO2Mode: false
+  Max_Concurrent_Subprocesses: 3
+Skip_Lists: {}

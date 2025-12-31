@@ -459,7 +459,7 @@ public sealed class MainWindowViewModelTests
             LoadOrderPath = "newpath/plugins.txt",
             XEditExecutablePath = "newpath/xedit.exe",
             MO2ExecutablePath = "newpath/mo2.exe",
-            MO2ModeEnabled = true,
+            Mo2ModeEnabled = true,
             PartialFormsEnabled = true
         };
         stateSubject.OnNext(newState);
@@ -467,8 +467,8 @@ public sealed class MainWindowViewModelTests
         // Assert
         vm.LoadOrderPath.Should().Be("newpath/plugins.txt");
         vm.XEditPath.Should().Be("newpath/xedit.exe");
-        vm.MO2Path.Should().Be("newpath/mo2.exe");
-        vm.MO2ModeEnabled.Should().BeTrue();
+        vm.Mo2Path.Should().Be("newpath/mo2.exe");
+        vm.Mo2ModeEnabled.Should().BeTrue();
         vm.PartialFormsEnabled.Should().BeTrue();
     }
 

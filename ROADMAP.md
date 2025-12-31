@@ -1138,7 +1138,7 @@ public sealed class XEditOutputParser
                     <TextBlock Grid.Column="0" Text="Mod Organizer 2:"
                                VerticalAlignment="Center" />
                     <TextBox Grid.Column="1"
-                             Text="{Binding MO2Path}"
+                             Text="{Binding Mo2Path}"
                              IsReadOnly="True"
                              Watermark="Optional - for MO2 mode" />
                     <Button Grid.Column="2"
@@ -1329,7 +1329,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     {
         LoadOrderPath = state.LoadOrderPath;
         XEditPath = state.XEditExecutablePath;
-        MO2Path = state.MO2ExecutablePath;
+        Mo2Path = state.MO2ExecutablePath;
         MO2ModeEnabled = state.MO2ModeEnabled;
         PartialFormsEnabled = state.PartialFormsEnabled;
     }

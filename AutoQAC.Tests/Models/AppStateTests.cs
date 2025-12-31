@@ -119,7 +119,7 @@ public sealed class AppStateTests
         state.SkippedPlugins.Should().NotBeNull().And.BeEmpty();
 
         state.CleaningTimeout.Should().Be(300, "default timeout should be 300 seconds");
-        state.MO2ModeEnabled.Should().BeFalse();
+        state.Mo2ModeEnabled.Should().BeFalse();
         state.PartialFormsEnabled.Should().BeFalse();
         state.CurrentGameType.Should().Be(GameType.Unknown);
         state.MaxConcurrentSubprocesses.Should().BeNull();

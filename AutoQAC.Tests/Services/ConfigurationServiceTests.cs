@@ -299,7 +299,7 @@ AutoQAC_Data:
     /// but MO2 binary path is invalid.
     /// </summary>
     [Fact]
-    public async Task ValidatePathsAsync_ShouldReturnFalse_WhenMO2ModeEnabledButBinaryMissing()
+    public async Task ValidatePathsAsync_ShouldReturnFalse_WhenMo2ModeEnabledButBinaryMissing()
     {
         // Arrange
         var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);

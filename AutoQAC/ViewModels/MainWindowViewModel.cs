@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -46,14 +46,14 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
     }
 
     private string? _mo2Path;
-    public string? MO2Path
+    public string? Mo2Path
     {
         get => _mo2Path;
         set => this.RaiseAndSetIfChanged(ref _mo2Path, value);
     }
 
     private bool _mo2ModeEnabled;
-    public bool MO2ModeEnabled
+    public bool Mo2ModeEnabled
     {
         get => _mo2ModeEnabled;
         set => this.RaiseAndSetIfChanged(ref _mo2ModeEnabled, value);
@@ -109,7 +109,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
     // Commands
     public ReactiveCommand<Unit, Unit> ConfigureLoadOrderCommand { get; }
     public ReactiveCommand<Unit, Unit> ConfigureXEditCommand { get; }
-    public ReactiveCommand<Unit, Unit> ConfigureMO2Command { get; }
+    public ReactiveCommand<Unit, Unit> ConfigureMo2Command { get; }
     public ReactiveCommand<Unit, Unit> TogglePartialFormsCommand { get; }
     public ReactiveCommand<Unit, Unit> StartCleaningCommand { get; }
     public ReactiveCommand<Unit, Unit> StopCleaningCommand { get; }
@@ -179,17 +179,15 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
         // Initialize commands
         ConfigureLoadOrderCommand = ReactiveCommand.CreateFromTask(ConfigureLoadOrderAsync);
         ConfigureXEditCommand = ReactiveCommand.CreateFromTask(ConfigureXEditAsync);
-        ConfigureMO2Command = ReactiveCommand.CreateFromTask(ConfigureMO2Async);
+        ConfigureMo2Command = ReactiveCommand.CreateFromTask(ConfigureMo2Async);
 
         TogglePartialFormsCommand = ReactiveCommand.Create(TogglePartialForms);
 
         // Define canStart observable - requires xEdit and plugins (from game detection OR load order file)
         var hasPlugins = _stateService.StateChanged
-            .Select(s => s.PluginsToClean?.Count > 0);
+            .Select(s => s.PluginsToClean.Count > 0);
 
-        var canStart = Observable.CombineLatest(
-            hasPlugins,
-            this.WhenAnyValue(x => x.XEditPath),
+        var canStart = hasPlugins.CombineLatest(this.WhenAnyValue(x => x.XEditPath),
             this.WhenAnyValue(x => x.IsCleaning),
             (hasP, xEdit, isCleaning) =>
                 hasP &&
@@ -231,37 +229,29 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
         _ = InitializeAsync();
 
         // Auto-save MO2Mode when changed
-        var mo2ModeSubscription = this.WhenAnyValue(x => x.MO2ModeEnabled)
+        var mo2ModeSubscription = this.WhenAnyValue(x => x.Mo2ModeEnabled)
             .Skip(1) // Skip initial load
-            .Subscribe(async _ =>
-            {
-                try
-                {
-                    await SaveConfigurationAsync();
-                }
-                catch (Exception ex)
-                {
-                    _logger.Error(ex, "Failed to auto-save MO2Mode configuration");
-                }
-            });
+            .SelectMany(_ => Observable.FromAsync(SaveConfigurationAsync))
+            .Subscribe(
+                _ => { },
+                ex => _logger.Error(ex, "Failed to auto-save MO2Mode configuration"));
         _disposables.Add(mo2ModeSubscription);
 
         // Auto-save and refresh plugins when SelectedGame changes
         var gameSelectionSubscription = this.WhenAnyValue(x => x.SelectedGame)
             .Skip(1) // Skip initial load
-            .Subscribe(async gameType =>
+            .SelectMany(gameType => Observable.FromAsync(async () =>
             {
-                try
-                {
-                    await _configService.SetSelectedGameAsync(gameType);
-                    await RefreshPluginsForGameAsync(gameType);
-                }
-                catch (Exception ex)
+                await _configService.SetSelectedGameAsync(gameType);
+                await RefreshPluginsForGameAsync(gameType);
+            }))
+            .Subscribe(
+                _ => { },
+                ex =>
                 {
                     _logger.Error(ex, "Failed to handle game selection change");
                     StatusText = "Error changing game selection";
-                }
-            });
+                });
         _disposables.Add(gameSelectionSubscription);
     }
 
@@ -278,7 +268,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
 
             _stateService.UpdateState(s => s with
             {
-                MO2ModeEnabled = config.Settings.MO2Mode,
+                Mo2ModeEnabled = config.Settings.MO2Mode,
                 CleaningTimeout = config.Settings.CleaningTimeout,
                 MaxConcurrentSubprocesses = config.Settings.MaxConcurrentSubprocesses
             });
@@ -331,7 +321,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
                 return;
             }
 
-            _stateService.UpdateConfigurationPaths(path, MO2Path, XEditPath);
+            _stateService.UpdateConfigurationPaths(path, Mo2Path, XEditPath);
 
             // Parse plugins from load order and update state
             try
@@ -393,12 +383,12 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
 
         if (!string.IsNullOrEmpty(path))
         {
-            _stateService.UpdateConfigurationPaths(LoadOrderPath, MO2Path, path);
+            _stateService.UpdateConfigurationPaths(LoadOrderPath, Mo2Path, path);
             await SaveConfigurationAsync();
         }
     }
 
-    private async Task ConfigureMO2Async()
+    private async Task ConfigureMo2Async()
     {
         var path = await _fileDialog.OpenFileDialogAsync(
             "Select Mod Organizer 2 Executable",
@@ -417,14 +407,10 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
         var config = await _configService.LoadUserConfigAsync();
 
         // Safely update configuration properties (they may be null in some configurations)
-        if (config.LoadOrder != null)
-            config.LoadOrder.File = LoadOrderPath;
-        if (config.XEdit != null)
-            config.XEdit.Binary = XEditPath;
-        if (config.ModOrganizer != null)
-            config.ModOrganizer.Binary = MO2Path;
-        if (config.Settings != null)
-            config.Settings.MO2Mode = MO2ModeEnabled;
+        config.LoadOrder.File = LoadOrderPath;
+        config.XEdit.Binary = XEditPath;
+        config.ModOrganizer.Binary = Mo2Path;
+        config.Settings.MO2Mode = Mo2ModeEnabled;
 
         await _configService.SaveUserConfigAsync(config);
     }
@@ -516,7 +502,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
         {
             await _messageDialog.ShowErrorAsync(
                 "xEdit Not Found",
-                $"The configured xEdit executable was not found at the specified path.",
+                "The configured xEdit executable was not found at the specified path.",
                 $"Path: {XEditPath}\n\nPlease verify the path is correct or select a new xEdit executable.");
             return;
         }
@@ -605,7 +591,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
 
             _stateService.UpdateState(s => s with
             {
-                MO2ModeEnabled = config.Settings.MO2Mode,
+                Mo2ModeEnabled = config.Settings.MO2Mode,
                 CleaningTimeout = config.Settings.CleaningTimeout,
                 MaxConcurrentSubprocesses = config.Settings.MaxConcurrentSubprocesses,
                 PartialFormsEnabled = false
@@ -637,13 +623,13 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
 
                 _stateService.UpdateState(s => s with
                 {
-                    MO2ModeEnabled = config.Settings.MO2Mode,
+                    Mo2ModeEnabled = config.Settings.MO2Mode,
                     CleaningTimeout = config.Settings.CleaningTimeout,
                     MaxConcurrentSubprocesses = config.Settings.MaxConcurrentSubprocesses
                 });
 
                 // Update local property
-                MO2ModeEnabled = config.Settings.MO2Mode;
+                Mo2ModeEnabled = config.Settings.MO2Mode;
 
                 StatusText = "Settings saved";
                 _logger.Information("Settings updated from settings dialog");
@@ -682,12 +668,12 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
     {
         LoadOrderPath = state.LoadOrderPath;
         XEditPath = state.XEditExecutablePath;
-        MO2Path = state.MO2ExecutablePath;
-        MO2ModeEnabled = state.MO2ModeEnabled;
+        Mo2Path = state.MO2ExecutablePath;
+        Mo2ModeEnabled = state.Mo2ModeEnabled;
         PartialFormsEnabled = state.PartialFormsEnabled;
         
         // Plugins list update - optimized to avoid recreation if possible
-        var statePlugins = state.PluginsToClean ?? new List<string>();
+        var statePlugins = state.PluginsToClean;
         if (PluginsToClean.Count != statePlugins.Count ||
             !PluginsToClean.Select(p => p.FileName).SequenceEqual(statePlugins))
         {

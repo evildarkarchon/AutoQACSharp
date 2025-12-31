@@ -52,7 +52,7 @@ public sealed class XEditCommandBuilder : IXEditCommandBuilder
         var xEditArgs = string.Join(" ", args);
 
         // 4. MO2 Wrapping
-        if (config.MO2ModeEnabled && !string.IsNullOrEmpty(config.MO2ExecutablePath))
+        if (config.Mo2ModeEnabled && !string.IsNullOrEmpty(config.MO2ExecutablePath))
         {
             // Escape quotes in xEditArgs for the -a parameter
             // We need to ensure that quotes inside xEditArgs are escaped so they don't break the outer quotes of -a "..."

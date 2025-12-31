@@ -41,7 +41,7 @@ public class XEditCommandBuilderTests
         _stateServiceMock.Setup(x => x.CurrentState).Returns(new AppState 
         { 
             XEditExecutablePath = xEditPath,
-            MO2ModeEnabled = false
+            Mo2ModeEnabled = false
         });
         var plugin = new PluginInfo { FileName = "Update.esm", FullPath = "C:\\Games\\SSE\\Data\\Update.esm" };
 
@@ -104,7 +104,7 @@ public class XEditCommandBuilderTests
         { 
             XEditExecutablePath = xEditPath,
             MO2ExecutablePath = mo2Path,
-            MO2ModeEnabled = true
+            Mo2ModeEnabled = true
         });
 
         // Act

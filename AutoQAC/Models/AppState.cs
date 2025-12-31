@@ -32,7 +32,7 @@ public sealed record AppState
 
     // Settings
     public int CleaningTimeout { get; init; } = 300;
-    public bool MO2ModeEnabled { get; init; }
+    public bool Mo2ModeEnabled { get; init; }
     public bool PartialFormsEnabled { get; init; }
     public GameType CurrentGameType { get; init; } = GameType.Unknown;
     public int? MaxConcurrentSubprocesses { get; init; }
