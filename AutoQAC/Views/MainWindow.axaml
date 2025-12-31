@@ -3,18 +3,16 @@
         xmlns:vm="using:AutoQAC.ViewModels"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        mc:Ignorable="d" 
+        mc:Ignorable="d"
         d:DesignWidth="900" d:DesignHeight="600"
         x:Class="AutoQAC.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
+        d:DataContext="{d:DesignInstance vm:MainWindowViewModel, IsDesignTimeCreatable=False}"
         Title="AutoQAC - Plugin Auto Cleaning Tool"
         Width="900" Height="600"
         MinWidth="700" MinHeight="400"
         Icon="/Assets/avalonia-logo.ico">
 
-    <Design.DataContext>
-        <vm:MainWindowViewModel />
-    </Design.DataContext>
 
     <DockPanel>
         <!-- Menu Bar -->
@@ -99,18 +97,18 @@
                     <TextBlock Grid.Column="0" Text="Mod Organizer 2:"
                                VerticalAlignment="Center" />
                     <TextBox Grid.Column="1"
-                             Text="{Binding MO2Path}"
+                             Text="{Binding Mo2Path}"
                              IsReadOnly="True"
                              Watermark="Optional - for MO2 mode" />
                     <Button Grid.Column="2"
                             Content="Browse..."
-                            Command="{Binding ConfigureMO2Command}"
+                            Command="{Binding ConfigureMo2Command}"
                             Margin="5,0,0,0" />
                 </Grid>
 
                 <StackPanel Orientation="Horizontal" Spacing="10">
                     <CheckBox Content="MO2 Mode"
-                              IsChecked="{Binding MO2ModeEnabled}" />
+                              IsChecked="{Binding Mo2ModeEnabled}" />
                     <CheckBox Content="Partial Forms (Experimental)"
                               IsChecked="{Binding PartialFormsEnabled}"
                               Command="{Binding TogglePartialFormsCommand}" />
@@ -171,3 +169,4 @@
         </Grid>
     </DockPanel>
 </Window>
+
