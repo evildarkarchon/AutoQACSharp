@@ -14,4 +14,8 @@ public interface IFileDialogService
         string filter,
         string? defaultFileName = null,
         string? initialDirectory = null);
+
+    Task<string?> OpenFolderDialogAsync(
+        string title,
+        string? initialDirectory = null);
 }

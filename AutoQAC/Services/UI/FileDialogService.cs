@@ -84,6 +84,36 @@ public sealed class FileDialogService : IFileDialogService
         return result?.Path.LocalPath;
     }
 
+    public async Task<string?> OpenFolderDialogAsync(
+        string title,
+        string? initialDirectory = null)
+    {
+        var mainWindow = GetMainWindow();
+        if (mainWindow == null) return null;
+
+        var topLevel = TopLevel.GetTopLevel(mainWindow);
+        if (topLevel == null) return null;
+
+        var options = new FolderPickerOpenOptions
+        {
+            Title = title,
+            AllowMultiple = false
+        };
+
+        if (!string.IsNullOrEmpty(initialDirectory))
+        {
+            try
+            {
+                var folder = await topLevel.StorageProvider.TryGetFolderFromPathAsync(initialDirectory);
+                options.SuggestedStartLocation = folder;
+            }
+            catch { /* ignore invalid path */ }
+        }
+
+        var result = await topLevel.StorageProvider.OpenFolderPickerAsync(options);
+        return result.FirstOrDefault()?.Path.LocalPath;
+    }
+
     private static List<FilePickerFileType> ParseFilter(string filter)
     {
         // Format: "Text Files (*.txt)|*.txt|All Files (*.*)|*.*"

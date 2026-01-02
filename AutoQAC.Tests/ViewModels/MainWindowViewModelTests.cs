@@ -584,7 +584,7 @@ public sealed class MainWindowViewModelTests
 
         _pluginLoadingServiceMock.Setup(x => x.IsGameSupportedByMutagen(GameType.SkyrimSe))
             .Returns(true);
-        _pluginLoadingServiceMock.Setup(x => x.GetPluginsAsync(GameType.SkyrimSe, It.IsAny<CancellationToken>()))
+        _pluginLoadingServiceMock.Setup(x => x.GetPluginsAsync(GameType.SkyrimSe, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(expectedPlugins);
 
         var stateSubject = new BehaviorSubject<AppState>(new AppState());
@@ -608,7 +608,7 @@ public sealed class MainWindowViewModelTests
         await Task.Delay(100);
 
         // Assert
-        _pluginLoadingServiceMock.Verify(x => x.GetPluginsAsync(GameType.SkyrimSe, It.IsAny<CancellationToken>()), Times.Once);
+        _pluginLoadingServiceMock.Verify(x => x.GetPluginsAsync(GameType.SkyrimSe, It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Once);
         _stateServiceMock.Verify(x => x.SetPluginsToClean(It.Is<List<string>>(list =>
             list.Count == 2 &&
             list.Contains("Plugin1.esp") &&

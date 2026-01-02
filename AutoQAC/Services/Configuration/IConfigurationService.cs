@@ -34,6 +34,10 @@ public interface IConfigurationService
     Task<GameType> GetSelectedGameAsync(CancellationToken ct = default);
     Task SetSelectedGameAsync(GameType gameType, CancellationToken ct = default);
 
+    // Game data folder overrides
+    Task<string?> GetGameDataFolderOverrideAsync(GameType gameType, CancellationToken ct = default);
+    Task SetGameDataFolderOverrideAsync(GameType gameType, string? folderPath, CancellationToken ct = default);
+
     // Settings management
     Task ResetToDefaultsAsync(CancellationToken ct = default);
 

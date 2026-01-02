@@ -358,6 +358,39 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
         await SaveUserConfigAsync(config, ct).ConfigureAwait(false);
     }
 
+    public async Task<string?> GetGameDataFolderOverrideAsync(GameType gameType, CancellationToken ct = default)
+    {
+        var config = await LoadUserConfigAsync(ct).ConfigureAwait(false);
+        var key = GetGameKey(gameType);
+        
+        if (config.GameDataFolderOverrides.TryGetValue(key, out var folderPath))
+        {
+            return folderPath;
+        }
+        
+        return null;
+    }
+
+    public async Task SetGameDataFolderOverrideAsync(GameType gameType, string? folderPath, CancellationToken ct = default)
+    {
+        var config = await LoadUserConfigAsync(ct).ConfigureAwait(false);
+        var key = GetGameKey(gameType);
+        
+        if (string.IsNullOrWhiteSpace(folderPath))
+        {
+            // Remove the override if null or empty
+            config.GameDataFolderOverrides.Remove(key);
+            _logger.Information("Removed data folder override for {GameType}", gameType);
+        }
+        else
+        {
+            config.GameDataFolderOverrides[key] = folderPath;
+            _logger.Information("Set data folder override for {GameType} to {FolderPath}", gameType, folderPath);
+        }
+        
+        await SaveUserConfigAsync(config, ct).ConfigureAwait(false);
+    }
+
     public async Task ResetToDefaultsAsync(CancellationToken ct = default)
     {
         _logger.Information("Resetting user configuration to defaults");

@@ -22,6 +22,9 @@ public sealed class UserConfiguration
 
     [YamlMember(Alias = "Skip_Lists")]
     public Dictionary<string, List<string>> SkipLists { get; set; } = new();
+
+    [YamlMember(Alias = "Game_Data_Folders")]
+    public Dictionary<string, string> GameDataFolderOverrides { get; set; } = new();
 }
 
 public sealed class LoadOrderConfig

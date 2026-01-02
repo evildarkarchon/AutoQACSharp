@@ -78,6 +78,23 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
     private readonly ObservableAsPropertyHelper<bool> _isMutagenSupported;
     public bool IsMutagenSupported => _isMutagenSupported.Value;
 
+    private readonly ObservableAsPropertyHelper<bool> _requiresLoadOrderFile;
+    public bool RequiresLoadOrderFile => _requiresLoadOrderFile.Value;
+
+    private string? _gameDataFolder;
+    public string? GameDataFolder
+    {
+        get => _gameDataFolder;
+        set => this.RaiseAndSetIfChanged(ref _gameDataFolder, value);
+    }
+
+    private bool _hasGameDataFolderOverride;
+    public bool HasGameDataFolderOverride
+    {
+        get => _hasGameDataFolderOverride;
+        set => this.RaiseAndSetIfChanged(ref _hasGameDataFolderOverride, value);
+    }
+
     private string _statusText = "Ready";
     public string StatusText
     {
@@ -110,6 +127,8 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
     public ReactiveCommand<Unit, Unit> ConfigureLoadOrderCommand { get; }
     public ReactiveCommand<Unit, Unit> ConfigureXEditCommand { get; }
     public ReactiveCommand<Unit, Unit> ConfigureMo2Command { get; }
+    public ReactiveCommand<Unit, Unit> ConfigureGameDataFolderCommand { get; }
+    public ReactiveCommand<Unit, Unit> ClearGameDataFolderOverrideCommand { get; }
     public ReactiveCommand<Unit, Unit> TogglePartialFormsCommand { get; }
     public ReactiveCommand<Unit, Unit> StartCleaningCommand { get; }
     public ReactiveCommand<Unit, Unit> StopCleaningCommand { get; }
@@ -176,10 +195,23 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
             .ToProperty(this, x => x.IsMutagenSupported);
         _disposables.Add(_isMutagenSupported);
 
+        // RequiresLoadOrderFile computed from SelectedGame (inverse of IsMutagenSupported)
+        _requiresLoadOrderFile = this.WhenAnyValue(x => x.SelectedGame)
+            .Select(g => g != GameType.Unknown && !_pluginLoadingService.IsGameSupportedByMutagen(g))
+            .ToProperty(this, x => x.RequiresLoadOrderFile);
+        _disposables.Add(_requiresLoadOrderFile);
+
         // Initialize commands
         ConfigureLoadOrderCommand = ReactiveCommand.CreateFromTask(ConfigureLoadOrderAsync);
         ConfigureXEditCommand = ReactiveCommand.CreateFromTask(ConfigureXEditAsync);
         ConfigureMo2Command = ReactiveCommand.CreateFromTask(ConfigureMo2Async);
+
+        // Game data folder commands - only enabled for Mutagen-supported games
+        var canConfigureDataFolder = this.WhenAnyValue(x => x.IsMutagenSupported);
+        ConfigureGameDataFolderCommand = ReactiveCommand.CreateFromTask(ConfigureGameDataFolderAsync, canConfigureDataFolder);
+        
+        var canClearOverride = this.WhenAnyValue(x => x.HasGameDataFolderOverride);
+        ClearGameDataFolderOverrideCommand = ReactiveCommand.CreateFromTask(ClearGameDataFolderOverrideAsync, canClearOverride);
 
         TogglePartialFormsCommand = ReactiveCommand.Create(TogglePartialForms);
 
@@ -401,6 +433,52 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
         }
     }
 
+    private async Task ConfigureGameDataFolderAsync()
+    {
+        var path = await _fileDialog.OpenFolderDialogAsync(
+            "Select Game Data Folder");
+
+        if (!string.IsNullOrEmpty(path))
+        {
+            // Verify the folder exists
+            if (!System.IO.Directory.Exists(path))
+            {
+                await _messageDialog.ShowErrorAsync(
+                    "Folder Not Found",
+                    "The selected folder does not exist.",
+                    $"Path: {path}");
+                return;
+            }
+
+            // Save the override
+            await _configService.SetGameDataFolderOverrideAsync(SelectedGame, path);
+            
+            // Update display
+            GameDataFolder = path;
+            HasGameDataFolderOverride = true;
+            
+            // Refresh plugins with the new path
+            await RefreshPluginsForGameAsync(SelectedGame);
+            
+            StatusText = $"Data folder override set for {SelectedGame}";
+        }
+    }
+
+    private async Task ClearGameDataFolderOverrideAsync()
+    {
+        // Clear the override
+        await _configService.SetGameDataFolderOverrideAsync(SelectedGame, null);
+        HasGameDataFolderOverride = false;
+        
+        // Refresh to show auto-detected path
+        await RefreshPluginsForGameAsync(SelectedGame);
+        
+        // Update display with auto-detected path
+        GameDataFolder = _pluginLoadingService.GetGameDataFolder(SelectedGame);
+        
+        StatusText = $"Data folder reset to auto-detect for {SelectedGame}";
+    }
+
     private async Task SaveConfigurationAsync()
     {
         // Update UserConfiguration from ViewModel/State
@@ -420,11 +498,39 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
         if (gameType == GameType.Unknown)
         {
             _stateService.SetPluginsToClean(new List<string>());
+            GameDataFolder = null;
+            HasGameDataFolderOverride = false;
             StatusText = "No game selected";
             return;
         }
 
         _stateService.UpdateState(s => s with { CurrentGameType = gameType });
+
+        // Get data folder override for this game
+        string? customDataFolder = null;
+        if (_pluginLoadingService.IsGameSupportedByMutagen(gameType))
+        {
+            customDataFolder = await _configService.GetGameDataFolderOverrideAsync(gameType);
+            HasGameDataFolderOverride = !string.IsNullOrEmpty(customDataFolder);
+            
+            // Update displayed data folder (override or auto-detected)
+            GameDataFolder = _pluginLoadingService.GetGameDataFolder(gameType, customDataFolder);
+        }
+        else
+        {
+            // Non-Mutagen games don't support data folder override
+            GameDataFolder = null;
+            HasGameDataFolderOverride = false;
+
+            // Try to auto-detect load order path for non-Mutagen games
+            var detectedPath = _pluginLoadingService.GetDefaultLoadOrderPath(gameType);
+            if (!string.IsNullOrEmpty(detectedPath))
+            {
+                _stateService.UpdateConfigurationPaths(detectedPath, Mo2Path, XEditPath);
+                await SaveConfigurationAsync();
+                _logger.Information($"Auto-detected load order path for {gameType}: {detectedPath}");
+            }
+        }
 
         // Try Mutagen first if supported
         if (_pluginLoadingService.IsGameSupportedByMutagen(gameType))
@@ -432,7 +538,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
             try
             {
                 StatusText = $"Loading plugins via Mutagen for {gameType}...";
-                var plugins = await _pluginLoadingService.GetPluginsAsync(gameType);
+                var plugins = await _pluginLoadingService.GetPluginsAsync(gameType, customDataFolder);
 
                 if (plugins.Count > 0)
                 {

@@ -417,4 +417,122 @@ AutoQAC_Data:
     }
 
     #endregion
+
+    #region Game Data Folder Override Tests
+
+    /// <summary>
+    /// Verifies that GetGameDataFolderOverrideAsync returns null when no override is set.
+    /// </summary>
+    [Fact]
+    public async Task GetGameDataFolderOverrideAsync_ShouldReturnNull_WhenNoOverrideSet()
+    {
+        // Arrange
+        var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+
+        // Act
+        var result = await service.GetGameDataFolderOverrideAsync(GameType.SkyrimSe);
+
+        // Assert
+        result.Should().BeNull("no override has been set for this game");
+    }
+
+    /// <summary>
+    /// Verifies that SetGameDataFolderOverrideAsync persists the override and can be retrieved.
+    /// </summary>
+    [Fact]
+    public async Task SetGameDataFolderOverrideAsync_ShouldPersistOverride()
+    {
+        // Arrange
+        var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+        var expectedPath = @"C:\Games\SkyrimSE\Data";
+
+        // Act
+        await service.SetGameDataFolderOverrideAsync(GameType.SkyrimSe, expectedPath);
+        var result = await service.GetGameDataFolderOverrideAsync(GameType.SkyrimSe);
+
+        // Assert
+        result.Should().Be(expectedPath);
+    }
+
+    /// <summary>
+    /// Verifies that SetGameDataFolderOverrideAsync removes the override when null is passed.
+    /// </summary>
+    [Fact]
+    public async Task SetGameDataFolderOverrideAsync_ShouldRemoveOverride_WhenNullPassed()
+    {
+        // Arrange
+        var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+        await service.SetGameDataFolderOverrideAsync(GameType.SkyrimSe, @"C:\Games\SkyrimSE\Data");
+
+        // Act
+        await service.SetGameDataFolderOverrideAsync(GameType.SkyrimSe, null);
+        var result = await service.GetGameDataFolderOverrideAsync(GameType.SkyrimSe);
+
+        // Assert
+        result.Should().BeNull("override should be removed when null is passed");
+    }
+
+    /// <summary>
+    /// Verifies that SetGameDataFolderOverrideAsync removes the override when empty string is passed.
+    /// </summary>
+    [Fact]
+    public async Task SetGameDataFolderOverrideAsync_ShouldRemoveOverride_WhenEmptyStringPassed()
+    {
+        // Arrange
+        var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+        await service.SetGameDataFolderOverrideAsync(GameType.Fallout4, @"C:\Games\Fallout4\Data");
+
+        // Act
+        await service.SetGameDataFolderOverrideAsync(GameType.Fallout4, "");
+        var result = await service.GetGameDataFolderOverrideAsync(GameType.Fallout4);
+
+        // Assert
+        result.Should().BeNull("override should be removed when empty string is passed");
+    }
+
+    /// <summary>
+    /// Verifies that game data folder overrides are stored per-game.
+    /// </summary>
+    [Fact]
+    public async Task SetGameDataFolderOverrideAsync_ShouldStorePerGame()
+    {
+        // Arrange
+        var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+        var ssePath = @"C:\Games\SkyrimSE\Data";
+        var fo4Path = @"C:\Games\Fallout4\Data";
+
+        // Act
+        await service.SetGameDataFolderOverrideAsync(GameType.SkyrimSe, ssePath);
+        await service.SetGameDataFolderOverrideAsync(GameType.Fallout4, fo4Path);
+
+        var sseResult = await service.GetGameDataFolderOverrideAsync(GameType.SkyrimSe);
+        var fo4Result = await service.GetGameDataFolderOverrideAsync(GameType.Fallout4);
+
+        // Assert
+        sseResult.Should().Be(ssePath);
+        fo4Result.Should().Be(fo4Path);
+    }
+
+    /// <summary>
+    /// Verifies that game data folder overrides persist to YAML file.
+    /// </summary>
+    [Fact]
+    public async Task SetGameDataFolderOverrideAsync_ShouldPersistToYaml()
+    {
+        // Arrange
+        var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+        var expectedPath = @"C:\Games\SkyrimSE\Data";
+
+        // Act
+        await service.SetGameDataFolderOverrideAsync(GameType.SkyrimSe, expectedPath);
+
+        // Verify by loading in a new service instance
+        var service2 = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+        var result = await service2.GetGameDataFolderOverrideAsync(GameType.SkyrimSe);
+
+        // Assert
+        result.Should().Be(expectedPath, "override should persist across service instances");
+    }
+
+    #endregion
 }

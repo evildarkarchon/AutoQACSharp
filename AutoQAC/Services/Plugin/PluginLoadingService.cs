@@ -33,6 +33,17 @@ public sealed class PluginLoadingService : IPluginLoadingService
         GameType.Fallout4Vr
     };
 
+    /// <summary>
+    /// Maps GameType to My Games folder names for non-Mutagen games.
+    /// These games require file-based load order detection.
+    /// </summary>
+    private static readonly Dictionary<GameType, string> MyGamesFolderNames = new()
+    {
+        { GameType.Fallout3, "Fallout3" },
+        { GameType.FalloutNewVegas, "FalloutNV" },
+        { GameType.Oblivion, "Oblivion" }
+    };
+
     public PluginLoadingService(
         IPluginValidationService pluginValidation,
         ILoggingService logger)
@@ -44,6 +55,7 @@ public sealed class PluginLoadingService : IPluginLoadingService
     /// <inheritdoc />
     public async Task<List<PluginInfo>> GetPluginsAsync(
         GameType gameType,
+        string? customDataFolder = null,
         CancellationToken ct = default)
     {
         if (gameType == GameType.Unknown)
@@ -56,7 +68,7 @@ public sealed class PluginLoadingService : IPluginLoadingService
         {
             try
             {
-                return await LoadFromMutagenAsync(gameType, ct).ConfigureAwait(false);
+                return await LoadFromMutagenAsync(gameType, customDataFolder, ct).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -96,8 +108,14 @@ public sealed class PluginLoadingService : IPluginLoadingService
     }
 
     /// <inheritdoc />
-    public string? GetGameDataFolder(GameType gameType)
+    public string? GetGameDataFolder(GameType gameType, string? customDataFolderOverride = null)
     {
+        // Return override if provided
+        if (!string.IsNullOrEmpty(customDataFolderOverride))
+        {
+            return customDataFolderOverride;
+        }
+
         if (!IsGameSupportedByMutagen(gameType))
         {
             return null;
@@ -116,11 +134,33 @@ public sealed class PluginLoadingService : IPluginLoadingService
         }
     }
 
+    /// <inheritdoc />
+    public string? GetDefaultLoadOrderPath(GameType gameType)
+    {
+        if (!MyGamesFolderNames.TryGetValue(gameType, out var folderName))
+        {
+            return null;
+        }
+
+        var documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+        var path = Path.Combine(documents, "My Games", folderName, "plugins.txt");
+
+        if (File.Exists(path))
+        {
+            _logger.Information($"Found default load order path for {gameType}: {path}");
+            return path;
+        }
+
+        _logger.Debug($"Default load order path does not exist for {gameType}: {path}");
+        return null;
+    }
+
     /// <summary>
     /// Load plugins using Mutagen's GameEnvironment.
     /// </summary>
     private Task<List<PluginInfo>> LoadFromMutagenAsync(
         GameType gameType,
+        string? customDataFolder,
         CancellationToken ct)
     {
         return Task.Run(() =>
@@ -131,10 +171,20 @@ public sealed class PluginLoadingService : IPluginLoadingService
 
             _logger.Information($"Loading plugins via Mutagen for {gameType}");
 
-            using var env = GameEnvironment.Typical.Builder(release).Build();
+            // Use custom data folder if provided, otherwise use typical (registry-detected) path
+            using var env = string.IsNullOrEmpty(customDataFolder)
+                ? GameEnvironment.Typical.Builder(release).Build()
+                : GameEnvironment.Typical.Builder(release)
+                    .WithTargetDataFolder(customDataFolder)
+                    .Build();
 
             var dataFolder = env.DataFolderPath.Path;
             _logger.Debug($"Data folder: {dataFolder}");
+
+            if (!string.IsNullOrEmpty(customDataFolder))
+            {
+                _logger.Information($"Using custom data folder override: {customDataFolder}");
+            }
 
             var plugins = new List<PluginInfo>();
 
