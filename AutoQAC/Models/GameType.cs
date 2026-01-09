@@ -12,11 +12,11 @@ public enum GameType
     SkyrimLe,           // Skyrim Legendary Edition (original)
     SkyrimSe,           // Skyrim Special Edition
     SkyrimVr,           // Skyrim VR
-    Fallout3,           // Fallout 3
-    FalloutNewVegas,    // Fallout: New Vegas
     Fallout4,           // Fallout 4
     Fallout4Vr,         // Fallout 4 VR
 
     // File-based only (not supported by Mutagen for load order)
     Oblivion,           // The Elder Scrolls IV: Oblivion (limited xEdit QAC support)
+    Fallout3,           // Fallout 3
+    FalloutNewVegas,    // Fallout: New Vegas
 }

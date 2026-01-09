@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Threading.Tasks;
 using Avalonia;
@@ -10,6 +11,7 @@ namespace AutoQAC.Services.UI;
 
 public sealed class FileDialogService : IFileDialogService
 {
+    [SuppressMessage("Performance", "CA1826:Do not use Enumerable methods on indexable collections")]
     public async Task<string?> OpenFileDialogAsync(
         string title,
         string filter,

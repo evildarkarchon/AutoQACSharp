@@ -12,11 +12,9 @@ public partial class PartialFormsWarningDialog : ReactiveWindow<PartialFormsWarn
         InitializeComponent();
         this.WhenActivated(d =>
         {
-            if (ViewModel != null)
-            {
-                d(ViewModel.EnableCommand.Subscribe(result => Close(result)));
-                d(ViewModel.CancelCommand.Subscribe(result => Close(result)));
-            }
+            if (ViewModel == null) return;
+            d(ViewModel.EnableCommand.Subscribe(result => Close(result)));
+            d(ViewModel.CancelCommand.Subscribe(result => Close(result)));
         });
     }
 }

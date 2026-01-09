@@ -63,7 +63,7 @@ public sealed class AutoQacSettings
     public int CpuThreshold { get; set; } = 5;
 
     [YamlMember(Alias = "MO2Mode")]
-    public bool MO2Mode { get; set; }
+    public bool Mo2Mode { get; set; }
 
     [YamlMember(Alias = "Max_Concurrent_Subprocesses")]
     public int MaxConcurrentSubprocesses { get; set; } = 3;

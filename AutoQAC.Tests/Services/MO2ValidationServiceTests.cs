@@ -4,7 +4,7 @@ using FluentAssertions;
 namespace AutoQAC.Tests.Services;
 
 /// <summary>
-/// Unit tests for <see cref="MO2ValidationService"/> covering MO2 process detection,
+/// Unit tests for <see cref="Mo2ValidationService"/> covering MO2 process detection,
 /// executable validation, and warning message generation.
 ///
     /// NOTE: The IsMo2Running test is difficult to unit test reliably since it depends
@@ -13,7 +13,7 @@ namespace AutoQAC.Tests.Services;
 /// </summary>
 public sealed class MO2ValidationServiceTests : IDisposable
 {
-    private readonly MO2ValidationService _sut;
+    private readonly Mo2ValidationService _sut;
     private readonly string _testDirectory;
 
     /// <summary>
@@ -21,7 +21,7 @@ public sealed class MO2ValidationServiceTests : IDisposable
     /// </summary>
     public MO2ValidationServiceTests()
     {
-        _sut = new MO2ValidationService();
+        _sut = new Mo2ValidationService();
         _testDirectory = Path.Combine(Path.GetTempPath(), "MO2ValidationTests_" + Guid.NewGuid());
         Directory.CreateDirectory(_testDirectory);
     }

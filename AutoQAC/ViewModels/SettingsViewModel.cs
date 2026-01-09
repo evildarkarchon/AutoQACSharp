@@ -129,7 +129,7 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
                 v.je != _originalSettings.JournalExpiration ||
                 v.ct != _originalSettings.CleaningTimeout ||
                 v.cpu != _originalSettings.CpuThreshold ||
-                v.mo2 != _originalSettings.MO2Mode ||
+                v.mo2 != _originalSettings.Mo2Mode ||
                 v.max != _originalSettings.MaxConcurrentSubprocesses)
             .ToProperty(this, x => x.HasUnsavedChanges);
         _disposables.Add(_hasUnsavedChanges);
@@ -168,7 +168,7 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
             JournalExpiration = config.Settings.JournalExpiration;
             CleaningTimeout = config.Settings.CleaningTimeout;
             CpuThreshold = config.Settings.CpuThreshold;
-            Mo2Mode = config.Settings.MO2Mode;
+            Mo2Mode = config.Settings.Mo2Mode;
             MaxConcurrentSubprocesses = config.Settings.MaxConcurrentSubprocesses;
         }
         catch (Exception ex)
@@ -188,7 +188,7 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
             config.Settings.JournalExpiration = JournalExpiration;
             config.Settings.CleaningTimeout = CleaningTimeout;
             config.Settings.CpuThreshold = CpuThreshold;
-            config.Settings.MO2Mode = Mo2Mode;
+            config.Settings.Mo2Mode = Mo2Mode;
             config.Settings.MaxConcurrentSubprocesses = MaxConcurrentSubprocesses;
 
             await _configService.SaveUserConfigAsync(config);
@@ -209,7 +209,7 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
         JournalExpiration = defaults.JournalExpiration;
         CleaningTimeout = defaults.CleaningTimeout;
         CpuThreshold = defaults.CpuThreshold;
-        Mo2Mode = defaults.MO2Mode;
+        Mo2Mode = defaults.Mo2Mode;
         MaxConcurrentSubprocesses = defaults.MaxConcurrentSubprocesses;
     }
 

@@ -67,7 +67,7 @@ public sealed class MainWindowViewModelInitializationTests
             LoadOrder = new LoadOrderConfig { File = "loadorder.txt" },
             ModOrganizer = new ModOrganizerConfig { Binary = "mo2.exe" },
             XEdit = new XEditConfig { Binary = "xedit.exe" },
-            Settings = new AutoQacSettings { MO2Mode = true }
+            Settings = new AutoQacSettings { Mo2Mode = true }
         };
 
         _configServiceMock.Setup(c => c.LoadUserConfigAsync(It.IsAny<CancellationToken>()))

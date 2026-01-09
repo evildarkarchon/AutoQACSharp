@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.RegularExpressions;
 using AutoQAC.Models;
 
@@ -26,15 +27,13 @@ public sealed partial class XEditOutputParser : IXEditOutputParser
 
     public CleaningStatistics ParseOutput(List<string> outputLines)
     {
-        int undeleted = 0;
-        int removed = 0;
-        int skipped = 0;
-        int partialForms = 0;
+        var undeleted = 0;
+        var removed = 0;
+        var skipped = 0;
+        var partialForms = 0;
 
-        foreach (var line in outputLines)
+        foreach (var line in outputLines.Where(line => !string.IsNullOrWhiteSpace(line)))
         {
-            if (string.IsNullOrWhiteSpace(line)) continue;
-
             if (UndeletedPattern().IsMatch(line)) undeleted++;
             else if (RemovedPattern().IsMatch(line)) removed++;
             else if (SkippedPattern().IsMatch(line)) skipped++;

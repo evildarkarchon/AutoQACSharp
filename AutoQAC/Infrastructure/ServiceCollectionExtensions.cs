@@ -39,7 +39,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IPluginValidationService, PluginValidationService>();
         services.AddSingleton<IPluginLoadingService, PluginLoadingService>();
         services.AddSingleton<IProcessExecutionService, ProcessExecutionService>();
-        services.AddSingleton<IMo2ValidationService, MO2ValidationService>();
+        services.AddSingleton<IMo2ValidationService, Mo2ValidationService>();
         services.AddSingleton<IXEditCommandBuilder, XEditCommandBuilder>();
         services.AddSingleton<IXEditOutputParser, XEditOutputParser>();
         services.AddSingleton<ICleaningService, CleaningService>();

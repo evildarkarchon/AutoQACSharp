@@ -309,7 +309,7 @@ AutoQAC_Data:
             LoadOrder = new LoadOrderConfig { File = loFile },
             XEdit = new XEditConfig { Binary = xEditFile },
             ModOrganizer = new ModOrganizerConfig { Binary = "NonExistent/ModOrganizer.exe" },
-            Settings = new AutoQacSettings { MO2Mode = true }
+            Settings = new AutoQacSettings { Mo2Mode = true }
         };
 
         // Act

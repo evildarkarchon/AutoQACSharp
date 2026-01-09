@@ -309,7 +309,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
 
             _stateService.UpdateState(s => s with
             {
-                Mo2ModeEnabled = config.Settings.MO2Mode,
+                Mo2ModeEnabled = config.Settings.Mo2Mode,
                 CleaningTimeout = config.Settings.CleaningTimeout,
                 MaxConcurrentSubprocesses = config.Settings.MaxConcurrentSubprocesses
             });
@@ -499,7 +499,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
         config.LoadOrder.File = LoadOrderPath;
         config.XEdit.Binary = XEditPath;
         config.ModOrganizer.Binary = Mo2Path;
-        config.Settings.MO2Mode = Mo2ModeEnabled;
+        config.Settings.Mo2Mode = Mo2ModeEnabled;
 
         await _configService.SaveUserConfigAsync(config);
     }
@@ -726,7 +726,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
 
             _stateService.UpdateState(s => s with
             {
-                Mo2ModeEnabled = config.Settings.MO2Mode,
+                Mo2ModeEnabled = config.Settings.Mo2Mode,
                 CleaningTimeout = config.Settings.CleaningTimeout,
                 MaxConcurrentSubprocesses = config.Settings.MaxConcurrentSubprocesses,
                 PartialFormsEnabled = false
@@ -758,13 +758,13 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
 
                 _stateService.UpdateState(s => s with
                 {
-                    Mo2ModeEnabled = config.Settings.MO2Mode,
+                    Mo2ModeEnabled = config.Settings.Mo2Mode,
                     CleaningTimeout = config.Settings.CleaningTimeout,
                     MaxConcurrentSubprocesses = config.Settings.MaxConcurrentSubprocesses
                 });
 
                 // Update local property
-                Mo2ModeEnabled = config.Settings.MO2Mode;
+                Mo2ModeEnabled = config.Settings.Mo2Mode;
 
                 StatusText = "Settings saved";
                 _logger.Information("Settings updated from settings dialog");

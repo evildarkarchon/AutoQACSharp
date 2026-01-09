@@ -224,7 +224,7 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
              isValid = false;
         }
 
-        if (config.Settings.MO2Mode)
+        if (config.Settings.Mo2Mode)
         {
              if (!string.IsNullOrEmpty(config.ModOrganizer.Binary) && !File.Exists(config.ModOrganizer.Binary))
              {

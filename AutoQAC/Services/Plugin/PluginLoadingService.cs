@@ -24,14 +24,14 @@ public sealed class PluginLoadingService : IPluginLoadingService
     /// Games supported by Mutagen for load order detection.
     /// Note: Fallout 3, Fallout NV, and Oblivion are not supported by Mutagen.
     /// </summary>
-    private static readonly HashSet<GameType> MutagenSupportedGames = new()
-    {
+    private static readonly HashSet<GameType> MutagenSupportedGames =
+    [
         GameType.SkyrimLe,
         GameType.SkyrimSe,
         GameType.SkyrimVr,
         GameType.Fallout4,
         GameType.Fallout4Vr
-    };
+    ];
 
     /// <summary>
     /// Maps GameType to My Games folder names for non-Mutagen games.

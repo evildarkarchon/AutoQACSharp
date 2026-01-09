@@ -3,7 +3,7 @@ using System.Threading.Tasks;
 
 namespace AutoQAC.Services.MO2;
 
-public sealed class MO2ValidationService : IMo2ValidationService
+public sealed class Mo2ValidationService : IMo2ValidationService
 {
     public bool IsMo2Running()
     {

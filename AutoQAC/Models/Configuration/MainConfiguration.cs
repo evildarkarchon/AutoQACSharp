@@ -15,8 +15,8 @@ public sealed class AutoQacData
     public string Version { get; set; } = string.Empty;
 
     [YamlMember(Alias = "XEdit_Lists")]
-    public Dictionary<string, List<string>> XEditLists { get; set; } = new();
+    public Dictionary<string, List<string>> XEditLists { get; } = new();
 
     [YamlMember(Alias = "Skip_Lists")]
-    public Dictionary<string, List<string>> SkipLists { get; set; } = new();
+    public Dictionary<string, List<string>> SkipLists { get; } = new();
 }
