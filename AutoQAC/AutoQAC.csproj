@@ -14,6 +14,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Copy AutoQAC Data folder to output directory -->
+    <None Include="AutoQAC Data\**" CopyToOutputDirectory="PreserveNewest" LinkBase="AutoQAC Data" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Avalonia" Version="11.3.10" />
     <PackageReference Include="Avalonia.Controls.DataGrid" Version="11.3.10" />
     <PackageReference Include="Avalonia.Desktop" Version="11.3.10" />
