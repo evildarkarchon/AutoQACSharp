@@ -203,8 +203,16 @@ public sealed class AppStateTests
     public void Equality_ShouldConsiderCollectionContents()
     {
         // Arrange
-        var plugins1 = new List<string> { "a.esp", "b.esp" };
-        var plugins2 = new List<string> { "a.esp", "b.esp" };
+        var plugins1 = new List<PluginInfo> 
+        { 
+            new() { FileName = "a.esp", FullPath = "a.esp" }, 
+            new() { FileName = "b.esp", FullPath = "b.esp" } 
+        };
+        var plugins2 = new List<PluginInfo> 
+        { 
+            new() { FileName = "a.esp", FullPath = "a.esp" }, 
+            new() { FileName = "b.esp", FullPath = "b.esp" } 
+        };
 
         var state1 = new AppState { PluginsToClean = plugins1 };
         var state2 = new AppState { PluginsToClean = plugins2 };

@@ -22,7 +22,7 @@ public sealed record AppState
     // Progress
     public int Progress { get; init; }
     public int TotalPlugins { get; init; }
-    public List<string> PluginsToClean { get; init; } = new();
+    public List<PluginInfo> PluginsToClean { get; init; } = new();
 
     // Results
     public HashSet<string> CleanedPlugins { get; init; } = new();

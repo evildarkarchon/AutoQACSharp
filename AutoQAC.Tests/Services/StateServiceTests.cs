@@ -13,6 +13,16 @@ public class StateServiceTests
         _sut = new StateService();
     }
 
+    /// <summary>
+    /// Helper method to create a list of PluginInfo from plugin names.
+    /// </summary>
+    private static List<PluginInfo> CreatePluginInfoList(params string[] pluginNames) =>
+        pluginNames.Select(name => new PluginInfo 
+        { 
+            FileName = name, 
+            FullPath = name 
+        }).ToList();
+
     [Fact]
     public void InitialState_IsEmpty()
     {
@@ -38,13 +48,13 @@ public class StateServiceTests
     [Fact]
     public void StartCleaning_ResetsProgressAndLists()
     {
-        var plugins = new List<string> { "a.esp", "b.esp" };
+        var plugins = CreatePluginInfoList("a.esp", "b.esp");
         
         _sut.StartCleaning(plugins);
 
         var state = _sut.CurrentState;
         state.IsCleaning.Should().BeTrue();
-        state.PluginsToClean.Should().BeEquivalentTo(plugins);
+        state.PluginsToClean.Select(p => p.FileName).Should().BeEquivalentTo(plugins.Select(p => p.FileName));
         state.Progress.Should().Be(0);
         state.TotalPlugins.Should().Be(2);
         state.CleanedPlugins.Should().BeEmpty();
@@ -53,7 +63,7 @@ public class StateServiceTests
     [Fact]
     public void AddCleaningResult_UpdatesCorrectSetAndProgress()
     {
-        _sut.StartCleaning(new List<string> { "a.esp", "b.esp" });
+        _sut.StartCleaning(CreatePluginInfoList("a.esp", "b.esp"));
         
         _sut.AddCleaningResult("a.esp", CleaningStatus.Cleaned);
 
@@ -128,7 +138,7 @@ public class StateServiceTests
     {
         // Arrange
         const int numPlugins = 100;
-        _sut.StartCleaning(Enumerable.Range(0, numPlugins).Select(i => $"plugin{i}.esp").ToList());
+        _sut.StartCleaning(Enumerable.Range(0, numPlugins).Select(i => new PluginInfo { FileName = $"plugin{i}.esp", FullPath = $"plugin{i}.esp" }).ToList());
 
         // Act
         // Simulate concurrent cleaning results from multiple threads
@@ -261,7 +271,7 @@ public class StateServiceTests
         var processedPlugins = new List<(string plugin, CleaningStatus status)>();
         using var subscription = _sut.PluginProcessed.Subscribe(p => processedPlugins.Add(p));
 
-        _sut.StartCleaning(new List<string> { "a.esp", "b.esp", "c.esp" });
+        _sut.StartCleaning(CreatePluginInfoList("a.esp", "b.esp", "c.esp"));
 
         // Act
         _sut.AddCleaningResult("a.esp", CleaningStatus.Cleaned);
@@ -318,7 +328,7 @@ public class StateServiceTests
         using var subscription = _sut.ProgressChanged.Subscribe(p => progressChanges.Add(p));
 
         // Act
-        _sut.StartCleaning(new List<string> { "a.esp", "b.esp", "c.esp" });
+        _sut.StartCleaning(CreatePluginInfoList("a.esp", "b.esp", "c.esp"));
         _sut.UpdateProgress(1, 3);
         _sut.UpdateProgress(1, 3); // Duplicate - should be filtered
         _sut.UpdateProgress(2, 3);
@@ -342,7 +352,7 @@ public class StateServiceTests
     public void FinishCleaning_ShouldResetCleaningState()
     {
         // Arrange
-        _sut.StartCleaning(new List<string> { "a.esp", "b.esp" });
+        _sut.StartCleaning(CreatePluginInfoList("a.esp", "b.esp"));
         _sut.UpdateState(s => s with { CurrentPlugin = "a.esp", CurrentOperation = "Cleaning..." });
         _sut.AddCleaningResult("a.esp", CleaningStatus.Cleaned);
 
@@ -369,7 +379,7 @@ public class StateServiceTests
     public void AddCleaningResult_ShouldCategorizeCorrectly(CleaningStatus status, string expectedSet)
     {
         // Arrange
-        _sut.StartCleaning(new List<string> { "test.esp" });
+        _sut.StartCleaning(CreatePluginInfoList("test.esp"));
 
         // Act
         _sut.AddCleaningResult("test.esp", status);
@@ -423,19 +433,19 @@ public class StateServiceTests
     public void SetPluginsToClean_ShouldUpdatePluginList()
     {
         // Arrange
-        var plugins = new List<string> { "a.esp", "b.esp", "c.esp" };
+        var plugins = CreatePluginInfoList("a.esp", "b.esp", "c.esp");
 
         // Act
         _sut.SetPluginsToClean(plugins);
 
         // Assert
         var state = _sut.CurrentState;
-        state.PluginsToClean.Should().BeEquivalentTo(plugins);
+        state.PluginsToClean.Select(p => p.FileName).Should().BeEquivalentTo(plugins.Select(p => p.FileName));
         state.PluginsToClean.Should().NotBeSameAs(plugins,
             "should create a copy, not store the reference");
 
         // Modifying the original list should not affect state
-        plugins.Add("d.esp");
+        plugins.Add(new PluginInfo { FileName = "d.esp", FullPath = "d.esp" });
         state.PluginsToClean.Should().HaveCount(3);
     }
 
@@ -450,7 +460,7 @@ public class StateServiceTests
     public void AddDetailedCleaningResult_ShouldStoreResult()
     {
         // Arrange
-        _sut.StartCleaning(new List<string> { "test.esp" });
+        _sut.StartCleaning(CreatePluginInfoList("test.esp"));
         var detailedResult = new PluginCleaningResult
         {
             PluginName = "test.esp",
@@ -483,7 +493,7 @@ public class StateServiceTests
     public void AddDetailedCleaningResult_ShouldUpdateBasicStatus(CleaningStatus status)
     {
         // Arrange
-        _sut.StartCleaning(new List<string> { "test.esp" });
+        _sut.StartCleaning(CreatePluginInfoList("test.esp"));
         var detailedResult = new PluginCleaningResult
         {
             PluginName = "test.esp",
@@ -517,7 +527,7 @@ public class StateServiceTests
     public void FinishCleaningWithResults_ShouldSetLastSessionResult()
     {
         // Arrange
-        _sut.StartCleaning(new List<string> { "test.esp" });
+        _sut.StartCleaning(CreatePluginInfoList("test.esp"));
         var sessionResult = new CleaningSessionResult
         {
             StartTime = DateTime.Now.AddMinutes(-5),
@@ -549,7 +559,7 @@ public class StateServiceTests
     public void FinishCleaningWithResults_ShouldResetCleaningState()
     {
         // Arrange
-        _sut.StartCleaning(new List<string> { "test.esp" });
+        _sut.StartCleaning(CreatePluginInfoList("test.esp"));
         _sut.UpdateState(s => s with { CurrentPlugin = "test.esp", CurrentOperation = "Cleaning" });
 
         var sessionResult = new CleaningSessionResult();
@@ -615,7 +625,7 @@ public class StateServiceTests
     public void StartCleaning_ShouldClearPreviousSessionState()
     {
         // Arrange - first cleaning session
-        _sut.StartCleaning(new List<string> { "first.esp" });
+        _sut.StartCleaning(CreatePluginInfoList("first.esp"));
         _sut.AddDetailedCleaningResult(new PluginCleaningResult
         {
             PluginName = "first.esp",
@@ -623,12 +633,12 @@ public class StateServiceTests
         });
 
         // Act - start a new cleaning session
-        _sut.StartCleaning(new List<string> { "second.esp" });
+        _sut.StartCleaning(CreatePluginInfoList("second.esp"));
 
         // Assert - state should be reset for new session
         var state = _sut.CurrentState;
         state.IsCleaning.Should().BeTrue();
-        state.PluginsToClean.Should().Contain("second.esp");
+        state.PluginsToClean.Select(p => p.FileName).Should().Contain("second.esp");
         state.CleanedPlugins.Should().BeEmpty();
         state.Progress.Should().Be(0);
     }
@@ -654,7 +664,7 @@ public class StateServiceTests
     {
         // Arrange
         const int numPlugins = 50;
-        var plugins = Enumerable.Range(0, numPlugins).Select(i => $"plugin{i}.esp").ToList();
+        var plugins = Enumerable.Range(0, numPlugins).Select(i => new PluginInfo { FileName = $"plugin{i}.esp", FullPath = $"plugin{i}.esp" }).ToList();
         _sut.StartCleaning(plugins);
 
         // Act

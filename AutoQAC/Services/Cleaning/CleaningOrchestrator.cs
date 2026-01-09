@@ -66,10 +66,9 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
                 throw new InvalidOperationException("Configuration is invalid");
             }
 
-            // 2. Load plugins from load order
+            // 2. Get plugins from state (already loaded with skip list status)
             var config = _stateService.CurrentState;
-            var plugins = await _pluginService.GetPluginsFromLoadOrderAsync(
-                config.LoadOrderPath!, ct).ConfigureAwait(false);
+            var allPlugins = config.PluginsToClean;
 
             // 3. Detect Game (if unknown) and Update State
             if (config.CurrentGameType == GameType.Unknown)
@@ -95,13 +94,29 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
 
             gameType = config.CurrentGameType;
 
-            // 4. Filter skip list
-            var skipList = await _configService.GetSkipListAsync(config.CurrentGameType).ConfigureAwait(false);
-            var pluginsToClean = _pluginService.FilterSkippedPlugins(plugins, skipList);
+            // 4. Apply skip list filtering
+            // If game was detected during this workflow (was Unknown when plugins loaded),
+            // we need to fetch and apply the skip list now
+            List<PluginInfo> pluginsToClean;
+            if (gameType != GameType.Unknown)
+            {
+                var skipList = await _configService.GetSkipListAsync(gameType).ConfigureAwait(false);
+                var skipSet = new HashSet<string>(skipList ?? [], StringComparer.OrdinalIgnoreCase);
+
+                // Apply skip list status to plugins and filter out skipped ones
+                pluginsToClean = allPlugins
+                    .Select(p => p with { IsInSkipList = skipSet.Contains(p.FileName), DetectedGameType = gameType })
+                    .Where(p => !p.IsInSkipList)
+                    .ToList();
+            }
+            else
+            {
+                // No game detected - just filter by existing IsInSkipList flag
+                pluginsToClean = allPlugins.Where(p => !p.IsInSkipList).ToList();
+            }
 
             // 5. Update state - cleaning started
-            _stateService.StartCleaning(
-                pluginsToClean.Select(p => p.FileName).ToList());
+            _stateService.StartCleaning(pluginsToClean);
 
             // 6. Create cancellation token (thread-safe)
             CancellationTokenSource cts;

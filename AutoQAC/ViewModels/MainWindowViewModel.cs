@@ -285,6 +285,15 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
                     StatusText = "Error changing game selection";
                 });
         _disposables.Add(gameSelectionSubscription);
+
+        // Subscribe to skip list changes to refresh plugin display
+        var skipListChangedSubscription = _configService.SkipListChanged
+            .Where(changedGame => changedGame == SelectedGame)
+            .SelectMany(_ => Observable.FromAsync(() => RefreshPluginsForGameAsync(SelectedGame)))
+            .Subscribe(
+                _ => { },
+                ex => _logger.Error(ex, "Failed to refresh plugins after skip list change"));
+        _disposables.Add(skipListChangedSubscription);
     }
 
     private async Task InitializeAsync()
@@ -317,8 +326,8 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
                 try
                 {
                     var plugins = await _pluginService.GetPluginsFromLoadOrderAsync(config.LoadOrder.File);
-                    var pluginNames = plugins.Select(p => p.FileName).ToList();
-                    _stateService.SetPluginsToClean(pluginNames);
+                    // No game selected, so we can't apply skip list - just pass plugins as-is
+                    _stateService.SetPluginsToClean(plugins);
                     StatusText = "Configuration loaded";
                 }
                 catch (Exception ex)
@@ -368,8 +377,10 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
                         $"File: {path}\n\nEnsure the file contains a valid list of plugin names (one per line).");
                 }
 
-                var pluginNames = plugins.Select(p => p.FileName).ToList();
-                _stateService.SetPluginsToClean(pluginNames);
+                // Apply skip list status if a game is selected
+                var skipList = await _configService.GetSkipListAsync(SelectedGame);
+                var pluginsWithSkipStatus = ApplySkipListStatus(plugins, skipList, SelectedGame);
+                _stateService.SetPluginsToClean(pluginsWithSkipStatus);
                 StatusText = $"Loaded {plugins.Count} plugins from load order";
             }
             catch (System.IO.FileNotFoundException ex)
@@ -497,7 +508,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
     {
         if (gameType == GameType.Unknown)
         {
-            _stateService.SetPluginsToClean(new List<string>());
+            _stateService.SetPluginsToClean(new List<PluginInfo>());
             GameDataFolder = null;
             HasGameDataFolderOverride = false;
             StatusText = "No game selected";
@@ -532,6 +543,9 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
             }
         }
 
+        // Load skip list for the current game
+        var skipList = await _configService.GetSkipListAsync(gameType);
+
         // Try Mutagen first if supported
         if (_pluginLoadingService.IsGameSupportedByMutagen(gameType))
         {
@@ -542,8 +556,9 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
 
                 if (plugins.Count > 0)
                 {
-                    var pluginNames = plugins.Select(p => p.FileName).ToList();
-                    _stateService.SetPluginsToClean(pluginNames);
+                    // Apply skip list filtering and mark IsInSkipList
+                    var pluginsWithSkipStatus = ApplySkipListStatus(plugins, skipList, gameType);
+                    _stateService.SetPluginsToClean(pluginsWithSkipStatus);
                     StatusText = $"Loaded {plugins.Count} plugins for {gameType}";
                     return;
                 }
@@ -564,8 +579,9 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
             {
                 StatusText = $"Loading plugins from file for {gameType}...";
                 var plugins = await _pluginLoadingService.GetPluginsFromFileAsync(LoadOrderPath);
-                var pluginNames = plugins.Select(p => p.FileName).ToList();
-                _stateService.SetPluginsToClean(pluginNames);
+                // Apply skip list filtering and mark IsInSkipList
+                var pluginsWithSkipStatus = ApplySkipListStatus(plugins, skipList, gameType);
+                _stateService.SetPluginsToClean(pluginsWithSkipStatus);
                 StatusText = $"Loaded {plugins.Count} plugins from file";
             }
             catch (Exception ex)
@@ -581,6 +597,19 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
                 ? $"Could not detect {gameType} installation"
                 : $"{gameType} requires a load order file";
         }
+    }
+
+    /// <summary>
+    /// Applies skip list status to plugins, marking IsInSkipList for each plugin.
+    /// </summary>
+    private static List<PluginInfo> ApplySkipListStatus(List<PluginInfo> plugins, List<string> skipList, GameType gameType)
+    {
+        var skipSet = new HashSet<string>(skipList, StringComparer.OrdinalIgnoreCase);
+        return plugins.Select(p => p with
+        {
+            IsInSkipList = skipSet.Contains(p.FileName),
+            DetectedGameType = gameType
+        }).ToList();
     }
 
     private void TogglePartialForms()
@@ -704,7 +733,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
             });
 
             SelectedGame = GameType.Unknown;
-            _stateService.SetPluginsToClean(new List<string>());
+            _stateService.SetPluginsToClean(new List<PluginInfo>());
 
             StatusText = "Settings reset to defaults";
             _logger.Information("Settings reset to defaults by user");
@@ -778,21 +807,15 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
         Mo2ModeEnabled = state.Mo2ModeEnabled;
         PartialFormsEnabled = state.PartialFormsEnabled;
         
-        // Plugins list update - optimized to avoid recreation if possible
+        // Plugins list update - use PluginInfo directly from state (preserves IsInSkipList)
         var statePlugins = state.PluginsToClean;
         if (PluginsToClean.Count != statePlugins.Count ||
-            !PluginsToClean.Select(p => p.FileName).SequenceEqual(statePlugins))
+            !PluginsToClean.SequenceEqual(statePlugins))
         {
             PluginsToClean.Clear();
             foreach (var p in statePlugins)
             {
-                PluginsToClean.Add(new PluginInfo
-                {
-                    FileName = p,
-                    FullPath = p,
-                    DetectedGameType = state.CurrentGameType,
-                    IsInSkipList = false
-                });
+                PluginsToClean.Add(p);
             }
         }
         

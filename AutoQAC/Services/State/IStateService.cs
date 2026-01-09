@@ -17,8 +17,8 @@ public interface IStateService
     // State updates
     void UpdateState(Func<AppState, AppState> updateFunc);
     void UpdateConfigurationPaths(string? loadOrder, string? mo2, string? xEdit);
-    void SetPluginsToClean(List<string> plugins);
-    void StartCleaning(List<string> plugins);
+    void SetPluginsToClean(List<PluginInfo> plugins);
+    void StartCleaning(List<PluginInfo> plugins);
     void FinishCleaning();
     void AddCleaningResult(string plugin, CleaningStatus status);
     void UpdateProgress(int current, int total);

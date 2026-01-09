@@ -48,6 +48,10 @@ public sealed class MainWindowViewModelTests
         _stateServiceMock.Setup(s => s.CleaningCompleted)
             .Returns(Observable.Never<CleaningSessionResult>());
 
+        // Default setup for SkipListChanged observable
+        _configServiceMock.Setup(s => s.SkipListChanged)
+            .Returns(Observable.Never<GameType>());
+
         RxApp.MainThreadScheduler = Scheduler.Immediate;
     }
 
@@ -60,7 +64,7 @@ public sealed class MainWindowViewModelTests
         _stateServiceMock.Setup(s => s.CurrentState).Returns(new AppState());
 
         // Create temp file to satisfy File.Exists check
-        var tempFile = System.IO.Path.GetTempFileName();
+        var tempFile = Path.GetTempFileName();
         try
         {
             var vm = new MainWindowViewModel(
@@ -87,8 +91,8 @@ public sealed class MainWindowViewModelTests
         }
         finally
         {
-            if (System.IO.File.Exists(tempFile))
-                System.IO.File.Delete(tempFile);
+            if (File.Exists(tempFile))
+                File.Delete(tempFile);
         }
     }
 
@@ -132,12 +136,16 @@ public sealed class MainWindowViewModelTests
             _pluginServiceMock.Setup(x => x.GetPluginsFromLoadOrderAsync(tempFile, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(expectedPlugins);
 
+            // Setup skip list (required for ApplySkipListStatus)
+            _configServiceMock.Setup(x => x.GetSkipListAsync(It.IsAny<GameType>()))
+                .ReturnsAsync(new List<string>());
+
             // Act
             await vm.ConfigureLoadOrderCommand.Execute();
 
             // Assert
             _stateServiceMock.Verify(x => x.UpdateConfigurationPaths(tempFile, It.IsAny<string>(), It.IsAny<string>()), Times.Once);
-            _stateServiceMock.Verify(x => x.SetPluginsToClean(It.Is<List<string>>(l => l.Count == 2 && l[0] == "Update.esm")), Times.Once);
+            _stateServiceMock.Verify(x => x.SetPluginsToClean(It.Is<List<PluginInfo>>(l => l.Count == 2 && l[0].FileName == "Update.esm")), Times.Once);
             _configServiceMock.Verify(x => x.SaveUserConfigAsync(It.IsAny<UserConfiguration>(), It.IsAny<CancellationToken>()), Times.Once);
         }
         finally
@@ -587,6 +595,10 @@ public sealed class MainWindowViewModelTests
         _pluginLoadingServiceMock.Setup(x => x.GetPluginsAsync(GameType.SkyrimSe, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(expectedPlugins);
 
+        // Setup skip list (required for ApplySkipListStatus)
+        _configServiceMock.Setup(x => x.GetSkipListAsync(It.IsAny<GameType>()))
+            .ReturnsAsync(new List<string>());
+
         var stateSubject = new BehaviorSubject<AppState>(new AppState());
         _stateServiceMock.Setup(s => s.StateChanged).Returns(stateSubject);
         _stateServiceMock.Setup(s => s.CurrentState).Returns(new AppState());
@@ -609,10 +621,10 @@ public sealed class MainWindowViewModelTests
 
         // Assert
         _pluginLoadingServiceMock.Verify(x => x.GetPluginsAsync(GameType.SkyrimSe, It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Once);
-        _stateServiceMock.Verify(x => x.SetPluginsToClean(It.Is<List<string>>(list =>
+        _stateServiceMock.Verify(x => x.SetPluginsToClean(It.Is<List<PluginInfo>>(list =>
             list.Count == 2 &&
-            list.Contains("Plugin1.esp") &&
-            list.Contains("Plugin2.esp"))), Times.Once);
+            list.Any(p => p.FileName == "Plugin1.esp") &&
+            list.Any(p => p.FileName == "Plugin2.esp"))), Times.Once);
     }
 
     #endregion
@@ -641,7 +653,7 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock.Object);
 
         // Act & Assert
-        FluentActions.Invoking(() => vm.Dispose())
+        FluentActions.Invoking(vm.Dispose)
             .Should().NotThrow("disposal should complete without exception");
     }
 

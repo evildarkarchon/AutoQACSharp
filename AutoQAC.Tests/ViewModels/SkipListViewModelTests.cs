@@ -100,7 +100,12 @@ public sealed class SkipListViewModelTests
     public async Task LoadSkipListAsync_ShouldPopulateAvailablePlugins()
     {
         // Arrange
-        var loadedPlugins = new List<string> { "Mod1.esp", "Mod2.esp", "InSkipList.esp" };
+        var loadedPlugins = new List<PluginInfo>
+        {
+            new() { FileName = "Mod1.esp", FullPath = "Mod1.esp" },
+            new() { FileName = "Mod2.esp", FullPath = "Mod2.esp" },
+            new() { FileName = "InSkipList.esp", FullPath = "InSkipList.esp" }
+        };
         var skipList = new List<string> { "InSkipList.esp" };
 
         _stateSubject.OnNext(new AppState
@@ -132,7 +137,10 @@ public sealed class SkipListViewModelTests
     public async Task AddSelectedPluginCommand_ShouldAddToSkipList()
     {
         // Arrange
-        var loadedPlugins = new List<string> { "NewMod.esp" };
+        var loadedPlugins = new List<PluginInfo>
+        {
+            new() { FileName = "NewMod.esp", FullPath = "NewMod.esp" }
+        };
         _stateSubject.OnNext(new AppState
         {
             CurrentGameType = GameType.SkyrimSe,
@@ -286,7 +294,10 @@ public sealed class SkipListViewModelTests
     public async Task RemoveSelectedEntryCommand_ShouldAddBackToAvailablePlugins()
     {
         // Arrange
-        var loadedPlugins = new List<string> { "InSkipList.esp" };
+        var loadedPlugins = new List<PluginInfo>
+        {
+            new() { FileName = "InSkipList.esp", FullPath = "InSkipList.esp" }
+        };
         var skipList = new List<string> { "InSkipList.esp" };
 
         _stateSubject.OnNext(new AppState

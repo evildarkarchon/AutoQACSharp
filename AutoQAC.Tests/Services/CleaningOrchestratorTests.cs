@@ -42,31 +42,24 @@ public sealed class CleaningOrchestratorTests
     public async Task StartCleaningAsync_ShouldProcessPlugins_WhenConfigIsValid()
     {
         // Arrange
+        var plugins = new List<PluginInfo>
+        {
+            new() { FileName = "Plugin1.esp", FullPath = "Path/Plugin1.esp" },
+            new() { FileName = "Plugin2.esp", FullPath = "Path/Plugin2.esp" }
+        };
+
         var appState = new AppState
         {
             LoadOrderPath = "plugins.txt",
             XEditExecutablePath = "xedit.exe",
-            CurrentGameType = GameType.SkyrimSe
+            CurrentGameType = GameType.SkyrimSe,
+            PluginsToClean = plugins
         };
 
         _stateServiceMock.Setup(s => s.CurrentState).Returns(appState);
 
         _cleaningServiceMock.Setup(s => s.ValidateEnvironmentAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
-
-        var plugins = new List<PluginInfo>
-        {
-            new() { FileName = "Plugin1.esp", FullPath = "Path/Plugin1.esp" },
-            new() { FileName = "Plugin2.esp", FullPath = "Path/Plugin2.esp" }
-        };
-        _pluginServiceMock.Setup(s => s.GetPluginsFromLoadOrderAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(plugins);
-
-        _configServiceMock.Setup(s => s.GetSkipListAsync(It.IsAny<GameType>()))
-            .ReturnsAsync(new List<string>());
-
-        _pluginServiceMock.Setup(s => s.FilterSkippedPlugins(plugins, It.IsAny<List<string>>()))
-            .Returns(plugins); // No skip
 
         _cleaningServiceMock.Setup(s => s.CleanPluginAsync(It.IsAny<PluginInfo>(), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new CleaningResult { Status = CleaningStatus.Cleaned });
@@ -77,7 +70,7 @@ public sealed class CleaningOrchestratorTests
         // Assert
         _cleaningServiceMock.Verify(s => s.CleanPluginAsync(It.Is<PluginInfo>(p => p.FileName == "Plugin1.esp"), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>()), Times.Once);
         _cleaningServiceMock.Verify(s => s.CleanPluginAsync(It.Is<PluginInfo>(p => p.FileName == "Plugin2.esp"), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>()), Times.Once);
-        _stateServiceMock.Verify(s => s.StartCleaning(It.IsAny<List<string>>()), Times.Once);
+        _stateServiceMock.Verify(s => s.StartCleaning(It.IsAny<List<PluginInfo>>()), Times.Once);
         _stateServiceMock.Verify(s => s.FinishCleaningWithResults(It.IsAny<CleaningSessionResult>()), Times.Once);
     }
 
@@ -85,20 +78,18 @@ public sealed class CleaningOrchestratorTests
     public async Task StartCleaningAsync_ShouldDetectGame_WhenUnknown()
     {
         // Arrange
+        var plugins = new List<PluginInfo>();
         var appState = new AppState
         {
             LoadOrderPath = "plugins.txt",
             XEditExecutablePath = "xedit.exe",
-            CurrentGameType = GameType.Unknown
+            CurrentGameType = GameType.Unknown,
+            PluginsToClean = plugins
         };
         _stateServiceMock.Setup(s => s.CurrentState).Returns(appState);
 
         _cleaningServiceMock.Setup(s => s.ValidateEnvironmentAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
-
-        var plugins = new List<PluginInfo>();
-        _pluginServiceMock.Setup(s => s.GetPluginsFromLoadOrderAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(plugins);
 
         // Mock Executable detection failing (Unknown)
         _gameDetectionServiceMock.Setup(d => d.DetectFromExecutable(It.IsAny<string>()))
@@ -107,12 +98,6 @@ public sealed class CleaningOrchestratorTests
         // Mock Load Order detection succeeding
         _gameDetectionServiceMock.Setup(d => d.DetectFromLoadOrderAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(GameType.Fallout4);
-
-        _configServiceMock.Setup(s => s.GetSkipListAsync(It.IsAny<GameType>()))
-            .ReturnsAsync(new List<string>());
-        
-        _pluginServiceMock.Setup(s => s.FilterSkippedPlugins(plugins, It.IsAny<List<string>>()))
-            .Returns(plugins);
 
         // Act
         await _orchestrator.StartCleaningAsync();
@@ -160,17 +145,6 @@ public sealed class CleaningOrchestratorTests
     public async Task StartCleaningAsync_ShouldHandleUserCancellation_MidBatch()
     {
         // Arrange
-        var appState = new AppState
-        {
-            LoadOrderPath = "plugins.txt",
-            XEditExecutablePath = "xedit.exe",
-            CurrentGameType = GameType.SkyrimSe
-        };
-        _stateServiceMock.Setup(s => s.CurrentState).Returns(appState);
-
-        _cleaningServiceMock.Setup(s => s.ValidateEnvironmentAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
-
         // Create 5 plugins to clean
         var plugins = new List<PluginInfo>
         {
@@ -180,14 +154,18 @@ public sealed class CleaningOrchestratorTests
             new() { FileName = "Plugin4.esp", FullPath = "Path/Plugin4.esp" },
             new() { FileName = "Plugin5.esp", FullPath = "Path/Plugin5.esp" }
         };
-        _pluginServiceMock.Setup(s => s.GetPluginsFromLoadOrderAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(plugins);
 
-        _configServiceMock.Setup(s => s.GetSkipListAsync(It.IsAny<GameType>()))
-            .ReturnsAsync(new List<string>());
+        var appState = new AppState
+        {
+            LoadOrderPath = "plugins.txt",
+            XEditExecutablePath = "xedit.exe",
+            CurrentGameType = GameType.SkyrimSe,
+            PluginsToClean = plugins
+        };
+        _stateServiceMock.Setup(s => s.CurrentState).Returns(appState);
 
-        _pluginServiceMock.Setup(s => s.FilterSkippedPlugins(plugins, It.IsAny<List<string>>()))
-            .Returns(plugins);
+        _cleaningServiceMock.Setup(s => s.ValidateEnvironmentAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
 
         // Track how many plugins were cleaned
         var cleanedCount = 0;
@@ -226,17 +204,6 @@ public sealed class CleaningOrchestratorTests
     public async Task StartCleaningAsync_ShouldContinueOnError_WhenPluginFails()
     {
         // Arrange
-        var appState = new AppState
-        {
-            LoadOrderPath = "plugins.txt",
-            XEditExecutablePath = "xedit.exe",
-            CurrentGameType = GameType.SkyrimSe
-        };
-        _stateServiceMock.Setup(s => s.CurrentState).Returns(appState);
-
-        _cleaningServiceMock.Setup(s => s.ValidateEnvironmentAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
-
         // Create 5 plugins
         var plugins = new List<PluginInfo>
         {
@@ -246,8 +213,18 @@ public sealed class CleaningOrchestratorTests
             new() { FileName = "Plugin4.esp", FullPath = "Path/Plugin4.esp" },
             new() { FileName = "Plugin5.esp", FullPath = "Path/Plugin5.esp" }
         };
-        _pluginServiceMock.Setup(s => s.GetPluginsFromLoadOrderAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(plugins);
+
+        var appState = new AppState
+        {
+            LoadOrderPath = "plugins.txt",
+            XEditExecutablePath = "xedit.exe",
+            CurrentGameType = GameType.SkyrimSe,
+            PluginsToClean = plugins
+        };
+        _stateServiceMock.Setup(s => s.CurrentState).Returns(appState);
+
+        _cleaningServiceMock.Setup(s => s.ValidateEnvironmentAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
 
         _configServiceMock.Setup(s => s.GetSkipListAsync(It.IsAny<GameType>()))
             .ReturnsAsync(new List<string>());
@@ -307,31 +284,24 @@ public sealed class CleaningOrchestratorTests
     public async Task StartCleaningAsync_ShouldProcessPluginsSequentially_NeverInParallel()
     {
         // Arrange
-        var appState = new AppState
-        {
-            LoadOrderPath = "plugins.txt",
-            XEditExecutablePath = "xedit.exe",
-            CurrentGameType = GameType.SkyrimSe
-        };
-        _stateServiceMock.Setup(s => s.CurrentState).Returns(appState);
-
-        _cleaningServiceMock.Setup(s => s.ValidateEnvironmentAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
-
         var plugins = new List<PluginInfo>
         {
             new() { FileName = "Plugin1.esp", FullPath = "Path/Plugin1.esp" },
             new() { FileName = "Plugin2.esp", FullPath = "Path/Plugin2.esp" },
             new() { FileName = "Plugin3.esp", FullPath = "Path/Plugin3.esp" }
         };
-        _pluginServiceMock.Setup(s => s.GetPluginsFromLoadOrderAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(plugins);
 
-        _configServiceMock.Setup(s => s.GetSkipListAsync(It.IsAny<GameType>()))
-            .ReturnsAsync(new List<string>());
+        var appState = new AppState
+        {
+            LoadOrderPath = "plugins.txt",
+            XEditExecutablePath = "xedit.exe",
+            CurrentGameType = GameType.SkyrimSe,
+            PluginsToClean = plugins
+        };
+        _stateServiceMock.Setup(s => s.CurrentState).Returns(appState);
 
-        _pluginServiceMock.Setup(s => s.FilterSkippedPlugins(plugins, It.IsAny<List<string>>()))
-            .Returns(plugins);
+        _cleaningServiceMock.Setup(s => s.ValidateEnvironmentAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
 
         // Track execution order and overlap
         var executionLog = new List<(string plugin, DateTime start, DateTime end)>();
@@ -396,31 +366,24 @@ public sealed class CleaningOrchestratorTests
     public async Task StopCleaning_ShouldCancelOngoingCleaning()
     {
         // Arrange
-        var appState = new AppState
-        {
-            LoadOrderPath = "plugins.txt",
-            XEditExecutablePath = "xedit.exe",
-            CurrentGameType = GameType.SkyrimSe
-        };
-        _stateServiceMock.Setup(s => s.CurrentState).Returns(appState);
-
-        _cleaningServiceMock.Setup(s => s.ValidateEnvironmentAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
-
         var plugins = new List<PluginInfo>
         {
             new() { FileName = "Plugin1.esp", FullPath = "Path/Plugin1.esp" },
             new() { FileName = "Plugin2.esp", FullPath = "Path/Plugin2.esp" },
             new() { FileName = "Plugin3.esp", FullPath = "Path/Plugin3.esp" }
         };
-        _pluginServiceMock.Setup(s => s.GetPluginsFromLoadOrderAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(plugins);
 
-        _configServiceMock.Setup(s => s.GetSkipListAsync(It.IsAny<GameType>()))
-            .ReturnsAsync(new List<string>());
+        var appState = new AppState
+        {
+            LoadOrderPath = "plugins.txt",
+            XEditExecutablePath = "xedit.exe",
+            CurrentGameType = GameType.SkyrimSe,
+            PluginsToClean = plugins
+        };
+        _stateServiceMock.Setup(s => s.CurrentState).Returns(appState);
 
-        _pluginServiceMock.Setup(s => s.FilterSkippedPlugins(plugins, It.IsAny<List<string>>()))
-            .Returns(plugins);
+        _cleaningServiceMock.Setup(s => s.ValidateEnvironmentAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
 
         var cleanedPlugins = new List<string>();
         var cleaningStartedEvent = new TaskCompletionSource<bool>();
@@ -476,27 +439,20 @@ public sealed class CleaningOrchestratorTests
     public async Task StartCleaningAsync_ShouldHandleEmptyPluginList()
     {
         // Arrange
+        // Empty plugin list
+        var plugins = new List<PluginInfo>();
+
         var appState = new AppState
         {
             LoadOrderPath = "plugins.txt",
             XEditExecutablePath = "xedit.exe",
-            CurrentGameType = GameType.SkyrimSe
+            CurrentGameType = GameType.SkyrimSe,
+            PluginsToClean = plugins
         };
         _stateServiceMock.Setup(s => s.CurrentState).Returns(appState);
 
         _cleaningServiceMock.Setup(s => s.ValidateEnvironmentAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
-
-        // Empty plugin list
-        var plugins = new List<PluginInfo>();
-        _pluginServiceMock.Setup(s => s.GetPluginsFromLoadOrderAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(plugins);
-
-        _configServiceMock.Setup(s => s.GetSkipListAsync(It.IsAny<GameType>()))
-            .ReturnsAsync(new List<string>());
-
-        _pluginServiceMock.Setup(s => s.FilterSkippedPlugins(plugins, It.IsAny<List<string>>()))
-            .Returns(plugins);
 
         // Act
         await _orchestrator.StartCleaningAsync();
@@ -508,7 +464,7 @@ public sealed class CleaningOrchestratorTests
             Times.Never);
 
         // But state lifecycle should still be complete
-        _stateServiceMock.Verify(s => s.StartCleaning(It.IsAny<List<string>>()), Times.Once);
+        _stateServiceMock.Verify(s => s.StartCleaning(It.IsAny<List<PluginInfo>>()), Times.Once);
         _stateServiceMock.Verify(s => s.FinishCleaningWithResults(It.IsAny<CleaningSessionResult>()), Times.Once);
     }
 
@@ -519,30 +475,23 @@ public sealed class CleaningOrchestratorTests
     public async Task StartCleaningAsync_ShouldUpdateCurrentPluginState_ForEachPlugin()
     {
         // Arrange
-        var appState = new AppState
-        {
-            LoadOrderPath = "plugins.txt",
-            XEditExecutablePath = "xedit.exe",
-            CurrentGameType = GameType.SkyrimSe
-        };
-        _stateServiceMock.Setup(s => s.CurrentState).Returns(appState);
-
-        _cleaningServiceMock.Setup(s => s.ValidateEnvironmentAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
-
         var plugins = new List<PluginInfo>
         {
             new() { FileName = "Plugin1.esp", FullPath = "Path/Plugin1.esp" },
             new() { FileName = "Plugin2.esp", FullPath = "Path/Plugin2.esp" }
         };
-        _pluginServiceMock.Setup(s => s.GetPluginsFromLoadOrderAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(plugins);
 
-        _configServiceMock.Setup(s => s.GetSkipListAsync(It.IsAny<GameType>()))
-            .ReturnsAsync(new List<string>());
+        var appState = new AppState
+        {
+            LoadOrderPath = "plugins.txt",
+            XEditExecutablePath = "xedit.exe",
+            CurrentGameType = GameType.SkyrimSe,
+            PluginsToClean = plugins
+        };
+        _stateServiceMock.Setup(s => s.CurrentState).Returns(appState);
 
-        _pluginServiceMock.Setup(s => s.FilterSkippedPlugins(plugins, It.IsAny<List<string>>()))
-            .Returns(plugins);
+        _cleaningServiceMock.Setup(s => s.ValidateEnvironmentAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
 
         _cleaningServiceMock.Setup(s => s.CleanPluginAsync(It.IsAny<PluginInfo>(), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new CleaningResult { Status = CleaningStatus.Cleaned });

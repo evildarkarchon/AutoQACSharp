@@ -51,6 +51,10 @@ public sealed class ErrorDialogTests
         _stateServiceMock.Setup(s => s.CleaningCompleted)
             .Returns(Observable.Never<CleaningSessionResult>());
 
+        // Default setup for SkipListChanged observable
+        _configServiceMock.Setup(s => s.SkipListChanged)
+            .Returns(Observable.Never<GameType>());
+
         RxApp.MainThreadScheduler = Scheduler.Immediate;
     }
 

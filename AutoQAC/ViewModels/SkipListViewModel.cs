@@ -222,9 +222,9 @@ public sealed class SkipListViewModel : ViewModelBase, IDisposable
         // Filter out plugins already in skip list
         var skipSet = new HashSet<string>(SkipListEntries, StringComparer.OrdinalIgnoreCase);
 
-        foreach (var plugin in loadedPlugins.Where(p => !skipSet.Contains(p)))
+        foreach (var plugin in loadedPlugins.Where(p => !skipSet.Contains(p.FileName)))
         {
-            AvailablePlugins.Add(plugin);
+            AvailablePlugins.Add(plugin.FileName);
         }
 
         SelectedPlugin = null;
@@ -294,7 +294,7 @@ public sealed class SkipListViewModel : ViewModelBase, IDisposable
 
         // Add back to available plugins if it was loaded
         var loadedPlugins = _stateService.CurrentState.PluginsToClean;
-        if (loadedPlugins.Contains(entry, StringComparer.OrdinalIgnoreCase))
+        if (loadedPlugins.Any(p => string.Equals(p.FileName, entry, StringComparison.OrdinalIgnoreCase)))
         {
             AvailablePlugins.Add(entry);
         }

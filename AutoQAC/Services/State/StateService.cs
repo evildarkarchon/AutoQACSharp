@@ -66,7 +66,7 @@ public sealed class StateService : IStateService, IDisposable
         });
     }
 
-    public void SetPluginsToClean(List<string> plugins)
+    public void SetPluginsToClean(List<PluginInfo> plugins)
     {
         UpdateState(s => s with
         {
@@ -74,7 +74,7 @@ public sealed class StateService : IStateService, IDisposable
         });
     }
 
-    public void StartCleaning(List<string> plugins)
+    public void StartCleaning(List<PluginInfo> plugins)
     {
         lock (_lock)
         {
