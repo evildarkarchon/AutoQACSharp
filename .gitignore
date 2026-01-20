@@ -475,3 +475,4 @@ gha-creds-*.json
 AutoQACSharp.code-workspace
 AutoQAC Data/AutoQAC Config.yaml
 AutoQAC Data/AutoQAC Settings.yaml
+test_output.txt

@@ -32,6 +32,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
 
     // Observable properties
     private string? _loadOrderPath;
+
     public string? LoadOrderPath
     {
         get => _loadOrderPath;
@@ -39,6 +40,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
     }
 
     private string? _xEditPath;
+
     public string? XEditPath
     {
         get => _xEditPath;
@@ -46,6 +48,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
     }
 
     private string? _mo2Path;
+
     public string? Mo2Path
     {
         get => _mo2Path;
@@ -53,6 +56,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
     }
 
     private bool _mo2ModeEnabled;
+
     public bool Mo2ModeEnabled
     {
         get => _mo2ModeEnabled;
@@ -60,6 +64,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
     }
 
     private bool _partialFormsEnabled;
+
     public bool PartialFormsEnabled
     {
         get => _partialFormsEnabled;
@@ -67,6 +72,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
     }
 
     private GameType _selectedGame = GameType.Unknown;
+
     public GameType SelectedGame
     {
         get => _selectedGame;
@@ -82,6 +88,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
     public bool RequiresLoadOrderFile => _requiresLoadOrderFile.Value;
 
     private string? _gameDataFolder;
+
     public string? GameDataFolder
     {
         get => _gameDataFolder;
@@ -89,6 +96,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
     }
 
     private bool _hasGameDataFolderOverride;
+
     public bool HasGameDataFolderOverride
     {
         get => _hasGameDataFolderOverride;
@@ -96,6 +104,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
     }
 
     private string _statusText = "Ready";
+
     public string StatusText
     {
         get => _statusText;
@@ -103,6 +112,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
     }
 
     private ObservableCollection<PluginInfo> _pluginsToClean = new();
+
     public ObservableCollection<PluginInfo> PluginsToClean
     {
         get => _pluginsToClean;
@@ -110,6 +120,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
     }
 
     private PluginInfo? _selectedPlugin;
+
     public PluginInfo? SelectedPlugin
     {
         get => _selectedPlugin;
@@ -137,6 +148,8 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
     public ReactiveCommand<Unit, Unit> ResetSettingsCommand { get; }
     public ReactiveCommand<Unit, Unit> ShowSettingsCommand { get; }
     public ReactiveCommand<Unit, Unit> ShowSkipListCommand { get; }
+    public ReactiveCommand<Unit, Unit> SelectAllCommand { get; }
+    public ReactiveCommand<Unit, Unit> DeselectAllCommand { get; }
 
     /// <summary>
     /// Interaction for showing the progress window during cleaning.
@@ -208,10 +221,12 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
 
         // Game data folder commands - only enabled for Mutagen-supported games
         var canConfigureDataFolder = this.WhenAnyValue(x => x.IsMutagenSupported);
-        ConfigureGameDataFolderCommand = ReactiveCommand.CreateFromTask(ConfigureGameDataFolderAsync, canConfigureDataFolder);
-        
+        ConfigureGameDataFolderCommand =
+            ReactiveCommand.CreateFromTask(ConfigureGameDataFolderAsync, canConfigureDataFolder);
+
         var canClearOverride = this.WhenAnyValue(x => x.HasGameDataFolderOverride);
-        ClearGameDataFolderOverrideCommand = ReactiveCommand.CreateFromTask(ClearGameDataFolderOverrideAsync, canClearOverride);
+        ClearGameDataFolderOverrideCommand =
+            ReactiveCommand.CreateFromTask(ClearGameDataFolderOverrideAsync, canClearOverride);
 
         TogglePartialFormsCommand = ReactiveCommand.Create(TogglePartialForms);
 
@@ -242,11 +257,18 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
         ShowAboutCommand = ReactiveCommand.Create(ShowAbout);
         ResetSettingsCommand = ReactiveCommand.CreateFromTask(ResetSettingsAsync);
         ShowSettingsCommand = ReactiveCommand.CreateFromTask(ShowSettingsAsync);
-        
+
         // Skip list command - disabled during cleaning
         var canShowSkipList = this.WhenAnyValue(x => x.IsCleaning)
             .Select(cleaning => !cleaning);
         ShowSkipListCommand = ReactiveCommand.CreateFromTask(ShowSkipListAsync, canShowSkipList);
+
+        // Plugin selection commands - disabled during cleaning, enabled when plugins exist
+        var canSelectPlugins = hasPlugins.CombineLatest(
+            this.WhenAnyValue(x => x.IsCleaning),
+            (hasP, cleaning) => hasP && !cleaning);
+        SelectAllCommand = ReactiveCommand.Create(SelectAllPlugins, canSelectPlugins);
+        DeselectAllCommand = ReactiveCommand.Create(DeselectAllPlugins, canSelectPlugins);
 
         // Subscribe to state changes
         var stateSubscription = _stateService.StateChanged
@@ -463,14 +485,14 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
 
             // Save the override
             await _configService.SetGameDataFolderOverrideAsync(SelectedGame, path);
-            
+
             // Update display
             GameDataFolder = path;
             HasGameDataFolderOverride = true;
-            
+
             // Refresh plugins with the new path
             await RefreshPluginsForGameAsync(SelectedGame);
-            
+
             StatusText = $"Data folder override set for {SelectedGame}";
         }
     }
@@ -480,13 +502,13 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
         // Clear the override
         await _configService.SetGameDataFolderOverrideAsync(SelectedGame, null);
         HasGameDataFolderOverride = false;
-        
+
         // Refresh to show auto-detected path
         await RefreshPluginsForGameAsync(SelectedGame);
-        
+
         // Update display with auto-detected path
         GameDataFolder = _pluginLoadingService.GetGameDataFolder(SelectedGame);
-        
+
         StatusText = $"Data folder reset to auto-detect for {SelectedGame}";
     }
 
@@ -523,7 +545,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
         {
             customDataFolder = await _configService.GetGameDataFolderOverrideAsync(gameType);
             HasGameDataFolderOverride = !string.IsNullOrEmpty(customDataFolder);
-            
+
             // Update displayed data folder (override or auto-detected)
             GameDataFolder = _pluginLoadingService.GetGameDataFolder(gameType, customDataFolder);
         }
@@ -602,7 +624,8 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
     /// <summary>
     /// Applies skip list status to plugins, marking IsInSkipList for each plugin.
     /// </summary>
-    private static List<PluginInfo> ApplySkipListStatus(List<PluginInfo> plugins, List<string> skipList, GameType gameType)
+    private static List<PluginInfo> ApplySkipListStatus(List<PluginInfo> plugins, List<string> skipList,
+        GameType gameType)
     {
         var skipSet = new HashSet<string>(skipList, StringComparer.OrdinalIgnoreCase);
         return plugins.Select(p => p with
@@ -619,6 +642,22 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
         // For now just toggle
         // PartialFormsEnabled is bound to CheckBox, so it updates automatically.
         // We might want to intercept the change but for now let it be.
+    }
+
+    private void SelectAllPlugins()
+    {
+        foreach (var plugin in PluginsToClean)
+        {
+            plugin.IsSelected = true;
+        }
+    }
+
+    private void DeselectAllPlugins()
+    {
+        foreach (var plugin in PluginsToClean)
+        {
+            plugin.IsSelected = false;
+        }
     }
 
     private async Task StartCleaningAsync()
@@ -806,19 +845,19 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
         Mo2Path = state.Mo2ExecutablePath;
         Mo2ModeEnabled = state.Mo2ModeEnabled;
         PartialFormsEnabled = state.PartialFormsEnabled;
-        
-        // Plugins list update - use PluginInfo directly from state (preserves IsInSkipList)
-        var statePlugins = state.PluginsToClean;
-        if (PluginsToClean.Count != statePlugins.Count ||
-            !PluginsToClean.SequenceEqual(statePlugins))
+
+        // Plugins list update - filter out skipped plugins from display
+        var displayPlugins = state.PluginsToClean.Where(p => !p.IsInSkipList).ToList();
+        if (PluginsToClean.Count != displayPlugins.Count ||
+            !PluginsToClean.SequenceEqual(displayPlugins))
         {
             PluginsToClean.Clear();
-            foreach (var p in statePlugins)
+            foreach (var p in displayPlugins)
             {
                 PluginsToClean.Add(p);
             }
         }
-        
+
         if (state.IsCleaning)
         {
             StatusText = $"Cleaning: {state.CurrentPlugin} ({state.Progress}/{state.TotalPlugins})";

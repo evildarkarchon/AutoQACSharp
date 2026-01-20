@@ -73,11 +73,13 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
             // 3. Detect Game (if unknown) and Update State
             if (config.CurrentGameType == GameType.Unknown)
             {
-                var detectedGame = _gameDetectionService.DetectFromExecutable(config.XEditExecutablePath ?? string.Empty);
+                var detectedGame =
+                    _gameDetectionService.DetectFromExecutable(config.XEditExecutablePath ?? string.Empty);
 
                 if (detectedGame == GameType.Unknown && !string.IsNullOrEmpty(config.LoadOrderPath))
                 {
-                    detectedGame = await _gameDetectionService.DetectFromLoadOrderAsync(config.LoadOrderPath, ct).ConfigureAwait(false);
+                    detectedGame = await _gameDetectionService.DetectFromLoadOrderAsync(config.LoadOrderPath, ct)
+                        .ConfigureAwait(false);
                 }
 
                 if (detectedGame != GameType.Unknown)
@@ -106,13 +108,13 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
                 // Apply skip list status to plugins and filter out skipped ones
                 pluginsToClean = allPlugins
                     .Select(p => p with { IsInSkipList = skipSet.Contains(p.FileName), DetectedGameType = gameType })
-                    .Where(p => !p.IsInSkipList)
+                    .Where(p => !p.IsInSkipList && p.IsSelected)
                     .ToList();
             }
             else
             {
-                // No game detected - just filter by existing IsInSkipList flag
-                pluginsToClean = allPlugins.Where(p => !p.IsInSkipList).ToList();
+                // No game detected - just filter by existing IsInSkipList flag and selection
+                pluginsToClean = allPlugins.Where(p => !p.IsInSkipList && p.IsSelected).ToList();
             }
 
             // 5. Update state - cleaning started

@@ -44,7 +44,7 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
             .WithNamingConvention(NullNamingConvention.Instance)
             .IgnoreUnmatchedProperties()
             .Build();
-            
+
         if (!Directory.Exists(_configDirectory))
         {
             Directory.CreateDirectory(_configDirectory);
@@ -147,12 +147,9 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
                 var existingConfig = _deserializer.Deserialize<UserConfiguration>(existingContent);
 
                 // Merge skip lists from existing Settings.yaml into the migrated config
-                if (existingConfig?.SkipLists != null)
+                foreach (var kvp in existingConfig.SkipLists)
                 {
-                    foreach (var kvp in existingConfig.SkipLists)
-                    {
-                        legacyConfig.SkipLists[kvp.Key] = kvp.Value;
-                    }
+                    legacyConfig.SkipLists[kvp.Key] = kvp.Value;
                 }
             }
 
@@ -220,17 +217,17 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
 
         if (!string.IsNullOrEmpty(config.XEdit.Binary) && !File.Exists(config.XEdit.Binary))
         {
-             _logger.Warning($"xEdit binary not found: {config.XEdit.Binary}");
-             isValid = false;
+            _logger.Warning($"xEdit binary not found: {config.XEdit.Binary}");
+            isValid = false;
         }
 
         if (config.Settings.Mo2Mode)
         {
-             if (!string.IsNullOrEmpty(config.ModOrganizer.Binary) && !File.Exists(config.ModOrganizer.Binary))
-             {
-                 _logger.Warning($"MO2 binary not found: {config.ModOrganizer.Binary}");
-                 isValid = false;
-             }
+            if (!string.IsNullOrEmpty(config.ModOrganizer.Binary) && !File.Exists(config.ModOrganizer.Binary))
+            {
+                _logger.Warning($"MO2 binary not found: {config.ModOrganizer.Binary}");
+                isValid = false;
+            }
         }
 
         return isValid;
@@ -245,13 +242,19 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
         var result = new List<string>();
         var key = GetGameKey(gameType);
 
-        // 1. User's game-specific skip list
+        // 1. User's game-specific skip list (highest priority - user overrides)
         if (userConfig.SkipLists.TryGetValue(key, out var userList))
         {
             result.AddRange(userList);
         }
 
-        // 2. Universal from Main.yaml (always applied for safety)
+        // 2. Game-specific skip list from Main.yaml (default DLC/base game protections)
+        if (_mainConfigCache.Data.SkipLists.TryGetValue(key, out var mainGameList))
+        {
+            result.AddRange(mainGameList);
+        }
+
+        // 3. Universal from Main.yaml (always applied for safety)
         if (_mainConfigCache.Data.SkipLists.TryGetValue("Universal", out var universalList))
         {
             result.AddRange(universalList);
@@ -259,6 +262,7 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
 
         return result.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     }
+
 
     public async Task<List<string>> GetXEditExecutableNamesAsync(GameType gameType)
     {
@@ -269,6 +273,7 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
         {
             return list;
         }
+
         // Fallback to Universal if specific not found? Or maybe Universal is always useful?
         if (_mainConfigCache.Data.XEditLists.TryGetValue("Universal", out var universalList))
         {
@@ -333,7 +338,8 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
         var currentList = await GetGameSpecificSkipListAsync(gameType, ct).ConfigureAwait(false);
 
         // Find and remove (case-insensitive)
-        var toRemove = currentList.FirstOrDefault(p => string.Equals(p, pluginName, StringComparison.OrdinalIgnoreCase));
+        var toRemove =
+            currentList.FirstOrDefault(p => string.Equals(p, pluginName, StringComparison.OrdinalIgnoreCase));
         if (toRemove != null)
         {
             currentList.Remove(toRemove);
@@ -348,6 +354,7 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
         {
             return gameType;
         }
+
         return GameType.Unknown;
     }
 
@@ -362,20 +369,16 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
     {
         var config = await LoadUserConfigAsync(ct).ConfigureAwait(false);
         var key = GetGameKey(gameType);
-        
-        if (config.GameDataFolderOverrides.TryGetValue(key, out var folderPath))
-        {
-            return folderPath;
-        }
-        
-        return null;
+
+        return config.GameDataFolderOverrides.GetValueOrDefault(key);
     }
 
-    public async Task SetGameDataFolderOverrideAsync(GameType gameType, string? folderPath, CancellationToken ct = default)
+    public async Task SetGameDataFolderOverrideAsync(GameType gameType, string? folderPath,
+        CancellationToken ct = default)
     {
         var config = await LoadUserConfigAsync(ct).ConfigureAwait(false);
         var key = GetGameKey(gameType);
-        
+
         if (string.IsNullOrWhiteSpace(folderPath))
         {
             // Remove the override if null or empty
@@ -387,7 +390,7 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
             config.GameDataFolderOverrides[key] = folderPath;
             _logger.Information("Set data folder override for {GameType} to {FolderPath}", gameType, folderPath);
         }
-        
+
         await SaveUserConfigAsync(config, ct).ConfigureAwait(false);
     }
 
