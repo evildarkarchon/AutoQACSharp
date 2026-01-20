@@ -36,7 +36,7 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
     public ConfigurationService(ILoggingService logger, string? configDirectory = null)
     {
         _logger = logger;
-        _configDirectory = configDirectory ?? "AutoQAC Data";
+        _configDirectory = configDirectory ?? ResolveConfigDirectory(logger);
         _serializer = new SerializerBuilder()
             .WithNamingConvention(NullNamingConvention.Instance)
             .Build();
@@ -49,6 +49,30 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
         {
             Directory.CreateDirectory(_configDirectory);
         }
+    }
+
+    private string ResolveConfigDirectory(ILoggingService logger)
+    {
+        var baseDir = AppContext.BaseDirectory;
+
+#if DEBUG
+        // In DEBUG mode, prioritize finding the directory in the source tree (parent directories)
+        var current = new DirectoryInfo(baseDir);
+        // Limit traversal to prevent scanning entire drive (e.g. 6 levels up)
+        for (int i = 0; i < 6 && current != null; i++)
+        {
+            var candidate = Path.Combine(current.FullName, "AutoQAC Data");
+            if (Directory.Exists(candidate))
+            {
+                logger.Information($"[Debug] Resolved configuration directory to source: {candidate}");
+                return candidate;
+            }
+
+            current = current.Parent;
+        }
+#endif
+
+        return Path.Combine(baseDir, "AutoQAC Data");
     }
 
     public async Task<MainConfiguration> LoadMainConfigAsync(CancellationToken ct = default)

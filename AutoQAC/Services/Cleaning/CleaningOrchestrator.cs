@@ -103,18 +103,18 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
             if (gameType != GameType.Unknown)
             {
                 var skipList = await _configService.GetSkipListAsync(gameType).ConfigureAwait(false);
-                var skipSet = new HashSet<string>(skipList ?? [], StringComparer.OrdinalIgnoreCase);
+                var skipSet = new HashSet<string>(skipList, StringComparer.OrdinalIgnoreCase);
 
                 // Apply skip list status to plugins and filter out skipped ones
                 pluginsToClean = allPlugins
                     .Select(p => p with { IsInSkipList = skipSet.Contains(p.FileName), DetectedGameType = gameType })
-                    .Where(p => !p.IsInSkipList && p.IsSelected)
+                    .Where(p => p is { IsInSkipList: false, IsSelected: true })
                     .ToList();
             }
             else
             {
                 // No game detected - just filter by existing IsInSkipList flag and selection
-                pluginsToClean = allPlugins.Where(p => !p.IsInSkipList && p.IsSelected).ToList();
+                pluginsToClean = allPlugins.Where(p => p is { IsInSkipList: false, IsSelected: true }).ToList();
             }
 
             // 5. Update state - cleaning started
@@ -193,7 +193,7 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
                     {
                         break; // No timeout or no callback or max attempts reached
                     }
-                } while (result.TimedOut && attemptNumber < maxRetryAttempts);
+                } while (true);
 
                 pluginStopwatch.Stop();
 
