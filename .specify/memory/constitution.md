@@ -1,50 +1,139 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+<!--
+SYNC IMPACT REPORT
+==================
+Version change: 0.0.0 (template) -> 1.0.0 (initial ratification)
+
+Modified principles: N/A (initial version)
+
+Added sections:
+- Core Principles (5 principles defined)
+- Technology Constraints section
+- Development Workflow section
+- Governance section with amendment procedures
+
+Removed sections: N/A (initial version)
+
+Templates requiring updates:
+- .specify/templates/plan-template.md: Constitution Check section exists, compatible
+- .specify/templates/spec-template.md: Compatible, no changes needed
+- .specify/templates/tasks-template.md: Compatible, no changes needed
+
+Follow-up TODOs: None
+-->
+
+# AutoQAC Constitution
 
 ## Core Principles
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+### I. MVVM Architecture (NON-NEGOTIABLE)
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+This project follows strict Model-View-ViewModel separation:
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+- **Models** (`AutoQAC/Models/`): Pure business logic and data structures with NO UI
+  dependencies (no Avalonia, no ReactiveUI imports)
+- **ViewModels** (`AutoQAC/ViewModels/`): Presentation logic only, inherit from
+  `ReactiveObject`, use `ReactiveCommand` for commands, NO direct UI manipulation
+- **Views** (`AutoQAC/Views/`): XAML with minimal code-behind, pure UI rendering via
+  data binding, NO business logic
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+**Rationale**: Strict layer separation enables independent testing, maintains
+codebase clarity, and prevents coupling that leads to unmaintainable code.
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+### II. Sequential Processing (NON-NEGOTIABLE)
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+Plugin cleaning operations MUST execute one at a time, never in parallel:
 
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+- Only ONE xEdit process may run at any moment
+- Use `foreach` with `await`, never `Task.WhenAll` for cleaning operations
+- Multiple xEdit windows opening simultaneously is a CRITICAL BUG
+- Process queues MUST be strictly sequential
 
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
+**Rationale**: xEdit's file locking mechanisms make parallel processing impossible.
+Violating this constraint corrupts plugin files and crashes the application.
 
-[SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+### III. Async-First
+
+All I/O and long-running operations MUST be asynchronous:
+
+- Async methods MUST use `Async` suffix
+- NEVER use `.Result` or `.Wait()` (causes UI thread deadlocks)
+- Use `ReactiveCommand.CreateFromTask` for async commands
+- Use `ConfigureAwait(false)` in non-UI library code
+- Use `Dispatcher.UIThread.InvokeAsync` for cross-thread UI updates
+
+**Rationale**: Blocking the UI thread creates unresponsive applications and deadlocks
+in Avalonia's reactive model.
+
+### IV. Dependency Injection
+
+Services and dependencies MUST be injected via constructors:
+
+- NO static mutable state
+- NO service locators or ambient context
+- ALL services accessed through interfaces
+- Registration occurs in `Program.cs` or `App.axaml.cs`
+
+**Rationale**: Constructor injection enables unit testing with mocks, makes
+dependencies explicit, and prevents hidden coupling.
+
+### V. Error Transparency
+
+Exceptions MUST be handled explicitly and never swallowed:
+
+- Use structured exception handling with try/catch
+- Log ALL exceptions with context (timestamp, thread ID, operation)
+- Display user-friendly error messages via dialogs
+- NEVER catch exceptions without logging or re-throwing
+- Use Serilog or Microsoft.Extensions.Logging for structured logging
+
+**Rationale**: Silent exception swallowing hides bugs, corrupts state, and makes
+debugging impossible. Users deserve clear error feedback.
+
+## Technology Constraints
+
+**Stack Requirements**:
+
+- **.NET 9** with C# 12, nullable reference types ENABLED
+- **Avalonia UI 11.3.8** for cross-platform XAML
+- **ReactiveUI** for MVVM reactive programming
+- **YamlDotNet** for configuration serialization
+- **xUnit** with FluentAssertions for testing
+
+**Code Standards**:
+
+- One class per file, file name matches class name
+- PascalCase for public members, `_camelCase` for private fields
+- Compiled bindings preferred over reflection-based bindings
+- `IDisposable` objects MUST be disposed (especially event subscriptions)
+
+## Development Workflow
+
+1. **Reference First**: Check `Code_To_Port/` for equivalent functionality
+2. **Models First**: Implement business logic before UI
+3. **ViewModels Second**: Build presentation logic with ReactiveUI
+4. **Views Last**: Create XAML UI with data binding
+5. **Test Incrementally**: Verify each layer before proceeding
+6. **Sequential Always**: Never parallelize plugin operations
 
 ## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
 
-[GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
+This constitution supersedes all other development practices for this project:
 
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+- All code reviews MUST verify compliance with these principles
+- Violations require explicit justification in PR description
+- Complexity beyond these principles requires documented rationale
+- Use CLAUDE.md for runtime development guidance and examples
+
+**Amendment Procedure**:
+
+1. Propose changes via pull request modifying this file
+2. Document rationale for additions, removals, or modifications
+3. Update version according to semantic versioning:
+   - MAJOR: Principle removal or incompatible redefinition
+   - MINOR: New principle or substantial guidance expansion
+   - PATCH: Clarifications, wording, typo fixes
+4. Ensure dependent templates remain compatible
+
+**Compliance Review**: Quarterly review of constitution relevance and adherence.
+
+**Version**: 1.0.0 | **Ratified**: 2026-01-19 | **Last Amended**: 2026-01-19
