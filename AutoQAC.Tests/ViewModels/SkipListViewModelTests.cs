@@ -30,6 +30,16 @@ public sealed class SkipListViewModelTests
         _stateServiceMock.Setup(s => s.StateChanged).Returns(_stateSubject);
         _stateServiceMock.Setup(s => s.CurrentState).Returns(() => _stateSubject.Value);
 
+        // Default setup for GetSkipListAsync - returns empty list (no defaults)
+        // Individual tests can override this for specific scenarios
+        _configServiceMock.Setup(x => x.GetSkipListAsync(It.IsAny<GameType>()))
+            .ReturnsAsync(new List<string>());
+
+        // Default setup for GetDefaultSkipListAsync - returns empty list (no defaults from Main.yaml)
+        // Individual tests can override this for specific scenarios
+        _configServiceMock.Setup(x => x.GetDefaultSkipListAsync(It.IsAny<GameType>()))
+            .ReturnsAsync(new List<string>());
+
         RxApp.MainThreadScheduler = Scheduler.Immediate;
     }
 
@@ -115,6 +125,10 @@ public sealed class SkipListViewModelTests
         });
 
         _configServiceMock.Setup(x => x.GetGameSpecificSkipListAsync(GameType.SkyrimSe, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(skipList);
+
+        // GetSkipListAsync returns merged list (same as user list in this test)
+        _configServiceMock.Setup(x => x.GetSkipListAsync(GameType.SkyrimSe))
             .ReturnsAsync(skipList);
 
         var vm = CreateViewModel();
@@ -531,6 +545,95 @@ public sealed class SkipListViewModelTests
         // Assert
         vm.AvailableGames.Should().NotContain(GameType.Unknown);
         vm.AvailableGames.Should().NotBeEmpty();
+    }
+
+    #endregion
+
+    #region Default Skip List Filtering Tests
+
+    [Fact]
+    public async Task RefreshAvailablePlugins_ShouldExcludeDefaultSkipListPlugins()
+    {
+        // Arrange - simulate user skip list is empty, but default skip list has base game ESMs
+        var loadedPlugins = new List<PluginInfo>
+        {
+            new() { FileName = "Skyrim.esm", FullPath = "Skyrim.esm" },  // In default skip list
+            new() { FileName = "Update.esm", FullPath = "Update.esm" },  // In default skip list
+            new() { FileName = "Dawnguard.esm", FullPath = "Dawnguard.esm" },  // In default skip list
+            new() { FileName = "UserMod.esp", FullPath = "UserMod.esp" },  // NOT in skip list
+            new() { FileName = "AnotherMod.esp", FullPath = "AnotherMod.esp" }  // NOT in skip list
+        };
+
+        var userSkipList = new List<string>(); // User hasn't added any custom entries
+        var mergedSkipList = new List<string> { "Skyrim.esm", "Update.esm", "Dawnguard.esm" }; // Defaults from AutoQAC Main.yaml
+
+        _stateSubject.OnNext(new AppState
+        {
+            CurrentGameType = GameType.SkyrimSe,
+            PluginsToClean = loadedPlugins
+        });
+
+        // GetGameSpecificSkipListAsync returns user's list (empty)
+        _configServiceMock.Setup(x => x.GetGameSpecificSkipListAsync(GameType.SkyrimSe, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(userSkipList);
+
+        // GetSkipListAsync returns merged list (includes defaults)
+        _configServiceMock.Setup(x => x.GetSkipListAsync(GameType.SkyrimSe))
+            .ReturnsAsync(mergedSkipList);
+
+        var vm = CreateViewModel();
+
+        // Act
+        await vm.LoadSkipListAsync();
+
+        // Assert - AvailablePlugins should NOT contain default skip list entries
+        vm.AvailablePlugins.Should().HaveCount(2, "only non-skipped plugins should appear");
+        vm.AvailablePlugins.Should().Contain("UserMod.esp");
+        vm.AvailablePlugins.Should().Contain("AnotherMod.esp");
+        vm.AvailablePlugins.Should().NotContain("Skyrim.esm", "base game ESM is in default skip list");
+        vm.AvailablePlugins.Should().NotContain("Update.esm", "base game ESM is in default skip list");
+        vm.AvailablePlugins.Should().NotContain("Dawnguard.esm", "DLC is in default skip list");
+
+        // SkipListEntries should only show user's entries (for editing)
+        vm.SkipListEntries.Should().BeEmpty("user hasn't added any custom entries");
+    }
+
+    [Fact]
+    public async Task AvailablePlugins_ShouldExcludeBothUserAndDefaultSkipListPlugins()
+    {
+        // Arrange - user has some entries, default list has base game entries
+        var loadedPlugins = new List<PluginInfo>
+        {
+            new() { FileName = "Skyrim.esm", FullPath = "Skyrim.esm" },  // In default skip list
+            new() { FileName = "UserSkipped.esp", FullPath = "UserSkipped.esp" },  // In user skip list
+            new() { FileName = "CleanablePlugin.esp", FullPath = "CleanablePlugin.esp" }  // NOT in any skip list
+        };
+
+        var userSkipList = new List<string> { "UserSkipped.esp" };
+        var mergedSkipList = new List<string> { "Skyrim.esm", "UserSkipped.esp" }; // Combined
+
+        _stateSubject.OnNext(new AppState
+        {
+            CurrentGameType = GameType.SkyrimSe,
+            PluginsToClean = loadedPlugins
+        });
+
+        _configServiceMock.Setup(x => x.GetGameSpecificSkipListAsync(GameType.SkyrimSe, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(userSkipList);
+
+        _configServiceMock.Setup(x => x.GetSkipListAsync(GameType.SkyrimSe))
+            .ReturnsAsync(mergedSkipList);
+
+        var vm = CreateViewModel();
+
+        // Act
+        await vm.LoadSkipListAsync();
+
+        // Assert - only CleanablePlugin.esp should appear in AvailablePlugins
+        vm.AvailablePlugins.Should().HaveCount(1);
+        vm.AvailablePlugins.Should().Contain("CleanablePlugin.esp");
+        vm.AvailablePlugins.Should().NotContain("Skyrim.esm");
+        vm.AvailablePlugins.Should().NotContain("UserSkipped.esp");
     }
 
     #endregion

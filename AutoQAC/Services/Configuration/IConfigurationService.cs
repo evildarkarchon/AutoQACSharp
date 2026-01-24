@@ -21,6 +21,7 @@ public interface IConfigurationService
 
     // Game-specific queries
     Task<List<string>> GetSkipListAsync(GameType gameType);
+    Task<List<string>> GetDefaultSkipListAsync(GameType gameType);
     Task<List<string>> GetXEditExecutableNamesAsync(GameType gameType);
 
     // Skip list management (game-specific only, for UI editing)

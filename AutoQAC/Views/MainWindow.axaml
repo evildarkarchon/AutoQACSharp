@@ -136,6 +136,9 @@
                     <CheckBox Content="Partial Forms (Experimental)"
                               IsChecked="{Binding PartialFormsEnabled}"
                               Command="{Binding TogglePartialFormsCommand}" />
+                    <CheckBox Content="Disable Skip Lists"
+                              IsChecked="{Binding DisableSkipListsEnabled}"
+                              ToolTip.Tip="Show all plugins, ignoring skip and ignore lists" />
                     <Button Content="Reset Settings"
                             Command="{Binding ResetSettingsCommand}"
                             VerticalAlignment="Center" />

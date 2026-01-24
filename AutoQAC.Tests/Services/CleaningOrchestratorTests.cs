@@ -1,5 +1,6 @@
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
+using AutoQAC.Models.Configuration;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
 using AutoQAC.Services.GameDetection;
@@ -28,6 +29,14 @@ public sealed class CleaningOrchestratorTests
         _stateServiceMock = new Mock<IStateService>();
         _configServiceMock = new Mock<IConfigurationService>();
         _loggerMock = new Mock<ILoggingService>();
+
+        // Default mock setup for GetSkipListAsync to return empty list instead of null
+        _configServiceMock.Setup(s => s.GetSkipListAsync(It.IsAny<GameType>()))
+            .ReturnsAsync(new List<string>());
+
+        // Default mock setup for LoadUserConfigAsync to return default config (DisableSkipLists = false)
+        _configServiceMock.Setup(s => s.LoadUserConfigAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new UserConfiguration());
 
         _orchestrator = new CleaningOrchestrator(
             _cleaningServiceMock.Object,
@@ -505,6 +514,128 @@ public sealed class CleaningOrchestratorTests
             s => s.UpdateState(It.IsAny<Func<AppState, AppState>>()),
             Times.AtLeast(2),
             "UpdateState should be called at least once per plugin");
+    }
+
+    #endregion
+
+    #region DisableSkipLists Tests
+
+    /// <summary>
+    /// Verifies that when DisableSkipLists is enabled, plugins in the skip list are still cleaned.
+    /// This tests the fix for Bug 1: CleaningOrchestrator should respect DisableSkipLists setting.
+    /// </summary>
+    [Fact]
+    public async Task StartCleaningAsync_ShouldCleanSkippedPlugins_WhenDisableSkipListsEnabled()
+    {
+        // Arrange
+        var plugins = new List<PluginInfo>
+        {
+            new() { FileName = "Skyrim.esm", FullPath = "Skyrim.esm", IsSelected = true },  // In skip list
+            new() { FileName = "Update.esm", FullPath = "Update.esm", IsSelected = true },  // In skip list
+            new() { FileName = "UserMod.esp", FullPath = "UserMod.esp", IsSelected = true }   // Not in skip list
+        };
+
+        var appState = new AppState
+        {
+            LoadOrderPath = "plugins.txt",
+            XEditExecutablePath = "xedit.exe",
+            CurrentGameType = GameType.SkyrimSe,
+            PluginsToClean = plugins
+        };
+        _stateServiceMock.Setup(s => s.CurrentState).Returns(appState);
+
+        _cleaningServiceMock.Setup(s => s.ValidateEnvironmentAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        _cleaningServiceMock.Setup(s => s.CleanPluginAsync(It.IsAny<PluginInfo>(), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CleaningResult { Status = CleaningStatus.Cleaned });
+
+        // Skip list contains base game ESMs
+        _configServiceMock.Setup(s => s.GetSkipListAsync(GameType.SkyrimSe))
+            .ReturnsAsync(new List<string> { "Skyrim.esm", "Update.esm" });
+
+        // DisableSkipLists is ENABLED
+        var userConfig = new UserConfiguration
+        {
+            Settings = new AutoQacSettings { DisableSkipLists = true }
+        };
+        _configServiceMock.Setup(s => s.LoadUserConfigAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(userConfig);
+
+        // Act
+        await _orchestrator.StartCleaningAsync();
+
+        // Assert - ALL 3 plugins should be cleaned, including those in skip list
+        _cleaningServiceMock.Verify(
+            s => s.CleanPluginAsync(It.Is<PluginInfo>(p => p.FileName == "Skyrim.esm"), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>()),
+            Times.Once,
+            "Skyrim.esm should be cleaned when DisableSkipLists is enabled");
+        _cleaningServiceMock.Verify(
+            s => s.CleanPluginAsync(It.Is<PluginInfo>(p => p.FileName == "Update.esm"), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>()),
+            Times.Once,
+            "Update.esm should be cleaned when DisableSkipLists is enabled");
+        _cleaningServiceMock.Verify(
+            s => s.CleanPluginAsync(It.Is<PluginInfo>(p => p.FileName == "UserMod.esp"), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    /// <summary>
+    /// Verifies that when DisableSkipLists is disabled (default), plugins in the skip list are excluded.
+    /// </summary>
+    [Fact]
+    public async Task StartCleaningAsync_ShouldExcludeSkippedPlugins_WhenDisableSkipListsDisabled()
+    {
+        // Arrange
+        var plugins = new List<PluginInfo>
+        {
+            new() { FileName = "Skyrim.esm", FullPath = "Skyrim.esm", IsSelected = true },  // In skip list
+            new() { FileName = "Update.esm", FullPath = "Update.esm", IsSelected = true },  // In skip list
+            new() { FileName = "UserMod.esp", FullPath = "UserMod.esp", IsSelected = true }   // Not in skip list
+        };
+
+        var appState = new AppState
+        {
+            LoadOrderPath = "plugins.txt",
+            XEditExecutablePath = "xedit.exe",
+            CurrentGameType = GameType.SkyrimSe,
+            PluginsToClean = plugins
+        };
+        _stateServiceMock.Setup(s => s.CurrentState).Returns(appState);
+
+        _cleaningServiceMock.Setup(s => s.ValidateEnvironmentAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        _cleaningServiceMock.Setup(s => s.CleanPluginAsync(It.IsAny<PluginInfo>(), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CleaningResult { Status = CleaningStatus.Cleaned });
+
+        // Skip list contains base game ESMs
+        _configServiceMock.Setup(s => s.GetSkipListAsync(GameType.SkyrimSe))
+            .ReturnsAsync(new List<string> { "Skyrim.esm", "Update.esm" });
+
+        // DisableSkipLists is DISABLED (default)
+        var userConfig = new UserConfiguration
+        {
+            Settings = new AutoQacSettings { DisableSkipLists = false }
+        };
+        _configServiceMock.Setup(s => s.LoadUserConfigAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(userConfig);
+
+        // Act
+        await _orchestrator.StartCleaningAsync();
+
+        // Assert - Only UserMod.esp should be cleaned
+        _cleaningServiceMock.Verify(
+            s => s.CleanPluginAsync(It.Is<PluginInfo>(p => p.FileName == "Skyrim.esm"), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>()),
+            Times.Never,
+            "Skyrim.esm should NOT be cleaned when DisableSkipLists is disabled");
+        _cleaningServiceMock.Verify(
+            s => s.CleanPluginAsync(It.Is<PluginInfo>(p => p.FileName == "Update.esm"), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>()),
+            Times.Never,
+            "Update.esm should NOT be cleaned when DisableSkipLists is disabled");
+        _cleaningServiceMock.Verify(
+            s => s.CleanPluginAsync(It.Is<PluginInfo>(p => p.FileName == "UserMod.esp"), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>()),
+            Times.Once,
+            "UserMod.esp should be cleaned");
     }
 
     #endregion

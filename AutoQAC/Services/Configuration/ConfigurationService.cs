@@ -95,6 +95,7 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
             await _fileLock.WaitAsync(ct).ConfigureAwait(false);
             var content = await File.ReadAllTextAsync(path, ct).ConfigureAwait(false);
             _mainConfigCache = _deserializer.Deserialize<MainConfiguration>(content);
+            _logger.Information("Loaded Main Configuration (Version: {Version})", _mainConfigCache.Data.Version);
             return _mainConfigCache;
         }
         catch (Exception ex)
@@ -287,6 +288,28 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
         return result.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     }
 
+    public async Task<List<string>> GetDefaultSkipListAsync(GameType gameType)
+    {
+        // Load Main.yaml config only - this contains the default skip lists
+        _mainConfigCache ??= await LoadMainConfigAsync().ConfigureAwait(false);
+
+        var result = new List<string>();
+        var key = GetGameKey(gameType);
+
+        // 1. Game-specific skip list from Main.yaml (default DLC/base game protections)
+        if (_mainConfigCache.Data.SkipLists.TryGetValue(key, out var mainGameList))
+        {
+            result.AddRange(mainGameList);
+        }
+
+        // 2. Universal from Main.yaml (always applied for safety)
+        if (_mainConfigCache.Data.SkipLists.TryGetValue("Universal", out var universalList))
+        {
+            result.AddRange(universalList);
+        }
+
+        return result.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    }
 
     public async Task<List<string>> GetXEditExecutableNamesAsync(GameType gameType)
     {

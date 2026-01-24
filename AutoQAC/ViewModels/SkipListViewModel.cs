@@ -135,7 +135,7 @@ public sealed class SkipListViewModel : ViewModelBase, IDisposable
         // Commands
         AddSelectedPluginCommand = ReactiveCommand.Create(AddSelectedPlugin, canAddFromPlugins);
         AddManualEntryCommand = ReactiveCommand.Create(AddManualEntry, canAddManual);
-        RemoveSelectedEntryCommand = ReactiveCommand.Create(RemoveSelectedEntry, canRemove);
+        RemoveSelectedEntryCommand = ReactiveCommand.CreateFromTask(RemoveSelectedEntryAsync, canRemove);
         SaveCommand = ReactiveCommand.CreateFromTask(SaveAsync);
         CancelCommand = ReactiveCommand.Create(() => false);
 
@@ -201,7 +201,7 @@ public sealed class SkipListViewModel : ViewModelBase, IDisposable
                 SkipListEntries.Add(entry);
             }
 
-            RefreshAvailablePlugins();
+            await RefreshAvailablePluginsAsync();
             _logger.Debug("Loaded {Count} entries for {Game} skip list", list.Count, game);
         }
         catch (Exception ex)
@@ -212,15 +212,17 @@ public sealed class SkipListViewModel : ViewModelBase, IDisposable
         }
     }
 
-    private void RefreshAvailablePlugins()
+    private async Task RefreshAvailablePluginsAsync()
     {
         AvailablePlugins.Clear();
 
         // Get loaded plugins from state
         var loadedPlugins = _stateService.CurrentState.PluginsToClean;
 
-        // Filter out plugins already in skip list
-        var skipSet = new HashSet<string>(SkipListEntries, StringComparer.OrdinalIgnoreCase);
+        // Get the merged skip list (user + defaults from Main.yaml)
+        // This ensures base game ESMs and DLCs are excluded from available plugins
+        var mergedSkipList = await _configService.GetSkipListAsync(SelectedGame);
+        var skipSet = new HashSet<string>(mergedSkipList, StringComparer.OrdinalIgnoreCase);
 
         foreach (var plugin in loadedPlugins.Where(p => !skipSet.Contains(p.FileName)))
         {
@@ -284,7 +286,7 @@ public sealed class SkipListViewModel : ViewModelBase, IDisposable
         _logger.Debug("Added {Plugin} to skip list via manual entry", entry);
     }
 
-    private void RemoveSelectedEntry()
+    private async Task RemoveSelectedEntryAsync()
     {
         if (string.IsNullOrEmpty(SelectedEntry))
             return;
@@ -292,11 +294,22 @@ public sealed class SkipListViewModel : ViewModelBase, IDisposable
         var entry = SelectedEntry;
         SkipListEntries.Remove(entry);
 
-        // Add back to available plugins if it was loaded
+        // Add back to available plugins if it was loaded AND not in the default skip list
         var loadedPlugins = _stateService.CurrentState.PluginsToClean;
-        if (loadedPlugins.Any(p => string.Equals(p.FileName, entry, StringComparison.OrdinalIgnoreCase)))
+        var isLoadedPlugin = loadedPlugins.Any(p => string.Equals(p.FileName, entry, StringComparison.OrdinalIgnoreCase));
+
+        if (isLoadedPlugin)
         {
-            AvailablePlugins.Add(entry);
+            // Check if plugin is in the DEFAULT skip list (from Main.yaml), not the merged list
+            // We use GetDefaultSkipListAsync because the user's removal hasn't been saved yet,
+            // and GetSkipListAsync would still include the unsaved user entry
+            var defaultSkipList = await _configService.GetDefaultSkipListAsync(SelectedGame);
+            var inDefaultSkipList = defaultSkipList.Any(s => string.Equals(s, entry, StringComparison.OrdinalIgnoreCase));
+
+            if (!inDefaultSkipList)
+            {
+                AvailablePlugins.Add(entry);
+            }
         }
 
         SelectedEntry = null;

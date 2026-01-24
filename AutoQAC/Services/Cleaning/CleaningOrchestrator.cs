@@ -96,13 +96,26 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
 
             gameType = config.CurrentGameType;
 
-            // 4. Apply skip list filtering
-            // If game was detected during this workflow (was Unknown when plugins loaded),
-            // we need to fetch and apply the skip list now
+            // 4. Apply skip list filtering (respecting DisableSkipLists setting)
+            // Check if user has disabled skip lists entirely
+            var userConfig = await _configService.LoadUserConfigAsync(ct).ConfigureAwait(false);
+            var disableSkipLists = userConfig.Settings.DisableSkipLists;
+
             List<PluginInfo> pluginsToClean;
-            if (gameType != GameType.Unknown)
+            if (disableSkipLists)
             {
-                var skipList = await _configService.GetSkipListAsync(gameType).ConfigureAwait(false);
+                // Skip lists disabled - just filter by selection, ignoring skip list status
+                _logger.Debug("Skip lists disabled by user setting - cleaning all selected plugins");
+                pluginsToClean = allPlugins
+                    .Where(p => p.IsSelected)
+                    .Select(p => p with { DetectedGameType = gameType })
+                    .ToList();
+            }
+            else if (gameType != GameType.Unknown)
+            {
+                // If game was detected during this workflow (was Unknown when plugins loaded),
+                // we need to fetch and apply the skip list now
+                var skipList = await _configService.GetSkipListAsync(gameType).ConfigureAwait(false) ?? [];
                 var skipSet = new HashSet<string>(skipList, StringComparer.OrdinalIgnoreCase);
 
                 // Apply skip list status to plugins and filter out skipped ones

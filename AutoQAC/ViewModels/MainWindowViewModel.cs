@@ -71,6 +71,14 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
         set => this.RaiseAndSetIfChanged(ref _partialFormsEnabled, value);
     }
 
+    private bool _disableSkipListsEnabled;
+
+    public bool DisableSkipListsEnabled
+    {
+        get => _disableSkipListsEnabled;
+        set => this.RaiseAndSetIfChanged(ref _disableSkipListsEnabled, value);
+    }
+
     private GameType _selectedGame = GameType.Unknown;
 
     public GameType SelectedGame
@@ -316,6 +324,19 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
                 _ => { },
                 ex => _logger.Error(ex, "Failed to refresh plugins after skip list change"));
         _disposables.Add(skipListChangedSubscription);
+
+        // Auto-save DisableSkipLists when changed and refresh plugin list
+        var disableSkipListsSubscription = this.WhenAnyValue(x => x.DisableSkipListsEnabled)
+            .Skip(1) // Skip initial load
+            .SelectMany(_ => Observable.FromAsync(async () =>
+            {
+                await SaveConfigurationAsync();
+                await RefreshPluginsForGameAsync(SelectedGame);
+            }))
+            .Subscribe(
+                _ => { },
+                ex => _logger.Error(ex, "Failed to handle DisableSkipLists change"));
+        _disposables.Add(disableSkipListsSubscription);
     }
 
     private async Task InitializeAsync()
@@ -336,9 +357,17 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
                 MaxConcurrentSubprocesses = config.Settings.MaxConcurrentSubprocesses
             });
 
-            // Load saved game selection
+            // Load DisableSkipLists setting - use backing field first to avoid triggering
+            // the subscription before SelectedGame is set (which would cause a race condition)
+            _disableSkipListsEnabled = config.Settings.DisableSkipLists;
+
+            // Load saved game selection - this triggers gameSelectionSubscription which loads plugins
             var savedGame = await _configService.GetSelectedGameAsync();
-            SelectedGame = savedGame; // This will trigger the subscription which loads plugins
+            SelectedGame = savedGame;
+
+            // Now notify UI that DisableSkipListsEnabled changed - the subscription will fire
+            // but SelectedGame is already set correctly, so no race condition occurs
+            this.RaisePropertyChanged(nameof(DisableSkipListsEnabled));
 
             // If no game was saved but we have a load order file, try to detect game and load plugins
             if (savedGame == GameType.Unknown &&
@@ -401,7 +430,8 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
 
                 // Apply skip list status if a game is selected
                 var skipList = await _configService.GetSkipListAsync(SelectedGame);
-                var pluginsWithSkipStatus = ApplySkipListStatus(plugins, skipList, SelectedGame);
+                var pluginsWithSkipStatus =
+                    ApplySkipListStatus(plugins, skipList, SelectedGame, DisableSkipListsEnabled);
                 _stateService.SetPluginsToClean(pluginsWithSkipStatus);
                 StatusText = $"Loaded {plugins.Count} plugins from load order";
             }
@@ -522,6 +552,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
         config.XEdit.Binary = XEditPath;
         config.ModOrganizer.Binary = Mo2Path;
         config.Settings.Mo2Mode = Mo2ModeEnabled;
+        config.Settings.DisableSkipLists = DisableSkipListsEnabled;
 
         await _configService.SaveUserConfigAsync(config);
     }
@@ -579,7 +610,8 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
                 if (plugins.Count > 0)
                 {
                     // Apply skip list filtering and mark IsInSkipList
-                    var pluginsWithSkipStatus = ApplySkipListStatus(plugins, skipList, gameType);
+                    var pluginsWithSkipStatus =
+                        ApplySkipListStatus(plugins, skipList, gameType, DisableSkipListsEnabled);
                     _stateService.SetPluginsToClean(pluginsWithSkipStatus);
                     StatusText = $"Loaded {plugins.Count} plugins for {gameType}";
                     return;
@@ -602,7 +634,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
                 StatusText = $"Loading plugins from file for {gameType}...";
                 var plugins = await _pluginLoadingService.GetPluginsFromFileAsync(LoadOrderPath);
                 // Apply skip list filtering and mark IsInSkipList
-                var pluginsWithSkipStatus = ApplySkipListStatus(plugins, skipList, gameType);
+                var pluginsWithSkipStatus = ApplySkipListStatus(plugins, skipList, gameType, DisableSkipListsEnabled);
                 _stateService.SetPluginsToClean(pluginsWithSkipStatus);
                 StatusText = $"Loaded {plugins.Count} plugins from file";
             }
@@ -623,14 +655,15 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
 
     /// <summary>
     /// Applies skip list status to plugins, marking IsInSkipList for each plugin.
+    /// If disableSkipLists is true, all plugins will have IsInSkipList = false.
     /// </summary>
     private static List<PluginInfo> ApplySkipListStatus(List<PluginInfo> plugins, List<string> skipList,
-        GameType gameType)
+        GameType gameType, bool disableSkipLists)
     {
         var skipSet = new HashSet<string>(skipList, StringComparer.OrdinalIgnoreCase);
         return plugins.Select(p => p with
         {
-            IsInSkipList = skipSet.Contains(p.FileName),
+            IsInSkipList = !disableSkipLists && skipSet.Contains(p.FileName),
             DetectedGameType = gameType
         }).ToList();
     }
