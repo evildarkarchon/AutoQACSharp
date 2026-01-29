@@ -30,15 +30,11 @@ public sealed class LoadOrderConfig
 public sealed class ModOrganizerConfig
 {
     [YamlMember(Alias = "Binary")] public string? Binary { get; set; }
-
-    [YamlMember(Alias = "Install_Path")] public string? InstallPath { get; set; }
 }
 
 public sealed class XEditConfig
 {
     [YamlMember(Alias = "Binary")] public string? Binary { get; set; }
-
-    [YamlMember(Alias = "Install_Path")] public string? InstallPath { get; set; }
 }
 
 public sealed class AutoQacSettings
