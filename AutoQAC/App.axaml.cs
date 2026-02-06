@@ -50,6 +50,21 @@ namespace AutoQAC
 
                 var mainWindow = new MainWindow(viewModel, logger, fileDialog, configService, stateService, orchestrator);
                 desktop.MainWindow = mainWindow;
+
+                desktop.ShutdownRequested += (sender, args) =>
+                {
+                    // Flush pending config saves before app exits (per user decision)
+                    // Synchronous wait is acceptable during app shutdown
+                    try
+                    {
+                        configService.FlushPendingSavesAsync().GetAwaiter().GetResult();
+                    }
+                    catch (Exception ex)
+                    {
+                        // Log but don't prevent shutdown
+                        logger.Warning("[Config] Failed to flush config on shutdown: {Message}", ex.Message);
+                    }
+                };
             }
 
             base.OnFrameworkInitializationCompleted();

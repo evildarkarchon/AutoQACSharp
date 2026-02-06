@@ -75,6 +75,10 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
             // Clean orphaned processes before starting
             await _processService.CleanOrphanedProcessesAsync(ct).ConfigureAwait(false);
 
+            // Flush any pending config saves before launching xEdit
+            // (per user decision: "Always force-flush pending config saves before launching xEdit")
+            await _configService.FlushPendingSavesAsync(ct).ConfigureAwait(false);
+
             // 1. Validate configuration
             var isValid = await ValidateConfigurationAsync(ct).ConfigureAwait(false);
             if (!isValid)
