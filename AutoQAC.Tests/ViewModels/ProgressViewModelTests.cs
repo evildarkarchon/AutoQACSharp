@@ -72,16 +72,17 @@ public sealed class ProgressViewModelTests
     }
 
     [Fact]
-    public void StopCommand_ShouldCallOrchestratorStop()
+    public async Task StopCommand_ShouldCallOrchestratorStop()
     {
         // Arrange
+        _orchestratorMock.Setup(x => x.StopCleaningAsync()).Returns(Task.CompletedTask);
         var vm = CreateViewModel();
 
         // Act
-        vm.StopCommand.Execute().Subscribe();
+        await vm.StopCommand.Execute();
 
         // Assert
-        _orchestratorMock.Verify(x => x.StopCleaning(), Times.Once);
+        _orchestratorMock.Verify(x => x.StopCleaningAsync(), Times.Once);
     }
 
     #region Edge Case Tests

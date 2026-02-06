@@ -257,8 +257,8 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
             StartCleaningAsync,
             canStart);
 
-        StopCleaningCommand = ReactiveCommand.Create(
-            StopCleaning,
+        StopCleaningCommand = ReactiveCommand.CreateFromTask(
+            HandleStopAsync,
             this.WhenAnyValue(x => x.IsCleaning));
 
         ExitCommand = ReactiveCommand.Create(Exit);
@@ -761,10 +761,19 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
         return await _messageDialog.ShowRetryAsync("Plugin Timeout", message, details);
     }
 
-    private void StopCleaning()
+    private async Task HandleStopAsync()
     {
-        _orchestrator.StopCleaning();
         StatusText = "Stopping...";
+        await _orchestrator.StopCleaningAsync();
+
+        // Check if grace period expired (Path A: user waited patiently)
+        if (_orchestrator.LastTerminationResult == TerminationResult.GracePeriodExpired)
+        {
+            // TODO(01-02): Replace this with a user confirmation dialog
+            // For now, auto-escalate to force kill since the prompt UI
+            // will be added with the "Stopping..." spinner in a future plan.
+            await _orchestrator.ForceStopCleaningAsync();
+        }
     }
 
     private void Exit()

@@ -90,7 +90,7 @@ public sealed class ProgressViewModel : ViewModelBase, IDisposable
 
         // StopCommand is only enabled when cleaning is in progress
         var canStop = this.WhenAnyValue(x => x.IsCleaning);
-        StopCommand = ReactiveCommand.Create(() => _orchestrator.StopCleaning(), canStop);
+        StopCommand = ReactiveCommand.CreateFromTask(() => _orchestrator.StopCleaningAsync(), canStop);
         
         // CloseCommand raises an event to request window closure
         CloseCommand = ReactiveCommand.Create(() => CloseRequested?.Invoke(this, EventArgs.Empty));

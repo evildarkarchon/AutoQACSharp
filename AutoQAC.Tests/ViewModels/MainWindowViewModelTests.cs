@@ -401,15 +401,18 @@ public sealed class MainWindowViewModelTests
     }
 
     /// <summary>
-    /// Verifies that StopCleaningCommand calls orchestrator's StopCleaning.
+    /// Verifies that StopCleaningCommand calls orchestrator's StopCleaningAsync.
     /// </summary>
     [Fact]
-    public void StopCleaningCommand_ShouldCallOrchestratorStop()
+    public async Task StopCleaningCommand_ShouldCallOrchestratorStop()
     {
         // Arrange
         var stateSubject = new BehaviorSubject<AppState>(new AppState { IsCleaning = true });
         _stateServiceMock.Setup(s => s.StateChanged).Returns(stateSubject);
         _stateServiceMock.Setup(s => s.CurrentState).Returns(new AppState { IsCleaning = true });
+
+        _orchestratorMock.Setup(x => x.StopCleaningAsync()).Returns(Task.CompletedTask);
+        _orchestratorMock.Setup(x => x.LastTerminationResult).Returns((TerminationResult?)null);
 
         var vm = new MainWindowViewModel(
             _configServiceMock.Object,
@@ -422,10 +425,10 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock.Object);
 
         // Act
-        vm.StopCleaningCommand.Execute().Subscribe();
+        await vm.StopCleaningCommand.Execute();
 
         // Assert
-        _orchestratorMock.Verify(x => x.StopCleaning(), Times.Once);
+        _orchestratorMock.Verify(x => x.StopCleaningAsync(), Times.Once);
         vm.StatusText.Should().Contain("Stopping");
     }
 

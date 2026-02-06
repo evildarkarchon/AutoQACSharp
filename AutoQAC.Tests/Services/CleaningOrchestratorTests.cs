@@ -5,6 +5,7 @@ using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
 using AutoQAC.Services.GameDetection;
 using AutoQAC.Services.Plugin;
+using AutoQAC.Services.Process;
 using AutoQAC.Services.State;
 using FluentAssertions;
 using Moq;
@@ -19,6 +20,7 @@ public sealed class CleaningOrchestratorTests
     private readonly Mock<IStateService> _stateServiceMock;
     private readonly Mock<IConfigurationService> _configServiceMock;
     private readonly Mock<ILoggingService> _loggerMock;
+    private readonly Mock<IProcessExecutionService> _processServiceMock;
     private readonly CleaningOrchestrator _orchestrator;
 
     public CleaningOrchestratorTests()
@@ -29,6 +31,7 @@ public sealed class CleaningOrchestratorTests
         _stateServiceMock = new Mock<IStateService>();
         _configServiceMock = new Mock<IConfigurationService>();
         _loggerMock = new Mock<ILoggingService>();
+        _processServiceMock = new Mock<IProcessExecutionService>();
 
         // Default mock setup for GetSkipListAsync to return empty list instead of null
         _configServiceMock.Setup(s => s.GetSkipListAsync(It.IsAny<GameType>()))
@@ -44,7 +47,8 @@ public sealed class CleaningOrchestratorTests
             _gameDetectionServiceMock.Object,
             _stateServiceMock.Object,
             _configServiceMock.Object,
-            _loggerMock.Object);
+            _loggerMock.Object,
+            _processServiceMock.Object);
     }
 
     [Fact]
@@ -428,7 +432,7 @@ public sealed class CleaningOrchestratorTests
         // Wait for cleaning to start, then stop it
         await cleaningStartedEvent.Task;
         await Task.Delay(50); // Give a moment for the first clean to be in progress
-        _orchestrator.StopCleaning();
+        await _orchestrator.StopCleaningAsync();
 
         // Wait for task to complete
         await cleaningTask;
@@ -655,7 +659,8 @@ public sealed class CleaningOrchestratorTests
             _gameDetectionServiceMock.Object,
             _stateServiceMock.Object,
             _configServiceMock.Object,
-            _loggerMock.Object);
+            _loggerMock.Object,
+            _processServiceMock.Object);
 
         // Act & Assert
         // Should not throw
