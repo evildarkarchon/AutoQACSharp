@@ -42,6 +42,12 @@ public interface IConfigurationService
     // Settings management
     Task ResetToDefaultsAsync(CancellationToken ct = default);
 
+    /// <summary>
+    /// Force-flush any pending debounced config saves to disk immediately.
+    /// Call before starting xEdit and during app shutdown.
+    /// </summary>
+    Task FlushPendingSavesAsync(CancellationToken ct = default);
+
     // Reactive configuration changes
     IObservable<UserConfiguration> UserConfigurationChanged { get; }
 }

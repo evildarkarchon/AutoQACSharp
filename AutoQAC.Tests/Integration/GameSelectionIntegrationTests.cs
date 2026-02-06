@@ -85,6 +85,8 @@ public sealed class GameSelectionIntegrationTests
 
             // Act - Set game
             await configService.SetSelectedGameAsync(GameType.SkyrimSe);
+            // Flush debounced save to disk before verifying with a second instance
+            await configService.FlushPendingSavesAsync();
 
             // Create new instance to verify persistence
             var configService2 = new ConfigurationService(

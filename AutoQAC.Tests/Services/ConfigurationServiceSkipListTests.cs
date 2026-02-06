@@ -150,6 +150,8 @@ Skip_Lists:
 
     // Act
     await service.UpdateSkipListAsync(GameType.SkyrimSe, newSkipList);
+    // Flush debounced save to disk before verifying with a second instance
+    await service.FlushPendingSavesAsync();
 
     // Recreate service to verify file was written
     var service2 = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);

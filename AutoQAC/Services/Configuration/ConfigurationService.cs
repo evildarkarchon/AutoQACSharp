@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reactive.Linq;
 using System.Reactive.Subjects;
 using System.Threading;
 using System.Threading.Tasks;
@@ -19,6 +20,10 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
     private readonly SemaphoreSlim _fileLock = new(1, 1);
     private readonly Subject<UserConfiguration> _configChanges = new();
     private readonly Subject<GameType> _skipListChanges = new();
+    private readonly Subject<UserConfiguration> _saveRequests = new();
+    private readonly IDisposable _debounceSubscription;
+    private UserConfiguration? _lastKnownGoodConfig;
+    private volatile UserConfiguration? _pendingConfig;
 
     private readonly string _configDirectory;
     private const string MainConfigFile = "AutoQAC Main.yaml";
@@ -49,6 +54,15 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
         {
             Directory.CreateDirectory(_configDirectory);
         }
+
+        // Set up Rx Throttle pipeline for debounced config saves (500ms)
+        _debounceSubscription = _saveRequests
+            .Throttle(TimeSpan.FromMilliseconds(500))
+            .Subscribe(config =>
+            {
+                // Fire-and-forget the save -- errors are handled inside
+                _ = SaveToDiskWithRetryAsync(config);
+            });
     }
 
     private string ResolveConfigDirectory(ILoggingService logger)
@@ -111,6 +125,9 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
 
     public async Task<UserConfiguration> LoadUserConfigAsync(CancellationToken ct = default)
     {
+        // Return pending in-memory config if available (debounced save may not have fired yet)
+        if (_pendingConfig != null) return _pendingConfig;
+
         // Run migration once per session if needed
         if (!_migrationCompleted)
         {
@@ -121,7 +138,7 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
         var path = Path.Combine(_configDirectory, UserConfigFile);
         if (!File.Exists(path))
         {
-            _logger.Information($"User config file not found at {path}. Creating default.");
+            _logger.Information($"[Config] User config file not found at {path}. Creating default.");
             var config = new UserConfiguration();
             await SaveUserConfigAsync(config, ct).ConfigureAwait(false);
             return config;
@@ -131,11 +148,13 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
         {
             await _fileLock.WaitAsync(ct).ConfigureAwait(false);
             var content = await File.ReadAllTextAsync(path, ct).ConfigureAwait(false);
-            return _deserializer.Deserialize<UserConfiguration>(content);
+            var loaded = _deserializer.Deserialize<UserConfiguration>(content);
+            _lastKnownGoodConfig = loaded;
+            return loaded;
         }
         catch (Exception ex)
         {
-            _logger.Error(ex, "Failed to load user configuration");
+            _logger.Error(ex, "[Config] Failed to load user configuration");
             throw;
         }
         finally
@@ -207,25 +226,78 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
         }
     }
 
-    public async Task SaveUserConfigAsync(UserConfiguration config, CancellationToken ct = default)
+    public Task SaveUserConfigAsync(UserConfiguration config, CancellationToken ct = default)
     {
+        // Store the pending config in memory (always up-to-date)
+        _pendingConfig = config;
+        // Notify subscribers immediately (in-memory state is current)
+        _configChanges.OnNext(config);
+        // Schedule debounced write to disk
+        _saveRequests.OnNext(config);
+        return Task.CompletedTask;
+    }
+
+    private async Task SaveToDiskWithRetryAsync(UserConfiguration config, CancellationToken ct = default)
+    {
+        const int maxRetries = 2;
         var path = Path.Combine(_configDirectory, UserConfigFile);
-        try
+
+        for (int attempt = 0; attempt <= maxRetries; attempt++)
         {
-            await _fileLock.WaitAsync(ct).ConfigureAwait(false);
-            var content = _serializer.Serialize(config);
-            await File.WriteAllTextAsync(path, content, ct).ConfigureAwait(false);
-            _configChanges.OnNext(config);
+            try
+            {
+                await _fileLock.WaitAsync(ct).ConfigureAwait(false);
+                try
+                {
+                    var content = _serializer.Serialize(config);
+                    await File.WriteAllTextAsync(path, content, ct).ConfigureAwait(false);
+                    _lastKnownGoodConfig = config;
+                    // Clear pending if this was the latest pending config
+                    if (ReferenceEquals(_pendingConfig, config))
+                    {
+                        _pendingConfig = null;
+                    }
+                    _logger.Information("[Config] Debounced save completed successfully");
+                    return;
+                }
+                finally
+                {
+                    _fileLock.Release();
+                }
+            }
+            catch (Exception ex) when (attempt < maxRetries)
+            {
+                _logger.Warning("[Config] Save failed (attempt {Attempt}/{MaxAttempts}): {Message}",
+                    attempt + 1, maxRetries + 1, ex.Message);
+                await Task.Delay(100, ct).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, "[Config] Save failed after {MaxRetries} retries. Reverting to last known good config.",
+                    maxRetries + 1);
+
+                // Revert in-memory to last known good (per user decision: "revert to last known-good config on disk")
+                if (_lastKnownGoodConfig != null)
+                {
+                    _pendingConfig = null;
+                    _configChanges.OnNext(_lastKnownGoodConfig);
+                    _logger.Warning("[Config] Reverted to last known good configuration");
+                }
+            }
         }
-        catch (Exception ex)
+    }
+
+    public async Task FlushPendingSavesAsync(CancellationToken ct = default)
+    {
+        var config = _pendingConfig;
+        if (config == null)
         {
-            _logger.Error(ex, "Failed to save user configuration");
-            throw;
+            _logger.Debug("[Config] No pending config changes to flush");
+            return;
         }
-        finally
-        {
-            _fileLock.Release();
-        }
+
+        _logger.Information("[Config] Flushing pending config saves to disk");
+        await SaveToDiskWithRetryAsync(config, ct).ConfigureAwait(false);
     }
 
     public async Task<bool> ValidatePathsAsync(UserConfiguration config, CancellationToken ct = default)
@@ -463,6 +535,8 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
 
     public void Dispose()
     {
+        _debounceSubscription.Dispose();
+        _saveRequests.Dispose();
         _fileLock.Dispose();
         _configChanges.Dispose();
         _skipListChanges.Dispose();

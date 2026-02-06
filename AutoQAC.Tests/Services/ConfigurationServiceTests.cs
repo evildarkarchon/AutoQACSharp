@@ -41,6 +41,8 @@ public sealed class ConfigurationServiceTests : IDisposable
 
         // Act
         var config = await service.LoadUserConfigAsync();
+        // Flush debounced save to disk so file exists for assertion
+        await service.FlushPendingSavesAsync();
 
         // Assert
         config.Should().NotBeNull();
@@ -525,6 +527,8 @@ AutoQAC_Data:
 
         // Act
         await service.SetGameDataFolderOverrideAsync(GameType.SkyrimSe, expectedPath);
+        // Flush debounced save to disk before verifying with a second instance
+        await service.FlushPendingSavesAsync();
 
         // Verify by loading in a new service instance
         var service2 = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
