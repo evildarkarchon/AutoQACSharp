@@ -9,6 +9,7 @@ using AutoQAC.Models;
 using AutoQAC.Services.Configuration;
 using AutoQAC.Services.GameDetection;
 using AutoQAC.Services.Plugin;
+using AutoQAC.Services.Process;
 using AutoQAC.Services.State;
 
 namespace AutoQAC.Services.Cleaning;
@@ -21,9 +22,16 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
     private readonly IStateService _stateService;
     private readonly IConfigurationService _configService;
     private readonly ILoggingService _logger;
+    private readonly IProcessExecutionService _processService;
     private readonly object _ctsLock = new();
+    private readonly object _processLock = new();
 
     private CancellationTokenSource? _cleaningCts;
+    private volatile bool _isStopRequested;
+    private System.Diagnostics.Process? _currentProcess;
+    private TerminationResult? _lastTerminationResult;
+
+    public TerminationResult? LastTerminationResult => _lastTerminationResult;
 
     public CleaningOrchestrator(
         ICleaningService cleaningService,
@@ -31,7 +39,8 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
         IGameDetectionService gameDetectionService,
         IStateService stateService,
         IConfigurationService configService,
-        ILoggingService logger)
+        ILoggingService logger,
+        IProcessExecutionService processService)
     {
         _cleaningService = cleaningService;
         _pluginService = pluginService;
@@ -39,6 +48,7 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
         _stateService = stateService;
         _configService = configService;
         _logger = logger;
+        _processService = processService;
     }
 
     public Task StartCleaningAsync(CancellationToken ct = default)
@@ -54,9 +64,16 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
         var wasCancelled = false;
         var gameType = GameType.Unknown;
 
+        // Reset stop flags at the start of each cleaning session
+        _isStopRequested = false;
+        _lastTerminationResult = null;
+
         try
         {
             _logger.Information("Starting cleaning workflow");
+
+            // Clean orphaned processes before starting
+            await _processService.CleanOrphanedProcessesAsync(ct).ConfigureAwait(false);
 
             // 1. Validate configuration
             var isValid = await ValidateConfigurationAsync(ct).ConfigureAwait(false);
@@ -97,14 +114,12 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
             gameType = config.CurrentGameType;
 
             // 4. Apply skip list filtering (respecting DisableSkipLists setting)
-            // Check if user has disabled skip lists entirely
             var userConfig = await _configService.LoadUserConfigAsync(ct).ConfigureAwait(false);
             var disableSkipLists = userConfig.Settings.DisableSkipLists;
 
             List<PluginInfo> pluginsToClean;
             if (disableSkipLists)
             {
-                // Skip lists disabled - just filter by selection, ignoring skip list status
                 _logger.Debug("Skip lists disabled by user setting - cleaning all selected plugins");
                 pluginsToClean = allPlugins
                     .Where(p => p.IsSelected)
@@ -113,12 +128,9 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
             }
             else if (gameType != GameType.Unknown)
             {
-                // If game was detected during this workflow (was Unknown when plugins loaded),
-                // we need to fetch and apply the skip list now
                 var skipList = await _configService.GetSkipListAsync(gameType).ConfigureAwait(false) ?? [];
                 var skipSet = new HashSet<string>(skipList, StringComparer.OrdinalIgnoreCase);
 
-                // Apply skip list status to plugins and filter out skipped ones
                 pluginsToClean = allPlugins
                     .Select(p => p with { IsInSkipList = skipSet.Contains(p.FileName), DetectedGameType = gameType })
                     .Where(p => p is { IsInSkipList: false, IsSelected: true })
@@ -126,7 +138,6 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
             }
             else
             {
-                // No game detected - just filter by existing IsInSkipList flag and selection
                 pluginsToClean = allPlugins.Where(p => p is { IsInSkipList: false, IsSelected: true }).ToList();
             }
 
@@ -164,7 +175,6 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
                 // Progress reporting
                 var progress = new Progress<string>(output =>
                 {
-                    // We could pipe this to UI if needed
                     _logger.Debug("xEdit output: {Output}", output);
                 });
 
@@ -210,6 +220,12 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
 
                 pluginStopwatch.Stop();
 
+                // Clear the current process reference after plugin is done
+                lock (_processLock)
+                {
+                    _currentProcess = null;
+                }
+
                 // Create detailed result
                 var pluginCleaningResult = new PluginCleaningResult
                 {
@@ -247,6 +263,23 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
             _stateService.FinishCleaningWithResults(sessionResult);
             _logger.Information("Cleaning workflow completed");
         }
+        catch (OperationCanceledException)
+        {
+            // Cancellation is not an error -- preserve partial results
+            _logger.Information("Cleaning workflow cancelled");
+            wasCancelled = true;
+
+            var sessionResult = new CleaningSessionResult
+            {
+                StartTime = startTime,
+                EndTime = DateTime.Now,
+                GameType = gameType,
+                WasCancelled = true,
+                PluginResults = pluginResults
+            };
+
+            _stateService.FinishCleaningWithResults(sessionResult);
+        }
         catch (Exception ex)
         {
             _logger.Error(ex, "Error during cleaning workflow");
@@ -266,6 +299,16 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
         }
         finally
         {
+            // Reset stop flags
+            _isStopRequested = false;
+            _lastTerminationResult = null;
+
+            // Clear process reference
+            lock (_processLock)
+            {
+                _currentProcess = null;
+            }
+
             lock (_ctsLock)
             {
                 _cleaningCts?.Dispose();
@@ -274,12 +317,108 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
         }
     }
 
-    public void StopCleaning()
+    public async Task StopCleaningAsync()
     {
-        _logger.Information("Stop requested");
+        if (_isStopRequested)
+        {
+            // Path B: Second click during grace period -- immediate force kill, no prompt
+            _logger.Information("[Termination] Second stop requested -- escalating to force kill");
+            await ForceStopCleaningAsync().ConfigureAwait(false);
+            return;
+        }
+
+        _isStopRequested = true;
+        _logger.Information("[Termination] Graceful stop requested");
+
+        // Cancel the CTS (race-safe per PROC-04)
+        CancellationTokenSource? cts;
         lock (_ctsLock)
         {
-            _cleaningCts?.Cancel();
+            cts = _cleaningCts;
+        }
+
+        try
+        {
+            cts?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            _logger.Debug("[Termination] CTS already disposed -- cleaning likely already finished");
+            return;
+        }
+
+        // Attempt graceful termination on the current process
+        System.Diagnostics.Process? proc;
+        lock (_processLock)
+        {
+            proc = _currentProcess;
+        }
+
+        if (proc != null)
+        {
+            try
+            {
+                if (!proc.HasExited)
+                {
+                    var result = await _processService.TerminateProcessAsync(proc, forceKill: false)
+                        .ConfigureAwait(false);
+
+                    if (result == TerminationResult.GracePeriodExpired)
+                    {
+                        // Path A: Grace period expired naturally, user hasn't clicked again.
+                        // Store result so the ViewModel can react and prompt the user.
+                        _lastTerminationResult = result;
+                    }
+                }
+            }
+            catch (InvalidOperationException)
+            {
+                _logger.Debug("[Termination] Process already exited during graceful stop");
+            }
+        }
+    }
+
+    public async Task ForceStopCleaningAsync()
+    {
+        _logger.Information("[Termination] Force stop requested -- killing process tree immediately");
+
+        // Cancel the CTS if not already
+        CancellationTokenSource? cts;
+        lock (_ctsLock)
+        {
+            cts = _cleaningCts;
+        }
+
+        try
+        {
+            cts?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Already disposed -- fine
+        }
+
+        // Force kill the process tree
+        System.Diagnostics.Process? proc;
+        lock (_processLock)
+        {
+            proc = _currentProcess;
+        }
+
+        if (proc != null)
+        {
+            try
+            {
+                if (!proc.HasExited)
+                {
+                    await _processService.TerminateProcessAsync(proc, forceKill: true)
+                        .ConfigureAwait(false);
+                }
+            }
+            catch (InvalidOperationException)
+            {
+                _logger.Debug("[Termination] Process already exited during force stop");
+            }
         }
     }
 

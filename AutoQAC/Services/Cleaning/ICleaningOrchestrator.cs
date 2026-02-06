@@ -1,5 +1,6 @@
 using System.Threading;
 using System.Threading.Tasks;
+using AutoQAC.Models;
 
 namespace AutoQAC.Services.Cleaning;
 
@@ -28,7 +29,20 @@ public interface ICleaningOrchestrator
     Task StartCleaningAsync(TimeoutRetryCallback? onTimeout, CancellationToken ct = default);
 
     /// <summary>
-    /// Stop current operation.
+    /// Graceful stop: cancels the CTS, attempts graceful process termination.
+    /// If called a second time during the grace period, escalates to immediate force kill.
     /// </summary>
-    void StopCleaning();
+    Task StopCleaningAsync();
+
+    /// <summary>
+    /// Immediate force kill of the process tree. No grace period, no prompt.
+    /// </summary>
+    Task ForceStopCleaningAsync();
+
+    /// <summary>
+    /// Result of the last termination attempt. When GracePeriodExpired, the ViewModel
+    /// should prompt the user to confirm force kill (Path A: patient user).
+    /// Reset at the start and end of each cleaning session.
+    /// </summary>
+    TerminationResult? LastTerminationResult { get; }
 }
