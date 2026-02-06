@@ -5,33 +5,34 @@
 See: .planning/PROJECT.md (updated 2026-02-06)
 
 **Core value:** Reliably clean every plugin in a load order with one click, without corrupting game data or cleaning plugins that shouldn't be touched.
-**Current focus:** Phase 1 - Foundation Hardening (COMPLETE)
+**Current focus:** Phase 2 - Plugin Pipeline Robustness (IN PROGRESS)
 
 ## Current Position
 
-Phase: 1 of 7 (Foundation Hardening)
-Plan: 2 of 2 in current phase
-Status: Phase complete
-Last activity: 2026-02-06 -- Completed 01-02-PLAN.md (State Deadlock Fix and Debounced Config Saves)
+Phase: 2 of 7 (Plugin Pipeline Robustness)
+Plan: 1 of 2 in current phase
+Status: In progress
+Last activity: 2026-02-06 -- Completed 02-01-PLAN.md (Plugin Line Validation and FullPath Resolution)
 
-Progress: [##............] 13% (2/15 plans)
+Progress: [###...........] 20% (3/15 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 2
-- Average duration: 7.5 minutes
-- Total execution time: 0.25 hours
+- Total plans completed: 3
+- Average duration: 7.2 minutes
+- Total execution time: 0.36 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1 - Foundation | 2/2 | 15m | 7.5m |
+| 2 - Plugin Pipeline | 1/2 | 6.5m | 6.5m |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (7m), 01-02 (8m)
-- Trend: Stable
+- Last 5 plans: 01-01 (7m), 01-02 (8m), 02-01 (6.5m)
+- Trend: Stable/improving
 
 *Updated after each plan completion*
 
@@ -51,6 +52,10 @@ Recent decisions affecting current work:
 - [01-02]: Authoritative _currentState field (volatile) separate from BehaviorSubject for concurrent UpdateState correctness
 - [01-02]: Config events emit immediately in SaveUserConfigAsync; disk write deferred to 500ms debounce
 - [01-02]: Cross-instance persistence tests must call FlushPendingSavesAsync before creating second service instance
+- [02-01]: StreamReader with detectEncodingFromByteOrderMarks replaces File.ReadAllLinesAsync for BOM auto-detection
+- [02-01]: 7-step line validation pipeline (blanks, comments, prefix strip, control chars, path separators, extension check)
+- [02-01]: ValidatePluginFile returns PluginWarningKind enum instead of bool -- eliminates dual code path
+- [02-01]: Non-rooted paths return NotFound from ValidatePluginFile (not optimistic true)
 
 ### Pending Todos
 
@@ -65,6 +70,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-02-06T13:19Z
-Stopped at: Completed 01-02-PLAN.md (Phase 1 complete)
+Last session: 2026-02-06T23:55Z
+Stopped at: Completed 02-01-PLAN.md
 Resume file: None
