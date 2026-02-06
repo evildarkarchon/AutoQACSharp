@@ -43,4 +43,16 @@ public interface IStateService
     /// Emits when a cleaning session completes with full results.
     /// </summary>
     IObservable<CleaningSessionResult> CleaningCompleted { get; }
+
+    /// <summary>
+    /// Observable that emits true when stop/termination is in progress.
+    /// Foundation for the locked "UI blocking during stop" user decision.
+    /// The actual UI spinner will be implemented in a future plan.
+    /// </summary>
+    IObservable<bool> IsTerminatingChanged { get; }
+
+    /// <summary>
+    /// Sets whether termination is currently in progress.
+    /// </summary>
+    void SetTerminating(bool isTerminating);
 }

@@ -13,6 +13,12 @@ public sealed class StateService : IStateService, IDisposable
     private readonly BehaviorSubject<AppState> _stateSubject = new(new AppState());
     private readonly Subject<(string plugin, CleaningStatus status)> _pluginProcessedSubject = new();
     private readonly Subject<CleaningSessionResult> _cleaningCompletedSubject = new();
+    private readonly BehaviorSubject<bool> _isTerminatingSubject = new(false);
+
+    // Authoritative state protected by _lock. Updated inside the lock so concurrent
+    // UpdateState calls always read-modify-write against the latest value.
+    // BehaviorSubject.OnNext is called OUTSIDE the lock to prevent subscriber deadlocks.
+    private volatile AppState _currentState = new();
 
     private readonly List<PluginCleaningResult> _currentSessionResults = new();
     private DateTime _cleaningStartTime;
@@ -20,16 +26,7 @@ public sealed class StateService : IStateService, IDisposable
 
     public CleaningSessionResult? LastSessionResult => _lastSessionResult;
 
-    public AppState CurrentState
-    {
-        get
-        {
-            lock (_lock)
-            {
-                return _stateSubject.Value;
-            }
-        }
-    }
+    public AppState CurrentState => _currentState;
 
     public IObservable<AppState> StateChanged => _stateSubject.AsObservable();
 
@@ -47,13 +44,23 @@ public sealed class StateService : IStateService, IDisposable
     public IObservable<CleaningSessionResult> CleaningCompleted =>
         _cleaningCompletedSubject.AsObservable();
 
+    public IObservable<bool> IsTerminatingChanged => _isTerminatingSubject.AsObservable();
+
+    public void SetTerminating(bool isTerminating)
+    {
+        _isTerminatingSubject.OnNext(isTerminating);
+    }
+
     public void UpdateState(Func<AppState, AppState> updateFunc)
     {
+        AppState newState;
         lock (_lock)
         {
-            var newState = updateFunc(_stateSubject.Value);
-            _stateSubject.OnNext(newState);
+            newState = updateFunc(_currentState);
+            _currentState = newState;
         }
+        // Emit OUTSIDE the lock -- subscribers can safely read CurrentState
+        _stateSubject.OnNext(newState);
     }
 
     public void UpdateConfigurationPaths(string? loadOrder, string? mo2, string? xEdit)
@@ -179,5 +186,6 @@ public sealed class StateService : IStateService, IDisposable
         _stateSubject.Dispose();
         _pluginProcessedSubject.Dispose();
         _cleaningCompletedSubject.Dispose();
+        _isTerminatingSubject.Dispose();
     }
 }
