@@ -5,33 +5,33 @@
 See: .planning/PROJECT.md (updated 2026-02-06)
 
 **Core value:** Reliably clean every plugin in a load order with one click, without corrupting game data or cleaning plugins that shouldn't be touched.
-**Current focus:** Phase 1 - Foundation Hardening
+**Current focus:** Phase 1 - Foundation Hardening (COMPLETE)
 
 ## Current Position
 
 Phase: 1 of 7 (Foundation Hardening)
-Plan: 1 of 2 in current phase
-Status: In progress
-Last activity: 2026-02-06 -- Completed 01-01-PLAN.md (Process Termination Hardening)
+Plan: 2 of 2 in current phase
+Status: Phase complete
+Last activity: 2026-02-06 -- Completed 01-02-PLAN.md (State Deadlock Fix and Debounced Config Saves)
 
-Progress: [#.............] 7% (1/15 plans)
+Progress: [##............] 13% (2/15 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 1
-- Average duration: 7 minutes
-- Total execution time: 0.1 hours
+- Total plans completed: 2
+- Average duration: 7.5 minutes
+- Total execution time: 0.25 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 1 - Foundation | 1/2 | 7m | 7m |
+| 1 - Foundation | 2/2 | 15m | 7.5m |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (7m)
-- Trend: N/A (first plan)
+- Last 5 plans: 01-01 (7m), 01-02 (8m)
+- Trend: Stable
 
 *Updated after each plan completion*
 
@@ -48,10 +48,14 @@ Recent decisions affecting current work:
 - [01-01]: Grace period set to 2500ms; CloseMainWindow false returns GracePeriodExpired immediately
 - [01-01]: Path A confirmation dialog deferred to future UI plan; ViewModel auto-escalates for now
 - [01-01]: PID file in AutoQAC Data/ directory; orphan validation uses name + start time
+- [01-02]: Authoritative _currentState field (volatile) separate from BehaviorSubject for concurrent UpdateState correctness
+- [01-02]: Config events emit immediately in SaveUserConfigAsync; disk write deferred to 500ms debounce
+- [01-02]: Cross-instance persistence tests must call FlushPendingSavesAsync before creating second service instance
 
 ### Pending Todos
 
 - TODO(01-02): Add confirmation dialog for Path A (patient user) force kill prompt in MainWindowViewModel.HandleStopAsync
+- TODO(future): Wire IsTerminatingChanged observable to ViewModel for Stopping... spinner UI
 
 ### Blockers/Concerns
 
@@ -61,6 +65,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-02-06T13:05Z
-Stopped at: Completed 01-01-PLAN.md
+Last session: 2026-02-06T13:19Z
+Stopped at: Completed 01-02-PLAN.md (Phase 1 complete)
 Resume file: None
