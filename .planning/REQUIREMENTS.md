@@ -7,7 +7,7 @@
 
 ### Process Management
 
-- [ ] **PROC-01**: Graceful subprocess termination with escalation pattern (close → wait → terminate → wait → kill entire tree)
+- [ ] **PROC-01**: Graceful subprocess termination with escalation pattern (close -> wait -> terminate -> wait -> kill entire tree)
 - [ ] **PROC-02**: Reliable stop/cancel that guarantees xEdit is dead before reporting cancelled
 - [ ] **PROC-03**: Fix process termination race condition (file handles persisting after disposal)
 - [ ] **PROC-04**: Fix CancellationTokenSource lock synchronization (race on null check in StopCleaning + Dispose)
@@ -74,7 +74,7 @@
 
 ### Dependencies
 
-- [ ] **DEP-01**: Evaluate and update Mutagen (0.52.0 → latest compatible)
+- [ ] **DEP-01**: Evaluate and update Mutagen (0.52.0 -> latest compatible)
 - [ ] **DEP-02**: YamlDotNet security advisory check and update if needed
 
 ### Post-Parity
@@ -86,14 +86,14 @@
 ### Enhanced UX
 
 - **UX-01**: Auto-discovery of xEdit from common install locations (Steam, Program Files)
-- **UX-02**: Config export/import for shareable settings (timeouts, skip lists — not paths)
+- **UX-02**: Config export/import for shareable settings (timeouts, skip lists -- not paths)
 - **UX-03**: Backup retention policy UI (configurable days/count, disk space monitoring)
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| Parallel plugin cleaning | xEdit file locking makes this impossible — fundamental constraint |
+| Parallel plugin cleaning | xEdit file locking makes this impossible -- fundamental constraint |
 | Auto-updating | Security surface, complexity, and maintenance burden for a modding tool |
 | Built-in xEdit | Redistribution concerns, version mismatch issues, separate project |
 | Plugin content analysis/preview | Duplicates xEdit's analysis engine, enormous scope for marginal benefit |
@@ -105,52 +105,52 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PROC-01 | Pending | Pending |
-| PROC-02 | Pending | Pending |
-| PROC-03 | Pending | Pending |
-| PROC-04 | Pending | Pending |
-| PROC-05 | Pending | Pending |
-| PROC-06 | Pending | Pending |
-| PROG-01 | Pending | Pending |
-| PROG-02 | Pending | Pending |
-| PROG-03 | Pending | Pending |
-| CONF-01 | Pending | Pending |
-| CONF-02 | Pending | Pending |
-| CONF-03 | Pending | Pending |
-| CONF-04 | Pending | Pending |
-| CONF-05 | Pending | Pending |
-| CONF-06 | Pending | Pending |
-| CONF-07 | Pending | Pending |
-| PLUG-01 | Pending | Pending |
-| PLUG-02 | Pending | Pending |
-| PLUG-03 | Pending | Pending |
-| PLUG-04 | Pending | Pending |
-| PLUG-05 | Pending | Pending |
-| STAT-01 | Pending | Pending |
-| STAT-02 | Pending | Pending |
-| SAFE-01 | Pending | Pending |
-| SAFE-02 | Pending | Pending |
-| SAFE-03 | Pending | Pending |
-| GAME-01 | Pending | Pending |
-| UI-01 | Pending | Pending |
-| UI-02 | Pending | Pending |
-| UI-03 | Pending | Pending |
-| MON-01 | Pending | Pending |
-| TEST-01 | Pending | Pending |
-| TEST-02 | Pending | Pending |
-| TEST-03 | Pending | Pending |
-| TEST-04 | Pending | Pending |
-| TEST-05 | Pending | Pending |
-| TEST-06 | Pending | Pending |
-| DEP-01 | Pending | Pending |
-| DEP-02 | Pending | Pending |
-| POST-01 | Pending | Pending |
+| PROC-01 | Phase 1 | Pending |
+| PROC-02 | Phase 1 | Pending |
+| PROC-03 | Phase 1 | Pending |
+| PROC-04 | Phase 1 | Pending |
+| PROC-05 | Phase 6 | Pending |
+| PROC-06 | Phase 1 | Pending |
+| PROG-01 | Phase 3 | Pending |
+| PROG-02 | Phase 3 | Pending |
+| PROG-03 | Phase 3 | Pending |
+| CONF-01 | Phase 1 | Pending |
+| CONF-02 | Phase 4 | Pending |
+| CONF-03 | Phase 4 | Pending |
+| CONF-04 | Phase 4 | Pending |
+| CONF-05 | Phase 1 | Pending |
+| CONF-06 | Phase 4 | Pending |
+| CONF-07 | Phase 4 | Pending |
+| PLUG-01 | Phase 2 | Pending |
+| PLUG-02 | Phase 2 | Pending |
+| PLUG-03 | Phase 2 | Pending |
+| PLUG-04 | Phase 2 | Pending |
+| PLUG-05 | Phase 2 | Pending |
+| STAT-01 | Phase 1 | Pending |
+| STAT-02 | Phase 3 | Pending |
+| SAFE-01 | Phase 5 | Pending |
+| SAFE-02 | Phase 5 | Pending |
+| SAFE-03 | Phase 5 | Pending |
+| GAME-01 | Phase 2 | Pending |
+| UI-01 | Phase 6 | Pending |
+| UI-02 | Phase 6 | Pending |
+| UI-03 | Phase 6 | Pending |
+| MON-01 | Phase 6 | Pending |
+| TEST-01 | Phase 7 | Pending |
+| TEST-02 | Phase 7 | Pending |
+| TEST-03 | Phase 7 | Pending |
+| TEST-04 | Phase 7 | Pending |
+| TEST-05 | Phase 7 | Pending |
+| TEST-06 | Phase 7 | Pending |
+| DEP-01 | Phase 7 | Pending |
+| DEP-02 | Phase 7 | Pending |
+| POST-01 | Phase 7 | Pending |
 
 **Coverage:**
-- v1 requirements: 39 total
-- Mapped to phases: 0
-- Unmapped: 39 ⚠️
+- v1 requirements: 40 total
+- Mapped to phases: 40
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-06*
-*Last updated: 2026-02-06 after initial definition*
+*Last updated: 2026-02-06 after roadmap creation (corrected count from 39 to 40)*
