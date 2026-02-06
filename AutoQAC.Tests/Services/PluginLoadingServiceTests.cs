@@ -88,7 +88,7 @@ public sealed class PluginLoadingServiceTests
             new() { FileName = "Plugin2.esp", FullPath = "Data/Plugin2.esp" }
         };
         _mockPluginValidation
-            .Setup(s => s.GetPluginsFromLoadOrderAsync(loadOrderPath, default))
+            .Setup(s => s.GetPluginsFromLoadOrderAsync(loadOrderPath, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(expectedPlugins);
 
         // Act
@@ -97,7 +97,7 @@ public sealed class PluginLoadingServiceTests
         // Assert
         result.Should().BeEquivalentTo(expectedPlugins);
         _mockPluginValidation.Verify(
-            s => s.GetPluginsFromLoadOrderAsync(loadOrderPath, default),
+            s => s.GetPluginsFromLoadOrderAsync(loadOrderPath, It.IsAny<string?>(), It.IsAny<CancellationToken>()),
             Times.Once);
     }
 

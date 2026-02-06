@@ -190,7 +190,7 @@ public sealed class ErrorDialogTests
                 .ReturnsAsync(new UserConfiguration { LoadOrder = new(), XEdit = new(), ModOrganizer = new(), Settings = new() });
 
             // Return empty list
-            _pluginServiceMock.Setup(x => x.GetPluginsFromLoadOrderAsync(tempFile, It.IsAny<CancellationToken>()))
+            _pluginServiceMock.Setup(x => x.GetPluginsFromLoadOrderAsync(tempFile, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new List<PluginInfo>());
 
             // Act
@@ -227,7 +227,7 @@ public sealed class ErrorDialogTests
                 .ReturnsAsync(tempFile);
 
             // Throw IOException
-            _pluginServiceMock.Setup(x => x.GetPluginsFromLoadOrderAsync(tempFile, It.IsAny<CancellationToken>()))
+            _pluginServiceMock.Setup(x => x.GetPluginsFromLoadOrderAsync(tempFile, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
                 .ThrowsAsync(new IOException("File in use"));
 
             // Act

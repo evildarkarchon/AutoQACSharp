@@ -133,7 +133,7 @@ public sealed class MainWindowViewModelTests
                 new PluginInfo { FileName = "Dawnguard.esm", FullPath = "Dawnguard.esm", DetectedGameType = GameType.Unknown }
             };
 
-            _pluginServiceMock.Setup(x => x.GetPluginsFromLoadOrderAsync(tempFile, It.IsAny<CancellationToken>()))
+            _pluginServiceMock.Setup(x => x.GetPluginsFromLoadOrderAsync(tempFile, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(expectedPlugins);
 
             // Setup skip list (required for ApplySkipListStatus)
@@ -302,7 +302,7 @@ public sealed class MainWindowViewModelTests
                 .ReturnsAsync(tempFile);
 
             // Plugin service throws exception for the corrupted file path
-            _pluginServiceMock.Setup(x => x.GetPluginsFromLoadOrderAsync(tempFile, It.IsAny<CancellationToken>()))
+            _pluginServiceMock.Setup(x => x.GetPluginsFromLoadOrderAsync(tempFile, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
                 .ThrowsAsync(new InvalidOperationException("Failed to parse load order"));
 
             // Act

@@ -86,9 +86,10 @@ public sealed class PluginLoadingService : IPluginLoadingService
     /// <inheritdoc />
     public async Task<List<PluginInfo>> GetPluginsFromFileAsync(
         string loadOrderPath,
+        string? dataFolderPath = null,
         CancellationToken ct = default)
     {
-        return await _pluginValidation.GetPluginsFromLoadOrderAsync(loadOrderPath, ct)
+        return await _pluginValidation.GetPluginsFromLoadOrderAsync(loadOrderPath, dataFolderPath, ct)
             .ConfigureAwait(false);
     }
 

@@ -28,10 +28,12 @@ public interface IPluginLoadingService
     /// Gets plugins from a specific load order file path (fallback mode).
     /// </summary>
     /// <param name="loadOrderPath">Path to the load order file.</param>
+    /// <param name="dataFolderPath">Optional game data folder path for resolving FullPath.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>List of plugins from the file.</returns>
     Task<List<PluginInfo>> GetPluginsFromFileAsync(
         string loadOrderPath,
+        string? dataFolderPath = null,
         CancellationToken ct = default);
 
     /// <summary>
