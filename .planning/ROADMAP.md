@@ -12,7 +12,7 @@ This roadmap hardens AutoQACSharp's existing cleaning pipeline from a functional
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Foundation Hardening** - Fix critical process, state, and config bugs that block all subsequent work
+- [x] **Phase 1: Foundation Hardening** - Fix critical process, state, and config bugs that block all subsequent work
 - [ ] **Phase 2: Plugin Pipeline Robustness** - Resolve plugin path tech debt and validation gaps that block safety features
 - [ ] **Phase 3: Real-Time Feedback** - Give users live progress and actionable error messages during cleaning sessions
 - [ ] **Phase 4: Configuration Enhancement** - Batch config operations, cache invalidation, validation UI, and settings cleanup
@@ -35,8 +35,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 2 plans
 
 Plans:
-- [ ] 01-01-PLAN.md -- Process termination hardening: escalating stop, PID tracking, orphan cleanup, CTS race fix (PROC-01, PROC-02, PROC-03, PROC-04, PROC-06)
-- [ ] 01-02-PLAN.md -- State deadlock fix and debounced config saves with pre-clean/shutdown flush (STAT-01, CONF-01, CONF-05)
+- [x] 01-01-PLAN.md -- Process termination hardening: escalating stop, PID tracking, orphan cleanup, CTS race fix (PROC-01, PROC-02, PROC-03, PROC-04, PROC-06)
+- [x] 01-02-PLAN.md -- State deadlock fix and debounced config saves with pre-clean/shutdown flush (STAT-01, CONF-01, CONF-05)
 
 ### Phase 2: Plugin Pipeline Robustness
 **Goal**: Every plugin in the load order has a verified real file path, and edge-case inputs are handled gracefully instead of silently failing
@@ -140,7 +140,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation Hardening | 0/2 | Not started | - |
+| 1. Foundation Hardening | 2/2 | Complete | 2026-02-06 |
 | 2. Plugin Pipeline Robustness | 0/2 | Not started | - |
 | 3. Real-Time Feedback | 0/2 | Not started | - |
 | 4. Configuration Enhancement | 0/2 | Not started | - |
