@@ -32,11 +32,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. User can change multiple settings in quick succession and all changes persist to disk even if the application is closed shortly after
   4. Starting a new cleaning session after cancelling a previous one never fails due to leftover process state or locked files
   5. Configuration changes made just before starting a cleaning run are flushed to disk before xEdit launches
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 01-01: Process termination hardening (PROC-01, PROC-02, PROC-03, PROC-06)
-- [ ] 01-02: State and config concurrency fixes (PROC-04, STAT-01, CONF-01, CONF-05)
+- [ ] 01-01-PLAN.md -- Process termination hardening: escalating stop, PID tracking, orphan cleanup, CTS race fix (PROC-01, PROC-02, PROC-03, PROC-04, PROC-06)
+- [ ] 01-02-PLAN.md -- State deadlock fix and debounced config saves with pre-clean/shutdown flush (STAT-01, CONF-01, CONF-05)
 
 ### Phase 2: Plugin Pipeline Robustness
 **Goal**: Every plugin in the load order has a verified real file path, and edge-case inputs are handled gracefully instead of silently failing
