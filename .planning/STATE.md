@@ -10,28 +10,28 @@ See: .planning/PROJECT.md (updated 2026-02-06)
 ## Current Position
 
 Phase: 1 of 7 (Foundation Hardening)
-Plan: 0 of 2 in current phase
-Status: Ready to plan
-Last activity: 2026-02-06 -- Roadmap created from 39 v1 requirements across 7 phases
+Plan: 1 of 2 in current phase
+Status: In progress
+Last activity: 2026-02-06 -- Completed 01-01-PLAN.md (Process Termination Hardening)
 
-Progress: [..............] 0% (0/15 plans)
+Progress: [#.............] 7% (1/15 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 0
-- Average duration: -
-- Total execution time: 0 hours
+- Total plans completed: 1
+- Average duration: 7 minutes
+- Total execution time: 0.1 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| - | - | - | - |
+| 1 - Foundation | 1/2 | 7m | 7m |
 
 **Recent Trend:**
-- Last 5 plans: -
-- Trend: -
+- Last 5 plans: 01-01 (7m)
+- Trend: N/A (first plan)
 
 *Updated after each plan completion*
 
@@ -45,10 +45,13 @@ Recent decisions affecting current work:
 - [Roadmap]: Phase 1 prioritizes process termination, state deadlock, and deferred config saves -- these are foundational bugs that risk data corruption
 - [Roadmap]: FullPath resolution (Phase 2) must complete before backup feature (Phase 5) -- backup cannot copy files it cannot locate
 - [Roadmap]: Tests (Phase 7) deferred to end so they cover all new features, with incremental testing during feature phases
+- [01-01]: Grace period set to 2500ms; CloseMainWindow false returns GracePeriodExpired immediately
+- [01-01]: Path A confirmation dialog deferred to future UI plan; ViewModel auto-escalates for now
+- [01-01]: PID file in AutoQAC Data/ directory; orphan validation uses name + start time
 
 ### Pending Todos
 
-None yet.
+- TODO(01-02): Add confirmation dialog for Path A (patient user) force kill prompt in MainWindowViewModel.HandleStopAsync
 
 ### Blockers/Concerns
 
@@ -58,6 +61,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-06
-Stopped at: Roadmap created, ready for Phase 1 planning
+Last session: 2026-02-06T13:05Z
+Stopped at: Completed 01-01-PLAN.md
 Resume file: None
