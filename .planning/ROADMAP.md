@@ -48,11 +48,11 @@ Plans:
   3. TTW users see Fallout New Vegas skip list entries inherited automatically when their game is detected as TTW
   4. Attempting to clean with GameType.Unknown shows a clear error message instead of proceeding without skip lists
   5. MO2 users see correct plugin paths resolved through the virtual filesystem
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 02-01: FullPath resolution and plugin validation fixes (PLUG-01, PLUG-02, PLUG-03)
-- [ ] 02-02: Game detection and skip list edge cases (PLUG-04, PLUG-05, GAME-01)
+- [ ] 02-01-PLAN.md -- Plugin line validation, encoding-aware parsing, and FullPath resolution (PLUG-01, PLUG-02, PLUG-03)
+- [ ] 02-02-PLAN.md -- Game variant detection (TTW/Enderal), skip list inheritance, Unknown rejection, aggregated errors (PLUG-04, PLUG-05, GAME-01)
 
 ### Phase 3: Real-Time Feedback
 **Goal**: Users see live cleaning progress with per-record stats and receive actionable error messages when something is misconfigured
