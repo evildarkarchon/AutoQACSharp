@@ -200,7 +200,14 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
                     result = await _cleaningService.CleanPluginAsync(
                         plugin,
                         progress,
-                        cts.Token).ConfigureAwait(false);
+                        cts.Token,
+                        onProcessStarted: proc =>
+                        {
+                            lock (_processLock)
+                            {
+                                _currentProcess = proc;
+                            }
+                        }).ConfigureAwait(false);
 
                     // If timed out and callback provided, ask user if they want to retry
                     if (result.TimedOut && onTimeout != null && attemptNumber < maxRetryAttempts)

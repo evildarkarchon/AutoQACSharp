@@ -43,7 +43,8 @@ public sealed class CleaningService : ICleaningService
     public async Task<CleaningResult> CleanPluginAsync(
         PluginInfo plugin,
         IProgress<string>? progress = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        Action<System.Diagnostics.Process>? onProcessStarted = null)
     {
         var sw = Stopwatch.StartNew();
 
@@ -89,7 +90,7 @@ public sealed class CleaningService : ICleaningService
 
             _logger.Information($"Cleaning {plugin.FileName} with timeout {timeout.TotalSeconds}s...");
 
-            var result = await _processService.ExecuteAsync(command, progress, timeout, ct).ConfigureAwait(false);
+            var result = await _processService.ExecuteAsync(command, progress, timeout, ct, onProcessStarted).ConfigureAwait(false);
 
             sw.Stop();
 

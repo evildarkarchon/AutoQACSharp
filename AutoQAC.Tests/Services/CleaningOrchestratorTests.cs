@@ -74,15 +74,15 @@ public sealed class CleaningOrchestratorTests
         _cleaningServiceMock.Setup(s => s.ValidateEnvironmentAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
-        _cleaningServiceMock.Setup(s => s.CleanPluginAsync(It.IsAny<PluginInfo>(), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>()))
+        _cleaningServiceMock.Setup(s => s.CleanPluginAsync(It.IsAny<PluginInfo>(), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>(), It.IsAny<Action<System.Diagnostics.Process>?>()))
             .ReturnsAsync(new CleaningResult { Status = CleaningStatus.Cleaned });
 
         // Act
         await _orchestrator.StartCleaningAsync();
 
         // Assert
-        _cleaningServiceMock.Verify(s => s.CleanPluginAsync(It.Is<PluginInfo>(p => p.FileName == "Plugin1.esp"), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>()), Times.Once);
-        _cleaningServiceMock.Verify(s => s.CleanPluginAsync(It.Is<PluginInfo>(p => p.FileName == "Plugin2.esp"), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>()), Times.Once);
+        _cleaningServiceMock.Verify(s => s.CleanPluginAsync(It.Is<PluginInfo>(p => p.FileName == "Plugin1.esp"), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>(), It.IsAny<Action<System.Diagnostics.Process>?>()), Times.Once);
+        _cleaningServiceMock.Verify(s => s.CleanPluginAsync(It.Is<PluginInfo>(p => p.FileName == "Plugin2.esp"), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>(), It.IsAny<Action<System.Diagnostics.Process>?>()), Times.Once);
         _stateServiceMock.Verify(s => s.StartCleaning(It.IsAny<List<PluginInfo>>()), Times.Once);
         _stateServiceMock.Verify(s => s.FinishCleaningWithResults(It.IsAny<CleaningSessionResult>()), Times.Once);
     }
@@ -185,7 +185,7 @@ public sealed class CleaningOrchestratorTests
         var cts = new CancellationTokenSource();
 
         // After cleaning 2 plugins, request cancellation
-        _cleaningServiceMock.Setup(s => s.CleanPluginAsync(It.IsAny<PluginInfo>(), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>()))
+        _cleaningServiceMock.Setup(s => s.CleanPluginAsync(It.IsAny<PluginInfo>(), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>(), It.IsAny<Action<System.Diagnostics.Process>?>()))
             .ReturnsAsync(() =>
             {
                 cleanedCount++;
@@ -249,7 +249,8 @@ public sealed class CleaningOrchestratorTests
         _cleaningServiceMock.Setup(s => s.CleanPluginAsync(
             It.Is<PluginInfo>(p => p.FileName == "BadPlugin.esp"),
             It.IsAny<IProgress<string>>(),
-            It.IsAny<CancellationToken>()))
+            It.IsAny<CancellationToken>(),
+            It.IsAny<Action<System.Diagnostics.Process>?>()))
             .ReturnsAsync(new CleaningResult
             {
                 Status = CleaningStatus.Failed,
@@ -260,7 +261,8 @@ public sealed class CleaningOrchestratorTests
         _cleaningServiceMock.Setup(s => s.CleanPluginAsync(
             It.Is<PluginInfo>(p => p.FileName != "BadPlugin.esp"),
             It.IsAny<IProgress<string>>(),
-            It.IsAny<CancellationToken>()))
+            It.IsAny<CancellationToken>(),
+            It.IsAny<Action<System.Diagnostics.Process>?>()))
             .ReturnsAsync(new CleaningResult
             {
                 Status = CleaningStatus.Cleaned,
@@ -273,7 +275,7 @@ public sealed class CleaningOrchestratorTests
         // Assert
         // All 5 plugins should have been processed
         _cleaningServiceMock.Verify(
-            s => s.CleanPluginAsync(It.IsAny<PluginInfo>(), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>()),
+            s => s.CleanPluginAsync(It.IsAny<PluginInfo>(), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>(), It.IsAny<Action<System.Diagnostics.Process>?>()),
             Times.Exactly(5),
             "all 5 plugins should be processed despite one failure");
 
@@ -322,8 +324,8 @@ public sealed class CleaningOrchestratorTests
         var currentlyExecuting = 0;
         var maxConcurrent = 0;
 
-        _cleaningServiceMock.Setup(s => s.CleanPluginAsync(It.IsAny<PluginInfo>(), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((PluginInfo plugin, IProgress<string>? progress, CancellationToken ct) =>
+        _cleaningServiceMock.Setup(s => s.CleanPluginAsync(It.IsAny<PluginInfo>(), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>(), It.IsAny<Action<System.Diagnostics.Process>?>()))
+            .ReturnsAsync((PluginInfo plugin, IProgress<string>? progress, CancellationToken ct, Action<System.Diagnostics.Process>? onProcessStarted) =>
             {
                 var startTime = DateTime.Now;
 
@@ -401,8 +403,8 @@ public sealed class CleaningOrchestratorTests
         var cleanedPlugins = new List<string>();
         var cleaningStartedEvent = new TaskCompletionSource<bool>();
 
-        _cleaningServiceMock.Setup(s => s.CleanPluginAsync(It.IsAny<PluginInfo>(), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>()))
-            .Returns(async (PluginInfo plugin, IProgress<string>? progress, CancellationToken ct) =>
+        _cleaningServiceMock.Setup(s => s.CleanPluginAsync(It.IsAny<PluginInfo>(), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>(), It.IsAny<Action<System.Diagnostics.Process>?>()))
+            .Returns(async (PluginInfo plugin, IProgress<string>? progress, CancellationToken ct, Action<System.Diagnostics.Process>? onProcessStarted) =>
             {
                 cleanedPlugins.Add(plugin.FileName);
 
@@ -473,7 +475,7 @@ public sealed class CleaningOrchestratorTests
         // Assert
         // No cleaning should have been attempted
         _cleaningServiceMock.Verify(
-            s => s.CleanPluginAsync(It.IsAny<PluginInfo>(), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>()),
+            s => s.CleanPluginAsync(It.IsAny<PluginInfo>(), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>(), It.IsAny<Action<System.Diagnostics.Process>?>()),
             Times.Never);
 
         // But state lifecycle should still be complete
@@ -506,7 +508,7 @@ public sealed class CleaningOrchestratorTests
         _cleaningServiceMock.Setup(s => s.ValidateEnvironmentAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
-        _cleaningServiceMock.Setup(s => s.CleanPluginAsync(It.IsAny<PluginInfo>(), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>()))
+        _cleaningServiceMock.Setup(s => s.CleanPluginAsync(It.IsAny<PluginInfo>(), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>(), It.IsAny<Action<System.Diagnostics.Process>?>()))
             .ReturnsAsync(new CleaningResult { Status = CleaningStatus.Cleaned });
 
         // Act
@@ -551,7 +553,7 @@ public sealed class CleaningOrchestratorTests
         _cleaningServiceMock.Setup(s => s.ValidateEnvironmentAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
-        _cleaningServiceMock.Setup(s => s.CleanPluginAsync(It.IsAny<PluginInfo>(), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>()))
+        _cleaningServiceMock.Setup(s => s.CleanPluginAsync(It.IsAny<PluginInfo>(), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>(), It.IsAny<Action<System.Diagnostics.Process>?>()))
             .ReturnsAsync(new CleaningResult { Status = CleaningStatus.Cleaned });
 
         // Skip list contains base game ESMs
@@ -571,15 +573,15 @@ public sealed class CleaningOrchestratorTests
 
         // Assert - ALL 3 plugins should be cleaned, including those in skip list
         _cleaningServiceMock.Verify(
-            s => s.CleanPluginAsync(It.Is<PluginInfo>(p => p.FileName == "Skyrim.esm"), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>()),
+            s => s.CleanPluginAsync(It.Is<PluginInfo>(p => p.FileName == "Skyrim.esm"), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>(), It.IsAny<Action<System.Diagnostics.Process>?>()),
             Times.Once,
             "Skyrim.esm should be cleaned when DisableSkipLists is enabled");
         _cleaningServiceMock.Verify(
-            s => s.CleanPluginAsync(It.Is<PluginInfo>(p => p.FileName == "Update.esm"), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>()),
+            s => s.CleanPluginAsync(It.Is<PluginInfo>(p => p.FileName == "Update.esm"), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>(), It.IsAny<Action<System.Diagnostics.Process>?>()),
             Times.Once,
             "Update.esm should be cleaned when DisableSkipLists is enabled");
         _cleaningServiceMock.Verify(
-            s => s.CleanPluginAsync(It.Is<PluginInfo>(p => p.FileName == "UserMod.esp"), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>()),
+            s => s.CleanPluginAsync(It.Is<PluginInfo>(p => p.FileName == "UserMod.esp"), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>(), It.IsAny<Action<System.Diagnostics.Process>?>()),
             Times.Once);
     }
 
@@ -609,7 +611,7 @@ public sealed class CleaningOrchestratorTests
         _cleaningServiceMock.Setup(s => s.ValidateEnvironmentAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
-        _cleaningServiceMock.Setup(s => s.CleanPluginAsync(It.IsAny<PluginInfo>(), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>()))
+        _cleaningServiceMock.Setup(s => s.CleanPluginAsync(It.IsAny<PluginInfo>(), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>(), It.IsAny<Action<System.Diagnostics.Process>?>()))
             .ReturnsAsync(new CleaningResult { Status = CleaningStatus.Cleaned });
 
         // Skip list contains base game ESMs
@@ -629,15 +631,15 @@ public sealed class CleaningOrchestratorTests
 
         // Assert - Only UserMod.esp should be cleaned
         _cleaningServiceMock.Verify(
-            s => s.CleanPluginAsync(It.Is<PluginInfo>(p => p.FileName == "Skyrim.esm"), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>()),
+            s => s.CleanPluginAsync(It.Is<PluginInfo>(p => p.FileName == "Skyrim.esm"), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>(), It.IsAny<Action<System.Diagnostics.Process>?>()),
             Times.Never,
             "Skyrim.esm should NOT be cleaned when DisableSkipLists is disabled");
         _cleaningServiceMock.Verify(
-            s => s.CleanPluginAsync(It.Is<PluginInfo>(p => p.FileName == "Update.esm"), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>()),
+            s => s.CleanPluginAsync(It.Is<PluginInfo>(p => p.FileName == "Update.esm"), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>(), It.IsAny<Action<System.Diagnostics.Process>?>()),
             Times.Never,
             "Update.esm should NOT be cleaned when DisableSkipLists is disabled");
         _cleaningServiceMock.Verify(
-            s => s.CleanPluginAsync(It.Is<PluginInfo>(p => p.FileName == "UserMod.esp"), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>()),
+            s => s.CleanPluginAsync(It.Is<PluginInfo>(p => p.FileName == "UserMod.esp"), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>(), It.IsAny<Action<System.Diagnostics.Process>?>()),
             Times.Once,
             "UserMod.esp should be cleaned");
     }
