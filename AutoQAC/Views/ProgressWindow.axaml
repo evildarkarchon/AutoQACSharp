@@ -59,13 +59,8 @@
                            Text="{Binding Total}" />
             </Grid>
 
-            <!-- Log Output -->
-            <TextBlock Text="Output:" FontWeight="SemiBold" Margin="0,10,0,0" />
-            <ScrollViewer Height="150">
-                <TextBlock Text="{Binding LogOutput}"
-                           FontFamily="Consolas"
-                           TextWrapping="Wrap" />
-            </ScrollViewer>
+            <!-- Completed Plugins (placeholder, redesigned in Task 2) -->
+            <TextBlock Text="Completed:" FontWeight="SemiBold" Margin="0,10,0,0" />
         </StackPanel>
 
         <!-- Buttons -->

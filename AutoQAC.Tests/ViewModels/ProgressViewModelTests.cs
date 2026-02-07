@@ -13,7 +13,7 @@ namespace AutoQAC.Tests.ViewModels;
 
 /// <summary>
 /// Unit tests for <see cref="ProgressViewModel"/> covering progress tracking,
-/// state synchronization, and edge cases like division by zero.
+/// state synchronization, per-plugin stats, results summary mode, and edge cases.
 /// </summary>
 public sealed class ProgressViewModelTests
 {
@@ -21,6 +21,8 @@ public sealed class ProgressViewModelTests
     private readonly Mock<ICleaningOrchestrator> _orchestratorMock;
     private readonly BehaviorSubject<AppState> _stateSubject;
     private readonly Subject<(string plugin, CleaningStatus status)> _pluginProcessedSubject;
+    private readonly Subject<PluginCleaningResult> _detailedPluginResultSubject;
+    private readonly Subject<CleaningSessionResult> _cleaningCompletedSubject;
 
     /// <summary>
     /// Initializes test fixtures with default mock configurations.
@@ -32,10 +34,14 @@ public sealed class ProgressViewModelTests
 
         _stateSubject = new BehaviorSubject<AppState>(new AppState());
         _pluginProcessedSubject = new Subject<(string, CleaningStatus)>();
+        _detailedPluginResultSubject = new Subject<PluginCleaningResult>();
+        _cleaningCompletedSubject = new Subject<CleaningSessionResult>();
 
         _stateServiceMock = new Mock<IStateService>();
         _stateServiceMock.Setup(s => s.StateChanged).Returns(_stateSubject);
         _stateServiceMock.Setup(s => s.PluginProcessed).Returns(_pluginProcessedSubject);
+        _stateServiceMock.Setup(s => s.DetailedPluginResult).Returns(_detailedPluginResultSubject);
+        _stateServiceMock.Setup(s => s.CleaningCompleted).Returns(_cleaningCompletedSubject);
         _stateServiceMock.Setup(s => s.CurrentState).Returns(new AppState());
 
         _orchestratorMock = new Mock<ICleaningOrchestrator>();
@@ -163,26 +169,137 @@ public sealed class ProgressViewModelTests
     }
 
     /// <summary>
-    /// Verifies that OnPluginProcessed correctly appends to log output.
+    /// Verifies that DetailedPluginResult adds results to CompletedPlugins collection.
     /// </summary>
     [Fact]
-    public void OnPluginProcessed_ShouldAppendToLogOutput()
+    public void OnDetailedResult_ShouldAddToCompletedPlugins()
     {
         // Arrange
         var vm = CreateViewModel();
 
+        var result1 = new PluginCleaningResult
+        {
+            PluginName = "Plugin1.esp",
+            Status = CleaningStatus.Cleaned,
+            Success = true,
+            Statistics = new CleaningStatistics { ItemsRemoved = 5, ItemsUndeleted = 2 }
+        };
+        var result2 = new PluginCleaningResult
+        {
+            PluginName = "Plugin2.esp",
+            Status = CleaningStatus.Skipped,
+            Success = true
+        };
+        var result3 = new PluginCleaningResult
+        {
+            PluginName = "Plugin3.esp",
+            Status = CleaningStatus.Failed,
+            Success = false,
+            Message = "Timeout"
+        };
+
         // Act
-        _pluginProcessedSubject.OnNext(("Plugin1.esp", CleaningStatus.Cleaned));
-        _pluginProcessedSubject.OnNext(("Plugin2.esp", CleaningStatus.Skipped));
-        _pluginProcessedSubject.OnNext(("Plugin3.esp", CleaningStatus.Failed));
+        _detailedPluginResultSubject.OnNext(result1);
+        _detailedPluginResultSubject.OnNext(result2);
+        _detailedPluginResultSubject.OnNext(result3);
 
         // Assert
-        vm.LogOutput.Should().Contain("Plugin1.esp");
-        vm.LogOutput.Should().Contain("Plugin2.esp");
-        vm.LogOutput.Should().Contain("Plugin3.esp");
-        vm.LogOutput.Should().Contain("Cleaned");
-        vm.LogOutput.Should().Contain("Skipped");
-        vm.LogOutput.Should().Contain("Failed");
+        vm.CompletedPlugins.Should().HaveCount(3);
+        vm.CompletedPlugins[0].PluginName.Should().Be("Plugin1.esp");
+        vm.CompletedPlugins[1].PluginName.Should().Be("Plugin2.esp");
+        vm.CompletedPlugins[2].PluginName.Should().Be("Plugin3.esp");
+    }
+
+    /// <summary>
+    /// Verifies that per-plugin counter badges update from DetailedPluginResult.
+    /// </summary>
+    [Fact]
+    public void OnDetailedResult_ShouldUpdateCurrentCounterBadges()
+    {
+        // Arrange
+        var vm = CreateViewModel();
+
+        var result = new PluginCleaningResult
+        {
+            PluginName = "Plugin1.esp",
+            Status = CleaningStatus.Cleaned,
+            Success = true,
+            Statistics = new CleaningStatistics
+            {
+                ItemsRemoved = 15,
+                ItemsUndeleted = 3,
+                PartialFormsCreated = 1
+            }
+        };
+
+        // Act
+        _detailedPluginResultSubject.OnNext(result);
+
+        // Assert
+        vm.CurrentItmCount.Should().Be(15);
+        vm.CurrentUdrCount.Should().Be(3);
+        vm.CurrentNavCount.Should().Be(1);
+        vm.HasCurrentPluginStats.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// Verifies that HasCurrentPluginStats is false when statistics are null.
+    /// </summary>
+    [Fact]
+    public void OnDetailedResult_ShouldSetHasCurrentPluginStatsFalse_WhenNoStatistics()
+    {
+        // Arrange
+        var vm = CreateViewModel();
+
+        var result = new PluginCleaningResult
+        {
+            PluginName = "Skipped.esp",
+            Status = CleaningStatus.Skipped,
+            Success = true,
+            Statistics = null
+        };
+
+        // Act
+        _detailedPluginResultSubject.OnNext(result);
+
+        // Assert
+        vm.HasCurrentPluginStats.Should().BeFalse();
+        vm.CurrentItmCount.Should().Be(0);
+        vm.CurrentUdrCount.Should().Be(0);
+    }
+
+    /// <summary>
+    /// Verifies that session-wide totals accumulate across multiple plugin results.
+    /// </summary>
+    [Fact]
+    public void OnDetailedResult_ShouldAccumulateSessionWideTotals()
+    {
+        // Arrange
+        var vm = CreateViewModel();
+
+        var result1 = new PluginCleaningResult
+        {
+            PluginName = "Plugin1.esp",
+            Status = CleaningStatus.Cleaned,
+            Success = true,
+            Statistics = new CleaningStatistics { ItemsRemoved = 10, ItemsUndeleted = 2 }
+        };
+        var result2 = new PluginCleaningResult
+        {
+            PluginName = "Plugin2.esp",
+            Status = CleaningStatus.Cleaned,
+            Success = true,
+            Statistics = new CleaningStatistics { ItemsRemoved = 5, ItemsUndeleted = 1, PartialFormsCreated = 3 }
+        };
+
+        // Act
+        _detailedPluginResultSubject.OnNext(result1);
+        _detailedPluginResultSubject.OnNext(result2);
+
+        // Assert
+        vm.TotalItmCount.Should().Be(15);
+        vm.TotalUdrCount.Should().Be(3);
+        vm.TotalNavCount.Should().Be(3);
     }
 
     /// <summary>
@@ -269,24 +386,6 @@ public sealed class ProgressViewModelTests
     }
 
     /// <summary>
-    /// Verifies that LogOutput handles very long plugin names.
-    /// </summary>
-    [Fact]
-    public void LogOutput_ShouldHandleLongPluginNames()
-    {
-        // Arrange
-        var vm = CreateViewModel();
-        var longPluginName = new string('A', 500) + ".esp";
-
-        // Act
-        _pluginProcessedSubject.OnNext((longPluginName, CleaningStatus.Cleaned));
-
-        // Assert
-        vm.LogOutput.Should().Contain(longPluginName,
-            "long plugin names should be handled without truncation");
-    }
-
-    /// <summary>
     /// Verifies that ProgressText handles edge case of Progress > Total.
     /// </summary>
     [Fact]
@@ -303,6 +402,124 @@ public sealed class ProgressViewModelTests
         // Should not throw or produce nonsensical output
         vm.ProgressText.Should().NotBeNullOrEmpty();
         // Percentage might be > 100%, which is technically correct for the inputs
+    }
+
+    #endregion
+
+    #region Results Summary Tests
+
+    /// <summary>
+    /// Verifies that CleaningCompleted transitions to results summary mode.
+    /// </summary>
+    [Fact]
+    public void OnCleaningCompleted_ShouldTransitionToResultsSummary()
+    {
+        // Arrange
+        var vm = CreateViewModel();
+
+        var session = new CleaningSessionResult
+        {
+            StartTime = DateTime.Now.AddMinutes(-5),
+            EndTime = DateTime.Now,
+            GameType = GameType.SkyrimSe,
+            WasCancelled = false,
+            PluginResults = new[]
+            {
+                new PluginCleaningResult
+                {
+                    PluginName = "Cleaned.esp",
+                    Status = CleaningStatus.Cleaned,
+                    Success = true,
+                    Statistics = new CleaningStatistics { ItemsRemoved = 10, ItemsUndeleted = 2 }
+                }
+            }
+        };
+
+        // Act
+        _cleaningCompletedSubject.OnNext(session);
+
+        // Assert
+        vm.IsShowingResults.Should().BeTrue();
+        vm.SessionResult.Should().Be(session);
+        vm.WasCancelled.Should().BeFalse();
+        vm.IsCleaning.Should().BeFalse();
+        vm.SessionSummaryText.Should().NotBeNullOrEmpty();
+        vm.TotalItmCount.Should().Be(10);
+        vm.TotalUdrCount.Should().Be(2);
+    }
+
+    /// <summary>
+    /// Verifies that cancelled session shows cancelled indication.
+    /// </summary>
+    [Fact]
+    public void OnCleaningCompleted_ShouldShowCancelledIndication_WhenCancelled()
+    {
+        // Arrange
+        var vm = CreateViewModel();
+
+        var session = new CleaningSessionResult
+        {
+            StartTime = DateTime.Now.AddMinutes(-2),
+            EndTime = DateTime.Now,
+            GameType = GameType.SkyrimSe,
+            WasCancelled = true,
+            PluginResults = new[]
+            {
+                new PluginCleaningResult
+                {
+                    PluginName = "Cleaned.esp",
+                    Status = CleaningStatus.Cleaned,
+                    Success = true
+                }
+            }
+        };
+
+        // Act
+        _cleaningCompletedSubject.OnNext(session);
+
+        // Assert
+        vm.WasCancelled.Should().BeTrue();
+        vm.IsShowingResults.Should().BeTrue();
+        vm.SessionSummaryText.Should().Contain("Cancelled");
+    }
+
+    /// <summary>
+    /// Verifies that new cleaning session resets all state.
+    /// </summary>
+    [Fact]
+    public void NewCleaningSession_ShouldResetState()
+    {
+        // Arrange
+        var vm = CreateViewModel();
+
+        // First: add some results from a previous session
+        _detailedPluginResultSubject.OnNext(new PluginCleaningResult
+        {
+            PluginName = "Old.esp",
+            Status = CleaningStatus.Cleaned,
+            Success = true,
+            Statistics = new CleaningStatistics { ItemsRemoved = 5 }
+        });
+        vm.CompletedPlugins.Should().HaveCount(1);
+
+        // Set up as if we completed
+        vm.IsShowingResults = true;
+        vm.SessionSummaryText = "Previous session";
+
+        // Act: start new session (IsCleaning transitions from false to true)
+        var cleaningState = new AppState { IsCleaning = true, TotalPlugins = 10 };
+        _stateSubject.OnNext(cleaningState);
+
+        // Assert
+        vm.CompletedPlugins.Should().BeEmpty("should be cleared for new session");
+        vm.IsShowingResults.Should().BeFalse("should not show results during active cleaning");
+        vm.CurrentItmCount.Should().Be(0);
+        vm.CurrentUdrCount.Should().Be(0);
+        vm.CurrentNavCount.Should().Be(0);
+        vm.TotalItmCount.Should().Be(0);
+        vm.TotalUdrCount.Should().Be(0);
+        vm.TotalNavCount.Should().Be(0);
+        vm.SessionSummaryText.Should().BeEmpty();
     }
 
     #endregion
