@@ -553,6 +553,115 @@ AutoQAC_Data:
 
   #endregion
 
+  #region TTW/Enderal Variant Skip List Tests
+
+  /// <summary>
+  /// TTW variant: GetSkipListAsync for FNV with GameVariant.TTW should include FO3 entries.
+  /// </summary>
+  [Fact]
+  public async Task GetSkipListAsync_TTW_ShouldMergeFO3EntriesIntoFNV()
+  {
+    // Arrange
+    var mainConfigContent = @"
+AutoQAC_Data:
+  Skip_Lists:
+    FNV:
+      - FalloutNV.esm
+    FO3:
+      - Fallout3.esm
+      - Anchorage.esm
+    Universal:
+      - Universal.esm
+";
+    var settingsContent = @"
+Skip_Lists:
+  FNV:
+    - UserFNVMod.esp
+  FO3:
+    - UserFO3Mod.esp
+";
+    await SetupMainConfigAsync(mainConfigContent);
+    await SetupSettingsConfigAsync(settingsContent);
+    var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+
+    // Act
+    var list = await service.GetSkipListAsync(GameType.FalloutNewVegas, GameVariant.TTW);
+
+    // Assert
+    list.Should().Contain("FalloutNV.esm", "FNV entries from Main.yaml should be included");
+    list.Should().Contain("UserFNVMod.esp", "FNV entries from user config should be included");
+    list.Should().Contain("Fallout3.esm", "FO3 entries from Main.yaml should be merged for TTW");
+    list.Should().Contain("Anchorage.esm", "FO3 DLC entries from Main.yaml should be merged for TTW");
+    list.Should().Contain("UserFO3Mod.esp", "FO3 entries from user config should be merged for TTW");
+    list.Should().Contain("Universal.esm", "Universal entries should still be included");
+  }
+
+  /// <summary>
+  /// Non-TTW FNV: GetSkipListAsync should NOT include FO3 entries.
+  /// </summary>
+  [Fact]
+  public async Task GetSkipListAsync_NonTTW_ShouldNotIncludeFO3Entries()
+  {
+    // Arrange
+    var mainConfigContent = @"
+AutoQAC_Data:
+  Skip_Lists:
+    FNV:
+      - FalloutNV.esm
+    FO3:
+      - Fallout3.esm
+      - Anchorage.esm
+    Universal:
+      - Universal.esm
+";
+    await SetupMainConfigAsync(mainConfigContent);
+    var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+
+    // Act - No TTW variant
+    var list = await service.GetSkipListAsync(GameType.FalloutNewVegas, GameVariant.None);
+
+    // Assert
+    list.Should().Contain("FalloutNV.esm", "FNV entries should be included");
+    list.Should().Contain("Universal.esm", "Universal should be included");
+    list.Should().NotContain("Fallout3.esm", "FO3 entries must NOT be included without TTW variant");
+    list.Should().NotContain("Anchorage.esm", "FO3 DLC must NOT be included without TTW variant");
+  }
+
+  /// <summary>
+  /// Enderal variant: GetSkipListAsync for SSE with GameVariant.Enderal should use Enderal key.
+  /// </summary>
+  [Fact]
+  public async Task GetSkipListAsync_Enderal_ShouldUseEnderalKey()
+  {
+    // Arrange
+    var mainConfigContent = @"
+AutoQAC_Data:
+  Skip_Lists:
+    SSE:
+      - Skyrim.esm
+      - Update.esm
+    Enderal:
+      - Enderal - Forgotten Stories.esm
+      - SkyUI_SE.esp
+    Universal:
+      - Universal.esm
+";
+    await SetupMainConfigAsync(mainConfigContent);
+    var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+
+    // Act
+    var list = await service.GetSkipListAsync(GameType.SkyrimSe, GameVariant.Enderal);
+
+    // Assert
+    list.Should().Contain("Enderal - Forgotten Stories.esm", "Enderal-specific entries should be used");
+    list.Should().Contain("SkyUI_SE.esp", "Enderal skip list should include all Enderal entries");
+    list.Should().Contain("Universal.esm", "Universal should still be included");
+    list.Should().NotContain("Skyrim.esm", "SSE entries should NOT be used when Enderal variant is active");
+    list.Should().NotContain("Update.esm", "SSE entries should NOT be used when Enderal variant is active");
+  }
+
+  #endregion
+
   #region Integration Tests
 
   [Fact]

@@ -92,6 +92,24 @@ public class XEditCommandBuilderTests
     }
 
     [Fact]
+    public void BuildCommand_ReturnsNull_WhenGameTypeIsUnknown()
+    {
+        // Arrange
+        _stateServiceMock.Setup(x => x.CurrentState).Returns(new AppState
+        {
+            XEditExecutablePath = @"C:\Tools\xEdit.exe",
+            Mo2ModeEnabled = false
+        });
+        var plugin = new PluginInfo { FileName = "test.esp", FullPath = "C:\\path\\test.esp" };
+
+        // Act
+        var result = _sut.BuildCommand(plugin, GameType.Unknown);
+
+        // Assert
+        result.Should().BeNull("GameType.Unknown must be rejected to prevent building commands without game flags");
+    }
+
+    [Fact]
     public void BuildCommand_WrapsInMO2_WhenEnabled()
     {
         // Arrange

@@ -646,6 +646,253 @@ public sealed class CleaningOrchestratorTests
 
     #endregion
 
+    #region GameType.Unknown Blocking Tests
+
+    /// <summary>
+    /// Verifies that StartCleaningAsync throws InvalidOperationException when
+    /// game type cannot be determined (both executable and load order detection fail).
+    /// This is safety-critical: skip lists cannot be applied without a known game type.
+    /// </summary>
+    [Fact]
+    public async Task StartCleaningAsync_ShouldThrow_WhenGameTypeIsUnknown()
+    {
+        // Arrange
+        var plugins = new List<PluginInfo>
+        {
+            new() { FileName = "Plugin1.esp", FullPath = "Path/Plugin1.esp", IsSelected = true }
+        };
+
+        var appState = new AppState
+        {
+            LoadOrderPath = "plugins.txt",
+            XEditExecutablePath = "xedit.exe",
+            CurrentGameType = GameType.Unknown,
+            PluginsToClean = plugins
+        };
+        _stateServiceMock.Setup(s => s.CurrentState).Returns(appState);
+
+        _cleaningServiceMock.Setup(s => s.ValidateEnvironmentAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        // Both detection methods return Unknown
+        _gameDetectionServiceMock.Setup(d => d.DetectFromExecutable(It.IsAny<string>()))
+            .Returns(GameType.Unknown);
+        _gameDetectionServiceMock.Setup(d => d.DetectFromLoadOrderAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(GameType.Unknown);
+
+        // Act
+        var act = () => _orchestrator.StartCleaningAsync();
+
+        // Assert
+        var ex = await act.Should().ThrowAsync<InvalidOperationException>();
+        ex.Which.Message.Should().Contain("game type", "error message should explain the problem");
+    }
+
+    #endregion
+
+    #region MO2 Mode Tests
+
+    /// <summary>
+    /// Verifies that MO2 mode skips file-existence validation entirely.
+    /// MO2's VFS resolves paths at xEdit runtime, so checking disk paths is wrong.
+    /// </summary>
+    [Fact]
+    public async Task StartCleaningAsync_MO2Mode_ShouldSkipFileValidation()
+    {
+        // Arrange
+        var plugins = new List<PluginInfo>
+        {
+            new() { FileName = "Plugin1.esp", FullPath = "Path/Plugin1.esp", IsSelected = true },
+            new() { FileName = "Plugin2.esp", FullPath = "Path/Plugin2.esp", IsSelected = true }
+        };
+
+        var appState = new AppState
+        {
+            LoadOrderPath = "plugins.txt",
+            XEditExecutablePath = "xedit.exe",
+            Mo2ExecutablePath = @"C:\MO2\ModOrganizer.exe",
+            CurrentGameType = GameType.SkyrimSe,
+            Mo2ModeEnabled = true,
+            PluginsToClean = plugins
+        };
+        _stateServiceMock.Setup(s => s.CurrentState).Returns(appState);
+
+        _cleaningServiceMock.Setup(s => s.ValidateEnvironmentAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        _cleaningServiceMock.Setup(s => s.CleanPluginAsync(It.IsAny<PluginInfo>(), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>(), It.IsAny<Action<System.Diagnostics.Process>?>()))
+            .ReturnsAsync(new CleaningResult { Status = CleaningStatus.Cleaned });
+
+        // MO2 mode enabled in user config
+        var userConfig = new UserConfiguration
+        {
+            ModOrganizer = new ModOrganizerConfig { Binary = @"C:\MO2\ModOrganizer.exe" },
+            Settings = new AutoQacSettings { Mo2Mode = true }
+        };
+        _configServiceMock.Setup(s => s.LoadUserConfigAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(userConfig);
+
+        // Act
+        await _orchestrator.StartCleaningAsync();
+
+        // Assert - ValidatePluginFile should NEVER be called when MO2 mode is active
+        _pluginServiceMock.Verify(
+            s => s.ValidatePluginFile(It.IsAny<PluginInfo>()),
+            Times.Never,
+            "MO2 mode active: file-existence validation must be skipped (MO2 VFS resolves paths at runtime)");
+    }
+
+    /// <summary>
+    /// Verifies that when MO2 mode is OFF, file validation runs normally
+    /// and missing plugins produce aggregated warnings.
+    /// </summary>
+    [Fact]
+    public async Task StartCleaningAsync_NonMO2Mode_ShouldRunFileValidation()
+    {
+        // Arrange
+        var plugins = new List<PluginInfo>
+        {
+            new() { FileName = "Valid.esp", FullPath = "Path/Valid.esp", IsSelected = true },
+            new() { FileName = "Missing.esp", FullPath = "Path/Missing.esp", IsSelected = true },
+            new() { FileName = "AlsoValid.esp", FullPath = "Path/AlsoValid.esp", IsSelected = true }
+        };
+
+        var appState = new AppState
+        {
+            LoadOrderPath = "plugins.txt",
+            XEditExecutablePath = "xedit.exe",
+            CurrentGameType = GameType.SkyrimSe,
+            Mo2ModeEnabled = false,
+            PluginsToClean = plugins
+        };
+        _stateServiceMock.Setup(s => s.CurrentState).Returns(appState);
+
+        _cleaningServiceMock.Setup(s => s.ValidateEnvironmentAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        _cleaningServiceMock.Setup(s => s.CleanPluginAsync(It.IsAny<PluginInfo>(), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>(), It.IsAny<Action<System.Diagnostics.Process>?>()))
+            .ReturnsAsync(new CleaningResult { Status = CleaningStatus.Cleaned });
+
+        // MO2 mode disabled in user config
+        var userConfig = new UserConfiguration
+        {
+            Settings = new AutoQacSettings { Mo2Mode = false }
+        };
+        _configServiceMock.Setup(s => s.LoadUserConfigAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(userConfig);
+
+        // Mock validation: Missing.esp is NotFound, others are fine
+        _pluginServiceMock.Setup(s => s.ValidatePluginFile(It.Is<PluginInfo>(p => p.FileName == "Missing.esp")))
+            .Returns(PluginWarningKind.NotFound);
+        _pluginServiceMock.Setup(s => s.ValidatePluginFile(It.Is<PluginInfo>(p => p.FileName != "Missing.esp")))
+            .Returns(PluginWarningKind.None);
+
+        // Act
+        await _orchestrator.StartCleaningAsync();
+
+        // Assert - ValidatePluginFile SHOULD be called for non-MO2 mode
+        _pluginServiceMock.Verify(
+            s => s.ValidatePluginFile(It.IsAny<PluginInfo>()),
+            Times.AtLeastOnce,
+            "Non-MO2 mode should run file validation");
+
+        // Missing.esp should NOT be cleaned (removed from list)
+        _cleaningServiceMock.Verify(
+            s => s.CleanPluginAsync(It.Is<PluginInfo>(p => p.FileName == "Missing.esp"), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>(), It.IsAny<Action<System.Diagnostics.Process>?>()),
+            Times.Never,
+            "Missing plugin should be excluded from cleaning");
+    }
+
+    /// <summary>
+    /// Verifies that MO2 mode with empty MO2 executable path throws with actionable guidance.
+    /// </summary>
+    [Fact]
+    public async Task StartCleaningAsync_MO2Mode_ShouldThrow_WhenMO2BinaryPathEmpty()
+    {
+        // Arrange
+        var plugins = new List<PluginInfo>
+        {
+            new() { FileName = "Plugin1.esp", FullPath = "Path/Plugin1.esp", IsSelected = true }
+        };
+
+        var appState = new AppState
+        {
+            LoadOrderPath = "plugins.txt",
+            XEditExecutablePath = "xedit.exe",
+            CurrentGameType = GameType.SkyrimSe,
+            Mo2ModeEnabled = true,
+            Mo2ExecutablePath = null,
+            PluginsToClean = plugins
+        };
+        _stateServiceMock.Setup(s => s.CurrentState).Returns(appState);
+
+        _cleaningServiceMock.Setup(s => s.ValidateEnvironmentAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        // MO2 mode enabled but no binary path
+        var userConfig = new UserConfiguration
+        {
+            ModOrganizer = new ModOrganizerConfig { Binary = null },
+            Settings = new AutoQacSettings { Mo2Mode = true }
+        };
+        _configServiceMock.Setup(s => s.LoadUserConfigAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(userConfig);
+
+        // Act
+        var act = () => _orchestrator.StartCleaningAsync();
+
+        // Assert
+        var ex = await act.Should().ThrowAsync<InvalidOperationException>();
+        ex.Which.Message.Should().Contain("MO2", "error message should reference MO2");
+        ex.Which.Message.Should().Contain("Settings", "error message should guide user to Settings");
+    }
+
+    /// <summary>
+    /// Verifies that MO2 mode with non-existent MO2 binary throws with actionable guidance.
+    /// </summary>
+    [Fact]
+    public async Task StartCleaningAsync_MO2Mode_ShouldThrow_WhenMO2BinaryNotFound()
+    {
+        // Arrange
+        var plugins = new List<PluginInfo>
+        {
+            new() { FileName = "Plugin1.esp", FullPath = "Path/Plugin1.esp", IsSelected = true }
+        };
+
+        var appState = new AppState
+        {
+            LoadOrderPath = "plugins.txt",
+            XEditExecutablePath = "xedit.exe",
+            CurrentGameType = GameType.SkyrimSe,
+            Mo2ModeEnabled = true,
+            Mo2ExecutablePath = @"C:\nonexistent\ModOrganizer.exe",
+            PluginsToClean = plugins
+        };
+        _stateServiceMock.Setup(s => s.CurrentState).Returns(appState);
+
+        _cleaningServiceMock.Setup(s => s.ValidateEnvironmentAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        // MO2 mode enabled with non-existent path
+        var userConfig = new UserConfiguration
+        {
+            ModOrganizer = new ModOrganizerConfig { Binary = @"C:\nonexistent\ModOrganizer.exe" },
+            Settings = new AutoQacSettings { Mo2Mode = true }
+        };
+        _configServiceMock.Setup(s => s.LoadUserConfigAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(userConfig);
+
+        // Act
+        var act = () => _orchestrator.StartCleaningAsync();
+
+        // Assert
+        var ex = await act.Should().ThrowAsync<InvalidOperationException>();
+        ex.Which.Message.Should().Contain("MO2", "error message should reference MO2");
+        ex.Which.Message.Should().Contain("Settings", "error message should guide user to Settings");
+    }
+
+    #endregion
+
     #region Dispose Tests
 
     /// <summary>

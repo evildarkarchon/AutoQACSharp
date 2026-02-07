@@ -330,7 +330,7 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
         return isValid;
     }
 
-    public async Task<List<string>> GetSkipListAsync(GameType gameType)
+    public async Task<List<string>> GetSkipListAsync(GameType gameType, GameVariant variant = GameVariant.None)
     {
         // Load both configs
         _mainConfigCache ??= await LoadMainConfigAsync().ConfigureAwait(false);

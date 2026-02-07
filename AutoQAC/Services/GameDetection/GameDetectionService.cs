@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
@@ -120,6 +121,11 @@ public sealed class GameDetectionService : IGameDetectionService
         }
 
         return GameType.Unknown;
+    }
+
+    public GameVariant DetectVariant(GameType baseGame, IReadOnlyList<string> pluginNames)
+    {
+        throw new NotImplementedException("DetectVariant not yet implemented");
     }
 
     public bool IsValidGameType(GameType gameType)

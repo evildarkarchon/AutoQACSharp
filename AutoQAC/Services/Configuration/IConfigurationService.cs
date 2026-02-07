@@ -20,7 +20,7 @@ public interface IConfigurationService
     Task<bool> ValidatePathsAsync(UserConfiguration config, CancellationToken ct = default);
 
     // Game-specific queries
-    Task<List<string>> GetSkipListAsync(GameType gameType);
+    Task<List<string>> GetSkipListAsync(GameType gameType, GameVariant variant = GameVariant.None);
     Task<List<string>> GetDefaultSkipListAsync(GameType gameType);
     Task<List<string>> GetXEditExecutableNamesAsync(GameType gameType);
 

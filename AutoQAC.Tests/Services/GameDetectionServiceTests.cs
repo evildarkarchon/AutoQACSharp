@@ -366,6 +366,129 @@ SomeMod.esp
 
     #endregion
 
+    #region DetectVariant Tests
+
+    /// <summary>
+    /// TTW: FNV base game with TaleOfTwoWastelands.esm should return TTW variant.
+    /// </summary>
+    [Fact]
+    public void DetectVariant_ShouldReturnTTW_WhenFNVWithTTWPlugin()
+    {
+        // Arrange
+        var service = new GameDetectionService(Mock.Of<ILoggingService>());
+        var plugins = new List<string> { "FalloutNV.esm", "TaleOfTwoWastelands.esm", "SomeMod.esp" };
+
+        // Act
+        var result = service.DetectVariant(GameType.FalloutNewVegas, plugins);
+
+        // Assert
+        result.Should().Be(GameVariant.TTW);
+    }
+
+    /// <summary>
+    /// TTW detection should be case-insensitive.
+    /// </summary>
+    [Fact]
+    public void DetectVariant_ShouldBeCaseInsensitive_ForTTW()
+    {
+        // Arrange
+        var service = new GameDetectionService(Mock.Of<ILoggingService>());
+        var plugins = new List<string> { "FalloutNV.esm", "taleoftwowastelands.esm" };
+
+        // Act
+        var result = service.DetectVariant(GameType.FalloutNewVegas, plugins);
+
+        // Assert
+        result.Should().Be(GameVariant.TTW);
+    }
+
+    /// <summary>
+    /// TTW only applies when base game is FNV. FO3 base game with TTW plugin should return None.
+    /// </summary>
+    [Fact]
+    public void DetectVariant_ShouldReturnNone_WhenTTWPluginButWrongBaseGame()
+    {
+        // Arrange
+        var service = new GameDetectionService(Mock.Of<ILoggingService>());
+        var plugins = new List<string> { "Fallout3.esm", "TaleOfTwoWastelands.esm" };
+
+        // Act
+        var result = service.DetectVariant(GameType.Fallout3, plugins);
+
+        // Assert
+        result.Should().Be(GameVariant.None, "TTW only applies when base game is FNV");
+    }
+
+    /// <summary>
+    /// Enderal: SSE base game with Enderal - Forgotten Stories.esm should return Enderal variant.
+    /// </summary>
+    [Fact]
+    public void DetectVariant_ShouldReturnEnderal_WhenSSEWithEnderalPlugin()
+    {
+        // Arrange
+        var service = new GameDetectionService(Mock.Of<ILoggingService>());
+        var plugins = new List<string> { "Skyrim.esm", "Enderal - Forgotten Stories.esm", "SomeMod.esp" };
+
+        // Act
+        var result = service.DetectVariant(GameType.SkyrimSe, plugins);
+
+        // Assert
+        result.Should().Be(GameVariant.Enderal);
+    }
+
+    /// <summary>
+    /// Enderal only applies when base game is SSE. FO4 with Enderal plugin should return None.
+    /// </summary>
+    [Fact]
+    public void DetectVariant_ShouldReturnNone_WhenEnderalPluginButWrongBaseGame()
+    {
+        // Arrange
+        var service = new GameDetectionService(Mock.Of<ILoggingService>());
+        var plugins = new List<string> { "Fallout4.esm", "Enderal - Forgotten Stories.esm" };
+
+        // Act
+        var result = service.DetectVariant(GameType.Fallout4, plugins);
+
+        // Assert
+        result.Should().Be(GameVariant.None, "Enderal only applies when base game is SSE");
+    }
+
+    /// <summary>
+    /// No variant marker plugins: should return None.
+    /// </summary>
+    [Fact]
+    public void DetectVariant_ShouldReturnNone_WhenNoVariantPlugins()
+    {
+        // Arrange
+        var service = new GameDetectionService(Mock.Of<ILoggingService>());
+        var plugins = new List<string> { "Skyrim.esm", "Update.esm", "Mod.esp" };
+
+        // Act
+        var result = service.DetectVariant(GameType.SkyrimSe, plugins);
+
+        // Assert
+        result.Should().Be(GameVariant.None);
+    }
+
+    /// <summary>
+    /// Empty load order: should return None.
+    /// </summary>
+    [Fact]
+    public void DetectVariant_ShouldReturnNone_WhenEmptyLoadOrder()
+    {
+        // Arrange
+        var service = new GameDetectionService(Mock.Of<ILoggingService>());
+        var plugins = new List<string>();
+
+        // Act
+        var result = service.DetectVariant(GameType.FalloutNewVegas, plugins);
+
+        // Assert
+        result.Should().Be(GameVariant.None);
+    }
+
+    #endregion
+
     #region Utility Method Tests
 
     /// <summary>
