@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Models;
@@ -45,4 +46,13 @@ public interface ICleaningOrchestrator
     /// Reset at the start and end of each cleaning session.
     /// </summary>
     TerminationResult? LastTerminationResult { get; }
+
+    /// <summary>
+    /// Runs the validation pipeline without invoking xEdit. Returns a preview of which
+    /// plugins would be cleaned or skipped, with human-readable reasons for each.
+    /// Does not mutate application state, start processes, or create cancellation tokens.
+    /// </summary>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A list of DryRunResult entries, one per plugin.</returns>
+    Task<List<DryRunResult>> RunDryRunAsync(CancellationToken ct = default);
 }
