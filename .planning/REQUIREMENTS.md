@@ -111,9 +111,9 @@
 | PROC-04 | Phase 1 | Complete |
 | PROC-05 | Phase 6 | Pending |
 | PROC-06 | Phase 1 | Complete |
-| PROG-01 | Phase 3 | Pending |
-| PROG-02 | Phase 3 | Pending |
-| PROG-03 | Phase 3 | Pending |
+| PROG-01 | Phase 3 | Complete |
+| PROG-02 | Phase 3 | Complete |
+| PROG-03 | Phase 3 | Complete |
 | CONF-01 | Phase 1 | Complete |
 | CONF-02 | Phase 4 | Pending |
 | CONF-03 | Phase 4 | Pending |
@@ -127,7 +127,7 @@
 | PLUG-04 | Phase 2 | Complete |
 | PLUG-05 | Phase 2 | Complete |
 | STAT-01 | Phase 1 | Complete |
-| STAT-02 | Phase 3 | Pending |
+| STAT-02 | Phase 3 | Complete |
 | SAFE-01 | Phase 5 | Pending |
 | SAFE-02 | Phase 5 | Pending |
 | SAFE-03 | Phase 5 | Pending |
