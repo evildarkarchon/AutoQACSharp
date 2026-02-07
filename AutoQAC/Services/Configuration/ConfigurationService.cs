@@ -337,7 +337,9 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
         var userConfig = await LoadUserConfigAsync().ConfigureAwait(false);
 
         var result = new List<string>();
-        var key = GetGameKey(gameType);
+
+        // For Enderal, use Enderal-specific key instead of SSE
+        var key = variant == GameVariant.Enderal ? "Enderal" : GetGameKey(gameType);
 
         // 1. User's game-specific skip list (highest priority - user overrides)
         if (userConfig.SkipLists.TryGetValue(key, out var userList))
@@ -351,7 +353,17 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
             result.AddRange(mainGameList);
         }
 
-        // 3. Universal from Main.yaml (always applied for safety)
+        // 3. TTW: auto-merge FO3 skip list entries into FNV list (silently, per user decision)
+        if (variant == GameVariant.TTW)
+        {
+            var fo3Key = GetGameKey(GameType.Fallout3);
+            if (userConfig.SkipLists.TryGetValue(fo3Key, out var userFo3List))
+                result.AddRange(userFo3List);
+            if (_mainConfigCache.Data.SkipLists.TryGetValue(fo3Key, out var mainFo3List))
+                result.AddRange(mainFo3List);
+        }
+
+        // 4. Universal from Main.yaml (always applied for safety)
         if (_mainConfigCache.Data.SkipLists.TryGetValue("Universal", out var universalList))
         {
             result.AddRange(universalList);

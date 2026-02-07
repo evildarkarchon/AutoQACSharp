@@ -23,9 +23,14 @@ public sealed class XEditCommandBuilder : IXEditCommandBuilder
 
     public ProcessStartInfo? BuildCommand(PluginInfo plugin, GameType gameType)
     {
+        if (gameType == GameType.Unknown)
+        {
+            return null; // Safety: refuse to build command without known game type
+        }
+
         var config = _stateService.CurrentState;
         var xEditPath = config.XEditExecutablePath;
-        
+
         if (string.IsNullOrEmpty(xEditPath)) return null;
 
         var args = new List<string>();

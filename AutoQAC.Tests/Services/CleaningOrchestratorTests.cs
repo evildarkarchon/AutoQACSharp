@@ -699,47 +699,55 @@ public sealed class CleaningOrchestratorTests
     [Fact]
     public async Task StartCleaningAsync_MO2Mode_ShouldSkipFileValidation()
     {
-        // Arrange
-        var plugins = new List<PluginInfo>
+        // Arrange - create a temp file to represent the MO2 binary
+        var tempMo2 = Path.GetTempFileName();
+        try
         {
-            new() { FileName = "Plugin1.esp", FullPath = "Path/Plugin1.esp", IsSelected = true },
-            new() { FileName = "Plugin2.esp", FullPath = "Path/Plugin2.esp", IsSelected = true }
-        };
+            var plugins = new List<PluginInfo>
+            {
+                new() { FileName = "Plugin1.esp", FullPath = "Path/Plugin1.esp", IsSelected = true },
+                new() { FileName = "Plugin2.esp", FullPath = "Path/Plugin2.esp", IsSelected = true }
+            };
 
-        var appState = new AppState
+            var appState = new AppState
+            {
+                LoadOrderPath = "plugins.txt",
+                XEditExecutablePath = "xedit.exe",
+                Mo2ExecutablePath = tempMo2,
+                CurrentGameType = GameType.SkyrimSe,
+                Mo2ModeEnabled = true,
+                PluginsToClean = plugins
+            };
+            _stateServiceMock.Setup(s => s.CurrentState).Returns(appState);
+
+            _cleaningServiceMock.Setup(s => s.ValidateEnvironmentAsync(It.IsAny<CancellationToken>()))
+                .ReturnsAsync(true);
+
+            _cleaningServiceMock.Setup(s => s.CleanPluginAsync(It.IsAny<PluginInfo>(), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>(), It.IsAny<Action<System.Diagnostics.Process>?>()))
+                .ReturnsAsync(new CleaningResult { Status = CleaningStatus.Cleaned });
+
+            // MO2 mode enabled in user config
+            var userConfig = new UserConfiguration
+            {
+                ModOrganizer = new ModOrganizerConfig { Binary = tempMo2 },
+                Settings = new AutoQacSettings { Mo2Mode = true }
+            };
+            _configServiceMock.Setup(s => s.LoadUserConfigAsync(It.IsAny<CancellationToken>()))
+                .ReturnsAsync(userConfig);
+
+            // Act
+            await _orchestrator.StartCleaningAsync();
+
+            // Assert - ValidatePluginFile should NEVER be called when MO2 mode is active
+            _pluginServiceMock.Verify(
+                s => s.ValidatePluginFile(It.IsAny<PluginInfo>()),
+                Times.Never,
+                "MO2 mode active: file-existence validation must be skipped (MO2 VFS resolves paths at runtime)");
+        }
+        finally
         {
-            LoadOrderPath = "plugins.txt",
-            XEditExecutablePath = "xedit.exe",
-            Mo2ExecutablePath = @"C:\MO2\ModOrganizer.exe",
-            CurrentGameType = GameType.SkyrimSe,
-            Mo2ModeEnabled = true,
-            PluginsToClean = plugins
-        };
-        _stateServiceMock.Setup(s => s.CurrentState).Returns(appState);
-
-        _cleaningServiceMock.Setup(s => s.ValidateEnvironmentAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
-
-        _cleaningServiceMock.Setup(s => s.CleanPluginAsync(It.IsAny<PluginInfo>(), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>(), It.IsAny<Action<System.Diagnostics.Process>?>()))
-            .ReturnsAsync(new CleaningResult { Status = CleaningStatus.Cleaned });
-
-        // MO2 mode enabled in user config
-        var userConfig = new UserConfiguration
-        {
-            ModOrganizer = new ModOrganizerConfig { Binary = @"C:\MO2\ModOrganizer.exe" },
-            Settings = new AutoQacSettings { Mo2Mode = true }
-        };
-        _configServiceMock.Setup(s => s.LoadUserConfigAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(userConfig);
-
-        // Act
-        await _orchestrator.StartCleaningAsync();
-
-        // Assert - ValidatePluginFile should NEVER be called when MO2 mode is active
-        _pluginServiceMock.Verify(
-            s => s.ValidatePluginFile(It.IsAny<PluginInfo>()),
-            Times.Never,
-            "MO2 mode active: file-existence validation must be skipped (MO2 VFS resolves paths at runtime)");
+            File.Delete(tempMo2);
+        }
     }
 
     /// <summary>

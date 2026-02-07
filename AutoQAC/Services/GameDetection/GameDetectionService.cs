@@ -125,7 +125,30 @@ public sealed class GameDetectionService : IGameDetectionService
 
     public GameVariant DetectVariant(GameType baseGame, IReadOnlyList<string> pluginNames)
     {
-        throw new NotImplementedException("DetectVariant not yet implemented");
+        if (pluginNames == null || pluginNames.Count == 0)
+            return GameVariant.None;
+
+        if (baseGame == GameType.FalloutNewVegas)
+        {
+            if (pluginNames.Any(p => p.Equals("TaleOfTwoWastelands.esm", StringComparison.OrdinalIgnoreCase)))
+            {
+                _logger.Information("Detected TTW (Tale of Two Wastelands) variant");
+                return GameVariant.TTW;
+            }
+        }
+
+        if (baseGame == GameType.SkyrimSe)
+        {
+            if (pluginNames.Any(p =>
+                p.Equals("Enderal - Forgotten Stories.esm", StringComparison.OrdinalIgnoreCase) ||
+                p.Equals("Enderal.esm", StringComparison.OrdinalIgnoreCase)))
+            {
+                _logger.Information("Detected Enderal variant");
+                return GameVariant.Enderal;
+            }
+        }
+
+        return GameVariant.None;
     }
 
     public bool IsValidGameType(GameType gameType)

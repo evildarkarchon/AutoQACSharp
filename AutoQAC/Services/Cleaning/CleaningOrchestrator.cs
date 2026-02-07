@@ -111,15 +111,47 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
                 }
                 else
                 {
-                    _logger.Warning("Could not auto-detect game type. Skip list might be empty.");
+                    _logger.Error(null, "Cannot determine game type. Cleaning blocked for safety -- skip lists cannot be applied without a known game type.");
+                    throw new InvalidOperationException(
+                        "Cannot start cleaning: game type could not be determined. " +
+                        "Please select a game type in Settings, or ensure the xEdit executable name matches a supported game.");
                 }
             }
 
             gameType = config.CurrentGameType;
 
+            // 3b. Detect game variant for skip list handling
+            var pluginNames = allPlugins.Select(p => p.FileName).ToList();
+            var gameVariant = _gameDetectionService.DetectVariant(gameType, pluginNames);
+            if (gameVariant != GameVariant.None)
+            {
+                _logger.Information("Detected game variant: {Variant}", gameVariant);
+            }
+
             // 4. Apply skip list filtering (respecting DisableSkipLists setting)
             var userConfig = await _configService.LoadUserConfigAsync(ct).ConfigureAwait(false);
             var disableSkipLists = userConfig.Settings.DisableSkipLists;
+            var isMo2Mode = userConfig.Settings.Mo2Mode;
+
+            // 4a. MO2 configuration validation (early check with actionable error messages)
+            if (isMo2Mode)
+            {
+                var mo2Path = config.Mo2ExecutablePath;
+
+                if (string.IsNullOrEmpty(mo2Path))
+                {
+                    throw new InvalidOperationException(
+                        "MO2 mode is enabled but no MO2 executable path is configured. " +
+                        "Check MO2 executable path in Settings, or disable MO2 mode if not using Mod Organizer 2.");
+                }
+
+                if (!System.IO.File.Exists(mo2Path))
+                {
+                    throw new InvalidOperationException(
+                        $"MO2 mode is enabled but MO2 executable not found at '{mo2Path}'. " +
+                        "Check MO2 executable path in Settings, or disable MO2 mode if not using Mod Organizer 2.");
+                }
+            }
 
             List<PluginInfo> pluginsToClean;
             if (disableSkipLists)
@@ -132,7 +164,7 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
             }
             else if (gameType != GameType.Unknown)
             {
-                var skipList = await _configService.GetSkipListAsync(gameType).ConfigureAwait(false) ?? [];
+                var skipList = await _configService.GetSkipListAsync(gameType, gameVariant).ConfigureAwait(false) ?? [];
                 var skipSet = new HashSet<string>(skipList, StringComparer.OrdinalIgnoreCase);
 
                 pluginsToClean = allPlugins
@@ -143,6 +175,40 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
             else
             {
                 pluginsToClean = allPlugins.Where(p => p is { IsInSkipList: false, IsSelected: true }).ToList();
+            }
+
+            // 4b. File-existence validation (skipped in MO2 mode -- MO2 VFS resolves paths at runtime)
+            if (!isMo2Mode)
+            {
+                var pathFailures = new List<string>();
+                foreach (var plugin in pluginsToClean)
+                {
+                    var warning = _pluginService.ValidatePluginFile(plugin);
+                    if (warning != PluginWarningKind.None)
+                    {
+                        pathFailures.Add($"{plugin.FileName} ({warning})");
+                    }
+                }
+
+                if (pathFailures.Count > 0)
+                {
+                    var summary = $"{pathFailures.Count} plugin(s) not found or unreadable: {string.Join(", ", pathFailures)}";
+                    _logger.Warning(summary);
+
+                    pluginsToClean = pluginsToClean
+                        .Where(p => _pluginService.ValidatePluginFile(p) == PluginWarningKind.None)
+                        .ToList();
+
+                    if (pluginsToClean.Count == 0)
+                    {
+                        throw new InvalidOperationException(
+                            $"No valid plugins to clean. {summary}");
+                    }
+                }
+            }
+            else
+            {
+                _logger.Debug("MO2 mode active -- skipping file-existence validation (MO2 VFS resolves paths at xEdit runtime)");
             }
 
             // 5. Update state - cleaning started
