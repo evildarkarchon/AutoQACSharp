@@ -79,11 +79,11 @@ Plans:
   2. Legacy configuration files from the Python version are migrated safely with validation, and failures produce a clear warning instead of silent data loss
   3. YAML configuration is re-read from disk only when the file has actually changed (not on every access)
   4. Journal/log expiration settings are available and old log files are cleaned up according to the configured retention period
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 04-01: Config helpers, cache invalidation, and migration fix (CONF-03, CONF-04, CONF-06)
-- [ ] 04-02: Settings validation UI and journal expiration (CONF-02, CONF-07)
+- [ ] 04-01-PLAN.md -- Config helpers, config watcher (FSW + SHA256), and legacy migration rewrite (CONF-03, CONF-04, CONF-06)
+- [ ] 04-02-PLAN.md -- Settings path validation UI, log retention service, and migration warning banner (CONF-02, CONF-07)
 
 ### Phase 5: Safety Features
 **Goal**: Users can preview what will happen before committing, and have a safety net to undo cleaning if something goes wrong
