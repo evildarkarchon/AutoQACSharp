@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-06)
 ## Current Position
 
 Phase: 5 of 7 (Safety Features)
-Plan: 1 of 2 in current phase
-Status: In progress
-Last activity: 2026-02-07 -- Completed 05-01-PLAN.md
+Plan: 2 of 2 in current phase
+Status: Phase complete
+Last activity: 2026-02-07 -- Completed 05-02-PLAN.md
 
-Progress: [###########...] 73% (11/15 plans)
+Progress: [############..] 80% (12/15 plans)
 
 ## Performance Metrics
 
@@ -31,10 +31,10 @@ Progress: [###########...] 73% (11/15 plans)
 | 2 - Plugin Pipeline | 2/2 | 14.5m | 7.25m |
 | 3 - Real-Time Feedback | 3/3 | 30m | 10m |
 | 4 - Configuration | 2/2 | 21.5m | 10.75m |
-| 5 - Safety Features | 1/2 | 6m | 6m |
+| 5 - Safety Features | 2/2 | 28m | 14m |
 
 **Recent Trend:**
-- Last 5 plans: 03-02 (14m), 04-01 (6.5m), 04-02 (15m), 05-01 (6m)
+- Last 5 plans: 04-01 (6.5m), 04-02 (15m), 05-01 (6m), 05-02 (22m)
 - Trend: Stable
 
 *Updated after each plan completion*
@@ -87,6 +87,12 @@ Recent decisions affecting current work:
 - [05-01]: RunDryRunAsync duplicates validation steps rather than refactoring StartCleaningAsync -- minimal risk to working pipeline
 - [05-01]: Preview reuses ProgressWindow with IsPreviewMode flag instead of separate window
 - [05-01]: PreviewCommand shares same canStart observable as StartCleaningCommand
+- [05-02]: BackupPlugin uses File.Copy with overwrite:false to prevent accidental overwrites
+- [05-02]: MO2 mode silently skips backup with log warning (MO2 manages files through virtual filesystem)
+- [05-02]: Individual plugin restore has no confirmation; Restore All requires confirmation dialog
+- [05-02]: Backup enabled by default for new users (BackupSettings.Enabled = true)
+- [05-02]: Session metadata stored as session.json using System.Text.Json (not YAML)
+- [05-02]: Backup root derived from first valid plugin's FullPath directory parent
 
 ### Pending Todos
 
@@ -102,5 +108,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-02-07
-Stopped at: Completed 05-01-PLAN.md
+Stopped at: Completed 05-02-PLAN.md (Phase 5 complete)
 Resume file: None
