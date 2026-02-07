@@ -150,6 +150,14 @@ public sealed class ProgressViewModel : ViewModelBase, IDisposable
         set => this.RaiseAndSetIfChanged(ref _totalNavCount, value);
     }
 
+    // Termination in progress (stopping spinner)
+    private bool _isTerminating;
+    public bool IsTerminating
+    {
+        get => _isTerminating;
+        set => this.RaiseAndSetIfChanged(ref _isTerminating, value);
+    }
+
     // Hang detection warning
     private bool _isHangWarningVisible;
     public bool IsHangWarningVisible
@@ -232,8 +240,9 @@ public sealed class ProgressViewModel : ViewModelBase, IDisposable
         _stateService = stateService;
         _orchestrator = orchestrator;
 
-        // StopCommand is only enabled when cleaning is in progress
-        var canStop = this.WhenAnyValue(x => x.IsCleaning);
+        // StopCommand is only enabled when cleaning is in progress and not already terminating
+        var canStop = this.WhenAnyValue(x => x.IsCleaning, x => x.IsTerminating,
+            (cleaning, terminating) => cleaning && !terminating);
         StopCommand = ReactiveCommand.CreateFromTask(() => _orchestrator.StopCleaningAsync(), canStop);
 
         // CloseCommand raises an event to request window closure
@@ -278,6 +287,12 @@ public sealed class ProgressViewModel : ViewModelBase, IDisposable
             .ObserveOn(RxApp.MainThreadScheduler)
             .Subscribe(OnHangDetected);
         _disposables.Add(hangSubscription);
+
+        // Subscribe to termination state for stopping spinner
+        var terminatingSubscription = _stateService.IsTerminatingChanged
+            .ObserveOn(RxApp.MainThreadScheduler)
+            .Subscribe(isTerminating => IsTerminating = isTerminating);
+        _disposables.Add(terminatingSubscription);
 
         // Computed progress text
         _progressText = this.WhenAnyValue(
@@ -380,6 +395,7 @@ public sealed class ProgressViewModel : ViewModelBase, IDisposable
         DryRunResults.Clear();
         WillCleanCount = 0;
         WillSkipCount = 0;
+        IsTerminating = false;
         IsHangWarningVisible = false;
         _hangWarningDismissed = false;
     }

@@ -4,7 +4,7 @@ using System.Reactive.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Services.Monitoring;
 using FluentAssertions;
-using Moq;
+using NSubstitute;
 
 namespace AutoQAC.Tests.Services;
 
@@ -14,13 +14,13 @@ namespace AutoQAC.Tests.Services;
 /// </summary>
 public sealed class HangDetectionServiceTests
 {
-    private readonly Mock<ILoggingService> _loggerMock;
+    private readonly ILoggingService _loggerMock;
     private readonly HangDetectionService _service;
 
     public HangDetectionServiceTests()
     {
-        _loggerMock = new Mock<ILoggingService>();
-        _service = new HangDetectionService(_loggerMock.Object);
+        _loggerMock = Substitute.For<ILoggingService>();
+        _service = new HangDetectionService(_loggerMock);
     }
 
     [Fact]

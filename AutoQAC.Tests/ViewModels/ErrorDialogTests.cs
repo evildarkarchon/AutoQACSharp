@@ -11,7 +11,8 @@ using AutoQAC.Services.UI;
 using AutoQAC.Services.Plugin;
 using AutoQAC.ViewModels;
 using FluentAssertions;
-using Moq;
+using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using ReactiveUI;
 
 namespace AutoQAC.Tests.ViewModels;
@@ -21,38 +22,38 @@ namespace AutoQAC.Tests.ViewModels;
 /// </summary>
 public sealed class ErrorDialogTests
 {
-    private readonly Mock<IConfigurationService> _configServiceMock;
-    private readonly Mock<IStateService> _stateServiceMock;
-    private readonly Mock<ICleaningOrchestrator> _orchestratorMock;
-    private readonly Mock<ILoggingService> _loggerMock;
-    private readonly Mock<IFileDialogService> _fileDialogMock;
-    private readonly Mock<IMessageDialogService> _messageDialogMock;
-    private readonly Mock<IPluginValidationService> _pluginServiceMock;
-    private readonly Mock<IPluginLoadingService> _pluginLoadingServiceMock;
+    private readonly IConfigurationService _configServiceMock;
+    private readonly IStateService _stateServiceMock;
+    private readonly ICleaningOrchestrator _orchestratorMock;
+    private readonly ILoggingService _loggerMock;
+    private readonly IFileDialogService _fileDialogMock;
+    private readonly IMessageDialogService _messageDialogMock;
+    private readonly IPluginValidationService _pluginServiceMock;
+    private readonly IPluginLoadingService _pluginLoadingServiceMock;
 
     public ErrorDialogTests()
     {
-        _configServiceMock = new Mock<IConfigurationService>();
-        _stateServiceMock = new Mock<IStateService>();
-        _orchestratorMock = new Mock<ICleaningOrchestrator>();
-        _loggerMock = new Mock<ILoggingService>();
-        _fileDialogMock = new Mock<IFileDialogService>();
-        _messageDialogMock = new Mock<IMessageDialogService>();
-        _pluginServiceMock = new Mock<IPluginValidationService>();
-        _pluginLoadingServiceMock = new Mock<IPluginLoadingService>();
+        _configServiceMock = Substitute.For<IConfigurationService>();
+        _stateServiceMock = Substitute.For<IStateService>();
+        _orchestratorMock = Substitute.For<ICleaningOrchestrator>();
+        _loggerMock = Substitute.For<ILoggingService>();
+        _fileDialogMock = Substitute.For<IFileDialogService>();
+        _messageDialogMock = Substitute.For<IMessageDialogService>();
+        _pluginServiceMock = Substitute.For<IPluginValidationService>();
+        _pluginLoadingServiceMock = Substitute.For<IPluginLoadingService>();
 
         // Default setup for plugin loading service
-        _pluginLoadingServiceMock.Setup(x => x.GetAvailableGames())
+        _pluginLoadingServiceMock.GetAvailableGames()
             .Returns(new List<GameType> { GameType.SkyrimSe, GameType.Fallout4 });
-        _pluginLoadingServiceMock.Setup(x => x.IsGameSupportedByMutagen(It.IsAny<GameType>()))
+        _pluginLoadingServiceMock.IsGameSupportedByMutagen(Arg.Any<GameType>())
             .Returns(false);
 
         // Default setup for CleaningCompleted observable
-        _stateServiceMock.Setup(s => s.CleaningCompleted)
+        _stateServiceMock.CleaningCompleted
             .Returns(Observable.Never<CleaningSessionResult>());
 
         // Default setup for SkipListChanged observable
-        _configServiceMock.Setup(s => s.SkipListChanged)
+        _configServiceMock.SkipListChanged
             .Returns(Observable.Never<GameType>());
 
         RxApp.MainThreadScheduler = Scheduler.Immediate;
@@ -61,18 +62,18 @@ public sealed class ErrorDialogTests
     private MainWindowViewModel CreateViewModel()
     {
         var stateSubject = new BehaviorSubject<AppState>(new AppState());
-        _stateServiceMock.Setup(s => s.StateChanged).Returns(stateSubject);
-        _stateServiceMock.Setup(s => s.CurrentState).Returns(new AppState());
+        _stateServiceMock.StateChanged.Returns(stateSubject);
+        _stateServiceMock.CurrentState.Returns(new AppState());
 
         return new MainWindowViewModel(
-            _configServiceMock.Object,
-            _stateServiceMock.Object,
-            _orchestratorMock.Object,
-            _loggerMock.Object,
-            _fileDialogMock.Object,
-            _messageDialogMock.Object,
-            _pluginServiceMock.Object,
-            _pluginLoadingServiceMock.Object);
+            _configServiceMock,
+            _stateServiceMock,
+            _orchestratorMock,
+            _loggerMock,
+            _fileDialogMock,
+            _messageDialogMock,
+            _pluginServiceMock,
+            _pluginLoadingServiceMock);
     }
 
     /// <summary>
@@ -90,18 +91,18 @@ public sealed class ErrorDialogTests
             }
         };
         var stateSubject = new BehaviorSubject<AppState>(validState);
-        _stateServiceMock.Setup(s => s.StateChanged).Returns(stateSubject);
-        _stateServiceMock.Setup(s => s.CurrentState).Returns(validState);
+        _stateServiceMock.StateChanged.Returns(stateSubject);
+        _stateServiceMock.CurrentState.Returns(validState);
 
         return new MainWindowViewModel(
-            _configServiceMock.Object,
-            _stateServiceMock.Object,
-            _orchestratorMock.Object,
-            _loggerMock.Object,
-            _fileDialogMock.Object,
-            _messageDialogMock.Object,
-            _pluginServiceMock.Object,
-            _pluginLoadingServiceMock.Object);
+            _configServiceMock,
+            _stateServiceMock,
+            _orchestratorMock,
+            _loggerMock,
+            _fileDialogMock,
+            _messageDialogMock,
+            _pluginServiceMock,
+            _pluginLoadingServiceMock);
     }
 
     #region xEdit Validation Tests (Inline Validation Panel)
@@ -122,16 +123,10 @@ public sealed class ErrorDialogTests
             "should show xEdit not configured error");
 
         // No modal dialog should be shown
-        _messageDialogMock.Verify(
-            m => m.ShowErrorAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()),
-            Times.Never,
-            "Modal dialog should NOT be shown - using inline validation panel now");
+        await _messageDialogMock.DidNotReceive().ShowErrorAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>());
 
         // Orchestrator should NOT be called
-        _orchestratorMock.Verify(
-            x => x.StartCleaningAsync(It.IsAny<TimeoutRetryCallback>(), It.IsAny<BackupFailureCallback>(), It.IsAny<CancellationToken>()),
-            Times.Never,
-            "Orchestrator should not be called when xEdit is not configured");
+        await _orchestratorMock.DidNotReceive().StartCleaningAsync(Arg.Any<TimeoutRetryCallback>(), Arg.Any<BackupFailureCallback>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -163,18 +158,18 @@ public sealed class ErrorDialogTests
             }
         };
         var stateSubject = new BehaviorSubject<AppState>(stateWithBadXEdit);
-        _stateServiceMock.Setup(s => s.StateChanged).Returns(stateSubject);
-        _stateServiceMock.Setup(s => s.CurrentState).Returns(stateWithBadXEdit);
+        _stateServiceMock.StateChanged.Returns(stateSubject);
+        _stateServiceMock.CurrentState.Returns(stateWithBadXEdit);
 
         var vm = new MainWindowViewModel(
-            _configServiceMock.Object,
-            _stateServiceMock.Object,
-            _orchestratorMock.Object,
-            _loggerMock.Object,
-            _fileDialogMock.Object,
-            _messageDialogMock.Object,
-            _pluginServiceMock.Object,
-            _pluginLoadingServiceMock.Object);
+            _configServiceMock,
+            _stateServiceMock,
+            _orchestratorMock,
+            _loggerMock,
+            _fileDialogMock,
+            _messageDialogMock,
+            _pluginServiceMock,
+            _pluginLoadingServiceMock);
 
         vm.Configuration.XEditPath = nonExistentPath;
 
@@ -198,22 +193,20 @@ public sealed class ErrorDialogTests
         var vm = CreateViewModel();
         var nonExistentPath = @"C:\NonExistent\plugins.txt";
 
-        _fileDialogMock.Setup(x => x.OpenFileDialogAsync(
-                It.IsAny<string>(),
-                It.IsAny<string>(),
-                It.IsAny<string?>()))
-            .ReturnsAsync(nonExistentPath);
+        _fileDialogMock.OpenFileDialogAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<string?>())
+            .Returns(nonExistentPath);
 
         // Act
         await vm.Configuration.ConfigureLoadOrderCommand.Execute();
 
         // Assert
-        _messageDialogMock.Verify(
-            m => m.ShowErrorAsync(
+        await _messageDialogMock.Received(1).ShowErrorAsync(
                 "File Not Found",
-                It.IsAny<string>(),
-                It.IsAny<string?>()),
-            Times.Once);
+                Arg.Any<string>(),
+                Arg.Any<string?>());
     }
 
     [Fact]
@@ -225,29 +218,27 @@ public sealed class ErrorDialogTests
         {
             var vm = CreateViewModel();
 
-            _fileDialogMock.Setup(x => x.OpenFileDialogAsync(
-                    It.IsAny<string>(),
-                    It.IsAny<string>(),
-                    It.IsAny<string?>()))
-                .ReturnsAsync(tempFile);
+            _fileDialogMock.OpenFileDialogAsync(
+                    Arg.Any<string>(),
+                    Arg.Any<string>(),
+                    Arg.Any<string?>())
+                .Returns(tempFile);
 
-            _configServiceMock.Setup(x => x.LoadUserConfigAsync(It.IsAny<CancellationToken>()))
-                .ReturnsAsync(new UserConfiguration { LoadOrder = new(), XEdit = new(), ModOrganizer = new(), Settings = new() });
+            _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>())
+                .Returns(new UserConfiguration { LoadOrder = new(), XEdit = new(), ModOrganizer = new(), Settings = new() });
 
             // Return empty list
-            _pluginServiceMock.Setup(x => x.GetPluginsFromLoadOrderAsync(tempFile, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync(new List<PluginInfo>());
+            _pluginServiceMock.GetPluginsFromLoadOrderAsync(tempFile, Arg.Any<string?>(), Arg.Any<CancellationToken>())
+                .Returns(new List<PluginInfo>());
 
             // Act
             await vm.Configuration.ConfigureLoadOrderCommand.Execute();
 
             // Assert
-            _messageDialogMock.Verify(
-                m => m.ShowWarningAsync(
+            await _messageDialogMock.Received(1).ShowWarningAsync(
                     "No Plugins Found",
-                    It.IsAny<string>(),
-                    It.IsAny<string?>()),
-                Times.Once);
+                    Arg.Any<string>(),
+                    Arg.Any<string?>());
         }
         finally
         {
@@ -265,26 +256,24 @@ public sealed class ErrorDialogTests
         {
             var vm = CreateViewModel();
 
-            _fileDialogMock.Setup(x => x.OpenFileDialogAsync(
-                    It.IsAny<string>(),
-                    It.IsAny<string>(),
-                    It.IsAny<string?>()))
-                .ReturnsAsync(tempFile);
+            _fileDialogMock.OpenFileDialogAsync(
+                    Arg.Any<string>(),
+                    Arg.Any<string>(),
+                    Arg.Any<string?>())
+                .Returns(tempFile);
 
             // Throw IOException
-            _pluginServiceMock.Setup(x => x.GetPluginsFromLoadOrderAsync(tempFile, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            _pluginServiceMock.GetPluginsFromLoadOrderAsync(tempFile, Arg.Any<string?>(), Arg.Any<CancellationToken>())
                 .ThrowsAsync(new IOException("File in use"));
 
             // Act
             await vm.Configuration.ConfigureLoadOrderCommand.Execute();
 
             // Assert
-            _messageDialogMock.Verify(
-                m => m.ShowErrorAsync(
+            await _messageDialogMock.Received(1).ShowErrorAsync(
                     "Read Error",
-                    It.IsAny<string>(),
-                    It.IsAny<string?>()),
-                Times.Once);
+                    Arg.Any<string>(),
+                    Arg.Any<string?>());
         }
         finally
         {
@@ -307,7 +296,7 @@ public sealed class ErrorDialogTests
             var vm = CreateViewModelWithValidState(tempFile);
             vm.Configuration.XEditPath = tempFile;
 
-            _orchestratorMock.Setup(x => x.StartCleaningAsync(It.IsAny<TimeoutRetryCallback>(), It.IsAny<BackupFailureCallback>(), It.IsAny<CancellationToken>()))
+            _orchestratorMock.StartCleaningAsync(Arg.Any<TimeoutRetryCallback>(), Arg.Any<BackupFailureCallback>(), Arg.Any<CancellationToken>())
                 .ThrowsAsync(new InvalidOperationException("Configuration is invalid"));
 
             // Act
@@ -320,10 +309,7 @@ public sealed class ErrorDialogTests
             vm.Commands.StatusText.Should().Contain("error");
 
             // No modal dialog should be shown
-            _messageDialogMock.Verify(
-                m => m.ShowErrorAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()),
-                Times.Never,
-                "Modal dialog should NOT be shown for InvalidOperationException");
+            await _messageDialogMock.DidNotReceive().ShowErrorAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>());
         }
         finally
         {
@@ -342,19 +328,17 @@ public sealed class ErrorDialogTests
             var vm = CreateViewModelWithValidState(tempFile);
             vm.Configuration.XEditPath = tempFile;
 
-            _orchestratorMock.Setup(x => x.StartCleaningAsync(It.IsAny<TimeoutRetryCallback>(), It.IsAny<BackupFailureCallback>(), It.IsAny<CancellationToken>()))
+            _orchestratorMock.StartCleaningAsync(Arg.Any<TimeoutRetryCallback>(), Arg.Any<BackupFailureCallback>(), Arg.Any<CancellationToken>())
                 .ThrowsAsync(new Exception("Unexpected error"));
 
             // Act
             await vm.Commands.StartCleaningCommand.Execute();
 
             // Assert - generic exceptions still use modal dialog (truly unexpected)
-            _messageDialogMock.Verify(
-                m => m.ShowErrorAsync(
+            await _messageDialogMock.Received(1).ShowErrorAsync(
                     "Cleaning Failed",
-                    It.IsAny<string>(),
-                    It.IsAny<string?>()),
-                Times.Once);
+                    Arg.Any<string>(),
+                    Arg.Any<string?>());
         }
         finally
         {
@@ -378,8 +362,10 @@ public sealed class ErrorDialogTests
             vm.Configuration.XEditPath = tempFile;
 
             TimeoutRetryCallback? capturedCallback = null;
-            _orchestratorMock.Setup(x => x.StartCleaningAsync(It.IsAny<TimeoutRetryCallback>(), It.IsAny<BackupFailureCallback>(), It.IsAny<CancellationToken>()))
-                .Callback<TimeoutRetryCallback?, BackupFailureCallback?, CancellationToken>((callback, _, ct) => capturedCallback = callback)
+            _orchestratorMock.StartCleaningAsync(
+                    Arg.Do<TimeoutRetryCallback?>(cb => capturedCallback = cb),
+                    Arg.Any<BackupFailureCallback?>(),
+                    Arg.Any<CancellationToken>())
                 .Returns(Task.CompletedTask);
 
             // Act
@@ -406,12 +392,14 @@ public sealed class ErrorDialogTests
             vm.Configuration.XEditPath = tempFile;
 
             TimeoutRetryCallback? capturedCallback = null;
-            _orchestratorMock.Setup(x => x.StartCleaningAsync(It.IsAny<TimeoutRetryCallback>(), It.IsAny<BackupFailureCallback>(), It.IsAny<CancellationToken>()))
-                .Callback<TimeoutRetryCallback?, BackupFailureCallback?, CancellationToken>((callback, _, ct) => capturedCallback = callback)
+            _orchestratorMock.StartCleaningAsync(
+                    Arg.Do<TimeoutRetryCallback?>(cb => capturedCallback = cb),
+                    Arg.Any<BackupFailureCallback?>(),
+                    Arg.Any<CancellationToken>())
                 .Returns(Task.CompletedTask);
 
-            _messageDialogMock.Setup(m => m.ShowRetryAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()))
-                .ReturnsAsync(true);
+            _messageDialogMock.ShowRetryAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>())
+                .Returns(true);
 
             await vm.Commands.StartCleaningCommand.Execute();
 
@@ -420,12 +408,10 @@ public sealed class ErrorDialogTests
             var result = await capturedCallback!("TestPlugin.esp", 300, 1);
 
             // Assert
-            _messageDialogMock.Verify(
-                m => m.ShowRetryAsync(
+            await _messageDialogMock.Received(1).ShowRetryAsync(
                     "Plugin Timeout",
-                    It.Is<string>(s => s.Contains("TestPlugin.esp")),
-                    It.IsAny<string?>()),
-                Times.Once);
+                    Arg.Is<string>(s => s.Contains("TestPlugin.esp")),
+                    Arg.Any<string?>());
 
             result.Should().BeTrue("ShowRetryAsync returned true");
         }
@@ -447,13 +433,15 @@ public sealed class ErrorDialogTests
             vm.Configuration.XEditPath = tempFile;
 
             TimeoutRetryCallback? capturedCallback = null;
-            _orchestratorMock.Setup(x => x.StartCleaningAsync(It.IsAny<TimeoutRetryCallback>(), It.IsAny<BackupFailureCallback>(), It.IsAny<CancellationToken>()))
-                .Callback<TimeoutRetryCallback?, BackupFailureCallback?, CancellationToken>((callback, _, ct) => capturedCallback = callback)
+            _orchestratorMock.StartCleaningAsync(
+                    Arg.Do<TimeoutRetryCallback?>(cb => capturedCallback = cb),
+                    Arg.Any<BackupFailureCallback?>(),
+                    Arg.Any<CancellationToken>())
                 .Returns(Task.CompletedTask);
 
             // User cancels retry
-            _messageDialogMock.Setup(m => m.ShowRetryAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()))
-                .ReturnsAsync(false);
+            _messageDialogMock.ShowRetryAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>())
+                .Returns(false);
 
             await vm.Commands.StartCleaningCommand.Execute();
 

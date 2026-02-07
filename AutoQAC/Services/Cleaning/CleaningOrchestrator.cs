@@ -566,6 +566,7 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
         {
             // Reset stop flags
             _isStopRequested = false;
+            _stateService.SetTerminating(false);
             _lastTerminationResult = null;
 
             // Stop hang monitoring
@@ -598,6 +599,7 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
         }
 
         _isStopRequested = true;
+        _stateService.SetTerminating(true);
         _logger.Information("[Termination] Graceful stop requested");
 
         // Cancel the CTS (race-safe per PROC-04)
@@ -614,6 +616,7 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
         catch (ObjectDisposedException)
         {
             _logger.Debug("[Termination] CTS already disposed -- cleaning likely already finished");
+            _stateService.SetTerminating(false);
             return;
         }
 

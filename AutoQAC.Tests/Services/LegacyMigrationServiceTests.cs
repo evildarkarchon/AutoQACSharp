@@ -1,7 +1,7 @@
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Services.Configuration;
 using FluentAssertions;
-using Moq;
+using NSubstitute;
 
 namespace AutoQAC.Tests.Services;
 
@@ -16,12 +16,12 @@ namespace AutoQAC.Tests.Services;
 /// </summary>
 public sealed class LegacyMigrationServiceTests : IDisposable
 {
-    private readonly Mock<ILoggingService> _mockLogger;
+    private readonly ILoggingService _mockLogger;
     private readonly string _testDirectory;
 
     public LegacyMigrationServiceTests()
     {
-        _mockLogger = new Mock<ILoggingService>();
+        _mockLogger = Substitute.For<ILoggingService>();
         _testDirectory = Path.Combine(Path.GetTempPath(), $"autoqac_migration_test_{Guid.NewGuid():N}");
         Directory.CreateDirectory(_testDirectory);
     }
@@ -42,7 +42,7 @@ public sealed class LegacyMigrationServiceTests : IDisposable
     }
 
     private LegacyMigrationService CreateSut() =>
-        new(_mockLogger.Object, _testDirectory);
+        new(_mockLogger, _testDirectory);
 
     private string LegacyConfigPath => Path.Combine(_testDirectory, "AutoQAC Config.yaml");
     private string CurrentConfigPath => Path.Combine(_testDirectory, "AutoQAC Settings.yaml");

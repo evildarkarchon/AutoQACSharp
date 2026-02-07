@@ -378,13 +378,17 @@ public sealed class CleaningCommandsViewModel : ViewModelBase, IDisposable
         StatusText = "Stopping...";
         await _orchestrator.StopCleaningAsync();
 
-        // Check if grace period expired (Path A: user waited patiently)
+        // Path A: grace period expired -- ask user before force-killing
         if (_orchestrator.LastTerminationResult == TerminationResult.GracePeriodExpired)
         {
-            // TODO(01-02): Replace this with a user confirmation dialog
-            // For now, auto-escalate to force kill since the prompt UI
-            // will be added with the "Stopping..." spinner in a future plan.
-            await _orchestrator.ForceStopCleaningAsync();
+            var confirmed = await _messageDialog.ShowConfirmAsync(
+                "Force Terminate?",
+                "xEdit did not exit gracefully. Force terminate the process?");
+
+            if (confirmed)
+            {
+                await _orchestrator.ForceStopCleaningAsync();
+            }
         }
     }
 

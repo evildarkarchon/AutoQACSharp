@@ -2,7 +2,7 @@ using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.Configuration;
 using FluentAssertions;
-using Moq;
+using NSubstitute;
 
 namespace AutoQAC.Tests.Services;
 
@@ -72,7 +72,7 @@ AutoQAC_Data:
 ";
     await SetupSettingsConfigAsync(settingsContent);
     await SetupMainConfigAsync(mainConfigContent);
-    var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+    var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
 
     // Act
     var list = await service.GetGameSpecificSkipListAsync(GameType.SkyrimSe);
@@ -94,7 +94,7 @@ Skip_Lists:
     - Skyrim.esm
 ";
     await SetupSettingsConfigAsync(settingsContent);
-    var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+    var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
 
     // Act
     var list = await service.GetGameSpecificSkipListAsync(GameType.Fallout3);
@@ -107,7 +107,7 @@ Skip_Lists:
   public async Task GetGameSpecificSkipListAsync_ShouldReturnEmptyList_WhenNoSettingsFile()
   {
     // Arrange - no Settings.yaml file
-    var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+    var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
 
     // Act
     var list = await service.GetGameSpecificSkipListAsync(GameType.SkyrimSe);
@@ -126,7 +126,7 @@ Skip_Lists:
     - Skyrim.esm
 ";
     await SetupSettingsConfigAsync(settingsContent);
-    var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+    var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
 
     // Act
     var list1 = await service.GetGameSpecificSkipListAsync(GameType.SkyrimSe);
@@ -145,7 +145,7 @@ Skip_Lists:
   public async Task UpdateSkipListAsync_ShouldPersistToSettingsFile()
   {
     // Arrange
-    var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+    var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
     var newSkipList = new List<string> { "NewPlugin1.esp", "NewPlugin2.esm" };
 
     // Act
@@ -154,7 +154,7 @@ Skip_Lists:
     await service.FlushPendingSavesAsync();
 
     // Recreate service to verify file was written
-    var service2 = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+    var service2 = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
     var loadedList = await service2.GetGameSpecificSkipListAsync(GameType.SkyrimSe);
 
     // Assert
@@ -173,7 +173,7 @@ Skip_Lists:
     - OldPlugin.esm
 ";
     await SetupSettingsConfigAsync(settingsContent);
-    var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+    var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
     var newSkipList = new List<string> { "NewPlugin1.esp", "NewPlugin2.esm" };
 
     // Act
@@ -191,7 +191,7 @@ Skip_Lists:
   public async Task UpdateSkipListAsync_ShouldEmitSkipListChangedEvent()
   {
     // Arrange
-    var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+    var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
 
     var emittedGames = new List<GameType>();
     using var subscription = service.SkipListChanged.Subscribe(emittedGames.Add);
@@ -216,7 +216,7 @@ Skip_Lists:
     - Fallout4.esm
 ";
     await SetupSettingsConfigAsync(settingsContent);
-    var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+    var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
 
     // Act
     await service.UpdateSkipListAsync(GameType.SkyrimSe, ["NewSkyrim.esp"]);
@@ -239,7 +239,7 @@ AutoQAC_Data:
       - Universal.esm
 ";
     await SetupMainConfigAsync(mainConfigContent);
-    var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+    var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
 
     // Act
     await service.UpdateSkipListAsync(GameType.SkyrimSe, ["UserSkyrim.esp"]);
@@ -264,7 +264,7 @@ Skip_Lists:
     - Skyrim.esm
 ";
     await SetupSettingsConfigAsync(settingsContent);
-    var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+    var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
 
     // Act
     await service.AddToSkipListAsync(GameType.SkyrimSe, "NewMod.esp");
@@ -285,7 +285,7 @@ Skip_Lists:
     - Skyrim.esm
 ";
     await SetupSettingsConfigAsync(settingsContent);
-    var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+    var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
 
     // Act
     await service.AddToSkipListAsync(GameType.SkyrimSe, "Skyrim.esm");
@@ -305,7 +305,7 @@ Skip_Lists:
     - Skyrim.esm
 ";
     await SetupSettingsConfigAsync(settingsContent);
-    var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+    var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
 
     // Act
     await service.AddToSkipListAsync(GameType.SkyrimSe, "SKYRIM.ESM");
@@ -319,7 +319,7 @@ Skip_Lists:
   public async Task AddToSkipListAsync_ShouldThrow_WhenPluginNameEmpty()
   {
     // Arrange
-    var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+    var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
 
     // Act
     Func<Task> act = () => service.AddToSkipListAsync(GameType.SkyrimSe, "");
@@ -338,7 +338,7 @@ Skip_Lists:
     - Skyrim.esm
 ";
     await SetupSettingsConfigAsync(settingsContent);
-    var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+    var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
 
     // Act
     await service.AddToSkipListAsync(GameType.Fallout4, "NewFallout4Mod.esp");
@@ -352,7 +352,7 @@ Skip_Lists:
   public async Task AddToSkipListAsync_ShouldWorkWithNoExistingSettingsFile()
   {
     // Arrange - no Settings.yaml
-    var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+    var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
 
     // Act
     await service.AddToSkipListAsync(GameType.SkyrimSe, "NewMod.esp");
@@ -377,7 +377,7 @@ Skip_Lists:
     - ToRemove.esp
 ";
     await SetupSettingsConfigAsync(settingsContent);
-    var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+    var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
 
     // Act
     await service.RemoveFromSkipListAsync(GameType.SkyrimSe, "ToRemove.esp");
@@ -398,7 +398,7 @@ Skip_Lists:
     - ToRemove.esp
 ";
     await SetupSettingsConfigAsync(settingsContent);
-    var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+    var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
 
     // Act
     await service.RemoveFromSkipListAsync(GameType.SkyrimSe, "TOREMOVE.ESP");
@@ -418,7 +418,7 @@ Skip_Lists:
     - Skyrim.esm
 ";
     await SetupSettingsConfigAsync(settingsContent);
-    var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+    var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
 
     // Act
     Func<Task> act = () => service.RemoveFromSkipListAsync(GameType.SkyrimSe, "NonExistent.esp");
@@ -439,7 +439,7 @@ Skip_Lists:
     - Skyrim.esm
 ";
     await SetupSettingsConfigAsync(settingsContent);
-    var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+    var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
 
     // Act
     await service.RemoveFromSkipListAsync(GameType.SkyrimSe, "");
@@ -470,7 +470,7 @@ AutoQAC_Data:
 ";
     await SetupSettingsConfigAsync(settingsContent);
     await SetupMainConfigAsync(mainConfigContent);
-    var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+    var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
 
     // Act
     var mergedList = await service.GetSkipListAsync(GameType.SkyrimSe);
@@ -497,7 +497,7 @@ AutoQAC_Data:
 ";
     await SetupSettingsConfigAsync(settingsContent);
     await SetupMainConfigAsync(mainConfigContent);
-    var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+    var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
 
     // Act
     var mergedList = await service.GetSkipListAsync(GameType.SkyrimSe);
@@ -517,7 +517,7 @@ AutoQAC_Data:
       - Universal.esm
 ";
     await SetupMainConfigAsync(mainConfigContent);
-    var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+    var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
 
     // Act
     var mergedList = await service.GetSkipListAsync(GameType.SkyrimSe);
@@ -540,7 +540,7 @@ AutoQAC_Data:
       - Universal.esm
 ";
     await SetupMainConfigAsync(mainConfigContent);
-    var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+    var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
 
     // Act
     var mergedList = await service.GetSkipListAsync(GameType.SkyrimSe);
@@ -582,7 +582,7 @@ Skip_Lists:
 ";
     await SetupMainConfigAsync(mainConfigContent);
     await SetupSettingsConfigAsync(settingsContent);
-    var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+    var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
 
     // Act
     var list = await service.GetSkipListAsync(GameType.FalloutNewVegas, GameVariant.TTW);
@@ -615,7 +615,7 @@ AutoQAC_Data:
       - Universal.esm
 ";
     await SetupMainConfigAsync(mainConfigContent);
-    var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+    var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
 
     // Act - No TTW variant
     var list = await service.GetSkipListAsync(GameType.FalloutNewVegas, GameVariant.None);
@@ -647,7 +647,7 @@ AutoQAC_Data:
       - Universal.esm
 ";
     await SetupMainConfigAsync(mainConfigContent);
-    var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+    var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
 
     // Act
     var list = await service.GetSkipListAsync(GameType.SkyrimSe, GameVariant.Enderal);
@@ -668,7 +668,7 @@ AutoQAC_Data:
   public async Task SkipListOperations_ShouldWorkWithNoInitialFiles()
   {
     // Arrange - no config files exist
-    var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+    var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
 
     // Act
     await service.AddToSkipListAsync(GameType.SkyrimSe, "FirstMod.esp");
@@ -692,7 +692,7 @@ AutoQAC_Data:
       - Universal.esm
 ";
     await SetupMainConfigAsync(mainConfigContent);
-    var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+    var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
 
     // Act
     await service.UpdateSkipListAsync(GameType.SkyrimSe, ["NewSkyrim.esp"]);
@@ -707,7 +707,7 @@ AutoQAC_Data:
   public async Task MultipleGames_ShouldHaveIndependentSkipLists()
   {
     // Arrange
-    var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+    var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
 
     // Act
     await service.AddToSkipListAsync(GameType.SkyrimSe, "SkyrimMod.esp");
@@ -750,7 +750,7 @@ Skip_Lists:
 ";
     await SetupMainConfigAsync(mainConfigContent);
     await SetupSettingsConfigAsync(settingsContent);
-    var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+    var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
 
     // Act
     var list = await service.GetSkipListAsync(GameType.Unknown);
@@ -775,7 +775,7 @@ AutoQAC_Data:
       - Skyrim.esm
 ";
     await SetupMainConfigAsync(mainConfigContent);
-    var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+    var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
 
     // Act
     var list = await service.GetSkipListAsync(GameType.Unknown);

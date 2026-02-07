@@ -166,11 +166,24 @@
                 </Border>
             </Grid>
 
-            <!-- Row 5: Stop Button -->
+            <!-- Row 5: Stop Button / Stopping Indicator -->
             <StackPanel Grid.Row="5"
                         Orientation="Horizontal"
                         HorizontalAlignment="Right"
+                        Spacing="10"
                         Margin="0,10,0,0">
+                <!-- Stopping spinner (visible during termination) -->
+                <StackPanel Orientation="Horizontal"
+                            Spacing="8"
+                            VerticalAlignment="Center"
+                            IsVisible="{Binding IsTerminating}">
+                    <ProgressBar IsIndeterminate="True"
+                                 Width="80" Height="14" />
+                    <TextBlock Text="Stopping..."
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                               FontSize="12" />
+                </StackPanel>
                 <Button Content="Stop"
                         Command="{Binding StopCommand}"
                         MinWidth="100" />

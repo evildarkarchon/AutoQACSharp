@@ -3,7 +3,7 @@ using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.Plugin;
 using FluentAssertions;
-using Moq;
+using NSubstitute;
 
 namespace AutoQAC.Tests.Services;
 
@@ -14,7 +14,7 @@ public sealed class PluginValidationServiceTests : IDisposable
 
     public PluginValidationServiceTests()
     {
-        _sut = new PluginValidationService(Mock.Of<ILoggingService>());
+        _sut = new PluginValidationService(Substitute.For<ILoggingService>());
     }
 
     public void Dispose()

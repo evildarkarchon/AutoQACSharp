@@ -5,7 +5,7 @@ using AutoQAC.Models;
 using AutoQAC.Services.UI;
 using AutoQAC.ViewModels;
 using FluentAssertions;
-using Moq;
+using NSubstitute;
 using ReactiveUI;
 
 namespace AutoQAC.Tests.ViewModels;
@@ -15,16 +15,16 @@ namespace AutoQAC.Tests.ViewModels;
 /// </summary>
 public sealed class CleaningResultsViewModelTests
 {
-    private readonly Mock<ILoggingService> _loggerMock;
-    private readonly Mock<IFileDialogService> _fileDialogMock;
+    private readonly ILoggingService _loggerMock;
+    private readonly IFileDialogService _fileDialogMock;
 
     public CleaningResultsViewModelTests()
     {
         // Force immediate execution for tests
         RxApp.MainThreadScheduler = Scheduler.Immediate;
 
-        _loggerMock = new Mock<ILoggingService>();
-        _fileDialogMock = new Mock<IFileDialogService>();
+        _loggerMock = Substitute.For<ILoggingService>();
+        _fileDialogMock = Substitute.For<IFileDialogService>();
     }
 
     private static CleaningSessionResult CreateTestSessionResult(
@@ -84,8 +84,8 @@ public sealed class CleaningResultsViewModelTests
     {
         return new CleaningResultsViewModel(
             sessionResult ?? CreateTestSessionResult(),
-            _loggerMock.Object,
-            _fileDialogMock.Object);
+            _loggerMock,
+            _fileDialogMock);
     }
 
     #region Initialization Tests
@@ -110,7 +110,7 @@ public sealed class CleaningResultsViewModelTests
         var sessionResult = CreateTestSessionResult();
 
         // Act
-        var vm = new CleaningResultsViewModel(sessionResult, _loggerMock.Object, _fileDialogMock.Object);
+        var vm = new CleaningResultsViewModel(sessionResult, _loggerMock, _fileDialogMock);
 
         // Assert
         vm.SessionResult.Should().BeSameAs(sessionResult);
@@ -322,12 +322,12 @@ public sealed class CleaningResultsViewModelTests
     public async Task ExportReportCommand_WhenUserCancels_ShouldNotWriteFile()
     {
         // Arrange
-        _fileDialogMock.Setup(f => f.SaveFileDialogAsync(
-            It.IsAny<string>(),
-            It.IsAny<string>(),
-            It.IsAny<string>(),
-            It.IsAny<string>()))
-            .ReturnsAsync((string?)null);
+        _fileDialogMock.SaveFileDialogAsync(
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Any<string>())
+            .Returns((string?)null);
 
         var vm = CreateViewModel();
 
@@ -335,9 +335,8 @@ public sealed class CleaningResultsViewModelTests
         await vm.ExportReportCommand.Execute().FirstAsync();
 
         // Assert - No file should be written
-        _loggerMock.Verify(
-            l => l.Information(It.IsAny<string>(), It.IsAny<object[]>()),
-            Times.Never);
+        _loggerMock.DidNotReceive()
+            .Information(Arg.Any<string>(), Arg.Any<object[]>());
     }
 
     [Fact]
@@ -345,12 +344,12 @@ public sealed class CleaningResultsViewModelTests
     {
         // Arrange
         var testPath = "C:\\test\\report.txt";
-        _fileDialogMock.Setup(f => f.SaveFileDialogAsync(
-            It.IsAny<string>(),
-            It.IsAny<string>(),
-            It.IsAny<string>(),
-            It.IsAny<string>()))
-            .ReturnsAsync(testPath);
+        _fileDialogMock.SaveFileDialogAsync(
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Any<string>())
+            .Returns(testPath);
 
         var vm = CreateViewModel();
 
@@ -358,9 +357,8 @@ public sealed class CleaningResultsViewModelTests
         await vm.ExportReportCommand.Execute().FirstAsync();
 
         // Assert
-        _loggerMock.Verify(
-            l => l.Information(It.IsAny<string>(), It.Is<object[]>(args => args[0].ToString() == testPath)),
-            Times.Once);
+        _loggerMock.Received(1)
+            .Information(Arg.Any<string>(), Arg.Is<object[]>(args => args[0].ToString() == testPath));
     }
 
     [Fact]
@@ -370,12 +368,12 @@ public sealed class CleaningResultsViewModelTests
         var sessionResult = CreateTestSessionResult();
         var expectedPrefix = $"AutoQAC_Report_{sessionResult.StartTime:yyyyMMdd_HHmmss}";
 
-        _fileDialogMock.Setup(f => f.SaveFileDialogAsync(
-            It.IsAny<string>(),
-            It.IsAny<string>(),
-            It.Is<string>(name => name.StartsWith(expectedPrefix)),
-            It.IsAny<string>()))
-            .ReturnsAsync((string?)null);
+        _fileDialogMock.SaveFileDialogAsync(
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Is<string>(name => name.StartsWith(expectedPrefix)),
+            Arg.Any<string>())
+            .Returns((string?)null);
 
         var vm = CreateViewModel(sessionResult);
 
@@ -383,12 +381,11 @@ public sealed class CleaningResultsViewModelTests
         await vm.ExportReportCommand.Execute().FirstAsync();
 
         // Assert
-        _fileDialogMock.Verify(f => f.SaveFileDialogAsync(
+        await _fileDialogMock.Received(1).SaveFileDialogAsync(
             "Save Cleaning Report",
-            It.IsAny<string>(),
-            It.Is<string>(name => name.Contains("AutoQAC_Report")),
-            It.IsAny<string>()),
-            Times.Once);
+            Arg.Any<string>(),
+            Arg.Is<string>(name => name.Contains("AutoQAC_Report")),
+            Arg.Any<string>());
     }
 
     #endregion

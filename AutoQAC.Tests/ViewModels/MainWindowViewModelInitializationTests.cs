@@ -10,45 +10,45 @@ using AutoQAC.Services.State;
 using AutoQAC.Services.UI;
 using AutoQAC.Services.Plugin;
 using AutoQAC.ViewModels;
-using Moq;
+using NSubstitute;
 using ReactiveUI;
 
 namespace AutoQAC.Tests.ViewModels;
 
 public sealed class MainWindowViewModelInitializationTests
 {
-    private readonly Mock<IConfigurationService> _configServiceMock;
-    private readonly Mock<IStateService> _stateServiceMock;
-    private readonly Mock<ICleaningOrchestrator> _orchestratorMock;
-    private readonly Mock<ILoggingService> _loggerMock;
-    private readonly Mock<IFileDialogService> _fileDialogMock;
-    private readonly Mock<IMessageDialogService> _messageDialogMock;
-    private readonly Mock<IPluginValidationService> _pluginServiceMock;
-    private readonly Mock<IPluginLoadingService> _pluginLoadingServiceMock;
+    private readonly IConfigurationService _configServiceMock;
+    private readonly IStateService _stateServiceMock;
+    private readonly ICleaningOrchestrator _orchestratorMock;
+    private readonly ILoggingService _loggerMock;
+    private readonly IFileDialogService _fileDialogMock;
+    private readonly IMessageDialogService _messageDialogMock;
+    private readonly IPluginValidationService _pluginServiceMock;
+    private readonly IPluginLoadingService _pluginLoadingServiceMock;
 
     public MainWindowViewModelInitializationTests()
     {
-        _configServiceMock = new Mock<IConfigurationService>();
-        _stateServiceMock = new Mock<IStateService>();
-        _orchestratorMock = new Mock<ICleaningOrchestrator>();
-        _loggerMock = new Mock<ILoggingService>();
-        _fileDialogMock = new Mock<IFileDialogService>();
-        _messageDialogMock = new Mock<IMessageDialogService>();
-        _pluginServiceMock = new Mock<IPluginValidationService>();
-        _pluginLoadingServiceMock = new Mock<IPluginLoadingService>();
+        _configServiceMock = Substitute.For<IConfigurationService>();
+        _stateServiceMock = Substitute.For<IStateService>();
+        _orchestratorMock = Substitute.For<ICleaningOrchestrator>();
+        _loggerMock = Substitute.For<ILoggingService>();
+        _fileDialogMock = Substitute.For<IFileDialogService>();
+        _messageDialogMock = Substitute.For<IMessageDialogService>();
+        _pluginServiceMock = Substitute.For<IPluginValidationService>();
+        _pluginLoadingServiceMock = Substitute.For<IPluginLoadingService>();
 
         // Default setup for plugin loading service
-        _pluginLoadingServiceMock.Setup(x => x.GetAvailableGames())
+        _pluginLoadingServiceMock.GetAvailableGames()
             .Returns(new List<GameType> { GameType.SkyrimSe, GameType.Fallout4 });
-        _pluginLoadingServiceMock.Setup(x => x.IsGameSupportedByMutagen(It.IsAny<GameType>()))
+        _pluginLoadingServiceMock.IsGameSupportedByMutagen(Arg.Any<GameType>())
             .Returns(false);
 
         // Default setup for CleaningCompleted observable
-        _stateServiceMock.Setup(s => s.CleaningCompleted)
+        _stateServiceMock.CleaningCompleted
             .Returns(Observable.Never<CleaningSessionResult>());
 
         // Default setup for SkipListChanged observable
-        _configServiceMock.Setup(s => s.SkipListChanged)
+        _configServiceMock.SkipListChanged
             .Returns(Observable.Never<GameType>());
 
         RxApp.MainThreadScheduler = Scheduler.Immediate;
@@ -59,8 +59,8 @@ public sealed class MainWindowViewModelInitializationTests
     {
         // Arrange
         var stateSubject = new BehaviorSubject<AppState>(new AppState());
-        _stateServiceMock.Setup(s => s.StateChanged).Returns(stateSubject);
-        _stateServiceMock.Setup(s => s.CurrentState).Returns(new AppState());
+        _stateServiceMock.StateChanged.Returns(stateSubject);
+        _stateServiceMock.CurrentState.Returns(new AppState());
 
         var config = new UserConfiguration
         {
@@ -70,31 +70,31 @@ public sealed class MainWindowViewModelInitializationTests
             Settings = new AutoQacSettings { Mo2Mode = true }
         };
 
-        _configServiceMock.Setup(c => c.LoadUserConfigAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(config);
+        _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>())
+            .Returns(config);
 
         // Act
         var vm = new MainWindowViewModel(
-            _configServiceMock.Object,
-            _stateServiceMock.Object,
-            _orchestratorMock.Object,
-            _loggerMock.Object,
-            _fileDialogMock.Object,
-            _messageDialogMock.Object,
-            _pluginServiceMock.Object,
-            _pluginLoadingServiceMock.Object);
+            _configServiceMock,
+            _stateServiceMock,
+            _orchestratorMock,
+            _loggerMock,
+            _fileDialogMock,
+            _messageDialogMock,
+            _pluginServiceMock,
+            _pluginLoadingServiceMock);
 
         // Allow async void to run
-        await Task.Delay(100); 
+        await Task.Delay(100);
 
         // Assert
-        _configServiceMock.Verify(x => x.LoadUserConfigAsync(It.IsAny<CancellationToken>()), Times.Once);
-        
-        _stateServiceMock.Verify(x => x.UpdateConfigurationPaths(
-            "loadorder.txt", 
-            "mo2.exe", 
-            "xedit.exe"), Times.Once);
-            
-        _stateServiceMock.Verify(x => x.UpdateState(It.IsAny<Func<AppState, AppState>>()), Times.AtLeastOnce);
+        await _configServiceMock.Received(1).LoadUserConfigAsync(Arg.Any<CancellationToken>());
+
+        _stateServiceMock.Received(1).UpdateConfigurationPaths(
+            "loadorder.txt",
+            "mo2.exe",
+            "xedit.exe");
+
+        _stateServiceMock.Received().UpdateState(Arg.Any<Func<AppState, AppState>>());
     }
 }

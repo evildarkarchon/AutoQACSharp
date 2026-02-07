@@ -220,7 +220,7 @@ public async Task CleanPluginsAsync(IEnumerable<string> plugins, CancellationTok
 - **MVVM Framework**: ReactiveUI 11.3.8
 - **YAML Library**: YamlDotNet 16.3.0
 - **Logging**: Serilog with Console and File sinks
-- **Testing**: xUnit 2.9.3 with FluentAssertions 8.8.0 and Moq 4.20.72
+- **Testing**: xUnit 2.9.3 with FluentAssertions 8.8.0 and NSubstitute 5.3.0
 - **DI**: Microsoft.Extensions.DependencyInjection 10.0.2
 - **Coverage**: Coverlet (MSBuild + Collector) with Cobertura XML output
 
@@ -293,7 +293,7 @@ Use YamlDotNet for deserialization with proper error handling.
 - **UI Tests**: Avalonia.Headless for automated UI testing (xUnit v2 required)
 - **Coverage Target**: Minimum 80% for critical paths
 - **Coverage Tooling**: Coverlet MSBuild auto-collects on every `dotnet test` run
-- **Mocking**: Moq for dependency mocking -- ALL optional parameters must be matched in Setup/Verify calls
+- **Mocking**: NSubstitute for dependency mocking -- ALL optional parameters must be matched in substitute calls (same constraint as Moq). Use NSubstitute.Analyzers.CSharp for compile-time misuse detection.
 
 ## Common Pitfalls to Avoid
 

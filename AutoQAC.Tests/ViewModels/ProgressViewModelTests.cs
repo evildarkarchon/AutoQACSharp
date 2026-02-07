@@ -6,7 +6,7 @@ using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.State;
 using AutoQAC.ViewModels;
 using FluentAssertions;
-using Moq;
+using NSubstitute;
 using ReactiveUI;
 
 namespace AutoQAC.Tests.ViewModels;
@@ -17,12 +17,13 @@ namespace AutoQAC.Tests.ViewModels;
 /// </summary>
 public sealed class ProgressViewModelTests
 {
-    private readonly Mock<IStateService> _stateServiceMock;
-    private readonly Mock<ICleaningOrchestrator> _orchestratorMock;
+    private readonly IStateService _stateServiceMock;
+    private readonly ICleaningOrchestrator _orchestratorMock;
     private readonly BehaviorSubject<AppState> _stateSubject;
     private readonly Subject<(string plugin, CleaningStatus status)> _pluginProcessedSubject;
     private readonly Subject<PluginCleaningResult> _detailedPluginResultSubject;
     private readonly Subject<CleaningSessionResult> _cleaningCompletedSubject;
+    private readonly BehaviorSubject<bool> _isTerminatingSubject;
 
     /// <summary>
     /// Initializes test fixtures with default mock configurations.
@@ -36,16 +37,18 @@ public sealed class ProgressViewModelTests
         _pluginProcessedSubject = new Subject<(string, CleaningStatus)>();
         _detailedPluginResultSubject = new Subject<PluginCleaningResult>();
         _cleaningCompletedSubject = new Subject<CleaningSessionResult>();
+        _isTerminatingSubject = new BehaviorSubject<bool>(false);
 
-        _stateServiceMock = new Mock<IStateService>();
-        _stateServiceMock.Setup(s => s.StateChanged).Returns(_stateSubject);
-        _stateServiceMock.Setup(s => s.PluginProcessed).Returns(_pluginProcessedSubject);
-        _stateServiceMock.Setup(s => s.DetailedPluginResult).Returns(_detailedPluginResultSubject);
-        _stateServiceMock.Setup(s => s.CleaningCompleted).Returns(_cleaningCompletedSubject);
-        _stateServiceMock.Setup(s => s.CurrentState).Returns(new AppState());
+        _stateServiceMock = Substitute.For<IStateService>();
+        _stateServiceMock.StateChanged.Returns(_stateSubject);
+        _stateServiceMock.PluginProcessed.Returns(_pluginProcessedSubject);
+        _stateServiceMock.DetailedPluginResult.Returns(_detailedPluginResultSubject);
+        _stateServiceMock.CleaningCompleted.Returns(_cleaningCompletedSubject);
+        _stateServiceMock.IsTerminatingChanged.Returns(_isTerminatingSubject);
+        _stateServiceMock.CurrentState.Returns(new AppState());
 
-        _orchestratorMock = new Mock<ICleaningOrchestrator>();
-        _orchestratorMock.Setup(o => o.HangDetected).Returns(new Subject<bool>());
+        _orchestratorMock = Substitute.For<ICleaningOrchestrator>();
+        _orchestratorMock.HangDetected.Returns(new Subject<bool>());
     }
 
     /// <summary>
@@ -53,7 +56,7 @@ public sealed class ProgressViewModelTests
     /// </summary>
     private ProgressViewModel CreateViewModel()
     {
-        return new ProgressViewModel(_stateServiceMock.Object, _orchestratorMock.Object);
+        return new ProgressViewModel(_stateServiceMock, _orchestratorMock);
     }
 
     [Fact]
@@ -82,14 +85,14 @@ public sealed class ProgressViewModelTests
     public async Task StopCommand_ShouldCallOrchestratorStop()
     {
         // Arrange
-        _orchestratorMock.Setup(x => x.StopCleaningAsync()).Returns(Task.CompletedTask);
+        _orchestratorMock.StopCleaningAsync().Returns(Task.CompletedTask);
         var vm = CreateViewModel();
 
         // Act
         await vm.StopCommand.Execute();
 
         // Assert
-        _orchestratorMock.Verify(x => x.StopCleaningAsync(), Times.Once);
+        await _orchestratorMock.Received(1).StopCleaningAsync();
     }
 
     #region Edge Case Tests
@@ -525,6 +528,79 @@ public sealed class ProgressViewModelTests
 
     #endregion
 
+    #region Termination Spinner Tests
+
+    /// <summary>
+    /// Verifies that IsTerminating tracks the IsTerminatingChanged observable.
+    /// </summary>
+    [Fact]
+    public void IsTerminating_ShouldTrackStateServiceObservable()
+    {
+        // Arrange
+        var vm = CreateViewModel();
+        vm.IsTerminating.Should().BeFalse("initially not terminating");
+
+        // Act
+        _isTerminatingSubject.OnNext(true);
+
+        // Assert
+        vm.IsTerminating.Should().BeTrue("should reflect terminating state");
+
+        // Act - reset
+        _isTerminatingSubject.OnNext(false);
+
+        // Assert
+        vm.IsTerminating.Should().BeFalse("should reflect non-terminating state");
+    }
+
+    /// <summary>
+    /// Verifies that StopCommand is disabled while IsTerminating is true.
+    /// </summary>
+    [Fact]
+    public void StopCommand_ShouldBeDisabled_WhenTerminating()
+    {
+        // Arrange
+        var vm = CreateViewModel();
+
+        // Start cleaning so Stop button would normally be enabled
+        _stateSubject.OnNext(new AppState { IsCleaning = true });
+        vm.StopCommand.CanExecute.Subscribe(_ => { });
+        vm.IsCleaning.Should().BeTrue();
+
+        // Act - begin termination
+        _isTerminatingSubject.OnNext(true);
+
+        // Assert
+        bool canExecute = false;
+        vm.StopCommand.CanExecute.Subscribe(x => canExecute = x);
+        canExecute.Should().BeFalse("Stop should be disabled while terminating");
+    }
+
+    /// <summary>
+    /// Verifies that IsTerminating is reset when a new cleaning session starts.
+    /// </summary>
+    [Fact]
+    public void NewCleaningSession_ShouldResetIsTerminating()
+    {
+        // Arrange
+        var vm = CreateViewModel();
+
+        // Simulate a terminated state
+        _isTerminatingSubject.OnNext(true);
+        vm.IsTerminating.Should().BeTrue();
+
+        // Manually set it (as if from previous session leftover)
+        vm.IsTerminating = true;
+
+        // Act: start new session (IsCleaning transitions from false to true)
+        _stateSubject.OnNext(new AppState { IsCleaning = true, TotalPlugins = 5 });
+
+        // Assert
+        vm.IsTerminating.Should().BeFalse("should be reset for new session");
+    }
+
+    #endregion
+
     #region State Synchronization Tests
 
     /// <summary>
@@ -543,14 +619,14 @@ public sealed class ProgressViewModelTests
             SkippedPlugins = new HashSet<string> { "c.esp" },
             FailedPlugins = new HashSet<string>()
         };
-        _stateServiceMock.Setup(s => s.CurrentState).Returns(initialState);
+        _stateServiceMock.CurrentState.Returns(initialState);
 
         // Create a new subject with initial state
         var stateSubject = new BehaviorSubject<AppState>(initialState);
-        _stateServiceMock.Setup(s => s.StateChanged).Returns(stateSubject);
+        _stateServiceMock.StateChanged.Returns(stateSubject);
 
         // Act
-        var vm = new ProgressViewModel(_stateServiceMock.Object, _orchestratorMock.Object);
+        var vm = new ProgressViewModel(_stateServiceMock, _orchestratorMock);
 
         // Assert
         vm.Progress.Should().Be(3);

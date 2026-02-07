@@ -2,7 +2,7 @@ using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.GameDetection;
 using FluentAssertions;
-using Moq;
+using NSubstitute;
 
 namespace AutoQAC.Tests.Services;
 
@@ -26,7 +26,7 @@ public sealed class GameDetectionServiceTests
         GameType expected)
     {
         // Arrange
-        var service = new GameDetectionService(Mock.Of<ILoggingService>());
+        var service = new GameDetectionService(Substitute.For<ILoggingService>());
 
         // Act
         var result = service.DetectFromExecutable(executable);
@@ -42,7 +42,7 @@ public sealed class GameDetectionServiceTests
         var tempFile = Path.GetTempFileName();
         await File.WriteAllTextAsync(tempFile, "# Load Order\nSkyrim.esm\nUpdate.esm\n");
 
-        var service = new GameDetectionService(Mock.Of<ILoggingService>());
+        var service = new GameDetectionService(Substitute.For<ILoggingService>());
 
         try
         {
@@ -65,7 +65,7 @@ public sealed class GameDetectionServiceTests
         var tempFile = Path.GetTempFileName();
         await File.WriteAllTextAsync(tempFile, "*Fallout4.esm\nDLCCoast.esm\n");
 
-        var service = new GameDetectionService(Mock.Of<ILoggingService>());
+        var service = new GameDetectionService(Substitute.For<ILoggingService>());
 
         try
         {
@@ -88,7 +88,7 @@ public sealed class GameDetectionServiceTests
         var tempFile = Path.GetTempFileName();
         await File.WriteAllTextAsync(tempFile, "Unknown.esm\nMod.esp\n");
 
-        var service = new GameDetectionService(Mock.Of<ILoggingService>());
+        var service = new GameDetectionService(Substitute.For<ILoggingService>());
 
         try
         {
@@ -116,7 +116,7 @@ public sealed class GameDetectionServiceTests
         var tempFile = Path.GetTempFileName();
         await File.WriteAllTextAsync(tempFile, "");
 
-        var service = new GameDetectionService(Mock.Of<ILoggingService>());
+        var service = new GameDetectionService(Substitute.For<ILoggingService>());
 
         try
         {
@@ -142,7 +142,7 @@ public sealed class GameDetectionServiceTests
         var tempFile = Path.GetTempFileName();
         await File.WriteAllTextAsync(tempFile, "   \n\n  \t  \n   ");
 
-        var service = new GameDetectionService(Mock.Of<ILoggingService>());
+        var service = new GameDetectionService(Substitute.For<ILoggingService>());
 
         try
         {
@@ -167,7 +167,7 @@ public sealed class GameDetectionServiceTests
     {
         // Arrange
         var nonExistentPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString(), "plugins.txt");
-        var service = new GameDetectionService(Mock.Of<ILoggingService>());
+        var service = new GameDetectionService(Substitute.For<ILoggingService>());
 
         // Act
         var result = await service.DetectFromLoadOrderAsync(nonExistentPath);
@@ -186,7 +186,7 @@ public sealed class GameDetectionServiceTests
     public async Task DetectFromLoadOrder_WithInvalidPath_ShouldReturnUnknown(string? path)
     {
         // Arrange
-        var service = new GameDetectionService(Mock.Of<ILoggingService>());
+        var service = new GameDetectionService(Substitute.For<ILoggingService>());
 
         // Act
         var result = await service.DetectFromLoadOrderAsync(path!);
@@ -205,7 +205,7 @@ public sealed class GameDetectionServiceTests
         var tempFile = Path.GetTempFileName();
         await File.WriteAllTextAsync(tempFile, "# This is a comment\n# Another comment\n# No plugins here");
 
-        var service = new GameDetectionService(Mock.Of<ILoggingService>());
+        var service = new GameDetectionService(Substitute.For<ILoggingService>());
 
         try
         {
@@ -239,7 +239,7 @@ Fallout3.esm
 SomeMod.esp
 ");
 
-        var service = new GameDetectionService(Mock.Of<ILoggingService>());
+        var service = new GameDetectionService(Substitute.For<ILoggingService>());
 
         try
         {
@@ -266,7 +266,7 @@ SomeMod.esp
         var tempFile = Path.GetTempFileName();
         await File.WriteAllTextAsync(tempFile, "*Fallout4.esm\n*DLCCoast.esm\n*SomeMod.esp");
 
-        var service = new GameDetectionService(Mock.Of<ILoggingService>());
+        var service = new GameDetectionService(Substitute.For<ILoggingService>());
 
         try
         {
@@ -292,7 +292,7 @@ SomeMod.esp
         var tempFile = Path.GetTempFileName();
         await File.WriteAllTextAsync(tempFile, "FalloutNV.esm\nSomeMod.esp");
 
-        var service = new GameDetectionService(Mock.Of<ILoggingService>());
+        var service = new GameDetectionService(Substitute.For<ILoggingService>());
 
         try
         {
@@ -322,7 +322,7 @@ SomeMod.esp
     public void DetectFromExecutable_ShouldHandleVersionedNames(string fileName, GameType expected)
     {
         // Arrange
-        var service = new GameDetectionService(Mock.Of<ILoggingService>());
+        var service = new GameDetectionService(Substitute.For<ILoggingService>());
 
         // Act
         var result = service.DetectFromExecutable(fileName);
@@ -338,7 +338,7 @@ SomeMod.esp
     public void DetectFromExecutable_ShouldExtractFileNameFromPath()
     {
         // Arrange
-        var service = new GameDetectionService(Mock.Of<ILoggingService>());
+        var service = new GameDetectionService(Substitute.For<ILoggingService>());
         var fullPath = @"C:\Games\xEdit\SSEEdit.exe";
 
         // Act
@@ -355,7 +355,7 @@ SomeMod.esp
     public void DetectFromExecutable_WithNull_ShouldReturnUnknown()
     {
         // Arrange
-        var service = new GameDetectionService(Mock.Of<ILoggingService>());
+        var service = new GameDetectionService(Substitute.For<ILoggingService>());
 
         // Act
         var result = service.DetectFromExecutable(null!);
@@ -375,7 +375,7 @@ SomeMod.esp
     public void DetectVariant_ShouldReturnTTW_WhenFNVWithTTWPlugin()
     {
         // Arrange
-        var service = new GameDetectionService(Mock.Of<ILoggingService>());
+        var service = new GameDetectionService(Substitute.For<ILoggingService>());
         var plugins = new List<string> { "FalloutNV.esm", "TaleOfTwoWastelands.esm", "SomeMod.esp" };
 
         // Act
@@ -392,7 +392,7 @@ SomeMod.esp
     public void DetectVariant_ShouldBeCaseInsensitive_ForTTW()
     {
         // Arrange
-        var service = new GameDetectionService(Mock.Of<ILoggingService>());
+        var service = new GameDetectionService(Substitute.For<ILoggingService>());
         var plugins = new List<string> { "FalloutNV.esm", "taleoftwowastelands.esm" };
 
         // Act
@@ -409,7 +409,7 @@ SomeMod.esp
     public void DetectVariant_ShouldReturnNone_WhenTTWPluginButWrongBaseGame()
     {
         // Arrange
-        var service = new GameDetectionService(Mock.Of<ILoggingService>());
+        var service = new GameDetectionService(Substitute.For<ILoggingService>());
         var plugins = new List<string> { "Fallout3.esm", "TaleOfTwoWastelands.esm" };
 
         // Act
@@ -426,7 +426,7 @@ SomeMod.esp
     public void DetectVariant_ShouldReturnEnderal_WhenSSEWithEnderalPlugin()
     {
         // Arrange
-        var service = new GameDetectionService(Mock.Of<ILoggingService>());
+        var service = new GameDetectionService(Substitute.For<ILoggingService>());
         var plugins = new List<string> { "Skyrim.esm", "Enderal - Forgotten Stories.esm", "SomeMod.esp" };
 
         // Act
@@ -443,7 +443,7 @@ SomeMod.esp
     public void DetectVariant_ShouldReturnNone_WhenEnderalPluginButWrongBaseGame()
     {
         // Arrange
-        var service = new GameDetectionService(Mock.Of<ILoggingService>());
+        var service = new GameDetectionService(Substitute.For<ILoggingService>());
         var plugins = new List<string> { "Fallout4.esm", "Enderal - Forgotten Stories.esm" };
 
         // Act
@@ -460,7 +460,7 @@ SomeMod.esp
     public void DetectVariant_ShouldReturnNone_WhenNoVariantPlugins()
     {
         // Arrange
-        var service = new GameDetectionService(Mock.Of<ILoggingService>());
+        var service = new GameDetectionService(Substitute.For<ILoggingService>());
         var plugins = new List<string> { "Skyrim.esm", "Update.esm", "Mod.esp" };
 
         // Act
@@ -477,7 +477,7 @@ SomeMod.esp
     public void DetectVariant_ShouldReturnNone_WhenEmptyLoadOrder()
     {
         // Arrange
-        var service = new GameDetectionService(Mock.Of<ILoggingService>());
+        var service = new GameDetectionService(Substitute.For<ILoggingService>());
         var plugins = new List<string>();
 
         // Act
@@ -507,7 +507,7 @@ SomeMod.esp
     public void IsValidGameType_ShouldReturnCorrectResult(GameType gameType, bool expected)
     {
         // Arrange
-        var service = new GameDetectionService(Mock.Of<ILoggingService>());
+        var service = new GameDetectionService(Substitute.For<ILoggingService>());
 
         // Act
         var result = service.IsValidGameType(gameType);
@@ -529,7 +529,7 @@ SomeMod.esp
     public void GetGameDisplayName_ShouldReturnCorrectName(GameType gameType, string expected)
     {
         // Arrange
-        var service = new GameDetectionService(Mock.Of<ILoggingService>());
+        var service = new GameDetectionService(Substitute.For<ILoggingService>());
 
         // Act
         var result = service.GetGameDisplayName(gameType);
@@ -545,7 +545,7 @@ SomeMod.esp
     public void GetDefaultLoadOrderFileName_ShouldReturnValidFileName()
     {
         // Arrange
-        var service = new GameDetectionService(Mock.Of<ILoggingService>());
+        var service = new GameDetectionService(Substitute.For<ILoggingService>());
 
         // Act
         var result = service.GetDefaultLoadOrderFileName(GameType.SkyrimSe);

@@ -2,7 +2,8 @@ using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models.Configuration;
 using AutoQAC.Services.Configuration;
 using FluentAssertions;
-using Moq;
+using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 
 namespace AutoQAC.Tests.Services;
 
@@ -16,17 +17,17 @@ namespace AutoQAC.Tests.Services;
 /// </summary>
 public sealed class LogRetentionServiceTests : IDisposable
 {
-    private readonly Mock<IConfigurationService> _mockConfig;
-    private readonly Mock<ILoggingService> _mockLogger;
+    private readonly IConfigurationService _mockConfig;
+    private readonly ILoggingService _mockLogger;
     private readonly LogRetentionService _sut;
     private readonly string _testRoot;
     private readonly string _originalCwd;
 
     public LogRetentionServiceTests()
     {
-        _mockConfig = new Mock<IConfigurationService>();
-        _mockLogger = new Mock<ILoggingService>();
-        _sut = new LogRetentionService(_mockConfig.Object, _mockLogger.Object);
+        _mockConfig = Substitute.For<IConfigurationService>();
+        _mockLogger = Substitute.For<ILoggingService>();
+        _sut = new LogRetentionService(_mockConfig, _mockLogger);
 
         _testRoot = Path.Combine(Path.GetTempPath(), $"autoqac_logretention_test_{Guid.NewGuid():N}");
         Directory.CreateDirectory(_testRoot);
@@ -61,8 +62,8 @@ public sealed class LogRetentionServiceTests : IDisposable
                 MaxFileCount = maxFileCount
             }
         };
-        _mockConfig.Setup(c => c.LoadUserConfigAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(userConfig);
+        _mockConfig.LoadUserConfigAsync(Arg.Any<CancellationToken>())
+            .Returns(userConfig);
     }
 
     private string CreateLogFile(string name, DateTime lastWriteUtc)
@@ -205,7 +206,7 @@ public sealed class LogRetentionServiceTests : IDisposable
         File.WriteAllText(Path.Combine(LogsDir, "autoqac-a.log"), "a");
         File.WriteAllText(Path.Combine(LogsDir, "autoqac-b.log"), "b");
 
-        _mockConfig.Setup(c => c.LoadUserConfigAsync(It.IsAny<CancellationToken>()))
+        _mockConfig.LoadUserConfigAsync(Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("Config corrupted"));
 
         // Act
@@ -213,10 +214,7 @@ public sealed class LogRetentionServiceTests : IDisposable
 
         // Assert
         await act.Should().NotThrowAsync("service catches exceptions and logs warning");
-        _mockLogger.Verify(
-            l => l.Warning(It.IsAny<string>(), It.IsAny<object[]>()),
-            Times.AtLeastOnce,
-            "should log a warning about the config error");
+        _mockLogger.Received().Warning(Arg.Any<string>(), Arg.Any<object[]>());
     }
 
     #endregion

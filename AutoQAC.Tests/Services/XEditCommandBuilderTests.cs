@@ -2,26 +2,26 @@ using AutoQAC.Models;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.State;
 using FluentAssertions;
-using Moq;
+using NSubstitute;
 
 namespace AutoQAC.Tests.Services;
 
 public class XEditCommandBuilderTests
 {
-    private readonly Mock<IStateService> _stateServiceMock;
+    private readonly IStateService _stateServiceMock;
     private readonly XEditCommandBuilder _sut;
 
     public XEditCommandBuilderTests()
     {
-        _stateServiceMock = new Mock<IStateService>();
-        _sut = new XEditCommandBuilder(_stateServiceMock.Object);
+        _stateServiceMock = Substitute.For<IStateService>();
+        _sut = new XEditCommandBuilder(_stateServiceMock);
     }
 
     [Fact]
     public void BuildCommand_ReturnsNull_WhenXEditPathIsEmpty()
     {
         // Arrange
-        _stateServiceMock.Setup(x => x.CurrentState).Returns(new AppState { XEditExecutablePath = "" });
+        _stateServiceMock.CurrentState.Returns(new AppState { XEditExecutablePath = "" });
 
         // Act
         var result = _sut.BuildCommand(new PluginInfo { FileName = "test.esp", FullPath = "/path/to/test.esp" }, GameType.SkyrimSe);
@@ -35,8 +35,8 @@ public class XEditCommandBuilderTests
     {
         // Arrange
         var xEditPath = @"C:\Games\SSE\SSEEdit.exe";
-        _stateServiceMock.Setup(x => x.CurrentState).Returns(new AppState 
-        { 
+        _stateServiceMock.CurrentState.Returns(new AppState
+        {
             XEditExecutablePath = xEditPath,
             Mo2ModeEnabled = false
         });
@@ -61,11 +61,11 @@ public class XEditCommandBuilderTests
     {
          // Arrange
         var xEditPath = @"C:\Tools\xEdit.exe";
-        _stateServiceMock.Setup(x => x.CurrentState).Returns(new AppState 
-        { 
+        _stateServiceMock.CurrentState.Returns(new AppState
+        {
             XEditExecutablePath = xEditPath
         });
-        
+
         // Act
         var result = _sut.BuildCommand(new PluginInfo { FileName = "foo.esp", FullPath = "foo.esp" }, GameType.Fallout4);
 
@@ -77,8 +77,8 @@ public class XEditCommandBuilderTests
     public void BuildCommand_AddsPartialFormFlags_WhenEnabled()
     {
         // Arrange
-        _stateServiceMock.Setup(x => x.CurrentState).Returns(new AppState 
-        { 
+        _stateServiceMock.CurrentState.Returns(new AppState
+        {
             XEditExecutablePath = "xEdit.exe",
             PartialFormsEnabled = true
         });
@@ -95,7 +95,7 @@ public class XEditCommandBuilderTests
     public void BuildCommand_ReturnsNull_WhenGameTypeIsUnknown()
     {
         // Arrange
-        _stateServiceMock.Setup(x => x.CurrentState).Returns(new AppState
+        _stateServiceMock.CurrentState.Returns(new AppState
         {
             XEditExecutablePath = @"C:\Tools\xEdit.exe",
             Mo2ModeEnabled = false
@@ -115,8 +115,8 @@ public class XEditCommandBuilderTests
         // Arrange
         var xEditPath = @"C:\Tools\SSEEdit.exe";
         var mo2Path = @"C:\MO2\ModOrganizer.exe";
-        _stateServiceMock.Setup(x => x.CurrentState).Returns(new AppState 
-        { 
+        _stateServiceMock.CurrentState.Returns(new AppState
+        {
             XEditExecutablePath = xEditPath,
             Mo2ExecutablePath = mo2Path,
             Mo2ModeEnabled = true

@@ -6,29 +6,30 @@ using AutoQAC.Services.GameDetection;
 using AutoQAC.Services.Process;
 using AutoQAC.Services.State;
 using FluentAssertions;
-using Moq;
+using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 
 namespace AutoQAC.Tests.Services;
 
 public sealed class CleaningServiceTests
 {
-    private readonly Mock<IConfigurationService> _mockConfig;
-    private readonly Mock<IGameDetectionService> _mockGameDetection;
-    private readonly Mock<IStateService> _mockState;
-    private readonly Mock<ILoggingService> _mockLogger;
-    private readonly Mock<IProcessExecutionService> _mockProcess;
-    private readonly Mock<IXEditCommandBuilder> _mockCommandBuilder;
-    private readonly Mock<IXEditOutputParser> _mockOutputParser;
+    private readonly IConfigurationService _mockConfig;
+    private readonly IGameDetectionService _mockGameDetection;
+    private readonly IStateService _mockState;
+    private readonly ILoggingService _mockLogger;
+    private readonly IProcessExecutionService _mockProcess;
+    private readonly IXEditCommandBuilder _mockCommandBuilder;
+    private readonly IXEditOutputParser _mockOutputParser;
 
     public CleaningServiceTests()
     {
-        _mockConfig = new Mock<IConfigurationService>();
-        _mockGameDetection = new Mock<IGameDetectionService>();
-        _mockState = new Mock<IStateService>();
-        _mockLogger = new Mock<ILoggingService>();
-        _mockProcess = new Mock<IProcessExecutionService>();
-        _mockCommandBuilder = new Mock<IXEditCommandBuilder>();
-        _mockOutputParser = new Mock<IXEditOutputParser>();
+        _mockConfig = Substitute.For<IConfigurationService>();
+        _mockGameDetection = Substitute.For<IGameDetectionService>();
+        _mockState = Substitute.For<IStateService>();
+        _mockLogger = Substitute.For<ILoggingService>();
+        _mockProcess = Substitute.For<IProcessExecutionService>();
+        _mockCommandBuilder = Substitute.For<IXEditCommandBuilder>();
+        _mockOutputParser = Substitute.For<IXEditOutputParser>();
     }
 
     [Fact]
@@ -36,13 +37,13 @@ public sealed class CleaningServiceTests
     {
         // Arrange
         var service = new CleaningService(
-            _mockConfig.Object,
-            _mockGameDetection.Object,
-            _mockState.Object,
-            _mockLogger.Object,
-            _mockProcess.Object,
-            _mockCommandBuilder.Object,
-            _mockOutputParser.Object);
+            _mockConfig,
+            _mockGameDetection,
+            _mockState,
+            _mockLogger,
+            _mockProcess,
+            _mockCommandBuilder,
+            _mockOutputParser);
 
         var plugin = new PluginInfo
         {
@@ -54,11 +55,11 @@ public sealed class CleaningServiceTests
 
         // Mock State
         var appState = new AppState { CurrentGameType = GameType.SkyrimSe };
-        _mockState.Setup(s => s.CurrentState).Returns(appState);
+        _mockState.CurrentState.Returns(appState);
 
         // Mock Command Builder
         var startInfo = new System.Diagnostics.ProcessStartInfo("xEdit.exe");
-        _mockCommandBuilder.Setup(b => b.BuildCommand(plugin, GameType.SkyrimSe))
+        _mockCommandBuilder.BuildCommand(plugin, GameType.SkyrimSe)
             .Returns(startInfo);
 
         // Mock Process Execution
@@ -68,12 +69,12 @@ public sealed class CleaningServiceTests
             OutputLines = new List<string> { "Undeleting: Foo", "Done." },
             TimedOut = false
         };
-        _mockProcess.Setup(p => p.ExecuteAsync(startInfo, It.IsAny<IProgress<string>>(), It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(processResult);
+        _mockProcess.ExecuteAsync(startInfo, Arg.Any<IProgress<string>>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(processResult);
 
         // Mock Output Parser
         var stats = new CleaningStatistics { ItemsUndeleted = 1 };
-        _mockOutputParser.Setup(p => p.ParseOutput(processResult.OutputLines))
+        _mockOutputParser.ParseOutput(processResult.OutputLines)
             .Returns(stats);
 
         // Act
@@ -85,7 +86,7 @@ public sealed class CleaningServiceTests
         result.Statistics.Should().NotBeNull();
         result.Statistics!.ItemsUndeleted.Should().Be(1);
 
-        _mockProcess.Verify(p => p.ExecuteAsync(startInfo, It.IsAny<IProgress<string>>(), It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()), Times.Once);
+        await _mockProcess.Received(1).ExecuteAsync(startInfo, Arg.Any<IProgress<string>>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -93,13 +94,13 @@ public sealed class CleaningServiceTests
     {
         // Arrange
         var service = new CleaningService(
-            _mockConfig.Object,
-            _mockGameDetection.Object,
-            _mockState.Object,
-            _mockLogger.Object,
-            _mockProcess.Object,
-            _mockCommandBuilder.Object,
-            _mockOutputParser.Object);
+            _mockConfig,
+            _mockGameDetection,
+            _mockState,
+            _mockLogger,
+            _mockProcess,
+            _mockCommandBuilder,
+            _mockOutputParser);
 
         var plugin = new PluginInfo
         {
@@ -115,7 +116,7 @@ public sealed class CleaningServiceTests
         // Assert
         result.Success.Should().BeTrue();
         result.Status.Should().Be(CleaningStatus.Skipped);
-        _mockProcess.Verify(p => p.ExecuteAsync(It.IsAny<System.Diagnostics.ProcessStartInfo>(), It.IsAny<IProgress<string>>(), It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()), Times.Never);
+        await _mockProcess.DidNotReceive().ExecuteAsync(Arg.Any<System.Diagnostics.ProcessStartInfo>(), Arg.Any<IProgress<string>>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }
 
     #region Error Path Tests
@@ -129,13 +130,13 @@ public sealed class CleaningServiceTests
     {
         // Arrange
         var service = new CleaningService(
-            _mockConfig.Object,
-            _mockGameDetection.Object,
-            _mockState.Object,
-            _mockLogger.Object,
-            _mockProcess.Object,
-            _mockCommandBuilder.Object,
-            _mockOutputParser.Object);
+            _mockConfig,
+            _mockGameDetection,
+            _mockState,
+            _mockLogger,
+            _mockProcess,
+            _mockCommandBuilder,
+            _mockOutputParser);
 
         var plugin = new PluginInfo
         {
@@ -147,10 +148,10 @@ public sealed class CleaningServiceTests
 
         // Configure state with a valid game type
         var appState = new AppState { CurrentGameType = GameType.SkyrimSe };
-        _mockState.Setup(s => s.CurrentState).Returns(appState);
+        _mockState.CurrentState.Returns(appState);
 
         // Command builder returns null - simulating build failure
-        _mockCommandBuilder.Setup(b => b.BuildCommand(plugin, GameType.SkyrimSe))
+        _mockCommandBuilder.BuildCommand(plugin, GameType.SkyrimSe)
             .Returns((System.Diagnostics.ProcessStartInfo?)null);
 
         // Act
@@ -162,11 +163,11 @@ public sealed class CleaningServiceTests
         result.Message.Should().Contain("Failed to build xEdit command");
 
         // Process should never be called since command building failed
-        _mockProcess.Verify(p => p.ExecuteAsync(
-            It.IsAny<System.Diagnostics.ProcessStartInfo>(),
-            It.IsAny<IProgress<string>>(),
-            It.IsAny<TimeSpan?>(),
-            It.IsAny<CancellationToken>()), Times.Never);
+        await _mockProcess.DidNotReceive().ExecuteAsync(
+            Arg.Any<System.Diagnostics.ProcessStartInfo>(),
+            Arg.Any<IProgress<string>>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
     }
 
     /// <summary>
@@ -178,13 +179,13 @@ public sealed class CleaningServiceTests
     {
         // Arrange
         var service = new CleaningService(
-            _mockConfig.Object,
-            _mockGameDetection.Object,
-            _mockState.Object,
-            _mockLogger.Object,
-            _mockProcess.Object,
-            _mockCommandBuilder.Object,
-            _mockOutputParser.Object);
+            _mockConfig,
+            _mockGameDetection,
+            _mockState,
+            _mockLogger,
+            _mockProcess,
+            _mockCommandBuilder,
+            _mockOutputParser);
 
         var plugin = new PluginInfo
         {
@@ -200,11 +201,11 @@ public sealed class CleaningServiceTests
             CurrentGameType = GameType.SkyrimSe,
             CleaningTimeout = 300 // 5 minute timeout
         };
-        _mockState.Setup(s => s.CurrentState).Returns(appState);
+        _mockState.CurrentState.Returns(appState);
 
         // Mock command builder to return valid command
         var startInfo = new System.Diagnostics.ProcessStartInfo("xEdit.exe");
-        _mockCommandBuilder.Setup(b => b.BuildCommand(plugin, GameType.SkyrimSe))
+        _mockCommandBuilder.BuildCommand(plugin, GameType.SkyrimSe)
             .Returns(startInfo);
 
         // Mock process to return timed out result
@@ -214,8 +215,8 @@ public sealed class CleaningServiceTests
             OutputLines = new List<string> { "Started cleaning..." },
             TimedOut = true
         };
-        _mockProcess.Setup(p => p.ExecuteAsync(startInfo, It.IsAny<IProgress<string>>(), It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(processResult);
+        _mockProcess.ExecuteAsync(startInfo, Arg.Any<IProgress<string>>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(processResult);
 
         // Act
         var result = await service.CleanPluginAsync(plugin);
@@ -235,13 +236,13 @@ public sealed class CleaningServiceTests
     {
         // Arrange
         var service = new CleaningService(
-            _mockConfig.Object,
-            _mockGameDetection.Object,
-            _mockState.Object,
-            _mockLogger.Object,
-            _mockProcess.Object,
-            _mockCommandBuilder.Object,
-            _mockOutputParser.Object);
+            _mockConfig,
+            _mockGameDetection,
+            _mockState,
+            _mockLogger,
+            _mockProcess,
+            _mockCommandBuilder,
+            _mockOutputParser);
 
         var plugin = new PluginInfo
         {
@@ -253,11 +254,11 @@ public sealed class CleaningServiceTests
 
         // Configure state
         var appState = new AppState { CurrentGameType = GameType.SkyrimSe };
-        _mockState.Setup(s => s.CurrentState).Returns(appState);
+        _mockState.CurrentState.Returns(appState);
 
         // Mock command builder
         var startInfo = new System.Diagnostics.ProcessStartInfo("xEdit.exe");
-        _mockCommandBuilder.Setup(b => b.BuildCommand(plugin, GameType.SkyrimSe))
+        _mockCommandBuilder.BuildCommand(plugin, GameType.SkyrimSe)
             .Returns(startInfo);
 
         // Mock process to return error exit code
@@ -268,8 +269,8 @@ public sealed class CleaningServiceTests
             ErrorLines = new List<string> { "Exception occurred" },
             TimedOut = false
         };
-        _mockProcess.Setup(p => p.ExecuteAsync(startInfo, It.IsAny<IProgress<string>>(), It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(processResult);
+        _mockProcess.ExecuteAsync(startInfo, Arg.Any<IProgress<string>>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(processResult);
 
         // Act
         var result = await service.CleanPluginAsync(plugin);
@@ -289,13 +290,13 @@ public sealed class CleaningServiceTests
     {
         // Arrange
         var service = new CleaningService(
-            _mockConfig.Object,
-            _mockGameDetection.Object,
-            _mockState.Object,
-            _mockLogger.Object,
-            _mockProcess.Object,
-            _mockCommandBuilder.Object,
-            _mockOutputParser.Object);
+            _mockConfig,
+            _mockGameDetection,
+            _mockState,
+            _mockLogger,
+            _mockProcess,
+            _mockCommandBuilder,
+            _mockOutputParser);
 
         var plugin = new PluginInfo
         {
@@ -307,11 +308,11 @@ public sealed class CleaningServiceTests
 
         // Configure state with Unknown game type
         var appState = new AppState { CurrentGameType = GameType.Unknown };
-        _mockState.Setup(s => s.CurrentState).Returns(appState);
+        _mockState.CurrentState.Returns(appState);
 
         // Mock command builder - verify it's called with Fallout4 (plugin's type)
         var startInfo = new System.Diagnostics.ProcessStartInfo("xEdit.exe");
-        _mockCommandBuilder.Setup(b => b.BuildCommand(plugin, GameType.Fallout4))
+        _mockCommandBuilder.BuildCommand(plugin, GameType.Fallout4)
             .Returns(startInfo);
 
         // Mock process execution
@@ -321,11 +322,11 @@ public sealed class CleaningServiceTests
             OutputLines = new List<string> { "Done." },
             TimedOut = false
         };
-        _mockProcess.Setup(p => p.ExecuteAsync(startInfo, It.IsAny<IProgress<string>>(), It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(processResult);
+        _mockProcess.ExecuteAsync(startInfo, Arg.Any<IProgress<string>>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(processResult);
 
         // Mock output parser
-        _mockOutputParser.Setup(p => p.ParseOutput(processResult.OutputLines))
+        _mockOutputParser.ParseOutput(processResult.OutputLines)
             .Returns(new CleaningStatistics());
 
         // Act
@@ -335,10 +336,7 @@ public sealed class CleaningServiceTests
         result.Success.Should().BeTrue();
 
         // Verify command builder was called with plugin's detected game type
-        _mockCommandBuilder.Verify(
-            b => b.BuildCommand(plugin, GameType.Fallout4),
-            Times.Once,
-            "should use plugin's detected game type when state has Unknown");
+        _mockCommandBuilder.Received(1).BuildCommand(plugin, GameType.Fallout4);
     }
 
     /// <summary>
@@ -350,13 +348,13 @@ public sealed class CleaningServiceTests
     {
         // Arrange
         var service = new CleaningService(
-            _mockConfig.Object,
-            _mockGameDetection.Object,
-            _mockState.Object,
-            _mockLogger.Object,
-            _mockProcess.Object,
-            _mockCommandBuilder.Object,
-            _mockOutputParser.Object);
+            _mockConfig,
+            _mockGameDetection,
+            _mockState,
+            _mockLogger,
+            _mockProcess,
+            _mockCommandBuilder,
+            _mockOutputParser);
 
         var plugin = new PluginInfo
         {
@@ -368,15 +366,15 @@ public sealed class CleaningServiceTests
 
         // Configure state
         var appState = new AppState { CurrentGameType = GameType.SkyrimSe };
-        _mockState.Setup(s => s.CurrentState).Returns(appState);
+        _mockState.CurrentState.Returns(appState);
 
         // Mock command builder
         var startInfo = new System.Diagnostics.ProcessStartInfo("xEdit.exe");
-        _mockCommandBuilder.Setup(b => b.BuildCommand(plugin, GameType.SkyrimSe))
+        _mockCommandBuilder.BuildCommand(plugin, GameType.SkyrimSe)
             .Returns(startInfo);
 
         // Mock process to throw OperationCanceledException
-        _mockProcess.Setup(p => p.ExecuteAsync(startInfo, It.IsAny<IProgress<string>>(), It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()))
+        _mockProcess.ExecuteAsync(startInfo, Arg.Any<IProgress<string>>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new OperationCanceledException());
 
         // Act
@@ -397,13 +395,13 @@ public sealed class CleaningServiceTests
     {
         // Arrange
         var service = new CleaningService(
-            _mockConfig.Object,
-            _mockGameDetection.Object,
-            _mockState.Object,
-            _mockLogger.Object,
-            _mockProcess.Object,
-            _mockCommandBuilder.Object,
-            _mockOutputParser.Object);
+            _mockConfig,
+            _mockGameDetection,
+            _mockState,
+            _mockLogger,
+            _mockProcess,
+            _mockCommandBuilder,
+            _mockOutputParser);
 
         var plugin = new PluginInfo
         {
@@ -415,15 +413,15 @@ public sealed class CleaningServiceTests
 
         // Configure state
         var appState = new AppState { CurrentGameType = GameType.SkyrimSe };
-        _mockState.Setup(s => s.CurrentState).Returns(appState);
+        _mockState.CurrentState.Returns(appState);
 
         // Mock command builder
         var startInfo = new System.Diagnostics.ProcessStartInfo("xEdit.exe");
-        _mockCommandBuilder.Setup(b => b.BuildCommand(plugin, GameType.SkyrimSe))
+        _mockCommandBuilder.BuildCommand(plugin, GameType.SkyrimSe)
             .Returns(startInfo);
 
         // Mock process to throw unexpected exception
-        _mockProcess.Setup(p => p.ExecuteAsync(startInfo, It.IsAny<IProgress<string>>(), It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()))
+        _mockProcess.ExecuteAsync(startInfo, Arg.Any<IProgress<string>>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("Unexpected error during process execution"));
 
         // Act
@@ -435,10 +433,7 @@ public sealed class CleaningServiceTests
         result.Message.Should().Contain("Unexpected error");
 
         // Verify error was logged
-        _mockLogger.Verify(
-            l => l.Error(It.IsAny<Exception>(), It.Is<string>(s => s.Contains("Mod.esp"))),
-            Times.Once,
-            "exception should be logged with plugin name");
+        _mockLogger.Received(1).Error(Arg.Any<Exception>(), Arg.Is<string>(s => s.Contains("Mod.esp")));
     }
 
     #endregion
@@ -453,13 +448,13 @@ public sealed class CleaningServiceTests
     {
         // Arrange
         var service = new CleaningService(
-            _mockConfig.Object,
-            _mockGameDetection.Object,
-            _mockState.Object,
-            _mockLogger.Object,
-            _mockProcess.Object,
-            _mockCommandBuilder.Object,
-            _mockOutputParser.Object);
+            _mockConfig,
+            _mockGameDetection,
+            _mockState,
+            _mockLogger,
+            _mockProcess,
+            _mockCommandBuilder,
+            _mockOutputParser);
 
         // State has load order but no xEdit path
         var appState = new AppState
@@ -467,7 +462,7 @@ public sealed class CleaningServiceTests
             LoadOrderPath = "plugins.txt",
             XEditExecutablePath = null
         };
-        _mockState.Setup(s => s.CurrentState).Returns(appState);
+        _mockState.CurrentState.Returns(appState);
 
         // Act
         var result = await service.ValidateEnvironmentAsync();
@@ -484,13 +479,13 @@ public sealed class CleaningServiceTests
     {
         // Arrange
         var service = new CleaningService(
-            _mockConfig.Object,
-            _mockGameDetection.Object,
-            _mockState.Object,
-            _mockLogger.Object,
-            _mockProcess.Object,
-            _mockCommandBuilder.Object,
-            _mockOutputParser.Object);
+            _mockConfig,
+            _mockGameDetection,
+            _mockState,
+            _mockLogger,
+            _mockProcess,
+            _mockCommandBuilder,
+            _mockOutputParser);
 
         // State has xEdit but no load order path
         var appState = new AppState
@@ -498,7 +493,7 @@ public sealed class CleaningServiceTests
             LoadOrderPath = null,
             XEditExecutablePath = "xEdit.exe"
         };
-        _mockState.Setup(s => s.CurrentState).Returns(appState);
+        _mockState.CurrentState.Returns(appState);
 
         // Act
         var result = await service.ValidateEnvironmentAsync();

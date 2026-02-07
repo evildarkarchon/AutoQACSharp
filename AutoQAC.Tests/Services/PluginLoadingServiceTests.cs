@@ -2,21 +2,21 @@ using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.Plugin;
 using FluentAssertions;
-using Moq;
+using NSubstitute;
 
 namespace AutoQAC.Tests.Services;
 
 public sealed class PluginLoadingServiceTests
 {
-    private readonly Mock<IPluginValidationService> _mockPluginValidation;
-    private readonly Mock<ILoggingService> _mockLogger;
+    private readonly IPluginValidationService _mockPluginValidation;
+    private readonly ILoggingService _mockLogger;
     private readonly PluginLoadingService _sut;
 
     public PluginLoadingServiceTests()
     {
-        _mockPluginValidation = new Mock<IPluginValidationService>();
-        _mockLogger = new Mock<ILoggingService>();
-        _sut = new PluginLoadingService(_mockPluginValidation.Object, _mockLogger.Object);
+        _mockPluginValidation = Substitute.For<IPluginValidationService>();
+        _mockLogger = Substitute.For<ILoggingService>();
+        _sut = new PluginLoadingService(_mockPluginValidation, _mockLogger);
     }
 
     #region IsGameSupportedByMutagen Tests
@@ -88,17 +88,16 @@ public sealed class PluginLoadingServiceTests
             new() { FileName = "Plugin2.esp", FullPath = "Data/Plugin2.esp" }
         };
         _mockPluginValidation
-            .Setup(s => s.GetPluginsFromLoadOrderAsync(loadOrderPath, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(expectedPlugins);
+            .GetPluginsFromLoadOrderAsync(loadOrderPath, Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(expectedPlugins);
 
         // Act
         var result = await _sut.GetPluginsFromFileAsync(loadOrderPath);
 
         // Assert
         result.Should().BeEquivalentTo(expectedPlugins);
-        _mockPluginValidation.Verify(
-            s => s.GetPluginsFromLoadOrderAsync(loadOrderPath, It.IsAny<string?>(), It.IsAny<CancellationToken>()),
-            Times.Once);
+        await _mockPluginValidation.Received(1)
+            .GetPluginsFromLoadOrderAsync(loadOrderPath, Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
 
     #endregion

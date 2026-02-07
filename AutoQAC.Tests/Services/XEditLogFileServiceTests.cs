@@ -1,7 +1,7 @@
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Services.Cleaning;
 using FluentAssertions;
-using Moq;
+using NSubstitute;
 
 namespace AutoQAC.Tests.Services;
 
@@ -14,14 +14,14 @@ namespace AutoQAC.Tests.Services;
 /// </summary>
 public sealed class XEditLogFileServiceTests : IDisposable
 {
-    private readonly Mock<ILoggingService> _mockLogger;
+    private readonly ILoggingService _mockLogger;
     private readonly XEditLogFileService _sut;
     private readonly string _testRoot;
 
     public XEditLogFileServiceTests()
     {
-        _mockLogger = new Mock<ILoggingService>();
-        _sut = new XEditLogFileService(_mockLogger.Object);
+        _mockLogger = Substitute.For<ILoggingService>();
+        _sut = new XEditLogFileService(_mockLogger);
         _testRoot = Path.Combine(Path.GetTempPath(), $"autoqac_xeditlog_test_{Guid.NewGuid():N}");
         Directory.CreateDirectory(_testRoot);
     }

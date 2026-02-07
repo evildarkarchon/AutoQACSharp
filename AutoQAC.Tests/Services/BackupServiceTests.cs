@@ -3,7 +3,7 @@ using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.Backup;
 using FluentAssertions;
-using Moq;
+using NSubstitute;
 
 namespace AutoQAC.Tests.Services;
 
@@ -16,14 +16,14 @@ namespace AutoQAC.Tests.Services;
 /// </summary>
 public sealed class BackupServiceTests : IDisposable
 {
-    private readonly Mock<ILoggingService> _mockLogger;
+    private readonly ILoggingService _mockLogger;
     private readonly BackupService _sut;
     private readonly string _testRoot;
 
     public BackupServiceTests()
     {
-        _mockLogger = new Mock<ILoggingService>();
-        _sut = new BackupService(_mockLogger.Object);
+        _mockLogger = Substitute.For<ILoggingService>();
+        _sut = new BackupService(_mockLogger);
         _testRoot = Path.Combine(Path.GetTempPath(), $"autoqac_backup_test_{Guid.NewGuid():N}");
         Directory.CreateDirectory(_testRoot);
     }

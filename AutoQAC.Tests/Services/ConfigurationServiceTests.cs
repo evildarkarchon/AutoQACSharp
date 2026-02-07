@@ -3,7 +3,7 @@ using AutoQAC.Models;
 using AutoQAC.Models.Configuration;
 using AutoQAC.Services.Configuration;
 using FluentAssertions;
-using Moq;
+using NSubstitute;
 
 namespace AutoQAC.Tests.Services;
 
@@ -36,7 +36,7 @@ public sealed class ConfigurationServiceTests : IDisposable
     public async Task LoadUserConfig_ShouldCreateDefault_WhenFileNotFound()
     {
         // Arrange
-        var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+        var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
         var expectedPath = Path.Combine(_testDirectory, "AutoQAC Settings.yaml");
 
         // Act
@@ -53,7 +53,7 @@ public sealed class ConfigurationServiceTests : IDisposable
     public async Task SaveUserConfig_ShouldWriteToFile()
     {
         // Arrange
-        var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+        var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
         var config = new UserConfiguration
         {
             Settings = new AutoQacSettings { CleaningTimeout = 999 }
@@ -71,7 +71,7 @@ public sealed class ConfigurationServiceTests : IDisposable
     public async Task ValidatePaths_ShouldReturnFalse_WhenFilesMissing()
     {
         // Arrange
-        var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+        var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
         var config = new UserConfiguration
         {
             LoadOrder = new LoadOrderConfig { File = "NonExistent.txt" },
@@ -89,7 +89,7 @@ public sealed class ConfigurationServiceTests : IDisposable
     public async Task ValidatePaths_ShouldReturnTrue_WhenFilesExist()
     {
         // Arrange
-        var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+        var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
         
         var loFile = Path.Combine(_testDirectory, "plugins.txt");
         var xEditFile = Path.Combine(_testDirectory, "SSEEdit.exe");
@@ -122,7 +122,7 @@ AutoQAC_Data:
 ";
         await File.WriteAllTextAsync(Path.Combine(_testDirectory, "AutoQAC Main.yaml"), mainConfigContent);
 
-        var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+        var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
 
         // Act
         var list = await service.GetXEditExecutableNamesAsync(GameType.SkyrimSe);
@@ -152,7 +152,7 @@ Settings: [not: properly: closed
 ";
         await File.WriteAllTextAsync(Path.Combine(_testDirectory, "AutoQAC Settings.yaml"), corruptedYaml);
 
-        var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+        var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
 
         // Act
         Func<Task> act = () => service.LoadUserConfigAsync();
@@ -181,7 +181,7 @@ AutoQAC_Data:
 ";
         await File.WriteAllTextAsync(Path.Combine(_testDirectory, "AutoQAC Main.yaml"), corruptedYaml);
 
-        var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+        var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
 
         // Act
         Func<Task> act = () => service.LoadMainConfigAsync();
@@ -211,7 +211,7 @@ AutoQAC_Data:
 ";
         await File.WriteAllTextAsync(Path.Combine(_testDirectory, "AutoQAC Main.yaml"), mainConfigContent);
 
-        var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+        var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
 
         // Act
         // Request skip list for a game type that's not in the config
@@ -254,7 +254,7 @@ AutoQAC_Data:
 ";
         await File.WriteAllTextAsync(Path.Combine(_testDirectory, "AutoQAC Main.yaml"), mainConfigContent);
 
-        var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+        var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
 
         // Act
         var list = await service.GetSkipListAsync(GameType.SkyrimSe);
@@ -273,7 +273,7 @@ AutoQAC_Data:
     public async Task SaveUserConfigAsync_ShouldEmitConfigurationChangedEvent()
     {
         // Arrange
-        var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+        var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
         var emittedConfigs = new List<UserConfiguration>();
         using var subscription = service.UserConfigurationChanged.Subscribe(c => emittedConfigs.Add(c));
 
@@ -298,7 +298,7 @@ AutoQAC_Data:
     public async Task ValidatePathsAsync_ShouldReturnFalse_WhenMo2ModeEnabledButBinaryMissing()
     {
         // Arrange
-        var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+        var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
 
         // Create only load order and xEdit files
         var loFile = Path.Combine(_testDirectory, "plugins.txt");
@@ -330,7 +330,7 @@ AutoQAC_Data:
         // Arrange
         await File.WriteAllTextAsync(Path.Combine(_testDirectory, "AutoQAC Settings.yaml"), "");
 
-        var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+        var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
 
         // Act
         // YamlDotNet may return null for empty file, which should be handled
@@ -358,7 +358,7 @@ Settings:
 ";
         await File.WriteAllTextAsync(Path.Combine(_testDirectory, "AutoQAC Settings.yaml"), configContent);
 
-        var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+        var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
 
         // Act
         var tasks = Enumerable.Range(0, 10).Select(_ => service.LoadUserConfigAsync());
@@ -389,7 +389,7 @@ AutoQAC_Data:
 ";
         await File.WriteAllTextAsync(Path.Combine(_testDirectory, "AutoQAC Main.yaml"), mainConfigContent);
 
-        var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+        var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
 
         // Act
         // Request for a game type not specifically defined
@@ -407,7 +407,7 @@ AutoQAC_Data:
     public void Dispose_ShouldNotThrow()
     {
         // Arrange
-        var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+        var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
 
         // Act & Assert
         FluentActions.Invoking(() => service.Dispose())
@@ -429,7 +429,7 @@ AutoQAC_Data:
     public async Task GetGameDataFolderOverrideAsync_ShouldReturnNull_WhenNoOverrideSet()
     {
         // Arrange
-        var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+        var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
 
         // Act
         var result = await service.GetGameDataFolderOverrideAsync(GameType.SkyrimSe);
@@ -445,7 +445,7 @@ AutoQAC_Data:
     public async Task SetGameDataFolderOverrideAsync_ShouldPersistOverride()
     {
         // Arrange
-        var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+        var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
         var expectedPath = @"C:\Games\SkyrimSE\Data";
 
         // Act
@@ -463,7 +463,7 @@ AutoQAC_Data:
     public async Task SetGameDataFolderOverrideAsync_ShouldRemoveOverride_WhenNullPassed()
     {
         // Arrange
-        var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+        var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
         await service.SetGameDataFolderOverrideAsync(GameType.SkyrimSe, @"C:\Games\SkyrimSE\Data");
 
         // Act
@@ -481,7 +481,7 @@ AutoQAC_Data:
     public async Task SetGameDataFolderOverrideAsync_ShouldRemoveOverride_WhenEmptyStringPassed()
     {
         // Arrange
-        var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+        var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
         await service.SetGameDataFolderOverrideAsync(GameType.Fallout4, @"C:\Games\Fallout4\Data");
 
         // Act
@@ -499,7 +499,7 @@ AutoQAC_Data:
     public async Task SetGameDataFolderOverrideAsync_ShouldStorePerGame()
     {
         // Arrange
-        var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+        var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
         var ssePath = @"C:\Games\SkyrimSE\Data";
         var fo4Path = @"C:\Games\Fallout4\Data";
 
@@ -522,7 +522,7 @@ AutoQAC_Data:
     public async Task SetGameDataFolderOverrideAsync_ShouldPersistToYaml()
     {
         // Arrange
-        var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+        var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
         var expectedPath = @"C:\Games\SkyrimSE\Data";
 
         // Act
@@ -531,7 +531,7 @@ AutoQAC_Data:
         await service.FlushPendingSavesAsync();
 
         // Verify by loading in a new service instance
-        var service2 = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+        var service2 = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
         var result = await service2.GetGameDataFolderOverrideAsync(GameType.SkyrimSe);
 
         // Assert
