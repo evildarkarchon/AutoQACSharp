@@ -128,11 +128,11 @@ Plans:
   3. New features from phases 1-6 have tests achieving 80%+ coverage on critical paths
   4. Mutagen and YamlDotNet are updated to latest compatible versions with no regressions
   5. Code_To_Port/ directory is removed and the application builds and passes all tests without it
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 07-01: Targeted test coverage for existing gaps (TEST-01, TEST-02, TEST-03, TEST-04, TEST-05)
-- [ ] 07-02: Feature test coverage, dependency updates, and cleanup (TEST-06, DEP-01, DEP-02, POST-01)
+- [ ] 07-01-PLAN.md -- Targeted gap tests (TEST-01 through TEST-05) + Coverlet MSBuild coverage tooling setup
+- [ ] 07-02-PLAN.md -- Feature test coverage for BackupService/LogRetentionService/XEditLogFileService (TEST-06), Mutagen update (DEP-01, DEP-02), Code_To_Port removal (POST-01)
 
 ## Progress
 
