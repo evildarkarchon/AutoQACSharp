@@ -42,6 +42,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IMo2ValidationService, Mo2ValidationService>();
         services.AddSingleton<IXEditCommandBuilder, XEditCommandBuilder>();
         services.AddSingleton<IXEditOutputParser, XEditOutputParser>();
+        services.AddSingleton<IXEditLogFileService, XEditLogFileService>();
         services.AddSingleton<ICleaningService, CleaningService>();
         services.AddSingleton<ICleaningOrchestrator, CleaningOrchestrator>();
         return services;

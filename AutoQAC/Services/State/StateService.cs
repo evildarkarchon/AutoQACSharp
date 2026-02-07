@@ -13,6 +13,7 @@ public sealed class StateService : IStateService, IDisposable
     private readonly BehaviorSubject<AppState> _stateSubject = new(new AppState());
     private readonly Subject<(string plugin, CleaningStatus status)> _pluginProcessedSubject = new();
     private readonly Subject<CleaningSessionResult> _cleaningCompletedSubject = new();
+    private readonly Subject<PluginCleaningResult> _detailedPluginResultSubject = new();
     private readonly BehaviorSubject<bool> _isTerminatingSubject = new(false);
 
     // Authoritative state protected by _lock. Updated inside the lock so concurrent
@@ -43,6 +44,9 @@ public sealed class StateService : IStateService, IDisposable
 
     public IObservable<CleaningSessionResult> CleaningCompleted =>
         _cleaningCompletedSubject.AsObservable();
+
+    public IObservable<PluginCleaningResult> DetailedPluginResult =>
+        _detailedPluginResultSubject.AsObservable();
 
     public IObservable<bool> IsTerminatingChanged => _isTerminatingSubject.AsObservable();
 
@@ -118,6 +122,9 @@ public sealed class StateService : IStateService, IDisposable
             _currentSessionResults.Add(result);
         }
 
+        // Emit the detailed result for live per-plugin stat subscribers (e.g., ProgressViewModel)
+        _detailedPluginResultSubject.OnNext(result);
+
         // Also update the basic status tracking
         AddCleaningResult(result.PluginName, result.Status);
     }
@@ -186,6 +193,7 @@ public sealed class StateService : IStateService, IDisposable
         _stateSubject.Dispose();
         _pluginProcessedSubject.Dispose();
         _cleaningCompletedSubject.Dispose();
+        _detailedPluginResultSubject.Dispose();
         _isTerminatingSubject.Dispose();
     }
 }

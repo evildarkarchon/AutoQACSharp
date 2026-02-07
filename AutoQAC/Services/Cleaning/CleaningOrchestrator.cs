@@ -23,6 +23,8 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
     private readonly IConfigurationService _configService;
     private readonly ILoggingService _logger;
     private readonly IProcessExecutionService _processService;
+    private readonly IXEditLogFileService _logFileService;
+    private readonly IXEditOutputParser _outputParser;
     private readonly object _ctsLock = new();
     private readonly object _processLock = new();
 
@@ -40,7 +42,9 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
         IStateService stateService,
         IConfigurationService configService,
         ILoggingService logger,
-        IProcessExecutionService processService)
+        IProcessExecutionService processService,
+        IXEditLogFileService logFileService,
+        IXEditOutputParser outputParser)
     {
         _cleaningService = cleaningService;
         _pluginService = pluginService;
@@ -49,6 +53,8 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
         _configService = configService;
         _logger = logger;
         _processService = processService;
+        _logFileService = logFileService;
+        _outputParser = outputParser;
     }
 
     public Task StartCleaningAsync(CancellationToken ct = default)
@@ -250,6 +256,7 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
 
                 // Clean plugin with retry logic for timeouts
                 var pluginStopwatch = Stopwatch.StartNew();
+                var pluginStartTime = DateTime.UtcNow;
                 CleaningResult result;
                 var attemptNumber = 0;
 
@@ -303,6 +310,31 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
                     _currentProcess = null;
                 }
 
+                // Attempt to enrich stats from the xEdit log file (preferred over stdout stats)
+                var logStats = result.Statistics;
+                string? logParseWarning = null;
+
+                if (result.Success && result.Status == CleaningStatus.Cleaned)
+                {
+                    var xEditPath = config.XEditExecutablePath ?? string.Empty;
+                    var (logLines, logError) = await _logFileService.ReadLogFileAsync(
+                        xEditPath, pluginStartTime, cts.Token).ConfigureAwait(false);
+
+                    if (logError != null)
+                    {
+                        _logger.Warning("Log parse warning for {Plugin}: {Warning}", plugin.FileName, logError);
+                        logParseWarning = logError;
+                        // Keep stdout-based stats as fallback
+                    }
+                    else if (logLines.Count > 0)
+                    {
+                        // Prefer log-file-based stats over stdout stats
+                        logStats = _outputParser.ParseOutput(logLines);
+                        _logger.Debug("Parsed log file stats for {Plugin}: {Removed} ITM, {Undeleted} UDR",
+                            plugin.FileName, logStats.ItemsRemoved, logStats.ItemsUndeleted);
+                    }
+                }
+
                 // Create detailed result
                 var pluginCleaningResult = new PluginCleaningResult
                 {
@@ -313,7 +345,8 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
                         ? $"Cleaning timed out after {attemptNumber} attempts."
                         : result.Message,
                     Duration = pluginStopwatch.Elapsed,
-                    Statistics = result.Statistics
+                    Statistics = logStats,
+                    LogParseWarning = logParseWarning
                 };
                 pluginResults.Add(pluginCleaningResult);
 

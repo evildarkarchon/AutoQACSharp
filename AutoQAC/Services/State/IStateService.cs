@@ -45,6 +45,12 @@ public interface IStateService
     IObservable<CleaningSessionResult> CleaningCompleted { get; }
 
     /// <summary>
+    /// Emits a detailed per-plugin result each time a plugin finishes cleaning.
+    /// Subscribers receive ITM/UDR/Nav stats for live counter badges.
+    /// </summary>
+    IObservable<PluginCleaningResult> DetailedPluginResult { get; }
+
+    /// <summary>
     /// Observable that emits true when stop/termination is in progress.
     /// Foundation for the locked "UI blocking during stop" user decision.
     /// The actual UI spinner will be implemented in a future plan.

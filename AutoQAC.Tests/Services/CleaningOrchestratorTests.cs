@@ -21,6 +21,8 @@ public sealed class CleaningOrchestratorTests
     private readonly Mock<IConfigurationService> _configServiceMock;
     private readonly Mock<ILoggingService> _loggerMock;
     private readonly Mock<IProcessExecutionService> _processServiceMock;
+    private readonly Mock<IXEditLogFileService> _logFileServiceMock;
+    private readonly Mock<IXEditOutputParser> _outputParserMock;
     private readonly CleaningOrchestrator _orchestrator;
 
     public CleaningOrchestratorTests()
@@ -32,6 +34,8 @@ public sealed class CleaningOrchestratorTests
         _configServiceMock = new Mock<IConfigurationService>();
         _loggerMock = new Mock<ILoggingService>();
         _processServiceMock = new Mock<IProcessExecutionService>();
+        _logFileServiceMock = new Mock<IXEditLogFileService>();
+        _outputParserMock = new Mock<IXEditOutputParser>();
 
         // Default mock setup for GetSkipListAsync to return empty list instead of null
         _configServiceMock.Setup(s => s.GetSkipListAsync(It.IsAny<GameType>()))
@@ -41,6 +45,10 @@ public sealed class CleaningOrchestratorTests
         _configServiceMock.Setup(s => s.LoadUserConfigAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new UserConfiguration());
 
+        // Default mock setup for log file service: return empty lines (no log file found)
+        _logFileServiceMock.Setup(s => s.ReadLogFileAsync(It.IsAny<string>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((new List<string>(), (string?)"Log file not found"));
+
         _orchestrator = new CleaningOrchestrator(
             _cleaningServiceMock.Object,
             _pluginServiceMock.Object,
@@ -48,7 +56,9 @@ public sealed class CleaningOrchestratorTests
             _stateServiceMock.Object,
             _configServiceMock.Object,
             _loggerMock.Object,
-            _processServiceMock.Object);
+            _processServiceMock.Object,
+            _logFileServiceMock.Object,
+            _outputParserMock.Object);
     }
 
     [Fact]
@@ -917,7 +927,9 @@ public sealed class CleaningOrchestratorTests
             _stateServiceMock.Object,
             _configServiceMock.Object,
             _loggerMock.Object,
-            _processServiceMock.Object);
+            _processServiceMock.Object,
+            _logFileServiceMock.Object,
+            _outputParserMock.Object);
 
         // Act & Assert
         // Should not throw
