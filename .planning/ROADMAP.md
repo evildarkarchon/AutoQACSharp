@@ -95,11 +95,11 @@ Plans:
   3. When backup is enabled, every plugin is copied to a timestamped backup directory before xEdit touches it
   4. User can browse previous backup sessions and restore individual plugins to their pre-cleaning state
   5. Backup enable/disable and retention settings are configurable in Settings
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 05-01: Dry-run mode (SAFE-01)
-- [ ] 05-02: Backup service and rollback UI (SAFE-02, SAFE-03)
+- [ ] 05-01-PLAN.md -- Dry-run preview mode: DryRunResult model, RunDryRunAsync orchestrator method, Preview button, progress window preview panel (SAFE-01)
+- [ ] 05-02-PLAN.md -- Backup service, orchestrator integration, restore browser window, settings backup section, failure callback dialog (SAFE-02, SAFE-03)
 
 ### Phase 6: UI Polish & Monitoring
 **Goal**: The UI is well-organized, informative, and provides diagnostic tools for troubleshooting xEdit issues
