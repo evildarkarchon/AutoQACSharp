@@ -150,6 +150,23 @@ public sealed class ProgressViewModel : ViewModelBase, IDisposable
         set => this.RaiseAndSetIfChanged(ref _totalNavCount, value);
     }
 
+    // Hang detection warning
+    private bool _isHangWarningVisible;
+    public bool IsHangWarningVisible
+    {
+        get => _isHangWarningVisible;
+        set => this.RaiseAndSetIfChanged(ref _isHangWarningVisible, value);
+    }
+
+    /// <summary>
+    /// True when the user has dismissed the warning via "Wait" -- prevents the warning
+    /// from reappearing until the next hang detection cycle (process resumes then hangs again).
+    /// </summary>
+    private bool _hangWarningDismissed;
+
+    public ReactiveCommand<Unit, Unit> DismissHangWarningCommand { get; }
+    public ReactiveCommand<Unit, Unit> KillHungProcessCommand { get; }
+
     // Dry-run preview mode
     private bool _isPreviewMode;
     public bool IsPreviewMode
@@ -222,6 +239,19 @@ public sealed class ProgressViewModel : ViewModelBase, IDisposable
         // CloseCommand raises an event to request window closure
         CloseCommand = ReactiveCommand.Create(() => CloseRequested?.Invoke(this, EventArgs.Empty));
 
+        // Hang detection commands
+        DismissHangWarningCommand = ReactiveCommand.Create(() =>
+        {
+            IsHangWarningVisible = false;
+            _hangWarningDismissed = true;
+        });
+
+        KillHungProcessCommand = ReactiveCommand.CreateFromTask(async () =>
+        {
+            IsHangWarningVisible = false;
+            await _orchestrator.ForceStopCleaningAsync();
+        });
+
         // StateChanged subscription with throttling for large plugin counts.
         // ObserveOn(MainThreadScheduler) naturally coalesces rapid updates between UI frames.
         // DistinctUntilChanged on IsCleaning ensures session start/stop transitions are never missed.
@@ -242,6 +272,12 @@ public sealed class ProgressViewModel : ViewModelBase, IDisposable
             .ObserveOn(RxApp.MainThreadScheduler)
             .Subscribe(OnCleaningCompleted);
         _disposables.Add(cleaningCompletedSubscription);
+
+        // Subscribe to hang detection from the orchestrator
+        var hangSubscription = _orchestrator.HangDetected
+            .ObserveOn(RxApp.MainThreadScheduler)
+            .Subscribe(OnHangDetected);
+        _disposables.Add(hangSubscription);
 
         // Computed progress text
         _progressText = this.WhenAnyValue(
@@ -308,6 +344,24 @@ public sealed class ProgressViewModel : ViewModelBase, IDisposable
         TotalNavCount = session.TotalPartialFormsCreated;
     }
 
+    private void OnHangDetected(bool isHung)
+    {
+        if (isHung)
+        {
+            // Only show warning if user hasn't dismissed it for this cycle
+            if (!_hangWarningDismissed)
+            {
+                IsHangWarningVisible = true;
+            }
+        }
+        else
+        {
+            // Process resumed or plugin changed -- auto-dismiss warning and reset dismissed flag
+            IsHangWarningVisible = false;
+            _hangWarningDismissed = false;
+        }
+    }
+
     private void ResetForNewSession()
     {
         CompletedPlugins.Clear();
@@ -326,6 +380,8 @@ public sealed class ProgressViewModel : ViewModelBase, IDisposable
         DryRunResults.Clear();
         WillCleanCount = 0;
         WillSkipCount = 0;
+        IsHangWarningVisible = false;
+        _hangWarningDismissed = false;
     }
 
     public void Dispose()

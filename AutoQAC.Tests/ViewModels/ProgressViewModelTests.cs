@@ -45,6 +45,7 @@ public sealed class ProgressViewModelTests
         _stateServiceMock.Setup(s => s.CurrentState).Returns(new AppState());
 
         _orchestratorMock = new Mock<ICleaningOrchestrator>();
+        _orchestratorMock.Setup(o => o.HangDetected).Returns(new Subject<bool>());
     }
 
     /// <summary>

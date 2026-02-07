@@ -6,6 +6,7 @@ using AutoQAC.Services.Configuration;
 using AutoQAC.Services.GameDetection;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Services.Backup;
+using AutoQAC.Services.Monitoring;
 using AutoQAC.Services.Process;
 using AutoQAC.Services.State;
 using FluentAssertions;
@@ -25,6 +26,7 @@ public sealed class CleaningOrchestratorTests
     private readonly Mock<IXEditLogFileService> _logFileServiceMock;
     private readonly Mock<IXEditOutputParser> _outputParserMock;
     private readonly Mock<IBackupService> _backupServiceMock;
+    private readonly Mock<IHangDetectionService> _hangDetectionMock;
     private readonly CleaningOrchestrator _orchestrator;
 
     public CleaningOrchestratorTests()
@@ -39,6 +41,7 @@ public sealed class CleaningOrchestratorTests
         _logFileServiceMock = new Mock<IXEditLogFileService>();
         _outputParserMock = new Mock<IXEditOutputParser>();
         _backupServiceMock = new Mock<IBackupService>();
+        _hangDetectionMock = new Mock<IHangDetectionService>();
 
         // Default mock setup for GetSkipListAsync to return empty list instead of null
         _configServiceMock.Setup(s => s.GetSkipListAsync(It.IsAny<GameType>()))
@@ -62,7 +65,8 @@ public sealed class CleaningOrchestratorTests
             _processServiceMock.Object,
             _logFileServiceMock.Object,
             _outputParserMock.Object,
-            _backupServiceMock.Object);
+            _backupServiceMock.Object,
+            _hangDetectionMock.Object);
     }
 
     [Fact]
@@ -934,7 +938,8 @@ public sealed class CleaningOrchestratorTests
             _processServiceMock.Object,
             _logFileServiceMock.Object,
             _outputParserMock.Object,
-            _backupServiceMock.Object);
+            _backupServiceMock.Object,
+            _hangDetectionMock.Object);
 
         // Act & Assert
         // Should not throw

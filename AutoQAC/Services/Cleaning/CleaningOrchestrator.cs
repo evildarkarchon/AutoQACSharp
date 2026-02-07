@@ -2,12 +2,16 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Reactive.Disposables;
+using System.Reactive.Linq;
+using System.Reactive.Subjects;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.Configuration;
 using AutoQAC.Services.GameDetection;
+using AutoQAC.Services.Monitoring;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Services.Backup;
 using AutoQAC.Services.Process;
@@ -27,6 +31,8 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
     private readonly IBackupService _backupService;
     private readonly IXEditLogFileService _logFileService;
     private readonly IXEditOutputParser _outputParser;
+    private readonly IHangDetectionService _hangDetection;
+    private readonly Subject<bool> _hangDetected = new();
     private readonly object _ctsLock = new();
     private readonly object _processLock = new();
 
@@ -34,8 +40,10 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
     private volatile bool _isStopRequested;
     private System.Diagnostics.Process? _currentProcess;
     private TerminationResult? _lastTerminationResult;
+    private IDisposable? _hangMonitorSubscription;
 
     public TerminationResult? LastTerminationResult => _lastTerminationResult;
+    public IObservable<bool> HangDetected => _hangDetected.AsObservable();
 
     public CleaningOrchestrator(
         ICleaningService cleaningService,
@@ -47,7 +55,8 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
         IProcessExecutionService processService,
         IXEditLogFileService logFileService,
         IXEditOutputParser outputParser,
-        IBackupService backupService)
+        IBackupService backupService,
+        IHangDetectionService hangDetection)
     {
         _cleaningService = cleaningService;
         _pluginService = pluginService;
@@ -59,6 +68,7 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
         _logFileService = logFileService;
         _outputParser = outputParser;
         _backupService = backupService;
+        _hangDetection = hangDetection;
     }
 
     public Task StartCleaningAsync(CancellationToken ct = default)
@@ -372,6 +382,15 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
                             {
                                 _currentProcess = proc;
                             }
+
+                            // Start hang detection monitoring for this process
+                            _hangMonitorSubscription?.Dispose();
+                            _hangMonitorSubscription = _hangDetection.MonitorProcess(proc)
+                                .Subscribe(
+                                    isHung => _hangDetected.OnNext(isHung),
+                                    _ => { }, // Error: monitor completed unexpectedly
+                                    () => { } // Completed: process exited
+                                );
                         }).ConfigureAwait(false);
 
                     // If timed out and callback provided, ask user if they want to retry
@@ -395,6 +414,11 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
                 } while (true);
 
                 pluginStopwatch.Stop();
+
+                // Stop hang monitoring and dismiss any visible warning
+                _hangMonitorSubscription?.Dispose();
+                _hangMonitorSubscription = null;
+                _hangDetected.OnNext(false);
 
                 // Clear the current process reference after plugin is done
                 lock (_processLock)
@@ -543,6 +567,11 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
             // Reset stop flags
             _isStopRequested = false;
             _lastTerminationResult = null;
+
+            // Stop hang monitoring
+            _hangMonitorSubscription?.Dispose();
+            _hangMonitorSubscription = null;
+            _hangDetected.OnNext(false);
 
             // Clear process reference
             lock (_processLock)
@@ -808,6 +837,9 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
 
     public void Dispose()
     {
+        _hangMonitorSubscription?.Dispose();
+        _hangDetected.Dispose();
+
         lock (_ctsLock)
         {
             _cleaningCts?.Dispose();
