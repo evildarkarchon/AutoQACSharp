@@ -98,7 +98,7 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 05-01-PLAN.md -- Dry-run preview mode: DryRunResult model, RunDryRunAsync orchestrator method, Preview button, progress window preview panel (SAFE-01)
+- [x] 05-01-PLAN.md -- Dry-run preview mode: DryRunResult model, RunDryRunAsync orchestrator method, Preview button, progress window preview panel (SAFE-01)
 - [ ] 05-02-PLAN.md -- Backup service, orchestrator integration, restore browser window, settings backup section, failure callback dialog (SAFE-02, SAFE-03)
 
 ### Phase 6: UI Polish & Monitoring
@@ -145,6 +145,6 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
 | 2. Plugin Pipeline Robustness | 2/2 | Complete | 2026-02-06 |
 | 3. Real-Time Feedback | 3/3 | Complete | 2026-02-07 |
 | 4. Configuration Enhancement | 2/2 | Complete | 2026-02-07 |
-| 5. Safety Features | 0/2 | Not started | - |
+| 5. Safety Features | 1/2 | In progress | - |
 | 6. UI Polish & Monitoring | 0/3 | Not started | - |
 | 7. Hardening & Cleanup | 0/2 | Not started | - |
