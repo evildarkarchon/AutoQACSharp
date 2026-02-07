@@ -435,7 +435,29 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
         finally
         {
             _isLoading = false;
+            ValidateLoadedPaths();
         }
+    }
+
+    /// <summary>
+    /// Validates all loaded path values immediately so indicators show
+    /// when the Settings window first opens (without waiting for user interaction).
+    /// </summary>
+    private void ValidateLoadedPaths()
+    {
+        // Required path — always show indicator if populated
+        if (!string.IsNullOrWhiteSpace(XEditPath))
+            IsXEditPathValid = ValidateExecutablePath(XEditPath);
+
+        // Optional paths — only show indicator if non-empty
+        if (!string.IsNullOrWhiteSpace(Mo2Path))
+            IsMo2PathValid = ValidateExecutablePath(Mo2Path);
+
+        if (!string.IsNullOrWhiteSpace(LoadOrderPath))
+            IsLoadOrderPathValid = ValidateFilePath(LoadOrderPath);
+
+        if (!string.IsNullOrWhiteSpace(DataFolderPath))
+            IsDataFolderPathValid = ValidateDirectoryPath(DataFolderPath);
     }
 
     private async Task<bool> SaveAsync()
