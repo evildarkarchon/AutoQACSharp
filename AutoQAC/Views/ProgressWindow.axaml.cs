@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using AutoQAC.ViewModels;
 using Avalonia.Controls;
 
@@ -9,7 +9,7 @@ public partial class ProgressWindow : Window
     public ProgressWindow()
     {
         InitializeComponent();
-        
+
         // Subscribe to ViewModel's CloseRequested event when DataContext changes
         DataContextChanged += OnDataContextChanged;
     }
@@ -31,6 +31,20 @@ public partial class ProgressWindow : Window
             viewModel.Dispose();
         }
         Close();
+    }
+
+    /// <summary>
+    /// Prevents closing the window while cleaning is in progress.
+    /// The user must use the Stop button first, then close after cleaning completes.
+    /// </summary>
+    protected override void OnClosing(WindowClosingEventArgs e)
+    {
+        if (DataContext is ProgressViewModel { IsCleaning: true })
+        {
+            e.Cancel = true;
+            return;
+        }
+        base.OnClosing(e);
     }
 
     protected override void OnClosed(EventArgs e)

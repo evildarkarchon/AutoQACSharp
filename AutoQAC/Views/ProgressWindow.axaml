@@ -1,80 +1,294 @@
-﻿<Window xmlns="https://github.com/avaloniaui"
+<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:AutoQAC.ViewModels"
+        xmlns:models="using:AutoQAC.Models"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        mc:Ignorable="d" d:DesignWidth="600" d:DesignHeight="400"
+        mc:Ignorable="d" d:DesignWidth="600" d:DesignHeight="450"
         x:Class="AutoQAC.Views.ProgressWindow"
         x:DataType="vm:ProgressViewModel"
         Title="Cleaning Progress"
-        Width="600" Height="400"
+        Width="600" Height="450"
         CanResize="False"
         WindowStartupLocation="CenterOwner">
 
-    <Grid Margin="20" RowDefinitions="Auto,Auto,*,Auto">
+    <!-- ==================== ACTIVE CLEANING PANEL ==================== -->
+    <Panel>
+        <Grid Margin="20" RowDefinitions="Auto,Auto,Auto,*,Auto"
+              IsVisible="{Binding !IsShowingResults}">
 
-        <!-- Current Plugin -->
-        <StackPanel Grid.Row="0" Spacing="5">
-            <TextBlock Text="Current Plugin:" FontWeight="SemiBold" />
-            <TextBlock Text="{Binding CurrentPlugin}" FontSize="14" />
-        </StackPanel>
+            <!-- Row 0: Current Plugin + Counter Badges -->
+            <StackPanel Grid.Row="0" Spacing="6">
+                <TextBlock Text="Currently cleaning:"
+                           FontWeight="SemiBold" FontSize="12"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                <TextBlock Text="{Binding CurrentPlugin}"
+                           FontSize="16" FontWeight="Bold"
+                           TextTrimming="CharacterEllipsis" />
 
-        <!-- Progress Bar -->
-        <StackPanel Grid.Row="1" Spacing="5" Margin="0,10,0,0">
-            <Grid ColumnDefinitions="*,Auto">
-                <TextBlock Grid.Column="0" Text="Progress:" FontWeight="SemiBold" />
-                <TextBlock Grid.Column="1" Text="{Binding ProgressText}" />
-            </Grid>
-            <ProgressBar Value="{Binding Progress}"
-                         Maximum="{Binding Total}"
-                         Height="25" />
-        </StackPanel>
+                <!-- Counter Badges -->
+                <StackPanel Orientation="Horizontal" Spacing="8"
+                            IsVisible="{Binding HasCurrentPluginStats}"
+                            Margin="0,2,0,0">
+                    <!-- ITM Badge -->
+                    <Border Background="#2D7D46" CornerRadius="3"
+                            Padding="8,3">
+                        <TextBlock FontWeight="SemiBold" FontSize="12"
+                                   Foreground="White">
+                            <Run Text="ITM: "/><Run Text="{Binding CurrentItmCount}"/>
+                        </TextBlock>
+                    </Border>
 
-        <!-- Statistics -->
-        <StackPanel Grid.Row="2" Spacing="10" Margin="0,10,0,0">
-            <TextBlock Text="Statistics:" FontWeight="SemiBold" />
-            <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto,Auto"
-                  >
-                  <!-- Note: RowGap property replaced with Grid props if needed, 
-                       but standard grid doesn't support RowGap directly in all versions. 
-                       Using Margin in children or rows is safer if not available.
-                       Avalonia 11 supports RowDefinitions with MinHeight? 
-                       Let's assume RowDefinitions works fine. 
-                       Actually Avalonia 11 Grid DOES support RowDefinitions="Auto,Auto..."
-                  -->
-                <TextBlock Grid.Row="0" Grid.Column="0" Text="Cleaned:" />
-                <TextBlock Grid.Row="0" Grid.Column="1"
-                           Text="{Binding CleanedCount}" />
+                    <!-- UDR Badge -->
+                    <Border Background="#B8860B" CornerRadius="3"
+                            Padding="8,3">
+                        <TextBlock FontWeight="SemiBold" FontSize="12"
+                                   Foreground="White">
+                            <Run Text="UDR: "/><Run Text="{Binding CurrentUdrCount}"/>
+                        </TextBlock>
+                    </Border>
 
-                <TextBlock Grid.Row="1" Grid.Column="0" Text="Skipped:" />
-                <TextBlock Grid.Row="1" Grid.Column="1"
-                           Text="{Binding SkippedCount}" />
+                    <!-- Nav Badge -->
+                    <Border Background="#8B4513" CornerRadius="3"
+                            Padding="8,3">
+                        <TextBlock FontWeight="SemiBold" FontSize="12"
+                                   Foreground="White">
+                            <Run Text="Nav: "/><Run Text="{Binding CurrentNavCount}"/>
+                        </TextBlock>
+                    </Border>
+                </StackPanel>
+            </StackPanel>
 
-                <TextBlock Grid.Row="2" Grid.Column="0" Text="Failed:" />
-                <TextBlock Grid.Row="2" Grid.Column="1"
-                           Text="{Binding FailedCount}" />
-
-                <TextBlock Grid.Row="3" Grid.Column="0" Text="Total:" />
-                <TextBlock Grid.Row="3" Grid.Column="1"
-                           Text="{Binding Total}" />
-            </Grid>
-
-            <!-- Completed Plugins (placeholder, redesigned in Task 2) -->
-            <TextBlock Text="Completed:" FontWeight="SemiBold" Margin="0,10,0,0" />
-        </StackPanel>
-
-        <!-- Buttons -->
-        <StackPanel Grid.Row="3"
-                    Orientation="Horizontal"
-                    HorizontalAlignment="Right"
-                    Spacing="10"
+            <!-- Row 1: Summary Bar -->
+            <Border Grid.Row="1"
+                    Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
+                    CornerRadius="4" Padding="10,6"
                     Margin="0,10,0,0">
-            <Button Content="Stop"
-                    Command="{Binding StopCommand}"
-                    MinWidth="100" />
-            <Button Content="Close"
-                    Command="{Binding CloseCommand}"
-                    MinWidth="100" />
-        </StackPanel>
-    </Grid>
+                <TextBlock FontSize="13">
+                    <Run Text="{Binding Progress}"/><Run Text="/"/><Run Text="{Binding Total}"/>
+                    <Run Text=" plugins"/>
+                    <Run Text=" -- "/>
+                    <Run Text="{Binding SkippedCount}"/><Run Text=" skipped, "/>
+                    <Run Text="{Binding FailedCount}"/><Run Text=" failed"/>
+                </TextBlock>
+            </Border>
+
+            <!-- Row 2: Progress Bar -->
+            <StackPanel Grid.Row="2" Spacing="4" Margin="0,10,0,0">
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Grid.Column="0" Text="Progress:" FontWeight="SemiBold" />
+                    <TextBlock Grid.Column="1" Text="{Binding ProgressText}" />
+                </Grid>
+                <ProgressBar Value="{Binding Progress}"
+                             Maximum="{Binding Total}"
+                             Height="25" />
+            </StackPanel>
+
+            <!-- Row 3: Completed Plugins List -->
+            <Grid Grid.Row="3" RowDefinitions="Auto,*" Margin="0,10,0,0">
+                <TextBlock Grid.Row="0" Text="Completed:" FontWeight="SemiBold"
+                           Margin="0,0,0,4" />
+                <Border Grid.Row="1"
+                        BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                        BorderThickness="1" CornerRadius="4">
+                    <ScrollViewer>
+                        <ItemsControl ItemsSource="{Binding CompletedPlugins}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="models:PluginCleaningResult">
+                                    <Border Padding="8,4"
+                                            BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                            BorderThickness="0,0,0,1">
+                                        <Grid ColumnDefinitions="*,Auto,Auto">
+                                            <!-- Plugin name -->
+                                            <TextBlock Grid.Column="0"
+                                                       Text="{Binding PluginName}"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       VerticalAlignment="Center" />
+
+                                            <!-- Summary (ITMs, UDRs, etc.) -->
+                                            <TextBlock Grid.Column="1"
+                                                       Text="{Binding Summary}"
+                                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                                       FontSize="12"
+                                                       Margin="10,0"
+                                                       VerticalAlignment="Center" />
+
+                                            <!-- Log parse warning indicator -->
+                                            <TextBlock Grid.Column="2"
+                                                       Text="!"
+                                                       FontWeight="Bold"
+                                                       Foreground="#DAA520"
+                                                       FontSize="14"
+                                                       VerticalAlignment="Center"
+                                                       IsVisible="{Binding HasLogParseWarning}"
+                                                       ToolTip.Tip="{Binding LogParseWarning}" />
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Border>
+            </Grid>
+
+            <!-- Row 4: Stop Button -->
+            <StackPanel Grid.Row="4"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Right"
+                        Margin="0,10,0,0">
+                <Button Content="Stop"
+                        Command="{Binding StopCommand}"
+                        MinWidth="100" />
+            </StackPanel>
+        </Grid>
+
+        <!-- ==================== RESULTS SUMMARY PANEL ==================== -->
+        <Grid Margin="20" RowDefinitions="Auto,Auto,Auto,*,Auto"
+              IsVisible="{Binding IsShowingResults}">
+
+            <!-- Row 0: Session Header -->
+            <StackPanel Grid.Row="0" Spacing="4">
+                <!-- Header text toggles between Complete/Cancelled -->
+                <TextBlock Text="Cleaning Complete"
+                           FontSize="20" FontWeight="Bold"
+                           IsVisible="{Binding !WasCancelled}" />
+                <TextBlock Text="Cleaning Cancelled"
+                           FontSize="20" FontWeight="Bold"
+                           Foreground="#DAA520"
+                           IsVisible="{Binding WasCancelled}" />
+                <TextBlock Text="{Binding SessionSummaryText}"
+                           FontSize="13"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+            </StackPanel>
+
+            <!-- Row 1: Plugin Count Totals -->
+            <Border Grid.Row="1"
+                    Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
+                    CornerRadius="4" Padding="15" Margin="0,10,0,0">
+                <Grid ColumnDefinitions="*,*,*">
+                    <StackPanel Grid.Column="0" HorizontalAlignment="Center">
+                        <TextBlock Text="{Binding CleanedCount}"
+                                   FontSize="24" FontWeight="Bold"
+                                   Foreground="Green"
+                                   HorizontalAlignment="Center" />
+                        <TextBlock Text="Cleaned" FontSize="12"
+                                   HorizontalAlignment="Center"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="1" HorizontalAlignment="Center">
+                        <TextBlock Text="{Binding SkippedCount}"
+                                   FontSize="24" FontWeight="Bold"
+                                   Foreground="Orange"
+                                   HorizontalAlignment="Center" />
+                        <TextBlock Text="Skipped" FontSize="12"
+                                   HorizontalAlignment="Center"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="2" HorizontalAlignment="Center">
+                        <TextBlock Text="{Binding FailedCount}"
+                                   FontSize="24" FontWeight="Bold"
+                                   Foreground="Red"
+                                   HorizontalAlignment="Center" />
+                        <TextBlock Text="Failed" FontSize="12"
+                                   HorizontalAlignment="Center"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- Row 2: Cleaning Stats Totals -->
+            <Border Grid.Row="2"
+                    Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
+                    CornerRadius="4" Padding="15" Margin="0,8,0,0">
+                <Grid ColumnDefinitions="*,*,*">
+                    <StackPanel Grid.Column="0" HorizontalAlignment="Center">
+                        <TextBlock Text="{Binding TotalItmCount}"
+                                   FontSize="20" FontWeight="SemiBold"
+                                   HorizontalAlignment="Center" />
+                        <TextBlock Text="ITMs Removed" FontSize="11"
+                                   HorizontalAlignment="Center"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="1" HorizontalAlignment="Center">
+                        <TextBlock Text="{Binding TotalUdrCount}"
+                                   FontSize="20" FontWeight="SemiBold"
+                                   HorizontalAlignment="Center" />
+                        <TextBlock Text="UDRs Fixed" FontSize="11"
+                                   HorizontalAlignment="Center"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="2" HorizontalAlignment="Center">
+                        <TextBlock Text="{Binding TotalNavCount}"
+                                   FontSize="20" FontWeight="SemiBold"
+                                   HorizontalAlignment="Center" />
+                        <TextBlock Text="Navmeshes" FontSize="11"
+                                   HorizontalAlignment="Center"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- Row 3: Per-Plugin Results List -->
+            <Grid Grid.Row="3" RowDefinitions="Auto,*" Margin="0,10,0,0">
+                <TextBlock Grid.Row="0" Text="Plugin Details:" FontWeight="SemiBold"
+                           Margin="0,0,0,4" />
+                <Border Grid.Row="1"
+                        BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                        BorderThickness="1" CornerRadius="4">
+                    <ScrollViewer>
+                        <ItemsControl ItemsSource="{Binding CompletedPlugins}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="models:PluginCleaningResult">
+                                    <Border Padding="8,4"
+                                            BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                            BorderThickness="0,0,0,1">
+                                        <Grid ColumnDefinitions="*,Auto,Auto">
+                                            <!-- Plugin name -->
+                                            <TextBlock Grid.Column="0"
+                                                       Text="{Binding PluginName}"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       VerticalAlignment="Center" />
+
+                                            <!-- Summary -->
+                                            <TextBlock Grid.Column="1"
+                                                       Text="{Binding Summary}"
+                                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                                       FontSize="12"
+                                                       Margin="10,0"
+                                                       VerticalAlignment="Center" />
+
+                                            <!-- Log parse warning indicator -->
+                                            <TextBlock Grid.Column="2"
+                                                       Text="!"
+                                                       FontWeight="Bold"
+                                                       Foreground="#DAA520"
+                                                       FontSize="14"
+                                                       VerticalAlignment="Center"
+                                                       IsVisible="{Binding HasLogParseWarning}"
+                                                       ToolTip.Tip="{Binding LogParseWarning}" />
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Border>
+            </Grid>
+
+            <!-- Row 4: Close Button -->
+            <StackPanel Grid.Row="4"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Right"
+                        Margin="0,10,0,0">
+                <Button Content="Close"
+                        Command="{Binding CloseCommand}"
+                        IsDefault="True"
+                        MinWidth="100" />
+            </StackPanel>
+        </Grid>
+    </Panel>
 </Window>
