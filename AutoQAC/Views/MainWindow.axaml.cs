@@ -1,4 +1,5 @@
-﻿using System.Reactive;
+﻿using System.Collections.Generic;
+using System.Reactive;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
@@ -51,6 +52,9 @@ public partial class MainWindow : Window
 
         // Register the interaction handler for showing progress window
         viewModel.ShowProgressInteraction.RegisterHandler(ShowProgressAsync);
+
+        // Register the interaction handler for showing dry-run preview
+        viewModel.ShowPreviewInteraction.RegisterHandler(ShowPreviewAsync);
     }
 
     private async Task ShowCleaningResultsAsync(IInteractionContext<CleaningSessionResult, Unit> context)
@@ -136,6 +140,33 @@ public partial class MainWindow : Window
         };
 
         // Show non-modal - the window stays open and user can close it when done
+        progressWindow.Show(this);
+
+        context.SetOutput(Unit.Default);
+        return Task.CompletedTask;
+    }
+
+    private Task ShowPreviewAsync(IInteractionContext<List<DryRunResult>, Unit> context)
+    {
+        if (_stateService == null || _orchestrator == null)
+        {
+            context.SetOutput(Unit.Default);
+            return Task.CompletedTask;
+        }
+
+        var progressViewModel = new ProgressViewModel(_stateService, _orchestrator);
+        progressViewModel.LoadDryRunResults(context.Input);
+
+        var progressWindow = new ProgressWindow
+        {
+            DataContext = progressViewModel,
+            Title = "Dry-Run Preview"
+        };
+
+        // Subscribe to CloseRequested to close the window
+        progressViewModel.CloseRequested += (_, _) => progressWindow.Close();
+
+        // Show non-modal
         progressWindow.Show(this);
 
         context.SetOutput(Unit.Default);

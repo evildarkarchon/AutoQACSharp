@@ -316,6 +316,10 @@
                         Orientation="Horizontal"
                         HorizontalAlignment="Right"
                         Spacing="10">
+                <Button Content="Preview"
+                        Command="{Binding PreviewCommand}"
+                        ToolTip.Tip="Preview which plugins will be cleaned or skipped (without running xEdit)"
+                        MinWidth="120" />
                 <Button Content="Start Cleaning"
                         Command="{Binding StartCleaningCommand}"
                         IsEnabled="{Binding CanStartCleaning}"

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Reactive;
@@ -149,6 +150,49 @@ public sealed class ProgressViewModel : ViewModelBase, IDisposable
         set => this.RaiseAndSetIfChanged(ref _totalNavCount, value);
     }
 
+    // Dry-run preview mode
+    private bool _isPreviewMode;
+    public bool IsPreviewMode
+    {
+        get => _isPreviewMode;
+        set => this.RaiseAndSetIfChanged(ref _isPreviewMode, value);
+    }
+
+    public ObservableCollection<DryRunResult> DryRunResults { get; } = new();
+
+    public string PreviewDisclaimer => "Preview only -- does not detect ITMs/UDRs (requires xEdit)";
+
+    private int _willCleanCount;
+    public int WillCleanCount
+    {
+        get => _willCleanCount;
+        set => this.RaiseAndSetIfChanged(ref _willCleanCount, value);
+    }
+
+    private int _willSkipCount;
+    public int WillSkipCount
+    {
+        get => _willSkipCount;
+        set => this.RaiseAndSetIfChanged(ref _willSkipCount, value);
+    }
+
+    /// <summary>
+    /// Loads dry-run preview results into the ViewModel.
+    /// Sets IsPreviewMode to true and populates the DryRunResults collection.
+    /// </summary>
+    public void LoadDryRunResults(List<DryRunResult> results)
+    {
+        IsPreviewMode = true;
+        DryRunResults.Clear();
+        foreach (var result in results)
+        {
+            DryRunResults.Add(result);
+        }
+        WillCleanCount = results.Count(r => r.Status == DryRunStatus.WillClean);
+        WillSkipCount = results.Count(r => r.Status == DryRunStatus.WillSkip);
+        IsShowingResults = true;
+    }
+
     public ReactiveCommand<Unit, Unit> StopCommand { get; }
 
     /// <summary>
@@ -278,6 +322,10 @@ public sealed class ProgressViewModel : ViewModelBase, IDisposable
         SessionResult = null;
         WasCancelled = false;
         SessionSummaryText = string.Empty;
+        IsPreviewMode = false;
+        DryRunResults.Clear();
+        WillCleanCount = 0;
+        WillSkipCount = 0;
     }
 
     public void Dispose()

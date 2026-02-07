@@ -223,6 +223,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
     public ReactiveCommand<Unit, Unit> SelectAllCommand { get; }
     public ReactiveCommand<Unit, Unit> DeselectAllCommand { get; }
     public ReactiveCommand<Unit, Unit> DismissValidationCommand { get; }
+    public ReactiveCommand<Unit, Unit> PreviewCommand { get; }
     public ReactiveCommand<Unit, Unit> DismissMigrationWarningCommand { get; }
 
     /// <summary>
@@ -230,6 +231,12 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
     /// The window is shown non-modal and remains open until user closes it.
     /// </summary>
     public Interaction<Unit, Unit> ShowProgressInteraction { get; } = new();
+
+    /// <summary>
+    /// Interaction for showing the dry-run preview in the progress window.
+    /// Passes the list of DryRunResult entries to display.
+    /// </summary>
+    public Interaction<List<DryRunResult>, Unit> ShowPreviewInteraction { get; } = new();
 
     /// <summary>
     /// Interaction for showing the cleaning results window.
@@ -321,6 +328,10 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
 
         StartCleaningCommand = ReactiveCommand.CreateFromTask(
             StartCleaningAsync,
+            canStart);
+
+        PreviewCommand = ReactiveCommand.CreateFromTask(
+            RunPreviewAsync,
             canStart);
 
         StopCleaningCommand = ReactiveCommand.CreateFromTask(
@@ -847,6 +858,54 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
             await _messageDialog.ShowErrorAsync(
                 "Cleaning Failed",
                 "An error occurred during the cleaning process.",
+                $"Error: {ex.Message}\n\nStack Trace:\n{ex.StackTrace}");
+        }
+    }
+
+    private async Task RunPreviewAsync()
+    {
+        // Clear previous validation errors (same as StartCleaningAsync)
+        ValidationErrors.Clear();
+        HasValidationErrors = false;
+
+        // Run pre-clean validation (same as StartCleaningAsync)
+        var errors = ValidatePreClean();
+        if (errors.Count > 0)
+        {
+            foreach (var error in errors)
+                ValidationErrors.Add(error);
+            HasValidationErrors = true;
+            return;
+        }
+
+        try
+        {
+            StatusText = "Running preview...";
+            var results = await _orchestrator.RunDryRunAsync();
+
+            // Show preview in progress window via interaction
+            _ = ShowPreviewInteraction.Handle(results);
+
+            StatusText = "Preview complete";
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.Error(ex, "Configuration validation failed before preview");
+            ValidationErrors.Clear();
+            ValidationErrors.Add(new ValidationError(
+                "Configuration error",
+                ex.Message,
+                "Check your configuration in Edit > Settings."));
+            HasValidationErrors = true;
+            StatusText = "Configuration error";
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"Error: {ex.Message}";
+            _logger.Error(ex, "RunPreviewAsync failed");
+            await _messageDialog.ShowErrorAsync(
+                "Preview Failed",
+                "An error occurred while running the preview.",
                 $"Error: {ex.Message}\n\nStack Trace:\n{ex.StackTrace}");
         }
     }

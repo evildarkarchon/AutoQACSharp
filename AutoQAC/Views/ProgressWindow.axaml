@@ -26,7 +26,7 @@
                            FontSize="16" FontWeight="Bold"
                            TextTrimming="CharacterEllipsis" />
 
-                <!-- Counter Badges -->
+                <!-- Counter Badges (hidden in preview mode) -->
                 <StackPanel Orientation="Horizontal" Spacing="8"
                             IsVisible="{Binding HasCurrentPluginStats}"
                             Margin="0,2,0,0">
@@ -143,11 +143,13 @@
         </Grid>
 
         <!-- ==================== RESULTS SUMMARY PANEL ==================== -->
+        <!-- Visible when showing results AND NOT in preview mode -->
         <Grid Margin="20" RowDefinitions="Auto,Auto,Auto,*,Auto"
-              IsVisible="{Binding IsShowingResults}">
+              IsVisible="{Binding !IsPreviewMode, FallbackValue=True}">
 
             <!-- Row 0: Session Header -->
-            <StackPanel Grid.Row="0" Spacing="4">
+            <StackPanel Grid.Row="0" Spacing="4"
+                        IsVisible="{Binding IsShowingResults}">
                 <!-- Header text toggles between Complete/Cancelled -->
                 <TextBlock Text="Cleaning Complete"
                            FontSize="20" FontWeight="Bold"
@@ -163,6 +165,7 @@
 
             <!-- Row 1: Plugin Count Totals -->
             <Border Grid.Row="1"
+                    IsVisible="{Binding IsShowingResults}"
                     Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
                     CornerRadius="4" Padding="15" Margin="0,10,0,0">
                 <Grid ColumnDefinitions="*,*,*">
@@ -200,6 +203,7 @@
 
             <!-- Row 2: Cleaning Stats Totals -->
             <Border Grid.Row="2"
+                    IsVisible="{Binding IsShowingResults}"
                     Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
                     CornerRadius="4" Padding="15" Margin="0,8,0,0">
                 <Grid ColumnDefinitions="*,*,*">
@@ -233,7 +237,8 @@
             </Border>
 
             <!-- Row 3: Per-Plugin Results List -->
-            <Grid Grid.Row="3" RowDefinitions="Auto,*" Margin="0,10,0,0">
+            <Grid Grid.Row="3" RowDefinitions="Auto,*" Margin="0,10,0,0"
+                  IsVisible="{Binding IsShowingResults}">
                 <TextBlock Grid.Row="0" Text="Plugin Details:" FontWeight="SemiBold"
                            Margin="0,0,0,4" />
                 <Border Grid.Row="1"
@@ -270,6 +275,107 @@
                                                        VerticalAlignment="Center"
                                                        IsVisible="{Binding HasLogParseWarning}"
                                                        ToolTip.Tip="{Binding LogParseWarning}" />
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Border>
+            </Grid>
+
+            <!-- Row 4: Close Button -->
+            <StackPanel Grid.Row="4"
+                        IsVisible="{Binding IsShowingResults}"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Right"
+                        Margin="0,10,0,0">
+                <Button Content="Close"
+                        Command="{Binding CloseCommand}"
+                        IsDefault="True"
+                        MinWidth="100" />
+            </StackPanel>
+        </Grid>
+
+        <!-- ==================== DRY-RUN PREVIEW PANEL ==================== -->
+        <Grid Margin="20" RowDefinitions="Auto,Auto,Auto,*,Auto"
+              IsVisible="{Binding IsPreviewMode}">
+
+            <!-- Row 0: Preview Header -->
+            <StackPanel Grid.Row="0" Spacing="4">
+                <TextBlock Text="Dry-Run Preview"
+                           FontSize="20" FontWeight="Bold"
+                           Foreground="#1565C0" />
+            </StackPanel>
+
+            <!-- Row 1: Disclaimer Banner -->
+            <Border Grid.Row="1"
+                    Background="#E3F2FD"
+                    BorderBrush="#1565C0"
+                    BorderThickness="1"
+                    CornerRadius="4"
+                    Padding="10,8"
+                    Margin="0,10,0,0">
+                <TextBlock Text="{Binding PreviewDisclaimer}"
+                           TextWrapping="Wrap"
+                           Foreground="#0D47A1"
+                           FontSize="12" />
+            </Border>
+
+            <!-- Row 2: Summary Bar -->
+            <Border Grid.Row="2"
+                    Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
+                    CornerRadius="4" Padding="10,8"
+                    Margin="0,8,0,0">
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                    <TextBlock FontSize="13" FontWeight="SemiBold"
+                               Foreground="#2D7D46">
+                        <Run Text="{Binding WillCleanCount}"/><Run Text=" will be cleaned"/>
+                    </TextBlock>
+                    <TextBlock Text=", " FontSize="13" />
+                    <TextBlock FontSize="13" FontWeight="SemiBold"
+                               Foreground="#E65100">
+                        <Run Text="{Binding WillSkipCount}"/><Run Text=" will be skipped"/>
+                    </TextBlock>
+                </StackPanel>
+            </Border>
+
+            <!-- Row 3: Per-Plugin Preview List -->
+            <Grid Grid.Row="3" RowDefinitions="Auto,*" Margin="0,10,0,0">
+                <TextBlock Grid.Row="0" Text="Plugin Details:" FontWeight="SemiBold"
+                           Margin="0,0,0,4" />
+                <Border Grid.Row="1"
+                        BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                        BorderThickness="1" CornerRadius="4">
+                    <ScrollViewer>
+                        <ItemsControl ItemsSource="{Binding DryRunResults}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="models:DryRunResult">
+                                    <Border Padding="8,4"
+                                            BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                            BorderThickness="0,0,0,1">
+                                        <Grid ColumnDefinitions="*,Auto,Auto">
+                                            <!-- Plugin name -->
+                                            <TextBlock Grid.Column="0"
+                                                       Text="{Binding PluginName}"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       VerticalAlignment="Center" />
+
+                                            <!-- Status text -->
+                                            <TextBlock Grid.Column="1"
+                                                       Text="{Binding Status}"
+                                                       FontWeight="SemiBold"
+                                                       FontSize="12"
+                                                       Margin="10,0"
+                                                       VerticalAlignment="Center" />
+
+                                            <!-- Reason -->
+                                            <TextBlock Grid.Column="2"
+                                                       Text="{Binding Reason}"
+                                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                                       FontSize="12"
+                                                       Margin="10,0"
+                                                       VerticalAlignment="Center" />
                                         </Grid>
                                     </Border>
                                 </DataTemplate>
