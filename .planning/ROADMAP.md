@@ -111,12 +111,12 @@ Plans:
   3. Application startup logs xEdit path, game type, MO2 status, and load order size; session completion logs a summary of results
   4. When xEdit appears hung (CPU usage near zero for an extended period), the application detects it and offers the user a choice to wait or terminate
   5. xEdit log file contents are accessible for diagnostics without leaving the application
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 06-01: MainWindowViewModel decomposition (UI-02)
-- [ ] 06-02: About dialog and logging improvements (UI-01, UI-03)
-- [ ] 06-03: CPU monitoring and log file tailing (PROC-05, MON-01)
+- [ ] 06-01-PLAN.md -- MainWindowViewModel decomposition into ConfigurationViewModel, PluginListViewModel, CleaningCommandsViewModel with parent mediation (UI-02)
+- [ ] 06-02-PLAN.md -- About dialog with version/build/update info, startup logging, session summary logging (UI-01, UI-03)
+- [ ] 06-03-PLAN.md -- CPU-based hang detection service, inline warning banner in progress window (PROC-05)
 
 ### Phase 7: Hardening & Cleanup
 **Goal**: Critical paths have 80%+ test coverage, dependencies are current, and the reference implementation code is removed
