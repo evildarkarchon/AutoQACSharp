@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-06)
 
 **Core value:** Reliably clean every plugin in a load order with one click, without corrupting game data or cleaning plugins that shouldn't be touched.
-**Current focus:** Phase 6 - UI Polish & Monitoring (NEXT)
+**Current focus:** Phase 6 - UI Polish & Monitoring (In progress)
 
 ## Current Position
 
 Phase: 6 of 7 (UI Polish & Monitoring)
-Plan: 0 of 3 in current phase
-Status: Not started
-Last activity: 2026-02-07 -- Completed Phase 5 (Safety Features)
+Plan: 1 of 3 in current phase
+Status: In progress
+Last activity: 2026-02-07 -- Completed 06-01-PLAN.md (ViewModel Decomposition)
 
-Progress: [############..] 80% (12/15 plans)
+Progress: [#############.] 86% (12/14 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 12
-- Average duration: 8.8 minutes
-- Total execution time: 1.8 hours
+- Total plans completed: 13
+- Average duration: 9.1 minutes
+- Total execution time: 2.0 hours
 
 **By Phase:**
 
@@ -32,9 +32,10 @@ Progress: [############..] 80% (12/15 plans)
 | 3 - Real-Time Feedback | 3/3 | 30m | 10m |
 | 4 - Configuration | 2/2 | 21.5m | 10.75m |
 | 5 - Safety Features | 2/2 | 28m | 14m |
+| 6 - UI Polish | 1/3 | 12m | 12m |
 
 **Recent Trend:**
-- Last 5 plans: 04-01 (6.5m), 04-02 (15m), 05-01 (6m), 05-02 (22m)
+- Last 5 plans: 04-02 (15m), 05-01 (6m), 05-02 (22m), 06-01 (12m)
 - Trend: Stable
 
 *Updated after each plan completion*
@@ -93,6 +94,11 @@ Recent decisions affecting current work:
 - [05-02]: Backup enabled by default for new users (BackupSettings.Enabled = true)
 - [05-02]: Session metadata stored as session.json using System.Text.Json (not YAML)
 - [05-02]: Backup root derived from first valid plugin's FullPath directory parent
+- [06-01]: Interaction references passed from parent to CleaningCommandsViewModel constructor (avoids extra event plumbing)
+- [06-01]: canStart observable derives entirely from IStateService.StateChanged (avoids cross-VM reactive chains)
+- [06-01]: Sub-VMs created directly by parent (not DI-registered) -- simpler lifecycle, no container bloat
+- [06-01]: StatusText lives on ConfigurationViewModel (status bar), not CleaningCommandsViewModel
+- [06-01]: ResetSettingsCommand on ConfigurationViewModel (settings concern, not cleaning concern)
 
 ### Pending Todos
 
@@ -108,5 +114,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-02-07
-Stopped at: Completed Phase 5 (Safety Features)
+Stopped at: Completed 06-01-PLAN.md (ViewModel Decomposition)
 Resume file: None
