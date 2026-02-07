@@ -243,6 +243,50 @@
 
                 <Separator />
 
+                <!-- Plugin Backup Section -->
+                <StackPanel Spacing="10">
+                    <TextBlock Text="Plugin Backup"
+                               FontSize="14" FontWeight="SemiBold" />
+
+                    <CheckBox Content="Enable plugin backup before cleaning"
+                              IsChecked="{Binding BackupEnabled}" />
+
+                    <TextBlock Text="Plugins are backed up to a folder next to the game's Data directory"
+                               FontSize="11"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                               TextWrapping="Wrap"
+                               Margin="28,0,0,0"
+                               IsVisible="{Binding BackupEnabled}" />
+
+                    <Grid ColumnDefinitions="180,*"
+                          IsVisible="{Binding BackupEnabled}">
+                        <TextBlock Grid.Column="0"
+                                   Text="Sessions to Keep:"
+                                   VerticalAlignment="Center" />
+                        <StackPanel Grid.Column="1">
+                            <NumericUpDown Value="{Binding BackupMaxSessions}"
+                                           Minimum="1"
+                                           Maximum="100"
+                                           Increment="1"
+                                           FormatString="N0" />
+                            <TextBlock Text="{Binding BackupMaxSessionsError}"
+                                       Foreground="Red"
+                                       FontSize="11"
+                                       IsVisible="{Binding BackupMaxSessionsError,
+                                                   Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                        </StackPanel>
+                    </Grid>
+
+                    <TextBlock Text="Backup is unavailable in MO2 mode"
+                               FontSize="11"
+                               Foreground="#E6A817"
+                               FontStyle="Italic"
+                               Margin="28,0,0,0"
+                               IsVisible="{Binding Mo2Mode}" />
+                </StackPanel>
+
+                <Separator />
+
                 <!-- Mode Settings Section -->
                 <StackPanel Spacing="10">
                     <TextBlock Text="Mode Settings"

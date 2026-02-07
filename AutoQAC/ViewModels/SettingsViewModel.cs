@@ -25,6 +25,7 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
     // Original values for tracking unsaved changes
     private AutoQacSettings _originalSettings = new();
     private RetentionSettings _originalRetention = new();
+    private BackupSettings _originalBackupSettings = new();
     private string? _originalXEditPath;
     private string? _originalMo2Path;
     private string? _originalLoadOrderPath;
@@ -194,6 +195,31 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
 
     #endregion
 
+    #region Backup Properties
+
+    private bool _backupEnabled = true;
+    public bool BackupEnabled
+    {
+        get => _backupEnabled;
+        set => this.RaiseAndSetIfChanged(ref _backupEnabled, value);
+    }
+
+    private int _backupMaxSessions = 10;
+    public int BackupMaxSessions
+    {
+        get => _backupMaxSessions;
+        set => this.RaiseAndSetIfChanged(ref _backupMaxSessions, value);
+    }
+
+    private string? _backupMaxSessionsError;
+    public string? BackupMaxSessionsError
+    {
+        get => _backupMaxSessionsError;
+        set => this.RaiseAndSetIfChanged(ref _backupMaxSessionsError, value);
+    }
+
+    #endregion
+
     #region Computed Properties
 
     private readonly ObservableAsPropertyHelper<bool> _hasValidationErrors;
@@ -245,19 +271,23 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
         var retentionValid = this.WhenAnyValue(x => x.MaxAgeDays, x => x.MaxFileCount)
             .Select(t => t.Item1 >= 1 && t.Item2 >= 1);
 
+        var backupMaxSessionsValid = this.WhenAnyValue(x => x.BackupMaxSessions)
+            .Select(v => v is >= 1 and <= 100);
+
         // Aggregate validation
         var allValid = cleaningTimeoutValid.CombineLatest(journalExpirationValid,
             cpuThresholdValid,
             maxSubprocessesValid,
             retentionValid,
-            (ct, je, cpu, max, ret) => ct && je && cpu && max && ret);
+            backupMaxSessionsValid,
+            (ct, je, cpu, max, ret, bms) => ct && je && cpu && max && ret && bms);
 
         _hasValidationErrors = allValid
             .Select(valid => !valid)
             .ToProperty(this, x => x.HasValidationErrors);
         _disposables.Add(_hasValidationErrors);
 
-        // Track unsaved changes (including paths and retention)
+        // Track unsaved changes (including paths, retention, and backup settings)
         var currentValues = Observable.CombineLatest(
             this.WhenAnyValue(x => x.JournalExpiration),
             this.WhenAnyValue(x => x.CleaningTimeout),
@@ -271,8 +301,10 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
             this.WhenAnyValue(x => x.RetentionMode),
             this.WhenAnyValue(x => x.MaxAgeDays),
             this.WhenAnyValue(x => x.MaxFileCount),
-            (je, ct, cpu, mo2, max, xedit, mo2p, lo, df, rm, mad, mfc) =>
-                new { je, ct, cpu, mo2, max, xedit, mo2p, lo, df, rm, mad, mfc });
+            this.WhenAnyValue(x => x.BackupEnabled),
+            this.WhenAnyValue(x => x.BackupMaxSessions),
+            (je, ct, cpu, mo2, max, xedit, mo2p, lo, df, rm, mad, mfc, be, bms) =>
+                new { je, ct, cpu, mo2, max, xedit, mo2p, lo, df, rm, mad, mfc, be, bms });
 
         _hasUnsavedChanges = currentValues
             .Select(v =>
@@ -287,7 +319,9 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
                 v.df != _originalDataFolderPath ||
                 v.rm != (int)_originalRetention.Mode ||
                 v.mad != _originalRetention.MaxAgeDays ||
-                v.mfc != _originalRetention.MaxFileCount)
+                v.mfc != _originalRetention.MaxFileCount ||
+                v.be != _originalBackupSettings.Enabled ||
+                v.bms != _originalBackupSettings.MaxSessions)
             .ToProperty(this, x => x.HasUnsavedChanges);
         _disposables.Add(_hasUnsavedChanges);
 
@@ -314,6 +348,12 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
                 ? null
                 : "Expiration must be between 1 and 365 days");
         _disposables.Add(expirationErrorSubscription);
+
+        var backupMaxSessionsErrorSubscription = this.WhenAnyValue(x => x.BackupMaxSessions)
+            .Subscribe(v => BackupMaxSessionsError = v is >= 1 and <= 100
+                ? null
+                : "Sessions to keep must be between 1 and 100");
+        _disposables.Add(backupMaxSessionsErrorSubscription);
 
         // Set up debounced path validation pipelines
         // Each pipeline skips the initial WhenAnyValue emission (before LoadSettingsAsync)
@@ -425,6 +465,11 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
             RetentionMode = (int)config.LogRetention.Mode;
             MaxAgeDays = config.LogRetention.MaxAgeDays;
             MaxFileCount = config.LogRetention.MaxFileCount;
+
+            // Load backup settings
+            _originalBackupSettings = config.Backup;
+            BackupEnabled = config.Backup.Enabled;
+            BackupMaxSessions = config.Backup.MaxSessions;
         }
         catch (Exception ex)
         {
@@ -483,6 +528,10 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
             config.LogRetention.MaxAgeDays = MaxAgeDays;
             config.LogRetention.MaxFileCount = MaxFileCount;
 
+            // Save backup settings
+            config.Backup.Enabled = BackupEnabled;
+            config.Backup.MaxSessions = BackupMaxSessions;
+
             await _configService.SaveUserConfigAsync(config);
             _logger.Information("Settings saved successfully");
 
@@ -508,6 +557,10 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
         RetentionMode = (int)retentionDefaults.Mode;
         MaxAgeDays = retentionDefaults.MaxAgeDays;
         MaxFileCount = retentionDefaults.MaxFileCount;
+
+        var backupDefaults = new BackupSettings();
+        BackupEnabled = backupDefaults.Enabled;
+        BackupMaxSessions = backupDefaults.MaxSessions;
     }
 
     #region Browse Commands

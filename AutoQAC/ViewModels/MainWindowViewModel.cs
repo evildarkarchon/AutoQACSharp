@@ -224,6 +224,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
     public ReactiveCommand<Unit, Unit> DeselectAllCommand { get; }
     public ReactiveCommand<Unit, Unit> DismissValidationCommand { get; }
     public ReactiveCommand<Unit, Unit> PreviewCommand { get; }
+    public ReactiveCommand<Unit, Unit> RestoreBackupsCommand { get; }
     public ReactiveCommand<Unit, Unit> DismissMigrationWarningCommand { get; }
 
     /// <summary>
@@ -254,6 +255,11 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
     /// Returns true if skip list was saved, false if cancelled.
     /// </summary>
     public Interaction<Unit, bool> ShowSkipListInteraction { get; } = new();
+
+    /// <summary>
+    /// Interaction for showing the backup restore browser window.
+    /// </summary>
+    public Interaction<Unit, Unit> ShowRestoreInteraction { get; } = new();
 
     public MainWindowViewModel(
         IConfigurationService configService,
@@ -347,6 +353,11 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
         var canShowSkipList = this.WhenAnyValue(x => x.IsCleaning)
             .Select(cleaning => !cleaning);
         ShowSkipListCommand = ReactiveCommand.CreateFromTask(ShowSkipListAsync, canShowSkipList);
+
+        // Restore backups command - disabled during cleaning
+        var canShowRestore = this.WhenAnyValue(x => x.IsCleaning)
+            .Select(cleaning => !cleaning);
+        RestoreBackupsCommand = ReactiveCommand.CreateFromTask(ShowRestoreAsync, canShowRestore);
 
         // Plugin selection commands - disabled during cleaning, enabled when plugins exist
         var canSelectPlugins = hasPlugins.CombineLatest(
@@ -837,7 +848,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
             _ = ShowProgressInteraction.Handle(Unit.Default);
 
             StatusText = "Cleaning started...";
-            await _orchestrator.StartCleaningAsync(HandleTimeoutRetryAsync);
+            await _orchestrator.StartCleaningAsync(HandleTimeoutRetryAsync, HandleBackupFailureAsync);
             StatusText = "Cleaning completed.";
         }
         catch (InvalidOperationException ex)
@@ -990,6 +1001,30 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
                       "You can increase the timeout in Edit > Settings if plugins regularly time out.";
 
         return await _messageDialog.ShowRetryAsync("Plugin Timeout", message, details);
+    }
+
+    /// <summary>
+    /// Handles backup failure prompts during plugin cleaning.
+    /// </summary>
+    private async Task<BackupFailureChoice> HandleBackupFailureAsync(string pluginName, string errorMessage)
+    {
+        return await _messageDialog.ShowBackupFailureDialogAsync(pluginName, errorMessage);
+    }
+
+    /// <summary>
+    /// Shows the backup restore browser window.
+    /// </summary>
+    private async Task ShowRestoreAsync()
+    {
+        try
+        {
+            await ShowRestoreInteraction.Handle(Unit.Default);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "Failed to show restore window");
+            StatusText = "Error opening restore window";
+        }
     }
 
     private async Task HandleStopAsync()

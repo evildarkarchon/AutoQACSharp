@@ -1,0 +1,134 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:AutoQAC.ViewModels"
+        xmlns:m="using:AutoQAC.Models"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        d:DesignWidth="700" d:DesignHeight="500"
+        x:Class="AutoQAC.Views.RestoreWindow"
+        x:DataType="vm:RestoreViewModel"
+        Title="Restore Backups"
+        Width="700" Height="500"
+        MinWidth="550" MinHeight="350"
+        WindowStartupLocation="CenterOwner">
+
+    <Grid Margin="10" RowDefinitions="*,Auto,Auto">
+
+        <!-- Two-panel layout -->
+        <Grid Grid.Row="0" ColumnDefinitions="250,10,*">
+
+            <!-- Left panel: Backup Sessions -->
+            <Border Grid.Column="0"
+                    BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                    BorderThickness="1"
+                    CornerRadius="4">
+                <Grid RowDefinitions="Auto,*">
+                    <TextBlock Grid.Row="0"
+                               Text="Backup Sessions"
+                               FontSize="14" FontWeight="SemiBold"
+                               Margin="10,8" />
+                    <ListBox Grid.Row="1"
+                             ItemsSource="{Binding Sessions}"
+                             SelectedItem="{Binding SelectedSession}"
+                             Margin="5">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="m:BackupSession">
+                                <StackPanel Margin="4,2">
+                                    <TextBlock Text="{Binding Timestamp, StringFormat='{}{0:MMM d, yyyy h:mm tt}'}"
+                                               FontWeight="SemiBold" />
+                                    <TextBlock Text="{Binding Plugins.Count, StringFormat='{}{0} plugin(s)'}"
+                                               FontSize="11"
+                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Grid>
+            </Border>
+
+            <!-- Right panel: Session Details -->
+            <Border Grid.Column="2"
+                    BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                    BorderThickness="1"
+                    CornerRadius="4">
+                <Grid RowDefinitions="Auto,*">
+                    <TextBlock Grid.Row="0"
+                               Text="Session Details"
+                               FontSize="14" FontWeight="SemiBold"
+                               Margin="10,8" />
+
+                    <!-- Empty state when no session selected -->
+                    <TextBlock Grid.Row="1"
+                               Text="Select a session to view plugins"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                               IsVisible="{Binding !SelectedSession}" />
+
+                    <!-- Plugin list -->
+                    <ListBox Grid.Row="1"
+                             ItemsSource="{Binding SelectedSessionPlugins}"
+                             SelectedItem="{Binding SelectedPlugin}"
+                             IsVisible="{Binding SelectedSession, Converter={x:Static ObjectConverters.IsNotNull}}"
+                             Margin="5">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="m:BackupPluginEntry">
+                                <Grid ColumnDefinitions="*,Auto" Margin="4,2">
+                                    <TextBlock Grid.Column="0"
+                                               Text="{Binding FileName}"
+                                               VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding FileSizeBytes, StringFormat='{}{0:N0} bytes'}"
+                                               FontSize="11"
+                                               VerticalAlignment="Center"
+                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- Button bar -->
+        <Grid Grid.Row="1"
+              ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto"
+              Margin="0,10,0,0">
+            <Button Grid.Column="0"
+                    Content="Delete Session"
+                    Command="{Binding DeleteSessionCommand}"
+                    MinWidth="110"
+                    Margin="0,0,5,0" />
+            <Button Grid.Column="1"
+                    Content="Refresh"
+                    Command="{Binding LoadSessionsCommand}"
+                    MinWidth="80"
+                    Margin="0,0,5,0" />
+
+            <Button Grid.Column="3"
+                    Content="Restore Selected"
+                    Command="{Binding RestorePluginCommand}"
+                    MinWidth="120"
+                    Margin="0,0,5,0" />
+            <Button Grid.Column="4"
+                    Content="Restore All"
+                    Command="{Binding RestoreAllCommand}"
+                    MinWidth="100"
+                    Margin="0,0,5,0" />
+            <Button Grid.Column="5"
+                    Content="Close"
+                    Command="{Binding CloseCommand}"
+                    MinWidth="80" />
+        </Grid>
+
+        <!-- Status bar -->
+        <Border Grid.Row="2"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                BorderThickness="0,1,0,0"
+                Padding="5,5,5,0"
+                Margin="0,8,0,0">
+            <TextBlock Text="{Binding StatusText}" FontSize="12" />
+        </Border>
+    </Grid>
+</Window>

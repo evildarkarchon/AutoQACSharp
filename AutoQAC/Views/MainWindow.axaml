@@ -312,23 +312,35 @@
             </Border>
 
             <!-- Control Buttons -->
-            <StackPanel Grid.Row="3"
-                        Orientation="Horizontal"
-                        HorizontalAlignment="Right"
-                        Spacing="10">
-                <Button Content="Preview"
-                        Command="{Binding PreviewCommand}"
-                        ToolTip.Tip="Preview which plugins will be cleaned or skipped (without running xEdit)"
-                        MinWidth="120" />
-                <Button Content="Start Cleaning"
-                        Command="{Binding StartCleaningCommand}"
-                        IsEnabled="{Binding CanStartCleaning}"
-                        MinWidth="120" />
-                <Button Content="Stop"
-                        Command="{Binding StopCleaningCommand}"
-                        IsEnabled="{Binding IsCleaning}"
-                        MinWidth="120" />
-            </StackPanel>
+            <Grid Grid.Row="3" ColumnDefinitions="Auto,*,Auto">
+                <!-- Left-aligned buttons -->
+                <StackPanel Grid.Column="0"
+                            Orientation="Horizontal"
+                            Spacing="10">
+                    <Button Content="Restore Backups"
+                            Command="{Binding RestoreBackupsCommand}"
+                            ToolTip.Tip="Browse and restore plugins from previous backup sessions"
+                            MinWidth="120" />
+                </StackPanel>
+
+                <!-- Right-aligned buttons -->
+                <StackPanel Grid.Column="2"
+                            Orientation="Horizontal"
+                            Spacing="10">
+                    <Button Content="Preview"
+                            Command="{Binding PreviewCommand}"
+                            ToolTip.Tip="Preview which plugins will be cleaned or skipped (without running xEdit)"
+                            MinWidth="120" />
+                    <Button Content="Start Cleaning"
+                            Command="{Binding StartCleaningCommand}"
+                            IsEnabled="{Binding CanStartCleaning}"
+                            MinWidth="120" />
+                    <Button Content="Stop"
+                            Command="{Binding StopCleaningCommand}"
+                            IsEnabled="{Binding IsCleaning}"
+                            MinWidth="120" />
+                </StackPanel>
+            </Grid>
         </Grid>
     </DockPanel>
 </Window>

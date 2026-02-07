@@ -66,6 +66,7 @@ public static class ServiceCollectionExtensions
         services.AddTransient<ProgressViewModel>();
         services.AddTransient<PartialFormsWarningViewModel>();
         services.AddTransient<SettingsViewModel>();
+        services.AddTransient<RestoreViewModel>();
         services.AddTransient<MessageDialogViewModel>();
         return services;
     }
@@ -76,6 +77,7 @@ public static class ServiceCollectionExtensions
         services.AddTransient<ProgressWindow>();
         services.AddTransient<PartialFormsWarningDialog>();
         services.AddTransient<SettingsWindow>();
+        services.AddTransient<RestoreWindow>();
         services.AddTransient<MessageDialog>();
         return services;
     }

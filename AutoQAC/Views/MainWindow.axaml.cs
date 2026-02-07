@@ -3,6 +3,7 @@ using System.Reactive;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
+using AutoQAC.Services.Backup;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
 using AutoQAC.Services.State;
@@ -20,6 +21,8 @@ public partial class MainWindow : Window
     private readonly IConfigurationService? _configService;
     private readonly IStateService? _stateService;
     private readonly ICleaningOrchestrator? _orchestrator;
+    private readonly IBackupService? _backupService;
+    private readonly IMessageDialogService? _messageDialog;
 
     public MainWindow()
     {
@@ -32,7 +35,9 @@ public partial class MainWindow : Window
         IFileDialogService fileDialog,
         IConfigurationService configService,
         IStateService stateService,
-        ICleaningOrchestrator orchestrator) : this()
+        ICleaningOrchestrator orchestrator,
+        IBackupService backupService,
+        IMessageDialogService messageDialog) : this()
     {
         DataContext = viewModel;
         _logger = logger;
@@ -40,6 +45,8 @@ public partial class MainWindow : Window
         _configService = configService;
         _stateService = stateService;
         _orchestrator = orchestrator;
+        _backupService = backupService;
+        _messageDialog = messageDialog;
 
         // Register the interaction handler for showing cleaning results
         viewModel.ShowCleaningResultsInteraction.RegisterHandler(ShowCleaningResultsAsync);
@@ -55,6 +62,9 @@ public partial class MainWindow : Window
 
         // Register the interaction handler for showing dry-run preview
         viewModel.ShowPreviewInteraction.RegisterHandler(ShowPreviewAsync);
+
+        // Register the interaction handler for showing restore window
+        viewModel.ShowRestoreInteraction.RegisterHandler(ShowRestoreAsync);
     }
 
     private async Task ShowCleaningResultsAsync(IInteractionContext<CleaningSessionResult, Unit> context)
@@ -171,5 +181,32 @@ public partial class MainWindow : Window
 
         context.SetOutput(Unit.Default);
         return Task.CompletedTask;
+    }
+
+    private async Task ShowRestoreAsync(IInteractionContext<Unit, Unit> context)
+    {
+        if (_backupService == null || _messageDialog == null || _logger == null)
+        {
+            context.SetOutput(Unit.Default);
+            return;
+        }
+
+        // Get the current game data folder from the ViewModel
+        var vm = DataContext as MainWindowViewModel;
+        var dataFolderPath = vm?.GameDataFolder;
+
+        var restoreViewModel = new RestoreViewModel(_backupService, _messageDialog, _logger);
+
+        // Load sessions with the data folder path
+        await restoreViewModel.LoadSessionsAsync(dataFolderPath);
+
+        var restoreWindow = new RestoreWindow(restoreViewModel);
+
+        await restoreWindow.ShowDialog(this);
+
+        // Dispose the ViewModel after dialog closes
+        restoreViewModel.Dispose();
+
+        context.SetOutput(Unit.Default);
     }
 }

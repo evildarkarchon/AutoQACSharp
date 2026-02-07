@@ -91,9 +91,9 @@ public sealed class MainWindowViewModelTests
             // Act
             await vm.StartCleaningCommand.Execute();
 
-            // Assert - verify the new overload with timeout callback is called
+            // Assert - verify the 3-param overload with timeout and backup failure callbacks is called
             _orchestratorMock.Verify(
-                x => x.StartCleaningAsync(It.IsAny<TimeoutRetryCallback>(), It.IsAny<CancellationToken>()),
+                x => x.StartCleaningAsync(It.IsAny<TimeoutRetryCallback>(), It.IsAny<BackupFailureCallback>(), It.IsAny<CancellationToken>()),
                 Times.Once);
         }
         finally
@@ -208,8 +208,8 @@ public sealed class MainWindowViewModelTests
             vm.LoadOrderPath = "plugins.txt";
             vm.XEditPath = tempFile;
 
-            // Configure orchestrator to throw exception (use the new overload)
-            _orchestratorMock.Setup(x => x.StartCleaningAsync(It.IsAny<TimeoutRetryCallback>(), It.IsAny<CancellationToken>()))
+            // Configure orchestrator to throw exception (use the 3-param overload)
+            _orchestratorMock.Setup(x => x.StartCleaningAsync(It.IsAny<TimeoutRetryCallback>(), It.IsAny<BackupFailureCallback>(), It.IsAny<CancellationToken>()))
                 .ThrowsAsync(new InvalidOperationException("Configuration is invalid"));
 
             // Act

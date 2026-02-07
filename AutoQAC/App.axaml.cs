@@ -1,5 +1,6 @@
 using AutoQAC.Infrastructure;
 using AutoQAC.Infrastructure.Logging;
+using AutoQAC.Services.Backup;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
 using AutoQAC.Services.State;
@@ -47,8 +48,10 @@ namespace AutoQAC
                 var configService = Services.GetRequiredService<IConfigurationService>();
                 var stateService = Services.GetRequiredService<IStateService>();
                 var orchestrator = Services.GetRequiredService<ICleaningOrchestrator>();
+                var backupService = Services.GetRequiredService<IBackupService>();
+                var messageDialog = Services.GetRequiredService<IMessageDialogService>();
 
-                var mainWindow = new MainWindow(viewModel, logger, fileDialog, configService, stateService, orchestrator);
+                var mainWindow = new MainWindow(viewModel, logger, fileDialog, configService, stateService, orchestrator, backupService, messageDialog);
                 desktop.MainWindow = mainWindow;
 
                 // Start config file watcher for external YAML edits

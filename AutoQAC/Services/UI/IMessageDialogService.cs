@@ -1,4 +1,5 @@
 using System.Threading.Tasks;
+using AutoQAC.Models;
 
 namespace AutoQAC.Services.UI;
 
@@ -78,4 +79,12 @@ public interface IMessageDialogService
     /// Shows a retry dialog.
     /// </summary>
     Task<bool> ShowRetryAsync(string title, string message, string? details = null);
+
+    /// <summary>
+    /// Shows a backup failure dialog with three choices: Skip Plugin, Abort Session, or Continue Without Backup.
+    /// </summary>
+    /// <param name="pluginName">Name of the plugin that failed to back up.</param>
+    /// <param name="errorMessage">Description of the backup failure.</param>
+    /// <returns>The user's choice for how to proceed.</returns>
+    Task<BackupFailureChoice> ShowBackupFailureDialogAsync(string pluginName, string errorMessage);
 }

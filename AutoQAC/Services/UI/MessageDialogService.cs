@@ -1,4 +1,5 @@
 using System.Threading.Tasks;
+using AutoQAC.Models;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -79,6 +80,104 @@ public sealed class MessageDialogService : IMessageDialogService
     {
         var result = await ShowAsync(title, message, MessageDialogButtons.RetryCancel, MessageDialogIcon.Warning, details);
         return result == MessageDialogResult.Retry;
+    }
+
+    public async Task<BackupFailureChoice> ShowBackupFailureDialogAsync(string pluginName, string errorMessage)
+    {
+        // Ensure we're on the UI thread
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            return await Dispatcher.UIThread.InvokeAsync(() =>
+                ShowBackupFailureDialogAsync(pluginName, errorMessage));
+        }
+
+        var tcs = new TaskCompletionSource<BackupFailureChoice>();
+
+        var window = new Window
+        {
+            Title = "Backup Failed",
+            Width = 450,
+            Height = 220,
+            CanResize = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner
+        };
+
+        var panel = new StackPanel
+        {
+            Margin = new Avalonia.Thickness(20),
+            Spacing = 12
+        };
+
+        panel.Children.Add(new TextBlock
+        {
+            Text = $"Failed to back up '{pluginName}'",
+            FontWeight = Avalonia.Media.FontWeight.Bold,
+            FontSize = 14,
+            TextWrapping = Avalonia.Media.TextWrapping.Wrap
+        });
+
+        panel.Children.Add(new TextBlock
+        {
+            Text = errorMessage,
+            TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+            FontSize = 12
+        });
+
+        panel.Children.Add(new TextBlock
+        {
+            Text = "How would you like to proceed?",
+            Margin = new Avalonia.Thickness(0, 4, 0, 0)
+        });
+
+        var buttonPanel = new StackPanel
+        {
+            Orientation = Avalonia.Layout.Orientation.Horizontal,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+            Spacing = 8
+        };
+
+        var skipButton = new Button { Content = "Skip Plugin", MinWidth = 100 };
+        skipButton.Click += (_, _) =>
+        {
+            tcs.TrySetResult(BackupFailureChoice.SkipPlugin);
+            window.Close();
+        };
+
+        var continueButton = new Button { Content = "Continue Anyway", MinWidth = 120 };
+        continueButton.Click += (_, _) =>
+        {
+            tcs.TrySetResult(BackupFailureChoice.ContinueWithoutBackup);
+            window.Close();
+        };
+
+        var abortButton = new Button { Content = "Abort Session", MinWidth = 110 };
+        abortButton.Click += (_, _) =>
+        {
+            tcs.TrySetResult(BackupFailureChoice.AbortSession);
+            window.Close();
+        };
+
+        buttonPanel.Children.Add(skipButton);
+        buttonPanel.Children.Add(continueButton);
+        buttonPanel.Children.Add(abortButton);
+
+        panel.Children.Add(buttonPanel);
+        window.Content = panel;
+
+        // Handle window close without button click (X button)
+        window.Closed += (_, _) => tcs.TrySetResult(BackupFailureChoice.SkipPlugin);
+
+        var mainWindow = GetMainWindow();
+        if (mainWindow != null)
+        {
+            await window.ShowDialog(mainWindow);
+        }
+        else
+        {
+            window.Show();
+        }
+
+        return await tcs.Task;
     }
 
     private static Window? GetMainWindow()

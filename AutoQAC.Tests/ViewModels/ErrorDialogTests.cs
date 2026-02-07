@@ -129,7 +129,7 @@ public sealed class ErrorDialogTests
 
         // Orchestrator should NOT be called
         _orchestratorMock.Verify(
-            x => x.StartCleaningAsync(It.IsAny<TimeoutRetryCallback>(), It.IsAny<CancellationToken>()),
+            x => x.StartCleaningAsync(It.IsAny<TimeoutRetryCallback>(), It.IsAny<BackupFailureCallback>(), It.IsAny<CancellationToken>()),
             Times.Never,
             "Orchestrator should not be called when xEdit is not configured");
     }
@@ -307,7 +307,7 @@ public sealed class ErrorDialogTests
             var vm = CreateViewModelWithValidState(tempFile);
             vm.XEditPath = tempFile;
 
-            _orchestratorMock.Setup(x => x.StartCleaningAsync(It.IsAny<TimeoutRetryCallback>(), It.IsAny<CancellationToken>()))
+            _orchestratorMock.Setup(x => x.StartCleaningAsync(It.IsAny<TimeoutRetryCallback>(), It.IsAny<BackupFailureCallback>(), It.IsAny<CancellationToken>()))
                 .ThrowsAsync(new InvalidOperationException("Configuration is invalid"));
 
             // Act
@@ -342,7 +342,7 @@ public sealed class ErrorDialogTests
             var vm = CreateViewModelWithValidState(tempFile);
             vm.XEditPath = tempFile;
 
-            _orchestratorMock.Setup(x => x.StartCleaningAsync(It.IsAny<TimeoutRetryCallback>(), It.IsAny<CancellationToken>()))
+            _orchestratorMock.Setup(x => x.StartCleaningAsync(It.IsAny<TimeoutRetryCallback>(), It.IsAny<BackupFailureCallback>(), It.IsAny<CancellationToken>()))
                 .ThrowsAsync(new Exception("Unexpected error"));
 
             // Act
@@ -378,8 +378,8 @@ public sealed class ErrorDialogTests
             vm.XEditPath = tempFile;
 
             TimeoutRetryCallback? capturedCallback = null;
-            _orchestratorMock.Setup(x => x.StartCleaningAsync(It.IsAny<TimeoutRetryCallback>(), It.IsAny<CancellationToken>()))
-                .Callback<TimeoutRetryCallback?, CancellationToken>((callback, ct) => capturedCallback = callback)
+            _orchestratorMock.Setup(x => x.StartCleaningAsync(It.IsAny<TimeoutRetryCallback>(), It.IsAny<BackupFailureCallback>(), It.IsAny<CancellationToken>()))
+                .Callback<TimeoutRetryCallback?, BackupFailureCallback?, CancellationToken>((callback, _, ct) => capturedCallback = callback)
                 .Returns(Task.CompletedTask);
 
             // Act
@@ -406,8 +406,8 @@ public sealed class ErrorDialogTests
             vm.XEditPath = tempFile;
 
             TimeoutRetryCallback? capturedCallback = null;
-            _orchestratorMock.Setup(x => x.StartCleaningAsync(It.IsAny<TimeoutRetryCallback>(), It.IsAny<CancellationToken>()))
-                .Callback<TimeoutRetryCallback?, CancellationToken>((callback, ct) => capturedCallback = callback)
+            _orchestratorMock.Setup(x => x.StartCleaningAsync(It.IsAny<TimeoutRetryCallback>(), It.IsAny<BackupFailureCallback>(), It.IsAny<CancellationToken>()))
+                .Callback<TimeoutRetryCallback?, BackupFailureCallback?, CancellationToken>((callback, _, ct) => capturedCallback = callback)
                 .Returns(Task.CompletedTask);
 
             _messageDialogMock.Setup(m => m.ShowRetryAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()))
@@ -447,8 +447,8 @@ public sealed class ErrorDialogTests
             vm.XEditPath = tempFile;
 
             TimeoutRetryCallback? capturedCallback = null;
-            _orchestratorMock.Setup(x => x.StartCleaningAsync(It.IsAny<TimeoutRetryCallback>(), It.IsAny<CancellationToken>()))
-                .Callback<TimeoutRetryCallback?, CancellationToken>((callback, ct) => capturedCallback = callback)
+            _orchestratorMock.Setup(x => x.StartCleaningAsync(It.IsAny<TimeoutRetryCallback>(), It.IsAny<BackupFailureCallback>(), It.IsAny<CancellationToken>()))
+                .Callback<TimeoutRetryCallback?, BackupFailureCallback?, CancellationToken>((callback, _, ct) => capturedCallback = callback)
                 .Returns(Task.CompletedTask);
 
             // User cancels retry
