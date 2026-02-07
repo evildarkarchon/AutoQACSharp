@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-06)
 
 **Core value:** Reliably clean every plugin in a load order with one click, without corrupting game data or cleaning plugins that shouldn't be touched.
-**Current focus:** Phase 6 - UI Polish & Monitoring (In progress)
+**Current focus:** Phase 6 - UI Polish & Monitoring (Complete)
 
 ## Current Position
 
 Phase: 6 of 7 (UI Polish & Monitoring)
-Plan: 2 of 3 in current phase
-Status: In progress
-Last activity: 2026-02-07 -- Completed 06-02-PLAN.md (About Dialog & Logging)
+Plan: 3 of 3 in current phase
+Status: Phase complete
+Last activity: 2026-02-07 -- Completed 06-03-PLAN.md (Hang Detection)
 
-Progress: [##############.] 93% (13/14 plans)
+Progress: [################] 100% (14/14 plans)
 
 ## Performance Metrics
 
 **Velocity:**
 - Total plans completed: 14
-- Average duration: 9.3 minutes
-- Total execution time: 2.2 hours
+- Average duration: 9.4 minutes
+- Total execution time: 2.3 hours
 
 **By Phase:**
 
@@ -32,11 +32,11 @@ Progress: [##############.] 93% (13/14 plans)
 | 3 - Real-Time Feedback | 3/3 | 30m | 10m |
 | 4 - Configuration | 2/2 | 21.5m | 10.75m |
 | 5 - Safety Features | 2/2 | 28m | 14m |
-| 6 - UI Polish | 2/3 | 24m | 12m |
+| 6 - UI Polish | 3/3 | 36m | 12m |
 
 **Recent Trend:**
-- Last 5 plans: 05-01 (6m), 05-02 (22m), 06-01 (12m), 06-02 (12m)
-- Trend: Stable
+- Last 5 plans: 05-02 (22m), 06-01 (12m), 06-02 (12m), 06-03 (12m)
+- Trend: Stable at ~12m for UI plans
 
 *Updated after each plan completion*
 
@@ -103,6 +103,12 @@ Recent decisions affecting current work:
 - [06-02]: Static HttpClient on AboutViewModel (not injected service) -- single fire-and-forget endpoint
 - [06-02]: Session summary logged in CleaningOrchestrator (close to data source), not ViewModel
 - [06-02]: Startup logging reads IStateService.CurrentState directly (not async config reload)
+- [06-03]: Process.TotalProcessorTime for CPU monitoring (cross-platform, no admin rights)
+- [06-03]: Subject<bool> relay in orchestrator forwards hang detection to ViewModel
+- [06-03]: Wait button sets _hangWarningDismissed flag; warning reappears only on resume+hang cycle
+- [06-03]: Kill calls ForceStopCleaningAsync (immediate process tree kill)
+- [06-03]: Public constants for thresholds (no InternalsVisibleTo in project)
+- [06-03]: Fully-qualified System.Diagnostics.Process to avoid namespace conflict
 
 ### Pending Todos
 
@@ -111,12 +117,12 @@ Recent decisions affecting current work:
 
 ### Blockers/Concerns
 
-- [Research]: CPU monitoring accuracy via Process.TotalProcessorTime varies by OS scheduler -- needs empirical validation in Phase 6
+- [Research]: CPU monitoring accuracy via Process.TotalProcessorTime varies by OS scheduler -- implemented with conservative 60s threshold and auto-dismiss (Phase 6 complete)
 - [Research]: FileSystemWatcher reliability with xEdit file locks needs investigation -- may need polling fallback in Phase 6
 - [Research]: xUnit v2 required for Avalonia.Headless.XUnit -- do not migrate to xUnit v3
 
 ## Session Continuity
 
 Last session: 2026-02-07
-Stopped at: Completed 06-02-PLAN.md (About Dialog & Logging)
+Stopped at: Completed 06-03-PLAN.md (Hang Detection) -- Phase 6 complete
 Resume file: None
