@@ -65,6 +65,17 @@ public sealed record PluginCleaningResult
     public int TotalProcessed => ItemsRemoved + ItemsUndeleted + ItemsSkipped + PartialFormsCreated;
 
     /// <summary>
+    /// Warning message when log file parsing fails (missing, stale, or unreadable).
+    /// Null when log parsing succeeded or was not attempted.
+    /// </summary>
+    public string? LogParseWarning { get; init; }
+
+    /// <summary>
+    /// Whether a log parse warning exists for this plugin.
+    /// </summary>
+    public bool HasLogParseWarning => !string.IsNullOrEmpty(LogParseWarning);
+
+    /// <summary>
     /// Gets a short summary string for display.
     /// </summary>
     public string Summary

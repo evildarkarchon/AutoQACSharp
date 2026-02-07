@@ -14,6 +14,12 @@ public sealed record CleaningResult
     /// Indicates if the cleaning operation timed out.
     /// </summary>
     public bool TimedOut { get; init; }
+
+    /// <summary>
+    /// Warning message when log file parsing fails (missing, stale, or unreadable).
+    /// Null when log parsing succeeded or was not attempted.
+    /// </summary>
+    public string? LogParseWarning { get; init; }
 }
 
 public enum CleaningStatus
