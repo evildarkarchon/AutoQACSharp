@@ -45,9 +45,9 @@
 
 ### Safety Features
 
-- [ ] **SAFE-01**: Dry-run mode (preview which plugins would be cleaned without invoking xEdit)
-- [ ] **SAFE-02**: Plugin backup before cleaning (timestamped copies to backup directory)
-- [ ] **SAFE-03**: Backup rollback UI (select backup point, selective plugin restore)
+- [x] **SAFE-01**: Dry-run mode (preview which plugins would be cleaned without invoking xEdit)
+- [x] **SAFE-02**: Plugin backup before cleaning (timestamped copies to backup directory)
+- [x] **SAFE-03**: Backup rollback UI (select backup point, selective plugin restore)
 
 ### Game Detection
 
@@ -128,9 +128,9 @@
 | PLUG-05 | Phase 2 | Complete |
 | STAT-01 | Phase 1 | Complete |
 | STAT-02 | Phase 3 | Complete |
-| SAFE-01 | Phase 5 | Pending |
-| SAFE-02 | Phase 5 | Pending |
-| SAFE-03 | Phase 5 | Pending |
+| SAFE-01 | Phase 5 | Complete |
+| SAFE-02 | Phase 5 | Complete |
+| SAFE-03 | Phase 5 | Complete |
 | GAME-01 | Phase 2 | Complete |
 | UI-01 | Phase 6 | Pending |
 | UI-02 | Phase 6 | Pending |
@@ -153,4 +153,4 @@
 
 ---
 *Requirements defined: 2026-02-06*
-*Last updated: 2026-02-07 after Phase 4 completion*
+*Last updated: 2026-02-07 after Phase 5 completion*
