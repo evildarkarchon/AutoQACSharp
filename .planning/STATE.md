@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-06)
 
 **Core value:** Reliably clean every plugin in a load order with one click, without corrupting game data or cleaning plugins that shouldn't be touched.
-**Current focus:** Phase 7 - Hardening & Cleanup (NEXT)
+**Current focus:** Phase 7 - Hardening & Cleanup (in progress)
 
 ## Current Position
 
 Phase: 7 of 7 (Hardening & Cleanup)
-Plan: 0 of 2 in current phase
-Status: Not started
-Last activity: 2026-02-07 -- Completed Phase 6 (UI Polish & Monitoring)
+Plan: 1 of 2 in current phase
+Status: In progress
+Last activity: 2026-02-07 -- Completed 07-01-PLAN.md
 
-Progress: [##############..] 88% (15/17 plans)
+Progress: [###############.] 94% (16/17 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 14
-- Average duration: 9.4 minutes
-- Total execution time: 2.3 hours
+- Total plans completed: 16
+- Average duration: 9.3 minutes
+- Total execution time: 2.5 hours
 
 **By Phase:**
 
@@ -33,10 +33,11 @@ Progress: [##############..] 88% (15/17 plans)
 | 4 - Configuration | 2/2 | 21.5m | 10.75m |
 | 5 - Safety Features | 2/2 | 28m | 14m |
 | 6 - UI Polish | 3/3 | 36m | 12m |
+| 7 - Hardening | 1/2 | 8m | 8m |
 
 **Recent Trend:**
-- Last 5 plans: 05-02 (22m), 06-01 (12m), 06-02 (12m), 06-03 (12m)
-- Trend: Stable at ~12m for UI plans
+- Last 5 plans: 06-01 (12m), 06-02 (12m), 06-03 (12m), 07-01 (8m)
+- Trend: Testing plans faster than feature plans
 
 *Updated after each plan completion*
 
@@ -109,6 +110,10 @@ Recent decisions affecting current work:
 - [06-03]: Kill calls ForceStopCleaningAsync (immediate process tree kill)
 - [06-03]: Public constants for thresholds (no InternalsVisibleTo in project)
 - [06-03]: Fully-qualified System.Diagnostics.Process to avoid namespace conflict
+- [07-01]: cmd.exe-spawning tests replaced with orchestrator-level mocks -- no real process spawning in unit tests
+- [07-01]: PID file path tests skipped due to private GetPidFilePath with non-injectable AppContext.BaseDirectory
+- [07-01]: LegacyMigrationService tests use injectable configDirectory with temp dirs for isolation
+- [07-01]: coverlet.msbuild added alongside coverlet.collector for automatic coverage on every dotnet test
 
 ### Pending Todos
 
@@ -124,5 +129,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-02-07
-Stopped at: Completed 06-03-PLAN.md (Hang Detection) -- Phase 6 complete
+Stopped at: Completed 07-01-PLAN.md (Targeted Test Coverage Gaps)
 Resume file: None
