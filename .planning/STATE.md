@@ -5,34 +5,34 @@
 See: .planning/PROJECT.md (updated 2026-02-06)
 
 **Core value:** Reliably clean every plugin in a load order with one click, without corrupting game data or cleaning plugins that shouldn't be touched.
-**Current focus:** Phase 2 - Plugin Pipeline Robustness (IN PROGRESS)
+**Current focus:** Phase 2 - Plugin Pipeline Robustness (COMPLETE)
 
 ## Current Position
 
 Phase: 2 of 7 (Plugin Pipeline Robustness)
-Plan: 1 of 2 in current phase
-Status: In progress
-Last activity: 2026-02-06 -- Completed 02-01-PLAN.md (Plugin Line Validation and FullPath Resolution)
+Plan: 2 of 2 in current phase
+Status: Phase complete
+Last activity: 2026-02-07 -- Completed 02-02-PLAN.md (MO2 Path Resolution and Error Guidance)
 
-Progress: [###...........] 20% (3/15 plans)
+Progress: [####..........] 27% (4/15 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 3
-- Average duration: 7.2 minutes
-- Total execution time: 0.36 hours
+- Total plans completed: 4
+- Average duration: 7.4 minutes
+- Total execution time: 0.49 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1 - Foundation | 2/2 | 15m | 7.5m |
-| 2 - Plugin Pipeline | 1/2 | 6.5m | 6.5m |
+| 2 - Plugin Pipeline | 2/2 | 14.5m | 7.25m |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (7m), 01-02 (8m), 02-01 (6.5m)
-- Trend: Stable/improving
+- Last 5 plans: 01-01 (7m), 01-02 (8m), 02-01 (6.5m), 02-02 (8m)
+- Trend: Stable
 
 *Updated after each plan completion*
 
@@ -56,6 +56,11 @@ Recent decisions affecting current work:
 - [02-01]: 7-step line validation pipeline (blanks, comments, prefix strip, control chars, path separators, extension check)
 - [02-01]: ValidatePluginFile returns PluginWarningKind enum instead of bool -- eliminates dual code path
 - [02-01]: Non-rooted paths return NotFound from ValidatePluginFile (not optimistic true)
+- [02-02]: DetectVariant scans load order for TTW/Enderal marker ESMs
+- [02-02]: Enderal uses separate "Enderal" key in skip list config, not "SSE"
+- [02-02]: MO2 binary path validated from AppState.Mo2ExecutablePath (not UserConfiguration)
+- [02-02]: GameType.Unknown throws InvalidOperationException (was: log warning, continue)
+- [02-02]: GetSkipListAsync gains GameVariant optional parameter (backward-compatible)
 
 ### Pending Todos
 
@@ -70,6 +75,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-02-06T23:55Z
-Stopped at: Completed 02-01-PLAN.md
+Last session: 2026-02-07T00:09Z
+Stopped at: Completed 02-02-PLAN.md (Phase 2 complete)
 Resume file: None
