@@ -486,8 +486,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
             _stateService.UpdateState(s => s with
             {
                 Mo2ModeEnabled = config.Settings.Mo2Mode,
-                CleaningTimeout = config.Settings.CleaningTimeout,
-                MaxConcurrentSubprocesses = config.Settings.MaxConcurrentSubprocesses
+                CleaningTimeout = config.Settings.CleaningTimeout
             });
 
             // Load DisableSkipLists setting - use backing field first to avoid triggering
@@ -1075,7 +1074,6 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
             {
                 Mo2ModeEnabled = config.Settings.Mo2Mode,
                 CleaningTimeout = config.Settings.CleaningTimeout,
-                MaxConcurrentSubprocesses = config.Settings.MaxConcurrentSubprocesses,
                 PartialFormsEnabled = false
             });
 
@@ -1106,8 +1104,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
                 _stateService.UpdateState(s => s with
                 {
                     Mo2ModeEnabled = config.Settings.Mo2Mode,
-                    CleaningTimeout = config.Settings.CleaningTimeout,
-                    MaxConcurrentSubprocesses = config.Settings.MaxConcurrentSubprocesses
+                    CleaningTimeout = config.Settings.CleaningTimeout
                 });
 
                 // Update local property

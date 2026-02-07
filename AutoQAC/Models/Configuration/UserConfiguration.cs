@@ -55,9 +55,6 @@ public sealed class AutoQacSettings
 
     [YamlMember(Alias = "MO2Mode")] public bool Mo2Mode { get; set; }
 
-    [YamlMember(Alias = "Max_Concurrent_Subprocesses")]
-    public int MaxConcurrentSubprocesses { get; set; } = 3;
-
     [YamlMember(Alias = "Disable_Skip_Lists")]
     public bool DisableSkipLists { get; set; }
 }

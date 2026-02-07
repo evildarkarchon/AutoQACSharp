@@ -12,5 +12,4 @@ AutoQAC_Settings:
   Cleaning_Timeout: 300
   CPU_Threshold: 5
   MO2Mode: false
-  Max_Concurrent_Subprocesses: 3
 Skip_Lists: {}

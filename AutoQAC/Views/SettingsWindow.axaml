@@ -227,18 +227,6 @@
                                        FormatString="N0" />
                     </Grid>
 
-                    <!-- Max Concurrent Subprocesses -->
-                    <Grid ColumnDefinitions="180,*">
-                        <TextBlock Grid.Column="0"
-                                   Text="Max Subprocesses:"
-                                   VerticalAlignment="Center" />
-                        <NumericUpDown Grid.Column="1"
-                                       Value="{Binding MaxConcurrentSubprocesses}"
-                                       Minimum="1"
-                                       Maximum="10"
-                                       Increment="1"
-                                       FormatString="N0" />
-                    </Grid>
                 </StackPanel>
 
                 <Separator />

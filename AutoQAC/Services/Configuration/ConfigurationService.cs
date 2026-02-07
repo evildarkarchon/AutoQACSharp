@@ -479,7 +479,6 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
             ["JournalExpiration"] = config.Settings.JournalExpiration,
             ["CpuThreshold"] = config.Settings.CpuThreshold,
             ["DisableSkipLists"] = config.Settings.DisableSkipLists,
-            ["MaxConcurrentSubprocesses"] = config.Settings.MaxConcurrentSubprocesses,
             ["LogRetention.Mode"] = config.LogRetention.Mode,
             ["LogRetention.MaxAgeDays"] = config.LogRetention.MaxAgeDays,
             ["LogRetention.MaxFileCount"] = config.LogRetention.MaxFileCount,

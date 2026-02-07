@@ -34,5 +34,4 @@ public sealed record AppState
     public bool Mo2ModeEnabled { get; init; }
     public bool PartialFormsEnabled { get; init; }
     public GameType CurrentGameType { get; init; } = GameType.Unknown;
-    public int? MaxConcurrentSubprocesses { get; init; }
 }

@@ -18,10 +18,6 @@ public interface IProcessExecutionService
         Action<System.Diagnostics.Process>? onProcessStarted = null,
         string? pluginName = null);
 
-    // Resource limit management
-    Task<IDisposable> AcquireProcessSlotAsync(
-        CancellationToken ct = default);
-
     /// <summary>
     /// Terminate a process with escalation support.
     /// When forceKill is false: attempts CloseMainWindow with a 2.5s grace period.

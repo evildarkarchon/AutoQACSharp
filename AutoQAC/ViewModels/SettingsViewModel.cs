@@ -61,13 +61,6 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
         set => this.RaiseAndSetIfChanged(ref _mo2Mode, value);
     }
 
-    private int _maxConcurrentSubprocesses;
-    public int MaxConcurrentSubprocesses
-    {
-        get => _maxConcurrentSubprocesses;
-        set => this.RaiseAndSetIfChanged(ref _maxConcurrentSubprocesses, value);
-    }
-
     // Validation error messages
     private string? _cleaningTimeoutError;
     public string? CleaningTimeoutError
@@ -265,9 +258,6 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
         var cpuThresholdValid = this.WhenAnyValue(x => x.CpuThreshold)
             .Select(v => v is >= 1 and <= 100);
 
-        var maxSubprocessesValid = this.WhenAnyValue(x => x.MaxConcurrentSubprocesses)
-            .Select(v => v is >= 1 and <= 10);
-
         var retentionValid = this.WhenAnyValue(x => x.MaxAgeDays, x => x.MaxFileCount)
             .Select(t => t.Item1 >= 1 && t.Item2 >= 1);
 
@@ -277,10 +267,9 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
         // Aggregate validation
         var allValid = cleaningTimeoutValid.CombineLatest(journalExpirationValid,
             cpuThresholdValid,
-            maxSubprocessesValid,
             retentionValid,
             backupMaxSessionsValid,
-            (ct, je, cpu, max, ret, bms) => ct && je && cpu && max && ret && bms);
+            (ct, je, cpu, ret, bms) => ct && je && cpu && ret && bms);
 
         _hasValidationErrors = allValid
             .Select(valid => !valid)
@@ -293,7 +282,6 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
             this.WhenAnyValue(x => x.CleaningTimeout),
             this.WhenAnyValue(x => x.CpuThreshold),
             this.WhenAnyValue(x => x.Mo2Mode),
-            this.WhenAnyValue(x => x.MaxConcurrentSubprocesses),
             this.WhenAnyValue(x => x.XEditPath),
             this.WhenAnyValue(x => x.Mo2Path),
             this.WhenAnyValue(x => x.LoadOrderPath),
@@ -303,8 +291,8 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
             this.WhenAnyValue(x => x.MaxFileCount),
             this.WhenAnyValue(x => x.BackupEnabled),
             this.WhenAnyValue(x => x.BackupMaxSessions),
-            (je, ct, cpu, mo2, max, xedit, mo2p, lo, df, rm, mad, mfc, be, bms) =>
-                new { je, ct, cpu, mo2, max, xedit, mo2p, lo, df, rm, mad, mfc, be, bms });
+            (je, ct, cpu, mo2, xedit, mo2p, lo, df, rm, mad, mfc, be, bms) =>
+                new { je, ct, cpu, mo2, xedit, mo2p, lo, df, rm, mad, mfc, be, bms });
 
         _hasUnsavedChanges = currentValues
             .Select(v =>
@@ -312,7 +300,6 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
                 v.ct != _originalSettings.CleaningTimeout ||
                 v.cpu != _originalSettings.CpuThreshold ||
                 v.mo2 != _originalSettings.Mo2Mode ||
-                v.max != _originalSettings.MaxConcurrentSubprocesses ||
                 v.xedit != _originalXEditPath ||
                 v.mo2p != _originalMo2Path ||
                 v.lo != _originalLoadOrderPath ||
@@ -448,7 +435,6 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
             CleaningTimeout = config.Settings.CleaningTimeout;
             CpuThreshold = config.Settings.CpuThreshold;
             Mo2Mode = config.Settings.Mo2Mode;
-            MaxConcurrentSubprocesses = config.Settings.MaxConcurrentSubprocesses;
 
             // Load path values
             XEditPath = config.XEdit.Binary;
@@ -516,7 +502,6 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
             config.Settings.CleaningTimeout = CleaningTimeout;
             config.Settings.CpuThreshold = CpuThreshold;
             config.Settings.Mo2Mode = Mo2Mode;
-            config.Settings.MaxConcurrentSubprocesses = MaxConcurrentSubprocesses;
 
             // Save path values
             config.XEdit.Binary = XEditPath;
@@ -551,7 +536,6 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
         CleaningTimeout = defaults.CleaningTimeout;
         CpuThreshold = defaults.CpuThreshold;
         Mo2Mode = defaults.Mo2Mode;
-        MaxConcurrentSubprocesses = defaults.MaxConcurrentSubprocesses;
 
         var retentionDefaults = new RetentionSettings();
         RetentionMode = (int)retentionDefaults.Mode;

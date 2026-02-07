@@ -23,16 +23,13 @@ public sealed class ProcessExecutionServiceTests : IDisposable
 
     /// <summary>
     /// Initializes test fixtures with default mock configurations.
-    /// Sets up a state service returning a default AppState with 1 max concurrent subprocess.
     /// </summary>
     public ProcessExecutionServiceTests()
     {
         _mockLogger = new Mock<ILoggingService>();
         _mockState = new Mock<IStateService>();
 
-        // Configure default state with 1 max concurrent process
-        // This ensures sequential execution as per CLAUDE.md requirements
-        var defaultState = new AppState { MaxConcurrentSubprocesses = 1 };
+        var defaultState = new AppState();
         _mockState.Setup(s => s.CurrentState).Returns(defaultState);
     }
 
@@ -40,102 +37,6 @@ public sealed class ProcessExecutionServiceTests : IDisposable
     {
         // No special cleanup needed since we're not creating real processes
     }
-
-    #region Process Slot Acquisition Tests
-
-    /// <summary>
-    /// Verifies that AcquireProcessSlotAsync returns a disposable slot
-    /// that can be properly released.
-    /// </summary>
-    [Fact]
-    public async Task AcquireProcessSlotAsync_ShouldReturnDisposableSlot()
-    {
-        // Arrange
-        using var service = new ProcessExecutionService(_mockState.Object, _mockLogger.Object);
-
-        // Act
-        using var slot = await service.AcquireProcessSlotAsync();
-
-        // Assert
-        slot.Should().NotBeNull("a valid slot should be returned");
-        slot.Should().BeAssignableTo<IDisposable>("slot should be disposable");
-    }
-
-    /// <summary>
-    /// Verifies that the semaphore properly limits concurrent process slots
-    /// based on the MaxConcurrentSubprocesses setting from state.
-    /// </summary>
-    [Fact]
-    public async Task AcquireProcessSlotAsync_ShouldBlockWhenNoSlotsAvailable()
-    {
-        // Arrange
-        // State configured with 1 slot in constructor
-        using var service = new ProcessExecutionService(_mockState.Object, _mockLogger.Object);
-
-        // Act
-        // Acquire the only slot
-        var slot1 = await service.AcquireProcessSlotAsync();
-
-        // Try to acquire second slot with a short timeout
-        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
-
-        // Assert
-        // Should throw OperationCanceledException because no slot is available
-        var acquireTask = service.AcquireProcessSlotAsync(cts.Token);
-        await FluentActions.Awaiting(() => acquireTask)
-            .Should().ThrowAsync<OperationCanceledException>(
-                "second slot acquisition should fail when all slots are taken");
-
-        // Cleanup
-        slot1.Dispose();
-    }
-
-    /// <summary>
-    /// Verifies that releasing a slot allows another acquisition to proceed.
-    /// This tests the core semaphore release functionality.
-    /// </summary>
-    [Fact]
-    public async Task AcquireProcessSlotAsync_ShouldSucceedAfterSlotReleased()
-    {
-        // Arrange
-        using var service = new ProcessExecutionService(_mockState.Object, _mockLogger.Object);
-
-        // Act
-        // Acquire and release the slot
-        var slot1 = await service.AcquireProcessSlotAsync();
-        slot1.Dispose();
-
-        // Should now be able to acquire again
-        using var slot2 = await service.AcquireProcessSlotAsync();
-
-        // Assert
-        slot2.Should().NotBeNull("slot should be available after release");
-    }
-
-    /// <summary>
-    /// Verifies that cancellation token is respected during slot acquisition.
-    /// </summary>
-    [Fact]
-    public async Task AcquireProcessSlotAsync_ShouldThrowOnCancellation()
-    {
-        // Arrange
-        using var service = new ProcessExecutionService(_mockState.Object, _mockLogger.Object);
-
-        // Occupy the only slot
-        var slot = await service.AcquireProcessSlotAsync();
-
-        // Act & Assert
-        using var cts = new CancellationTokenSource();
-        cts.Cancel(); // Cancel immediately
-
-        await FluentActions.Awaiting(() => service.AcquireProcessSlotAsync(cts.Token))
-            .Should().ThrowAsync<OperationCanceledException>(
-                "cancelled token should cause immediate cancellation");
-
-        slot.Dispose();
-    }
-
-    #endregion
 
     #region Process Execution Tests
 
@@ -327,48 +228,14 @@ public sealed class ProcessExecutionServiceTests : IDisposable
 
     #endregion
 
-    #region Semaphore Management Tests
+    #region Disposal Tests
 
     /// <summary>
-    /// Verifies that multiple concurrent execution requests are properly queued
-    /// and processed sequentially when only one slot is available.
-    /// This is CRITICAL for ensuring xEdit processes run one at a time per CLAUDE.md.
-    ///
-    /// NOTE: This test uses slot acquisition to verify sequential behavior,
-    /// which is more reliable than timing-based tests with actual processes.
+    /// Verifies that disposal properly cleans up internal resources.
+    /// After disposal, ExecuteAsync should throw ObjectDisposedException.
     /// </summary>
     [Fact]
-    public async Task ExecuteAsync_ShouldEnforceSequentialExecution_WhenOneSlot()
-    {
-        // Arrange
-        using var service = new ProcessExecutionService(_mockState.Object, _mockLogger.Object);
-
-        // Verify that only one slot is available at a time by trying to acquire two
-        var slot1 = await service.AcquireProcessSlotAsync();
-
-        // Act - Try to acquire a second slot with a short timeout
-        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
-
-        // Assert
-        // The second slot acquisition should fail because we only have 1 slot
-        // and it's already held by slot1
-        await FluentActions.Awaiting(() => service.AcquireProcessSlotAsync(cts.Token))
-            .Should().ThrowAsync<OperationCanceledException>(
-                "with 1 slot, concurrent slot acquisition should block and timeout");
-
-        // Release the first slot
-        slot1.Dispose();
-
-        // Now acquiring should succeed
-        using var slot2 = await service.AcquireProcessSlotAsync();
-        slot2.Should().NotBeNull("after releasing slot1, slot2 should be acquirable");
-    }
-
-    /// <summary>
-    /// Verifies that disposal properly cleans up the semaphore.
-    /// </summary>
-    [Fact]
-    public void Dispose_ShouldCleanupSemaphore()
+    public async Task Dispose_ShouldPreventFurtherExecution()
     {
         // Arrange
         var service = new ProcessExecutionService(_mockState.Object, _mockLogger.Object);
@@ -377,67 +244,15 @@ public sealed class ProcessExecutionServiceTests : IDisposable
         service.Dispose();
 
         // Assert
-        // After disposal, trying to acquire should throw ObjectDisposedException
-        FluentActions.Awaiting(() => service.AcquireProcessSlotAsync())
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = "cmd.exe",
+            Arguments = "/c echo test"
+        };
+
+        await FluentActions.Awaiting(() => service.ExecuteAsync(startInfo))
             .Should().ThrowAsync<ObjectDisposedException>(
-                "disposed service should not allow slot acquisition");
-    }
-
-    /// <summary>
-    /// Verifies that the service initializes with correct number of slots from state.
-    /// </summary>
-    [Fact]
-    public async Task Constructor_ShouldInitializeSlotsFromState()
-    {
-        // Arrange
-        var stateWith3Slots = new AppState { MaxConcurrentSubprocesses = 3 };
-        _mockState.Setup(s => s.CurrentState).Returns(stateWith3Slots);
-
-        using var service = new ProcessExecutionService(_mockState.Object, _mockLogger.Object);
-
-        // Act & Assert
-        // Should be able to acquire 3 slots concurrently
-        var slots = new List<IDisposable>();
-        for (int i = 0; i < 3; i++)
-        {
-            slots.Add(await service.AcquireProcessSlotAsync());
-        }
-
-        slots.Should().HaveCount(3, "should acquire all 3 configured slots");
-
-        // Cleanup
-        foreach (var slot in slots)
-        {
-            slot.Dispose();
-        }
-    }
-
-    /// <summary>
-    /// Verifies that null MaxConcurrentSubprocesses defaults to 1 slot.
-    /// </summary>
-    [Fact]
-    public async Task Constructor_WhenMaxConcurrentNull_ShouldDefaultToOneSlot()
-    {
-        // Arrange
-        var stateWithNullSlots = new AppState { MaxConcurrentSubprocesses = null };
-        _mockState.Setup(s => s.CurrentState).Returns(stateWithNullSlots);
-
-        using var service = new ProcessExecutionService(_mockState.Object, _mockLogger.Object);
-
-        // Act
-        // Should be able to acquire exactly 1 slot
-        var slot1 = await service.AcquireProcessSlotAsync();
-
-        // Second slot should block
-        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
-        var acquireTask = service.AcquireProcessSlotAsync(cts.Token);
-
-        // Assert
-        await FluentActions.Awaiting(() => acquireTask)
-            .Should().ThrowAsync<OperationCanceledException>(
-                "only 1 slot should be available when MaxConcurrent is null");
-
-        slot1.Dispose();
+                "disposed service should not allow execution");
     }
 
     #endregion

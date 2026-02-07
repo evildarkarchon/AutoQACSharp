@@ -120,7 +120,6 @@ public sealed class AppStateTests
         state.Mo2ModeEnabled.Should().BeFalse();
         state.PartialFormsEnabled.Should().BeFalse();
         state.CurrentGameType.Should().Be(GameType.Unknown);
-        state.MaxConcurrentSubprocesses.Should().BeNull();
     }
 
     #endregion
@@ -319,23 +318,6 @@ public sealed class AppStateTests
         state.CleaningTimeout.Should().Be(300,
             "default timeout should be 5 minutes (300 seconds)");
         state.CleaningTimeout.Should().BePositive();
-    }
-
-    /// <summary>
-    /// Verifies that MaxConcurrentSubprocesses can be null or a positive value.
-    /// </summary>
-    [Theory]
-    [InlineData(null)]
-    [InlineData(1)]
-    [InlineData(4)]
-    [InlineData(8)]
-    public void MaxConcurrentSubprocesses_ShouldAcceptNullOrPositiveValues(int? value)
-    {
-        // Arrange & Act
-        var state = new AppState { MaxConcurrentSubprocesses = value };
-
-        // Assert
-        state.MaxConcurrentSubprocesses.Should().Be(value);
     }
 
     #endregion

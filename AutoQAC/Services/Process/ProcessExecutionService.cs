@@ -35,45 +35,8 @@ public sealed class ProcessExecutionService : IProcessExecutionService, IDisposa
         _logger = logger;
         _stateService = stateService;
 
-        var maxProcesses = stateService.CurrentState.MaxConcurrentSubprocesses ?? 1;
-        _logger.Debug($"Initializing ProcessExecutionService with {maxProcesses} slots.");
-        _processSlots = new SemaphoreSlim(maxProcesses, maxProcesses);
-    }
-
-    public async Task<IDisposable> AcquireProcessSlotAsync(CancellationToken ct = default)
-    {
-        // Start the actual wait
-        var slotTask = _processSlots.WaitAsync(ct);
-
-        // Race against a 10-second warning delay
-        var warningDelay = Task.Delay(SemaphoreWarningMs, ct);
-        var firstCompleted = await Task.WhenAny(slotTask, warningDelay).ConfigureAwait(false);
-
-        if (firstCompleted == warningDelay && !slotTask.IsCompleted)
-        {
-            _logger.Warning("[Termination] Semaphore slot acquisition has been waiting for 10s -- possible contention");
-
-            // Continue waiting up to the full 60s timeout
-            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            timeoutCts.CancelAfter(SemaphoreTimeoutMs - SemaphoreWarningMs);
-
-            try
-            {
-                await slotTask.WaitAsync(timeoutCts.Token).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-            {
-                _logger.Warning("[Termination] Semaphore slot acquisition timed out after 60s -- possible deadlock");
-                throw new TimeoutException("Process slot acquisition timed out after 60 seconds. This may indicate a deadlock in process management.");
-            }
-        }
-        else
-        {
-            // slotTask completed within 10s (or was cancelled), just await to propagate exceptions
-            await slotTask.ConfigureAwait(false);
-        }
-
-        return new SemaphoreReleaser(_processSlots);
+        // Hardcoded to 1: xEdit enforces single-instance via file locking
+        _processSlots = new SemaphoreSlim(1, 1);
     }
 
     public async Task<ProcessResult> ExecuteAsync(
@@ -481,17 +444,4 @@ public sealed class ProcessExecutionService : IProcessExecutionService, IDisposa
         _processSlots.Dispose();
     }
 
-    private class SemaphoreReleaser(SemaphoreSlim semaphore) : IDisposable
-    {
-        private bool _isDisposed;
-
-        public void Dispose()
-        {
-            if (!_isDisposed)
-            {
-                semaphore.Release();
-                _isDisposed = true;
-            }
-        }
-    }
 }
