@@ -11,7 +11,7 @@
 - [x] **PROC-02**: Reliable stop/cancel that guarantees xEdit is dead before reporting cancelled
 - [x] **PROC-03**: Fix process termination race condition (file handles persisting after disposal)
 - [x] **PROC-04**: Fix CancellationTokenSource lock synchronization (race on null check in StopCleaning + Dispose)
-- [ ] **PROC-05**: CPU usage threshold monitoring to detect hung xEdit processes
+- [x] **PROC-05**: CPU usage threshold monitoring to detect hung xEdit processes
 - [x] **PROC-06**: Improved subprocess resource management (wait condition pattern, timeout on slot acquisition)
 
 ### Progress & Feedback
@@ -55,13 +55,13 @@
 
 ### UI/UX
 
-- [ ] **UI-01**: About dialog with version, build info, .NET version, links to project
-- [ ] **UI-02**: MainWindowViewModel decomposition (extract plugin selection, results display)
-- [ ] **UI-03**: Logging improvements (startup info, xEdit commands, session summary)
+- [x] **UI-01**: About dialog with version, build info, .NET version, links to project
+- [x] **UI-02**: MainWindowViewModel decomposition (extract plugin selection, results display)
+- [x] **UI-03**: Logging improvements (startup info, xEdit commands, session summary)
 
 ### Monitoring
 
-- [ ] **MON-01**: Log file monitoring (tail xEdit log files for diagnostics)
+- [x] **MON-01**: Log file monitoring (tail xEdit log files for diagnostics)
 
 ### Test Coverage
 
@@ -109,7 +109,7 @@
 | PROC-02 | Phase 1 | Complete |
 | PROC-03 | Phase 1 | Complete |
 | PROC-04 | Phase 1 | Complete |
-| PROC-05 | Phase 6 | Pending |
+| PROC-05 | Phase 6 | Complete |
 | PROC-06 | Phase 1 | Complete |
 | PROG-01 | Phase 3 | Complete |
 | PROG-02 | Phase 3 | Complete |
@@ -132,10 +132,10 @@
 | SAFE-02 | Phase 5 | Complete |
 | SAFE-03 | Phase 5 | Complete |
 | GAME-01 | Phase 2 | Complete |
-| UI-01 | Phase 6 | Pending |
-| UI-02 | Phase 6 | Pending |
-| UI-03 | Phase 6 | Pending |
-| MON-01 | Phase 6 | Pending |
+| UI-01 | Phase 6 | Complete |
+| UI-02 | Phase 6 | Complete |
+| UI-03 | Phase 6 | Complete |
+| MON-01 | Phase 6 | Complete |
 | TEST-01 | Phase 7 | Pending |
 | TEST-02 | Phase 7 | Pending |
 | TEST-03 | Phase 7 | Pending |
@@ -153,4 +153,4 @@
 
 ---
 *Requirements defined: 2026-02-06*
-*Last updated: 2026-02-07 after Phase 5 completion*
+*Last updated: 2026-02-07 after Phase 6 completion*

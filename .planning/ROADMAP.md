@@ -17,7 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 3: Real-Time Feedback** - Give users live progress and actionable error messages during cleaning sessions
 - [x] **Phase 4: Configuration Enhancement** - Batch config operations, cache invalidation, validation UI, and settings cleanup
 - [x] **Phase 5: Safety Features** - Dry-run preview and plugin backup/rollback so users trust the tool with their load order
-- [ ] **Phase 6: UI Polish & Monitoring** - Decompose bloated ViewModel, add About dialog, logging improvements, and diagnostic monitoring
+- [x] **Phase 6: UI Polish & Monitoring** - Decompose bloated ViewModel, add About dialog, logging improvements, and diagnostic monitoring
 - [ ] **Phase 7: Hardening & Cleanup** - Comprehensive test coverage, dependency updates, and remove reference code
 
 ## Phase Details
@@ -114,9 +114,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 06-01-PLAN.md -- MainWindowViewModel decomposition into ConfigurationViewModel, PluginListViewModel, CleaningCommandsViewModel with parent mediation (UI-02)
-- [ ] 06-02-PLAN.md -- About dialog with version/build/update info, startup logging, session summary logging (UI-01, UI-03)
-- [ ] 06-03-PLAN.md -- CPU-based hang detection service, inline warning banner in progress window (PROC-05)
+- [x] 06-01-PLAN.md -- MainWindowViewModel decomposition into ConfigurationViewModel, PluginListViewModel, CleaningCommandsViewModel with parent mediation (UI-02)
+- [x] 06-02-PLAN.md -- About dialog with version/build/update info, startup logging, session summary logging (UI-01, UI-03)
+- [x] 06-03-PLAN.md -- CPU-based hang detection service, inline warning banner in progress window (PROC-05)
 
 ### Phase 7: Hardening & Cleanup
 **Goal**: Critical paths have 80%+ test coverage, dependencies are current, and the reference implementation code is removed
@@ -146,5 +146,5 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
 | 3. Real-Time Feedback | 3/3 | Complete | 2026-02-07 |
 | 4. Configuration Enhancement | 2/2 | Complete | 2026-02-07 |
 | 5. Safety Features | 2/2 | Complete | 2026-02-07 |
-| 6. UI Polish & Monitoring | 0/3 | Not started | - |
+| 6. UI Polish & Monitoring | 3/3 | Complete | 2026-02-07 |
 | 7. Hardening & Cleanup | 0/2 | Not started | - |
