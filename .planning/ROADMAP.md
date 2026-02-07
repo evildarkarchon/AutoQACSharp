@@ -18,7 +18,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 4: Configuration Enhancement** - Batch config operations, cache invalidation, validation UI, and settings cleanup
 - [x] **Phase 5: Safety Features** - Dry-run preview and plugin backup/rollback so users trust the tool with their load order
 - [x] **Phase 6: UI Polish & Monitoring** - Decompose bloated ViewModel, add About dialog, logging improvements, and diagnostic monitoring
-- [ ] **Phase 7: Hardening & Cleanup** - Comprehensive test coverage, dependency updates, and remove reference code
+- [x] **Phase 7: Hardening & Cleanup** - Comprehensive test coverage, dependency updates, and remove reference code
 
 ## Phase Details
 
@@ -131,8 +131,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 07-01-PLAN.md -- Targeted gap tests (TEST-01 through TEST-05) + Coverlet MSBuild coverage tooling setup
-- [ ] 07-02-PLAN.md -- Feature test coverage for BackupService/LogRetentionService/XEditLogFileService (TEST-06), Mutagen update (DEP-01, DEP-02), Code_To_Port removal (POST-01)
+- [x] 07-01-PLAN.md -- Targeted gap tests (TEST-01 through TEST-05) + Coverlet MSBuild coverage tooling setup
+- [x] 07-02-PLAN.md -- Feature test coverage for BackupService/LogRetentionService/XEditLogFileService (TEST-06), Mutagen update (DEP-01, DEP-02), Code_To_Port removal (POST-01)
 
 ## Progress
 
@@ -147,4 +147,4 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
 | 4. Configuration Enhancement | 2/2 | Complete | 2026-02-07 |
 | 5. Safety Features | 2/2 | Complete | 2026-02-07 |
 | 6. UI Polish & Monitoring | 3/3 | Complete | 2026-02-07 |
-| 7. Hardening & Cleanup | 0/2 | Not started | - |
+| 7. Hardening & Cleanup | 2/2 | Complete | 2026-02-07 |

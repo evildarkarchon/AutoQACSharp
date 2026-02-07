@@ -65,21 +65,21 @@
 
 ### Test Coverage
 
-- [ ] **TEST-01**: ProcessExecutionService process termination edge cases
-- [ ] **TEST-02**: Configuration migration failure paths (merge, disk full, permission denied)
-- [ ] **TEST-03**: Skip list loading for Unknown GameType
-- [ ] **TEST-04**: Concurrent state updates from multiple tasks
-- [ ] **TEST-05**: PluginValidationService with non-rooted paths
-- [ ] **TEST-06**: Comprehensive test coverage for all new features (target 80% on critical paths)
+- [x] **TEST-01**: ProcessExecutionService process termination edge cases
+- [x] **TEST-02**: Configuration migration failure paths (merge, disk full, permission denied)
+- [x] **TEST-03**: Skip list loading for Unknown GameType
+- [x] **TEST-04**: Concurrent state updates from multiple tasks
+- [x] **TEST-05**: PluginValidationService with non-rooted paths
+- [x] **TEST-06**: Comprehensive test coverage for all new features (target 80% on critical paths)
 
 ### Dependencies
 
-- [ ] **DEP-01**: Evaluate and update Mutagen (0.52.0 -> latest compatible)
-- [ ] **DEP-02**: YamlDotNet security advisory check and update if needed
+- [x] **DEP-01**: Evaluate and update Mutagen (0.52.0 -> latest compatible)
+- [x] **DEP-02**: YamlDotNet security advisory check and update if needed
 
 ### Post-Parity
 
-- [ ] **POST-01**: Remove Code_To_Port/ directory after feature parity verified
+- [x] **POST-01**: Remove Code_To_Port/ directory after feature parity verified
 
 ## v2 Requirements
 
@@ -136,15 +136,15 @@
 | UI-02 | Phase 6 | Complete |
 | UI-03 | Phase 6 | Complete |
 | MON-01 | Phase 6 | Complete |
-| TEST-01 | Phase 7 | Pending |
-| TEST-02 | Phase 7 | Pending |
-| TEST-03 | Phase 7 | Pending |
-| TEST-04 | Phase 7 | Pending |
-| TEST-05 | Phase 7 | Pending |
-| TEST-06 | Phase 7 | Pending |
-| DEP-01 | Phase 7 | Pending |
-| DEP-02 | Phase 7 | Pending |
-| POST-01 | Phase 7 | Pending |
+| TEST-01 | Phase 7 | Complete |
+| TEST-02 | Phase 7 | Complete |
+| TEST-03 | Phase 7 | Complete |
+| TEST-04 | Phase 7 | Complete |
+| TEST-05 | Phase 7 | Complete |
+| TEST-06 | Phase 7 | Complete |
+| DEP-01 | Phase 7 | Complete |
+| DEP-02 | Phase 7 | Complete |
+| POST-01 | Phase 7 | Complete |
 
 **Coverage:**
 - v1 requirements: 40 total
@@ -153,4 +153,4 @@
 
 ---
 *Requirements defined: 2026-02-06*
-*Last updated: 2026-02-07 after Phase 6 completion*
+*Last updated: 2026-02-07 after Phase 7 completion*
