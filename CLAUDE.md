@@ -25,10 +25,6 @@ This file provides guidance to Claude Code when working with this C# Avalonia MV
 
 This is a C# implementation of XEdit-PACT (Plugin Auto Cleaning Tool) using Avalonia UI framework with MVVM architecture.
 
-**IMPORTANT**: The `Code_To_Port/` directory contains reference implementations (Python/Qt and Rust/Slint) for feature reference during development. This directory is **temporary** and will be removed once the C# implementation achieves feature parity.
-
-**Foundation Stage**: This project is currently in the foundation/infrastructure stage.
-
 ## Essential Commands
 
 ```bash
@@ -38,7 +34,7 @@ dotnet build
 # Run the application
 dotnet run --project AutoQAC
 
-# Run tests (when implemented)
+# Run tests (with automatic coverage collection)
 dotnet test
 
 # Build release version
@@ -50,10 +46,10 @@ dotnet clean
 
 ## Technology Stack
 
-- **.NET 9**: Target framework
-- **C# 12**: With nullable reference types enabled
-- **Avalonia UI 11.3.8**: Cross-platform XAML-based UI framework
-- **ReactiveUI**: MVVM framework for reactive programming
+- **.NET 10**: Target framework (LTS)
+- **C# 13**: With nullable reference types enabled
+- **Avalonia UI 11.3.11**: Cross-platform XAML-based UI framework
+- **ReactiveUI 11.3.8**: MVVM framework for reactive programming
 - **Fluent Design**: Microsoft Fluent theme for Avalonia
 
 ## Architecture & Design Principles
@@ -216,46 +212,17 @@ public async Task CleanPluginsAsync(IEnumerable<string> plugins, CancellationTok
 }
 ```
 
-## Reference Implementation Porting Guidelines
-
-When porting functionality from reference implementations in `Code_To_Port/`:
-
-1. **Study the Reference First**:
-   - Read `Code_To_Port/CLAUDE.md` for architecture overview
-   - Examine the Python modules in `Code_To_Port/AutoQACLib/`
-   - Understand the state management and threading model
-
-2. **Translate Concepts, Not Code**:
-   - Python's `QThread` → C# `Task` and `async/await`
-   - Python's `QMutex` → C# `SemaphoreSlim` or async patterns
-   - Python's signals/slots → ReactiveUI observables
-   - PySide6 widgets → Avalonia controls
-
-3. **Key Translation Mappings**:
-
-   | Python/Qt | C# Avalonia |
-   |-----------|-------------|
-   | `StateManager` with Qt signals | ReactiveUI `ReactiveObject` properties |
-   | `QThread` worker | `Task.Run()` or `ReactiveCommand.CreateFromTask()` |
-   | `ConfigManager` YAML I/O | `YamlDotNet` for YAML serialization |
-   | `CleaningService` subprocess | `Process.Start()` with async output reading |
-   | `GuiController` mediator | ViewModel orchestration |
-   | PySide6 dialogs | Avalonia `Window` with MVVM |
-
-4. **State Management**:
-   - Python's `StateManager` with `AppState` dataclass → C# ViewModel properties
-   - Qt signals for state changes → ReactiveUI property change notifications
-   - Thread-safe state access → C# async patterns and immutability when needed
-
 ## Critical Technical Constraints
 
-- **Target Framework**: .NET 8 (LTS)
-- **C# Version**: 12 with nullable reference types
-- **UI Framework**: Avalonia 11.3.8
-- **MVVM Framework**: ReactiveUI
-- **YAML Library**: YamlDotNet (to be added)
-- **Logging**: Serilog or Microsoft.Extensions.Logging (to be decided)
-- **Testing**: xUnit with FluentAssertions (when tests are added)
+- **Target Framework**: .NET 10 (LTS)
+- **C# Version**: 13 with nullable reference types
+- **UI Framework**: Avalonia 11.3.11
+- **MVVM Framework**: ReactiveUI 11.3.8
+- **YAML Library**: YamlDotNet 16.3.0
+- **Logging**: Serilog with Console and File sinks
+- **Testing**: xUnit 2.9.3 with FluentAssertions 8.8.0 and Moq 4.20.72
+- **DI**: Microsoft.Extensions.DependencyInjection 10.0.2
+- **Coverage**: Coverlet (MSBuild + Collector) with Cobertura XML output
 
 ## xEdit Integration
 
@@ -322,12 +289,11 @@ Use YamlDotNet for deserialization with proper error handling.
 
 ## Testing Requirements
 
-When tests are implemented:
-
-- **Unit Tests**: Test ViewModels and Models independently
-- **Integration Tests**: Test file I/O and subprocess execution
-- **UI Tests**: Consider Avalonia.Headless for automated UI testing
+- **Unit Tests**: Test ViewModels and Models independently (510+ tests)
+- **UI Tests**: Avalonia.Headless for automated UI testing (xUnit v2 required)
 - **Coverage Target**: Minimum 80% for critical paths
+- **Coverage Tooling**: Coverlet MSBuild auto-collects on every `dotnet test` run
+- **Mocking**: Moq for dependency mocking -- ALL optional parameters must be matched in Setup/Verify calls
 
 ## Common Pitfalls to Avoid
 
@@ -342,13 +308,11 @@ When tests are implemented:
 
 ## Development Workflow
 
-1. **Reference Implementation**: Check `Code_To_Port/` for equivalent functionality
-2. **Design C# Equivalent**: Translate concepts to C#/Avalonia patterns
-3. **Implement Models First**: Business logic before UI
-4. **Build ViewModels**: Presentation logic with ReactiveUI
-5. **Create Views Last**: XAML UI with data binding
-6. **Test Incrementally**: Verify each layer before moving on
-7. **Maintain Sequential Processing**: Always process plugins one at a time
+1. **Implement Models First**: Business logic before UI
+2. **Build ViewModels**: Presentation logic with ReactiveUI
+3. **Create Views Last**: XAML UI with data binding
+4. **Test Incrementally**: Verify each layer before moving on
+5. **Maintain Sequential Processing**: Always process plugins one at a time
 
 ## Resources
 
@@ -359,11 +323,8 @@ When tests are implemented:
 
 ## Notes for Claude Code
 
-- Always reference the implementations in `Code_To_Port/` when porting features
 - Follow the MVVM pattern strictly
 - Use ReactiveUI patterns for all ViewModels
 - Keep async operations truly asynchronous
 - **CRITICAL**: Ensure sequential processing - only one plugin at a time
 - Write clean, maintainable C# code with proper error handling
-- The `Code_To_Port/` directory is temporary and will be removed at feature parity
-- Ask for clarification if reference implementation behavior is unclear

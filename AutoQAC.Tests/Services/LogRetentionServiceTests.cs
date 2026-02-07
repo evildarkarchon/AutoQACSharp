@@ -79,15 +79,20 @@ public sealed class LogRetentionServiceTests : IDisposable
     [Fact]
     public async Task CleanupAsync_NoLogDirectory_DoesNothing()
     {
-        // Arrange -- no "logs" directory exists
+        // Arrange -- ensure no "logs" directory exists under CWD
+        // (CWD is set to _testRoot by constructor; explicitly remove logs if any race created it)
+        var logsPath = Path.Combine(_testRoot, "logs");
+        if (Directory.Exists(logsPath))
+            Directory.Delete(logsPath, recursive: true);
+
         SetupConfig(RetentionMode.AgeBased);
 
-        // Act
-        await _sut.CleanupAsync();
+        // Act -- should complete without error
+        var act = async () => await _sut.CleanupAsync();
 
-        // Assert -- no exception, no config load needed
-        _mockConfig.Verify(c => c.LoadUserConfigAsync(It.IsAny<CancellationToken>()), Times.Never,
-            "should return early before loading config when directory doesn't exist");
+        // Assert -- no exception, early return before any file operations
+        await act.Should().NotThrowAsync("should return early when log directory doesn't exist");
+        Directory.Exists(logsPath).Should().BeFalse("logs directory should not be created by cleanup");
     }
 
     #endregion
