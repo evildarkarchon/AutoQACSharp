@@ -1,6 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:AutoQAC.ViewModels"
+        xmlns:m="using:AutoQAC.Models"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
@@ -38,7 +39,7 @@
         </Border>
 
         <!-- Main Content -->
-        <Grid Margin="10" RowDefinitions="Auto,*,Auto">
+        <Grid Margin="10" RowDefinitions="Auto,Auto,*,Auto">
 
             <!-- Configuration Panel -->
             <StackPanel Grid.Row="0" Spacing="10">
@@ -145,8 +146,47 @@
                 </StackPanel>
             </StackPanel>
 
-            <!-- Plugin List -->
+            <!-- Validation Error Panel -->
             <Border Grid.Row="1"
+                    IsVisible="{Binding HasValidationErrors}"
+                    Background="#FFF2CC"
+                    BorderBrush="#E6A817"
+                    BorderThickness="1"
+                    CornerRadius="4"
+                    Padding="10"
+                    Margin="0,5">
+                <StackPanel Spacing="5">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Grid.Column="0"
+                                   Text="Cannot start cleaning:"
+                                   FontWeight="Bold"
+                                   Foreground="#8B4513" />
+                        <Button Grid.Column="1"
+                                Content="Dismiss"
+                                Command="{Binding DismissValidationCommand}"
+                                Padding="5,1"
+                                FontSize="11" />
+                    </Grid>
+                    <ItemsControl ItemsSource="{Binding ValidationErrors}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="m:ValidationError">
+                                <StackPanel Margin="0,3">
+                                    <TextBlock Text="{Binding Title}"
+                                               FontWeight="SemiBold"
+                                               Foreground="#8B4513" />
+                                    <TextBlock Text="{Binding FixStep}"
+                                               TextWrapping="Wrap"
+                                               Foreground="#5D4037"
+                                               FontSize="12" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+
+            <!-- Plugin List -->
+            <Border Grid.Row="2"
                     BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}"
                     BorderThickness="1"
                     CornerRadius="4"
@@ -196,7 +236,7 @@
             </Border>
 
             <!-- Control Buttons -->
-            <StackPanel Grid.Row="2"
+            <StackPanel Grid.Row="3"
                         Orientation="Horizontal"
                         HorizontalAlignment="Right"
                         Spacing="10">
