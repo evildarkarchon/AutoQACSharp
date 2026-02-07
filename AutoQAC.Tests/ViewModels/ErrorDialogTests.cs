@@ -111,14 +111,14 @@ public sealed class ErrorDialogTests
     {
         // Arrange - CurrentState has null xEdit path (default AppState)
         var vm = CreateViewModel();
-        vm.XEditPath = null;
+        vm.Configuration.XEditPath = null;
 
         // Act
-        await vm.StartCleaningCommand.Execute();
+        await vm.Commands.StartCleaningCommand.Execute();
 
         // Assert - inline validation errors shown, no modal dialog
-        vm.HasValidationErrors.Should().BeTrue("validation errors should be visible");
-        vm.ValidationErrors.Should().Contain(e => e.Title == "xEdit not configured",
+        vm.Commands.HasValidationErrors.Should().BeTrue("validation errors should be visible");
+        vm.Commands.ValidationErrors.Should().Contain(e => e.Title == "xEdit not configured",
             "should show xEdit not configured error");
 
         // No modal dialog should be shown
@@ -139,14 +139,14 @@ public sealed class ErrorDialogTests
     {
         // Arrange - CurrentState has empty xEdit path
         var vm = CreateViewModel();
-        vm.XEditPath = string.Empty;
+        vm.Configuration.XEditPath = string.Empty;
 
         // Act
-        await vm.StartCleaningCommand.Execute();
+        await vm.Commands.StartCleaningCommand.Execute();
 
         // Assert - inline validation errors shown
-        vm.HasValidationErrors.Should().BeTrue();
-        vm.ValidationErrors.Should().Contain(e => e.Title == "xEdit not configured");
+        vm.Commands.HasValidationErrors.Should().BeTrue();
+        vm.Commands.ValidationErrors.Should().Contain(e => e.Title == "xEdit not configured");
     }
 
     [Fact]
@@ -176,14 +176,14 @@ public sealed class ErrorDialogTests
             _pluginServiceMock.Object,
             _pluginLoadingServiceMock.Object);
 
-        vm.XEditPath = nonExistentPath;
+        vm.Configuration.XEditPath = nonExistentPath;
 
         // Act
-        await vm.StartCleaningCommand.Execute();
+        await vm.Commands.StartCleaningCommand.Execute();
 
         // Assert - inline validation errors shown
-        vm.HasValidationErrors.Should().BeTrue();
-        vm.ValidationErrors.Should().Contain(e => e.Title == "xEdit not found",
+        vm.Commands.HasValidationErrors.Should().BeTrue();
+        vm.Commands.ValidationErrors.Should().Contain(e => e.Title == "xEdit not found",
             "should show xEdit not found error");
     }
 
@@ -205,7 +205,7 @@ public sealed class ErrorDialogTests
             .ReturnsAsync(nonExistentPath);
 
         // Act
-        await vm.ConfigureLoadOrderCommand.Execute();
+        await vm.Configuration.ConfigureLoadOrderCommand.Execute();
 
         // Assert
         _messageDialogMock.Verify(
@@ -239,7 +239,7 @@ public sealed class ErrorDialogTests
                 .ReturnsAsync(new List<PluginInfo>());
 
             // Act
-            await vm.ConfigureLoadOrderCommand.Execute();
+            await vm.Configuration.ConfigureLoadOrderCommand.Execute();
 
             // Assert
             _messageDialogMock.Verify(
@@ -276,7 +276,7 @@ public sealed class ErrorDialogTests
                 .ThrowsAsync(new IOException("File in use"));
 
             // Act
-            await vm.ConfigureLoadOrderCommand.Execute();
+            await vm.Configuration.ConfigureLoadOrderCommand.Execute();
 
             // Assert
             _messageDialogMock.Verify(
@@ -305,19 +305,19 @@ public sealed class ErrorDialogTests
         try
         {
             var vm = CreateViewModelWithValidState(tempFile);
-            vm.XEditPath = tempFile;
+            vm.Configuration.XEditPath = tempFile;
 
             _orchestratorMock.Setup(x => x.StartCleaningAsync(It.IsAny<TimeoutRetryCallback>(), It.IsAny<BackupFailureCallback>(), It.IsAny<CancellationToken>()))
                 .ThrowsAsync(new InvalidOperationException("Configuration is invalid"));
 
             // Act
-            await vm.StartCleaningCommand.Execute();
+            await vm.Commands.StartCleaningCommand.Execute();
 
             // Assert - inline validation error shown instead of modal dialog
-            vm.HasValidationErrors.Should().BeTrue("validation errors should be visible");
-            vm.ValidationErrors.Should().HaveCount(1);
-            vm.ValidationErrors[0].Title.Should().Be("Configuration error");
-            vm.StatusText.Should().Contain("error");
+            vm.Commands.HasValidationErrors.Should().BeTrue("validation errors should be visible");
+            vm.Commands.ValidationErrors.Should().HaveCount(1);
+            vm.Commands.ValidationErrors[0].Title.Should().Be("Configuration error");
+            vm.Commands.StatusText.Should().Contain("error");
 
             // No modal dialog should be shown
             _messageDialogMock.Verify(
@@ -340,13 +340,13 @@ public sealed class ErrorDialogTests
         try
         {
             var vm = CreateViewModelWithValidState(tempFile);
-            vm.XEditPath = tempFile;
+            vm.Configuration.XEditPath = tempFile;
 
             _orchestratorMock.Setup(x => x.StartCleaningAsync(It.IsAny<TimeoutRetryCallback>(), It.IsAny<BackupFailureCallback>(), It.IsAny<CancellationToken>()))
                 .ThrowsAsync(new Exception("Unexpected error"));
 
             // Act
-            await vm.StartCleaningCommand.Execute();
+            await vm.Commands.StartCleaningCommand.Execute();
 
             // Assert - generic exceptions still use modal dialog (truly unexpected)
             _messageDialogMock.Verify(
@@ -375,7 +375,7 @@ public sealed class ErrorDialogTests
         try
         {
             var vm = CreateViewModelWithValidState(tempFile);
-            vm.XEditPath = tempFile;
+            vm.Configuration.XEditPath = tempFile;
 
             TimeoutRetryCallback? capturedCallback = null;
             _orchestratorMock.Setup(x => x.StartCleaningAsync(It.IsAny<TimeoutRetryCallback>(), It.IsAny<BackupFailureCallback>(), It.IsAny<CancellationToken>()))
@@ -383,7 +383,7 @@ public sealed class ErrorDialogTests
                 .Returns(Task.CompletedTask);
 
             // Act
-            await vm.StartCleaningCommand.Execute();
+            await vm.Commands.StartCleaningCommand.Execute();
 
             // Assert
             capturedCallback.Should().NotBeNull("Timeout callback should be passed to orchestrator");
@@ -403,7 +403,7 @@ public sealed class ErrorDialogTests
         try
         {
             var vm = CreateViewModelWithValidState(tempFile);
-            vm.XEditPath = tempFile;
+            vm.Configuration.XEditPath = tempFile;
 
             TimeoutRetryCallback? capturedCallback = null;
             _orchestratorMock.Setup(x => x.StartCleaningAsync(It.IsAny<TimeoutRetryCallback>(), It.IsAny<BackupFailureCallback>(), It.IsAny<CancellationToken>()))
@@ -413,7 +413,7 @@ public sealed class ErrorDialogTests
             _messageDialogMock.Setup(m => m.ShowRetryAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()))
                 .ReturnsAsync(true);
 
-            await vm.StartCleaningCommand.Execute();
+            await vm.Commands.StartCleaningCommand.Execute();
 
             // Act - simulate timeout callback being invoked
             capturedCallback.Should().NotBeNull();
@@ -444,7 +444,7 @@ public sealed class ErrorDialogTests
         try
         {
             var vm = CreateViewModelWithValidState(tempFile);
-            vm.XEditPath = tempFile;
+            vm.Configuration.XEditPath = tempFile;
 
             TimeoutRetryCallback? capturedCallback = null;
             _orchestratorMock.Setup(x => x.StartCleaningAsync(It.IsAny<TimeoutRetryCallback>(), It.IsAny<BackupFailureCallback>(), It.IsAny<CancellationToken>()))
@@ -455,7 +455,7 @@ public sealed class ErrorDialogTests
             _messageDialogMock.Setup(m => m.ShowRetryAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()))
                 .ReturnsAsync(false);
 
-            await vm.StartCleaningCommand.Execute();
+            await vm.Commands.StartCleaningCommand.Execute();
 
             // Act
             capturedCallback.Should().NotBeNull();

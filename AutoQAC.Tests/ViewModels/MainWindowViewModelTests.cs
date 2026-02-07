@@ -85,11 +85,11 @@ public sealed class MainWindowViewModelTests
                 _pluginLoadingServiceMock.Object);
 
             // Manually set properties to satisfy CanExecute (use temp file path)
-            vm.LoadOrderPath = "plugins.txt";
-            vm.XEditPath = tempFile; // Use actual existing file
+            vm.Configuration.LoadOrderPath = "plugins.txt";
+            vm.Configuration.XEditPath = tempFile; // Use actual existing file
 
             // Act
-            await vm.StartCleaningCommand.Execute();
+            await vm.Commands.StartCleaningCommand.Execute();
 
             // Assert - verify the 3-param overload with timeout and backup failure callbacks is called
             _orchestratorMock.Verify(
@@ -148,7 +148,7 @@ public sealed class MainWindowViewModelTests
                 .ReturnsAsync(new List<string>());
 
             // Act
-            await vm.ConfigureLoadOrderCommand.Execute();
+            await vm.Configuration.ConfigureLoadOrderCommand.Execute();
 
             // Assert
             _stateServiceMock.Verify(x => x.UpdateConfigurationPaths(tempFile, It.IsAny<string>(), It.IsAny<string>()), Times.Once);
@@ -205,21 +205,21 @@ public sealed class MainWindowViewModelTests
             await Task.Delay(50);
 
             // Set valid paths to enable command (use temp file for xEdit path)
-            vm.LoadOrderPath = "plugins.txt";
-            vm.XEditPath = tempFile;
+            vm.Configuration.LoadOrderPath = "plugins.txt";
+            vm.Configuration.XEditPath = tempFile;
 
             // Configure orchestrator to throw exception (use the 3-param overload)
             _orchestratorMock.Setup(x => x.StartCleaningAsync(It.IsAny<TimeoutRetryCallback>(), It.IsAny<BackupFailureCallback>(), It.IsAny<CancellationToken>()))
                 .ThrowsAsync(new InvalidOperationException("Configuration is invalid"));
 
             // Act
-            await vm.StartCleaningCommand.Execute();
+            await vm.Commands.StartCleaningCommand.Execute();
 
             // Assert - inline validation errors shown instead of modal dialog
-            vm.StatusText.Should().Contain("error", "error message should be displayed in status");
-            vm.HasValidationErrors.Should().BeTrue("validation errors should be visible");
-            vm.ValidationErrors.Should().HaveCount(1, "one configuration error should be shown");
-            vm.ValidationErrors[0].Title.Should().Be("Configuration error");
+            vm.Commands.StatusText.Should().Contain("error", "error message should be displayed in status");
+            vm.Commands.HasValidationErrors.Should().BeTrue("validation errors should be visible");
+            vm.Commands.ValidationErrors.Should().HaveCount(1, "one configuration error should be shown");
+            vm.Commands.ValidationErrors[0].Title.Should().Be("Configuration error");
 
             // Verify that NO modal error dialog was shown (inline validation replaces modals)
             _messageDialogMock.Verify(
@@ -269,7 +269,7 @@ public sealed class MainWindowViewModelTests
             .ReturnsAsync((string?)null);
 
         // Act
-        await vm.ConfigureLoadOrderCommand.Execute();
+        await vm.Configuration.ConfigureLoadOrderCommand.Execute();
 
         // Assert
         // State should not be updated when dialog is cancelled
@@ -323,10 +323,10 @@ public sealed class MainWindowViewModelTests
                 .ThrowsAsync(new InvalidOperationException("Failed to parse load order"));
 
             // Act
-            await vm.ConfigureLoadOrderCommand.Execute();
+            await vm.Configuration.ConfigureLoadOrderCommand.Execute();
 
             // Assert
-            vm.StatusText.Should().Contain("Error", "error should be reflected in status");
+            vm.Configuration.StatusText.Should().Contain("Error", "error should be reflected in status");
 
             // Verify error dialog was shown
             _messageDialogMock.Verify(
@@ -358,7 +358,8 @@ public sealed class MainWindowViewModelTests
     [InlineData(null, null)]
     public void CanStartCleaning_ShouldBeFalse_WhenPathsMissing(string? loadOrder, string? xEdit)
     {
-        // Arrange
+        // Arrange - CanStartCleaning now depends on state (not VM properties directly)
+        // With empty state (no plugins, no xEdit path), it should always be false
         var stateSubject = new BehaviorSubject<AppState>(new AppState());
         _stateServiceMock.Setup(s => s.StateChanged).Returns(stateSubject);
         _stateServiceMock.Setup(s => s.CurrentState).Returns(new AppState());
@@ -373,12 +374,13 @@ public sealed class MainWindowViewModelTests
             _pluginServiceMock.Object,
             _pluginLoadingServiceMock.Object);
 
-        // Act
-        vm.LoadOrderPath = loadOrder;
-        vm.XEditPath = xEdit;
+        // Act - set properties on Configuration sub-VM (these don't affect CanStartCleaning
+        // since it now reads from IStateService, but the state has no plugins/xEdit)
+        vm.Configuration.LoadOrderPath = loadOrder;
+        vm.Configuration.XEditPath = xEdit;
 
         // Assert
-        vm.CanStartCleaning.Should().BeFalse("cleaning should not be allowed without required paths");
+        vm.Commands.CanStartCleaning.Should().BeFalse("cleaning should not be allowed without required paths");
     }
 
     /// <summary>
@@ -403,18 +405,18 @@ public sealed class MainWindowViewModelTests
             _pluginServiceMock.Object,
             _pluginLoadingServiceMock.Object);
 
-        // Set valid paths
-        vm.LoadOrderPath = "plugins.txt";
-        vm.XEditPath = "xedit.exe";
+        // Set valid paths on Configuration sub-VM
+        vm.Configuration.LoadOrderPath = "plugins.txt";
+        vm.Configuration.XEditPath = "xedit.exe";
 
         // Emit cleaning state
         stateSubject.OnNext(cleaningState);
 
         // Assert
         // IsCleaning should be true from the state
-        vm.IsCleaning.Should().BeTrue();
+        vm.Commands.IsCleaning.Should().BeTrue();
         // CanStartCleaning should be false because IsCleaning is true
-        vm.CanStartCleaning.Should().BeFalse("cannot start new cleaning while one is in progress");
+        vm.Commands.CanStartCleaning.Should().BeFalse("cannot start new cleaning while one is in progress");
     }
 
     /// <summary>
@@ -442,11 +444,11 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock.Object);
 
         // Act
-        await vm.StopCleaningCommand.Execute();
+        await vm.Commands.StopCleaningCommand.Execute();
 
         // Assert
         _orchestratorMock.Verify(x => x.StopCleaningAsync(), Times.Once);
-        vm.StatusText.Should().Contain("Stopping");
+        vm.Commands.StatusText.Should().Contain("Stopping");
     }
 
     #endregion
@@ -486,12 +488,12 @@ public sealed class MainWindowViewModelTests
         };
         stateSubject.OnNext(newState);
 
-        // Assert
-        vm.LoadOrderPath.Should().Be("newpath/plugins.txt");
-        vm.XEditPath.Should().Be("newpath/xedit.exe");
-        vm.Mo2Path.Should().Be("newpath/mo2.exe");
-        vm.Mo2ModeEnabled.Should().BeTrue();
-        vm.PartialFormsEnabled.Should().BeTrue();
+        // Assert - properties are now on Configuration sub-VM
+        vm.Configuration.LoadOrderPath.Should().Be("newpath/plugins.txt");
+        vm.Configuration.XEditPath.Should().Be("newpath/xedit.exe");
+        vm.Configuration.Mo2Path.Should().Be("newpath/mo2.exe");
+        vm.Configuration.Mo2ModeEnabled.Should().BeTrue();
+        vm.Configuration.PartialFormsEnabled.Should().BeTrue();
     }
 
     #endregion
@@ -524,8 +526,8 @@ public sealed class MainWindowViewModelTests
             _pluginServiceMock.Object,
             _pluginLoadingServiceMock.Object);
 
-        // Assert
-        vm.AvailableGames.Should().BeEquivalentTo(expectedGames);
+        // Assert - AvailableGames is now on Configuration sub-VM
+        vm.Configuration.AvailableGames.Should().BeEquivalentTo(expectedGames);
     }
 
     /// <summary>
@@ -555,15 +557,15 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock.Object);
 
         // Act & Assert - Default is Unknown (not supported)
-        vm.IsMutagenSupported.Should().BeFalse();
+        vm.Configuration.IsMutagenSupported.Should().BeFalse();
 
         // Note: Due to Skip(1) in the subscription, the first change is consumed.
         // Testing the computed property directly after setting SelectedGame:
-        vm.SelectedGame = GameType.SkyrimSe;
-        vm.IsMutagenSupported.Should().BeTrue();
+        vm.Configuration.SelectedGame = GameType.SkyrimSe;
+        vm.Configuration.IsMutagenSupported.Should().BeTrue();
 
-        vm.SelectedGame = GameType.Fallout3;
-        vm.IsMutagenSupported.Should().BeFalse();
+        vm.Configuration.SelectedGame = GameType.Fallout3;
+        vm.Configuration.IsMutagenSupported.Should().BeFalse();
     }
 
     /// <summary>
@@ -588,7 +590,7 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock.Object);
 
         // Act
-        vm.SelectedGame = GameType.SkyrimSe;
+        vm.Configuration.SelectedGame = GameType.SkyrimSe;
 
         // Allow async subscription to execute
         await Task.Delay(100);
@@ -634,7 +636,7 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock.Object);
 
         // Act
-        vm.SelectedGame = GameType.SkyrimSe;
+        vm.Configuration.SelectedGame = GameType.SkyrimSe;
 
         // Allow async subscription to execute
         await Task.Delay(100);
