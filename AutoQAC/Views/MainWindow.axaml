@@ -97,7 +97,7 @@
                 </Grid>
 
                 <!-- Data Folder (only for Mutagen-supported games) -->
-                <Grid ColumnDefinitions="120,*,Auto,Auto"
+                <Grid ColumnDefinitions="120,*,Auto,Auto,Auto"
                       IsVisible="{Binding IsMutagenSupported}">
                     <TextBlock Grid.Column="0" Text="Data Folder:"
                                VerticalAlignment="Center" />
@@ -105,11 +105,23 @@
                              Text="{Binding GameDataFolder}"
                              IsReadOnly="True"
                              Watermark="Auto-detected from registry" />
-                    <Button Grid.Column="2"
+                    <Panel Grid.Column="2" Width="24" VerticalAlignment="Center" Margin="5,0,0,0">
+                        <TextBlock Text="&#x2713;"
+                                   FontSize="16" FontWeight="Bold"
+                                   Foreground="#4CAF50"
+                                   HorizontalAlignment="Center"
+                                   IsVisible="{Binding IsGameDataFolderValid, Converter={StaticResource IsTrueConverter}}" />
+                        <TextBlock Text="&#x2717;"
+                                   FontSize="16" FontWeight="Bold"
+                                   Foreground="#F44336"
+                                   HorizontalAlignment="Center"
+                                   IsVisible="{Binding IsGameDataFolderValid, Converter={StaticResource IsFalseConverter}}" />
+                    </Panel>
+                    <Button Grid.Column="3"
                             Content="Override..."
                             Command="{Binding ConfigureGameDataFolderCommand}"
                             Margin="5,0,0,0" />
-                    <Button Grid.Column="3"
+                    <Button Grid.Column="4"
                             Content="Reset"
                             Command="{Binding ClearGameDataFolderOverrideCommand}"
                             IsVisible="{Binding HasGameDataFolderOverride}"
@@ -119,41 +131,77 @@
                 <Expander Header="Advanced: Load Order"
                           IsExpanded="False"
                           IsVisible="{Binding RequiresLoadOrderFile}">
-                    <Grid ColumnDefinitions="120,*,Auto" Margin="0,5">
+                    <Grid ColumnDefinitions="120,*,Auto,Auto" Margin="0,5">
                         <TextBlock Grid.Column="0" Text="Load Order:"
                                    VerticalAlignment="Center" />
                         <TextBox Grid.Column="1"
                                  Text="{Binding LoadOrderPath}"
                                  IsReadOnly="True"
                                  Watermark="Auto-detected or not configured" />
-                        <Button Grid.Column="2"
+                        <Panel Grid.Column="2" Width="24" VerticalAlignment="Center" Margin="5,0,0,0">
+                            <TextBlock Text="&#x2713;"
+                                       FontSize="16" FontWeight="Bold"
+                                       Foreground="#4CAF50"
+                                       HorizontalAlignment="Center"
+                                       IsVisible="{Binding IsLoadOrderPathValid, Converter={StaticResource IsTrueConverter}}" />
+                            <TextBlock Text="&#x2717;"
+                                       FontSize="16" FontWeight="Bold"
+                                       Foreground="#F44336"
+                                       HorizontalAlignment="Center"
+                                       IsVisible="{Binding IsLoadOrderPathValid, Converter={StaticResource IsFalseConverter}}" />
+                        </Panel>
+                        <Button Grid.Column="3"
                                 Content="Browse..."
                                 Command="{Binding ConfigureLoadOrderCommand}"
                                 Margin="5,0,0,0" />
                     </Grid>
                 </Expander>
 
-                <Grid ColumnDefinitions="120,*,Auto">
+                <Grid ColumnDefinitions="120,*,Auto,Auto">
                     <TextBlock Grid.Column="0" Text="xEdit:"
                                VerticalAlignment="Center" />
                     <TextBox Grid.Column="1"
                              Text="{Binding XEditPath}"
                              IsReadOnly="True"
                              Watermark="Not configured" />
-                    <Button Grid.Column="2"
+                    <Panel Grid.Column="2" Width="24" VerticalAlignment="Center" Margin="5,0,0,0">
+                        <TextBlock Text="&#x2713;"
+                                   FontSize="16" FontWeight="Bold"
+                                   Foreground="#4CAF50"
+                                   HorizontalAlignment="Center"
+                                   IsVisible="{Binding IsXEditPathValid, Converter={StaticResource IsTrueConverter}}" />
+                        <TextBlock Text="&#x2717;"
+                                   FontSize="16" FontWeight="Bold"
+                                   Foreground="#F44336"
+                                   HorizontalAlignment="Center"
+                                   IsVisible="{Binding IsXEditPathValid, Converter={StaticResource IsFalseConverter}}" />
+                    </Panel>
+                    <Button Grid.Column="3"
                             Content="Browse..."
                             Command="{Binding ConfigureXEditCommand}"
                             Margin="5,0,0,0" />
                 </Grid>
 
-                <Grid ColumnDefinitions="120,*,Auto">
+                <Grid ColumnDefinitions="120,*,Auto,Auto">
                     <TextBlock Grid.Column="0" Text="Mod Organizer 2:"
                                VerticalAlignment="Center" />
                     <TextBox Grid.Column="1"
                              Text="{Binding Mo2Path}"
                              IsReadOnly="True"
                              Watermark="Optional - for MO2 mode" />
-                    <Button Grid.Column="2"
+                    <Panel Grid.Column="2" Width="24" VerticalAlignment="Center" Margin="5,0,0,0">
+                        <TextBlock Text="&#x2713;"
+                                   FontSize="16" FontWeight="Bold"
+                                   Foreground="#4CAF50"
+                                   HorizontalAlignment="Center"
+                                   IsVisible="{Binding IsMo2PathValid, Converter={StaticResource IsTrueConverter}}" />
+                        <TextBlock Text="&#x2717;"
+                                   FontSize="16" FontWeight="Bold"
+                                   Foreground="#F44336"
+                                   HorizontalAlignment="Center"
+                                   IsVisible="{Binding IsMo2PathValid, Converter={StaticResource IsFalseConverter}}" />
+                    </Panel>
+                    <Button Grid.Column="3"
                             Content="Browse..."
                             Command="{Binding ConfigureMo2Command}"
                             Margin="5,0,0,0" />

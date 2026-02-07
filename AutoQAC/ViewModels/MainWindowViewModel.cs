@@ -111,6 +111,38 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
         set => this.RaiseAndSetIfChanged(ref _hasGameDataFolderOverride, value);
     }
 
+    #region Path Validation State (null = untouched, true = valid, false = invalid)
+
+    private bool? _isXEditPathValid;
+    public bool? IsXEditPathValid
+    {
+        get => _isXEditPathValid;
+        set => this.RaiseAndSetIfChanged(ref _isXEditPathValid, value);
+    }
+
+    private bool? _isMo2PathValid;
+    public bool? IsMo2PathValid
+    {
+        get => _isMo2PathValid;
+        set => this.RaiseAndSetIfChanged(ref _isMo2PathValid, value);
+    }
+
+    private bool? _isLoadOrderPathValid;
+    public bool? IsLoadOrderPathValid
+    {
+        get => _isLoadOrderPathValid;
+        set => this.RaiseAndSetIfChanged(ref _isLoadOrderPathValid, value);
+    }
+
+    private bool? _isGameDataFolderValid;
+    public bool? IsGameDataFolderValid
+    {
+        get => _isGameDataFolderValid;
+        set => this.RaiseAndSetIfChanged(ref _isGameDataFolderValid, value);
+    }
+
+    #endregion
+
     private string _statusText = "Ready";
 
     public string StatusText
@@ -329,6 +361,39 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
             .ObserveOn(RxApp.MainThreadScheduler)
             .Subscribe(OnStateChanged);
         _disposables.Add(stateSubscription);
+
+        // Path validation subscriptions for main window indicators
+        // xEdit is required: null when empty, true/false when populated
+        var xEditValidation = this.WhenAnyValue(x => x.XEditPath)
+            .Select(path => string.IsNullOrWhiteSpace(path)
+                ? (bool?)null
+                : System.IO.File.Exists(path) && path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            .Subscribe(v => IsXEditPathValid = v);
+        _disposables.Add(xEditValidation);
+
+        // MO2 is optional: null when empty, true/false when populated
+        var mo2Validation = this.WhenAnyValue(x => x.Mo2Path)
+            .Select(path => string.IsNullOrWhiteSpace(path)
+                ? (bool?)null
+                : (bool?)(System.IO.File.Exists(path) && path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)))
+            .Subscribe(v => IsMo2PathValid = v);
+        _disposables.Add(mo2Validation);
+
+        // Load order is optional: null when empty, true/false when populated
+        var loadOrderValidation = this.WhenAnyValue(x => x.LoadOrderPath)
+            .Select(path => string.IsNullOrWhiteSpace(path)
+                ? (bool?)null
+                : (bool?)System.IO.File.Exists(path))
+            .Subscribe(v => IsLoadOrderPathValid = v);
+        _disposables.Add(loadOrderValidation);
+
+        // Game data folder is optional: null when empty, true/false when populated
+        var dataFolderValidation = this.WhenAnyValue(x => x.GameDataFolder)
+            .Select(path => string.IsNullOrWhiteSpace(path)
+                ? (bool?)null
+                : (bool?)System.IO.Directory.Exists(path))
+            .Subscribe(v => IsGameDataFolderValid = v);
+        _disposables.Add(dataFolderValidation);
 
         // Initialize UI from current state
         OnStateChanged(_stateService.CurrentState);

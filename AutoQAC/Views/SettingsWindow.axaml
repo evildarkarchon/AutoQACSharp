@@ -241,7 +241,7 @@
 
                     <!-- Age-based: MaxAgeDays (visible when RetentionMode == 0) -->
                     <Grid ColumnDefinitions="180,*"
-                          IsVisible="{Binding RetentionMode, Converter={StaticResource IntEqualsConverter}, ConverterParameter=0}">
+                          IsVisible="{Binding IsAgeBasedMode}">
                         <TextBlock Grid.Column="0"
                                    Text="Max Age (days):"
                                    VerticalAlignment="Center" />
@@ -255,7 +255,7 @@
 
                     <!-- Count-based: MaxFileCount (visible when RetentionMode == 1) -->
                     <Grid ColumnDefinitions="180,*"
-                          IsVisible="{Binding RetentionMode, Converter={StaticResource IntEqualsConverter}, ConverterParameter=1}">
+                          IsVisible="{Binding IsCountBasedMode}">
                         <TextBlock Grid.Column="0"
                                    Text="Max Files to Keep:"
                                    VerticalAlignment="Center" />

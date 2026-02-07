@@ -171,6 +171,27 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
         set => this.RaiseAndSetIfChanged(ref _maxFileCount, value);
     }
 
+    /// <summary>
+    /// True when RetentionMode == 0 (age-based). Used for direct XAML IsVisible binding
+    /// instead of IntEqualsConverter which may not resolve ConverterParameter correctly.
+    /// </summary>
+    private bool _isAgeBasedMode = true;
+    public bool IsAgeBasedMode
+    {
+        get => _isAgeBasedMode;
+        set => this.RaiseAndSetIfChanged(ref _isAgeBasedMode, value);
+    }
+
+    /// <summary>
+    /// True when RetentionMode == 1 (count-based). Used for direct XAML IsVisible binding.
+    /// </summary>
+    private bool _isCountBasedMode;
+    public bool IsCountBasedMode
+    {
+        get => _isCountBasedMode;
+        set => this.RaiseAndSetIfChanged(ref _isCountBasedMode, value);
+    }
+
     #endregion
 
     #region Computed Properties
@@ -295,31 +316,42 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
         _disposables.Add(expirationErrorSubscription);
 
         // Set up debounced path validation pipelines
-        // Each pipeline skips changes while _isLoading is true to avoid showing errors on initial load
+        // Each pipeline skips the initial WhenAnyValue emission (before LoadSettingsAsync)
+        // and also skips changes while _isLoading is true to avoid showing errors on initial load
         SetupPathValidation(
             this.WhenAnyValue(x => x.XEditPath),
             valid => IsXEditPathValid = valid,
             ValidateExecutablePath);
 
-        SetupPathValidation(
+        SetupOptionalPathValidation(
             this.WhenAnyValue(x => x.Mo2Path),
             valid => IsMo2PathValid = valid,
-            path => ValidateOptionalPath(path, ValidateExecutablePath));
+            ValidateExecutablePath);
 
-        SetupPathValidation(
+        SetupOptionalPathValidation(
             this.WhenAnyValue(x => x.LoadOrderPath),
             valid => IsLoadOrderPathValid = valid,
-            path => ValidateOptionalPath(path, ValidateFilePath));
+            ValidateFilePath);
 
-        SetupPathValidation(
+        SetupOptionalPathValidation(
             this.WhenAnyValue(x => x.DataFolderPath),
             valid => IsDataFolderPathValid = valid,
-            path => ValidateOptionalPath(path, ValidateDirectoryPath));
+            ValidateDirectoryPath);
+
+        // Wire retention mode booleans reactively
+        var retentionModeSubscription = this.WhenAnyValue(x => x.RetentionMode)
+            .Subscribe(mode =>
+            {
+                IsAgeBasedMode = mode == 0;
+                IsCountBasedMode = mode == 1;
+            });
+        _disposables.Add(retentionModeSubscription);
     }
 
     /// <summary>
-    /// Sets up a debounced validation pipeline for a path property.
-    /// Skips validation while loading, throttles to 400ms, runs on main thread.
+    /// Sets up a debounced validation pipeline for a required path property.
+    /// Skips the initial WhenAnyValue emission (before LoadSettingsAsync populates the field)
+    /// and also skips changes while _isLoading is true. Throttles to 400ms, runs on main thread.
     /// </summary>
     private void SetupPathValidation(
         IObservable<string?> pathObservable,
@@ -327,10 +359,32 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
         Func<string?, bool> validator)
     {
         var subscription = pathObservable
+            .Skip(1) // Skip initial emission from constructor (before LoadSettingsAsync)
             .Where(_ => !_isLoading) // Suppress validation during LoadSettingsAsync
             .Throttle(TimeSpan.FromMilliseconds(400))
             .ObserveOn(RxApp.MainThreadScheduler)
             .Select(path => (bool?)validator(path))
+            .Subscribe(valid => setValidation(valid));
+        _disposables.Add(subscription);
+    }
+
+    /// <summary>
+    /// Sets up a debounced validation pipeline for an optional path property.
+    /// Returns null (no indicator) when path is empty/whitespace,
+    /// true (green checkmark) when non-empty and valid,
+    /// false (red X) when non-empty and invalid.
+    /// </summary>
+    private void SetupOptionalPathValidation(
+        IObservable<string?> pathObservable,
+        Action<bool?> setValidation,
+        Func<string?, bool> validator)
+    {
+        var subscription = pathObservable
+            .Skip(1) // Skip initial emission from constructor (before LoadSettingsAsync)
+            .Where(_ => !_isLoading) // Suppress validation during LoadSettingsAsync
+            .Throttle(TimeSpan.FromMilliseconds(400))
+            .ObserveOn(RxApp.MainThreadScheduler)
+            .Select(path => string.IsNullOrWhiteSpace(path) ? (bool?)null : validator(path))
             .Subscribe(valid => setValidation(valid));
         _disposables.Add(subscription);
     }
