@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-06)
 
 **Core value:** Reliably clean every plugin in a load order with one click, without corrupting game data or cleaning plugins that shouldn't be touched.
-**Current focus:** Phase 3 - Real-Time Feedback (COMPLETE)
+**Current focus:** Phase 4 - Configuration Enhancement (IN PROGRESS)
 
 ## Current Position
 
-Phase: 3 of 7 (Real-Time Feedback)
-Plan: 3 of 3 in current phase (all complete including 03-02)
-Status: Phase complete
-Last activity: 2026-02-07 -- Completed 03-02-PLAN.md (Progress Window Live Stats)
+Phase: 4 of 7 (Configuration Enhancement)
+Plan: 1 of 2 in current phase
+Status: In progress
+Last activity: 2026-02-07 -- Completed 04-01-PLAN.md (Config Watcher, Migration, Helpers)
 
-Progress: [#######.......] 47% (7/15 plans)
+Progress: [########......] 53% (8/15 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 7
-- Average duration: 8.5 minutes
-- Total execution time: 1.0 hours
+- Total plans completed: 8
+- Average duration: 8.3 minutes
+- Total execution time: 1.1 hours
 
 **By Phase:**
 
@@ -30,10 +30,11 @@ Progress: [#######.......] 47% (7/15 plans)
 | 1 - Foundation | 2/2 | 15m | 7.5m |
 | 2 - Plugin Pipeline | 2/2 | 14.5m | 7.25m |
 | 3 - Real-Time Feedback | 3/3 | 30m | 10m |
+| 4 - Configuration | 1/2 | 6.5m | 6.5m |
 
 **Recent Trend:**
-- Last 5 plans: 02-01 (6.5m), 02-02 (8m), 03-01 (7m), 03-03 (9m), 03-02 (14m)
-- Trend: Stable (03-02 longer due to Rx scheduler debugging)
+- Last 5 plans: 02-02 (8m), 03-01 (7m), 03-03 (9m), 03-02 (14m), 04-01 (6.5m)
+- Trend: Stable
 
 *Updated after each plan completion*
 
@@ -71,6 +72,12 @@ Recent decisions affecting current work:
 - [03-02]: ObserveOn(MainThreadScheduler) used instead of Sample(100ms) -- dispatcher naturally coalesces rapid updates
 - [03-02]: Counter badges show last-completed plugin stats (not live during-clean) since log parsed after exit
 - [03-02]: IsCleaning transition detection via _wasPreviouslyCleaning flag for session reset
+- [04-01]: SHA256.HashData for config file content hashing (not MD5, not timestamps)
+- [04-01]: FSW + Rx Throttle(500ms) for config change detection; triple hash gate prevents circular reloads
+- [04-01]: Config changes during cleaning deferred until session ends
+- [04-01]: Invalid external YAML edits rejected, previous config kept
+- [04-01]: Legacy migration uses backup-then-delete order; backup failure prevents deletion
+- [04-01]: Migration is one-time bootstrap only; no merge when C# config exists
 
 ### Pending Todos
 
@@ -85,6 +92,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-02-07T01:27Z
-Stopped at: Completed 03-02-PLAN.md (Phase 3 fully complete)
+Last session: 2026-02-07T02:58Z
+Stopped at: Completed 04-01-PLAN.md
 Resume file: None
