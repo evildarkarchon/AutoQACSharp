@@ -102,7 +102,7 @@ public sealed class ProcessExecutionService : IProcessExecutionService, IDisposa
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
-                CreateNoWindow = true
+                CreateNoWindow = false
             };
 
             using var process = new System.Diagnostics.Process();
@@ -268,7 +268,7 @@ public sealed class ProcessExecutionService : IProcessExecutionService, IDisposa
 
         if (!closeResult)
         {
-            // CloseMainWindow returned false -- process has no window (CreateNoWindow=true scenario).
+            // CloseMainWindow returned false -- process may not have a visible main window.
             // Skip the grace period, caller should escalate.
             _logger.Debug("[Termination] CloseMainWindow returned false (no window) -- returning GracePeriodExpired for escalation");
             return TerminationResult.GracePeriodExpired;
