@@ -20,6 +20,9 @@ public sealed class UserConfiguration
 
     [YamlMember(Alias = "Game_Data_Folders")]
     public Dictionary<string, string> GameDataFolderOverrides { get; set; } = new();
+
+    [YamlMember(Alias = "Log_Retention")]
+    public RetentionSettings LogRetention { get; set; } = new();
 }
 
 public sealed class LoadOrderConfig

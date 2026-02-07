@@ -48,6 +48,31 @@ public interface IConfigurationService
     /// </summary>
     Task FlushPendingSavesAsync(CancellationToken ct = default);
 
+    /// <summary>
+    /// Returns a flat dictionary of all user-facing settings for bulk inspection.
+    /// Keys use dot-notation for nested properties (e.g., "LogRetention.Mode").
+    /// </summary>
+    Task<Dictionary<string, object?>> GetAllSettingsAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Loads config, applies multiple mutations via the action delegate, saves once.
+    /// Replaces repeated load-mutate-save cycles for batch updates.
+    /// </summary>
+    Task UpdateMultipleAsync(Action<UserConfiguration> updateAction, CancellationToken ct = default);
+
+    /// <summary>
+    /// Forces a fresh read from disk bypassing any in-memory cache.
+    /// Used by ConfigWatcherService after detecting an external file change.
+    /// </summary>
+    Task ReloadFromDiskAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns the SHA256 hex hash of the config file as written by the last app-initiated save.
+    /// The ConfigWatcherService compares this to the on-disk hash to detect external changes.
+    /// Returns null if no save has occurred yet.
+    /// </summary>
+    string? GetLastWrittenHash();
+
     // Reactive configuration changes
     IObservable<UserConfiguration> UserConfigurationChanged { get; }
 }

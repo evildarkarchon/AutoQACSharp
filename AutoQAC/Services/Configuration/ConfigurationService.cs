@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
+using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
@@ -28,10 +29,9 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
     private readonly string _configDirectory;
     private const string MainConfigFile = "AutoQAC Main.yaml";
     private const string UserConfigFile = "AutoQAC Settings.yaml";
-    private const string LegacyUserConfigFile = "AutoQAC Config.yaml";
 
     private MainConfiguration? _mainConfigCache;
-    private bool _migrationCompleted;
+    private string? _lastWrittenHash;
     private readonly ISerializer _serializer;
     private readonly IDeserializer _deserializer;
 
@@ -128,13 +128,6 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
         // Return pending in-memory config if available (debounced save may not have fired yet)
         if (_pendingConfig != null) return _pendingConfig;
 
-        // Run migration once per session if needed
-        if (!_migrationCompleted)
-        {
-            await MigrateLegacyConfigAsync(ct).ConfigureAwait(false);
-            _migrationCompleted = true;
-        }
-
         var path = Path.Combine(_configDirectory, UserConfigFile);
         if (!File.Exists(path))
         {
@@ -160,69 +153,6 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
         finally
         {
             _fileLock.Release();
-        }
-    }
-
-    private async Task MigrateLegacyConfigAsync(CancellationToken ct = default)
-    {
-        var legacyPath = Path.Combine(_configDirectory, LegacyUserConfigFile);
-        var newPath = Path.Combine(_configDirectory, UserConfigFile);
-
-        // Only migrate if legacy file exists and new file doesn't
-        if (!File.Exists(legacyPath))
-        {
-            return;
-        }
-
-        _logger.Information("Found legacy config file {LegacyPath}, migrating to {NewPath}", legacyPath, newPath);
-
-        try
-        {
-            await _fileLock.WaitAsync(ct).ConfigureAwait(false);
-
-            // Load legacy config
-            var legacyContent = await File.ReadAllTextAsync(legacyPath, ct).ConfigureAwait(false);
-            var legacyConfig = _deserializer.Deserialize<UserConfiguration>(legacyContent);
-
-            // If new file exists, merge skip lists from it (preserve user skip lists)
-            if (File.Exists(newPath))
-            {
-                var existingContent = await File.ReadAllTextAsync(newPath, ct).ConfigureAwait(false);
-                var existingConfig = _deserializer.Deserialize<UserConfiguration>(existingContent);
-
-                // Merge skip lists from existing Settings.yaml into the migrated config
-                foreach (var kvp in existingConfig.SkipLists)
-                {
-                    legacyConfig.SkipLists[kvp.Key] = kvp.Value;
-                }
-            }
-
-            // Save merged config to new location
-            var content = _serializer.Serialize(legacyConfig);
-            await File.WriteAllTextAsync(newPath, content, ct).ConfigureAwait(false);
-
-            _logger.Information("Migration complete, deleting legacy config file");
-        }
-        catch (Exception ex)
-        {
-            _logger.Error(ex, "Failed to migrate legacy config");
-            // Don't throw - we can continue with whatever config exists
-            return;
-        }
-        finally
-        {
-            _fileLock.Release();
-        }
-
-        // Delete legacy file outside of lock
-        try
-        {
-            File.Delete(legacyPath);
-            _logger.Information("Deleted legacy config file {LegacyPath}", legacyPath);
-        }
-        catch (Exception ex)
-        {
-            _logger.Warning("Failed to delete legacy config file {LegacyPath}: {Message}", legacyPath, ex.Message);
         }
     }
 
@@ -257,6 +187,10 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
                     {
                         _pendingConfig = null;
                     }
+
+                    // Compute SHA256 hash of the written file so ConfigWatcherService
+                    // can distinguish app-initiated saves from external edits
+                    _lastWrittenHash = ComputeFileHash(path);
                     _logger.Information("[Config] Debounced save completed successfully");
                     return;
                 }
@@ -530,6 +464,87 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
         _logger.Information("Resetting user configuration to defaults");
         var defaultConfig = new UserConfiguration();
         await SaveUserConfigAsync(defaultConfig, ct).ConfigureAwait(false);
+    }
+
+    public async Task<Dictionary<string, object?>> GetAllSettingsAsync(CancellationToken ct = default)
+    {
+        var config = await LoadUserConfigAsync(ct).ConfigureAwait(false);
+        return new Dictionary<string, object?>
+        {
+            ["XEditPath"] = config.XEdit.Binary,
+            ["LoadOrderPath"] = config.LoadOrder.File,
+            ["Mo2Binary"] = config.ModOrganizer.Binary,
+            ["Mo2Mode"] = config.Settings.Mo2Mode,
+            ["CleaningTimeout"] = config.Settings.CleaningTimeout,
+            ["JournalExpiration"] = config.Settings.JournalExpiration,
+            ["CpuThreshold"] = config.Settings.CpuThreshold,
+            ["DisableSkipLists"] = config.Settings.DisableSkipLists,
+            ["MaxConcurrentSubprocesses"] = config.Settings.MaxConcurrentSubprocesses,
+            ["LogRetention.Mode"] = config.LogRetention.Mode,
+            ["LogRetention.MaxAgeDays"] = config.LogRetention.MaxAgeDays,
+            ["LogRetention.MaxFileCount"] = config.LogRetention.MaxFileCount,
+            ["SelectedGame"] = config.SelectedGame
+        };
+    }
+
+    public async Task UpdateMultipleAsync(Action<UserConfiguration> updateAction, CancellationToken ct = default)
+    {
+        await _fileLock.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var config = await LoadUserConfigAsync(ct).ConfigureAwait(false);
+            updateAction(config);
+            await SaveUserConfigAsync(config, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            _fileLock.Release();
+        }
+    }
+
+    public async Task ReloadFromDiskAsync(CancellationToken ct = default)
+    {
+        await _fileLock.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            // Clear in-memory caches to force fresh read from disk
+            _pendingConfig = null;
+            _mainConfigCache = null;
+
+            var path = Path.Combine(_configDirectory, UserConfigFile);
+            if (!File.Exists(path))
+            {
+                _logger.Warning("[Config] Config file not found during reload: {Path}", path);
+                return;
+            }
+
+            var content = await File.ReadAllTextAsync(path, ct).ConfigureAwait(false);
+            var loaded = _deserializer.Deserialize<UserConfiguration>(content);
+            _lastKnownGoodConfig = loaded;
+            _configChanges.OnNext(loaded);
+            _logger.Information("[Config] Reloaded configuration from disk");
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "[Config] Failed to reload configuration from disk");
+            throw;
+        }
+        finally
+        {
+            _fileLock.Release();
+        }
+    }
+
+    public string? GetLastWrittenHash() => _lastWrittenHash;
+
+    /// <summary>
+    /// Computes a SHA256 hex hash of the file at the given path.
+    /// </summary>
+    private static string ComputeFileHash(string filePath)
+    {
+        using var stream = File.OpenRead(filePath);
+        var hashBytes = SHA256.HashData(stream);
+        return Convert.ToHexString(hashBytes);
     }
 
     private string GetGameKey(GameType gameType) => gameType switch

@@ -24,6 +24,7 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddConfiguration(this IServiceCollection services)
     {
         services.AddSingleton<IConfigurationService, ConfigurationService>();
+        services.AddSingleton<IConfigWatcherService, ConfigWatcherService>();
         return services;
     }
 
