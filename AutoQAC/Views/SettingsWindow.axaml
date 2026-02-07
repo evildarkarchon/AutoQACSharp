@@ -4,24 +4,143 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
-        d:DesignWidth="450" d:DesignHeight="400"
+        d:DesignWidth="550" d:DesignHeight="650"
         x:Class="AutoQAC.Views.SettingsWindow"
         x:DataType="vm:SettingsViewModel"
         Title="Settings"
-        Width="450" Height="400"
-        MinWidth="400" MinHeight="350"
+        Width="550" Height="650"
+        MinWidth="500" MinHeight="550"
         CanResize="False"
         WindowStartupLocation="CenterOwner">
 
-    <Design.DataContext>
-        <vm:SettingsViewModel />
-    </Design.DataContext>
+    <Window.Resources>
+        <!-- Validation border styles for path TextBoxes -->
+        <SolidColorBrush x:Key="PathValidBrush" Color="#4CAF50" />
+        <SolidColorBrush x:Key="PathInvalidBrush" Color="#F44336" />
+    </Window.Resources>
 
     <Grid Margin="20" RowDefinitions="*,Auto">
 
         <!-- Settings Content -->
         <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
-            <StackPanel Spacing="20">
+            <StackPanel Spacing="16">
+
+                <!-- File Paths Section -->
+                <StackPanel Spacing="8">
+                    <TextBlock Text="File Paths"
+                               FontSize="14" FontWeight="SemiBold" />
+
+                    <!-- xEdit Path -->
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="xEdit Executable:" FontSize="12" />
+                        <Grid ColumnDefinitions="*,Auto,Auto">
+                            <TextBox Grid.Column="0"
+                                     Text="{Binding XEditPath}"
+                                     Watermark="Path to SSEEdit.exe, FO4Edit.exe, etc."
+                                     Margin="0,0,5,0" />
+                            <!-- Validation indicator -->
+                            <Panel Grid.Column="1" Width="24" VerticalAlignment="Center" Margin="0,0,5,0">
+                                <TextBlock Text="&#x2713;"
+                                           FontSize="16" FontWeight="Bold"
+                                           Foreground="#4CAF50"
+                                           HorizontalAlignment="Center"
+                                           IsVisible="{Binding IsXEditPathValid, Converter={StaticResource IsTrueConverter}}" />
+                                <TextBlock Text="&#x2717;"
+                                           FontSize="16" FontWeight="Bold"
+                                           Foreground="#F44336"
+                                           HorizontalAlignment="Center"
+                                           IsVisible="{Binding IsXEditPathValid, Converter={StaticResource IsFalseConverter}}" />
+                            </Panel>
+                            <Button Grid.Column="2"
+                                    Content="Browse..."
+                                    Command="{Binding BrowseXEditCommand}"
+                                    MinWidth="80" />
+                        </Grid>
+                    </StackPanel>
+
+                    <!-- MO2 Path -->
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Mod Organizer 2 (optional):" FontSize="12" />
+                        <Grid ColumnDefinitions="*,Auto,Auto">
+                            <TextBox Grid.Column="0"
+                                     Text="{Binding Mo2Path}"
+                                     Watermark="Path to ModOrganizer.exe (optional)"
+                                     Margin="0,0,5,0" />
+                            <Panel Grid.Column="1" Width="24" VerticalAlignment="Center" Margin="0,0,5,0">
+                                <TextBlock Text="&#x2713;"
+                                           FontSize="16" FontWeight="Bold"
+                                           Foreground="#4CAF50"
+                                           HorizontalAlignment="Center"
+                                           IsVisible="{Binding IsMo2PathValid, Converter={StaticResource IsTrueConverter}}" />
+                                <TextBlock Text="&#x2717;"
+                                           FontSize="16" FontWeight="Bold"
+                                           Foreground="#F44336"
+                                           HorizontalAlignment="Center"
+                                           IsVisible="{Binding IsMo2PathValid, Converter={StaticResource IsFalseConverter}}" />
+                            </Panel>
+                            <Button Grid.Column="2"
+                                    Content="Browse..."
+                                    Command="{Binding BrowseMo2Command}"
+                                    MinWidth="80" />
+                        </Grid>
+                    </StackPanel>
+
+                    <!-- Load Order Path -->
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Load Order File (optional):" FontSize="12" />
+                        <Grid ColumnDefinitions="*,Auto,Auto">
+                            <TextBox Grid.Column="0"
+                                     Text="{Binding LoadOrderPath}"
+                                     Watermark="Path to loadorder.txt (optional)"
+                                     Margin="0,0,5,0" />
+                            <Panel Grid.Column="1" Width="24" VerticalAlignment="Center" Margin="0,0,5,0">
+                                <TextBlock Text="&#x2713;"
+                                           FontSize="16" FontWeight="Bold"
+                                           Foreground="#4CAF50"
+                                           HorizontalAlignment="Center"
+                                           IsVisible="{Binding IsLoadOrderPathValid, Converter={StaticResource IsTrueConverter}}" />
+                                <TextBlock Text="&#x2717;"
+                                           FontSize="16" FontWeight="Bold"
+                                           Foreground="#F44336"
+                                           HorizontalAlignment="Center"
+                                           IsVisible="{Binding IsLoadOrderPathValid, Converter={StaticResource IsFalseConverter}}" />
+                            </Panel>
+                            <Button Grid.Column="2"
+                                    Content="Browse..."
+                                    Command="{Binding BrowseLoadOrderCommand}"
+                                    MinWidth="80" />
+                        </Grid>
+                    </StackPanel>
+
+                    <!-- Data Folder Path -->
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Data Folder (optional):" FontSize="12" />
+                        <Grid ColumnDefinitions="*,Auto,Auto">
+                            <TextBox Grid.Column="0"
+                                     Text="{Binding DataFolderPath}"
+                                     Watermark="Path to game Data folder (optional)"
+                                     Margin="0,0,5,0" />
+                            <Panel Grid.Column="1" Width="24" VerticalAlignment="Center" Margin="0,0,5,0">
+                                <TextBlock Text="&#x2713;"
+                                           FontSize="16" FontWeight="Bold"
+                                           Foreground="#4CAF50"
+                                           HorizontalAlignment="Center"
+                                           IsVisible="{Binding IsDataFolderPathValid, Converter={StaticResource IsTrueConverter}}" />
+                                <TextBlock Text="&#x2717;"
+                                           FontSize="16" FontWeight="Bold"
+                                           Foreground="#F44336"
+                                           HorizontalAlignment="Center"
+                                           IsVisible="{Binding IsDataFolderPathValid, Converter={StaticResource IsFalseConverter}}" />
+                            </Panel>
+                            <Button Grid.Column="2"
+                                    Content="Browse..."
+                                    Command="{Binding BrowseDataFolderCommand}"
+                                    MinWidth="80" />
+                        </Grid>
+                    </StackPanel>
+                </StackPanel>
+
+                <Separator />
 
                 <!-- Cleaning Settings Section -->
                 <StackPanel Spacing="10">
@@ -98,6 +217,54 @@
                                        IsVisible="{Binding JournalExpirationError,
                                                    Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                         </StackPanel>
+                    </Grid>
+                </StackPanel>
+
+                <Separator />
+
+                <!-- Log Retention Section -->
+                <StackPanel Spacing="10">
+                    <TextBlock Text="Log Retention"
+                               FontSize="14" FontWeight="SemiBold" />
+
+                    <Grid ColumnDefinitions="180,*">
+                        <TextBlock Grid.Column="0"
+                                   Text="Retention Mode:"
+                                   VerticalAlignment="Center" />
+                        <ComboBox Grid.Column="1"
+                                  SelectedIndex="{Binding RetentionMode}"
+                                  HorizontalAlignment="Stretch">
+                            <ComboBoxItem Content="Age-based (delete after N days)" />
+                            <ComboBoxItem Content="Count-based (keep last N files)" />
+                        </ComboBox>
+                    </Grid>
+
+                    <!-- Age-based: MaxAgeDays (visible when RetentionMode == 0) -->
+                    <Grid ColumnDefinitions="180,*"
+                          IsVisible="{Binding RetentionMode, Converter={StaticResource IntEqualsConverter}, ConverterParameter=0}">
+                        <TextBlock Grid.Column="0"
+                                   Text="Max Age (days):"
+                                   VerticalAlignment="Center" />
+                        <NumericUpDown Grid.Column="1"
+                                       Value="{Binding MaxAgeDays}"
+                                       Minimum="1"
+                                       Maximum="365"
+                                       Increment="1"
+                                       FormatString="N0" />
+                    </Grid>
+
+                    <!-- Count-based: MaxFileCount (visible when RetentionMode == 1) -->
+                    <Grid ColumnDefinitions="180,*"
+                          IsVisible="{Binding RetentionMode, Converter={StaticResource IntEqualsConverter}, ConverterParameter=1}">
+                        <TextBlock Grid.Column="0"
+                                   Text="Max Files to Keep:"
+                                   VerticalAlignment="Center" />
+                        <NumericUpDown Grid.Column="1"
+                                       Value="{Binding MaxFileCount}"
+                                       Minimum="1"
+                                       Maximum="1000"
+                                       Increment="5"
+                                       FormatString="N0" />
                     </Grid>
                 </StackPanel>
 

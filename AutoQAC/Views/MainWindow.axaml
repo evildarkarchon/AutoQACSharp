@@ -30,6 +30,34 @@
             </MenuItem>
         </Menu>
 
+        <!-- Migration Warning Banner -->
+        <Border DockPanel.Dock="Top"
+                IsVisible="{Binding HasMigrationWarning}"
+                Background="#FFEBEE"
+                BorderBrush="#E53935"
+                BorderThickness="0,0,0,2"
+                Padding="10,8">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <TextBlock Grid.Column="0"
+                           Text="&#x26A0;"
+                           FontSize="16"
+                           VerticalAlignment="Center"
+                           Margin="0,0,8,0" />
+                <TextBlock Grid.Column="1"
+                           Text="{Binding MigrationWarningMessage}"
+                           TextWrapping="Wrap"
+                           VerticalAlignment="Center"
+                           Foreground="#B71C1C" />
+                <Button Grid.Column="2"
+                        Content="Dismiss"
+                        Command="{Binding DismissMigrationWarningCommand}"
+                        Padding="8,3"
+                        FontSize="11"
+                        Margin="10,0,0,0"
+                        VerticalAlignment="Center" />
+            </Grid>
+        </Border>
+
         <!-- Status Bar -->
         <Border DockPanel.Dock="Bottom"
                 BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}"

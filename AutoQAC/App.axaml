@@ -8,6 +8,10 @@
 
     <Application.Resources>
         <converters:GameTypeDisplayConverter x:Key="GameTypeDisplayConverter"/>
+        <converters:IsTrueConverter x:Key="IsTrueConverter"/>
+        <converters:IsFalseConverter x:Key="IsFalseConverter"/>
+        <converters:IsNotNullConverter x:Key="IsNotNullConverter"/>
+        <converters:IntEqualsConverter x:Key="IntEqualsConverter"/>
     </Application.Resources>
 
     <Application.DataTemplates>

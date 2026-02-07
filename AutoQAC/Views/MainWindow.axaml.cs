@@ -83,7 +83,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        var settingsViewModel = new SettingsViewModel(_configService, _logger);
+        var settingsViewModel = new SettingsViewModel(_configService, _logger, _fileDialog);
 
         // Load current settings before showing
         await settingsViewModel.LoadSettingsAsync();

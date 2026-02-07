@@ -26,6 +26,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IConfigurationService, ConfigurationService>();
         services.AddSingleton<IConfigWatcherService, ConfigWatcherService>();
         services.AddSingleton<ILegacyMigrationService, LegacyMigrationService>();
+        services.AddSingleton<ILogRetentionService, LogRetentionService>();
         return services;
     }
 

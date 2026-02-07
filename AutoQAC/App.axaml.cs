@@ -59,6 +59,10 @@ namespace AutoQAC
                 var migrationService = Services.GetRequiredService<ILegacyMigrationService>();
                 _ = RunMigrationAsync(migrationService, viewModel, logger);
 
+                // Run log retention cleanup on startup (fire-and-forget with error handling)
+                var logRetention = Services.GetRequiredService<ILogRetentionService>();
+                _ = RunLogRetentionAsync(logRetention, logger);
+
                 desktop.ShutdownRequested += (sender, args) =>
                 {
                     // Stop config watcher
@@ -79,6 +83,20 @@ namespace AutoQAC
             }
 
             base.OnFrameworkInitializationCompleted();
+        }
+
+        private static async System.Threading.Tasks.Task RunLogRetentionAsync(
+            ILogRetentionService logRetention,
+            ILoggingService logger)
+        {
+            try
+            {
+                await logRetention.CleanupAsync();
+            }
+            catch (Exception ex)
+            {
+                logger.Warning("[LogRetention] Failed to clean up old log files on startup: {Message}", ex.Message);
+            }
         }
 
         private static async System.Threading.Tasks.Task RunMigrationAsync(
