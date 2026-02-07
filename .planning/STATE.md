@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-02-06)
 ## Current Position
 
 Phase: 6 of 7 (UI Polish & Monitoring)
-Plan: 1 of 3 in current phase
+Plan: 2 of 3 in current phase
 Status: In progress
-Last activity: 2026-02-07 -- Completed 06-01-PLAN.md (ViewModel Decomposition)
+Last activity: 2026-02-07 -- Completed 06-02-PLAN.md (About Dialog & Logging)
 
-Progress: [#############.] 86% (12/14 plans)
+Progress: [##############.] 93% (13/14 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 13
-- Average duration: 9.1 minutes
-- Total execution time: 2.0 hours
+- Total plans completed: 14
+- Average duration: 9.3 minutes
+- Total execution time: 2.2 hours
 
 **By Phase:**
 
@@ -32,10 +32,10 @@ Progress: [#############.] 86% (12/14 plans)
 | 3 - Real-Time Feedback | 3/3 | 30m | 10m |
 | 4 - Configuration | 2/2 | 21.5m | 10.75m |
 | 5 - Safety Features | 2/2 | 28m | 14m |
-| 6 - UI Polish | 1/3 | 12m | 12m |
+| 6 - UI Polish | 2/3 | 24m | 12m |
 
 **Recent Trend:**
-- Last 5 plans: 04-02 (15m), 05-01 (6m), 05-02 (22m), 06-01 (12m)
+- Last 5 plans: 05-01 (6m), 05-02 (22m), 06-01 (12m), 06-02 (12m)
 - Trend: Stable
 
 *Updated after each plan completion*
@@ -99,6 +99,10 @@ Recent decisions affecting current work:
 - [06-01]: Sub-VMs created directly by parent (not DI-registered) -- simpler lifecycle, no container bloat
 - [06-01]: StatusText lives on ConfigurationViewModel (status bar), not CleaningCommandsViewModel
 - [06-01]: ResetSettingsCommand on ConfigurationViewModel (settings concern, not cleaning concern)
+- [06-02]: BuildDate via AssemblyMetadata MSBuild property (not PE timestamp) -- deterministic builds strip timestamps
+- [06-02]: Static HttpClient on AboutViewModel (not injected service) -- single fire-and-forget endpoint
+- [06-02]: Session summary logged in CleaningOrchestrator (close to data source), not ViewModel
+- [06-02]: Startup logging reads IStateService.CurrentState directly (not async config reload)
 
 ### Pending Todos
 
@@ -114,5 +118,5 @@ Recent decisions affecting current work:
 ## Session Continuity
 
 Last session: 2026-02-07
-Stopped at: Completed 06-01-PLAN.md (ViewModel Decomposition)
+Stopped at: Completed 06-02-PLAN.md (About Dialog & Logging)
 Resume file: None
