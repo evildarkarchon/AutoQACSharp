@@ -469,4 +469,79 @@ public sealed class PluginValidationServiceTests : IDisposable
     }
 
     #endregion
+
+    #region Non-Rooted Path Variants (TEST-05)
+
+    /// <summary>
+    /// A whitespace-only FullPath should be treated as not-found since
+    /// string.IsNullOrEmpty will be false but IsPathRooted will return false.
+    /// Note: ValidatePluginFile checks IsNullOrEmpty first, and whitespace-only
+    /// strings are NOT considered empty by IsNullOrEmpty. IsPathRooted("   ") returns false.
+    /// </summary>
+    [Fact]
+    public void ValidatePluginFile_WhitespaceOnlyFullPath_ReturnsNotFound()
+    {
+        // Arrange
+        var plugin = new PluginInfo { FileName = "Test.esp", FullPath = "   " };
+
+        // Act
+        var result = _sut.ValidatePluginFile(plugin);
+
+        // Assert
+        result.Should().Be(PluginWarningKind.NotFound,
+            "whitespace-only path is not rooted and should return NotFound");
+    }
+
+    /// <summary>
+    /// Forward-slash relative path should return NotFound (not rooted).
+    /// </summary>
+    [Fact]
+    public void ValidatePluginFile_ForwardSlashRelativePath_ReturnsNotFound()
+    {
+        // Arrange
+        var plugin = new PluginInfo { FileName = "Skyrim.esm", FullPath = "mods/Skyrim.esm" };
+
+        // Act
+        var result = _sut.ValidatePluginFile(plugin);
+
+        // Assert
+        result.Should().Be(PluginWarningKind.NotFound,
+            "relative path with forward slash is not rooted");
+    }
+
+    /// <summary>
+    /// Dot-relative path (./path) should return NotFound (not rooted).
+    /// </summary>
+    [Fact]
+    public void ValidatePluginFile_DotRelativePath_ReturnsNotFound()
+    {
+        // Arrange
+        var plugin = new PluginInfo { FileName = "Test.esp", FullPath = "./plugins/Test.esp" };
+
+        // Act
+        var result = _sut.ValidatePluginFile(plugin);
+
+        // Assert
+        result.Should().Be(PluginWarningKind.NotFound,
+            "dot-relative path is not rooted");
+    }
+
+    /// <summary>
+    /// Backslash relative path (no drive letter) should return NotFound (not rooted).
+    /// </summary>
+    [Fact]
+    public void ValidatePluginFile_BackslashRelativePath_ReturnsNotFound()
+    {
+        // Arrange
+        var plugin = new PluginInfo { FileName = "Skyrim.esm", FullPath = "mods\\Skyrim.esm" };
+
+        // Act
+        var result = _sut.ValidatePluginFile(plugin);
+
+        // Assert
+        result.Should().Be(PluginWarningKind.NotFound,
+            "relative path with backslash (no drive letter) is not rooted");
+    }
+
+    #endregion
 }

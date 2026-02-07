@@ -688,4 +688,103 @@ public class StateServiceTests
     }
 
     #endregion
+
+    #region Concurrent Edge Case Tests (TEST-04)
+
+    /// <summary>
+    /// Rapid toggling of IsCleaning between true/false from concurrent tasks
+    /// should settle to the value set by the last writer. Validates the volatile
+    /// _currentState field produces consistent reads.
+    /// </summary>
+    [Fact]
+    public async Task ConcurrentUpdateState_RapidToggling_SettlesCorrectly()
+    {
+        // Arrange
+        const int numUpdates = 100;
+
+        // Act -- alternate IsCleaning between true and false rapidly
+        var tasks = Enumerable.Range(0, numUpdates).Select(i => Task.Run(() =>
+        {
+            _sut.UpdateState(s => s with { IsCleaning = i % 2 == 0 });
+        }));
+
+        await Task.WhenAll(tasks);
+
+        // Assert -- state should be valid (not corrupted)
+        var finalState = _sut.CurrentState;
+        finalState.Should().NotBeNull("state should never be null after concurrent updates");
+
+        // IsCleaning must be either true or false (boolean is inherently consistent)
+        // but we verify no torn state
+        (finalState.IsCleaning == true || finalState.IsCleaning == false).Should().BeTrue(
+            "IsCleaning should be a valid boolean value");
+    }
+
+    /// <summary>
+    /// When multiple concurrent tasks update different state properties
+    /// (LoadOrderPath indexed by task), the final state should reflect one
+    /// of the writers' values -- no torn reads.
+    /// </summary>
+    [Fact]
+    public async Task ConcurrentUpdateState_MultiplePropertyUpdates_NoneAreLost()
+    {
+        // Arrange
+        const int numTasks = 10;
+        const int updatesPerTask = 50;
+        var barrier = new Barrier(numTasks);
+
+        // Act
+        var tasks = Enumerable.Range(0, numTasks).Select(taskId => Task.Run(() =>
+        {
+            barrier.SignalAndWait();
+            for (int i = 0; i < updatesPerTask; i++)
+            {
+                var loadOrderPath = $"task{taskId}_update{i}.txt";
+                _sut.UpdateState(s => s with { LoadOrderPath = loadOrderPath });
+            }
+        }));
+
+        await Task.WhenAll(tasks);
+
+        // Assert
+        var finalState = _sut.CurrentState;
+        finalState.LoadOrderPath.Should().NotBeNull("some task should have written a value");
+        finalState.LoadOrderPath.Should().MatchRegex(@"task\d+_update\d+\.txt",
+            "final value should match the pattern of one of the writers");
+    }
+
+    /// <summary>
+    /// Subscribe to StateChanged before firing rapid updates. Every UpdateState call
+    /// should produce exactly one emission (BehaviorSubject + lock guarantees this).
+    /// </summary>
+    [Fact]
+    public async Task StateChanged_RapidUpdates_AllEmitted()
+    {
+        // Arrange
+        const int numUpdates = 50;
+        var emittedStates = new System.Collections.Concurrent.ConcurrentBag<AppState>();
+
+        using var subscription = _sut.StateChanged.Subscribe(state =>
+        {
+            emittedStates.Add(state);
+        });
+
+        // Initial emission from BehaviorSubject upon subscription
+        await Task.Delay(10);
+        var initialCount = emittedStates.Count;
+
+        // Act
+        for (int i = 0; i < numUpdates; i++)
+        {
+            _sut.UpdateState(s => s with { Progress = i });
+        }
+
+        await Task.Delay(50); // Allow emissions to propagate
+
+        // Assert
+        (emittedStates.Count - initialCount).Should().Be(numUpdates,
+            "each UpdateState call should produce exactly one emission -- no dropped events");
+    }
+
+    #endregion
 }

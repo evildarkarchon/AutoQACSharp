@@ -724,4 +724,65 @@ AutoQAC_Data:
   }
 
   #endregion
+
+  #region GameType.Unknown Skip List Tests (TEST-03)
+
+  /// <summary>
+  /// When GameType.Unknown is passed to GetSkipListAsync, GetGameKey maps it to "Unknown"
+  /// which won't match any key in the skip list config. Only Universal entries should be returned.
+  /// </summary>
+  [Fact]
+  public async Task GetSkipListAsync_UnknownGameType_ReturnsOnlyUniversalEntries()
+  {
+    // Arrange
+    var mainConfigContent = @"
+AutoQAC_Data:
+  Skip_Lists:
+    SSE:
+      - Skyrim.esm
+    Universal:
+      - Update.esm
+";
+    var settingsContent = @"
+Skip_Lists:
+  SSE:
+    - UserSkyrim.esp
+";
+    await SetupMainConfigAsync(mainConfigContent);
+    await SetupSettingsConfigAsync(settingsContent);
+    var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+
+    // Act
+    var list = await service.GetSkipListAsync(GameType.Unknown);
+
+    // Assert
+    list.Should().Contain("Update.esm", "Universal entries should always be included");
+    list.Should().NotContain("Skyrim.esm", "SSE entries should not be included for Unknown game type");
+    list.Should().NotContain("UserSkyrim.esp", "user SSE entries should not be included for Unknown game type");
+  }
+
+  /// <summary>
+  /// When GameType.Unknown is used and there are no Universal entries, result should be empty.
+  /// </summary>
+  [Fact]
+  public async Task GetSkipListAsync_UnknownGameType_NoUniversal_ReturnsEmpty()
+  {
+    // Arrange -- no Universal key in config
+    var mainConfigContent = @"
+AutoQAC_Data:
+  Skip_Lists:
+    SSE:
+      - Skyrim.esm
+";
+    await SetupMainConfigAsync(mainConfigContent);
+    var service = new ConfigurationService(Mock.Of<ILoggingService>(), _testDirectory);
+
+    // Act
+    var list = await service.GetSkipListAsync(GameType.Unknown);
+
+    // Assert
+    list.Should().BeEmpty("no Universal entries and Unknown doesn't match any game key");
+  }
+
+  #endregion
 }
