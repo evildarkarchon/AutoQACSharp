@@ -26,8 +26,9 @@ public sealed class XEditLogFileService : IXEditLogFileService
     /// <inheritdoc />
     public string GetLogFilePath(string xEditExecutablePath)
     {
-        var dir = Path.GetDirectoryName(xEditExecutablePath)
-                  ?? throw new ArgumentException("Invalid xEdit executable path: cannot determine directory.", nameof(xEditExecutablePath));
+        var dir = Path.GetDirectoryName(xEditExecutablePath);
+        if (string.IsNullOrEmpty(dir))
+            throw new ArgumentException("Invalid xEdit executable path: cannot determine directory.", nameof(xEditExecutablePath));
         var stem = Path.GetFileNameWithoutExtension(xEditExecutablePath).ToUpperInvariant();
         return Path.Combine(dir, $"{stem}_log.txt");
     }
