@@ -480,7 +480,7 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
             };
 
             _stateService.FinishCleaningWithResults(sessionResult);
-            _logger.Information("Cleaning workflow completed");
+            LogSessionSummary(sessionResult);
         }
         catch (OperationCanceledException)
         {
@@ -518,6 +518,7 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
             };
 
             _stateService.FinishCleaningWithResults(sessionResult);
+            LogSessionSummary(sessionResult);
         }
         catch (Exception ex)
         {
@@ -534,6 +535,7 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
             };
 
             _stateService.FinishCleaningWithResults(sessionResult);
+            LogSessionSummary(sessionResult);
             throw;
         }
         finally
@@ -780,6 +782,28 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
         }
 
         return await _cleaningService.ValidateEnvironmentAsync(ct).ConfigureAwait(false);
+    }
+
+    private void LogSessionSummary(CleaningSessionResult session)
+    {
+        _logger.Information("=== AutoQAC Session Complete ===");
+        _logger.Information("Duration: {Duration}", session.TotalDuration.ToString(@"hh\:mm\:ss"));
+        _logger.Information(
+            "Plugins processed: {Total} (Cleaned: {Cleaned}, Skipped: {Skipped}, Failed: {Failed})",
+            session.TotalPlugins,
+            session.CleanedCount,
+            session.SkippedCount,
+            session.FailedCount);
+        _logger.Information(
+            "ITMs removed: {Itm}, UDRs fixed: {Udr}, Navmeshes: {Nav}",
+            session.TotalItemsRemoved,
+            session.TotalItemsUndeleted,
+            session.TotalPartialFormsCreated);
+
+        if (session.WasCancelled)
+        {
+            _logger.Information("Session was cancelled by user");
+        }
     }
 
     public void Dispose()

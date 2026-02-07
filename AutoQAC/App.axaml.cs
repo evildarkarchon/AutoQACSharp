@@ -12,6 +12,9 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Microsoft.Extensions.DependencyInjection;
 using System;
+using System.Linq;
+using System.Reflection;
+using System.Runtime.InteropServices;
 
 namespace AutoQAC
 {
@@ -54,6 +57,9 @@ namespace AutoQAC
                 var mainWindow = new MainWindow(viewModel, logger, fileDialog, configService, stateService, orchestrator, backupService, messageDialog);
                 desktop.MainWindow = mainWindow;
 
+                // Log startup diagnostics
+                LogStartupInfo(logger, stateService);
+
                 // Start config file watcher for external YAML edits
                 var configWatcher = Services.GetRequiredService<IConfigWatcherService>();
                 configWatcher.StartWatching();
@@ -86,6 +92,30 @@ namespace AutoQAC
             }
 
             base.OnFrameworkInitializationCompleted();
+        }
+
+        private static void LogStartupInfo(ILoggingService logger, IStateService stateService)
+        {
+            try
+            {
+                var assembly = Assembly.GetEntryAssembly();
+                var version = assembly?.GetName().Version;
+                var versionStr = version != null ? $"{version.Major}.{version.Minor}.{version.Build}" : "Unknown";
+
+                var state = stateService.CurrentState;
+
+                logger.Information("=== AutoQAC Session Start ===");
+                logger.Information("Version: {Version}", versionStr);
+                logger.Information(".NET Runtime: {Runtime}", RuntimeInformation.FrameworkDescription);
+                logger.Information("xEdit Path: {XEditPath}", state.XEditExecutablePath ?? "(not configured)");
+                logger.Information("Game Type: {GameType}", state.CurrentGameType);
+                logger.Information("MO2 Mode: {Mo2Mode}", state.Mo2ModeEnabled);
+                logger.Information("Load Order: {PluginCount} plugins", state.PluginsToClean.Count);
+            }
+            catch (Exception ex)
+            {
+                logger.Warning("[Startup] Failed to log startup info: {Message}", ex.Message);
+            }
         }
 
         private static async System.Threading.Tasks.Task RunLogRetentionAsync(

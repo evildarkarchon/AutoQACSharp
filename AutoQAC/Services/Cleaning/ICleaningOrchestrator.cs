@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -56,6 +57,14 @@ public interface ICleaningOrchestrator
     /// Reset at the start and end of each cleaning session.
     /// </summary>
     TerminationResult? LastTerminationResult { get; }
+
+    /// <summary>
+    /// Observable that emits hang detection state changes during cleaning.
+    /// Emits true when xEdit appears hung (near-zero CPU for 60+ seconds),
+    /// false when xEdit resumes activity. Emits false on plugin change and
+    /// cleaning end to auto-dismiss any visible warning.
+    /// </summary>
+    IObservable<bool> HangDetected { get; }
 
     /// <summary>
     /// Runs the validation pipeline without invoking xEdit. Returns a preview of which
