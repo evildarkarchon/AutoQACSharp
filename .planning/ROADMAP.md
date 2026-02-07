@@ -55,19 +55,20 @@ Plans:
 - [x] 02-02-PLAN.md -- Game variant detection (TTW/Enderal), skip list inheritance, Unknown rejection, aggregated errors (PLUG-04, PLUG-05, GAME-01)
 
 ### Phase 3: Real-Time Feedback
-**Goal**: Users see live cleaning progress with per-record stats and receive actionable error messages when something is misconfigured
+**Goal**: Users see live cleaning progress with per-plugin stats parsed from xEdit log files and receive actionable error messages when something is misconfigured
 **Depends on**: Phase 1 (robust process management for reliable output streaming)
 **Requirements**: PROG-01, PROG-02, PROG-03, STAT-02
 **Success Criteria** (what must be TRUE):
   1. During cleaning, the progress window shows live ITM/UDR/navmesh counts updating as xEdit processes each plugin (not just after completion)
-  2. Raw xEdit output lines scroll in real-time in the progress window so users can see exactly what xEdit is doing
+  2. xEdit runs visibly so the user can see its output directly; AutoQAC parses the xEdit log file after each plugin completes for statistics
   3. When environment validation fails (missing xEdit, bad load order path, invalid MO2 config), the error message tells the user exactly what is wrong and how to fix it
   4. Cleaning sessions with 100+ plugins do not cause UI lag from excessive property change notifications
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 03-01: Incremental output parser and progress pipeline (PROG-01, PROG-02, STAT-02)
-- [ ] 03-02: Enhanced validation messages (PROG-03)
+- [ ] 03-01-PLAN.md -- xEdit log file service, orchestrator wiring, DetailedPluginResult observable (PROG-01, PROG-02, STAT-02 backend)
+- [ ] 03-02-PLAN.md -- Progress window redesign with counter badges, summary bar, and results transformation (PROG-01, STAT-02 frontend)
+- [ ] 03-03-PLAN.md -- Inline pre-clean validation error panel with actionable messages (PROG-03)
 
 ### Phase 4: Configuration Enhancement
 **Goal**: Configuration management is efficient, validated, and gives users confidence their settings are correct before they start cleaning
@@ -142,7 +143,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
 |-------|----------------|--------|-----------|
 | 1. Foundation Hardening | 2/2 | Complete | 2026-02-06 |
 | 2. Plugin Pipeline Robustness | 2/2 | Complete | 2026-02-06 |
-| 3. Real-Time Feedback | 0/2 | Not started | - |
+| 3. Real-Time Feedback | 0/3 | Not started | - |
 | 4. Configuration Enhancement | 0/2 | Not started | - |
 | 5. Safety Features | 0/2 | Not started | - |
 | 6. UI Polish & Monitoring | 0/3 | Not started | - |
