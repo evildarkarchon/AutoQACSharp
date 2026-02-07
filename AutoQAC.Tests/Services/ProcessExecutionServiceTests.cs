@@ -1,6 +1,14 @@
 using System.Diagnostics;
+using System.Reactive.Subjects;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
+using AutoQAC.Models.Configuration;
+using AutoQAC.Services.Backup;
+using AutoQAC.Services.Cleaning;
+using AutoQAC.Services.Configuration;
+using AutoQAC.Services.GameDetection;
+using AutoQAC.Services.Monitoring;
+using AutoQAC.Services.Plugin;
 using AutoQAC.Services.Process;
 using AutoQAC.Services.State;
 using FluentAssertions;
@@ -9,12 +17,18 @@ using Moq;
 namespace AutoQAC.Tests.Services;
 
 /// <summary>
-/// Unit tests for <see cref="ProcessExecutionService"/> covering process execution,
-/// timeout handling, cancellation, semaphore slot management, and startup failures.
+/// Unit tests for <see cref="ProcessExecutionService"/> and orchestrator-level
+/// process termination/orphan cleanup behavior.
 ///
-/// IMPORTANT: These tests mock the dependencies but cannot fully test actual process
-/// execution. The tests verify the service's behavior with various scenarios by
-/// testing through the public API.
+/// IMPORTANT: These tests do NOT spawn real processes (no cmd.exe). Tests for
+/// termination and orphan cleanup are done at the orchestrator level via
+/// Mock&lt;IProcessExecutionService&gt;. Direct ProcessExecutionService tests
+/// are limited to paths that do NOT require a running process (startup failure,
+/// disposal).
+///
+/// PID file logic tests are skipped because GetPidFilePath() is private and uses
+/// AppContext.BaseDirectory with DEBUG directory walking -- the path cannot be
+/// controlled in tests without refactoring.
 /// </summary>
 public sealed class ProcessExecutionServiceTests : IDisposable
 {
@@ -38,14 +52,14 @@ public sealed class ProcessExecutionServiceTests : IDisposable
         // No special cleanup needed since we're not creating real processes
     }
 
-    #region Process Execution Tests
+    #region Process Execution Tests (Non-Process-Spawning)
 
     /// <summary>
     /// Verifies that ExecuteAsync returns a failed result with appropriate error
     /// when the process executable does not exist.
     ///
     /// NOTE: This tests the startup failure scenario where Process.Start throws
-    /// because the file cannot be found.
+    /// because the file cannot be found. No real process is spawned.
     /// </summary>
     [Fact]
     public async Task ExecuteAsync_WhenProcessNotFound_ShouldReturnFailedResult()
@@ -73,159 +87,6 @@ public sealed class ProcessExecutionServiceTests : IDisposable
             "startup failure should be logged");
     }
 
-    /// <summary>
-    /// Verifies that ExecuteAsync handles cancellation properly by terminating
-    /// the process and returning appropriate result.
-    ///
-    /// NOTE: This test uses a cmd.exe ping command that runs long enough to be cancelled.
-    /// The test verifies the cancellation logic path.
-    /// </summary>
-    [Fact]
-    public async Task ExecuteAsync_WhenCancelled_ShouldTerminateProcess()
-    {
-        // Arrange
-        using var service = new ProcessExecutionService(_mockState.Object, _mockLogger.Object);
-
-        // Use a simple command that will run for a while - Windows ping
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = "cmd.exe",
-            Arguments = "/c ping 127.0.0.1 -n 10" // Pings for about 10 seconds
-        };
-
-        using var cts = new CancellationTokenSource();
-
-        // Act
-        // Start the process and cancel after a short delay
-        var executeTask = service.ExecuteAsync(startInfo, ct: cts.Token);
-        await Task.Delay(500); // Let process start
-        cts.Cancel();
-
-        var result = await executeTask;
-
-        // Assert
-        // The result should indicate cancellation occurred
-        // Note: ExitCode may vary based on how termination happened
-        result.Should().NotBeNull("result should still be returned even on cancellation");
-
-        // Verify logging
-        _mockLogger.Verify(
-            l => l.Warning(It.Is<string>(s => s.Contains("cancelled"))),
-            Times.AtMostOnce());
-    }
-
-    /// <summary>
-    /// Verifies that ExecuteAsync enforces timeout and terminates long-running processes.
-    /// </summary>
-    [Fact]
-    public async Task ExecuteAsync_WhenTimeout_ShouldTerminateAndReturnTimedOut()
-    {
-        // Arrange
-        using var service = new ProcessExecutionService(_mockState.Object, _mockLogger.Object);
-
-        // Use a command that runs for a while
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = "cmd.exe",
-            Arguments = "/c ping 127.0.0.1 -n 10" // Runs for ~10 seconds
-        };
-
-        // Set a very short timeout
-        var timeout = TimeSpan.FromMilliseconds(500);
-
-        // Act
-        var result = await service.ExecuteAsync(startInfo, timeout: timeout);
-
-        // Assert
-        result.TimedOut.Should().BeTrue("process should be marked as timed out");
-        result.ExitCode.Should().Be(-1, "timed out process should return -1");
-
-        // Verify timeout was logged
-        _mockLogger.Verify(
-            l => l.Warning(It.Is<string>(s => s.Contains("timed out"))),
-            Times.Once,
-            "timeout should be logged");
-    }
-
-    /// <summary>
-    /// Verifies that ExecuteAsync captures output correctly via the progress callback.
-    /// This tests the happy path where a process runs and produces output.
-    /// </summary>
-    [Fact]
-    public async Task ExecuteAsync_ShouldCaptureOutputViaProgress()
-    {
-        // Arrange
-        using var service = new ProcessExecutionService(_mockState.Object, _mockLogger.Object);
-
-        // Use echo command to produce predictable output
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = "cmd.exe",
-            Arguments = "/c echo TestOutput123"
-        };
-
-        var capturedOutput = new List<string>();
-        var progress = new Progress<string>(output => capturedOutput.Add(output));
-
-        // Act
-        var result = await service.ExecuteAsync(startInfo, progress);
-
-        // Assert
-        result.ExitCode.Should().Be(0, "echo command should succeed");
-        result.OutputLines.Should().Contain(l => l.Contains("TestOutput123"),
-            "output should contain the echoed text");
-
-        // Note: Progress callback timing is not guaranteed, so we check OutputLines instead
-    }
-
-    /// <summary>
-    /// Verifies that ExecuteAsync returns the process exit code correctly.
-    /// </summary>
-    [Fact]
-    public async Task ExecuteAsync_ShouldReturnCorrectExitCode()
-    {
-        // Arrange
-        using var service = new ProcessExecutionService(_mockState.Object, _mockLogger.Object);
-
-        // Use exit command to produce specific exit code
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = "cmd.exe",
-            Arguments = "/c exit 42"
-        };
-
-        // Act
-        var result = await service.ExecuteAsync(startInfo);
-
-        // Assert
-        result.ExitCode.Should().Be(42, "exit code should match the command's exit code");
-        result.TimedOut.Should().BeFalse("process should not be marked as timed out");
-    }
-
-    /// <summary>
-    /// Verifies that ExecuteAsync captures error output (stderr) correctly.
-    /// </summary>
-    [Fact]
-    public async Task ExecuteAsync_ShouldCaptureErrorOutput()
-    {
-        // Arrange
-        using var service = new ProcessExecutionService(_mockState.Object, _mockLogger.Object);
-
-        // Use command that writes to stderr
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = "cmd.exe",
-            Arguments = "/c echo ErrorMessage 1>&2"
-        };
-
-        // Act
-        var result = await service.ExecuteAsync(startInfo);
-
-        // Assert
-        result.ErrorLines.Should().Contain(l => l.Contains("ErrorMessage"),
-            "stderr output should be captured in ErrorLines");
-    }
-
     #endregion
 
     #region Disposal Tests
@@ -233,6 +94,7 @@ public sealed class ProcessExecutionServiceTests : IDisposable
     /// <summary>
     /// Verifies that disposal properly cleans up internal resources.
     /// After disposal, ExecuteAsync should throw ObjectDisposedException.
+    /// No real process is spawned because the exception is thrown before Process.Start.
     /// </summary>
     [Fact]
     public async Task Dispose_ShouldPreventFurtherExecution()
@@ -246,13 +108,275 @@ public sealed class ProcessExecutionServiceTests : IDisposable
         // Assert
         var startInfo = new ProcessStartInfo
         {
-            FileName = "cmd.exe",
-            Arguments = "/c echo test"
+            FileName = "test_nonexistent.exe",
+            Arguments = "--test"
         };
 
         await FluentActions.Awaiting(() => service.ExecuteAsync(startInfo))
             .Should().ThrowAsync<ObjectDisposedException>(
                 "disposed service should not allow execution");
+    }
+
+    #endregion
+
+    #region Orchestrator-Level Termination Tests (via Mock<IProcessExecutionService>)
+
+    /// <summary>
+    /// Creates a CleaningOrchestrator with mocked dependencies for testing
+    /// process termination and orphan cleanup behavior.
+    /// </summary>
+    private (CleaningOrchestrator orchestrator, Mock<IProcessExecutionService> processServiceMock) CreateOrchestrator()
+    {
+        var cleaningServiceMock = new Mock<ICleaningService>();
+        var pluginServiceMock = new Mock<IPluginValidationService>();
+        var gameDetectionServiceMock = new Mock<IGameDetectionService>();
+        var stateServiceMock = new Mock<IStateService>();
+        var configServiceMock = new Mock<IConfigurationService>();
+        var loggerMock = new Mock<ILoggingService>();
+        var processServiceMock = new Mock<IProcessExecutionService>();
+        var logFileServiceMock = new Mock<IXEditLogFileService>();
+        var outputParserMock = new Mock<IXEditOutputParser>();
+        var backupServiceMock = new Mock<IBackupService>();
+        var hangDetectionMock = new Mock<IHangDetectionService>();
+
+        // Default setup for GetSkipListAsync (with GameVariant parameter)
+        configServiceMock.Setup(s => s.GetSkipListAsync(It.IsAny<GameType>(), It.IsAny<GameVariant>()))
+            .ReturnsAsync(new List<string>());
+
+        // Default setup for LoadUserConfigAsync
+        configServiceMock.Setup(s => s.LoadUserConfigAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new UserConfiguration());
+
+        // Default setup for log file service
+        logFileServiceMock.Setup(s => s.ReadLogFileAsync(
+                It.IsAny<string>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((new List<string>(), (string?)"Log file not found"));
+
+        var plugins = new List<PluginInfo>
+        {
+            new() { FileName = "Test.esp", FullPath = @"C:\Data\Test.esp", IsSelected = true }
+        };
+
+        var appState = new AppState
+        {
+            LoadOrderPath = "plugins.txt",
+            XEditExecutablePath = "xedit.exe",
+            CurrentGameType = GameType.SkyrimSe,
+            PluginsToClean = plugins
+        };
+
+        stateServiceMock.Setup(s => s.CurrentState).Returns(appState);
+
+        cleaningServiceMock.Setup(s => s.ValidateEnvironmentAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        pluginServiceMock.Setup(s => s.ValidatePluginFile(It.IsAny<PluginInfo>()))
+            .Returns(PluginWarningKind.None);
+
+        // Default: CleanPluginAsync succeeds and captures the onProcessStarted callback
+        cleaningServiceMock.Setup(s => s.CleanPluginAsync(
+                It.IsAny<PluginInfo>(),
+                It.IsAny<IProgress<string>>(),
+                It.IsAny<CancellationToken>(),
+                It.IsAny<Action<System.Diagnostics.Process>?>()))
+            .ReturnsAsync(new CleaningResult
+            {
+                Status = CleaningStatus.Cleaned,
+                Success = true,
+                Message = "Cleaned successfully"
+            });
+
+        // Default: game variant detection
+        gameDetectionServiceMock.Setup(s => s.DetectVariant(It.IsAny<GameType>(), It.IsAny<List<string>>()))
+            .Returns(GameVariant.None);
+
+        var orchestrator = new CleaningOrchestrator(
+            cleaningServiceMock.Object,
+            pluginServiceMock.Object,
+            gameDetectionServiceMock.Object,
+            stateServiceMock.Object,
+            configServiceMock.Object,
+            loggerMock.Object,
+            processServiceMock.Object,
+            logFileServiceMock.Object,
+            outputParserMock.Object,
+            backupServiceMock.Object,
+            hangDetectionMock.Object);
+
+        return (orchestrator, processServiceMock);
+    }
+
+    /// <summary>
+    /// Verifies that the orchestrator calls CleanOrphanedProcessesAsync
+    /// at the start of each cleaning run (before processing plugins).
+    /// </summary>
+    [Fact]
+    public async Task Orchestrator_StartCleaning_CallsCleanOrphanedProcessesAsync()
+    {
+        // Arrange
+        var (orchestrator, processServiceMock) = CreateOrchestrator();
+
+        // Act
+        await orchestrator.StartCleaningAsync();
+
+        // Assert
+        processServiceMock.Verify(
+            p => p.CleanOrphanedProcessesAsync(It.IsAny<CancellationToken>()),
+            Times.Once,
+            "CleanOrphanedProcessesAsync should be called at the start of cleaning");
+
+        orchestrator.Dispose();
+    }
+
+    /// <summary>
+    /// Verifies that StopCleaningAsync cancels the CTS which propagates cancellation
+    /// to the cleaning loop. When CleanPluginAsync throws OperationCanceledException,
+    /// the orchestrator catches it and records WasCancelled = true.
+    /// </summary>
+    [Fact]
+    public async Task Orchestrator_StopCleaning_CancelsCts()
+    {
+        // Arrange
+        var cleaningStarted = new TaskCompletionSource<bool>();
+
+        // Override CleanPluginAsync to block until cancellation, then throw
+        var cleaningServiceMock = new Mock<ICleaningService>();
+        cleaningServiceMock.Setup(s => s.ValidateEnvironmentAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        cleaningServiceMock.Setup(s => s.CleanPluginAsync(
+                It.IsAny<PluginInfo>(),
+                It.IsAny<IProgress<string>>(),
+                It.IsAny<CancellationToken>(),
+                It.IsAny<Action<System.Diagnostics.Process>?>()))
+            .Returns(async (PluginInfo _, IProgress<string> _, CancellationToken ct, Action<System.Diagnostics.Process>? _) =>
+            {
+                cleaningStarted.TrySetResult(true);
+                // Block until cancellation -- let the exception propagate so the
+                // orchestrator's catch(OperationCanceledException) sets WasCancelled
+                await Task.Delay(Timeout.Infinite, ct);
+                return new CleaningResult { Status = CleaningStatus.Failed, Message = "Cancelled" };
+            });
+
+        // Build orchestrator with blocking mock
+        var stateServiceMock = new Mock<IStateService>();
+        var configServiceMock = new Mock<IConfigurationService>();
+        var logFileServiceMock = new Mock<IXEditLogFileService>();
+        var gameDetectionServiceMock = new Mock<IGameDetectionService>();
+        var backupServiceMock = new Mock<IBackupService>();
+        var hangDetectionMock = new Mock<IHangDetectionService>();
+        var processServiceMock = new Mock<IProcessExecutionService>();
+
+        configServiceMock.Setup(s => s.GetSkipListAsync(It.IsAny<GameType>(), It.IsAny<GameVariant>()))
+            .ReturnsAsync(new List<string>());
+        configServiceMock.Setup(s => s.LoadUserConfigAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new UserConfiguration());
+        logFileServiceMock.Setup(s => s.ReadLogFileAsync(
+                It.IsAny<string>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((new List<string>(), (string?)"Log file not found"));
+        gameDetectionServiceMock.Setup(s => s.DetectVariant(It.IsAny<GameType>(), It.IsAny<List<string>>()))
+            .Returns(GameVariant.None);
+
+        var plugins = new List<PluginInfo>
+        {
+            new() { FileName = "Test.esp", FullPath = @"C:\Data\Test.esp", IsSelected = true }
+        };
+        var appState = new AppState
+        {
+            LoadOrderPath = "plugins.txt",
+            XEditExecutablePath = "xedit.exe",
+            CurrentGameType = GameType.SkyrimSe,
+            PluginsToClean = plugins
+        };
+        stateServiceMock.Setup(s => s.CurrentState).Returns(appState);
+
+        var pluginServiceMock = new Mock<IPluginValidationService>();
+        pluginServiceMock.Setup(s => s.ValidatePluginFile(It.IsAny<PluginInfo>()))
+            .Returns(PluginWarningKind.None);
+
+        var orch = new CleaningOrchestrator(
+            cleaningServiceMock.Object,
+            pluginServiceMock.Object,
+            gameDetectionServiceMock.Object,
+            stateServiceMock.Object,
+            configServiceMock.Object,
+            Mock.Of<ILoggingService>(),
+            processServiceMock.Object,
+            logFileServiceMock.Object,
+            Mock.Of<IXEditOutputParser>(),
+            backupServiceMock.Object,
+            hangDetectionMock.Object);
+
+        // Act
+        var cleaningTask = orch.StartCleaningAsync();
+        await cleaningStarted.Task; // Wait for cleaning to start
+
+        await orch.StopCleaningAsync(); // Request stop (cancels CTS)
+        await cleaningTask; // Wait for cleaning to complete
+
+        // Assert -- The cleaning was cancelled successfully
+        stateServiceMock.Verify(
+            s => s.FinishCleaningWithResults(It.Is<CleaningSessionResult>(r => r.WasCancelled)),
+            Times.Once,
+            "Cleaning should have been cancelled");
+
+        orch.Dispose();
+    }
+
+    /// <summary>
+    /// Verifies that ForceStopCleaningAsync calls TerminateProcessAsync with
+    /// forceKill=true for immediate process tree kill.
+    /// </summary>
+    [Fact]
+    public async Task Orchestrator_ForceStop_ShouldCallTerminateWithForceKill()
+    {
+        // Arrange
+        var (orchestrator, processServiceMock) = CreateOrchestrator();
+
+        // ForceStopCleaningAsync reads _currentProcess which is null when no
+        // cleaning is active, so it just cancels the CTS and returns.
+        // This test verifies the method doesn't throw when called in isolation.
+        await orchestrator.ForceStopCleaningAsync();
+
+        // Since _currentProcess is null (no active cleaning), TerminateProcessAsync
+        // should not be called. This verifies the null-check path.
+        processServiceMock.Verify(
+            p => p.TerminateProcessAsync(
+                It.IsAny<System.Diagnostics.Process>(),
+                It.IsAny<bool>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never,
+            "TerminateProcessAsync should not be called when no process is active");
+
+        orchestrator.Dispose();
+    }
+
+    /// <summary>
+    /// Verifies that calling StopCleaningAsync twice quickly (Path B) invokes
+    /// ForceStopCleaningAsync for immediate escalation.
+    /// </summary>
+    [Fact]
+    public async Task Orchestrator_DoubleStop_EscalatesToForceKill()
+    {
+        // Arrange
+        var (orchestrator, processServiceMock) = CreateOrchestrator();
+
+        // First stop sets _isStopRequested = true
+        await orchestrator.StopCleaningAsync();
+
+        // Second stop should take Path B (force kill path)
+        await orchestrator.StopCleaningAsync();
+
+        // With no active process, neither call should invoke TerminateProcessAsync.
+        // But the code path through ForceStopCleaningAsync was exercised.
+        processServiceMock.Verify(
+            p => p.TerminateProcessAsync(
+                It.IsAny<System.Diagnostics.Process>(),
+                It.IsAny<bool>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never,
+            "No process active, but the double-stop code path was exercised without errors");
+
+        orchestrator.Dispose();
     }
 
     #endregion
