@@ -193,7 +193,7 @@ public partial class MainWindow : Window
 
         // Get the current game data folder from the ViewModel
         var vm = DataContext as MainWindowViewModel;
-        var dataFolderPath = vm?.GameDataFolder;
+        var dataFolderPath = vm?.Configuration.GameDataFolder;
 
         var restoreViewModel = new RestoreViewModel(_backupService, _messageDialog, _logger);
 

@@ -1,6 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:AutoQAC.ViewModels"
+        xmlns:mw="using:AutoQAC.ViewModels.MainWindow"
         xmlns:m="using:AutoQAC.Models"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -19,20 +20,20 @@
         <!-- Menu Bar -->
         <Menu DockPanel.Dock="Top">
             <MenuItem Header="_File">
-                <MenuItem Header="_Exit" Command="{Binding ExitCommand}" />
+                <MenuItem Header="_Exit" Command="{Binding Commands.ExitCommand}" />
             </MenuItem>
             <MenuItem Header="_Edit">
-                <MenuItem Header="_Settings..." Command="{Binding ShowSettingsCommand}" />
-                <MenuItem Header="Skip _List..." Command="{Binding ShowSkipListCommand}" />
+                <MenuItem Header="_Settings..." Command="{Binding Commands.ShowSettingsCommand}" />
+                <MenuItem Header="Skip _List..." Command="{Binding Commands.ShowSkipListCommand}" />
             </MenuItem>
             <MenuItem Header="_Help">
-                <MenuItem Header="_About" Command="{Binding ShowAboutCommand}" />
+                <MenuItem Header="_About" Command="{Binding Commands.ShowAboutCommand}" />
             </MenuItem>
         </Menu>
 
         <!-- Migration Warning Banner -->
         <Border DockPanel.Dock="Top"
-                IsVisible="{Binding HasMigrationWarning}"
+                IsVisible="{Binding Configuration.HasMigrationWarning}"
                 Background="#FFEBEE"
                 BorderBrush="#E53935"
                 BorderThickness="0,0,0,2"
@@ -44,13 +45,13 @@
                            VerticalAlignment="Center"
                            Margin="0,0,8,0" />
                 <TextBlock Grid.Column="1"
-                           Text="{Binding MigrationWarningMessage}"
+                           Text="{Binding Configuration.MigrationWarningMessage}"
                            TextWrapping="Wrap"
                            VerticalAlignment="Center"
                            Foreground="#B71C1C" />
                 <Button Grid.Column="2"
                         Content="Dismiss"
-                        Command="{Binding DismissMigrationWarningCommand}"
+                        Command="{Binding Configuration.DismissMigrationWarningCommand}"
                         Padding="8,3"
                         FontSize="11"
                         Margin="10,0,0,0"
@@ -63,7 +64,7 @@
                 BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}"
                 BorderThickness="0,1,0,0"
                 Padding="5">
-            <TextBlock Text="{Binding StatusText}" />
+            <TextBlock Text="{Binding Configuration.StatusText}" />
         </Border>
 
         <!-- Main Content -->
@@ -79,8 +80,8 @@
                     <TextBlock Grid.Column="0" Text="Game:"
                                VerticalAlignment="Center" />
                     <ComboBox Grid.Column="1"
-                              ItemsSource="{Binding AvailableGames}"
-                              SelectedItem="{Binding SelectedGame}"
+                              ItemsSource="{Binding Configuration.AvailableGames}"
+                              SelectedItem="{Binding Configuration.SelectedGame}"
                               HorizontalAlignment="Stretch">
                         <ComboBox.ItemTemplate>
                             <DataTemplate>
@@ -89,7 +90,7 @@
                         </ComboBox.ItemTemplate>
                     </ComboBox>
                     <TextBlock Grid.Column="2"
-                               Text="{Binding IsMutagenSupported, StringFormat='Mutagen: {0}'}"
+                               Text="{Binding Configuration.IsMutagenSupported, StringFormat='Mutagen: {0}'}"
                                VerticalAlignment="Center"
                                Margin="10,0,0,0"
                                FontSize="11"
@@ -98,11 +99,11 @@
 
                 <!-- Data Folder (only for Mutagen-supported games) -->
                 <Grid ColumnDefinitions="120,*,Auto,Auto,Auto"
-                      IsVisible="{Binding IsMutagenSupported}">
+                      IsVisible="{Binding Configuration.IsMutagenSupported}">
                     <TextBlock Grid.Column="0" Text="Data Folder:"
                                VerticalAlignment="Center" />
                     <TextBox Grid.Column="1"
-                             Text="{Binding GameDataFolder}"
+                             Text="{Binding Configuration.GameDataFolder}"
                              IsReadOnly="True"
                              Watermark="Auto-detected from registry" />
                     <Panel Grid.Column="2" Width="24" VerticalAlignment="Center" Margin="5,0,0,0">
@@ -110,32 +111,32 @@
                                    FontSize="16" FontWeight="Bold"
                                    Foreground="#4CAF50"
                                    HorizontalAlignment="Center"
-                                   IsVisible="{Binding IsGameDataFolderValid, Converter={StaticResource IsTrueConverter}}" />
+                                   IsVisible="{Binding Configuration.IsGameDataFolderValid, Converter={StaticResource IsTrueConverter}}" />
                         <TextBlock Text="&#x2717;"
                                    FontSize="16" FontWeight="Bold"
                                    Foreground="#F44336"
                                    HorizontalAlignment="Center"
-                                   IsVisible="{Binding IsGameDataFolderValid, Converter={StaticResource IsFalseConverter}}" />
+                                   IsVisible="{Binding Configuration.IsGameDataFolderValid, Converter={StaticResource IsFalseConverter}}" />
                     </Panel>
                     <Button Grid.Column="3"
                             Content="Override..."
-                            Command="{Binding ConfigureGameDataFolderCommand}"
+                            Command="{Binding Configuration.ConfigureGameDataFolderCommand}"
                             Margin="5,0,0,0" />
                     <Button Grid.Column="4"
                             Content="Reset"
-                            Command="{Binding ClearGameDataFolderOverrideCommand}"
-                            IsVisible="{Binding HasGameDataFolderOverride}"
+                            Command="{Binding Configuration.ClearGameDataFolderOverrideCommand}"
+                            IsVisible="{Binding Configuration.HasGameDataFolderOverride}"
                             Margin="5,0,0,0" />
                 </Grid>
 
                 <Expander Header="Advanced: Load Order"
                           IsExpanded="False"
-                          IsVisible="{Binding RequiresLoadOrderFile}">
+                          IsVisible="{Binding Configuration.RequiresLoadOrderFile}">
                     <Grid ColumnDefinitions="120,*,Auto,Auto" Margin="0,5">
                         <TextBlock Grid.Column="0" Text="Load Order:"
                                    VerticalAlignment="Center" />
                         <TextBox Grid.Column="1"
-                                 Text="{Binding LoadOrderPath}"
+                                 Text="{Binding Configuration.LoadOrderPath}"
                                  IsReadOnly="True"
                                  Watermark="Auto-detected or not configured" />
                         <Panel Grid.Column="2" Width="24" VerticalAlignment="Center" Margin="5,0,0,0">
@@ -143,16 +144,16 @@
                                        FontSize="16" FontWeight="Bold"
                                        Foreground="#4CAF50"
                                        HorizontalAlignment="Center"
-                                       IsVisible="{Binding IsLoadOrderPathValid, Converter={StaticResource IsTrueConverter}}" />
+                                       IsVisible="{Binding Configuration.IsLoadOrderPathValid, Converter={StaticResource IsTrueConverter}}" />
                             <TextBlock Text="&#x2717;"
                                        FontSize="16" FontWeight="Bold"
                                        Foreground="#F44336"
                                        HorizontalAlignment="Center"
-                                       IsVisible="{Binding IsLoadOrderPathValid, Converter={StaticResource IsFalseConverter}}" />
+                                       IsVisible="{Binding Configuration.IsLoadOrderPathValid, Converter={StaticResource IsFalseConverter}}" />
                         </Panel>
                         <Button Grid.Column="3"
                                 Content="Browse..."
-                                Command="{Binding ConfigureLoadOrderCommand}"
+                                Command="{Binding Configuration.ConfigureLoadOrderCommand}"
                                 Margin="5,0,0,0" />
                     </Grid>
                 </Expander>
@@ -161,7 +162,7 @@
                     <TextBlock Grid.Column="0" Text="xEdit:"
                                VerticalAlignment="Center" />
                     <TextBox Grid.Column="1"
-                             Text="{Binding XEditPath}"
+                             Text="{Binding Configuration.XEditPath}"
                              IsReadOnly="True"
                              Watermark="Not configured" />
                     <Panel Grid.Column="2" Width="24" VerticalAlignment="Center" Margin="5,0,0,0">
@@ -169,16 +170,16 @@
                                    FontSize="16" FontWeight="Bold"
                                    Foreground="#4CAF50"
                                    HorizontalAlignment="Center"
-                                   IsVisible="{Binding IsXEditPathValid, Converter={StaticResource IsTrueConverter}}" />
+                                   IsVisible="{Binding Configuration.IsXEditPathValid, Converter={StaticResource IsTrueConverter}}" />
                         <TextBlock Text="&#x2717;"
                                    FontSize="16" FontWeight="Bold"
                                    Foreground="#F44336"
                                    HorizontalAlignment="Center"
-                                   IsVisible="{Binding IsXEditPathValid, Converter={StaticResource IsFalseConverter}}" />
+                                   IsVisible="{Binding Configuration.IsXEditPathValid, Converter={StaticResource IsFalseConverter}}" />
                     </Panel>
                     <Button Grid.Column="3"
                             Content="Browse..."
-                            Command="{Binding ConfigureXEditCommand}"
+                            Command="{Binding Configuration.ConfigureXEditCommand}"
                             Margin="5,0,0,0" />
                 </Grid>
 
@@ -186,7 +187,7 @@
                     <TextBlock Grid.Column="0" Text="Mod Organizer 2:"
                                VerticalAlignment="Center" />
                     <TextBox Grid.Column="1"
-                             Text="{Binding Mo2Path}"
+                             Text="{Binding Configuration.Mo2Path}"
                              IsReadOnly="True"
                              Watermark="Optional - for MO2 mode" />
                     <Panel Grid.Column="2" Width="24" VerticalAlignment="Center" Margin="5,0,0,0">
@@ -194,37 +195,37 @@
                                    FontSize="16" FontWeight="Bold"
                                    Foreground="#4CAF50"
                                    HorizontalAlignment="Center"
-                                   IsVisible="{Binding IsMo2PathValid, Converter={StaticResource IsTrueConverter}}" />
+                                   IsVisible="{Binding Configuration.IsMo2PathValid, Converter={StaticResource IsTrueConverter}}" />
                         <TextBlock Text="&#x2717;"
                                    FontSize="16" FontWeight="Bold"
                                    Foreground="#F44336"
                                    HorizontalAlignment="Center"
-                                   IsVisible="{Binding IsMo2PathValid, Converter={StaticResource IsFalseConverter}}" />
+                                   IsVisible="{Binding Configuration.IsMo2PathValid, Converter={StaticResource IsFalseConverter}}" />
                     </Panel>
                     <Button Grid.Column="3"
                             Content="Browse..."
-                            Command="{Binding ConfigureMo2Command}"
+                            Command="{Binding Configuration.ConfigureMo2Command}"
                             Margin="5,0,0,0" />
                 </Grid>
 
                 <StackPanel Orientation="Horizontal" Spacing="10">
                     <CheckBox Content="MO2 Mode"
-                              IsChecked="{Binding Mo2ModeEnabled}" />
+                              IsChecked="{Binding Configuration.Mo2ModeEnabled}" />
                     <CheckBox Content="Partial Forms (Experimental)"
-                              IsChecked="{Binding PartialFormsEnabled}"
-                              Command="{Binding TogglePartialFormsCommand}" />
+                              IsChecked="{Binding Configuration.PartialFormsEnabled}"
+                              Command="{Binding Configuration.TogglePartialFormsCommand}" />
                     <CheckBox Content="Disable Skip Lists"
-                              IsChecked="{Binding DisableSkipListsEnabled}"
+                              IsChecked="{Binding Configuration.DisableSkipListsEnabled}"
                               ToolTip.Tip="Show all plugins, ignoring skip and ignore lists" />
                     <Button Content="Reset Settings"
-                            Command="{Binding ResetSettingsCommand}"
+                            Command="{Binding Configuration.ResetSettingsCommand}"
                             VerticalAlignment="Center" />
                 </StackPanel>
             </StackPanel>
 
             <!-- Validation Error Panel -->
             <Border Grid.Row="1"
-                    IsVisible="{Binding HasValidationErrors}"
+                    IsVisible="{Binding Commands.HasValidationErrors}"
                     Background="#FFF2CC"
                     BorderBrush="#E6A817"
                     BorderThickness="1"
@@ -239,11 +240,11 @@
                                    Foreground="#8B4513" />
                         <Button Grid.Column="1"
                                 Content="Dismiss"
-                                Command="{Binding DismissValidationCommand}"
+                                Command="{Binding Commands.DismissValidationCommand}"
                                 Padding="5,1"
                                 FontSize="11" />
                     </Grid>
-                    <ItemsControl ItemsSource="{Binding ValidationErrors}">
+                    <ItemsControl ItemsSource="{Binding Commands.ValidationErrors}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="m:ValidationError">
                                 <StackPanel Margin="0,3">
@@ -276,29 +277,29 @@
                                    VerticalAlignment="Center" />
                         <Button Grid.Column="1"
                                 Content="All"
-                                Command="{Binding SelectAllCommand}"
+                                Command="{Binding PluginList.SelectAllCommand}"
                                 Margin="5,5,2,5"
                                 Padding="8,3"
                                 FontSize="11"
                                 ToolTip.Tip="Select all plugins" />
                         <Button Grid.Column="2"
                                 Content="None"
-                                Command="{Binding DeselectAllCommand}"
+                                Command="{Binding PluginList.DeselectAllCommand}"
                                 Margin="2,5,5,5"
                                 Padding="8,3"
                                 FontSize="11"
                                 ToolTip.Tip="Deselect all plugins" />
                         <Button Grid.Column="3"
                                 Content="Manage Skip List"
-                                Command="{Binding ShowSkipListCommand}"
+                                Command="{Binding Commands.ShowSkipListCommand}"
                                 Margin="5"
                                 Padding="10,3"
                                 FontSize="11" />
                     </Grid>
 
                     <ListBox Grid.Row="1"
-                             ItemsSource="{Binding PluginsToClean}"
-                             SelectedItem="{Binding SelectedPlugin}"
+                             ItemsSource="{Binding PluginList.PluginsToClean}"
+                             SelectedItem="{Binding PluginList.SelectedPlugin}"
                              Margin="5">
                         <ListBox.ItemTemplate>
                             <DataTemplate>
@@ -318,7 +319,7 @@
                             Orientation="Horizontal"
                             Spacing="10">
                     <Button Content="Restore Backups"
-                            Command="{Binding RestoreBackupsCommand}"
+                            Command="{Binding Commands.RestoreBackupsCommand}"
                             ToolTip.Tip="Browse and restore plugins from previous backup sessions"
                             MinWidth="120" />
                 </StackPanel>
@@ -328,20 +329,19 @@
                             Orientation="Horizontal"
                             Spacing="10">
                     <Button Content="Preview"
-                            Command="{Binding PreviewCommand}"
+                            Command="{Binding Commands.PreviewCommand}"
                             ToolTip.Tip="Preview which plugins will be cleaned or skipped (without running xEdit)"
                             MinWidth="120" />
                     <Button Content="Start Cleaning"
-                            Command="{Binding StartCleaningCommand}"
-                            IsEnabled="{Binding CanStartCleaning}"
+                            Command="{Binding Commands.StartCleaningCommand}"
+                            IsEnabled="{Binding Commands.CanStartCleaning}"
                             MinWidth="120" />
                     <Button Content="Stop"
-                            Command="{Binding StopCleaningCommand}"
-                            IsEnabled="{Binding IsCleaning}"
+                            Command="{Binding Commands.StopCleaningCommand}"
+                            IsEnabled="{Binding Commands.IsCleaning}"
                             MinWidth="120" />
                 </StackPanel>
             </Grid>
         </Grid>
     </DockPanel>
 </Window>
-
