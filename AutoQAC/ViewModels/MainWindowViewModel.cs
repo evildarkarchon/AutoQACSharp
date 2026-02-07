@@ -135,6 +135,22 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
         set => this.RaiseAndSetIfChanged(ref _hasValidationErrors, value);
     }
 
+    private bool _hasMigrationWarning;
+
+    public bool HasMigrationWarning
+    {
+        get => _hasMigrationWarning;
+        set => this.RaiseAndSetIfChanged(ref _hasMigrationWarning, value);
+    }
+
+    private string? _migrationWarningMessage;
+
+    public string? MigrationWarningMessage
+    {
+        get => _migrationWarningMessage;
+        set => this.RaiseAndSetIfChanged(ref _migrationWarningMessage, value);
+    }
+
     private ObservableCollection<PluginInfo> _pluginsToClean = new();
 
     public ObservableCollection<PluginInfo> PluginsToClean
@@ -175,6 +191,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
     public ReactiveCommand<Unit, Unit> SelectAllCommand { get; }
     public ReactiveCommand<Unit, Unit> DeselectAllCommand { get; }
     public ReactiveCommand<Unit, Unit> DismissValidationCommand { get; }
+    public ReactiveCommand<Unit, Unit> DismissMigrationWarningCommand { get; }
 
     /// <summary>
     /// Interaction for showing the progress window during cleaning.
@@ -299,6 +316,12 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
         {
             ValidationErrors.Clear();
             HasValidationErrors = false;
+        });
+
+        DismissMigrationWarningCommand = ReactiveCommand.Create(() =>
+        {
+            HasMigrationWarning = false;
+            MigrationWarningMessage = null;
         });
 
         // Subscribe to state changes
@@ -988,6 +1011,16 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
         {
             StatusText = $"Cleaning: {state.CurrentPlugin} ({state.Progress}/{state.TotalPlugins})";
         }
+    }
+
+    /// <summary>
+    /// Shows a non-modal migration warning banner in the main window.
+    /// Called from App.axaml.cs after legacy migration runs on startup.
+    /// </summary>
+    public void ShowMigrationWarning(string message)
+    {
+        MigrationWarningMessage = message;
+        HasMigrationWarning = true;
     }
 
     public void Dispose()

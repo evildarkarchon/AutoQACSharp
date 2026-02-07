@@ -51,8 +51,19 @@ namespace AutoQAC
                 var mainWindow = new MainWindow(viewModel, logger, fileDialog, configService, stateService, orchestrator);
                 desktop.MainWindow = mainWindow;
 
+                // Start config file watcher for external YAML edits
+                var configWatcher = Services.GetRequiredService<IConfigWatcherService>();
+                configWatcher.StartWatching();
+
+                // Run legacy migration on startup (fire-and-forget with error handling)
+                var migrationService = Services.GetRequiredService<ILegacyMigrationService>();
+                _ = RunMigrationAsync(migrationService, viewModel, logger);
+
                 desktop.ShutdownRequested += (sender, args) =>
                 {
+                    // Stop config watcher
+                    configWatcher.Dispose();
+
                     // Flush pending config saves before app exits (per user decision)
                     // Synchronous wait is acceptable during app shutdown
                     try
@@ -68,6 +79,26 @@ namespace AutoQAC
             }
 
             base.OnFrameworkInitializationCompleted();
+        }
+
+        private static async System.Threading.Tasks.Task RunMigrationAsync(
+            ILegacyMigrationService migrationService,
+            MainWindowViewModel viewModel,
+            ILoggingService logger)
+        {
+            try
+            {
+                var result = await migrationService.MigrateIfNeededAsync();
+                if (result.Attempted && !result.Success && result.WarningMessage != null)
+                {
+                    viewModel.ShowMigrationWarning(result.WarningMessage);
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.Error(ex, "[Migration] Unexpected error during legacy migration");
+                viewModel.ShowMigrationWarning($"Legacy config migration failed unexpectedly: {ex.Message}");
+            }
         }
     }
 }
