@@ -4,6 +4,7 @@ using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
 using AutoQAC.Services.GameDetection;
 using AutoQAC.Services.MO2;
+using AutoQAC.Services.Monitoring;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Services.Process;
 using AutoQAC.Services.State;
@@ -49,6 +50,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IXEditLogFileService, XEditLogFileService>();
         services.AddSingleton<ICleaningService, CleaningService>();
         services.AddSingleton<IBackupService, BackupService>();
+        services.AddSingleton<IHangDetectionService, HangDetectionService>();
         services.AddSingleton<ICleaningOrchestrator, CleaningOrchestrator>();
         return services;
     }

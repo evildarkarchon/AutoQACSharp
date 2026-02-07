@@ -36,6 +36,7 @@ public sealed class CleaningCommandsViewModel : ViewModelBase, IDisposable
     private readonly Interaction<Unit, bool> _showSettingsInteraction;
     private readonly Interaction<Unit, bool> _showSkipListInteraction;
     private readonly Interaction<Unit, Unit> _showRestoreInteraction;
+    private readonly Interaction<Unit, Unit> _showAboutInteraction;
 
     private string _statusText = "Ready";
 
@@ -88,7 +89,8 @@ public sealed class CleaningCommandsViewModel : ViewModelBase, IDisposable
         Interaction<List<DryRunResult>, Unit> showPreviewInteraction,
         Interaction<Unit, bool> showSettingsInteraction,
         Interaction<Unit, bool> showSkipListInteraction,
-        Interaction<Unit, Unit> showRestoreInteraction)
+        Interaction<Unit, Unit> showRestoreInteraction,
+        Interaction<Unit, Unit> showAboutInteraction)
     {
         _stateService = stateService;
         _orchestrator = orchestrator;
@@ -100,6 +102,7 @@ public sealed class CleaningCommandsViewModel : ViewModelBase, IDisposable
         _showSettingsInteraction = showSettingsInteraction;
         _showSkipListInteraction = showSkipListInteraction;
         _showRestoreInteraction = showRestoreInteraction;
+        _showAboutInteraction = showAboutInteraction;
 
         // IsCleaning OAPH from state
         _isCleaning = _stateService.StateChanged
@@ -138,7 +141,7 @@ public sealed class CleaningCommandsViewModel : ViewModelBase, IDisposable
             this.WhenAnyValue(x => x.IsCleaning));
 
         ExitCommand = ReactiveCommand.Create(Exit);
-        ShowAboutCommand = ReactiveCommand.Create(ShowAbout);
+        ShowAboutCommand = ReactiveCommand.CreateFromTask(ShowAboutAsync);
         ShowSettingsCommand = ReactiveCommand.CreateFromTask(ShowSettingsAsync);
 
         // Skip list command - disabled during cleaning
@@ -393,10 +396,17 @@ public sealed class CleaningCommandsViewModel : ViewModelBase, IDisposable
         }
     }
 
-    private void ShowAbout()
+    private async Task ShowAboutAsync()
     {
-        // TODO: Show about dialog
-        StatusText = "AutoQAC Sharp v1.0";
+        try
+        {
+            await _showAboutInteraction.Handle(Unit.Default);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "Failed to show about dialog");
+            StatusText = "Error opening about dialog";
+        }
     }
 
     private async Task ShowSettingsAsync()

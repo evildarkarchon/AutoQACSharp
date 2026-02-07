@@ -1,0 +1,112 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:AutoQAC.ViewModels"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        d:DesignWidth="420" d:DesignHeight="480"
+        x:Class="AutoQAC.Views.AboutWindow"
+        x:DataType="vm:AboutViewModel"
+        Title="About AutoQAC"
+        Width="420" Height="480"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner">
+
+    <Grid Margin="24" RowDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto">
+
+        <!-- App Icon and Title -->
+        <StackPanel Grid.Row="0" HorizontalAlignment="Center" Spacing="8" Margin="0,0,0,16">
+            <Image Source="/Assets/avalonia-logo.ico"
+                   Width="64" Height="64"
+                   HorizontalAlignment="Center" />
+            <TextBlock Text="AutoQAC"
+                       FontSize="24" FontWeight="Bold"
+                       HorizontalAlignment="Center" />
+            <TextBlock Text="Plugin Auto Cleaning Tool"
+                       FontSize="13"
+                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                       HorizontalAlignment="Center" />
+        </StackPanel>
+
+        <!-- Version Info -->
+        <Border Grid.Row="1"
+                Background="{DynamicResource SystemControlBackgroundAltHighBrush}"
+                CornerRadius="4"
+                Padding="12,8"
+                Margin="0,0,0,12">
+            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" Margin="0">
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="Version:" FontWeight="SemiBold" Margin="0,2" />
+                <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding InformationalVersion}" Margin="8,2" />
+
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="Build Date:" FontWeight="SemiBold" Margin="0,2" />
+                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding BuildDate}" Margin="8,2" />
+
+                <TextBlock Grid.Row="2" Grid.Column="0" Text=".NET Runtime:" FontWeight="SemiBold" Margin="0,2" />
+                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding DotNetVersion}" Margin="8,2" />
+
+                <TextBlock Grid.Row="3" Grid.Column="0" Text="Avalonia:" FontWeight="SemiBold" Margin="0,2" />
+                <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding AvaloniaVersion}" Margin="8,2" />
+
+                <TextBlock Grid.Row="4" Grid.Column="0" Text="ReactiveUI:" FontWeight="SemiBold" Margin="0,2" />
+                <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding ReactiveUIVersion}" Margin="8,2" />
+            </Grid>
+        </Border>
+
+        <!-- Update Check -->
+        <StackPanel Grid.Row="2" Spacing="6" Margin="0,0,0,12">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Content="Check for Updates"
+                        Command="{Binding CheckForUpdateCommand}"
+                        Padding="12,4" />
+                <Button Content="View Release"
+                        Command="{Binding OpenLatestReleaseCommand}"
+                        IsVisible="{Binding UpdateAvailable}"
+                        Padding="12,4" />
+            </StackPanel>
+            <TextBlock Text="{Binding UpdateStatusText}"
+                       FontSize="12"
+                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                       IsVisible="{Binding UpdateStatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+        </StackPanel>
+
+        <!-- Separator -->
+        <Separator Grid.Row="3" Margin="0,0,0,12" />
+
+        <!-- Links -->
+        <StackPanel Grid.Row="4" Spacing="6" Margin="0,0,0,12">
+            <TextBlock Text="Links" FontWeight="SemiBold" Margin="0,0,0,4" />
+            <Button Content="GitHub Repository"
+                    Command="{Binding OpenGitHubCommand}"
+                    Classes="hyperlink"
+                    Padding="0"
+                    Background="Transparent"
+                    Foreground="{DynamicResource SystemAccentColor}"
+                    Cursor="Hand" />
+            <Button Content="Report an Issue"
+                    Command="{Binding OpenIssuesCommand}"
+                    Classes="hyperlink"
+                    Padding="0"
+                    Background="Transparent"
+                    Foreground="{DynamicResource SystemAccentColor}"
+                    Cursor="Hand" />
+            <Button Content="xEdit Project (TES5Edit)"
+                    Command="{Binding OpenXEditCommand}"
+                    Classes="hyperlink"
+                    Padding="0"
+                    Background="Transparent"
+                    Foreground="{DynamicResource SystemAccentColor}"
+                    Cursor="Hand" />
+        </StackPanel>
+
+        <!-- Spacer -->
+        <Panel Grid.Row="5" />
+
+        <!-- Close Button -->
+        <Button Grid.Row="6"
+                Content="Close"
+                HorizontalAlignment="Center"
+                MinWidth="100"
+                Padding="16,6"
+                Click="OnCloseClick" />
+    </Grid>
+</Window>

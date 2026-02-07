@@ -65,6 +65,9 @@ public partial class MainWindow : Window
 
         // Register the interaction handler for showing restore window
         viewModel.ShowRestoreInteraction.RegisterHandler(ShowRestoreAsync);
+
+        // Register the interaction handler for showing about window
+        viewModel.ShowAboutInteraction.RegisterHandler(ShowAboutAsync);
     }
 
     private async Task ShowCleaningResultsAsync(IInteractionContext<CleaningSessionResult, Unit> context)
@@ -206,6 +209,16 @@ public partial class MainWindow : Window
 
         // Dispose the ViewModel after dialog closes
         restoreViewModel.Dispose();
+
+        context.SetOutput(Unit.Default);
+    }
+
+    private async Task ShowAboutAsync(IInteractionContext<Unit, Unit> context)
+    {
+        var aboutViewModel = new AboutViewModel();
+        var aboutWindow = new AboutWindow(aboutViewModel);
+
+        await aboutWindow.ShowDialog(this);
 
         context.SetOutput(Unit.Default);
     }

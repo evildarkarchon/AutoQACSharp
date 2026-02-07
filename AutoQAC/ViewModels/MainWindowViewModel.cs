@@ -36,6 +36,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
     public Interaction<Unit, bool> ShowSettingsInteraction { get; } = new();
     public Interaction<Unit, bool> ShowSkipListInteraction { get; } = new();
     public Interaction<Unit, Unit> ShowRestoreInteraction { get; } = new();
+    public Interaction<Unit, Unit> ShowAboutInteraction { get; } = new();
 
     public MainWindowViewModel(
         IConfigurationService configService,
@@ -59,7 +60,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
             messageDialog,
             ShowProgressInteraction, ShowPreviewInteraction,
             ShowSettingsInteraction, ShowSkipListInteraction,
-            ShowRestoreInteraction);
+            ShowRestoreInteraction, ShowAboutInteraction);
 
         // Subscribe to state changes and dispatch to sub-VMs
         var stateSubscription = stateService.StateChanged
