@@ -13,7 +13,7 @@ This roadmap hardens AutoQACSharp's existing cleaning pipeline from a functional
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Foundation Hardening** - Fix critical process, state, and config bugs that block all subsequent work
-- [ ] **Phase 2: Plugin Pipeline Robustness** - Resolve plugin path tech debt and validation gaps that block safety features
+- [x] **Phase 2: Plugin Pipeline Robustness** - Resolve plugin path tech debt and validation gaps that block safety features
 - [ ] **Phase 3: Real-Time Feedback** - Give users live progress and actionable error messages during cleaning sessions
 - [ ] **Phase 4: Configuration Enhancement** - Batch config operations, cache invalidation, validation UI, and settings cleanup
 - [ ] **Phase 5: Safety Features** - Dry-run preview and plugin backup/rollback so users trust the tool with their load order
@@ -51,8 +51,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 02-01-PLAN.md -- Plugin line validation, encoding-aware parsing, and FullPath resolution (PLUG-01, PLUG-02, PLUG-03)
-- [ ] 02-02-PLAN.md -- Game variant detection (TTW/Enderal), skip list inheritance, Unknown rejection, aggregated errors (PLUG-04, PLUG-05, GAME-01)
+- [x] 02-01-PLAN.md -- Plugin line validation, encoding-aware parsing, and FullPath resolution (PLUG-01, PLUG-02, PLUG-03)
+- [x] 02-02-PLAN.md -- Game variant detection (TTW/Enderal), skip list inheritance, Unknown rejection, aggregated errors (PLUG-04, PLUG-05, GAME-01)
 
 ### Phase 3: Real-Time Feedback
 **Goal**: Users see live cleaning progress with per-record stats and receive actionable error messages when something is misconfigured
@@ -141,7 +141,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation Hardening | 2/2 | Complete | 2026-02-06 |
-| 2. Plugin Pipeline Robustness | 0/2 | Not started | - |
+| 2. Plugin Pipeline Robustness | 2/2 | Complete | 2026-02-06 |
 | 3. Real-Time Feedback | 0/2 | Not started | - |
 | 4. Configuration Enhancement | 0/2 | Not started | - |
 | 5. Safety Features | 0/2 | Not started | - |

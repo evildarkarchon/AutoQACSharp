@@ -7,12 +7,12 @@
 
 ### Process Management
 
-- [ ] **PROC-01**: Graceful subprocess termination with escalation pattern (close -> wait -> terminate -> wait -> kill entire tree)
-- [ ] **PROC-02**: Reliable stop/cancel that guarantees xEdit is dead before reporting cancelled
-- [ ] **PROC-03**: Fix process termination race condition (file handles persisting after disposal)
-- [ ] **PROC-04**: Fix CancellationTokenSource lock synchronization (race on null check in StopCleaning + Dispose)
+- [x] **PROC-01**: Graceful subprocess termination with escalation pattern (close -> wait -> terminate -> wait -> kill entire tree)
+- [x] **PROC-02**: Reliable stop/cancel that guarantees xEdit is dead before reporting cancelled
+- [x] **PROC-03**: Fix process termination race condition (file handles persisting after disposal)
+- [x] **PROC-04**: Fix CancellationTokenSource lock synchronization (race on null check in StopCleaning + Dispose)
 - [ ] **PROC-05**: CPU usage threshold monitoring to detect hung xEdit processes
-- [ ] **PROC-06**: Improved subprocess resource management (wait condition pattern, timeout on slot acquisition)
+- [x] **PROC-06**: Improved subprocess resource management (wait condition pattern, timeout on slot acquisition)
 
 ### Progress & Feedback
 
@@ -22,25 +22,25 @@
 
 ### Configuration
 
-- [ ] **CONF-01**: Deferred configuration saves (debounced batch writes to prevent deadlocks)
+- [x] **CONF-01**: Deferred configuration saves (debounced batch writes to prevent deadlocks)
 - [ ] **CONF-02**: Configuration validation UI in Settings (real-time path validation with visual feedback)
 - [ ] **CONF-03**: Configuration helper methods (get_all, update_multiple, batch operations)
 - [ ] **CONF-04**: YAML cache invalidation by file modification time
-- [ ] **CONF-05**: Configuration file disk I/O batching (dirty-flag pattern with debounce)
+- [x] **CONF-05**: Configuration file disk I/O batching (dirty-flag pattern with debounce)
 - [ ] **CONF-06**: Fix legacy configuration migration (deletion outside lock, no validation)
 - [ ] **CONF-07**: Journal/log expiration setting support
 
 ### Plugin Handling
 
-- [ ] **PLUG-01**: Plugin line validation edge cases (separator detection, malformed entries, BOM, encoding)
-- [ ] **PLUG-02**: Fix PluginInfo FullPath resolution (FileName used as placeholder)
-- [ ] **PLUG-03**: Fix PluginValidationService two code paths (relative vs absolute FullPath)
-- [ ] **PLUG-04**: TTW (Tale of Two Wastelands) skip list inheritance from FNV
-- [ ] **PLUG-05**: XEdit command building validation (reject GameType.Unknown)
+- [x] **PLUG-01**: Plugin line validation edge cases (separator detection, malformed entries, BOM, encoding)
+- [x] **PLUG-02**: Fix PluginInfo FullPath resolution (FileName used as placeholder)
+- [x] **PLUG-03**: Fix PluginValidationService two code paths (relative vs absolute FullPath)
+- [x] **PLUG-04**: TTW (Tale of Two Wastelands) skip list inheritance from FNV
+- [x] **PLUG-05**: XEdit command building validation (reject GameType.Unknown)
 
 ### State Management
 
-- [ ] **STAT-01**: Fix potential lock deadlock in StateService (Lock vs ReaderWriterLockSlim or async patterns)
+- [x] **STAT-01**: Fix potential lock deadlock in StateService (Lock vs ReaderWriterLockSlim or async patterns)
 - [ ] **STAT-02**: Bulk state change optimization (reduce signal overhead for multi-property updates)
 
 ### Safety Features
@@ -51,7 +51,7 @@
 
 ### Game Detection
 
-- [ ] **GAME-01**: Fix game detection fallback path (validate game type before proceeding, reject Unknown)
+- [x] **GAME-01**: Fix game detection fallback path (validate game type before proceeding, reject Unknown)
 
 ### UI/UX
 
@@ -105,33 +105,33 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PROC-01 | Phase 1 | Pending |
-| PROC-02 | Phase 1 | Pending |
-| PROC-03 | Phase 1 | Pending |
-| PROC-04 | Phase 1 | Pending |
+| PROC-01 | Phase 1 | Complete |
+| PROC-02 | Phase 1 | Complete |
+| PROC-03 | Phase 1 | Complete |
+| PROC-04 | Phase 1 | Complete |
 | PROC-05 | Phase 6 | Pending |
-| PROC-06 | Phase 1 | Pending |
+| PROC-06 | Phase 1 | Complete |
 | PROG-01 | Phase 3 | Pending |
 | PROG-02 | Phase 3 | Pending |
 | PROG-03 | Phase 3 | Pending |
-| CONF-01 | Phase 1 | Pending |
+| CONF-01 | Phase 1 | Complete |
 | CONF-02 | Phase 4 | Pending |
 | CONF-03 | Phase 4 | Pending |
 | CONF-04 | Phase 4 | Pending |
-| CONF-05 | Phase 1 | Pending |
+| CONF-05 | Phase 1 | Complete |
 | CONF-06 | Phase 4 | Pending |
 | CONF-07 | Phase 4 | Pending |
-| PLUG-01 | Phase 2 | Pending |
-| PLUG-02 | Phase 2 | Pending |
-| PLUG-03 | Phase 2 | Pending |
-| PLUG-04 | Phase 2 | Pending |
-| PLUG-05 | Phase 2 | Pending |
-| STAT-01 | Phase 1 | Pending |
+| PLUG-01 | Phase 2 | Complete |
+| PLUG-02 | Phase 2 | Complete |
+| PLUG-03 | Phase 2 | Complete |
+| PLUG-04 | Phase 2 | Complete |
+| PLUG-05 | Phase 2 | Complete |
+| STAT-01 | Phase 1 | Complete |
 | STAT-02 | Phase 3 | Pending |
 | SAFE-01 | Phase 5 | Pending |
 | SAFE-02 | Phase 5 | Pending |
 | SAFE-03 | Phase 5 | Pending |
-| GAME-01 | Phase 2 | Pending |
+| GAME-01 | Phase 2 | Complete |
 | UI-01 | Phase 6 | Pending |
 | UI-02 | Phase 6 | Pending |
 | UI-03 | Phase 6 | Pending |
