@@ -15,7 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Foundation Hardening** - Fix critical process, state, and config bugs that block all subsequent work
 - [x] **Phase 2: Plugin Pipeline Robustness** - Resolve plugin path tech debt and validation gaps that block safety features
 - [x] **Phase 3: Real-Time Feedback** - Give users live progress and actionable error messages during cleaning sessions
-- [ ] **Phase 4: Configuration Enhancement** - Batch config operations, cache invalidation, validation UI, and settings cleanup
+- [x] **Phase 4: Configuration Enhancement** - Batch config operations, cache invalidation, validation UI, and settings cleanup
 - [ ] **Phase 5: Safety Features** - Dry-run preview and plugin backup/rollback so users trust the tool with their load order
 - [ ] **Phase 6: UI Polish & Monitoring** - Decompose bloated ViewModel, add About dialog, logging improvements, and diagnostic monitoring
 - [ ] **Phase 7: Hardening & Cleanup** - Comprehensive test coverage, dependency updates, and remove reference code
@@ -82,8 +82,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 04-01-PLAN.md -- Config helpers, config watcher (FSW + SHA256), and legacy migration rewrite (CONF-03, CONF-04, CONF-06)
-- [ ] 04-02-PLAN.md -- Settings path validation UI, log retention service, and migration warning banner (CONF-02, CONF-07)
+- [x] 04-01-PLAN.md -- Config helpers, config watcher (FSW + SHA256), and legacy migration rewrite (CONF-03, CONF-04, CONF-06)
+- [x] 04-02-PLAN.md -- Settings path validation UI, log retention service, and migration warning banner (CONF-02, CONF-07)
 
 ### Phase 5: Safety Features
 **Goal**: Users can preview what will happen before committing, and have a safety net to undo cleaning if something goes wrong
@@ -144,7 +144,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
 | 1. Foundation Hardening | 2/2 | Complete | 2026-02-06 |
 | 2. Plugin Pipeline Robustness | 2/2 | Complete | 2026-02-06 |
 | 3. Real-Time Feedback | 3/3 | Complete | 2026-02-07 |
-| 4. Configuration Enhancement | 0/2 | Not started | - |
+| 4. Configuration Enhancement | 2/2 | Complete | 2026-02-07 |
 | 5. Safety Features | 0/2 | Not started | - |
 | 6. UI Polish & Monitoring | 0/3 | Not started | - |
 | 7. Hardening & Cleanup | 0/2 | Not started | - |

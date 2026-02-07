@@ -16,19 +16,19 @@
 
 ### Progress & Feedback
 
-- [ ] **PROG-01**: Real-time parsed progress callbacks during cleaning (per-record stats, not just raw lines)
-- [ ] **PROG-02**: Pipe OutputDataReceived events to ProgressWindow with live xEdit output scrolling
-- [ ] **PROG-03**: Enhanced environment validation messages (detailed error strings with actionable guidance)
+- [x] **PROG-01**: Real-time parsed progress callbacks during cleaning (per-record stats, not just raw lines)
+- [x] **PROG-02**: Pipe OutputDataReceived events to ProgressWindow with live xEdit output scrolling
+- [x] **PROG-03**: Enhanced environment validation messages (detailed error strings with actionable guidance)
 
 ### Configuration
 
 - [x] **CONF-01**: Deferred configuration saves (debounced batch writes to prevent deadlocks)
-- [ ] **CONF-02**: Configuration validation UI in Settings (real-time path validation with visual feedback)
-- [ ] **CONF-03**: Configuration helper methods (get_all, update_multiple, batch operations)
-- [ ] **CONF-04**: YAML cache invalidation by file modification time
+- [x] **CONF-02**: Configuration validation UI in Settings (real-time path validation with visual feedback)
+- [x] **CONF-03**: Configuration helper methods (get_all, update_multiple, batch operations)
+- [x] **CONF-04**: YAML cache invalidation by file modification time
 - [x] **CONF-05**: Configuration file disk I/O batching (dirty-flag pattern with debounce)
-- [ ] **CONF-06**: Fix legacy configuration migration (deletion outside lock, no validation)
-- [ ] **CONF-07**: Journal/log expiration setting support
+- [x] **CONF-06**: Fix legacy configuration migration (deletion outside lock, no validation)
+- [x] **CONF-07**: Journal/log expiration setting support
 
 ### Plugin Handling
 
@@ -41,7 +41,7 @@
 ### State Management
 
 - [x] **STAT-01**: Fix potential lock deadlock in StateService (Lock vs ReaderWriterLockSlim or async patterns)
-- [ ] **STAT-02**: Bulk state change optimization (reduce signal overhead for multi-property updates)
+- [x] **STAT-02**: Bulk state change optimization (reduce signal overhead for multi-property updates)
 
 ### Safety Features
 
@@ -115,12 +115,12 @@
 | PROG-02 | Phase 3 | Complete |
 | PROG-03 | Phase 3 | Complete |
 | CONF-01 | Phase 1 | Complete |
-| CONF-02 | Phase 4 | Pending |
-| CONF-03 | Phase 4 | Pending |
-| CONF-04 | Phase 4 | Pending |
+| CONF-02 | Phase 4 | Complete |
+| CONF-03 | Phase 4 | Complete |
+| CONF-04 | Phase 4 | Complete |
 | CONF-05 | Phase 1 | Complete |
-| CONF-06 | Phase 4 | Pending |
-| CONF-07 | Phase 4 | Pending |
+| CONF-06 | Phase 4 | Complete |
+| CONF-07 | Phase 4 | Complete |
 | PLUG-01 | Phase 2 | Complete |
 | PLUG-02 | Phase 2 | Complete |
 | PLUG-03 | Phase 2 | Complete |
@@ -153,4 +153,4 @@
 
 ---
 *Requirements defined: 2026-02-06*
-*Last updated: 2026-02-06 after roadmap creation (corrected count from 39 to 40)*
+*Last updated: 2026-02-07 after Phase 4 completion*

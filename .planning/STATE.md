@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-06)
 
 **Core value:** Reliably clean every plugin in a load order with one click, without corrupting game data or cleaning plugins that shouldn't be touched.
-**Current focus:** Phase 4 - Configuration Enhancement (IN PROGRESS)
+**Current focus:** Phase 5 - Safety Features (NEXT)
 
 ## Current Position
 
-Phase: 4 of 7 (Configuration Enhancement)
-Plan: 1 of 2 in current phase
-Status: In progress
-Last activity: 2026-02-07 -- Completed 04-01-PLAN.md (Config Watcher, Migration, Helpers)
+Phase: 5 of 7 (Safety Features)
+Plan: 0 of 2 in current phase
+Status: Not started
+Last activity: 2026-02-07 -- Completed Phase 4 (Configuration Enhancement)
 
-Progress: [########......] 53% (8/15 plans)
+Progress: [##########....] 67% (10/15 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 8
-- Average duration: 8.3 minutes
-- Total execution time: 1.1 hours
+- Total plans completed: 10
+- Average duration: 8.7 minutes
+- Total execution time: 1.4 hours
 
 **By Phase:**
 
@@ -30,10 +30,10 @@ Progress: [########......] 53% (8/15 plans)
 | 1 - Foundation | 2/2 | 15m | 7.5m |
 | 2 - Plugin Pipeline | 2/2 | 14.5m | 7.25m |
 | 3 - Real-Time Feedback | 3/3 | 30m | 10m |
-| 4 - Configuration | 1/2 | 6.5m | 6.5m |
+| 4 - Configuration | 2/2 | 21.5m | 10.75m |
 
 **Recent Trend:**
-- Last 5 plans: 02-02 (8m), 03-01 (7m), 03-03 (9m), 03-02 (14m), 04-01 (6.5m)
+- Last 5 plans: 03-01 (7m), 03-03 (9m), 03-02 (14m), 04-01 (6.5m), 04-02 (15m)
 - Trend: Stable
 
 *Updated after each plan completion*
@@ -78,6 +78,11 @@ Recent decisions affecting current work:
 - [04-01]: Invalid external YAML edits rejected, previous config kept
 - [04-01]: Legacy migration uses backup-then-delete order; backup failure prevents deletion
 - [04-01]: Migration is one-time bootstrap only; no merge when C# config exists
+- [04-02]: Skip(1) + _isLoading double guard for Rx path validation (prevents constructor emission leak)
+- [04-02]: Nullable bool 3-state validation: null=untouched/empty, true=valid, false=invalid
+- [04-02]: ValidateLoadedPaths() on settings open for immediate indicators (not deferred to first interaction)
+- [04-02]: Direct boolean properties (IsAgeBasedMode/IsCountBasedMode) preferred over IntEqualsConverter for XAML visibility
+- [04-02]: Journal Settings removed; Log Retention replaces it as unified retention control
 
 ### Pending Todos
 
@@ -92,6 +97,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-02-07T02:58Z
-Stopped at: Completed 04-01-PLAN.md
+Last session: 2026-02-07
+Stopped at: Completed Phase 4 (Configuration Enhancement)
 Resume file: None
