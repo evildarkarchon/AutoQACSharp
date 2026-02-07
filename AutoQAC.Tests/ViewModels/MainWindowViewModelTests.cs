@@ -58,15 +58,22 @@ public sealed class MainWindowViewModelTests
     [Fact]
     public async Task StartCleaningCommand_ShouldCallOrchestrator_WhenCanStart()
     {
-        // Arrange
-        var stateSubject = new BehaviorSubject<AppState>(new AppState());
-        _stateServiceMock.Setup(s => s.StateChanged).Returns(stateSubject);
-        _stateServiceMock.Setup(s => s.CurrentState).Returns(new AppState());
-
-        // Create temp file to satisfy File.Exists check
+        // Arrange - create temp file to satisfy File.Exists check in ValidatePreClean
         var tempFile = Path.GetTempFileName();
         try
         {
+            var stateWithPlugins = new AppState
+            {
+                XEditExecutablePath = tempFile,
+                PluginsToClean = new List<PluginInfo>
+                {
+                    new() { FileName = "Test.esp", FullPath = "Test.esp", IsSelected = true }
+                }
+            };
+            var stateSubject = new BehaviorSubject<AppState>(stateWithPlugins);
+            _stateServiceMock.Setup(s => s.StateChanged).Returns(stateSubject);
+            _stateServiceMock.Setup(s => s.CurrentState).Returns(stateWithPlugins);
+
             var vm = new MainWindowViewModel(
                 _configServiceMock.Object,
                 _stateServiceMock.Object,
@@ -159,24 +166,31 @@ public sealed class MainWindowViewModelTests
 
     /// <summary>
     /// Verifies that StartCleaningCommand handles orchestrator exceptions gracefully
-    /// and shows an error dialog.
+    /// and shows inline validation errors instead of modal dialog.
     /// </summary>
     [Fact]
     public async Task StartCleaningCommand_ShouldHandleOrchestratorException()
     {
-        // Arrange
-        var stateSubject = new BehaviorSubject<AppState>(new AppState());
-        _stateServiceMock.Setup(s => s.StateChanged).Returns(stateSubject);
-        _stateServiceMock.Setup(s => s.CurrentState).Returns(new AppState());
-
-        // Setup config service to avoid NullReferenceException during InitializeAsync
-        _configServiceMock.Setup(x => x.LoadUserConfigAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new UserConfiguration { LoadOrder = new(), XEdit = new(), ModOrganizer = new(), Settings = new() });
-
-        // Create temp file to satisfy File.Exists check
+        // Arrange - create temp file to satisfy File.Exists check in ValidatePreClean
         var tempFile = Path.GetTempFileName();
         try
         {
+            var stateWithPlugins = new AppState
+            {
+                XEditExecutablePath = tempFile,
+                PluginsToClean = new List<PluginInfo>
+                {
+                    new() { FileName = "Test.esp", FullPath = "Test.esp", IsSelected = true }
+                }
+            };
+            var stateSubject = new BehaviorSubject<AppState>(stateWithPlugins);
+            _stateServiceMock.Setup(s => s.StateChanged).Returns(stateSubject);
+            _stateServiceMock.Setup(s => s.CurrentState).Returns(stateWithPlugins);
+
+            // Setup config service to avoid NullReferenceException during InitializeAsync
+            _configServiceMock.Setup(x => x.LoadUserConfigAsync(It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new UserConfiguration { LoadOrder = new(), XEdit = new(), ModOrganizer = new(), Settings = new() });
+
             var vm = new MainWindowViewModel(
                 _configServiceMock.Object,
                 _stateServiceMock.Object,
@@ -201,14 +215,17 @@ public sealed class MainWindowViewModelTests
             // Act
             await vm.StartCleaningCommand.Execute();
 
-            // Assert
-            vm.StatusText.Should().Contain("error", "error message should be displayed");
+            // Assert - inline validation errors shown instead of modal dialog
+            vm.StatusText.Should().Contain("error", "error message should be displayed in status");
+            vm.HasValidationErrors.Should().BeTrue("validation errors should be visible");
+            vm.ValidationErrors.Should().HaveCount(1, "one configuration error should be shown");
+            vm.ValidationErrors[0].Title.Should().Be("Configuration error");
 
-            // Verify error dialog was shown
+            // Verify that NO modal error dialog was shown (inline validation replaces modals)
             _messageDialogMock.Verify(
                 m => m.ShowErrorAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()),
-                Times.Once,
-                "Error dialog should be shown");
+                Times.Never,
+                "Modal error dialog should NOT be shown for InvalidOperationException");
 
             // Verify that the StartCleaningAsync error was logged
             _loggerMock.Verify(

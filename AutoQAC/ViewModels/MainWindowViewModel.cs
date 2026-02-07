@@ -119,6 +119,22 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
         set => this.RaiseAndSetIfChanged(ref _statusText, value);
     }
 
+    private ObservableCollection<ValidationError> _validationErrors = new();
+
+    public ObservableCollection<ValidationError> ValidationErrors
+    {
+        get => _validationErrors;
+        set => this.RaiseAndSetIfChanged(ref _validationErrors, value);
+    }
+
+    private bool _hasValidationErrors;
+
+    public bool HasValidationErrors
+    {
+        get => _hasValidationErrors;
+        set => this.RaiseAndSetIfChanged(ref _hasValidationErrors, value);
+    }
+
     private ObservableCollection<PluginInfo> _pluginsToClean = new();
 
     public ObservableCollection<PluginInfo> PluginsToClean
@@ -158,6 +174,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
     public ReactiveCommand<Unit, Unit> ShowSkipListCommand { get; }
     public ReactiveCommand<Unit, Unit> SelectAllCommand { get; }
     public ReactiveCommand<Unit, Unit> DeselectAllCommand { get; }
+    public ReactiveCommand<Unit, Unit> DismissValidationCommand { get; }
 
     /// <summary>
     /// Interaction for showing the progress window during cleaning.
@@ -277,6 +294,12 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
             (hasP, cleaning) => hasP && !cleaning);
         SelectAllCommand = ReactiveCommand.Create(SelectAllPlugins, canSelectPlugins);
         DeselectAllCommand = ReactiveCommand.Create(DeselectAllPlugins, canSelectPlugins);
+
+        DismissValidationCommand = ReactiveCommand.Create(() =>
+        {
+            ValidationErrors.Clear();
+            HasValidationErrors = false;
+        });
 
         // Subscribe to state changes
         var stateSubscription = _stateService.StateChanged
@@ -695,23 +718,18 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
 
     private async Task StartCleaningAsync()
     {
-        // Validate xEdit path before starting
-        if (string.IsNullOrEmpty(XEditPath))
-        {
-            await _messageDialog.ShowErrorAsync(
-                "xEdit Not Configured",
-                "xEdit executable path is not configured. Please select your xEdit executable (SSEEdit, FO4Edit, etc.) before starting the cleaning process.",
-                "Go to Edit > Configure xEdit Path to select your xEdit executable.");
-            return;
-        }
+        // Clear previous validation errors
+        ValidationErrors.Clear();
+        HasValidationErrors = false;
 
-        if (!System.IO.File.Exists(XEditPath))
+        // Run pre-clean validation
+        var errors = ValidatePreClean();
+        if (errors.Count > 0)
         {
-            await _messageDialog.ShowErrorAsync(
-                "xEdit Not Found",
-                "The configured xEdit executable was not found at the specified path.",
-                $"Path: {XEditPath}\n\nPlease verify the path is correct or select a new xEdit executable.");
-            return;
+            foreach (var error in errors)
+                ValidationErrors.Add(error);
+            HasValidationErrors = true;
+            return; // Do not start cleaning
         }
 
         try
@@ -723,13 +741,15 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
             await _orchestrator.StartCleaningAsync(HandleTimeoutRetryAsync);
             StatusText = "Cleaning completed.";
         }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("Configuration is invalid"))
+        catch (InvalidOperationException ex)
         {
             _logger.Error(ex, "Configuration validation failed before cleaning");
-            await _messageDialog.ShowErrorAsync(
-                "Configuration Invalid",
-                "The current configuration is invalid and cleaning cannot start.",
-                $"Please ensure:\n- xEdit path is set correctly\n- Load order file is selected\n- Game type is detected\n\nDetails: {ex.Message}");
+            ValidationErrors.Clear();
+            ValidationErrors.Add(new ValidationError(
+                "Configuration error",
+                ex.Message,
+                "Check your configuration in Edit > Settings."));
+            HasValidationErrors = true;
             StatusText = "Configuration error";
         }
         catch (Exception ex)
@@ -741,6 +761,70 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
                 "An error occurred during the cleaning process.",
                 $"Error: {ex.Message}\n\nStack Trace:\n{ex.StackTrace}");
         }
+    }
+
+    private List<ValidationError> ValidatePreClean()
+    {
+        var errors = new List<ValidationError>();
+        var state = _stateService.CurrentState;
+
+        // xEdit validation
+        if (string.IsNullOrEmpty(state.XEditExecutablePath))
+        {
+            errors.Add(new ValidationError(
+                "xEdit not configured",
+                "xEdit executable path is not set.",
+                "Go to Edit > Settings and set the xEdit Path to your xEdit executable (SSEEdit.exe, FO4Edit.exe, etc.)."));
+        }
+        else if (!System.IO.File.Exists(state.XEditExecutablePath))
+        {
+            errors.Add(new ValidationError(
+                "xEdit not found",
+                $"xEdit not found at: {state.XEditExecutablePath}",
+                "Go to Edit > Settings and update the xEdit Path to the correct location."));
+        }
+
+        // Load order / plugins validation
+        var hasPlugins = state.PluginsToClean.Count > 0;
+        if (!hasPlugins)
+        {
+            errors.Add(new ValidationError(
+                "No plugins loaded",
+                "No plugins are available for cleaning.",
+                "Select a game from the dropdown, or browse for a load order file."));
+        }
+        else
+        {
+            var selectedCount = state.PluginsToClean.Count(p => p.IsSelected && !p.IsInSkipList);
+            if (selectedCount == 0)
+            {
+                errors.Add(new ValidationError(
+                    "No plugins selected",
+                    "All plugins are either deselected or in the skip list.",
+                    "Select at least one plugin to clean, or check your skip list settings."));
+            }
+        }
+
+        // MO2 validation (only if MO2 mode enabled)
+        if (state.Mo2ModeEnabled)
+        {
+            if (string.IsNullOrEmpty(state.Mo2ExecutablePath))
+            {
+                errors.Add(new ValidationError(
+                    "MO2 not configured",
+                    "MO2 mode is enabled but no MO2 executable path is set.",
+                    "Go to Edit > Settings and set the MO2 Path, or disable MO2 mode if not using Mod Organizer 2."));
+            }
+            else if (!System.IO.File.Exists(state.Mo2ExecutablePath))
+            {
+                errors.Add(new ValidationError(
+                    "MO2 not found",
+                    $"MO2 executable not found at: {state.Mo2ExecutablePath}",
+                    "Check the MO2 executable path in Edit > Settings, or disable MO2 mode."));
+            }
+        }
+
+        return errors;
     }
 
     /// <summary>

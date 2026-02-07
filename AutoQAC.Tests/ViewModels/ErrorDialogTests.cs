@@ -75,26 +75,57 @@ public sealed class ErrorDialogTests
             _pluginLoadingServiceMock.Object);
     }
 
-    #region xEdit Not Configured Tests
+    /// <summary>
+    /// Creates a ViewModel with a valid CurrentState that passes ValidatePreClean,
+    /// allowing tests to reach the orchestrator call.
+    /// </summary>
+    private MainWindowViewModel CreateViewModelWithValidState(string xEditPath)
+    {
+        var validState = new AppState
+        {
+            XEditExecutablePath = xEditPath,
+            PluginsToClean = new List<PluginInfo>
+            {
+                new() { FileName = "Test.esp", FullPath = "Test.esp", IsSelected = true }
+            }
+        };
+        var stateSubject = new BehaviorSubject<AppState>(validState);
+        _stateServiceMock.Setup(s => s.StateChanged).Returns(stateSubject);
+        _stateServiceMock.Setup(s => s.CurrentState).Returns(validState);
+
+        return new MainWindowViewModel(
+            _configServiceMock.Object,
+            _stateServiceMock.Object,
+            _orchestratorMock.Object,
+            _loggerMock.Object,
+            _fileDialogMock.Object,
+            _messageDialogMock.Object,
+            _pluginServiceMock.Object,
+            _pluginLoadingServiceMock.Object);
+    }
+
+    #region xEdit Validation Tests (Inline Validation Panel)
 
     [Fact]
-    public async Task StartCleaningCommand_ShouldShowErrorDialog_WhenXEditPathIsNull()
+    public async Task StartCleaningCommand_ShouldShowInlineValidation_WhenXEditPathIsNull()
     {
-        // Arrange
+        // Arrange - CurrentState has null xEdit path (default AppState)
         var vm = CreateViewModel();
         vm.XEditPath = null;
 
         // Act
         await vm.StartCleaningCommand.Execute();
 
-        // Assert
+        // Assert - inline validation errors shown, no modal dialog
+        vm.HasValidationErrors.Should().BeTrue("validation errors should be visible");
+        vm.ValidationErrors.Should().Contain(e => e.Title == "xEdit not configured",
+            "should show xEdit not configured error");
+
+        // No modal dialog should be shown
         _messageDialogMock.Verify(
-            m => m.ShowErrorAsync(
-                "xEdit Not Configured",
-                It.IsAny<string>(),
-                It.IsAny<string?>()),
-            Times.Once,
-            "Should show error dialog for missing xEdit path");
+            m => m.ShowErrorAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()),
+            Times.Never,
+            "Modal dialog should NOT be shown - using inline validation panel now");
 
         // Orchestrator should NOT be called
         _orchestratorMock.Verify(
@@ -104,42 +135,56 @@ public sealed class ErrorDialogTests
     }
 
     [Fact]
-    public async Task StartCleaningCommand_ShouldShowErrorDialog_WhenXEditPathIsEmpty()
+    public async Task StartCleaningCommand_ShouldShowInlineValidation_WhenXEditPathIsEmpty()
     {
-        // Arrange
+        // Arrange - CurrentState has empty xEdit path
         var vm = CreateViewModel();
         vm.XEditPath = string.Empty;
 
         // Act
         await vm.StartCleaningCommand.Execute();
 
-        // Assert
-        _messageDialogMock.Verify(
-            m => m.ShowErrorAsync(
-                "xEdit Not Configured",
-                It.IsAny<string>(),
-                It.IsAny<string?>()),
-            Times.Once);
+        // Assert - inline validation errors shown
+        vm.HasValidationErrors.Should().BeTrue();
+        vm.ValidationErrors.Should().Contain(e => e.Title == "xEdit not configured");
     }
 
     [Fact]
-    public async Task StartCleaningCommand_ShouldShowErrorDialog_WhenXEditFileNotFound()
+    public async Task StartCleaningCommand_ShouldShowInlineValidation_WhenXEditFileNotFound()
     {
-        // Arrange
-        var vm = CreateViewModel();
-        vm.XEditPath = @"C:\NonExistent\xedit.exe"; // Path that doesn't exist
+        // Arrange - CurrentState has xEdit path that doesn't exist on disk
+        var nonExistentPath = @"C:\NonExistent\xedit.exe";
+        var stateWithBadXEdit = new AppState
+        {
+            XEditExecutablePath = nonExistentPath,
+            PluginsToClean = new List<PluginInfo>
+            {
+                new() { FileName = "Test.esp", FullPath = "Test.esp", IsSelected = true }
+            }
+        };
+        var stateSubject = new BehaviorSubject<AppState>(stateWithBadXEdit);
+        _stateServiceMock.Setup(s => s.StateChanged).Returns(stateSubject);
+        _stateServiceMock.Setup(s => s.CurrentState).Returns(stateWithBadXEdit);
+
+        var vm = new MainWindowViewModel(
+            _configServiceMock.Object,
+            _stateServiceMock.Object,
+            _orchestratorMock.Object,
+            _loggerMock.Object,
+            _fileDialogMock.Object,
+            _messageDialogMock.Object,
+            _pluginServiceMock.Object,
+            _pluginLoadingServiceMock.Object);
+
+        vm.XEditPath = nonExistentPath;
 
         // Act
         await vm.StartCleaningCommand.Execute();
 
-        // Assert
-        _messageDialogMock.Verify(
-            m => m.ShowErrorAsync(
-                "xEdit Not Found",
-                It.IsAny<string>(),
-                It.IsAny<string?>()),
-            Times.Once,
-            "Should show error dialog when xEdit file doesn't exist");
+        // Assert - inline validation errors shown
+        vm.HasValidationErrors.Should().BeTrue();
+        vm.ValidationErrors.Should().Contain(e => e.Title == "xEdit not found",
+            "should show xEdit not found error");
     }
 
     #endregion
@@ -253,13 +298,13 @@ public sealed class ErrorDialogTests
     #region Cleaning Failure Tests
 
     [Fact]
-    public async Task StartCleaningCommand_ShouldShowErrorDialog_WhenConfigurationInvalid()
+    public async Task StartCleaningCommand_ShouldShowInlineError_WhenConfigurationInvalid()
     {
-        // Arrange
+        // Arrange - use valid state so ValidatePreClean passes and orchestrator is reached
         var tempFile = Path.GetTempFileName();
         try
         {
-            var vm = CreateViewModel();
+            var vm = CreateViewModelWithValidState(tempFile);
             vm.XEditPath = tempFile;
 
             _orchestratorMock.Setup(x => x.StartCleaningAsync(It.IsAny<TimeoutRetryCallback>(), It.IsAny<CancellationToken>()))
@@ -268,13 +313,17 @@ public sealed class ErrorDialogTests
             // Act
             await vm.StartCleaningCommand.Execute();
 
-            // Assert
+            // Assert - inline validation error shown instead of modal dialog
+            vm.HasValidationErrors.Should().BeTrue("validation errors should be visible");
+            vm.ValidationErrors.Should().HaveCount(1);
+            vm.ValidationErrors[0].Title.Should().Be("Configuration error");
+            vm.StatusText.Should().Contain("error");
+
+            // No modal dialog should be shown
             _messageDialogMock.Verify(
-                m => m.ShowErrorAsync(
-                    "Configuration Invalid",
-                    It.IsAny<string>(),
-                    It.IsAny<string?>()),
-                Times.Once);
+                m => m.ShowErrorAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()),
+                Times.Never,
+                "Modal dialog should NOT be shown for InvalidOperationException");
         }
         finally
         {
@@ -286,11 +335,11 @@ public sealed class ErrorDialogTests
     [Fact]
     public async Task StartCleaningCommand_ShouldShowGenericErrorDialog_WhenUnexpectedExceptionThrown()
     {
-        // Arrange
+        // Arrange - use valid state so ValidatePreClean passes and orchestrator is reached
         var tempFile = Path.GetTempFileName();
         try
         {
-            var vm = CreateViewModel();
+            var vm = CreateViewModelWithValidState(tempFile);
             vm.XEditPath = tempFile;
 
             _orchestratorMock.Setup(x => x.StartCleaningAsync(It.IsAny<TimeoutRetryCallback>(), It.IsAny<CancellationToken>()))
@@ -299,7 +348,7 @@ public sealed class ErrorDialogTests
             // Act
             await vm.StartCleaningCommand.Execute();
 
-            // Assert
+            // Assert - generic exceptions still use modal dialog (truly unexpected)
             _messageDialogMock.Verify(
                 m => m.ShowErrorAsync(
                     "Cleaning Failed",
@@ -321,11 +370,11 @@ public sealed class ErrorDialogTests
     [Fact]
     public async Task StartCleaningCommand_ShouldPassTimeoutCallback_ToOrchestrator()
     {
-        // Arrange
+        // Arrange - use valid state so ValidatePreClean passes
         var tempFile = Path.GetTempFileName();
         try
         {
-            var vm = CreateViewModel();
+            var vm = CreateViewModelWithValidState(tempFile);
             vm.XEditPath = tempFile;
 
             TimeoutRetryCallback? capturedCallback = null;
@@ -349,11 +398,11 @@ public sealed class ErrorDialogTests
     [Fact]
     public async Task TimeoutCallback_ShouldCallShowRetryAsync()
     {
-        // Arrange
+        // Arrange - use valid state so ValidatePreClean passes
         var tempFile = Path.GetTempFileName();
         try
         {
-            var vm = CreateViewModel();
+            var vm = CreateViewModelWithValidState(tempFile);
             vm.XEditPath = tempFile;
 
             TimeoutRetryCallback? capturedCallback = null;
@@ -390,11 +439,11 @@ public sealed class ErrorDialogTests
     [Fact]
     public async Task TimeoutCallback_ShouldReturnFalse_WhenUserCancels()
     {
-        // Arrange
+        // Arrange - use valid state so ValidatePreClean passes
         var tempFile = Path.GetTempFileName();
         try
         {
-            var vm = CreateViewModel();
+            var vm = CreateViewModelWithValidState(tempFile);
             vm.XEditPath = tempFile;
 
             TimeoutRetryCallback? capturedCallback = null;
