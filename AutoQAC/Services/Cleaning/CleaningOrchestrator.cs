@@ -9,6 +9,7 @@ using AutoQAC.Models;
 using AutoQAC.Services.Configuration;
 using AutoQAC.Services.GameDetection;
 using AutoQAC.Services.Plugin;
+using AutoQAC.Services.Backup;
 using AutoQAC.Services.Process;
 using AutoQAC.Services.State;
 
@@ -23,6 +24,7 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
     private readonly IConfigurationService _configService;
     private readonly ILoggingService _logger;
     private readonly IProcessExecutionService _processService;
+    private readonly IBackupService _backupService;
     private readonly IXEditLogFileService _logFileService;
     private readonly IXEditOutputParser _outputParser;
     private readonly object _ctsLock = new();
@@ -44,7 +46,8 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
         ILoggingService logger,
         IProcessExecutionService processService,
         IXEditLogFileService logFileService,
-        IXEditOutputParser outputParser)
+        IXEditOutputParser outputParser,
+        IBackupService backupService)
     {
         _cleaningService = cleaningService;
         _pluginService = pluginService;
@@ -55,20 +58,28 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
         _processService = processService;
         _logFileService = logFileService;
         _outputParser = outputParser;
+        _backupService = backupService;
     }
 
     public Task StartCleaningAsync(CancellationToken ct = default)
     {
-        return StartCleaningAsync(null, ct);
+        return StartCleaningAsync(null, null, ct);
     }
 
-    public async Task StartCleaningAsync(TimeoutRetryCallback? onTimeout, CancellationToken ct = default)
+    public Task StartCleaningAsync(TimeoutRetryCallback? onTimeout, CancellationToken ct = default)
+    {
+        return StartCleaningAsync(onTimeout, null, ct);
+    }
+
+    public async Task StartCleaningAsync(TimeoutRetryCallback? onTimeout, BackupFailureCallback? onBackupFailure, CancellationToken ct = default)
     {
         const int maxRetryAttempts = 3;
         var startTime = DateTime.Now;
         var pluginResults = new List<PluginCleaningResult>();
         var wasCancelled = false;
         var gameType = GameType.Unknown;
+        string? sessionDir = null;
+        var backupEntries = new List<BackupPluginEntry>();
 
         // Reset stop flags at the start of each cleaning session
         _isStopRequested = false;
@@ -232,6 +243,32 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
             var timeoutSeconds = _stateService.CurrentState.CleaningTimeout;
             if (timeoutSeconds <= 0) timeoutSeconds = 300;
 
+            // 6b. Initialize backup session if backup is enabled
+            var backupEnabled = userConfig.Backup.Enabled;
+
+            if (backupEnabled && !isMo2Mode)
+            {
+                // Derive data folder from the first plugin with a rooted FullPath
+                var firstRootedPlugin = pluginsToClean.FirstOrDefault(
+                    p => !string.IsNullOrEmpty(p.FullPath) && System.IO.Path.IsPathRooted(p.FullPath));
+
+                if (firstRootedPlugin != null)
+                {
+                    var dataFolder = System.IO.Path.GetDirectoryName(firstRootedPlugin.FullPath)!;
+                    var backupRoot = _backupService.GetBackupRoot(dataFolder);
+                    sessionDir = _backupService.CreateSessionDirectory(backupRoot);
+                    _logger.Information("Backup session directory created: {SessionDir}", sessionDir);
+                }
+                else
+                {
+                    _logger.Warning("Backup enabled but no plugins have rooted paths -- skipping backup initialization");
+                }
+            }
+            else if (backupEnabled && isMo2Mode)
+            {
+                _logger.Warning("Backup skipped in MO2 mode -- MO2 manages files through its virtual filesystem");
+            }
+
             // 7. Process plugins SEQUENTIALLY (CRITICAL!)
             foreach (var plugin in pluginsToClean)
             {
@@ -247,6 +284,61 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
                 {
                     CurrentPlugin = plugin.FileName
                 });
+
+                // Backup this plugin before xEdit processes it
+                if (sessionDir != null)
+                {
+                    var backupResult = _backupService.BackupPlugin(plugin, sessionDir);
+                    if (!backupResult.Success)
+                    {
+                        if (onBackupFailure != null)
+                        {
+                            var choice = await onBackupFailure(plugin.FileName, backupResult.Error!).ConfigureAwait(false);
+                            switch (choice)
+                            {
+                                case BackupFailureChoice.SkipPlugin:
+                                    _logger.Information("User chose to skip plugin after backup failure: {Plugin}", plugin.FileName);
+                                    _stateService.UpdateState(s => s with
+                                    {
+                                        SkippedPlugins = new HashSet<string>(s.SkippedPlugins) { plugin.FileName }
+                                    });
+                                    continue;
+                                case BackupFailureChoice.AbortSession:
+                                    _logger.Information("User chose to abort session after backup failure for: {Plugin}", plugin.FileName);
+                                    // Write partial metadata before returning
+                                    if (backupEntries.Count > 0)
+                                    {
+                                        var partialSession = new BackupSession
+                                        {
+                                            Timestamp = DateTime.UtcNow,
+                                            GameType = gameType.ToString(),
+                                            SessionDirectory = sessionDir,
+                                            Plugins = backupEntries
+                                        };
+                                        await _backupService.WriteSessionMetadataAsync(sessionDir, partialSession, cts.Token).ConfigureAwait(false);
+                                    }
+                                    return;
+                                case BackupFailureChoice.ContinueWithoutBackup:
+                                    _logger.Information("User chose to continue without backup for: {Plugin}", plugin.FileName);
+                                    break;
+                            }
+                        }
+                        else
+                        {
+                            _logger.Warning("Backup failed for {Plugin}: {Error}. No callback, continuing without backup.",
+                                plugin.FileName, backupResult.Error ?? "Unknown error");
+                        }
+                    }
+                    else
+                    {
+                        backupEntries.Add(new BackupPluginEntry
+                        {
+                            FileName = plugin.FileName,
+                            OriginalPath = plugin.FullPath,
+                            FileSizeBytes = backupResult.FileSizeBytes
+                        });
+                    }
+                }
 
                 // Progress reporting
                 var progress = new Progress<string>(output =>
@@ -360,6 +452,23 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
                     result.Message);
             }
 
+            // 7b. Write backup session metadata and run retention cleanup
+            if (sessionDir != null && backupEntries.Count > 0)
+            {
+                var backupSession = new BackupSession
+                {
+                    Timestamp = DateTime.UtcNow,
+                    GameType = gameType.ToString(),
+                    SessionDirectory = sessionDir,
+                    Plugins = backupEntries
+                };
+                await _backupService.WriteSessionMetadataAsync(sessionDir, backupSession, cts.Token).ConfigureAwait(false);
+
+                var backupRoot = System.IO.Path.GetDirectoryName(sessionDir)!;
+                _backupService.CleanupOldSessions(backupRoot, userConfig.Backup.MaxSessions, sessionDir);
+                _logger.Information("Backup session complete: {Count} plugins backed up", backupEntries.Count);
+            }
+
             // 8. Create and store session result
             var sessionResult = new CleaningSessionResult
             {
@@ -378,6 +487,26 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
             // Cancellation is not an error -- preserve partial results
             _logger.Information("Cleaning workflow cancelled");
             wasCancelled = true;
+
+            // Write partial backup metadata if any backups were made
+            if (sessionDir != null && backupEntries.Count > 0)
+            {
+                try
+                {
+                    var partialBackupSession = new BackupSession
+                    {
+                        Timestamp = DateTime.UtcNow,
+                        GameType = gameType.ToString(),
+                        SessionDirectory = sessionDir,
+                        Plugins = backupEntries
+                    };
+                    await _backupService.WriteSessionMetadataAsync(sessionDir, partialBackupSession).ConfigureAwait(false);
+                }
+                catch (Exception backupEx)
+                {
+                    _logger.Warning("Failed to write partial backup metadata after cancellation: {Error}", backupEx.Message);
+                }
+            }
 
             var sessionResult = new CleaningSessionResult
             {

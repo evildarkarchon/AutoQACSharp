@@ -3,6 +3,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Models;
 
+// BackupFailureCallback is defined in AutoQAC.Models.BackupResult
+
 namespace AutoQAC.Services.Cleaning;
 
 /// <summary>
@@ -28,6 +30,14 @@ public interface ICleaningOrchestrator
     /// <param name="onTimeout">Callback invoked when a plugin times out. Return true to retry.</param>
     /// <param name="ct">Cancellation token.</param>
     Task StartCleaningAsync(TimeoutRetryCallback? onTimeout, CancellationToken ct = default);
+
+    /// <summary>
+    /// Start cleaning workflow with timeout retry and backup failure callbacks.
+    /// </summary>
+    /// <param name="onTimeout">Callback invoked when a plugin times out. Return true to retry.</param>
+    /// <param name="onBackupFailure">Callback invoked when a plugin backup fails. Returns the user's choice.</param>
+    /// <param name="ct">Cancellation token.</param>
+    Task StartCleaningAsync(TimeoutRetryCallback? onTimeout, BackupFailureCallback? onBackupFailure, CancellationToken ct = default);
 
     /// <summary>
     /// Graceful stop: cancels the CTS, attempts graceful process termination.

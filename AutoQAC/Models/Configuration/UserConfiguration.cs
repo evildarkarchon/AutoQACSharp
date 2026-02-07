@@ -23,6 +23,9 @@ public sealed class UserConfiguration
 
     [YamlMember(Alias = "Log_Retention")]
     public RetentionSettings LogRetention { get; set; } = new();
+
+    [YamlMember(Alias = "Backup")]
+    public BackupSettings Backup { get; set; } = new();
 }
 
 public sealed class LoadOrderConfig

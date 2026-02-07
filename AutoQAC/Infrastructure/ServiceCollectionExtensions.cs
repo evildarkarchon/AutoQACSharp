@@ -1,4 +1,5 @@
 using AutoQAC.Infrastructure.Logging;
+using AutoQAC.Services.Backup;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
 using AutoQAC.Services.GameDetection;
@@ -47,6 +48,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IXEditOutputParser, XEditOutputParser>();
         services.AddSingleton<IXEditLogFileService, XEditLogFileService>();
         services.AddSingleton<ICleaningService, CleaningService>();
+        services.AddSingleton<IBackupService, BackupService>();
         services.AddSingleton<ICleaningOrchestrator, CleaningOrchestrator>();
         return services;
     }
