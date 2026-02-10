@@ -220,7 +220,7 @@ public async Task CleanPluginsAsync(IEnumerable<string> plugins, CancellationTok
 - **MVVM Framework**: ReactiveUI 11.3.8
 - **YAML Library**: YamlDotNet 16.3.0
 - **Logging**: Serilog with Console and File sinks
-- **Testing**: xUnit 2.9.3 with FluentAssertions 8.8.0 and Moq 4.20.72
+- **Testing**: xUnit 2.9.3 with FluentAssertions 8.8.0 and NSubstitute 5.3.0
 - **DI**: Microsoft.Extensions.DependencyInjection 10.0.2
 - **Coverage**: Coverlet (MSBuild + Collector) with Cobertura XML output
 
@@ -293,7 +293,7 @@ Use YamlDotNet for deserialization with proper error handling.
 - **UI Tests**: Avalonia.Headless for automated UI testing (xUnit v2 required)
 - **Coverage Target**: Minimum 80% for critical paths
 - **Coverage Tooling**: Coverlet MSBuild auto-collects on every `dotnet test` run
-- **Mocking**: Moq for dependency mocking -- ALL optional parameters must be matched in Setup/Verify calls
+- **Mocking**: NSubstitute for dependency mocking -- ALL optional parameters must be matched in substitute calls (same constraint as Moq). Use NSubstitute.Analyzers.CSharp for compile-time misuse detection.
 
 ## Common Pitfalls to Avoid
 
@@ -320,6 +320,15 @@ Use YamlDotNet for deserialization with proper error handling.
 - **ReactiveUI Documentation**: https://www.reactiveui.net/docs/
 - **C# Async Best Practices**: https://learn.microsoft.com/en-us/dotnet/csharp/asynchronous-programming/
 - **MVVM Pattern**: https://learn.microsoft.com/en-us/dotnet/architecture/maui/mvvm
+
+## Mutagen Submodule
+
+The `Mutagen/` folder is a **read-only** Git submodule containing [Mutagen](https://github.com/Mutagen-Modding/Mutagen) v0.53.1 source code. It exists solely as an **API reference** for AI assistants and developers.
+
+- **DO NOT** modify, build, or add files in `Mutagen/`
+- **DO NOT** include `Mutagen/` files in project builds or test runs
+- Use it only to look up Mutagen types, interfaces, and API signatures when writing code that interacts with Mutagen
+- Diagnostic errors from the Mutagen folder are expected and should be ignored (missing dependencies, unresolved types, etc.)
 
 ## Notes for Claude Code
 
