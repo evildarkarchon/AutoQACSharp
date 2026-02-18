@@ -321,13 +321,22 @@ Use YamlDotNet for deserialization with proper error handling.
 - **C# Async Best Practices**: https://learn.microsoft.com/en-us/dotnet/csharp/asynchronous-programming/
 - **MVVM Pattern**: https://learn.microsoft.com/en-us/dotnet/architecture/maui/mvvm
 
-## Mutagen Submodule
+## Mutagen API Reference
 
-The `Mutagen/` folder is a **read-only** Git submodule containing [Mutagen](https://github.com/Mutagen-Modding/Mutagen) v0.53.1 source code. It exists solely as an **API reference** for AI assistants and developers.
+### Primary: `docs/mutagen/`
+
+The `docs/mutagen/` folder contains curated markdown documentation for Mutagen v0.53.1 packages. **Use this as the primary source** when looking up Mutagen types, interfaces, and API signatures.
+
+- Covers all Bethesda game packages (Core, Skyrim, Fallout4, Starfield, Oblivion, etc.)
+- Lightweight and fast to search — no build errors or missing dependencies
+- See `docs/mutagen/README.md` for an overview of available packages
+
+### Fallback: `Mutagen/` submodule
+
+The `Mutagen/` folder is a **read-only** Git submodule containing [Mutagen](https://github.com/Mutagen-Modding/Mutagen) v0.53.1 source code. Use it as a **fallback** when the `docs/mutagen/` documentation lacks the detail you need (e.g., full implementation specifics or generated record code).
 
 - **DO NOT** modify, build, or add files in `Mutagen/`
 - **DO NOT** include `Mutagen/` files in project builds or test runs
-- Use it only to look up Mutagen types, interfaces, and API signatures when writing code that interacts with Mutagen
 - Diagnostic errors from the Mutagen folder are expected and should be ignored (missing dependencies, unresolved types, etc.)
 
 ## Notes for Claude Code
