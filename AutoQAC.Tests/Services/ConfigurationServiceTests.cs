@@ -68,6 +68,32 @@ public sealed class ConfigurationServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task FlushPendingSavesAsync_ShouldRecreateConfigDirectory_WhenDeletedBeforeWrite()
+    {
+        // Arrange
+        var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
+        var config = new UserConfiguration
+        {
+            Settings = new AutoQacSettings { CleaningTimeout = 777 }
+        };
+        var expectedPath = Path.Combine(_testDirectory, "AutoQAC Settings.yaml");
+
+        await service.SaveUserConfigAsync(config);
+        Directory.Delete(_testDirectory, true);
+
+        // Act
+        await service.FlushPendingSavesAsync();
+
+        // Assert
+        Directory.Exists(_testDirectory).Should().BeTrue();
+        File.Exists(expectedPath).Should().BeTrue();
+
+        var service2 = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
+        var loaded = await service2.LoadUserConfigAsync();
+        loaded.Settings.CleaningTimeout.Should().Be(777);
+    }
+
+    [Fact]
     public async Task ValidatePaths_ShouldReturnFalse_WhenFilesMissing()
     {
         // Arrange

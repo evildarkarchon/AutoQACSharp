@@ -179,6 +179,10 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
                 await _fileLock.WaitAsync(ct).ConfigureAwait(false);
                 try
                 {
+                    // Temp/test directories can be removed between queued save and flush.
+                    // Recreate before each write attempt to keep save resilient.
+                    Directory.CreateDirectory(_configDirectory);
+
                     var content = _serializer.Serialize(config);
                     await File.WriteAllTextAsync(path, content, ct).ConfigureAwait(false);
                     _lastKnownGoodConfig = config;
