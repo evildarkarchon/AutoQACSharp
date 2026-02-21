@@ -250,6 +250,15 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
             isValid = false;
         }
 
+        foreach (var (gameKey, loadOrderPath) in config.LoadOrderFileOverrides)
+        {
+            if (!string.IsNullOrWhiteSpace(loadOrderPath) && !File.Exists(loadOrderPath))
+            {
+                _logger.Warning("Load Order file not found for {GameKey}: {Path}", gameKey, loadOrderPath);
+                isValid = false;
+            }
+        }
+
         if (!string.IsNullOrEmpty(config.XEdit.Binary) && !File.Exists(config.XEdit.Binary))
         {
             _logger.Warning($"xEdit binary not found: {config.XEdit.Binary}");
@@ -442,6 +451,56 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
         return config.GameDataFolderOverrides.GetValueOrDefault(key);
     }
 
+    public async Task<string?> GetGameLoadOrderOverrideAsync(GameType gameType, CancellationToken ct = default)
+    {
+        var config = await LoadUserConfigAsync(ct).ConfigureAwait(false);
+
+        if (gameType != GameType.Unknown)
+        {
+            var key = GetGameKey(gameType);
+            if (config.LoadOrderFileOverrides.TryGetValue(key, out var loadOrderPath) &&
+                !string.IsNullOrWhiteSpace(loadOrderPath))
+            {
+                return loadOrderPath;
+            }
+        }
+
+        // Backward compatibility fallback: legacy global load order field.
+        return config.LoadOrder.File;
+    }
+
+    public async Task SetGameLoadOrderOverrideAsync(GameType gameType, string? loadOrderPath,
+        CancellationToken ct = default)
+    {
+        var config = await LoadUserConfigAsync(ct).ConfigureAwait(false);
+
+        if (gameType == GameType.Unknown)
+        {
+            config.LoadOrder.File = string.IsNullOrWhiteSpace(loadOrderPath) ? null : loadOrderPath;
+            await SaveUserConfigAsync(config, ct).ConfigureAwait(false);
+            return;
+        }
+
+        var key = GetGameKey(gameType);
+
+        if (string.IsNullOrWhiteSpace(loadOrderPath))
+        {
+            config.LoadOrderFileOverrides.Remove(key);
+            _logger.Information("Removed load order override for {GameType}", gameType);
+        }
+        else
+        {
+            config.LoadOrderFileOverrides[key] = loadOrderPath;
+            _logger.Information("Set load order override for {GameType} to {LoadOrderPath}",
+                gameType, loadOrderPath);
+        }
+
+        // Keep legacy field aligned with the most recently selected game's path for compatibility.
+        config.LoadOrder.File = string.IsNullOrWhiteSpace(loadOrderPath) ? null : loadOrderPath;
+
+        await SaveUserConfigAsync(config, ct).ConfigureAwait(false);
+    }
+
     public async Task SetGameDataFolderOverrideAsync(GameType gameType, string? folderPath,
         CancellationToken ct = default)
     {
@@ -477,6 +536,7 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
         {
             ["XEditPath"] = config.XEdit.Binary,
             ["LoadOrderPath"] = config.LoadOrder.File,
+            ["LoadOrderOverrides"] = config.LoadOrderFileOverrides,
             ["Mo2Binary"] = config.ModOrganizer.Binary,
             ["Mo2Mode"] = config.Settings.Mo2Mode,
             ["CleaningTimeout"] = config.Settings.CleaningTimeout,

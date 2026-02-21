@@ -807,14 +807,30 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
     {
         var config = _stateService.CurrentState;
 
-        if (string.IsNullOrEmpty(config.LoadOrderPath) ||
-            string.IsNullOrEmpty(config.XEditExecutablePath))
+        if (string.IsNullOrEmpty(config.XEditExecutablePath))
         {
             return false;
         }
 
+        if (RequiresFileLoadOrder(config.CurrentGameType))
+        {
+            if (string.IsNullOrWhiteSpace(config.LoadOrderPath) ||
+                !System.IO.File.Exists(config.LoadOrderPath))
+            {
+                return false;
+            }
+        }
+
         return await _cleaningService.ValidateEnvironmentAsync(ct).ConfigureAwait(false);
     }
+
+    private static bool RequiresFileLoadOrder(GameType gameType) => gameType switch
+    {
+        GameType.Fallout3 => true,
+        GameType.FalloutNewVegas => true,
+        GameType.Oblivion => true,
+        _ => false
+    };
 
     private void LogSessionSummary(CleaningSessionResult session)
     {

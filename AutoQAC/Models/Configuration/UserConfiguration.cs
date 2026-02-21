@@ -9,6 +9,9 @@ public sealed class UserConfiguration
 
     [YamlMember(Alias = "Load_Order")] public LoadOrderConfig LoadOrder { get; set; } = new();
 
+    [YamlMember(Alias = "Load_Order_Files")]
+    public Dictionary<string, string> LoadOrderFileOverrides { get; set; } = new();
+
     [YamlMember(Alias = "Mod_Organizer")] public ModOrganizerConfig ModOrganizer { get; set; } = new();
 
     [YamlMember(Alias = "xEdit")] public XEditConfig XEdit { get; set; } = new();

@@ -91,7 +91,7 @@ public sealed class MainWindowViewModelInitializationTests
         await _configServiceMock.Received(1).LoadUserConfigAsync(Arg.Any<CancellationToken>());
 
         _stateServiceMock.Received(1).UpdateConfigurationPaths(
-            "loadorder.txt",
+            null,
             "mo2.exe",
             "xedit.exe");
 

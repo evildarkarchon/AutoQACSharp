@@ -187,6 +187,58 @@ public sealed class ErrorDialogTests
     #region Invalid Load Order Tests
 
     [Fact]
+    public async Task StartCleaningCommand_ShouldShowInlineValidation_WhenNonMutagenGameLoadOrderMissing()
+    {
+        // Arrange
+        var tempFile = Path.GetTempFileName();
+        try
+        {
+            var state = new AppState
+            {
+                CurrentGameType = GameType.Fallout3,
+                LoadOrderPath = null,
+                XEditExecutablePath = tempFile,
+                PluginsToClean = new List<PluginInfo>
+                {
+                    new() { FileName = "Test.esp", FullPath = "Test.esp", IsSelected = true }
+                }
+            };
+
+            var stateSubject = new BehaviorSubject<AppState>(state);
+            _stateServiceMock.StateChanged.Returns(stateSubject);
+            _stateServiceMock.CurrentState.Returns(state);
+
+            var vm = new MainWindowViewModel(
+                _configServiceMock,
+                _stateServiceMock,
+                _orchestratorMock,
+                _loggerMock,
+                _fileDialogMock,
+                _messageDialogMock,
+                _pluginServiceMock,
+                _pluginLoadingServiceMock);
+
+            // Act
+            await vm.Commands.StartCleaningCommand.Execute();
+
+            // Assert
+            vm.Commands.HasValidationErrors.Should().BeTrue();
+            vm.Commands.ValidationErrors.Should().Contain(e => e.Title == "Load order not configured");
+            await _orchestratorMock.DidNotReceive().StartCleaningAsync(
+                Arg.Any<TimeoutRetryCallback>(),
+                Arg.Any<BackupFailureCallback>(),
+                Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            if (File.Exists(tempFile))
+            {
+                File.Delete(tempFile);
+            }
+        }
+    }
+
+    [Fact]
     public async Task ConfigureLoadOrderCommand_ShouldShowErrorDialog_WhenFileNotFound()
     {
         // Arrange

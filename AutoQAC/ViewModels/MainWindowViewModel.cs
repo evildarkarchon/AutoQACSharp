@@ -56,7 +56,8 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
         PluginList = new PluginListViewModel(stateService);
 
         Commands = new CleaningCommandsViewModel(
-            stateService, orchestrator, configService, logger,
+            stateService, orchestrator, configService, pluginLoadingService,
+            logger,
             messageDialog,
             ShowProgressInteraction, ShowPreviewInteraction,
             ShowSettingsInteraction, ShowSkipListInteraction,

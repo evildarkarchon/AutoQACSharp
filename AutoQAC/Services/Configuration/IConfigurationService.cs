@@ -39,6 +39,10 @@ public interface IConfigurationService
     Task<string?> GetGameDataFolderOverrideAsync(GameType gameType, CancellationToken ct = default);
     Task SetGameDataFolderOverrideAsync(GameType gameType, string? folderPath, CancellationToken ct = default);
 
+    // Game-specific load order path overrides
+    Task<string?> GetGameLoadOrderOverrideAsync(GameType gameType, CancellationToken ct = default);
+    Task SetGameLoadOrderOverrideAsync(GameType gameType, string? loadOrderPath, CancellationToken ct = default);
+
     // Settings management
     Task ResetToDefaultsAsync(CancellationToken ct = default);
 

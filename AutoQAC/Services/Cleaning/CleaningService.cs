@@ -161,10 +161,23 @@ public sealed class CleaningService : ICleaningService
         {
             return Task.FromResult(false);
         }
-        if (string.IsNullOrEmpty(config.LoadOrderPath) || !File.Exists(config.LoadOrderPath))
+
+        if (RequiresFileLoadOrder(config.CurrentGameType))
         {
-            return Task.FromResult(false);
+            if (string.IsNullOrWhiteSpace(config.LoadOrderPath) || !File.Exists(config.LoadOrderPath))
+            {
+                return Task.FromResult(false);
+            }
         }
+
         return Task.FromResult(true);
     }
+
+    private static bool RequiresFileLoadOrder(GameType gameType) => gameType switch
+    {
+        GameType.Fallout3 => true,
+        GameType.FalloutNewVegas => true,
+        GameType.Oblivion => true,
+        _ => false
+    };
 }

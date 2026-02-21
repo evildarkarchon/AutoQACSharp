@@ -164,6 +164,81 @@ public sealed class CleaningOrchestratorTests
         _stateServiceMock.Received(1).FinishCleaningWithResults(Arg.Any<CleaningSessionResult>()); // It calls Finish in catch block
     }
 
+    [Fact]
+    public async Task StartCleaningAsync_ShouldNotRequireLoadOrderPath_WhenGameTypeIsMutagenSupported()
+    {
+        // Arrange
+        var plugins = new List<PluginInfo>
+        {
+            new() { FileName = "Plugin1.esp", FullPath = "Path/Plugin1.esp", IsSelected = true }
+        };
+
+        var appState = new AppState
+        {
+            LoadOrderPath = null,
+            XEditExecutablePath = "xedit.exe",
+            CurrentGameType = GameType.Fallout4,
+            PluginsToClean = plugins
+        };
+        _stateServiceMock.CurrentState.Returns(appState);
+
+        _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        _cleaningServiceMock.CleanPluginAsync(
+                Arg.Any<PluginInfo>(),
+                Arg.Any<IProgress<string>>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<Action<System.Diagnostics.Process>?>())
+            .Returns(new CleaningResult { Status = CleaningStatus.Cleaned, Success = true });
+
+        // Act
+        var act = () => _orchestrator.StartCleaningAsync();
+
+        // Assert
+        await act.Should().NotThrowAsync();
+        await _cleaningServiceMock.Received(1).CleanPluginAsync(
+            Arg.Any<PluginInfo>(),
+            Arg.Any<IProgress<string>>(),
+            Arg.Any<CancellationToken>(),
+            Arg.Any<Action<System.Diagnostics.Process>?>());
+    }
+
+    [Fact]
+    public async Task StartCleaningAsync_ShouldThrow_WhenNonMutagenGameMissingLoadOrderPath()
+    {
+        // Arrange
+        var plugins = new List<PluginInfo>
+        {
+            new() { FileName = "Plugin1.esp", FullPath = "Path/Plugin1.esp", IsSelected = true }
+        };
+
+        var appState = new AppState
+        {
+            LoadOrderPath = null,
+            XEditExecutablePath = "xedit.exe",
+            CurrentGameType = GameType.Fallout3,
+            PluginsToClean = plugins
+        };
+        _stateServiceMock.CurrentState.Returns(appState);
+
+        // Even if the cleaning service reports environment valid, orchestrator should
+        // block non-Mutagen games when load order is missing.
+        _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        // Act
+        var act = () => _orchestrator.StartCleaningAsync();
+
+        // Assert
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        await _cleaningServiceMock.DidNotReceive().CleanPluginAsync(
+            Arg.Any<PluginInfo>(),
+            Arg.Any<IProgress<string>>(),
+            Arg.Any<CancellationToken>(),
+            Arg.Any<Action<System.Diagnostics.Process>?>());
+    }
+
     #region Robustness and Cancellation Tests
 
     /// <summary>

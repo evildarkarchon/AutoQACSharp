@@ -153,7 +153,7 @@ public sealed class MainWindowViewModelTests
             // Assert
             _stateServiceMock.Received(1).UpdateConfigurationPaths(tempFile, Arg.Any<string>(), Arg.Any<string>());
             _stateServiceMock.Received(1).SetPluginsToClean(Arg.Is<List<PluginInfo>>(l => l.Count == 2 && l[0].FileName == "Update.esm"));
-            await _configServiceMock.Received(1).SaveUserConfigAsync(Arg.Any<UserConfiguration>(), Arg.Any<CancellationToken>());
+            await _configServiceMock.Received().SetGameLoadOrderOverrideAsync(Arg.Any<GameType>(), tempFile, Arg.Any<CancellationToken>());
         }
         finally
         {

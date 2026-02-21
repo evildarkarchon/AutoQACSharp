@@ -446,6 +446,51 @@ AutoQAC_Data:
 
     #endregion
 
+    #region Game Load Order Override Tests
+
+    [Fact]
+    public async Task SetGameLoadOrderOverrideAsync_ShouldPersistPerGameLoadOrderPath()
+    {
+        // Arrange
+        var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
+        var fo3Path = @"C:\Users\Test\Documents\My Games\Fallout3\plugins.txt";
+        var oblivionPath = @"C:\Users\Test\Documents\My Games\Oblivion\plugins.txt";
+
+        // Act
+        await service.SetGameLoadOrderOverrideAsync(GameType.Fallout3, fo3Path);
+        await service.SetGameLoadOrderOverrideAsync(GameType.Oblivion, oblivionPath);
+
+        var fo3Result = await service.GetGameLoadOrderOverrideAsync(GameType.Fallout3);
+        var oblivionResult = await service.GetGameLoadOrderOverrideAsync(GameType.Oblivion);
+
+        // Assert
+        fo3Result.Should().Be(fo3Path);
+        oblivionResult.Should().Be(oblivionPath);
+    }
+
+    [Fact]
+    public async Task GetGameLoadOrderOverrideAsync_ShouldFallbackToLegacyLoadOrderFile_WhenOverrideMissing()
+    {
+        // Arrange
+        var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
+        var legacyPath = @"C:\Users\Test\Documents\My Games\FalloutNV\plugins.txt";
+
+        var config = new UserConfiguration
+        {
+            LoadOrder = new LoadOrderConfig { File = legacyPath }
+        };
+        await service.SaveUserConfigAsync(config);
+        await service.FlushPendingSavesAsync();
+
+        // Act
+        var result = await service.GetGameLoadOrderOverrideAsync(GameType.FalloutNewVegas);
+
+        // Assert
+        result.Should().Be(legacyPath);
+    }
+
+    #endregion
+
     #region Game Data Folder Override Tests
 
     /// <summary>

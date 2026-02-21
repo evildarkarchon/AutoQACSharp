@@ -10,6 +10,7 @@ using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
+using AutoQAC.Services.Plugin;
 using AutoQAC.Services.State;
 using AutoQAC.Services.UI;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -26,6 +27,7 @@ public sealed class CleaningCommandsViewModel : ViewModelBase, IDisposable
     private readonly IStateService _stateService;
     private readonly ICleaningOrchestrator _orchestrator;
     private readonly IConfigurationService _configService;
+    private readonly IPluginLoadingService _pluginLoadingService;
     private readonly ILoggingService _logger;
     private readonly IMessageDialogService _messageDialog;
     private readonly CompositeDisposable _disposables = new();
@@ -83,6 +85,7 @@ public sealed class CleaningCommandsViewModel : ViewModelBase, IDisposable
         IStateService stateService,
         ICleaningOrchestrator orchestrator,
         IConfigurationService configService,
+        IPluginLoadingService pluginLoadingService,
         ILoggingService logger,
         IMessageDialogService messageDialog,
         Interaction<Unit, Unit> showProgressInteraction,
@@ -95,6 +98,7 @@ public sealed class CleaningCommandsViewModel : ViewModelBase, IDisposable
         _stateService = stateService;
         _orchestrator = orchestrator;
         _configService = configService;
+        _pluginLoadingService = pluginLoadingService;
         _logger = logger;
         _messageDialog = messageDialog;
         _showProgressInteraction = showProgressInteraction;
@@ -289,6 +293,27 @@ public sealed class CleaningCommandsViewModel : ViewModelBase, IDisposable
         }
 
         // Load order / plugins validation
+        var requiresLoadOrder = state.CurrentGameType != GameType.Unknown &&
+                                !_pluginLoadingService.IsGameSupportedByMutagen(state.CurrentGameType);
+
+        if (requiresLoadOrder)
+        {
+            if (string.IsNullOrWhiteSpace(state.LoadOrderPath))
+            {
+                errors.Add(new ValidationError(
+                    "Load order not configured",
+                    $"{state.CurrentGameType} requires a load order file (plugins.txt/loadorder.txt).",
+                    "Set the load order path in the main window under Configuration > Load Order File."));
+            }
+            else if (!System.IO.File.Exists(state.LoadOrderPath))
+            {
+                errors.Add(new ValidationError(
+                    "Load order not found",
+                    $"Load order file not found at: {state.LoadOrderPath}",
+                    "Set a valid per-game load order path in the main window under Configuration > Load Order File."));
+            }
+        }
+
         var hasPlugins = state.PluginsToClean.Count > 0;
         if (!hasPlugins)
         {

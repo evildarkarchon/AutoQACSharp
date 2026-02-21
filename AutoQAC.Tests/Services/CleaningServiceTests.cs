@@ -472,10 +472,11 @@ public sealed class CleaningServiceTests
     }
 
     /// <summary>
-    /// Verifies that ValidateEnvironmentAsync returns false when load order path is missing.
+    /// Verifies that ValidateEnvironmentAsync does not require a load order path
+    /// for Mutagen-supported games.
     /// </summary>
     [Fact]
-    public async Task ValidateEnvironmentAsync_WhenLoadOrderPathMissing_ShouldReturnFalse()
+    public async Task ValidateEnvironmentAsync_WhenLoadOrderPathMissing_ForMutagenGame_ShouldReturnTrueIfXEditIsValid()
     {
         // Arrange
         var service = new CleaningService(
@@ -487,19 +488,73 @@ public sealed class CleaningServiceTests
             _mockCommandBuilder,
             _mockOutputParser);
 
-        // State has xEdit but no load order path
-        var appState = new AppState
+        var tempXEdit = Path.GetTempFileName();
+        try
         {
-            LoadOrderPath = null,
-            XEditExecutablePath = "xEdit.exe"
-        };
-        _mockState.CurrentState.Returns(appState);
+            var appState = new AppState
+            {
+                LoadOrderPath = null,
+                XEditExecutablePath = tempXEdit,
+                CurrentGameType = GameType.Fallout4
+            };
+            _mockState.CurrentState.Returns(appState);
 
-        // Act
-        var result = await service.ValidateEnvironmentAsync();
+            // Act
+            var result = await service.ValidateEnvironmentAsync();
 
-        // Assert
-        result.Should().BeFalse("validation should fail without load order path");
+            // Assert
+            result.Should().BeTrue("validation should allow missing load order path when xEdit is configured");
+        }
+        finally
+        {
+            if (File.Exists(tempXEdit))
+            {
+                File.Delete(tempXEdit);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Verifies that ValidateEnvironmentAsync requires a load order path
+    /// for non-Mutagen games.
+    /// </summary>
+    [Fact]
+    public async Task ValidateEnvironmentAsync_WhenLoadOrderPathMissing_ForNonMutagenGame_ShouldReturnFalse()
+    {
+        // Arrange
+        var service = new CleaningService(
+            _mockConfig,
+            _mockGameDetection,
+            _mockState,
+            _mockLogger,
+            _mockProcess,
+            _mockCommandBuilder,
+            _mockOutputParser);
+
+        var tempXEdit = Path.GetTempFileName();
+        try
+        {
+            var appState = new AppState
+            {
+                LoadOrderPath = null,
+                XEditExecutablePath = tempXEdit,
+                CurrentGameType = GameType.Fallout3
+            };
+            _mockState.CurrentState.Returns(appState);
+
+            // Act
+            var result = await service.ValidateEnvironmentAsync();
+
+            // Assert
+            result.Should().BeFalse("non-Mutagen games require a load order file path");
+        }
+        finally
+        {
+            if (File.Exists(tempXEdit))
+            {
+                File.Delete(tempXEdit);
+            }
+        }
     }
 
     #endregion

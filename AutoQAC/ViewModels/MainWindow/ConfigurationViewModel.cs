@@ -263,11 +263,22 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
             .Subscribe(v => IsMo2PathValid = v);
         _disposables.Add(mo2Validation);
 
-        // Load order is optional: null when empty, true/false when populated
-        var loadOrderValidation = this.WhenAnyValue(x => x.LoadOrderPath)
-            .Select(path => string.IsNullOrWhiteSpace(path)
-                ? (bool?)null
-                : (bool?)System.IO.File.Exists(path))
+        // Load order is required for non-Mutagen games, optional otherwise.
+        var loadOrderValidation = this.WhenAnyValue(x => x.LoadOrderPath, x => x.RequiresLoadOrderFile)
+            .Select(t =>
+            {
+                var path = t.Item1;
+                var required = t.Item2;
+
+                if (required)
+                {
+                    return !string.IsNullOrWhiteSpace(path) && System.IO.File.Exists(path);
+                }
+
+                return string.IsNullOrWhiteSpace(path)
+                    ? (bool?)null
+                    : (bool?)System.IO.File.Exists(path);
+            })
             .Subscribe(v => IsLoadOrderPathValid = v);
         _disposables.Add(loadOrderValidation);
 
@@ -338,7 +349,7 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
             var config = await _configService.LoadUserConfigAsync();
 
             _stateService.UpdateConfigurationPaths(
-                config.LoadOrder.File,
+                null,
                 config.ModOrganizer.Binary,
                 config.XEdit.Binary);
 
@@ -469,7 +480,7 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
                 return;
             }
 
-            await SaveConfigurationAsync();
+            await _configService.SetGameLoadOrderOverrideAsync(SelectedGame, path);
         }
     }
 
@@ -551,7 +562,6 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
         var config = await _configService.LoadUserConfigAsync();
 
         // Safely update configuration properties (they may be null in some configurations)
-        config.LoadOrder.File = LoadOrderPath;
         config.XEdit.Binary = XEditPath;
         config.ModOrganizer.Binary = Mo2Path;
         config.Settings.Mo2Mode = Mo2ModeEnabled;
@@ -578,16 +588,26 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
         HasGameDataFolderOverride = !string.IsNullOrWhiteSpace(customDataFolder);
         GameDataFolder = _pluginLoadingService.GetGameDataFolder(gameType, customDataFolder);
 
-        if (!_pluginLoadingService.IsGameSupportedByMutagen(gameType))
+        if (_pluginLoadingService.IsGameSupportedByMutagen(gameType))
         {
-            // Try to auto-detect load order path for file-based games
-            var detectedPath = _pluginLoadingService.GetDefaultLoadOrderPath(gameType);
-            if (!string.IsNullOrEmpty(detectedPath))
+            LoadOrderPath = null;
+            _stateService.UpdateConfigurationPaths(null, Mo2Path, XEditPath);
+        }
+        else
+        {
+            var configuredPath = await _configService.GetGameLoadOrderOverrideAsync(gameType);
+            if (string.IsNullOrWhiteSpace(configuredPath))
             {
-                _stateService.UpdateConfigurationPaths(detectedPath, Mo2Path, XEditPath);
-                await SaveConfigurationAsync();
-                _logger.Information($"Auto-detected load order path for {gameType}: {detectedPath}");
+                configuredPath = _pluginLoadingService.GetDefaultLoadOrderPath(gameType);
+                if (!string.IsNullOrEmpty(configuredPath))
+                {
+                    await _configService.SetGameLoadOrderOverrideAsync(gameType, configuredPath);
+                    _logger.Information($"Auto-detected load order path for {gameType}: {configuredPath}");
+                }
             }
+
+            LoadOrderPath = configuredPath;
+            _stateService.UpdateConfigurationPaths(configuredPath, Mo2Path, XEditPath);
         }
 
         // Load skip list for the current game
@@ -641,6 +661,7 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
         else
         {
             // No Mutagen support and no file path - need user to configure
+            _stateService.SetPluginsToClean(new List<PluginInfo>());
             StatusText = _pluginLoadingService.IsGameSupportedByMutagen(gameType)
                 ? $"Could not detect {gameType} installation"
                 : $"{gameType} requires a load order file";

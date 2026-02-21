@@ -129,34 +129,31 @@
                             Margin="5,0,0,0" />
                 </Grid>
 
-                <Expander Header="Advanced: Load Order"
-                          IsExpanded="False"
-                          IsVisible="{Binding Configuration.RequiresLoadOrderFile}">
-                    <Grid ColumnDefinitions="120,*,Auto,Auto" Margin="0,5">
-                        <TextBlock Grid.Column="0" Text="Load Order:"
-                                   VerticalAlignment="Center" />
-                        <TextBox Grid.Column="1"
-                                 Text="{Binding Configuration.LoadOrderPath}"
-                                 IsReadOnly="True"
-                                 Watermark="Auto-detected or not configured" />
-                        <Panel Grid.Column="2" Width="24" VerticalAlignment="Center" Margin="5,0,0,0">
-                            <TextBlock Text="&#x2713;"
-                                       FontSize="16" FontWeight="Bold"
-                                       Foreground="#4CAF50"
-                                       HorizontalAlignment="Center"
-                                       IsVisible="{Binding Configuration.IsLoadOrderPathValid, Converter={StaticResource IsTrueConverter}}" />
-                            <TextBlock Text="&#x2717;"
-                                       FontSize="16" FontWeight="Bold"
-                                       Foreground="#F44336"
-                                       HorizontalAlignment="Center"
-                                       IsVisible="{Binding Configuration.IsLoadOrderPathValid, Converter={StaticResource IsFalseConverter}}" />
-                        </Panel>
-                        <Button Grid.Column="3"
-                                Content="Browse..."
-                                Command="{Binding Configuration.ConfigureLoadOrderCommand}"
-                                Margin="5,0,0,0" />
-                    </Grid>
-                </Expander>
+                <Grid ColumnDefinitions="120,*,Auto,Auto"
+                      IsVisible="{Binding Configuration.RequiresLoadOrderFile}">
+                    <TextBlock Grid.Column="0" Text="Load Order File:"
+                               VerticalAlignment="Center" />
+                    <TextBox Grid.Column="1"
+                             Text="{Binding Configuration.LoadOrderPath}"
+                             IsReadOnly="True"
+                             Watermark="Required for this game (plugins.txt/loadorder.txt)" />
+                    <Panel Grid.Column="2" Width="24" VerticalAlignment="Center" Margin="5,0,0,0">
+                        <TextBlock Text="&#x2713;"
+                                   FontSize="16" FontWeight="Bold"
+                                   Foreground="#4CAF50"
+                                   HorizontalAlignment="Center"
+                                   IsVisible="{Binding Configuration.IsLoadOrderPathValid, Converter={StaticResource IsTrueConverter}}" />
+                        <TextBlock Text="&#x2717;"
+                                   FontSize="16" FontWeight="Bold"
+                                   Foreground="#F44336"
+                                   HorizontalAlignment="Center"
+                                   IsVisible="{Binding Configuration.IsLoadOrderPathValid, Converter={StaticResource IsFalseConverter}}" />
+                    </Panel>
+                    <Button Grid.Column="3"
+                            Content="Browse..."
+                            Command="{Binding Configuration.ConfigureLoadOrderCommand}"
+                            Margin="5,0,0,0" />
+                </Grid>
 
                 <Grid ColumnDefinitions="120,*,Auto,Auto">
                     <TextBlock Grid.Column="0" Text="xEdit:"
