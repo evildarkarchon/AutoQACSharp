@@ -268,6 +268,28 @@ public sealed class PluginLoadingServiceTests
         }
     }
 
+    [Theory]
+    [InlineData(GameType.Oblivion, @"SOFTWARE\WOW6432Node\Bethesda Softworks\Oblivion")]
+    [InlineData(GameType.Fallout3, @"SOFTWARE\WOW6432Node\Bethesda Softworks\Fallout3")]
+    [InlineData(GameType.FalloutNewVegas, @"SOFTWARE\WOW6432Node\Bethesda Softworks\FalloutNV")]
+    [InlineData(GameType.SkyrimLe, @"SOFTWARE\WOW6432Node\Bethesda Softworks\Skyrim")]
+    [InlineData(GameType.SkyrimSe, @"SOFTWARE\WOW6432Node\Bethesda Softworks\Skyrim Special Edition")]
+    [InlineData(GameType.SkyrimVr, @"SOFTWARE\WOW6432Node\Bethesda Softworks\Skyrim VR")]
+    [InlineData(GameType.Fallout4, @"SOFTWARE\WOW6432Node\Bethesda Softworks\Fallout4")]
+    [InlineData(GameType.Fallout4Vr, @"SOFTWARE\WOW6432Node\Bethesda Softworks\Fallout 4 VR")]
+    public void RegistryInstallPathKeys_ShouldContainWow6432NodeBethesdaKey(GameType gameType, string expectedKey)
+    {
+        // Arrange
+        var registryKeys = GetRegistryInstallPathKeys();
+
+        // Act
+        var gameKeys = registryKeys[gameType];
+
+        // Assert
+        gameKeys.Should().Contain(expectedKey,
+            "Bethesda games should probe HKLM\\SOFTWARE\\WOW6432Node\\Bethesda Softworks first");
+    }
+
     private static string? InvokeNormalizeDataFolderPath(string input)
     {
         var method = typeof(PluginLoadingService).GetMethod(
@@ -277,6 +299,17 @@ public sealed class PluginLoadingServiceTests
         method.Should().NotBeNull("NormalizeDataFolderPath should exist for registry path normalization");
 
         return method!.Invoke(null, new object?[] { input }) as string;
+    }
+
+    private static Dictionary<GameType, string[]> GetRegistryInstallPathKeys()
+    {
+        var field = typeof(PluginLoadingService).GetField(
+            "RegistryInstallPathKeys",
+            BindingFlags.NonPublic | BindingFlags.Static);
+
+        field.Should().NotBeNull("RegistryInstallPathKeys should exist for registry probing");
+
+        return (field!.GetValue(null) as Dictionary<GameType, string[]>)!;
     }
 
     #endregion

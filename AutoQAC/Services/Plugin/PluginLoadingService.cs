@@ -46,65 +46,8 @@ public sealed class PluginLoadingService : IPluginLoadingService
         { GameType.Oblivion, "Oblivion" }
     };
 
-    private static readonly Dictionary<GameType, string[]> RegistryInstallPathKeys = new()
-    {
-        {
-            GameType.Oblivion,
-            [
-                @"SOFTWARE\Bethesda Softworks\Oblivion",
-                @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 22330"
-            ]
-        },
-        {
-            GameType.Fallout3,
-            [
-                @"SOFTWARE\Bethesda Softworks\Fallout3",
-                @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 22300"
-            ]
-        },
-        {
-            GameType.FalloutNewVegas,
-            [
-                @"SOFTWARE\Bethesda Softworks\FalloutNV",
-                @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 22380"
-            ]
-        },
-        {
-            GameType.SkyrimLe,
-            [
-                @"SOFTWARE\Bethesda Softworks\Skyrim",
-                @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 72850"
-            ]
-        },
-        {
-            GameType.SkyrimSe,
-            [
-                @"SOFTWARE\Bethesda Softworks\Skyrim Special Edition",
-                @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 489830"
-            ]
-        },
-        {
-            GameType.SkyrimVr,
-            [
-                @"SOFTWARE\Bethesda Softworks\Skyrim VR",
-                @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 611670"
-            ]
-        },
-        {
-            GameType.Fallout4,
-            [
-                @"SOFTWARE\Bethesda Softworks\Fallout4",
-                @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 377160"
-            ]
-        },
-        {
-            GameType.Fallout4Vr,
-            [
-                @"SOFTWARE\Bethesda Softworks\Fallout 4 VR",
-                @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 611660"
-            ]
-        }
-    };
+    private static readonly Dictionary<GameType, string[]> RegistryInstallPathKeys =
+        CreateRegistryInstallPathKeys();
 
     private static readonly string[] RegistryInstallPathValueNames =
         ["Installed Path", "Install Path", "InstallLocation", "Path"];
@@ -295,6 +238,25 @@ public sealed class PluginLoadingService : IPluginLoadingService
         GameType.Fallout4Vr => GameRelease.Fallout4VR,
         _ => throw new ArgumentException($"Game {gameType} is not supported by Mutagen")
     };
+
+    private static Dictionary<GameType, string[]> CreateRegistryInstallPathKeys() => new()
+    {
+        { GameType.Oblivion, CreateBethesdaRegistryKeyCandidates("Oblivion", "22330") },
+        { GameType.Fallout3, CreateBethesdaRegistryKeyCandidates("Fallout3", "22300") },
+        { GameType.FalloutNewVegas, CreateBethesdaRegistryKeyCandidates("FalloutNV", "22380") },
+        { GameType.SkyrimLe, CreateBethesdaRegistryKeyCandidates("Skyrim", "72850") },
+        { GameType.SkyrimSe, CreateBethesdaRegistryKeyCandidates("Skyrim Special Edition", "489830") },
+        { GameType.SkyrimVr, CreateBethesdaRegistryKeyCandidates("Skyrim VR", "611670") },
+        { GameType.Fallout4, CreateBethesdaRegistryKeyCandidates("Fallout4", "377160") },
+        { GameType.Fallout4Vr, CreateBethesdaRegistryKeyCandidates("Fallout 4 VR", "611660") }
+    };
+
+    private static string[] CreateBethesdaRegistryKeyCandidates(string bethesdaSubKey, string steamAppId) =>
+    [
+        $@"SOFTWARE\WOW6432Node\Bethesda Softworks\{bethesdaSubKey}",
+        $@"SOFTWARE\Bethesda Softworks\{bethesdaSubKey}",
+        $@"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App {steamAppId}"
+    ];
 
     private string? ResolveDataFolderFromRegistry(GameType gameType)
     {
