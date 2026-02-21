@@ -11,6 +11,7 @@ using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Microsoft.Extensions.DependencyInjection;
+using Serilog;
 using System;
 using System.Linq;
 using System.Reflection;
@@ -74,19 +75,21 @@ namespace AutoQAC
 
                 desktop.ShutdownRequested += (sender, args) =>
                 {
-                    // Stop config watcher
-                    configWatcher.Dispose();
-
-                    // Flush pending config saves before app exits (per user decision)
-                    // Synchronous wait is acceptable during app shutdown
                     try
                     {
-                        configService.FlushPendingSavesAsync().GetAwaiter().GetResult();
+                        configWatcher.Dispose();
+                        if (Services is IDisposable disposableServices)
+                        {
+                            disposableServices.Dispose();
+                        }
                     }
                     catch (Exception ex)
                     {
-                        // Log but don't prevent shutdown
-                        logger.Warning("[Config] Failed to flush config on shutdown: {Message}", ex.Message);
+                        logger.Warning("[Shutdown] Cleanup failed during shutdown: {Message}", ex.Message);
+                    }
+                    finally
+                    {
+                        Log.CloseAndFlush();
                     }
                 };
             }

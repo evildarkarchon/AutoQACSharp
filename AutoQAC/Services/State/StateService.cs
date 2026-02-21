@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Frozen;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
 using System.Threading;
@@ -81,7 +82,7 @@ public sealed class StateService : IStateService, IDisposable
     {
         UpdateState(s => s with
         {
-            PluginsToClean = [..plugins]
+            PluginsToClean = new List<PluginInfo>(plugins).AsReadOnly()
         });
     }
 
@@ -96,12 +97,12 @@ public sealed class StateService : IStateService, IDisposable
         UpdateState(s => s with
         {
             IsCleaning = true,
-            PluginsToClean = [..plugins],
+            PluginsToClean = new List<PluginInfo>(plugins).AsReadOnly(),
             Progress = 0,
             TotalPlugins = plugins.Count,
-            CleanedPlugins = new HashSet<string>(),
-            FailedPlugins = new HashSet<string>(),
-            SkippedPlugins = new HashSet<string>()
+            CleanedPlugins = Array.Empty<string>().ToFrozenSet(StringComparer.Ordinal),
+            FailedPlugins = Array.Empty<string>().ToFrozenSet(StringComparer.Ordinal),
+            SkippedPlugins = Array.Empty<string>().ToFrozenSet(StringComparer.Ordinal)
         });
     }
 
@@ -169,9 +170,9 @@ public sealed class StateService : IStateService, IDisposable
 
             return s with
             {
-                CleanedPlugins = cleaned,
-                FailedPlugins = failed,
-                SkippedPlugins = skipped,
+                CleanedPlugins = cleaned.ToFrozenSet(StringComparer.Ordinal),
+                FailedPlugins = failed.ToFrozenSet(StringComparer.Ordinal),
+                SkippedPlugins = skipped.ToFrozenSet(StringComparer.Ordinal),
                 Progress = s.Progress + 1
             };
         });

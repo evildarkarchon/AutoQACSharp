@@ -64,7 +64,7 @@ public static class ServiceCollectionExtensions
 
     public static IServiceCollection AddViewModels(this IServiceCollection services)
     {
-        services.AddTransient<MainWindowViewModel>();
+        services.AddSingleton<MainWindowViewModel>();
         services.AddTransient<ProgressViewModel>();
         services.AddTransient<PartialFormsWarningViewModel>();
         services.AddTransient<SettingsViewModel>();

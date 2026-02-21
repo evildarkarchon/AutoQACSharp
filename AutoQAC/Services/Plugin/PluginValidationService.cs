@@ -41,7 +41,7 @@ public sealed class PluginValidationService : IPluginValidationService
 
         if (string.IsNullOrWhiteSpace(loadOrderPath) || !File.Exists(loadOrderPath))
         {
-            _logger.Warning($"Load order file not found or empty path: {loadOrderPath}");
+            _logger.Warning("Load order file not found or empty path: {LoadOrderPath}", loadOrderPath);
             return plugins;
         }
 
@@ -71,7 +71,7 @@ public sealed class PluginValidationService : IPluginValidationService
         }
         catch (Exception ex)
         {
-            _logger.Error(ex, $"Failed to parse load order: {loadOrderPath}");
+            _logger.Error(ex, "Failed to parse load order: {LoadOrderPath}", loadOrderPath);
         }
 
         return plugins;
@@ -165,14 +165,16 @@ public sealed class PluginValidationService : IPluginValidationService
         // would have been trimmed already -- specifically check for null bytes and other controls)
         if (trimmed.Any(c => c < 0x20 && c != '\t'))
         {
-            _logger.Warning($"Skipping malformed load order entry (contains control characters): {SanitizeForLog(trimmed)}");
+            _logger.Warning(
+                "Skipping malformed load order entry (contains control characters): {Entry}",
+                SanitizeForLog(trimmed));
             return null;
         }
 
         // Step 6: Check for path separators (/ or \) -- indicates a full path, not a plugin name
         if (trimmed.Contains('\\') || trimmed.Contains('/'))
         {
-            _logger.Warning($"Skipping malformed load order entry (contains path separators): {trimmed}");
+            _logger.Warning("Skipping malformed load order entry (contains path separators): {Entry}", trimmed);
             return null;
         }
 
@@ -180,7 +182,7 @@ public sealed class PluginValidationService : IPluginValidationService
         var extension = Path.GetExtension(trimmed);
         if (!ValidExtensions.Contains(extension))
         {
-            _logger.Debug($"Skipping non-plugin entry (invalid extension '{extension}'): {trimmed}");
+            _logger.Debug("Skipping non-plugin entry (invalid extension '{Extension}'): {Entry}", extension, trimmed);
             return null;
         }
 

@@ -182,7 +182,13 @@ public sealed class AppStateTests
         // Arrange - Use fresh AppState instances with only scalar properties set
         // to test record equality without collection reference issues
         var state1 = new AppState { Progress = 5, LoadOrderPath = "test.txt" }
-            with { CleanedPlugins = new(), SkippedPlugins = new(), FailedPlugins = new(), PluginsToClean = new() };
+            with
+            {
+                CleanedPlugins = new HashSet<string>(),
+                SkippedPlugins = new HashSet<string>(),
+                FailedPlugins = new HashSet<string>(),
+                PluginsToClean = new List<PluginInfo>()
+            };
         var state2 = new AppState { Progress = 5, LoadOrderPath = "test.txt" }
             with { CleanedPlugins = state1.CleanedPlugins, SkippedPlugins = state1.SkippedPlugins,
                    FailedPlugins = state1.FailedPlugins, PluginsToClean = state1.PluginsToClean };

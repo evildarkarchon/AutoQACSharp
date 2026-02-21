@@ -82,14 +82,19 @@ public sealed class PluginLoadingService : IPluginLoadingService
             }
             catch (Exception ex)
             {
-                _logger.Warning($"Failed to load plugins via Mutagen for {gameType}, will need file-based fallback: {ex.Message}");
+                _logger.Warning(
+                    "Failed to load plugins via Mutagen for {GameType}, will need file-based fallback: {Message}",
+                    gameType,
+                    ex.Message);
                 // Return empty list - caller should prompt for file-based loading
                 return new List<PluginInfo>();
             }
         }
 
         // Non-Mutagen games require file path
-        _logger.Information($"Game {gameType} is not supported by Mutagen, use GetPluginsFromFileAsync instead");
+        _logger.Information(
+            "Game {GameType} is not supported by Mutagen, use GetPluginsFromFileAsync instead",
+            gameType);
         return new List<PluginInfo>();
     }
 
@@ -137,7 +142,7 @@ public sealed class PluginLoadingService : IPluginLoadingService
             }
             catch (Exception ex)
             {
-                _logger.Debug($"Could not detect data folder via Mutagen for {gameType}: {ex.Message}");
+                _logger.Debug("Could not detect data folder via Mutagen for {GameType}: {Message}", gameType, ex.Message);
             }
         }
 
@@ -164,11 +169,11 @@ public sealed class PluginLoadingService : IPluginLoadingService
 
         if (File.Exists(path))
         {
-            _logger.Information($"Found default load order path for {gameType}: {path}");
+            _logger.Information("Found default load order path for {GameType}: {Path}", gameType, path);
             return path;
         }
 
-        _logger.Debug($"Default load order path does not exist for {gameType}: {path}");
+        _logger.Debug("Default load order path does not exist for {GameType}: {Path}", gameType, path);
         return null;
     }
 
@@ -186,7 +191,7 @@ public sealed class PluginLoadingService : IPluginLoadingService
 
             var release = MapToGameRelease(gameType);
 
-            _logger.Information($"Loading plugins via Mutagen for {gameType}");
+            _logger.Information("Loading plugins via Mutagen for {GameType}", gameType);
 
             // Use custom data folder if provided, otherwise use typical (registry-detected) path
             using var env = string.IsNullOrEmpty(customDataFolder)
@@ -196,11 +201,11 @@ public sealed class PluginLoadingService : IPluginLoadingService
                     .Build();
 
             var dataFolder = env.DataFolderPath.Path;
-            _logger.Debug($"Data folder: {dataFolder}");
+            _logger.Debug("Data folder: {DataFolder}", dataFolder);
 
             if (!string.IsNullOrEmpty(customDataFolder))
             {
-                _logger.Information($"Using custom data folder override: {customDataFolder}");
+                _logger.Information("Using custom data folder override: {CustomDataFolder}", customDataFolder);
             }
 
             var plugins = new List<PluginInfo>();
@@ -221,7 +226,7 @@ public sealed class PluginLoadingService : IPluginLoadingService
                 });
             }
 
-            _logger.Information($"Loaded {plugins.Count} plugins from {gameType} load order");
+            _logger.Information("Loaded {Count} plugins from {GameType} load order", plugins.Count, gameType);
             return plugins;
         }, ct);
     }

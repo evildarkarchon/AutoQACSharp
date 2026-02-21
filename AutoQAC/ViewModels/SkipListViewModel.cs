@@ -5,6 +5,7 @@ using System.Linq;
 using System.Reactive;
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
@@ -221,7 +222,7 @@ public sealed class SkipListViewModel : ViewModelBase, IDisposable
 
         // Get the merged skip list (user + defaults from Main.yaml)
         // This ensures base game ESMs and DLCs are excluded from available plugins
-        var mergedSkipList = await _configService.GetSkipListAsync(SelectedGame);
+        var mergedSkipList = await _configService.GetSkipListAsync(SelectedGame, ct: CancellationToken.None);
         var skipSet = new HashSet<string>(mergedSkipList, StringComparer.OrdinalIgnoreCase);
 
         foreach (var plugin in loadedPlugins.Where(p => !skipSet.Contains(p.FileName)))
@@ -303,7 +304,7 @@ public sealed class SkipListViewModel : ViewModelBase, IDisposable
             // Check if plugin is in the DEFAULT skip list (from Main.yaml), not the merged list
             // We use GetDefaultSkipListAsync because the user's removal hasn't been saved yet,
             // and GetSkipListAsync would still include the unsaved user entry
-            var defaultSkipList = await _configService.GetDefaultSkipListAsync(SelectedGame);
+            var defaultSkipList = await _configService.GetDefaultSkipListAsync(SelectedGame, CancellationToken.None);
             var inDefaultSkipList = defaultSkipList.Any(s => string.Equals(s, entry, StringComparison.OrdinalIgnoreCase));
 
             if (!inDefaultSkipList)

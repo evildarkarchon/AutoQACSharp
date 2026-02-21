@@ -4,6 +4,8 @@ using System.Reactive.Concurrency;
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
 using System.Security.Cryptography;
+using System.Threading;
+using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models.Configuration;
 using AutoQAC.Services.State;
@@ -14,7 +16,7 @@ namespace AutoQAC.Services.Configuration;
 
 /// <summary>
 /// Watches the user configuration YAML file for external changes using FileSystemWatcher
-/// combined with SHA256 content hashing.  Changes detected during an active cleaning
+/// combined with SHA256 content hashing. Changes detected during an active cleaning
 /// session are deferred until the session ends.
 /// </summary>
 public sealed class ConfigWatcherService : IConfigWatcherService
@@ -23,14 +25,14 @@ public sealed class ConfigWatcherService : IConfigWatcherService
     private readonly IStateService _stateService;
     private readonly ILoggingService _logger;
     private readonly string _configDirectory;
-    private const string UserConfigFile = "AutoQAC Settings.yaml";
-
-    private FileSystemWatcher? _watcher;
     private readonly CompositeDisposable _disposables = new();
     private readonly IDeserializer _yamlValidator;
 
+    private FileSystemWatcher? _watcher;
     private string? _lastKnownExternalHash;
     private volatile bool _hasDeferredChanges;
+
+    private const string UserConfigFile = "AutoQAC Settings.yaml";
 
     public ConfigWatcherService(
         IConfigurationService configService,
@@ -41,8 +43,6 @@ public sealed class ConfigWatcherService : IConfigWatcherService
         _configService = configService;
         _stateService = stateService;
         _logger = logger;
-
-        // Resolve config directory using same pattern as ConfigurationService
         _configDirectory = configDirectory ?? ResolveConfigDirectory();
 
         _yamlValidator = new DeserializerBuilder()
@@ -61,7 +61,10 @@ public sealed class ConfigWatcherService : IConfigWatcherService
         {
             var candidate = Path.Combine(current.FullName, "AutoQAC Data");
             if (Directory.Exists(candidate))
+            {
                 return candidate;
+            }
+
             current = current.Parent;
         }
 #endif
@@ -71,7 +74,10 @@ public sealed class ConfigWatcherService : IConfigWatcherService
 
     public void StartWatching()
     {
-        if (_watcher != null) return; // Already watching
+        if (_watcher != null)
+        {
+            return;
+        }
 
         if (!Directory.Exists(_configDirectory))
         {
@@ -79,83 +85,96 @@ public sealed class ConfigWatcherService : IConfigWatcherService
             return;
         }
 
-        // Initialize the last known external hash from disk
         var filePath = Path.Combine(_configDirectory, UserConfigFile);
         if (File.Exists(filePath))
         {
             _lastKnownExternalHash = ComputeFileHash(filePath);
         }
 
-        _watcher = new FileSystemWatcher(_configDirectory, UserConfigFile)
+        FileSystemWatcher? watcher = null;
+        try
         {
-            NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size,
-            EnableRaisingEvents = true
-        };
+            watcher = new FileSystemWatcher(_configDirectory, UserConfigFile)
+            {
+                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size
+            };
 
-        // Pipe FSW Changed events through Rx: throttle to 500ms, then observe on thread pool
-        var fswObservable = Observable.FromEventPattern<FileSystemEventHandler, FileSystemEventArgs>(
-                h => _watcher.Changed += h,
-                h => _watcher.Changed -= h)
-            .Throttle(TimeSpan.FromMilliseconds(500))
-            .ObserveOn(TaskPoolScheduler.Default)
-            .Subscribe(
-                _ => HandleFileChanged(),
-                ex => _logger.Error(ex, "[ConfigWatcher] Error in FSW observable pipeline"));
+            var fswObservable = Observable.FromEventPattern<FileSystemEventHandler, FileSystemEventArgs>(
+                    h => watcher.Changed += h,
+                    h => watcher.Changed -= h)
+                .Throttle(TimeSpan.FromMilliseconds(500))
+                .ObserveOn(TaskPoolScheduler.Default)
+                .SelectMany(_ => Observable.FromAsync(HandleFileChangedAsync))
+                .Subscribe(
+                    _ => { },
+                    ex => _logger.Error(ex, "[ConfigWatcher] Error in FSW observable pipeline"));
 
-        _disposables.Add(fswObservable);
+            _disposables.Add(fswObservable);
 
-        // Subscribe to cleaning state changes to apply deferred reloads when cleaning ends
-        var cleaningEndSub = _stateService.StateChanged
-            .Select(s => s.IsCleaning)
-            .DistinctUntilChanged()
-            .Where(cleaning => !cleaning && _hasDeferredChanges)
-            .ObserveOn(TaskPoolScheduler.Default)
-            .Subscribe(
-                _ => ApplyDeferredChanges(),
-                ex => _logger.Error(ex, "[ConfigWatcher] Error applying deferred config changes"));
+            var cleaningEndSub = _stateService.StateChanged
+                .Select(s => s.IsCleaning)
+                .DistinctUntilChanged()
+                .Where(cleaning => !cleaning && _hasDeferredChanges)
+                .ObserveOn(TaskPoolScheduler.Default)
+                .SelectMany(_ => Observable.FromAsync(ApplyDeferredChangesAsync))
+                .Subscribe(
+                    _ => { },
+                    ex => _logger.Error(ex, "[ConfigWatcher] Error applying deferred config changes"));
 
-        _disposables.Add(cleaningEndSub);
+            _disposables.Add(cleaningEndSub);
 
-        _logger.Information("[ConfigWatcher] Started watching {File} in {Dir}", UserConfigFile, _configDirectory);
+            watcher.EnableRaisingEvents = true;
+            _watcher = watcher;
+            _logger.Information("[ConfigWatcher] Started watching {File} in {Dir}", UserConfigFile, _configDirectory);
+        }
+        catch (Exception ex)
+        {
+            watcher?.Dispose();
+            _watcher = null;
+            _logger.Error(ex, "[ConfigWatcher] Failed to start file watcher");
+        }
     }
 
     public void StopWatching()
     {
-        if (_watcher != null)
+        if (_watcher == null)
         {
-            _watcher.EnableRaisingEvents = false;
-            _watcher.Dispose();
-            _watcher = null;
-            _logger.Information("[ConfigWatcher] Stopped watching config file");
+            return;
         }
+
+        _watcher.EnableRaisingEvents = false;
+        _watcher.Dispose();
+        _watcher = null;
+        _logger.Information("[ConfigWatcher] Stopped watching config file");
     }
 
-    private void HandleFileChanged()
+    private async Task HandleFileChangedAsync(CancellationToken ct)
     {
         try
         {
             var filePath = Path.Combine(_configDirectory, UserConfigFile);
-            if (!File.Exists(filePath)) return;
+            if (!File.Exists(filePath))
+            {
+                return;
+            }
 
             var currentHash = ComputeFileHash(filePath);
-
-            // Check 1: Is this our own app-initiated save?
             var lastWrittenHash = _configService.GetLastWrittenHash();
-            if (lastWrittenHash != null && string.Equals(currentHash, lastWrittenHash, StringComparison.OrdinalIgnoreCase))
+            if (lastWrittenHash != null &&
+                string.Equals(currentHash, lastWrittenHash, StringComparison.OrdinalIgnoreCase))
             {
                 _logger.Debug("[ConfigWatcher] Detected app-initiated save, skipping reload");
                 _lastKnownExternalHash = currentHash;
                 return;
             }
 
-            // Check 2: Has the file actually changed since the last external read?
-            if (_lastKnownExternalHash != null && string.Equals(currentHash, _lastKnownExternalHash, StringComparison.OrdinalIgnoreCase))
+            if (_lastKnownExternalHash != null &&
+                string.Equals(currentHash, _lastKnownExternalHash, StringComparison.OrdinalIgnoreCase))
             {
                 _logger.Debug("[ConfigWatcher] No actual content change (same hash), skipping reload");
                 return;
             }
 
-            // Check 3: Are we currently cleaning? If so, defer.
             if (_stateService.CurrentState.IsCleaning)
             {
                 _hasDeferredChanges = true;
@@ -164,17 +183,19 @@ public sealed class ConfigWatcherService : IConfigWatcherService
                 return;
             }
 
-            // Check 4: Validate YAML before reloading
             if (!TryValidateYaml(filePath))
             {
                 _logger.Warning("[ConfigWatcher] Invalid external config edit rejected, keeping previous config");
                 return;
             }
 
-            // All checks passed: reload from disk
             _lastKnownExternalHash = currentHash;
-            _configService.ReloadFromDiskAsync().GetAwaiter().GetResult();
+            await _configService.ReloadFromDiskAsync(ct).ConfigureAwait(false);
             _logger.Information("[ConfigWatcher] Reloaded config after detecting external change");
+        }
+        catch (OperationCanceledException)
+        {
+            // No-op; canceled by pipeline shutdown/switch.
         }
         catch (Exception ex)
         {
@@ -182,14 +203,17 @@ public sealed class ConfigWatcherService : IConfigWatcherService
         }
     }
 
-    private void ApplyDeferredChanges()
+    private async Task ApplyDeferredChangesAsync(CancellationToken ct)
     {
         _hasDeferredChanges = false;
 
         try
         {
             var filePath = Path.Combine(_configDirectory, UserConfigFile);
-            if (!File.Exists(filePath)) return;
+            if (!File.Exists(filePath))
+            {
+                return;
+            }
 
             if (!TryValidateYaml(filePath))
             {
@@ -197,8 +221,12 @@ public sealed class ConfigWatcherService : IConfigWatcherService
                 return;
             }
 
-            _configService.ReloadFromDiskAsync().GetAwaiter().GetResult();
+            await _configService.ReloadFromDiskAsync(ct).ConfigureAwait(false);
             _logger.Information("[ConfigWatcher] Applied deferred config change after cleaning ended");
+        }
+        catch (OperationCanceledException)
+        {
+            // No-op; canceled by pipeline shutdown/switch.
         }
         catch (Exception ex)
         {
@@ -214,8 +242,14 @@ public sealed class ConfigWatcherService : IConfigWatcherService
     {
         try
         {
-            var content = File.ReadAllText(filePath);
-            if (string.IsNullOrWhiteSpace(content)) return false;
+            using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var reader = new StreamReader(stream);
+            var content = reader.ReadToEnd();
+            if (string.IsNullOrWhiteSpace(content))
+            {
+                return false;
+            }
+
             _yamlValidator.Deserialize<UserConfiguration>(content);
             return true;
         }

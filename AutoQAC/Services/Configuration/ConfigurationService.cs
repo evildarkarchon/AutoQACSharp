@@ -15,25 +15,27 @@ using YamlDotNet.Serialization.NamingConventions;
 
 namespace AutoQAC.Services.Configuration;
 
-public sealed class ConfigurationService : IConfigurationService, IDisposable
+public sealed class ConfigurationService : IConfigurationService, IDisposable, IAsyncDisposable
 {
     private readonly ILoggingService _logger;
     private readonly SemaphoreSlim _fileLock = new(1, 1);
+    private readonly Lock _stateLock = new();
     private readonly Subject<UserConfiguration> _configChanges = new();
     private readonly Subject<GameType> _skipListChanges = new();
     private readonly Subject<UserConfiguration> _saveRequests = new();
     private readonly IDisposable _debounceSubscription;
-    private UserConfiguration? _lastKnownGoodConfig;
-    private volatile UserConfiguration? _pendingConfig;
-
     private readonly string _configDirectory;
-    private const string MainConfigFile = "AutoQAC Main.yaml";
-    private const string UserConfigFile = "AutoQAC Settings.yaml";
-
-    private MainConfiguration? _mainConfigCache;
-    private string? _lastWrittenHash;
     private readonly ISerializer _serializer;
     private readonly IDeserializer _deserializer;
+
+    private UserConfiguration? _lastKnownGoodConfig;
+    private UserConfiguration? _pendingConfig;
+    private MainConfiguration? _mainConfigCache;
+    private string? _lastWrittenHash;
+    private int _disposeState;
+
+    private const string MainConfigFile = "AutoQAC Main.yaml";
+    private const string UserConfigFile = "AutoQAC Settings.yaml";
 
     public IObservable<UserConfiguration> UserConfigurationChanged => _configChanges;
     public IObservable<GameType> SkipListChanged => _skipListChanges;
@@ -55,14 +57,24 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
             Directory.CreateDirectory(_configDirectory);
         }
 
-        // Set up Rx Throttle pipeline for debounced config saves (500ms)
+        // Debounced async save pipeline. Switch cancels superseded in-flight saves.
         _debounceSubscription = _saveRequests
             .Throttle(TimeSpan.FromMilliseconds(500))
-            .Subscribe(config =>
+            .Select(config => Observable.FromAsync(async saveCt =>
             {
-                // Fire-and-forget the save -- errors are handled inside
-                _ = SaveToDiskWithRetryAsync(config);
-            });
+                try
+                {
+                    await SaveToDiskWithRetryAsync(config, saveCt).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (saveCt.IsCancellationRequested)
+                {
+                    _logger.Debug("[Config] Superseded debounced save canceled");
+                }
+            }))
+            .Switch()
+            .Subscribe(
+                _ => { },
+                ex => _logger.Error(ex, "[Config] Debounced save pipeline failed"));
     }
 
     private string ResolveConfigDirectory(ILoggingService logger)
@@ -70,15 +82,13 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
         var baseDir = AppContext.BaseDirectory;
 
 #if DEBUG
-        // In DEBUG mode, prioritize finding the directory in the source tree (parent directories)
         var current = new DirectoryInfo(baseDir);
-        // Limit traversal to prevent scanning entire drive (e.g. 6 levels up)
         for (int i = 0; i < 6 && current != null; i++)
         {
             var candidate = Path.Combine(current.FullName, "AutoQAC Data");
             if (Directory.Exists(candidate))
             {
-                logger.Information($"[Debug] Resolved configuration directory to source: {candidate}");
+                logger.Information("[Debug] Resolved configuration directory to source: {Candidate}", candidate);
                 return candidate;
             }
 
@@ -91,26 +101,52 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
 
     public async Task<MainConfiguration> LoadMainConfigAsync(CancellationToken ct = default)
     {
-        if (_mainConfigCache != null) return _mainConfigCache;
+        ThrowIfDisposed();
+
+        lock (_stateLock)
+        {
+            if (_mainConfigCache != null)
+            {
+                return _mainConfigCache;
+            }
+        }
 
         var path = Path.Combine(_configDirectory, MainConfigFile);
         if (!File.Exists(path))
         {
-            _logger.Warning($"Main config file not found at {path}. Creating default.");
-            var config = new MainConfiguration();
-            // Ideally we would write it, but MainConfiguration is usually static/read-only provided by the app
-            // For now, return empty or default
-            _mainConfigCache = config;
-            return config;
+            _logger.Warning("Main config file not found at {Path}. Creating default.", path);
+            var defaultConfig = new MainConfiguration();
+            lock (_stateLock)
+            {
+                _mainConfigCache ??= defaultConfig;
+                return _mainConfigCache;
+            }
         }
 
+        await _fileLock.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            await _fileLock.WaitAsync(ct).ConfigureAwait(false);
+            lock (_stateLock)
+            {
+                if (_mainConfigCache != null)
+                {
+                    return _mainConfigCache;
+                }
+            }
+
             var content = await File.ReadAllTextAsync(path, ct).ConfigureAwait(false);
-            _mainConfigCache = _deserializer.Deserialize<MainConfiguration>(content);
-            _logger.Information("Loaded Main Configuration (Version: {Version})", _mainConfigCache.Data.Version);
-            return _mainConfigCache;
+            var loaded = _deserializer.Deserialize<MainConfiguration>(content);
+            if (loaded == null)
+            {
+                throw new InvalidOperationException("Main configuration deserialized to null.");
+            }
+
+            lock (_stateLock)
+            {
+                _mainConfigCache = loaded;
+                _logger.Information("Loaded Main Configuration (Version: {Version})", _mainConfigCache.Data.Version);
+                return _mainConfigCache;
+            }
         }
         catch (Exception ex)
         {
@@ -125,25 +161,49 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
 
     public async Task<UserConfiguration> LoadUserConfigAsync(CancellationToken ct = default)
     {
-        // Return pending in-memory config if available (debounced save may not have fired yet)
-        if (_pendingConfig != null) return _pendingConfig;
+        ThrowIfDisposed();
+
+        UserConfiguration? pendingSnapshot;
+        lock (_stateLock)
+        {
+            pendingSnapshot = _pendingConfig;
+        }
+
+        if (pendingSnapshot != null)
+        {
+            return CloneConfig(pendingSnapshot);
+        }
 
         var path = Path.Combine(_configDirectory, UserConfigFile);
         if (!File.Exists(path))
         {
-            _logger.Information($"[Config] User config file not found at {path}. Creating default.");
-            var config = new UserConfiguration();
-            await SaveUserConfigAsync(config, ct).ConfigureAwait(false);
-            return config;
+            _logger.Information("[Config] User config file not found at {Path}. Creating default.", path);
+            var defaultConfig = new UserConfiguration();
+            await SaveUserConfigAsync(defaultConfig, ct).ConfigureAwait(false);
+            return CloneConfig(defaultConfig);
         }
 
+        await _fileLock.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            await _fileLock.WaitAsync(ct).ConfigureAwait(false);
             var content = await File.ReadAllTextAsync(path, ct).ConfigureAwait(false);
             var loaded = _deserializer.Deserialize<UserConfiguration>(content);
-            _lastKnownGoodConfig = loaded;
-            return loaded;
+            if (loaded == null)
+            {
+                _logger.Warning("[Config] User configuration file was empty. Using default configuration.");
+                loaded = new UserConfiguration();
+            }
+
+            lock (_stateLock)
+            {
+                _lastKnownGoodConfig = CloneConfig(loaded);
+                if (_pendingConfig != null)
+                {
+                    return CloneConfig(_pendingConfig);
+                }
+            }
+
+            return CloneConfig(loaded);
         }
         catch (Exception ex)
         {
@@ -158,12 +218,17 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
 
     public Task SaveUserConfigAsync(UserConfiguration config, CancellationToken ct = default)
     {
-        // Store the pending config in memory (always up-to-date)
-        _pendingConfig = config;
-        // Notify subscribers immediately (in-memory state is current)
-        _configChanges.OnNext(config);
-        // Schedule debounced write to disk
-        _saveRequests.OnNext(config);
+        ThrowIfDisposed();
+        ct.ThrowIfCancellationRequested();
+
+        var configCopy = CloneConfig(config);
+        lock (_stateLock)
+        {
+            _pendingConfig = configCopy;
+        }
+
+        _configChanges.OnNext(CloneConfig(configCopy));
+        _saveRequests.OnNext(configCopy);
         return Task.CompletedTask;
     }
 
@@ -174,27 +239,30 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
 
         for (int attempt = 0; attempt <= maxRetries; attempt++)
         {
+            ct.ThrowIfCancellationRequested();
             try
             {
                 await _fileLock.WaitAsync(ct).ConfigureAwait(false);
                 try
                 {
-                    // Temp/test directories can be removed between queued save and flush.
-                    // Recreate before each write attempt to keep save resilient.
                     Directory.CreateDirectory(_configDirectory);
 
                     var content = _serializer.Serialize(config);
                     await File.WriteAllTextAsync(path, content, ct).ConfigureAwait(false);
-                    _lastKnownGoodConfig = config;
-                    // Clear pending if this was the latest pending config
-                    if (ReferenceEquals(_pendingConfig, config))
+
+                    var successfulConfig = CloneConfig(config);
+                    lock (_stateLock)
                     {
-                        _pendingConfig = null;
+                        _lastKnownGoodConfig = successfulConfig;
                     }
 
-                    // Compute SHA256 hash of the written file so ConfigWatcherService
-                    // can distinguish app-initiated saves from external edits
-                    _lastWrittenHash = ComputeFileHash(path);
+                    Interlocked.CompareExchange(ref _pendingConfig, null, config);
+
+                    lock (_stateLock)
+                    {
+                        _lastWrittenHash = ComputeFileHash(path);
+                    }
+
                     _logger.Information("[Config] Debounced save completed successfully");
                     return;
                 }
@@ -203,22 +271,39 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
                     _fileLock.Release();
                 }
             }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
             catch (Exception ex) when (attempt < maxRetries)
             {
-                _logger.Warning("[Config] Save failed (attempt {Attempt}/{MaxAttempts}): {Message}",
-                    attempt + 1, maxRetries + 1, ex.Message);
+                _logger.Warning(
+                    "[Config] Save failed (attempt {Attempt}/{MaxAttempts}): {Message}",
+                    attempt + 1,
+                    maxRetries + 1,
+                    ex.Message);
                 await Task.Delay(100, ct).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
-                _logger.Error(ex, "[Config] Save failed after {MaxRetries} retries. Reverting to last known good config.",
+                _logger.Error(
+                    ex,
+                    "[Config] Save failed after {MaxRetries} retries. Reverting to last known good config.",
                     maxRetries + 1);
 
-                // Revert in-memory to last known good (per user decision: "revert to last known-good config on disk")
-                if (_lastKnownGoodConfig != null)
+                UserConfiguration? fallback = null;
+                lock (_stateLock)
                 {
-                    _pendingConfig = null;
-                    _configChanges.OnNext(_lastKnownGoodConfig);
+                    if (_lastKnownGoodConfig != null)
+                    {
+                        fallback = CloneConfig(_lastKnownGoodConfig);
+                        Interlocked.Exchange(ref _pendingConfig, null);
+                    }
+                }
+
+                if (fallback != null)
+                {
+                    _configChanges.OnNext(fallback);
                     _logger.Warning("[Config] Reverted to last known good configuration");
                 }
             }
@@ -227,7 +312,14 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
 
     public async Task FlushPendingSavesAsync(CancellationToken ct = default)
     {
-        var config = _pendingConfig;
+        ThrowIfDisposed();
+
+        UserConfiguration? config;
+        lock (_stateLock)
+        {
+            config = _pendingConfig;
+        }
+
         if (config == null)
         {
             _logger.Debug("[Config] No pending config changes to flush");
@@ -238,15 +330,16 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
         await SaveToDiskWithRetryAsync(config, ct).ConfigureAwait(false);
     }
 
-    public async Task<bool> ValidatePathsAsync(UserConfiguration config, CancellationToken ct = default)
+    public Task<bool> ValidatePathsAsync(UserConfiguration config, CancellationToken ct = default)
     {
-        await Task.Yield(); // Ensure async context
+        ThrowIfDisposed();
+        ct.ThrowIfCancellationRequested();
 
-        bool isValid = true;
+        var isValid = true;
 
         if (!string.IsNullOrEmpty(config.LoadOrder.File) && !File.Exists(config.LoadOrder.File))
         {
-            _logger.Warning($"Load Order file not found: {config.LoadOrder.File}");
+            _logger.Warning("Load Order file not found: {Path}", config.LoadOrder.File);
             isValid = false;
         }
 
@@ -261,57 +354,58 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
 
         if (!string.IsNullOrEmpty(config.XEdit.Binary) && !File.Exists(config.XEdit.Binary))
         {
-            _logger.Warning($"xEdit binary not found: {config.XEdit.Binary}");
+            _logger.Warning("xEdit binary not found: {Path}", config.XEdit.Binary);
             isValid = false;
         }
 
-        if (config.Settings.Mo2Mode)
+        if (config.Settings.Mo2Mode &&
+            !string.IsNullOrEmpty(config.ModOrganizer.Binary) &&
+            !File.Exists(config.ModOrganizer.Binary))
         {
-            if (!string.IsNullOrEmpty(config.ModOrganizer.Binary) && !File.Exists(config.ModOrganizer.Binary))
-            {
-                _logger.Warning($"MO2 binary not found: {config.ModOrganizer.Binary}");
-                isValid = false;
-            }
+            _logger.Warning("MO2 binary not found: {Path}", config.ModOrganizer.Binary);
+            isValid = false;
         }
 
-        return isValid;
+        return Task.FromResult(isValid);
     }
 
-    public async Task<List<string>> GetSkipListAsync(GameType gameType, GameVariant variant = GameVariant.None)
+    public async Task<List<string>> GetSkipListAsync(
+        GameType gameType,
+        GameVariant variant = GameVariant.None,
+        CancellationToken ct = default)
     {
-        // Load both configs
-        _mainConfigCache ??= await LoadMainConfigAsync().ConfigureAwait(false);
-        var userConfig = await LoadUserConfigAsync().ConfigureAwait(false);
+        ThrowIfDisposed();
+        var mainConfig = await LoadMainConfigAsync(ct).ConfigureAwait(false);
+        var userConfig = await LoadUserConfigAsync(ct).ConfigureAwait(false);
 
         var result = new List<string>();
-
-        // For Enderal, use Enderal-specific key instead of SSE
         var key = variant == GameVariant.Enderal ? "Enderal" : GetGameKey(gameType);
 
-        // 1. User's game-specific skip list (highest priority - user overrides)
         if (userConfig.SkipLists.TryGetValue(key, out var userList))
         {
             result.AddRange(userList);
         }
 
-        // 2. Game-specific skip list from Main.yaml (default DLC/base game protections)
-        if (_mainConfigCache.Data.SkipLists.TryGetValue(key, out var mainGameList))
+        if (mainConfig.Data.SkipLists.TryGetValue(key, out var mainGameList))
         {
             result.AddRange(mainGameList);
         }
 
-        // 3. TTW: auto-merge FO3 skip list entries into FNV list (silently, per user decision)
         if (variant == GameVariant.TTW)
         {
             var fo3Key = GetGameKey(GameType.Fallout3);
             if (userConfig.SkipLists.TryGetValue(fo3Key, out var userFo3List))
+            {
                 result.AddRange(userFo3List);
-            if (_mainConfigCache.Data.SkipLists.TryGetValue(fo3Key, out var mainFo3List))
+            }
+
+            if (mainConfig.Data.SkipLists.TryGetValue(fo3Key, out var mainFo3List))
+            {
                 result.AddRange(mainFo3List);
+            }
         }
 
-        // 4. Universal from Main.yaml (always applied for safety)
-        if (_mainConfigCache.Data.SkipLists.TryGetValue("Universal", out var universalList))
+        if (mainConfig.Data.SkipLists.TryGetValue("Universal", out var universalList))
         {
             result.AddRange(universalList);
         }
@@ -319,22 +413,20 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
         return result.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     }
 
-    public async Task<List<string>> GetDefaultSkipListAsync(GameType gameType)
+    public async Task<List<string>> GetDefaultSkipListAsync(GameType gameType, CancellationToken ct = default)
     {
-        // Load Main.yaml config only - this contains the default skip lists
-        _mainConfigCache ??= await LoadMainConfigAsync().ConfigureAwait(false);
+        ThrowIfDisposed();
+        var mainConfig = await LoadMainConfigAsync(ct).ConfigureAwait(false);
 
         var result = new List<string>();
         var key = GetGameKey(gameType);
 
-        // 1. Game-specific skip list from Main.yaml (default DLC/base game protections)
-        if (_mainConfigCache.Data.SkipLists.TryGetValue(key, out var mainGameList))
+        if (mainConfig.Data.SkipLists.TryGetValue(key, out var mainGameList))
         {
             result.AddRange(mainGameList);
         }
 
-        // 2. Universal from Main.yaml (always applied for safety)
-        if (_mainConfigCache.Data.SkipLists.TryGetValue("Universal", out var universalList))
+        if (mainConfig.Data.SkipLists.TryGetValue("Universal", out var universalList))
         {
             result.AddRange(universalList);
         }
@@ -342,45 +434,46 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
         return result.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     }
 
-    public async Task<List<string>> GetXEditExecutableNamesAsync(GameType gameType)
+    public async Task<List<string>> GetXEditExecutableNamesAsync(GameType gameType, CancellationToken ct = default)
     {
-        _mainConfigCache ??= await LoadMainConfigAsync().ConfigureAwait(false);
-
+        ThrowIfDisposed();
+        var mainConfig = await LoadMainConfigAsync(ct).ConfigureAwait(false);
         var key = GetGameKey(gameType);
-        if (_mainConfigCache.Data.XEditLists.TryGetValue(key, out var list))
+
+        if (mainConfig.Data.XEditLists.TryGetValue(key, out var list))
         {
             return list;
         }
 
-        // Fallback to Universal if specific not found? Or maybe Universal is always useful?
-        if (_mainConfigCache.Data.XEditLists.TryGetValue("Universal", out var universalList))
+        if (mainConfig.Data.XEditLists.TryGetValue("Universal", out var universalList))
         {
             return universalList;
         }
 
-        return new List<string>();
+        return [];
     }
 
     public async Task<List<string>> GetGameSpecificSkipListAsync(GameType gameType, CancellationToken ct = default)
     {
+        ThrowIfDisposed();
         var userConfig = await LoadUserConfigAsync(ct).ConfigureAwait(false);
-
         var key = GetGameKey(gameType);
+
         if (userConfig.SkipLists.TryGetValue(key, out var list))
         {
-            return list.ToList(); // Return a copy to prevent external modification
+            return list.ToList();
         }
 
-        return new List<string>();
+        return [];
     }
 
     public async Task UpdateSkipListAsync(GameType gameType, List<string> skipList, CancellationToken ct = default)
     {
+        ThrowIfDisposed();
         var userConfig = await LoadUserConfigAsync(ct).ConfigureAwait(false);
-
         var key = GetGameKey(gameType);
-        userConfig.SkipLists[key] = skipList.ToList(); // Store a copy
 
+        userConfig.SkipLists[key] = skipList.ToList();
         await SaveUserConfigAsync(userConfig, ct).ConfigureAwait(false);
         _skipListChanges.OnNext(gameType);
         _logger.Information("Skip list updated for {GameType} with {Count} entries", gameType, skipList.Count);
@@ -388,18 +481,18 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
 
     public async Task AddToSkipListAsync(GameType gameType, string pluginName, CancellationToken ct = default)
     {
+        ThrowIfDisposed();
+
         if (string.IsNullOrWhiteSpace(pluginName))
         {
             throw new ArgumentException("Plugin name cannot be empty", nameof(pluginName));
         }
 
         var currentList = await GetGameSpecificSkipListAsync(gameType, ct).ConfigureAwait(false);
-
-        // Check for duplicates (case-insensitive)
         if (currentList.Any(p => string.Equals(p, pluginName, StringComparison.OrdinalIgnoreCase)))
         {
             _logger.Debug("Plugin {PluginName} already in skip list for {GameType}", pluginName, gameType);
-            return; // Already exists, no-op
+            return;
         }
 
         currentList.Add(pluginName);
@@ -408,16 +501,17 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
 
     public async Task RemoveFromSkipListAsync(GameType gameType, string pluginName, CancellationToken ct = default)
     {
+        ThrowIfDisposed();
+
         if (string.IsNullOrWhiteSpace(pluginName))
         {
-            return; // Nothing to remove
+            return;
         }
 
         var currentList = await GetGameSpecificSkipListAsync(gameType, ct).ConfigureAwait(false);
+        var toRemove = currentList.FirstOrDefault(
+            p => string.Equals(p, pluginName, StringComparison.OrdinalIgnoreCase));
 
-        // Find and remove (case-insensitive)
-        var toRemove =
-            currentList.FirstOrDefault(p => string.Equals(p, pluginName, StringComparison.OrdinalIgnoreCase));
         if (toRemove != null)
         {
             currentList.Remove(toRemove);
@@ -427,17 +521,16 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
 
     public async Task<GameType> GetSelectedGameAsync(CancellationToken ct = default)
     {
+        ThrowIfDisposed();
         var config = await LoadUserConfigAsync(ct).ConfigureAwait(false);
-        if (Enum.TryParse<GameType>(config.SelectedGame, true, out var gameType))
-        {
-            return gameType;
-        }
-
-        return GameType.Unknown;
+        return Enum.TryParse<GameType>(config.SelectedGame, true, out var gameType)
+            ? gameType
+            : GameType.Unknown;
     }
 
     public async Task SetSelectedGameAsync(GameType gameType, CancellationToken ct = default)
     {
+        ThrowIfDisposed();
         var config = await LoadUserConfigAsync(ct).ConfigureAwait(false);
         config.SelectedGame = gameType.ToString();
         await SaveUserConfigAsync(config, ct).ConfigureAwait(false);
@@ -445,14 +538,15 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
 
     public async Task<string?> GetGameDataFolderOverrideAsync(GameType gameType, CancellationToken ct = default)
     {
+        ThrowIfDisposed();
         var config = await LoadUserConfigAsync(ct).ConfigureAwait(false);
         var key = GetGameKey(gameType);
-
         return config.GameDataFolderOverrides.GetValueOrDefault(key);
     }
 
     public async Task<string?> GetGameLoadOrderOverrideAsync(GameType gameType, CancellationToken ct = default)
     {
+        ThrowIfDisposed();
         var config = await LoadUserConfigAsync(ct).ConfigureAwait(false);
 
         if (gameType != GameType.Unknown)
@@ -465,13 +559,15 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
             }
         }
 
-        // Backward compatibility fallback: legacy global load order field.
         return config.LoadOrder.File;
     }
 
-    public async Task SetGameLoadOrderOverrideAsync(GameType gameType, string? loadOrderPath,
+    public async Task SetGameLoadOrderOverrideAsync(
+        GameType gameType,
+        string? loadOrderPath,
         CancellationToken ct = default)
     {
+        ThrowIfDisposed();
         var config = await LoadUserConfigAsync(ct).ConfigureAwait(false);
 
         if (gameType == GameType.Unknown)
@@ -482,7 +578,6 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
         }
 
         var key = GetGameKey(gameType);
-
         if (string.IsNullOrWhiteSpace(loadOrderPath))
         {
             config.LoadOrderFileOverrides.Remove(key);
@@ -491,25 +586,27 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
         else
         {
             config.LoadOrderFileOverrides[key] = loadOrderPath;
-            _logger.Information("Set load order override for {GameType} to {LoadOrderPath}",
-                gameType, loadOrderPath);
+            _logger.Information(
+                "Set load order override for {GameType} to {LoadOrderPath}",
+                gameType,
+                loadOrderPath);
         }
 
-        // Keep legacy field aligned with the most recently selected game's path for compatibility.
         config.LoadOrder.File = string.IsNullOrWhiteSpace(loadOrderPath) ? null : loadOrderPath;
-
         await SaveUserConfigAsync(config, ct).ConfigureAwait(false);
     }
 
-    public async Task SetGameDataFolderOverrideAsync(GameType gameType, string? folderPath,
+    public async Task SetGameDataFolderOverrideAsync(
+        GameType gameType,
+        string? folderPath,
         CancellationToken ct = default)
     {
+        ThrowIfDisposed();
         var config = await LoadUserConfigAsync(ct).ConfigureAwait(false);
         var key = GetGameKey(gameType);
 
         if (string.IsNullOrWhiteSpace(folderPath))
         {
-            // Remove the override if null or empty
             config.GameDataFolderOverrides.Remove(key);
             _logger.Information("Removed data folder override for {GameType}", gameType);
         }
@@ -524,6 +621,7 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
 
     public async Task ResetToDefaultsAsync(CancellationToken ct = default)
     {
+        ThrowIfDisposed();
         _logger.Information("Resetting user configuration to defaults");
         var defaultConfig = new UserConfiguration();
         await SaveUserConfigAsync(defaultConfig, ct).ConfigureAwait(false);
@@ -531,6 +629,7 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
 
     public async Task<Dictionary<string, object?>> GetAllSettingsAsync(CancellationToken ct = default)
     {
+        ThrowIfDisposed();
         var config = await LoadUserConfigAsync(ct).ConfigureAwait(false);
         return new Dictionary<string, object?>
         {
@@ -550,41 +649,36 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
         };
     }
 
-    public async Task UpdateMultipleAsync(Action<UserConfiguration> updateAction, CancellationToken ct = default)
-    {
-        await _fileLock.WaitAsync(ct).ConfigureAwait(false);
-        try
-        {
-            var config = await LoadUserConfigAsync(ct).ConfigureAwait(false);
-            updateAction(config);
-            await SaveUserConfigAsync(config, ct).ConfigureAwait(false);
-        }
-        finally
-        {
-            _fileLock.Release();
-        }
-    }
-
     public async Task ReloadFromDiskAsync(CancellationToken ct = default)
     {
+        ThrowIfDisposed();
+
+        var path = Path.Combine(_configDirectory, UserConfigFile);
+        if (!File.Exists(path))
+        {
+            _logger.Warning("[Config] Config file not found during reload: {Path}", path);
+            return;
+        }
+
         await _fileLock.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            // Clear in-memory caches to force fresh read from disk
-            _pendingConfig = null;
-            _mainConfigCache = null;
-
-            var path = Path.Combine(_configDirectory, UserConfigFile);
-            if (!File.Exists(path))
-            {
-                _logger.Warning("[Config] Config file not found during reload: {Path}", path);
-                return;
-            }
-
             var content = await File.ReadAllTextAsync(path, ct).ConfigureAwait(false);
             var loaded = _deserializer.Deserialize<UserConfiguration>(content);
-            _lastKnownGoodConfig = loaded;
-            _configChanges.OnNext(loaded);
+            if (loaded == null)
+            {
+                throw new InvalidOperationException("Reloaded user configuration deserialized to null.");
+            }
+
+            var loadedCopy = CloneConfig(loaded);
+            lock (_stateLock)
+            {
+                Interlocked.Exchange(ref _pendingConfig, null);
+                _mainConfigCache = null;
+                _lastKnownGoodConfig = loadedCopy;
+            }
+
+            _configChanges.OnNext(CloneConfig(loadedCopy));
             _logger.Information("[Config] Reloaded configuration from disk");
         }
         catch (Exception ex)
@@ -598,11 +692,26 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
         }
     }
 
-    public string? GetLastWrittenHash() => _lastWrittenHash;
+    public string? GetLastWrittenHash()
+    {
+        lock (_stateLock)
+        {
+            return _lastWrittenHash;
+        }
+    }
 
-    /// <summary>
-    /// Computes a SHA256 hex hash of the file at the given path.
-    /// </summary>
+    private UserConfiguration CloneConfig(UserConfiguration source)
+    {
+        var yaml = _serializer.Serialize(source);
+        var clone = _deserializer.Deserialize<UserConfiguration>(yaml);
+        if (clone == null)
+        {
+            throw new InvalidOperationException("Configuration clone failed (deserialized to null).");
+        }
+
+        return clone;
+    }
+
     private static string ComputeFileHash(string filePath)
     {
         using var stream = File.OpenRead(filePath);
@@ -625,10 +734,39 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable
 
     public void Dispose()
     {
+        DisposeAsync().AsTask().GetAwaiter().GetResult();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (Interlocked.CompareExchange(ref _disposeState, 1, 0) != 0)
+        {
+            return;
+        }
+
+        try
+        {
+            await FlushPendingSavesAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning("[Config] Flush during disposal failed: {Message}", ex.Message);
+        }
+
         _debounceSubscription.Dispose();
         _saveRequests.Dispose();
         _fileLock.Dispose();
         _configChanges.Dispose();
         _skipListChanges.Dispose();
+        Volatile.Write(ref _disposeState, 2);
+        GC.SuppressFinalize(this);
+    }
+
+    private void ThrowIfDisposed()
+    {
+        if (Volatile.Read(ref _disposeState) >= 2)
+        {
+            throw new ObjectDisposedException(nameof(ConfigurationService));
+        }
     }
 }

@@ -13,6 +13,7 @@ The application SHALL use the Mutagen library to read plugin load orders for sup
 - **Then** it SHALL use Mutagen's `GameEnvironment` to detect the game installation
 - **And** it SHALL retrieve the load order from the game's standard locations
 - **And** it SHALL populate each `PluginInfo` with the full path to the plugin file
+- **And** each `PluginInfo.IsSelected` SHALL be set during construction (not mutated afterward from background threads)
 
 #### Scenario: Mutagen fails to detect game installation
 - **Given** the user has selected a Mutagen-supported game
@@ -81,4 +82,3 @@ For Mutagen-supported games, the application SHALL be able to retrieve the game'
 - **When** requesting the data folder path
 - **Then** it SHALL return `null`
 - **And** it SHALL NOT throw an exception
-

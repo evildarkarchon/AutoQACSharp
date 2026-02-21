@@ -4,6 +4,7 @@ using AutoQAC.Models.Configuration;
 using AutoQAC.Services.Configuration;
 using FluentAssertions;
 using NSubstitute;
+using System.Collections.Concurrent;
 
 namespace AutoQAC.Tests.Services;
 
@@ -447,6 +448,134 @@ AutoQAC_Data:
     #endregion
 
     #region Game Load Order Override Tests
+
+    [Fact]
+    public async Task LoadUserConfigAsync_ShouldReturnIndependentClone()
+    {
+        // Arrange
+        var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
+        var originalPath = @"C:\Games\SkyrimSE\Data";
+        var original = new UserConfiguration
+        {
+            Settings = new AutoQacSettings { CleaningTimeout = 321 },
+            SkipLists = new Dictionary<string, List<string>>
+            {
+                ["SSE"] = ["Skyrim.esm"]
+            },
+            GameDataFolderOverrides = new Dictionary<string, string>
+            {
+                ["SSE"] = originalPath
+            }
+        };
+
+        await service.SaveUserConfigAsync(original);
+        await service.FlushPendingSavesAsync();
+
+        // Act
+        var firstRead = await service.LoadUserConfigAsync();
+        firstRead.Settings.CleaningTimeout = 999;
+        firstRead.SkipLists["SSE"].Add("Injected.esp");
+        firstRead.GameDataFolderOverrides["SSE"] = @"D:\Mutated\Data";
+
+        var secondRead = await service.LoadUserConfigAsync();
+
+        // Assert
+        secondRead.Settings.CleaningTimeout.Should().Be(321);
+        secondRead.SkipLists["SSE"].Should().NotContain("Injected.esp");
+        secondRead.GameDataFolderOverrides["SSE"].Should().Be(originalPath);
+    }
+
+    [Fact]
+    public async Task ConcurrentLoadAndSave_ShouldNotCorruptConfigurationState()
+    {
+        // Arrange
+        var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
+        var errors = new ConcurrentBag<Exception>();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+
+        await service.SaveUserConfigAsync(new UserConfiguration
+        {
+            Settings = new AutoQacSettings { CleaningTimeout = 100 }
+        }, cts.Token);
+        await service.FlushPendingSavesAsync(cts.Token);
+
+        // Act
+        var writer = Task.Run(async () =>
+        {
+            for (var i = 0; i < 100; i++)
+            {
+                try
+                {
+                    var config = await service.LoadUserConfigAsync(cts.Token);
+                    config.Settings.CleaningTimeout = 1000 + i;
+                    await service.SaveUserConfigAsync(config, cts.Token);
+                }
+                catch (Exception ex)
+                {
+                    errors.Add(ex);
+                }
+            }
+        }, cts.Token);
+
+        var readers = Enumerable.Range(0, 6).Select(_ => Task.Run(async () =>
+        {
+            for (var i = 0; i < 100; i++)
+            {
+                try
+                {
+                    var config = await service.LoadUserConfigAsync(cts.Token);
+                    _ = config.SkipLists.Count;
+                    _ = config.GameDataFolderOverrides.Count;
+                    _ = config.Settings.CleaningTimeout;
+                }
+                catch (Exception ex)
+                {
+                    errors.Add(ex);
+                }
+            }
+        }, cts.Token));
+
+        await Task.WhenAll(readers.Append(writer));
+        await service.FlushPendingSavesAsync(cts.Token);
+
+        // Assert
+        errors.Should().BeEmpty();
+        var finalConfig = await service.LoadUserConfigAsync(cts.Token);
+        finalConfig.Settings.CleaningTimeout.Should().BeInRange(1000, 1099);
+    }
+
+    [Fact]
+    public async Task DebouncedSave_ShouldLogFailureAndRevertToLastKnownGood_OnWriteError()
+    {
+        // Arrange
+        var logger = Substitute.For<ILoggingService>();
+        var service = new ConfigurationService(logger, _testDirectory);
+        var configPath = Path.Combine(_testDirectory, "AutoQAC Settings.yaml");
+
+        await service.SaveUserConfigAsync(new UserConfiguration
+        {
+            Settings = new AutoQacSettings { CleaningTimeout = 123 }
+        });
+        await service.FlushPendingSavesAsync();
+
+        var changed = await service.LoadUserConfigAsync();
+        changed.Settings.CleaningTimeout = 456;
+
+        // Act
+        using (var lockStream = new FileStream(configPath, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            await service.SaveUserConfigAsync(changed);
+            await Task.Delay(1800);
+        }
+
+        // Assert
+        var reloaded = await service.LoadUserConfigAsync();
+        reloaded.Settings.CleaningTimeout.Should().Be(123);
+        logger.Received().Error(
+            Arg.Any<Exception>(),
+            Arg.Is<string>(msg => msg.Contains("Save failed after")),
+            Arg.Any<object[]>());
+    }
 
     [Fact]
     public async Task SetGameLoadOrderOverrideAsync_ShouldPersistPerGameLoadOrderPath()

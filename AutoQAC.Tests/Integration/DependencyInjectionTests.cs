@@ -60,6 +60,6 @@ public sealed class DependencyInjectionTests
         
         var vm1 = provider.GetRequiredService<MainWindowViewModel>();
         var vm2 = provider.GetRequiredService<MainWindowViewModel>();
-        vm1.Should().NotBeSameAs(vm2); // Transient
+        vm1.Should().BeSameAs(vm2); // Singleton
     }
 }

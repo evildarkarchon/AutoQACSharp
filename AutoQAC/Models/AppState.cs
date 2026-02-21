@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using System.Collections.Frozen;
+using System.Linq;
 
 namespace AutoQAC.Models;
 
@@ -22,12 +24,12 @@ public sealed record AppState
     // Progress
     public int Progress { get; init; }
     public int TotalPlugins { get; init; }
-    public List<PluginInfo> PluginsToClean { get; init; } = new();
+    public IReadOnlyList<PluginInfo> PluginsToClean { get; init; } = [];
 
     // Results
-    public HashSet<string> CleanedPlugins { get; init; } = new();
-    public HashSet<string> FailedPlugins { get; init; } = new();
-    public HashSet<string> SkippedPlugins { get; init; } = new();
+    public IReadOnlySet<string> CleanedPlugins { get; init; } = Enumerable.Empty<string>().ToFrozenSet();
+    public IReadOnlySet<string> FailedPlugins { get; init; } = Enumerable.Empty<string>().ToFrozenSet();
+    public IReadOnlySet<string> SkippedPlugins { get; init; } = Enumerable.Empty<string>().ToFrozenSet();
 
     // Settings
     public int CleaningTimeout { get; init; } = 300;

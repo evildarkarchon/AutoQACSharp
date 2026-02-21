@@ -433,7 +433,7 @@ public sealed class CleaningServiceTests
         result.Message.Should().Contain("Unexpected error");
 
         // Verify error was logged
-        _mockLogger.Received(1).Error(Arg.Any<Exception>(), Arg.Is<string>(s => s.Contains("Mod.esp")));
+        _mockLogger.Received(1).Error(Arg.Any<Exception>(), "Error cleaning {Plugin}", "Mod.esp");
     }
 
     #endregion

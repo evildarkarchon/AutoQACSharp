@@ -4,6 +4,7 @@ using System.Linq;
 using System.Reactive;
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
@@ -443,7 +444,7 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
                 }
 
                 // Apply skip list status if a game is selected
-                var skipList = await _configService.GetSkipListAsync(SelectedGame);
+                var skipList = await _configService.GetSkipListAsync(SelectedGame, ct: CancellationToken.None);
                 var pluginsWithSkipStatus =
                     ApplySkipListStatus(plugins, skipList, SelectedGame, DisableSkipListsEnabled);
                 _stateService.SetPluginsToClean(pluginsWithSkipStatus);
@@ -602,7 +603,10 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
                 if (!string.IsNullOrEmpty(configuredPath))
                 {
                     await _configService.SetGameLoadOrderOverrideAsync(gameType, configuredPath);
-                    _logger.Information($"Auto-detected load order path for {gameType}: {configuredPath}");
+                    _logger.Information(
+                        "Auto-detected load order path for {GameType}: {ConfiguredPath}",
+                        gameType,
+                        configuredPath);
                 }
             }
 
@@ -611,7 +615,7 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
         }
 
         // Load skip list for the current game
-        var skipList = await _configService.GetSkipListAsync(gameType);
+        var skipList = await _configService.GetSkipListAsync(gameType, ct: CancellationToken.None);
 
         // Try Mutagen first if supported
         if (_pluginLoadingService.IsGameSupportedByMutagen(gameType))
@@ -632,11 +636,11 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
                 }
 
                 // Mutagen returned empty, might need file-based fallback
-                _logger.Information($"Mutagen returned no plugins for {gameType}, fallback to file-based");
+                _logger.Information("Mutagen returned no plugins for {GameType}, fallback to file-based", gameType);
             }
             catch (Exception ex)
             {
-                _logger.Warning($"Mutagen failed for {gameType}: {ex.Message}");
+                _logger.Warning("Mutagen failed for {GameType}: {Message}", gameType, ex.Message);
             }
         }
 

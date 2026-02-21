@@ -88,7 +88,7 @@ public sealed class CleaningService : ICleaningService
             var timeoutSeconds = _stateService.CurrentState.CleaningTimeout;
             var timeout = TimeSpan.FromSeconds(timeoutSeconds > 0 ? timeoutSeconds : 300);
 
-            _logger.Information($"Cleaning {plugin.FileName} with timeout {timeout.TotalSeconds}s...");
+            _logger.Information("Cleaning {Plugin} with timeout {TimeoutSeconds}s...", plugin.FileName, timeout.TotalSeconds);
 
             var result = await _processService.ExecuteAsync(command, progress, timeout, ct, onProcessStarted).ConfigureAwait(false);
 
@@ -143,7 +143,7 @@ public sealed class CleaningService : ICleaningService
         }
         catch (Exception ex)
         {
-            _logger.Error(ex, $"Error cleaning {plugin.FileName}");
+            _logger.Error(ex, "Error cleaning {Plugin}", plugin.FileName);
             return new CleaningResult
             {
                 Success = false,

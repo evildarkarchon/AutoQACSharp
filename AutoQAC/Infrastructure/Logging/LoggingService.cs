@@ -10,7 +10,7 @@ public sealed class LoggingService : ILoggingService, IDisposable
 
     public LoggingService()
     {
-        var logDirectory = "logs";
+        var logDirectory = Path.Combine(AppContext.BaseDirectory, "logs");
         if (!Directory.Exists(logDirectory))
         {
             Directory.CreateDirectory(logDirectory);
@@ -58,10 +58,6 @@ public sealed class LoggingService : ILoggingService, IDisposable
         if (_logger is IDisposable disposable)
         {
             disposable.Dispose();
-        }
-        else
-        {
-             Log.CloseAndFlush();
         }
     }
 }

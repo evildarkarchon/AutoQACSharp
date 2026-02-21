@@ -8,7 +8,9 @@
       "Bash(openspec show:*)",
       "mcp__exa__get_code_context_exa",
       "WebFetch(domain:github.com)",
-      "WebFetch(domain:mutagen-modding.github.io)"
+      "WebFetch(domain:mutagen-modding.github.io)",
+      "Bash(python3:*)",
+      "Bash(cygpath:*)"
     ],
     "deny": [],
     "ask": []

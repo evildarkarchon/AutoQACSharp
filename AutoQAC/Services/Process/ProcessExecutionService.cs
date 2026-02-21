@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -71,22 +72,22 @@ public sealed class ProcessExecutionService : IProcessExecutionService, IDisposa
             using var process = new System.Diagnostics.Process();
             process.StartInfo = processStartInfo;
 
-            var outputLines = new List<string>();
-            var errorLines = new List<string>();
+            var outputLines = new ConcurrentQueue<string>();
+            var errorLines = new ConcurrentQueue<string>();
 
             process.OutputDataReceived += (s, e) =>
             {
                 if (e.Data == null) return;
-                outputLines.Add(e.Data);
+                outputLines.Enqueue(e.Data);
                 outputProgress?.Report(e.Data);
             };
 
             process.ErrorDataReceived += (s, e) =>
             {
-                if (e.Data != null) errorLines.Add(e.Data);
+                if (e.Data != null) errorLines.Enqueue(e.Data);
             };
 
-            _logger.Debug($"Starting process: {startInfo.FileName} {startInfo.Arguments}");
+            _logger.Debug("Starting process: {FileName} {Arguments}", startInfo.FileName, startInfo.Arguments);
 
             try
             {
@@ -96,7 +97,7 @@ public sealed class ProcessExecutionService : IProcessExecutionService, IDisposa
             }
             catch (Exception ex)
             {
-                _logger.Error(ex, $"Failed to start process: {startInfo.FileName}");
+                _logger.Error(ex, "Failed to start process: {FileName}", startInfo.FileName);
                 return new ProcessResult { ExitCode = -1, ErrorLines = [ex.Message] };
             }
 
@@ -165,8 +166,8 @@ public sealed class ProcessExecutionService : IProcessExecutionService, IDisposa
             return new ProcessResult
             {
                 ExitCode = timedOut ? -1 : (process.HasExited ? process.ExitCode : -1),
-                OutputLines = outputLines,
-                ErrorLines = errorLines,
+                OutputLines = outputLines.ToList(),
+                ErrorLines = errorLines.ToList(),
                 TimedOut = timedOut
             };
         }
@@ -318,7 +319,7 @@ public sealed class ProcessExecutionService : IProcessExecutionService, IDisposa
         {
             try
             {
-                var process = System.Diagnostics.Process.GetProcessById(entry.Pid);
+                using var process = System.Diagnostics.Process.GetProcessById(entry.Pid);
 
                 if (IsXEditProcess(process, entry.StartTime))
                 {

@@ -6,6 +6,9 @@ namespace AutoQAC.Views;
 
 public partial class ProgressWindow : Window
 {
+    private ProgressViewModel? _subscribedViewModel;
+    private bool _disposeHandled;
+
     public ProgressWindow()
     {
         InitializeComponent();
@@ -16,20 +19,22 @@ public partial class ProgressWindow : Window
 
     private void OnDataContextChanged(object? sender, EventArgs e)
     {
-        if (DataContext is ProgressViewModel viewModel)
+        if (_subscribedViewModel != null)
         {
+            _subscribedViewModel.CloseRequested -= OnCloseRequested;
+            _subscribedViewModel = null;
+        }
+
+        if (DataContext is ProgressViewModel viewModel && !_disposeHandled)
+        {
+            _subscribedViewModel = viewModel;
             viewModel.CloseRequested += OnCloseRequested;
         }
     }
 
     private void OnCloseRequested(object? sender, EventArgs e)
     {
-        // Dispose the ViewModel before closing
-        if (DataContext is ProgressViewModel viewModel)
-        {
-            viewModel.CloseRequested -= OnCloseRequested;
-            viewModel.Dispose();
-        }
+        DisposeViewModelIfNeeded();
         Close();
     }
 
@@ -49,12 +54,25 @@ public partial class ProgressWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
-        // Clean up subscription if window is closed via X button
-        if (DataContext is ProgressViewModel viewModel)
-        {
-            viewModel.CloseRequested -= OnCloseRequested;
-            viewModel.Dispose();
-        }
+        DisposeViewModelIfNeeded();
         base.OnClosed(e);
+    }
+
+    private void DisposeViewModelIfNeeded()
+    {
+        if (_disposeHandled)
+        {
+            return;
+        }
+
+        _disposeHandled = true;
+        DataContextChanged -= OnDataContextChanged;
+
+        if (_subscribedViewModel != null)
+        {
+            _subscribedViewModel.CloseRequested -= OnCloseRequested;
+            _subscribedViewModel.Dispose();
+            _subscribedViewModel = null;
+        }
     }
 }

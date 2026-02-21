@@ -20,9 +20,12 @@ public interface IConfigurationService
     Task<bool> ValidatePathsAsync(UserConfiguration config, CancellationToken ct = default);
 
     // Game-specific queries
-    Task<List<string>> GetSkipListAsync(GameType gameType, GameVariant variant = GameVariant.None);
-    Task<List<string>> GetDefaultSkipListAsync(GameType gameType);
-    Task<List<string>> GetXEditExecutableNamesAsync(GameType gameType);
+    Task<List<string>> GetSkipListAsync(
+        GameType gameType,
+        GameVariant variant = GameVariant.None,
+        CancellationToken ct = default);
+    Task<List<string>> GetDefaultSkipListAsync(GameType gameType, CancellationToken ct = default);
+    Task<List<string>> GetXEditExecutableNamesAsync(GameType gameType, CancellationToken ct = default);
 
     // Skip list management (game-specific only, for UI editing)
     Task<List<string>> GetGameSpecificSkipListAsync(GameType gameType, CancellationToken ct = default);
@@ -57,12 +60,6 @@ public interface IConfigurationService
     /// Keys use dot-notation for nested properties (e.g., "LogRetention.Mode").
     /// </summary>
     Task<Dictionary<string, object?>> GetAllSettingsAsync(CancellationToken ct = default);
-
-    /// <summary>
-    /// Loads config, applies multiple mutations via the action delegate, saves once.
-    /// Replaces repeated load-mutate-save cycles for batch updates.
-    /// </summary>
-    Task UpdateMultipleAsync(Action<UserConfiguration> updateAction, CancellationToken ct = default);
 
     /// <summary>
     /// Forces a fresh read from disk bypassing any in-memory cache.

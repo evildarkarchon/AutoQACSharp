@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Reflection;
 using System.Reactive.Subjects;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
@@ -82,7 +83,10 @@ public sealed class ProcessExecutionServiceTests : IDisposable
         result.ErrorLines.Should().NotBeEmpty("error details should be captured");
 
         // Verify logging occurred
-        _mockLogger.Received(1).Error(Arg.Any<Exception>(), Arg.Is<string>(s => s.Contains("Failed to start")));
+        _mockLogger.Received(1).Error(
+            Arg.Any<Exception>(),
+            "Failed to start process: {FileName}",
+            "nonexistent_process_that_does_not_exist_12345.exe");
     }
 
     #endregion
@@ -113,6 +117,73 @@ public sealed class ProcessExecutionServiceTests : IDisposable
         await FluentActions.Awaiting(() => service.ExecuteAsync(startInfo))
             .Should().ThrowAsync<ObjectDisposedException>(
                 "disposed service should not allow execution");
+    }
+
+    #endregion
+
+    #region Thread-Safety and Handle Lifecycle Tests
+
+    [Fact]
+    public async Task ExecuteAsync_ShouldCaptureConcurrentStdoutAndStderrWithoutLoss()
+    {
+        // Arrange
+        using var service = new ProcessExecutionService(_mockState, _mockLogger);
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = "cmd.exe",
+            Arguments = "/c for /L %i in (1,1,120) do @echo out%i & @echo err%i 1>&2"
+        };
+
+        // Act
+        var result = await service.ExecuteAsync(startInfo, timeout: TimeSpan.FromSeconds(30));
+
+        // Assert
+        result.TimedOut.Should().BeFalse();
+        result.ExitCode.Should().Be(0);
+        result.OutputLines.Select(line => line.Trim()).Should().Contain("out1");
+        result.OutputLines.Select(line => line.Trim()).Should().Contain("out120");
+        result.ErrorLines.Select(line => line.Trim()).Should().Contain("err1");
+        result.ErrorLines.Select(line => line.Trim()).Should().Contain("err120");
+        result.OutputLines.Count.Should().BeGreaterThanOrEqualTo(120);
+        result.ErrorLines.Count.Should().BeGreaterThanOrEqualTo(120);
+    }
+
+    [Fact]
+    public async Task CleanOrphanedProcessesAsync_ShouldNotLeakProcessHandlesAcrossRepeatedRuns()
+    {
+        // Arrange
+        using var service = new ProcessExecutionService(_mockState, _mockLogger);
+        var getPidFilePathMethod = typeof(ProcessExecutionService)
+            .GetMethod("GetPidFilePath", BindingFlags.Instance | BindingFlags.NonPublic);
+        getPidFilePathMethod.Should().NotBeNull();
+
+        var pidFilePath = (string)getPidFilePathMethod!.Invoke(service, null)!;
+        var currentProcess = System.Diagnostics.Process.GetCurrentProcess();
+        var startHandles = currentProcess.HandleCount;
+
+        // Act
+        for (var i = 0; i < 25; i++)
+        {
+            var tracked = new List<TrackedProcess>
+            {
+                new()
+                {
+                    Pid = currentProcess.Id,
+                    StartTime = currentProcess.StartTime,
+                    PluginName = $"Test{i}.esp"
+                }
+            };
+
+            var json = System.Text.Json.JsonSerializer.Serialize(tracked);
+            await File.WriteAllTextAsync(pidFilePath, json);
+            await service.CleanOrphanedProcessesAsync();
+        }
+
+        var endHandles = currentProcess.HandleCount;
+
+        // Assert
+        var handleDrift = Math.Abs(endHandles - startHandles);
+        handleDrift.Should().BeLessThan(40, "GetProcessById handles should be disposed each run");
     }
 
     #endregion

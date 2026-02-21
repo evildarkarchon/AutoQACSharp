@@ -27,7 +27,8 @@ public sealed record PluginInfo
 
     /// <summary>
     /// Whether this plugin is selected for cleaning. Defaults to true.
-    /// Uses set (not init) to allow reactive UI binding.
+    /// Mutation is only supported on the UI thread (checkbox binding lifecycle).
+    /// Background/services must treat this as read-only snapshot data.
     /// </summary>
     public bool IsSelected { get; set; } = true;
 }

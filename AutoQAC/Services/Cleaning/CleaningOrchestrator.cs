@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Frozen;
 using System.Diagnostics;
 using System.Linq;
 using System.Reactive.Disposables;
@@ -132,7 +133,7 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
 
                 if (detectedGame != GameType.Unknown)
                 {
-                    _logger.Information($"Detected game type: {detectedGame}");
+                    _logger.Information("Detected game type: {GameType}", detectedGame);
                     _stateService.UpdateState(s => s with { CurrentGameType = detectedGame });
                     config = _stateService.CurrentState; // Refresh local config
                 }
@@ -191,7 +192,8 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
             }
             else if (gameType != GameType.Unknown)
             {
-                var skipList = await _configService.GetSkipListAsync(gameType, gameVariant).ConfigureAwait(false) ?? [];
+                var skipList = await _configService.GetSkipListAsync(gameType, gameVariant, ct)
+                    .ConfigureAwait(false) ?? [];
                 var skipSet = new HashSet<string>(skipList, StringComparer.OrdinalIgnoreCase);
 
                 pluginsToClean = allPlugins
@@ -310,7 +312,9 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
                                     _logger.Information("User chose to skip plugin after backup failure: {Plugin}", plugin.FileName);
                                     _stateService.UpdateState(s => s with
                                     {
-                                        SkippedPlugins = new HashSet<string>(s.SkippedPlugins) { plugin.FileName }
+                                        SkippedPlugins = new HashSet<string>(s.SkippedPlugins)
+                                            { plugin.FileName }
+                                            .ToFrozenSet(StringComparer.Ordinal)
                                     });
                                     continue;
                                 case BackupFailureChoice.AbortSession:
@@ -748,7 +752,8 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
         HashSet<string>? skipSet = null;
         if (!disableSkipLists && gameType != GameType.Unknown)
         {
-            var skipList = await _configService.GetSkipListAsync(gameType, gameVariant).ConfigureAwait(false) ?? [];
+            var skipList = await _configService.GetSkipListAsync(gameType, gameVariant, ct)
+                .ConfigureAwait(false) ?? [];
             skipSet = new HashSet<string>(skipList, StringComparer.OrdinalIgnoreCase);
         }
 
