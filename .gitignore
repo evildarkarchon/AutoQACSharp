@@ -470,7 +470,6 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
-.gemini/
 gha-creds-*.json
 AutoQACSharp.code-workspace
 AutoQAC Data/AutoQAC Config.yaml
