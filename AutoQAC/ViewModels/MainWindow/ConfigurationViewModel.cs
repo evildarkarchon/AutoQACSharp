@@ -93,6 +93,9 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
     private readonly ObservableAsPropertyHelper<bool> _isMutagenSupported;
     public bool IsMutagenSupported => _isMutagenSupported.Value;
 
+    private readonly ObservableAsPropertyHelper<bool> _isGameSelected;
+    public bool IsGameSelected => _isGameSelected.Value;
+
     private readonly ObservableAsPropertyHelper<bool> _requiresLoadOrderFile;
     public bool RequiresLoadOrderFile => _requiresLoadOrderFile.Value;
 
@@ -208,6 +211,11 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
             .ToProperty(this, x => x.IsMutagenSupported);
         _disposables.Add(_isMutagenSupported);
 
+        _isGameSelected = this.WhenAnyValue(x => x.SelectedGame)
+            .Select(g => g != GameType.Unknown)
+            .ToProperty(this, x => x.IsGameSelected);
+        _disposables.Add(_isGameSelected);
+
         // RequiresLoadOrderFile computed from SelectedGame (inverse of IsMutagenSupported)
         _requiresLoadOrderFile = this.WhenAnyValue(x => x.SelectedGame)
             .Select(g => g != GameType.Unknown && !_pluginLoadingService.IsGameSupportedByMutagen(g))
@@ -219,8 +227,8 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
         ConfigureXEditCommand = ReactiveCommand.CreateFromTask(ConfigureXEditAsync);
         ConfigureMo2Command = ReactiveCommand.CreateFromTask(ConfigureMo2Async);
 
-        // Game data folder commands - only enabled for Mutagen-supported games
-        var canConfigureDataFolder = this.WhenAnyValue(x => x.IsMutagenSupported);
+        // Game data folder commands - enabled whenever a game is selected
+        var canConfigureDataFolder = this.WhenAnyValue(x => x.IsGameSelected);
         ConfigureGameDataFolderCommand =
             ReactiveCommand.CreateFromTask(ConfigureGameDataFolderAsync, canConfigureDataFolder);
 
@@ -413,7 +421,7 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
             // Parse plugins from load order and update state
             try
             {
-                var plugins = await _pluginService.GetPluginsFromLoadOrderAsync(path);
+                var plugins = await _pluginService.GetPluginsFromLoadOrderAsync(path, GameDataFolder);
 
                 if (plugins.Count == 0)
                 {
@@ -565,23 +573,14 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
 
         _stateService.UpdateState(s => s with { CurrentGameType = gameType });
 
-        // Get data folder override for this game
-        string? customDataFolder = null;
-        if (_pluginLoadingService.IsGameSupportedByMutagen(gameType))
-        {
-            customDataFolder = await _configService.GetGameDataFolderOverrideAsync(gameType);
-            HasGameDataFolderOverride = !string.IsNullOrEmpty(customDataFolder);
+        // Resolve data folder (auto-detect + per-game override)
+        var customDataFolder = await _configService.GetGameDataFolderOverrideAsync(gameType);
+        HasGameDataFolderOverride = !string.IsNullOrWhiteSpace(customDataFolder);
+        GameDataFolder = _pluginLoadingService.GetGameDataFolder(gameType, customDataFolder);
 
-            // Update displayed data folder (override or auto-detected)
-            GameDataFolder = _pluginLoadingService.GetGameDataFolder(gameType, customDataFolder);
-        }
-        else
+        if (!_pluginLoadingService.IsGameSupportedByMutagen(gameType))
         {
-            // Non-Mutagen games don't support data folder override
-            GameDataFolder = null;
-            HasGameDataFolderOverride = false;
-
-            // Try to auto-detect load order path for non-Mutagen games
+            // Try to auto-detect load order path for file-based games
             var detectedPath = _pluginLoadingService.GetDefaultLoadOrderPath(gameType);
             if (!string.IsNullOrEmpty(detectedPath))
             {
@@ -627,7 +626,7 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
             try
             {
                 StatusText = $"Loading plugins from file for {gameType}...";
-                var plugins = await _pluginLoadingService.GetPluginsFromFileAsync(LoadOrderPath);
+                var plugins = await _pluginLoadingService.GetPluginsFromFileAsync(LoadOrderPath, GameDataFolder);
                 // Apply skip list filtering and mark IsInSkipList
                 var pluginsWithSkipStatus = ApplySkipListStatus(plugins, skipList, gameType, DisableSkipListsEnabled);
                 _stateService.SetPluginsToClean(pluginsWithSkipStatus);

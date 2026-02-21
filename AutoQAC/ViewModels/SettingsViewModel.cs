@@ -29,7 +29,6 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
     private string? _originalXEditPath;
     private string? _originalMo2Path;
     private string? _originalLoadOrderPath;
-    private string? _originalDataFolderPath;
 
     #region Existing Settings Properties
 
@@ -101,13 +100,6 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
         set => this.RaiseAndSetIfChanged(ref _loadOrderPath, value);
     }
 
-    private string? _dataFolderPath;
-    public string? DataFolderPath
-    {
-        get => _dataFolderPath;
-        set => this.RaiseAndSetIfChanged(ref _dataFolderPath, value);
-    }
-
     #endregion
 
     #region Path Validation State (null = untouched, true = valid, false = invalid)
@@ -131,13 +123,6 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
     {
         get => _isLoadOrderPathValid;
         set => this.RaiseAndSetIfChanged(ref _isLoadOrderPathValid, value);
-    }
-
-    private bool? _isDataFolderPathValid;
-    public bool? IsDataFolderPathValid
-    {
-        get => _isDataFolderPathValid;
-        set => this.RaiseAndSetIfChanged(ref _isDataFolderPathValid, value);
     }
 
     #endregion
@@ -233,7 +218,6 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
     public ReactiveCommand<Unit, Unit> BrowseXEditCommand { get; }
     public ReactiveCommand<Unit, Unit> BrowseMo2Command { get; }
     public ReactiveCommand<Unit, Unit> BrowseLoadOrderCommand { get; }
-    public ReactiveCommand<Unit, Unit> BrowseDataFolderCommand { get; }
 
     #endregion
 
@@ -285,14 +269,13 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
             this.WhenAnyValue(x => x.XEditPath),
             this.WhenAnyValue(x => x.Mo2Path),
             this.WhenAnyValue(x => x.LoadOrderPath),
-            this.WhenAnyValue(x => x.DataFolderPath),
             this.WhenAnyValue(x => x.RetentionMode),
             this.WhenAnyValue(x => x.MaxAgeDays),
             this.WhenAnyValue(x => x.MaxFileCount),
             this.WhenAnyValue(x => x.BackupEnabled),
             this.WhenAnyValue(x => x.BackupMaxSessions),
-            (je, ct, cpu, mo2, xedit, mo2p, lo, df, rm, mad, mfc, be, bms) =>
-                new { je, ct, cpu, mo2, xedit, mo2p, lo, df, rm, mad, mfc, be, bms });
+            (je, ct, cpu, mo2, xedit, mo2p, lo, rm, mad, mfc, be, bms) =>
+                new { je, ct, cpu, mo2, xedit, mo2p, lo, rm, mad, mfc, be, bms });
 
         _hasUnsavedChanges = currentValues
             .Select(v =>
@@ -303,7 +286,6 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
                 v.xedit != _originalXEditPath ||
                 v.mo2p != _originalMo2Path ||
                 v.lo != _originalLoadOrderPath ||
-                v.df != _originalDataFolderPath ||
                 v.rm != (int)_originalRetention.Mode ||
                 v.mad != _originalRetention.MaxAgeDays ||
                 v.mfc != _originalRetention.MaxFileCount ||
@@ -321,7 +303,6 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
         BrowseXEditCommand = ReactiveCommand.CreateFromTask(BrowseXEditAsync);
         BrowseMo2Command = ReactiveCommand.CreateFromTask(BrowseMo2Async);
         BrowseLoadOrderCommand = ReactiveCommand.CreateFromTask(BrowseLoadOrderAsync);
-        BrowseDataFolderCommand = ReactiveCommand.CreateFromTask(BrowseDataFolderAsync);
 
         // Update validation error messages reactively
         var timeoutErrorSubscription = this.WhenAnyValue(x => x.CleaningTimeout)
@@ -359,11 +340,6 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
             this.WhenAnyValue(x => x.LoadOrderPath),
             valid => IsLoadOrderPathValid = valid,
             ValidateFilePath);
-
-        SetupOptionalPathValidation(
-            this.WhenAnyValue(x => x.DataFolderPath),
-            valid => IsDataFolderPathValid = valid,
-            ValidateDirectoryPath);
 
         // Wire retention mode booleans reactively
         var retentionModeSubscription = this.WhenAnyValue(x => x.RetentionMode)
@@ -443,9 +419,6 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
             _originalMo2Path = config.ModOrganizer.Binary;
             LoadOrderPath = config.LoadOrder.File;
             _originalLoadOrderPath = config.LoadOrder.File;
-            // DataFolderPath is game-specific; load if a game is selected
-            // For now, leave it as-is (loaded from game-specific override if needed)
-            _originalDataFolderPath = DataFolderPath;
 
             // Load retention settings
             RetentionMode = (int)config.LogRetention.Mode;
@@ -486,9 +459,6 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
 
         if (!string.IsNullOrWhiteSpace(LoadOrderPath))
             IsLoadOrderPathValid = ValidateFilePath(LoadOrderPath);
-
-        if (!string.IsNullOrWhiteSpace(DataFolderPath))
-            IsDataFolderPathValid = ValidateDirectoryPath(DataFolderPath);
     }
 
     private async Task<bool> SaveAsync()
@@ -592,20 +562,6 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
         {
             LoadOrderPath = path;
             IsLoadOrderPathValid = ValidateFilePath(path);
-        }
-    }
-
-    private async Task BrowseDataFolderAsync()
-    {
-        if (_fileDialog == null) return;
-
-        var path = await _fileDialog.OpenFolderDialogAsync(
-            "Select Game Data Folder");
-
-        if (!string.IsNullOrEmpty(path))
-        {
-            DataFolderPath = path;
-            IsDataFolderPathValid = ValidateDirectoryPath(path);
         }
     }
 

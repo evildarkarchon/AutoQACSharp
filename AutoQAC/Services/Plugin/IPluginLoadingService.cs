@@ -51,7 +51,7 @@ public interface IPluginLoadingService
 
     /// <summary>
     /// Gets the data folder path for a game.
-    /// Returns the custom override if provided, otherwise queries registry via Mutagen.
+    /// Returns the custom override if provided, otherwise auto-detects via Mutagen and/or registry.
     /// </summary>
     /// <param name="gameType">The game type.</param>
     /// <param name="customDataFolderOverride">Optional custom data folder path to use instead of registry detection.</param>

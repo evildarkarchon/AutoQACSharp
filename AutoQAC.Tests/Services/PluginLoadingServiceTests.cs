@@ -16,7 +16,7 @@ public sealed class PluginLoadingServiceTests
     {
         _mockPluginValidation = Substitute.For<IPluginValidationService>();
         _mockLogger = Substitute.For<ILoggingService>();
-        _sut = new PluginLoadingService(_mockPluginValidation, _mockLogger);
+        _sut = new PluginLoadingService(_mockPluginValidation, _mockLogger, _ => null);
     }
 
     #region IsGameSupportedByMutagen Tests
@@ -145,6 +145,25 @@ public sealed class PluginLoadingServiceTests
         // Assert
         result.Should().BeNull(
             $"Non-Mutagen game {gameType} should return null for data folder");
+    }
+
+    [Theory]
+    [InlineData(GameType.Fallout3)]
+    [InlineData(GameType.FalloutNewVegas)]
+    [InlineData(GameType.Oblivion)]
+    public void GetGameDataFolder_WithNonMutagenGame_ShouldUseRegistryFallback(GameType gameType)
+    {
+        // Arrange
+        var expectedPath = @"C:\Games\Detected\Data";
+        var sut = new PluginLoadingService(_mockPluginValidation, _mockLogger,
+            g => g == gameType ? expectedPath : null);
+
+        // Act
+        var result = sut.GetGameDataFolder(gameType);
+
+        // Assert
+        result.Should().Be(expectedPath,
+            "registry fallback should be used when Mutagen is unavailable for a game");
     }
 
     [Fact]

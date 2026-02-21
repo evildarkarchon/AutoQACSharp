@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
+using Microsoft.Win32;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Environments;
 
@@ -19,6 +20,7 @@ public sealed class PluginLoadingService : IPluginLoadingService
 {
     private readonly IPluginValidationService _pluginValidation;
     private readonly ILoggingService _logger;
+    private readonly Func<GameType, string?> _registryDataFolderResolver;
 
     /// <summary>
     /// Games supported by Mutagen for load order detection.
@@ -44,12 +46,77 @@ public sealed class PluginLoadingService : IPluginLoadingService
         { GameType.Oblivion, "Oblivion" }
     };
 
+    private static readonly Dictionary<GameType, string[]> RegistryInstallPathKeys = new()
+    {
+        {
+            GameType.Oblivion,
+            [
+                @"SOFTWARE\Bethesda Softworks\Oblivion",
+                @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 22330"
+            ]
+        },
+        {
+            GameType.Fallout3,
+            [
+                @"SOFTWARE\Bethesda Softworks\Fallout3",
+                @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 22300"
+            ]
+        },
+        {
+            GameType.FalloutNewVegas,
+            [
+                @"SOFTWARE\Bethesda Softworks\FalloutNV",
+                @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 22380"
+            ]
+        },
+        {
+            GameType.SkyrimLe,
+            [
+                @"SOFTWARE\Bethesda Softworks\Skyrim",
+                @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 72850"
+            ]
+        },
+        {
+            GameType.SkyrimSe,
+            [
+                @"SOFTWARE\Bethesda Softworks\Skyrim Special Edition",
+                @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 489830"
+            ]
+        },
+        {
+            GameType.SkyrimVr,
+            [
+                @"SOFTWARE\Bethesda Softworks\Skyrim VR",
+                @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 611670"
+            ]
+        },
+        {
+            GameType.Fallout4,
+            [
+                @"SOFTWARE\Bethesda Softworks\Fallout4",
+                @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 377160"
+            ]
+        },
+        {
+            GameType.Fallout4Vr,
+            [
+                @"SOFTWARE\Bethesda Softworks\Fallout 4 VR",
+                @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 611660"
+            ]
+        }
+    };
+
+    private static readonly string[] RegistryInstallPathValueNames =
+        ["Installed Path", "Install Path", "InstallLocation", "Path"];
+
     public PluginLoadingService(
         IPluginValidationService pluginValidation,
-        ILoggingService logger)
+        ILoggingService logger,
+        Func<GameType, string?>? registryDataFolderResolver = null)
     {
         _pluginValidation = pluginValidation;
         _logger = logger;
+        _registryDataFolderResolver = registryDataFolderResolver ?? ResolveDataFolderFromRegistry;
     }
 
     /// <inheritdoc />
@@ -117,22 +184,28 @@ public sealed class PluginLoadingService : IPluginLoadingService
             return customDataFolderOverride;
         }
 
-        if (!IsGameSupportedByMutagen(gameType))
+        if (IsGameSupportedByMutagen(gameType))
         {
-            return null;
+            try
+            {
+                var release = MapToGameRelease(gameType);
+                using var env = GameEnvironment.Typical.Builder(release).Build();
+                return env.DataFolderPath.Path;
+            }
+            catch (Exception ex)
+            {
+                _logger.Debug($"Could not detect data folder via Mutagen for {gameType}: {ex.Message}");
+            }
         }
 
-        try
+        var registryPath = _registryDataFolderResolver(gameType);
+        if (!string.IsNullOrWhiteSpace(registryPath))
         {
-            var release = MapToGameRelease(gameType);
-            using var env = GameEnvironment.Typical.Builder(release).Build();
-            return env.DataFolderPath.Path;
+            _logger.Information("Detected data folder via registry for {GameType}: {DataFolder}", gameType, registryPath);
+            return registryPath;
         }
-        catch (Exception ex)
-        {
-            _logger.Debug($"Could not detect data folder for {gameType}: {ex.Message}");
-            return null;
-        }
+
+        return null;
     }
 
     /// <inheritdoc />
@@ -222,4 +295,99 @@ public sealed class PluginLoadingService : IPluginLoadingService
         GameType.Fallout4Vr => GameRelease.Fallout4VR,
         _ => throw new ArgumentException($"Game {gameType} is not supported by Mutagen")
     };
+
+    private string? ResolveDataFolderFromRegistry(GameType gameType)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return null;
+        }
+
+        if (!RegistryInstallPathKeys.TryGetValue(gameType, out var subKeys))
+        {
+            return null;
+        }
+
+        foreach (var hive in new[] { RegistryHive.LocalMachine, RegistryHive.CurrentUser })
+        {
+            foreach (var view in new[] { RegistryView.Registry64, RegistryView.Registry32 })
+            {
+                foreach (var subKeyPath in subKeys)
+                {
+                    try
+                    {
+                        using var baseKey = RegistryKey.OpenBaseKey(hive, view);
+                        using var key = baseKey.OpenSubKey(subKeyPath);
+
+                        if (key == null)
+                        {
+                            continue;
+                        }
+
+                        foreach (var valueName in RegistryInstallPathValueNames)
+                        {
+                            if (key.GetValue(valueName) is string rawPath)
+                            {
+                                var normalized = NormalizeDataFolderPath(rawPath);
+                                if (!string.IsNullOrWhiteSpace(normalized))
+                                {
+                                    return normalized;
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.Debug(
+                            "Registry probe failed for {GameType} key {SubKey} ({Hive}/{View}): {Message}",
+                            gameType,
+                            subKeyPath,
+                            hive,
+                            view,
+                            ex.Message);
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static string? NormalizeDataFolderPath(string rawPath)
+    {
+        if (string.IsNullOrWhiteSpace(rawPath))
+        {
+            return null;
+        }
+
+        var trimmed = rawPath.Trim().Trim('"');
+        if (!Path.IsPathRooted(trimmed))
+        {
+            return null;
+        }
+
+        if (Directory.Exists(trimmed))
+        {
+            var dirName = Path.GetFileName(trimmed.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            if (string.Equals(dirName, "Data", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(dirName, "Data Files", StringComparison.OrdinalIgnoreCase))
+            {
+                return trimmed;
+            }
+        }
+
+        var dataFolder = Path.Combine(trimmed, "Data");
+        if (Directory.Exists(dataFolder))
+        {
+            return dataFolder;
+        }
+
+        var dataFilesFolder = Path.Combine(trimmed, "Data Files");
+        if (Directory.Exists(dataFilesFolder))
+        {
+            return dataFilesFolder;
+        }
+
+        return null;
+    }
 }

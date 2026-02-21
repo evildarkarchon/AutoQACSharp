@@ -112,32 +112,6 @@
                         </Grid>
                     </StackPanel>
 
-                    <!-- Data Folder Path -->
-                    <StackPanel Spacing="2">
-                        <TextBlock Text="Data Folder (optional):" FontSize="12" />
-                        <Grid ColumnDefinitions="*,Auto,Auto">
-                            <TextBox Grid.Column="0"
-                                     Text="{Binding DataFolderPath}"
-                                     Watermark="Path to game Data folder (optional)"
-                                     Margin="0,0,5,0" />
-                            <Panel Grid.Column="1" Width="24" VerticalAlignment="Center" Margin="0,0,5,0">
-                                <TextBlock Text="&#x2713;"
-                                           FontSize="16" FontWeight="Bold"
-                                           Foreground="#4CAF50"
-                                           HorizontalAlignment="Center"
-                                           IsVisible="{Binding IsDataFolderPathValid, Converter={StaticResource IsTrueConverter}}" />
-                                <TextBlock Text="&#x2717;"
-                                           FontSize="16" FontWeight="Bold"
-                                           Foreground="#F44336"
-                                           HorizontalAlignment="Center"
-                                           IsVisible="{Binding IsDataFolderPathValid, Converter={StaticResource IsFalseConverter}}" />
-                            </Panel>
-                            <Button Grid.Column="2"
-                                    Content="Browse..."
-                                    Command="{Binding BrowseDataFolderCommand}"
-                                    MinWidth="80" />
-                        </Grid>
-                    </StackPanel>
                 </StackPanel>
 
                 <Separator />
