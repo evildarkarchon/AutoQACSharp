@@ -3,6 +3,7 @@ using AutoQAC.Models;
 using AutoQAC.Services.Plugin;
 using FluentAssertions;
 using NSubstitute;
+using System.Reflection;
 
 namespace AutoQAC.Tests.Services;
 
@@ -214,6 +215,68 @@ public sealed class PluginLoadingServiceTests
         // Assert
         result.Should().Be(customPath,
             "custom override should be returned even for non-Mutagen games");
+    }
+
+    [Fact]
+    public void NormalizeDataFolderPath_WithDataFilesDirectory_ShouldReturnNull()
+    {
+        // Arrange
+        var tempRoot = Path.Combine(Path.GetTempPath(), "AutoQACTest_" + Guid.NewGuid());
+        var dataFilesPath = Path.Combine(tempRoot, "Data Files");
+        Directory.CreateDirectory(dataFilesPath);
+
+        try
+        {
+            // Act
+            var result = InvokeNormalizeDataFolderPath(dataFilesPath);
+
+            // Assert
+            result.Should().BeNull("Bethesda games standardize on Data, not Data Files");
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void NormalizeDataFolderPath_WithInstallDirectoryContainingData_ShouldReturnDataPath()
+    {
+        // Arrange
+        var tempRoot = Path.Combine(Path.GetTempPath(), "AutoQACTest_" + Guid.NewGuid());
+        var installPath = Path.Combine(tempRoot, "SkyrimSE");
+        var dataPath = Path.Combine(installPath, "Data");
+        Directory.CreateDirectory(dataPath);
+
+        try
+        {
+            // Act
+            var result = InvokeNormalizeDataFolderPath(installPath);
+
+            // Assert
+            result.Should().Be(dataPath, "install roots should normalize to their Data directory");
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
+    private static string? InvokeNormalizeDataFolderPath(string input)
+    {
+        var method = typeof(PluginLoadingService).GetMethod(
+            "NormalizeDataFolderPath",
+            BindingFlags.NonPublic | BindingFlags.Static);
+
+        method.Should().NotBeNull("NormalizeDataFolderPath should exist for registry path normalization");
+
+        return method!.Invoke(null, new object?[] { input }) as string;
     }
 
     #endregion

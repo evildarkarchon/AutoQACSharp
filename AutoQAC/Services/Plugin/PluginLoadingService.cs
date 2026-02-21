@@ -369,8 +369,7 @@ public sealed class PluginLoadingService : IPluginLoadingService
         if (Directory.Exists(trimmed))
         {
             var dirName = Path.GetFileName(trimmed.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-            if (string.Equals(dirName, "Data", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(dirName, "Data Files", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(dirName, "Data", StringComparison.OrdinalIgnoreCase))
             {
                 return trimmed;
             }
@@ -380,12 +379,6 @@ public sealed class PluginLoadingService : IPluginLoadingService
         if (Directory.Exists(dataFolder))
         {
             return dataFolder;
-        }
-
-        var dataFilesFolder = Path.Combine(trimmed, "Data Files");
-        if (Directory.Exists(dataFilesFolder))
-        {
-            return dataFilesFolder;
         }
 
         return null;
