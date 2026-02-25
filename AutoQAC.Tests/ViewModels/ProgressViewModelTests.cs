@@ -24,6 +24,7 @@ public sealed class ProgressViewModelTests
     private readonly Subject<PluginCleaningResult> _detailedPluginResultSubject;
     private readonly Subject<CleaningSessionResult> _cleaningCompletedSubject;
     private readonly BehaviorSubject<bool> _isTerminatingSubject;
+    private readonly Subject<bool> _hangDetectedSubject;
 
     /// <summary>
     /// Initializes test fixtures with default mock configurations.
@@ -38,6 +39,7 @@ public sealed class ProgressViewModelTests
         _detailedPluginResultSubject = new Subject<PluginCleaningResult>();
         _cleaningCompletedSubject = new Subject<CleaningSessionResult>();
         _isTerminatingSubject = new BehaviorSubject<bool>(false);
+        _hangDetectedSubject = new Subject<bool>();
 
         _stateServiceMock = Substitute.For<IStateService>();
         _stateServiceMock.StateChanged.Returns(_stateSubject);
@@ -48,7 +50,7 @@ public sealed class ProgressViewModelTests
         _stateServiceMock.CurrentState.Returns(new AppState());
 
         _orchestratorMock = Substitute.For<ICleaningOrchestrator>();
-        _orchestratorMock.HangDetected.Returns(new Subject<bool>());
+        _orchestratorMock.HangDetected.Returns(_hangDetectedSubject);
     }
 
     /// <summary>
@@ -597,6 +599,39 @@ public sealed class ProgressViewModelTests
 
         // Assert
         vm.IsTerminating.Should().BeFalse("should be reset for new session");
+    }
+
+    [Fact]
+    public void OnHangDetected_ShouldNotReopenAfterDismiss_UntilResetEventThenAllowReopen()
+    {
+        // Arrange
+        var vm = CreateViewModel();
+        vm.IsHangWarningVisible.Should().BeFalse();
+
+        // Act - first hang shows warning
+        _hangDetectedSubject.OnNext(true);
+
+        // Assert
+        vm.IsHangWarningVisible.Should().BeTrue();
+
+        // Act - user dismisses warning
+        vm.DismissHangWarningCommand.Execute().Subscribe();
+
+        // Assert
+        vm.IsHangWarningVisible.Should().BeFalse("dismiss command should hide warning");
+
+        // Act - repeated hang signal should remain suppressed in same cycle
+        _hangDetectedSubject.OnNext(true);
+
+        // Assert
+        vm.IsHangWarningVisible.Should().BeFalse("dismissed warning should stay hidden until reset");
+
+        // Act - reset cycle then emit hang again
+        _hangDetectedSubject.OnNext(false);
+        _hangDetectedSubject.OnNext(true);
+
+        // Assert
+        vm.IsHangWarningVisible.Should().BeTrue("warning should reappear after non-hung reset event");
     }
 
     #endregion

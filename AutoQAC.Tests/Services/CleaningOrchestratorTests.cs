@@ -12,6 +12,8 @@ using AutoQAC.Services.State;
 using FluentAssertions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
+using System.Diagnostics;
+using System.Reactive.Subjects;
 
 namespace AutoQAC.Tests.Services;
 
@@ -535,6 +537,347 @@ public sealed class CleaningOrchestratorTests
             "StopCleaning should stop processing");
 
         _stateServiceMock.Received(1).FinishCleaningWithResults(Arg.Any<CleaningSessionResult>());
+    }
+
+    [Fact]
+    public async Task StopCleaningAsync_ShouldTerminateActiveProcess_Gracefully_AndStoreGracePeriodExpiredResult()
+    {
+        // Arrange
+        var plugins = new List<PluginInfo>
+        {
+            new() { FileName = "Plugin1.esp", FullPath = "Path/Plugin1.esp", IsSelected = true }
+        };
+
+        var appState = new AppState
+        {
+            LoadOrderPath = "plugins.txt",
+            XEditExecutablePath = "xedit.exe",
+            CurrentGameType = GameType.SkyrimSe,
+            PluginsToClean = plugins
+        };
+        _stateServiceMock.CurrentState.Returns(appState);
+
+        _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        _processServiceMock.TerminateProcessAsync(Arg.Any<Process>(), false, Arg.Any<CancellationToken>())
+            .Returns(TerminationResult.GracePeriodExpired);
+
+        var processStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releasePlugin = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        _cleaningServiceMock.CleanPluginAsync(
+                Arg.Any<PluginInfo>(),
+                Arg.Any<IProgress<string>>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<Action<Process>?>())
+            .Returns(async callInfo =>
+            {
+                callInfo.ArgAt<Action<Process>?>(3)?.Invoke(Process.GetCurrentProcess());
+                processStarted.TrySetResult(true);
+
+                await releasePlugin.Task;
+                return new CleaningResult { Status = CleaningStatus.Cleaned, Success = true };
+            });
+
+        // Act
+        var cleaningTask = _orchestrator.StartCleaningAsync();
+        await processStarted.Task;
+        await _orchestrator.StopCleaningAsync();
+
+        // Assert
+        await _processServiceMock.Received(1)
+            .TerminateProcessAsync(Arg.Any<Process>(), false, Arg.Any<CancellationToken>());
+        _orchestrator.LastTerminationResult.Should().Be(TerminationResult.GracePeriodExpired);
+
+        releasePlugin.SetResult(true);
+        await cleaningTask;
+    }
+
+    [Fact]
+    public async Task ForceStopCleaningAsync_ShouldTerminateActiveProcess_WithForceKillTrue()
+    {
+        // Arrange
+        var plugins = new List<PluginInfo>
+        {
+            new() { FileName = "Plugin1.esp", FullPath = "Path/Plugin1.esp", IsSelected = true }
+        };
+
+        var appState = new AppState
+        {
+            LoadOrderPath = "plugins.txt",
+            XEditExecutablePath = "xedit.exe",
+            CurrentGameType = GameType.SkyrimSe,
+            PluginsToClean = plugins
+        };
+        _stateServiceMock.CurrentState.Returns(appState);
+
+        _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        _processServiceMock.TerminateProcessAsync(Arg.Any<Process>(), true, Arg.Any<CancellationToken>())
+            .Returns(TerminationResult.ForceKilled);
+
+        var processStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        _cleaningServiceMock.CleanPluginAsync(
+                Arg.Any<PluginInfo>(),
+                Arg.Any<IProgress<string>>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<Action<Process>?>())
+            .Returns(async callInfo =>
+            {
+                callInfo.ArgAt<Action<Process>?>(3)?.Invoke(Process.GetCurrentProcess());
+                processStarted.TrySetResult(true);
+
+                var ct = callInfo.ArgAt<CancellationToken>(2);
+                await Task.Delay(Timeout.Infinite, ct);
+                return new CleaningResult { Status = CleaningStatus.Cleaned, Success = true };
+            });
+
+        // Act
+        var cleaningTask = _orchestrator.StartCleaningAsync();
+        await processStarted.Task;
+        await _orchestrator.ForceStopCleaningAsync();
+        await cleaningTask;
+
+        // Assert
+        await _processServiceMock.Received(1)
+            .TerminateProcessAsync(Arg.Any<Process>(), true, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task StopCleaningAsync_WhenCalledTwiceDuringActiveProcess_ShouldEscalateToForceStop()
+    {
+        // Arrange
+        var plugins = new List<PluginInfo>
+        {
+            new() { FileName = "Plugin1.esp", FullPath = "Path/Plugin1.esp", IsSelected = true }
+        };
+
+        var appState = new AppState
+        {
+            LoadOrderPath = "plugins.txt",
+            XEditExecutablePath = "xedit.exe",
+            CurrentGameType = GameType.SkyrimSe,
+            PluginsToClean = plugins
+        };
+        _stateServiceMock.CurrentState.Returns(appState);
+
+        _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        _processServiceMock.TerminateProcessAsync(Arg.Any<Process>(), false, Arg.Any<CancellationToken>())
+            .Returns(TerminationResult.GracePeriodExpired);
+        _processServiceMock.TerminateProcessAsync(Arg.Any<Process>(), true, Arg.Any<CancellationToken>())
+            .Returns(TerminationResult.ForceKilled);
+
+        var processStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        _cleaningServiceMock.CleanPluginAsync(
+                Arg.Any<PluginInfo>(),
+                Arg.Any<IProgress<string>>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<Action<Process>?>())
+            .Returns(async callInfo =>
+            {
+                callInfo.ArgAt<Action<Process>?>(3)?.Invoke(Process.GetCurrentProcess());
+                processStarted.TrySetResult(true);
+
+                var ct = callInfo.ArgAt<CancellationToken>(2);
+                await Task.Delay(Timeout.Infinite, ct);
+                return new CleaningResult { Status = CleaningStatus.Cleaned, Success = true };
+            });
+
+        // Act
+        var cleaningTask = _orchestrator.StartCleaningAsync();
+        await processStarted.Task;
+        await _orchestrator.StopCleaningAsync();
+        await _orchestrator.StopCleaningAsync();
+        await cleaningTask;
+
+        // Assert
+        await _processServiceMock.Received(1)
+            .TerminateProcessAsync(Arg.Any<Process>(), false, Arg.Any<CancellationToken>());
+        await _processServiceMock.Received(1)
+            .TerminateProcessAsync(Arg.Any<Process>(), true, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task StartCleaningAsync_ShouldRetryTimedOutPlugin_WhenTimeoutCallbackReturnsTrue_ThenSucceed()
+    {
+        // Arrange
+        var plugin = new PluginInfo { FileName = "TimedOut.esp", FullPath = "Path/TimedOut.esp", IsSelected = true };
+        var appState = new AppState
+        {
+            LoadOrderPath = "plugins.txt",
+            XEditExecutablePath = "xedit.exe",
+            CurrentGameType = GameType.SkyrimSe,
+            PluginsToClean = new List<PluginInfo> { plugin }
+        };
+        _stateServiceMock.CurrentState.Returns(appState);
+
+        _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var attempts = 0;
+        _cleaningServiceMock.CleanPluginAsync(
+                Arg.Any<PluginInfo>(),
+                Arg.Any<IProgress<string>>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<Action<Process>?>())
+            .Returns(_ =>
+            {
+                attempts++;
+                if (attempts == 1)
+                {
+                    return new CleaningResult
+                    {
+                        Status = CleaningStatus.Failed,
+                        Success = false,
+                        TimedOut = true,
+                        Message = "Timed out on attempt 1"
+                    };
+                }
+
+                return new CleaningResult
+                {
+                    Status = CleaningStatus.Cleaned,
+                    Success = true,
+                    Message = "Succeeded on retry"
+                };
+            });
+
+        var callbackCalls = new List<(string plugin, int timeoutSeconds, int attemptNumber)>();
+        TimeoutRetryCallback onTimeout = (pluginName, timeoutSeconds, attemptNumber) =>
+        {
+            callbackCalls.Add((pluginName, timeoutSeconds, attemptNumber));
+            return Task.FromResult(true);
+        };
+
+        // Act
+        await _orchestrator.StartCleaningAsync(onTimeout);
+
+        // Assert
+        attempts.Should().Be(2);
+        callbackCalls.Should().HaveCount(1);
+        callbackCalls[0].plugin.Should().Be("TimedOut.esp");
+        callbackCalls[0].attemptNumber.Should().Be(1);
+        callbackCalls[0].timeoutSeconds.Should().BeGreaterThan(0);
+
+        _stateServiceMock.Received(1)
+            .AddDetailedCleaningResult(Arg.Is<PluginCleaningResult>(r =>
+                r.PluginName == "TimedOut.esp" &&
+                r.Status == CleaningStatus.Cleaned &&
+                r.Success));
+    }
+
+    [Fact]
+    public async Task StartCleaningAsync_ShouldStopRetryingTimedOutPlugin_WhenTimeoutCallbackReturnsFalse()
+    {
+        // Arrange
+        var plugin = new PluginInfo { FileName = "TimedOut.esp", FullPath = "Path/TimedOut.esp", IsSelected = true };
+        var appState = new AppState
+        {
+            LoadOrderPath = "plugins.txt",
+            XEditExecutablePath = "xedit.exe",
+            CurrentGameType = GameType.SkyrimSe,
+            PluginsToClean = new List<PluginInfo> { plugin }
+        };
+        _stateServiceMock.CurrentState.Returns(appState);
+
+        _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        _cleaningServiceMock.CleanPluginAsync(
+                Arg.Any<PluginInfo>(),
+                Arg.Any<IProgress<string>>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<Action<Process>?>())
+            .Returns(new CleaningResult
+            {
+                Status = CleaningStatus.Failed,
+                Success = false,
+                TimedOut = true,
+                Message = "Timed out on attempt 1"
+            });
+
+        var callbackCalls = 0;
+        TimeoutRetryCallback onTimeout = (_, _, _) =>
+        {
+            callbackCalls++;
+            return Task.FromResult(false);
+        };
+
+        // Act
+        await _orchestrator.StartCleaningAsync(onTimeout);
+
+        // Assert
+        callbackCalls.Should().Be(1);
+        await _cleaningServiceMock.Received(1)
+            .CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<IProgress<string>>(), Arg.Any<CancellationToken>(), Arg.Any<Action<Process>?>());
+
+        _stateServiceMock.Received(1)
+            .AddDetailedCleaningResult(Arg.Is<PluginCleaningResult>(r =>
+                r.PluginName == "TimedOut.esp" &&
+                r.Status == CleaningStatus.Failed &&
+                r.Message == "Timed out on attempt 1"));
+    }
+
+    [Fact]
+    public async Task StartCleaningAsync_ShouldForwardHangEvents_AndEmitFalseWhenPluginCompletes()
+    {
+        // Arrange
+        var plugin = new PluginInfo { FileName = "Plugin1.esp", FullPath = "Path/Plugin1.esp", IsSelected = true };
+        var appState = new AppState
+        {
+            LoadOrderPath = "plugins.txt",
+            XEditExecutablePath = "xedit.exe",
+            CurrentGameType = GameType.SkyrimSe,
+            PluginsToClean = new List<PluginInfo> { plugin }
+        };
+        _stateServiceMock.CurrentState.Returns(appState);
+
+        _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var hangState = new Subject<bool>();
+        _hangDetectionMock.MonitorProcess(Arg.Any<Process>())
+            .Returns(hangState);
+
+        var processStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releasePlugin = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        _cleaningServiceMock.CleanPluginAsync(
+                Arg.Any<PluginInfo>(),
+                Arg.Any<IProgress<string>>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<Action<Process>?>())
+            .Returns(async callInfo =>
+            {
+                callInfo.ArgAt<Action<Process>?>(3)?.Invoke(Process.GetCurrentProcess());
+                processStarted.TrySetResult(true);
+                await releasePlugin.Task;
+                return new CleaningResult { Status = CleaningStatus.Cleaned, Success = true };
+            });
+
+        var hangEvents = new List<bool>();
+        using var sub = _orchestrator.HangDetected.Subscribe(hangEvents.Add);
+
+        // Act
+        var cleaningTask = _orchestrator.StartCleaningAsync();
+        await processStarted.Task;
+
+        hangState.OnNext(true);
+        await Task.Delay(25);
+
+        releasePlugin.SetResult(true);
+        await cleaningTask;
+
+        // Assert
+        hangEvents.Should().Contain(true, "hang event should be forwarded from monitor to orchestrator observable");
+        hangEvents.Should().NotBeEmpty();
+        hangEvents[^1].Should().BeFalse("orchestrator should emit false when plugin/session completes");
     }
 
     /// <summary>

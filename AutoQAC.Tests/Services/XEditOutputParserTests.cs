@@ -100,27 +100,11 @@ public class XEditOutputParserTests
     [Fact]
     public void ParseOutput_ShouldHandleNullList()
     {
-        // Act & Assert
-        // Depending on implementation, this might throw or return empty stats
-        try
-        {
-            var result = _sut.ParseOutput(null!);
-            // If it doesn't throw, should return empty stats
-            result.ItemsRemoved.Should().Be(0);
-            result.ItemsUndeleted.Should().Be(0);
-            result.ItemsSkipped.Should().Be(0);
-            result.PartialFormsCreated.Should().Be(0);
-        }
-        catch (ArgumentNullException)
-        {
-            // This is also acceptable behavior
-            true.Should().BeTrue();
-        }
-        catch (NullReferenceException)
-        {
-            // This might happen if the list is enumerated
-            true.Should().BeTrue();
-        }
+        // Act
+        var act = () => _sut.ParseOutput(null!);
+
+        // Assert
+        act.Should().Throw<ArgumentNullException>();
     }
 
     /// <summary>
@@ -299,9 +283,11 @@ public class XEditOutputParserTests
         var result = _sut.ParseOutput(lines);
 
         // Assert
-        // The regex patterns may or may not match depending on implementation
-        // This test documents the expected behavior
-        // Most regex patterns don't have ^ anchor, so they might still match
+        // Current parser behavior matches tokens even when prefixed by other text.
+        result.ItemsUndeleted.Should().Be(1);
+        result.ItemsRemoved.Should().Be(1);
+        result.ItemsSkipped.Should().Be(0);
+        result.PartialFormsCreated.Should().Be(0);
     }
 
     #endregion
@@ -312,10 +298,10 @@ public class XEditOutputParserTests
     /// Verifies how the parser handles different case variations.
     /// </summary>
     [Theory]
-    [InlineData("UNDELETING: Record", true)] // May or may not match depending on regex flags
-    [InlineData("undeleting: Record", true)]
-    [InlineData("Undeleting: Record", true)]
-    public void ParseOutput_CaseSensitivityBehavior(string line, bool expectsToBeUndeleted)
+    [InlineData("UNDELETING: Record", 0)]
+    [InlineData("undeleting: Record", 0)]
+    [InlineData("Undeleting: Record", 1)]
+    public void ParseOutput_CaseSensitivityBehavior(string line, int expectedUndeletedCount)
     {
         // Arrange
         var lines = new List<string> { line };
@@ -324,17 +310,10 @@ public class XEditOutputParserTests
         var result = _sut.ParseOutput(lines);
 
         // Assert
-        // Document actual behavior - the regex as implemented may be case-insensitive
-        // This test verifies the actual behavior matches expectations
-        if (expectsToBeUndeleted && line.Contains("ndeleting", StringComparison.OrdinalIgnoreCase))
-        {
-            // The actual result depends on regex implementation
-            // At minimum, standard case should work
-            if (line == "Undeleting: Record")
-            {
-                result.ItemsUndeleted.Should().Be(1, "standard case should always match");
-            }
-        }
+        result.ItemsUndeleted.Should().Be(expectedUndeletedCount);
+        result.ItemsRemoved.Should().Be(0);
+        result.ItemsSkipped.Should().Be(0);
+        result.PartialFormsCreated.Should().Be(0);
     }
 
     #endregion
