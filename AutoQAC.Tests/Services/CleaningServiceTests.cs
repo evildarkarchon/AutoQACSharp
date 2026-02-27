@@ -1,7 +1,6 @@
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.Cleaning;
-using AutoQAC.Services.Configuration;
 using AutoQAC.Services.GameDetection;
 using AutoQAC.Services.Process;
 using AutoQAC.Services.State;
@@ -13,7 +12,6 @@ namespace AutoQAC.Tests.Services;
 
 public sealed class CleaningServiceTests
 {
-    private readonly IConfigurationService _mockConfig;
     private readonly IGameDetectionService _mockGameDetection;
     private readonly IStateService _mockState;
     private readonly ILoggingService _mockLogger;
@@ -23,7 +21,6 @@ public sealed class CleaningServiceTests
 
     public CleaningServiceTests()
     {
-        _mockConfig = Substitute.For<IConfigurationService>();
         _mockGameDetection = Substitute.For<IGameDetectionService>();
         _mockState = Substitute.For<IStateService>();
         _mockLogger = Substitute.For<ILoggingService>();
@@ -37,7 +34,6 @@ public sealed class CleaningServiceTests
     {
         // Arrange
         var service = new CleaningService(
-            _mockConfig,
             _mockGameDetection,
             _mockState,
             _mockLogger,
@@ -94,7 +90,6 @@ public sealed class CleaningServiceTests
     {
         // Arrange
         var service = new CleaningService(
-            _mockConfig,
             _mockGameDetection,
             _mockState,
             _mockLogger,
@@ -130,7 +125,6 @@ public sealed class CleaningServiceTests
     {
         // Arrange
         var service = new CleaningService(
-            _mockConfig,
             _mockGameDetection,
             _mockState,
             _mockLogger,
@@ -179,7 +173,6 @@ public sealed class CleaningServiceTests
     {
         // Arrange
         var service = new CleaningService(
-            _mockConfig,
             _mockGameDetection,
             _mockState,
             _mockLogger,
@@ -236,7 +229,6 @@ public sealed class CleaningServiceTests
     {
         // Arrange
         var service = new CleaningService(
-            _mockConfig,
             _mockGameDetection,
             _mockState,
             _mockLogger,
@@ -290,7 +282,6 @@ public sealed class CleaningServiceTests
     {
         // Arrange
         var service = new CleaningService(
-            _mockConfig,
             _mockGameDetection,
             _mockState,
             _mockLogger,
@@ -337,6 +328,7 @@ public sealed class CleaningServiceTests
 
         // Verify command builder was called with plugin's detected game type
         _mockCommandBuilder.Received(1).BuildCommand(plugin, GameType.Fallout4);
+        _mockGameDetection.Received(1).GetGameDisplayName(GameType.Fallout4);
     }
 
     /// <summary>
@@ -348,7 +340,6 @@ public sealed class CleaningServiceTests
     {
         // Arrange
         var service = new CleaningService(
-            _mockConfig,
             _mockGameDetection,
             _mockState,
             _mockLogger,
@@ -395,7 +386,6 @@ public sealed class CleaningServiceTests
     {
         // Arrange
         var service = new CleaningService(
-            _mockConfig,
             _mockGameDetection,
             _mockState,
             _mockLogger,
@@ -448,7 +438,6 @@ public sealed class CleaningServiceTests
     {
         // Arrange
         var service = new CleaningService(
-            _mockConfig,
             _mockGameDetection,
             _mockState,
             _mockLogger,
@@ -480,7 +469,6 @@ public sealed class CleaningServiceTests
     {
         // Arrange
         var service = new CleaningService(
-            _mockConfig,
             _mockGameDetection,
             _mockState,
             _mockLogger,
@@ -523,7 +511,6 @@ public sealed class CleaningServiceTests
     {
         // Arrange
         var service = new CleaningService(
-            _mockConfig,
             _mockGameDetection,
             _mockState,
             _mockLogger,

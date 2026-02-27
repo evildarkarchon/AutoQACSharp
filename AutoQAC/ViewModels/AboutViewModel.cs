@@ -32,7 +32,7 @@ public sealed class AboutViewModel : ViewModelBase
     public string BuildDate { get; }
     public string DotNetVersion { get; }
     public string AvaloniaVersion { get; }
-    public string ReactiveUIVersion { get; }
+    public string ReactiveUiVersion { get; }
 
     // Links (constants)
     public string GitHubUrl => "https://github.com/evildarkarchon/AutoQACSharp";
@@ -40,32 +40,28 @@ public sealed class AboutViewModel : ViewModelBase
     public string XEditUrl => "https://github.com/TES5Edit/TES5Edit";
 
     // Update check state
-    private string _updateStatusText = string.Empty;
     public string UpdateStatusText
     {
-        get => _updateStatusText;
-        private set => this.RaiseAndSetIfChanged(ref _updateStatusText, value);
-    }
+        get;
+        private set => this.RaiseAndSetIfChanged(ref field, value);
+    } = string.Empty;
 
-    private bool _isCheckingUpdate;
     public bool IsCheckingUpdate
     {
-        get => _isCheckingUpdate;
-        private set => this.RaiseAndSetIfChanged(ref _isCheckingUpdate, value);
+        get;
+        private set => this.RaiseAndSetIfChanged(ref field, value);
     }
 
-    private bool _updateAvailable;
     public bool UpdateAvailable
     {
-        get => _updateAvailable;
-        private set => this.RaiseAndSetIfChanged(ref _updateAvailable, value);
+        get;
+        private set => this.RaiseAndSetIfChanged(ref field, value);
     }
 
-    private string? _latestVersionUrl;
     public string? LatestVersionUrl
     {
-        get => _latestVersionUrl;
-        private set => this.RaiseAndSetIfChanged(ref _latestVersionUrl, value);
+        get;
+        private set => this.RaiseAndSetIfChanged(ref field, value);
     }
 
     // Commands
@@ -95,9 +91,9 @@ public sealed class AboutViewModel : ViewModelBase
         var avaloniaVer = avaloniaAssembly.GetName().Version;
         AvaloniaVersion = avaloniaVer != null ? $"{avaloniaVer.Major}.{avaloniaVer.Minor}.{avaloniaVer.Build}" : "Unknown";
 
-        var rxuiAssembly = typeof(ReactiveUI.ReactiveObject).Assembly;
+        var rxuiAssembly = typeof(ReactiveObject).Assembly;
         var rxuiVer = rxuiAssembly.GetName().Version;
-        ReactiveUIVersion = rxuiVer != null ? $"{rxuiVer.Major}.{rxuiVer.Minor}.{rxuiVer.Build}" : "Unknown";
+        ReactiveUiVersion = rxuiVer != null ? $"{rxuiVer.Major}.{rxuiVer.Minor}.{rxuiVer.Build}" : "Unknown";
 
         // Commands
         var canCheckUpdate = this.WhenAnyValue(x => x.IsCheckingUpdate)
@@ -182,7 +178,7 @@ public sealed class AboutViewModel : ViewModelBase
     {
         try
         {
-            System.Diagnostics.Process.Start(new ProcessStartInfo(url)
+            Process.Start(new ProcessStartInfo(url)
             {
                 UseShellExecute = true
             });

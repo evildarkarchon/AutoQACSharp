@@ -19,19 +19,20 @@ using AutoQAC.Services.State;
 
 namespace AutoQAC.Services.Cleaning;
 
-public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
+public sealed class CleaningOrchestrator(
+    ICleaningService cleaningService,
+    IPluginValidationService pluginService,
+    IGameDetectionService gameDetectionService,
+    IStateService stateService,
+    IConfigurationService configService,
+    ILoggingService logger,
+    IProcessExecutionService processService,
+    IXEditLogFileService logFileService,
+    IXEditOutputParser outputParser,
+    IBackupService backupService,
+    IHangDetectionService hangDetection)
+    : ICleaningOrchestrator, IDisposable
 {
-    private readonly ICleaningService _cleaningService;
-    private readonly IPluginValidationService _pluginService;
-    private readonly IGameDetectionService _gameDetectionService;
-    private readonly IStateService _stateService;
-    private readonly IConfigurationService _configService;
-    private readonly ILoggingService _logger;
-    private readonly IProcessExecutionService _processService;
-    private readonly IBackupService _backupService;
-    private readonly IXEditLogFileService _logFileService;
-    private readonly IXEditOutputParser _outputParser;
-    private readonly IHangDetectionService _hangDetection;
     private readonly Subject<bool> _hangDetected = new();
     private readonly object _ctsLock = new();
     private readonly object _processLock = new();
@@ -44,32 +45,6 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
 
     public TerminationResult? LastTerminationResult => _lastTerminationResult;
     public IObservable<bool> HangDetected => _hangDetected.AsObservable();
-
-    public CleaningOrchestrator(
-        ICleaningService cleaningService,
-        IPluginValidationService pluginService,
-        IGameDetectionService gameDetectionService,
-        IStateService stateService,
-        IConfigurationService configService,
-        ILoggingService logger,
-        IProcessExecutionService processService,
-        IXEditLogFileService logFileService,
-        IXEditOutputParser outputParser,
-        IBackupService backupService,
-        IHangDetectionService hangDetection)
-    {
-        _cleaningService = cleaningService;
-        _pluginService = pluginService;
-        _gameDetectionService = gameDetectionService;
-        _stateService = stateService;
-        _configService = configService;
-        _logger = logger;
-        _processService = processService;
-        _logFileService = logFileService;
-        _outputParser = outputParser;
-        _backupService = backupService;
-        _hangDetection = hangDetection;
-    }
 
     public Task StartCleaningAsync(CancellationToken ct = default)
     {
@@ -97,48 +72,48 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
 
         try
         {
-            _logger.Information("Starting cleaning workflow");
+            logger.Information("Starting cleaning workflow");
 
             // Clean orphaned processes before starting
-            await _processService.CleanOrphanedProcessesAsync(ct).ConfigureAwait(false);
+            await processService.CleanOrphanedProcessesAsync(ct).ConfigureAwait(false);
 
             // Flush any pending config saves before launching xEdit
             // (per user decision: "Always force-flush pending config saves before launching xEdit")
-            await _configService.FlushPendingSavesAsync(ct).ConfigureAwait(false);
+            await configService.FlushPendingSavesAsync(ct).ConfigureAwait(false);
 
             // 1. Validate configuration
             var isValid = await ValidateConfigurationAsync(ct).ConfigureAwait(false);
             if (!isValid)
             {
-                _logger.Error(null, "Configuration is invalid, cannot start cleaning.");
+                logger.Error(null, "Configuration is invalid, cannot start cleaning.");
                 throw new InvalidOperationException("Configuration is invalid");
             }
 
             // 2. Get plugins from state (already loaded with skip list status)
-            var config = _stateService.CurrentState;
+            var config = stateService.CurrentState;
             var allPlugins = config.PluginsToClean;
 
             // 3. Detect Game (if unknown) and Update State
             if (config.CurrentGameType == GameType.Unknown)
             {
                 var detectedGame =
-                    _gameDetectionService.DetectFromExecutable(config.XEditExecutablePath ?? string.Empty);
+                    gameDetectionService.DetectFromExecutable(config.XEditExecutablePath ?? string.Empty);
 
                 if (detectedGame == GameType.Unknown && !string.IsNullOrEmpty(config.LoadOrderPath))
                 {
-                    detectedGame = await _gameDetectionService.DetectFromLoadOrderAsync(config.LoadOrderPath, ct)
+                    detectedGame = await gameDetectionService.DetectFromLoadOrderAsync(config.LoadOrderPath, ct)
                         .ConfigureAwait(false);
                 }
 
                 if (detectedGame != GameType.Unknown)
                 {
-                    _logger.Information("Detected game type: {GameType}", detectedGame);
-                    _stateService.UpdateState(s => s with { CurrentGameType = detectedGame });
-                    config = _stateService.CurrentState; // Refresh local config
+                    logger.Information("Detected game type: {GameType}", detectedGame);
+                    stateService.UpdateState(s => s with { CurrentGameType = detectedGame });
+                    config = stateService.CurrentState; // Refresh local config
                 }
                 else
                 {
-                    _logger.Error(null, "Cannot determine game type. Cleaning blocked for safety -- skip lists cannot be applied without a known game type.");
+                    logger.Error(null, "Cannot determine game type. Cleaning blocked for safety -- skip lists cannot be applied without a known game type.");
                     throw new InvalidOperationException(
                         "Cannot start cleaning: game type could not be determined. " +
                         "Please select a game type in Settings, or ensure the xEdit executable name matches a supported game.");
@@ -149,14 +124,14 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
 
             // 3b. Detect game variant for skip list handling
             var pluginNames = allPlugins.Select(p => p.FileName).ToList();
-            var gameVariant = _gameDetectionService.DetectVariant(gameType, pluginNames);
+            var gameVariant = gameDetectionService.DetectVariant(gameType, pluginNames);
             if (gameVariant != GameVariant.None)
             {
-                _logger.Information("Detected game variant: {Variant}", gameVariant);
+                logger.Information("Detected game variant: {Variant}", gameVariant);
             }
 
             // 4. Apply skip list filtering (respecting DisableSkipLists setting)
-            var userConfig = await _configService.LoadUserConfigAsync(ct).ConfigureAwait(false);
+            var userConfig = await configService.LoadUserConfigAsync(ct).ConfigureAwait(false);
             var disableSkipLists = userConfig.Settings.DisableSkipLists;
             var isMo2Mode = userConfig.Settings.Mo2Mode;
 
@@ -183,7 +158,7 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
             List<PluginInfo> pluginsToClean;
             if (disableSkipLists)
             {
-                _logger.Debug("Skip lists disabled by user setting - cleaning all selected plugins");
+                logger.Debug("Skip lists disabled by user setting - cleaning all selected plugins");
                 pluginsToClean = allPlugins
                     .Where(p => p.IsSelected)
                     .Select(p => p with { DetectedGameType = gameType })
@@ -191,7 +166,7 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
             }
             else if (gameType != GameType.Unknown)
             {
-                var skipList = await _configService.GetSkipListAsync(gameType, gameVariant, ct)
+                var skipList = await configService.GetSkipListAsync(gameType, gameVariant, ct)
                     .ConfigureAwait(false);
                 var skipSet = new HashSet<string>(skipList, StringComparer.OrdinalIgnoreCase);
 
@@ -211,7 +186,7 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
                 var pathFailures = new List<string>();
                 foreach (var plugin in pluginsToClean)
                 {
-                    var warning = _pluginService.ValidatePluginFile(plugin);
+                    var warning = pluginService.ValidatePluginFile(plugin);
                     if (warning != PluginWarningKind.None)
                     {
                         pathFailures.Add($"{plugin.FileName} ({warning})");
@@ -221,10 +196,10 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
                 if (pathFailures.Count > 0)
                 {
                     var summary = $"{pathFailures.Count} plugin(s) not found or unreadable: {string.Join(", ", pathFailures)}";
-                    _logger.Warning(summary);
+                    logger.Warning(summary);
 
                     pluginsToClean = pluginsToClean
-                        .Where(p => _pluginService.ValidatePluginFile(p) == PluginWarningKind.None)
+                        .Where(p => pluginService.ValidatePluginFile(p) == PluginWarningKind.None)
                         .ToList();
 
                     if (pluginsToClean.Count == 0)
@@ -236,11 +211,11 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
             }
             else
             {
-                _logger.Debug("MO2 mode active -- skipping file-existence validation (MO2 VFS resolves paths at xEdit runtime)");
+                logger.Debug("MO2 mode active -- skipping file-existence validation (MO2 VFS resolves paths at xEdit runtime)");
             }
 
             // 5. Update state - cleaning started
-            _stateService.StartCleaning(pluginsToClean);
+            stateService.StartCleaning(pluginsToClean);
 
             // 6. Create cancellation token (thread-safe)
             CancellationTokenSource cts;
@@ -251,7 +226,7 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
             }
 
             // Get timeout for retry prompts
-            var timeoutSeconds = _stateService.CurrentState.CleaningTimeout;
+            var timeoutSeconds = stateService.CurrentState.CleaningTimeout;
             if (timeoutSeconds <= 0) timeoutSeconds = 300;
 
             // 6b. Initialize backup session if backup is enabled
@@ -266,18 +241,18 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
                 if (firstRootedPlugin != null)
                 {
                     var dataFolder = System.IO.Path.GetDirectoryName(firstRootedPlugin.FullPath)!;
-                    var backupRoot = _backupService.GetBackupRoot(dataFolder);
-                    sessionDir = _backupService.CreateSessionDirectory(backupRoot);
-                    _logger.Information("Backup session directory created: {SessionDir}", sessionDir);
+                    var backupRoot = backupService.GetBackupRoot(dataFolder);
+                    sessionDir = backupService.CreateSessionDirectory(backupRoot);
+                    logger.Information("Backup session directory created: {SessionDir}", sessionDir);
                 }
                 else
                 {
-                    _logger.Warning("Backup enabled but no plugins have rooted paths -- skipping backup initialization");
+                    logger.Warning("Backup enabled but no plugins have rooted paths -- skipping backup initialization");
                 }
             }
             else if (backupEnabled && isMo2Mode)
             {
-                _logger.Warning("Backup skipped in MO2 mode -- MO2 manages files through its virtual filesystem");
+                logger.Warning("Backup skipped in MO2 mode -- MO2 manages files through its virtual filesystem");
             }
 
             // 7. Process plugins SEQUENTIALLY (CRITICAL!)
@@ -285,13 +260,13 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
             {
                 if (cts.Token.IsCancellationRequested)
                 {
-                    _logger.Information("Cleaning cancelled by user");
+                    logger.Information("Cleaning cancelled by user");
                     wasCancelled = true;
                     break;
                 }
 
-                _logger.Information("Processing plugin: {Plugin}", plugin.FileName);
-                _stateService.UpdateState(s => s with
+                logger.Information("Processing plugin: {Plugin}", plugin.FileName);
+                stateService.UpdateState(s => s with
                 {
                     CurrentPlugin = plugin.FileName
                 });
@@ -299,7 +274,7 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
                 // Backup this plugin before xEdit processes it
                 if (sessionDir != null)
                 {
-                    var backupResult = _backupService.BackupPlugin(plugin, sessionDir);
+                    var backupResult = backupService.BackupPlugin(plugin, sessionDir);
                     if (!backupResult.Success)
                     {
                         if (onBackupFailure != null)
@@ -308,8 +283,8 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
                             switch (choice)
                             {
                                 case BackupFailureChoice.SkipPlugin:
-                                    _logger.Information("User chose to skip plugin after backup failure: {Plugin}", plugin.FileName);
-                                    _stateService.UpdateState(s => s with
+                                    logger.Information("User chose to skip plugin after backup failure: {Plugin}", plugin.FileName);
+                                    stateService.UpdateState(s => s with
                                     {
                                         SkippedPlugins = new HashSet<string>(s.SkippedPlugins)
                                             { plugin.FileName }
@@ -317,7 +292,7 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
                                     });
                                     continue;
                                 case BackupFailureChoice.AbortSession:
-                                    _logger.Information("User chose to abort session after backup failure for: {Plugin}", plugin.FileName);
+                                    logger.Information("User chose to abort session after backup failure for: {Plugin}", plugin.FileName);
                                     // Write partial metadata before returning
                                     if (backupEntries.Count > 0)
                                     {
@@ -328,17 +303,17 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
                                             SessionDirectory = sessionDir,
                                             Plugins = backupEntries
                                         };
-                                        await _backupService.WriteSessionMetadataAsync(sessionDir, partialSession, cts.Token).ConfigureAwait(false);
+                                        await backupService.WriteSessionMetadataAsync(sessionDir, partialSession, cts.Token).ConfigureAwait(false);
                                     }
                                     return;
                                 case BackupFailureChoice.ContinueWithoutBackup:
-                                    _logger.Information("User chose to continue without backup for: {Plugin}", plugin.FileName);
+                                    logger.Information("User chose to continue without backup for: {Plugin}", plugin.FileName);
                                     break;
                             }
                         }
                         else
                         {
-                            _logger.Warning("Backup failed for {Plugin}: {Error}. No callback, continuing without backup.",
+                            logger.Warning("Backup failed for {Plugin}: {Error}. No callback, continuing without backup.",
                                 plugin.FileName, backupResult.Error ?? "Unknown error");
                         }
                     }
@@ -356,7 +331,7 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
                 // Progress reporting
                 var progress = new Progress<string>(output =>
                 {
-                    _logger.Debug("xEdit output: {Output}", output);
+                    logger.Debug("xEdit output: {Output}", output);
                 });
 
                 // Clean plugin with retry logic for timeouts
@@ -371,11 +346,11 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
 
                     if (attemptNumber > 1)
                     {
-                        _logger.Information("Retry attempt {Attempt} for plugin: {Plugin}",
+                        logger.Information("Retry attempt {Attempt} for plugin: {Plugin}",
                             attemptNumber, plugin.FileName);
                     }
 
-                    result = await _cleaningService.CleanPluginAsync(
+                    result = await cleaningService.CleanPluginAsync(
                         plugin,
                         progress,
                         cts.Token,
@@ -397,11 +372,11 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
 
                         if (!shouldRetry)
                         {
-                            _logger.Information("User chose not to retry plugin: {Plugin}", plugin.FileName);
+                            logger.Information("User chose not to retry plugin: {Plugin}", plugin.FileName);
                             break;
                         }
 
-                        _logger.Information("User chose to retry plugin: {Plugin}", plugin.FileName);
+                        logger.Information("User chose to retry plugin: {Plugin}", plugin.FileName);
                     }
                     else
                     {
@@ -429,20 +404,20 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
                 if (result is { Success: true, Status: CleaningStatus.Cleaned })
                 {
                     var xEditPath = config.XEditExecutablePath ?? string.Empty;
-                    var (logLines, logError) = await _logFileService.ReadLogFileAsync(
+                    var (logLines, logError) = await logFileService.ReadLogFileAsync(
                         xEditPath, pluginStartTime, cts.Token).ConfigureAwait(false);
 
                     if (logError != null)
                     {
-                        _logger.Warning("Log parse warning for {Plugin}: {Warning}", plugin.FileName, logError);
+                        logger.Warning("Log parse warning for {Plugin}: {Warning}", plugin.FileName, logError);
                         logParseWarning = logError;
                         // Keep stdout-based stats as fallback
                     }
                     else if (logLines.Count > 0)
                     {
                         // Prefer log-file-based stats over stdout stats
-                        logStats = _outputParser.ParseOutput(logLines);
-                        _logger.Debug("Parsed log file stats for {Plugin}: {Removed} ITM, {Undeleted} UDR",
+                        logStats = outputParser.ParseOutput(logLines);
+                        logger.Debug("Parsed log file stats for {Plugin}: {Removed} ITM, {Undeleted} UDR",
                             plugin.FileName, logStats.ItemsRemoved, logStats.ItemsUndeleted);
                     }
                 }
@@ -463,9 +438,9 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
                 pluginResults.Add(pluginCleaningResult);
 
                 // Update detailed results in state
-                _stateService.AddDetailedCleaningResult(pluginCleaningResult);
+                stateService.AddDetailedCleaningResult(pluginCleaningResult);
 
-                _logger.Information(
+                logger.Information(
                     "Plugin {Plugin} processed: {Status} - {Message}",
                     plugin.FileName,
                     result.Status,
@@ -482,11 +457,11 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
                     SessionDirectory = sessionDir,
                     Plugins = backupEntries
                 };
-                await _backupService.WriteSessionMetadataAsync(sessionDir, backupSession, cts.Token).ConfigureAwait(false);
+                await backupService.WriteSessionMetadataAsync(sessionDir, backupSession, cts.Token).ConfigureAwait(false);
 
                 var backupRoot = System.IO.Path.GetDirectoryName(sessionDir)!;
-                _backupService.CleanupOldSessions(backupRoot, userConfig.Backup.MaxSessions, sessionDir);
-                _logger.Information("Backup session complete: {Count} plugins backed up", backupEntries.Count);
+                backupService.CleanupOldSessions(backupRoot, userConfig.Backup.MaxSessions, sessionDir);
+                logger.Information("Backup session complete: {Count} plugins backed up", backupEntries.Count);
             }
 
             // 8. Create and store session result
@@ -499,13 +474,13 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
                 PluginResults = pluginResults
             };
 
-            _stateService.FinishCleaningWithResults(sessionResult);
+            stateService.FinishCleaningWithResults(sessionResult);
             LogSessionSummary(sessionResult);
         }
         catch (OperationCanceledException)
         {
             // Cancellation is not an error -- preserve partial results
-            _logger.Information("Cleaning workflow cancelled");
+            logger.Information("Cleaning workflow cancelled");
 
             // Write partial backup metadata if any backups were made
             if (sessionDir != null && backupEntries.Count > 0)
@@ -519,14 +494,14 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
                         SessionDirectory = sessionDir,
                         Plugins = backupEntries
                     };
-                    await _backupService.WriteSessionMetadataAsync(
+                    await backupService.WriteSessionMetadataAsync(
                         sessionDir,
                         partialBackupSession,
                         CancellationToken.None).ConfigureAwait(false);
                 }
                 catch (Exception backupEx)
                 {
-                    _logger.Warning("Failed to write partial backup metadata after cancellation: {Error}", backupEx.Message);
+                    logger.Warning("Failed to write partial backup metadata after cancellation: {Error}", backupEx.Message);
                 }
             }
 
@@ -539,12 +514,12 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
                 PluginResults = pluginResults
             };
 
-            _stateService.FinishCleaningWithResults(sessionResult);
+            stateService.FinishCleaningWithResults(sessionResult);
             LogSessionSummary(sessionResult);
         }
         catch (Exception ex)
         {
-            _logger.Error(ex, "Error during cleaning workflow");
+            logger.Error(ex, "Error during cleaning workflow");
 
             // Still create a session result even on error
             var sessionResult = new CleaningSessionResult
@@ -556,7 +531,7 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
                 PluginResults = pluginResults
             };
 
-            _stateService.FinishCleaningWithResults(sessionResult);
+            stateService.FinishCleaningWithResults(sessionResult);
             LogSessionSummary(sessionResult);
             throw;
         }
@@ -564,7 +539,7 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
         {
             // Reset stop flags
             _isStopRequested = false;
-            _stateService.SetTerminating(false);
+            stateService.SetTerminating(false);
             _lastTerminationResult = null;
 
             // Stop hang monitoring
@@ -591,14 +566,14 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
         if (_isStopRequested)
         {
             // Path B: Second click during grace period -- immediate force kill, no prompt
-            _logger.Information("[Termination] Second stop requested -- escalating to force kill");
+            logger.Information("[Termination] Second stop requested -- escalating to force kill");
             await ForceStopCleaningAsync().ConfigureAwait(false);
             return;
         }
 
         _isStopRequested = true;
-        _stateService.SetTerminating(true);
-        _logger.Information("[Termination] Graceful stop requested");
+        stateService.SetTerminating(true);
+        logger.Information("[Termination] Graceful stop requested");
 
         // Cancel the CTS (race-safe per PROC-04)
         CancellationTokenSource? cts;
@@ -616,8 +591,8 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
         }
         catch (ObjectDisposedException)
         {
-            _logger.Debug("[Termination] CTS already disposed -- cleaning likely already finished");
-            _stateService.SetTerminating(false);
+            logger.Debug("[Termination] CTS already disposed -- cleaning likely already finished");
+            stateService.SetTerminating(false);
             return;
         }
 
@@ -634,7 +609,7 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
             {
                 if (!proc.HasExited)
                 {
-                    var result = await _processService.TerminateProcessAsync(proc, forceKill: false, ct: CancellationToken.None)
+                    var result = await processService.TerminateProcessAsync(proc, forceKill: false, ct: CancellationToken.None)
                         .ConfigureAwait(false);
 
                     if (result == TerminationResult.GracePeriodExpired)
@@ -647,14 +622,14 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
             }
             catch (InvalidOperationException)
             {
-                _logger.Debug("[Termination] Process already exited during graceful stop");
+                logger.Debug("[Termination] Process already exited during graceful stop");
             }
         }
     }
 
     public async Task ForceStopCleaningAsync()
     {
-        _logger.Information("[Termination] Force stop requested -- killing process tree immediately");
+        logger.Information("[Termination] Force stop requested -- killing process tree immediately");
 
         // Cancel the CTS if not already
         CancellationTokenSource? cts;
@@ -688,13 +663,13 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
             {
                 if (!proc.HasExited)
                 {
-                    await _processService.TerminateProcessAsync(proc, forceKill: true, ct: CancellationToken.None)
+                    await processService.TerminateProcessAsync(proc, forceKill: true, ct: CancellationToken.None)
                         .ConfigureAwait(false);
                 }
             }
             catch (InvalidOperationException)
             {
-                _logger.Debug("[Termination] Process already exited during force stop");
+                logger.Debug("[Termination] Process already exited during force stop");
             }
         }
     }
@@ -703,13 +678,13 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
     {
         var results = new List<DryRunResult>();
 
-        _logger.Information("Starting dry-run preview");
+        logger.Information("Starting dry-run preview");
 
         // Flush any pending config saves to ensure config is current
-        await _configService.FlushPendingSavesAsync(ct).ConfigureAwait(false);
+        await configService.FlushPendingSavesAsync(ct).ConfigureAwait(false);
 
         // Get plugins from state (same as StartCleaningAsync step 2)
-        var config = _stateService.CurrentState;
+        var config = stateService.CurrentState;
         var allPlugins = config.PluginsToClean;
 
         // Detect game type locally (same as StartCleaningAsync step 3) -- do NOT update state
@@ -717,11 +692,11 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
         if (gameType == GameType.Unknown)
         {
             var detectedGame =
-                _gameDetectionService.DetectFromExecutable(config.XEditExecutablePath ?? string.Empty);
+                gameDetectionService.DetectFromExecutable(config.XEditExecutablePath ?? string.Empty);
 
             if (detectedGame == GameType.Unknown && !string.IsNullOrEmpty(config.LoadOrderPath))
             {
-                detectedGame = await _gameDetectionService.DetectFromLoadOrderAsync(config.LoadOrderPath, ct)
+                detectedGame = await gameDetectionService.DetectFromLoadOrderAsync(config.LoadOrderPath, ct)
                     .ConfigureAwait(false);
             }
 
@@ -731,7 +706,7 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
             }
             else
             {
-                _logger.Error(null,
+                logger.Error(null,
                     "Cannot determine game type for dry-run preview. Skip lists cannot be applied without a known game type.");
                 throw new InvalidOperationException(
                     "Cannot start preview: game type could not be determined. " +
@@ -741,10 +716,10 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
 
         // Detect game variant (same as StartCleaningAsync step 3b)
         var pluginNames = allPlugins.Select(p => p.FileName).ToList();
-        var gameVariant = _gameDetectionService.DetectVariant(gameType, pluginNames);
+        var gameVariant = gameDetectionService.DetectVariant(gameType, pluginNames);
 
         // Load user config for skip list and MO2 settings (same as StartCleaningAsync step 4)
-        var userConfig = await _configService.LoadUserConfigAsync(ct).ConfigureAwait(false);
+        var userConfig = await configService.LoadUserConfigAsync(ct).ConfigureAwait(false);
         var disableSkipLists = userConfig.Settings.DisableSkipLists;
         var isMo2Mode = userConfig.Settings.Mo2Mode;
 
@@ -752,7 +727,7 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
         HashSet<string>? skipSet = null;
         if (!disableSkipLists)
         {
-            var skipList = await _configService.GetSkipListAsync(gameType, gameVariant, ct)
+            var skipList = await configService.GetSkipListAsync(gameType, gameVariant, ct)
                 .ConfigureAwait(false);
             skipSet = new HashSet<string>(skipList, StringComparer.OrdinalIgnoreCase);
         }
@@ -780,7 +755,7 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
             if (!isMo2Mode)
             {
                 var enrichedPlugin = plugin with { DetectedGameType = gameType };
-                var warning = _pluginService.ValidatePluginFile(enrichedPlugin);
+                var warning = pluginService.ValidatePluginFile(enrichedPlugin);
                 if (warning != PluginWarningKind.None)
                 {
                     var reason = warning switch
@@ -801,7 +776,7 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
             results.Add(new DryRunResult(plugin.FileName, DryRunStatus.WillClean, "Ready for cleaning"));
         }
 
-        _logger.Information("Dry-run preview complete: {WillClean} will clean, {WillSkip} will skip",
+        logger.Information("Dry-run preview complete: {WillClean} will clean, {WillSkip} will skip",
             results.Count(r => r.Status == DryRunStatus.WillClean),
             results.Count(r => r.Status == DryRunStatus.WillSkip));
 
@@ -810,7 +785,7 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
 
     private async Task<bool> ValidateConfigurationAsync(CancellationToken ct)
     {
-        var config = _stateService.CurrentState;
+        var config = stateService.CurrentState;
 
         if (string.IsNullOrEmpty(config.XEditExecutablePath))
         {
@@ -826,7 +801,7 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
             }
         }
 
-        return await _cleaningService.ValidateEnvironmentAsync(ct).ConfigureAwait(false);
+        return await cleaningService.ValidateEnvironmentAsync(ct).ConfigureAwait(false);
     }
 
     private static bool RequiresFileLoadOrder(GameType gameType) => gameType switch
@@ -841,7 +816,7 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
     {
         // Ensure only one active monitor subscription per xEdit process lifecycle.
         _hangMonitorSubscription?.Dispose();
-        _hangMonitorSubscription = _hangDetection.MonitorProcess(process)
+        _hangMonitorSubscription = hangDetection.MonitorProcess(process)
             .Subscribe(
                 isHung => _hangDetected.OnNext(isHung),
                 _ => { }, // Error: monitor completed unexpectedly
@@ -851,15 +826,15 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
 
     private void LogSessionSummary(CleaningSessionResult session)
     {
-        _logger.Information("=== AutoQAC Session Complete ===");
-        _logger.Information("Duration: {Duration}", session.TotalDuration.ToString(@"hh\:mm\:ss"));
-        _logger.Information(
+        logger.Information("=== AutoQAC Session Complete ===");
+        logger.Information("Duration: {Duration}", session.TotalDuration.ToString(@"hh\:mm\:ss"));
+        logger.Information(
             "Plugins processed: {Total} (Cleaned: {Cleaned}, Skipped: {Skipped}, Failed: {Failed})",
             session.TotalPlugins,
             session.CleanedCount,
             session.SkippedCount,
             session.FailedCount);
-        _logger.Information(
+        logger.Information(
             "ITMs removed: {Itm}, UDRs fixed: {Udr}, Navmeshes: {Nav}",
             session.TotalItemsRemoved,
             session.TotalItemsUndeleted,
@@ -867,7 +842,7 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
 
         if (session.WasCancelled)
         {
-            _logger.Information("Session was cancelled by user");
+            logger.Information("Session was cancelled by user");
         }
     }
 

@@ -12,6 +12,10 @@
         CanResize="False"
         WindowStartupLocation="CenterOwner">
 
+    <Window.Styles>
+        <Style Selector=".hyperlink" />
+    </Window.Styles>
+
     <Grid Margin="24" RowDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto">
 
         <!-- App Icon and Title -->
@@ -48,7 +52,7 @@
                 <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding AvaloniaVersion}" Margin="8,2" />
 
                 <TextBlock Grid.Row="4" Grid.Column="0" Text="ReactiveUI:" FontWeight="SemiBold" Margin="0,2" />
-                <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding ReactiveUIVersion}" Margin="8,2" />
+                <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding ReactiveUiVersion}" Margin="8,2" />
             </Grid>
         </Border>
 
@@ -77,25 +81,13 @@
             <TextBlock Text="Links" FontWeight="SemiBold" Margin="0,0,0,4" />
             <Button Content="GitHub Repository"
                     Command="{Binding OpenGitHubCommand}"
-                    Classes="hyperlink"
-                    Padding="0"
-                    Background="Transparent"
-                    Foreground="{DynamicResource SystemAccentColor}"
-                    Cursor="Hand" />
+                    Classes="hyperlink" />
             <Button Content="Report an Issue"
                     Command="{Binding OpenIssuesCommand}"
-                    Classes="hyperlink"
-                    Padding="0"
-                    Background="Transparent"
-                    Foreground="{DynamicResource SystemAccentColor}"
-                    Cursor="Hand" />
+                    Classes="hyperlink" />
             <Button Content="xEdit Project (TES5Edit)"
                     Command="{Binding OpenXEditCommand}"
-                    Classes="hyperlink"
-                    Padding="0"
-                    Background="Transparent"
-                    Foreground="{DynamicResource SystemAccentColor}"
-                    Cursor="Hand" />
+                    Classes="hyperlink" />
         </StackPanel>
 
         <!-- Spacer -->
@@ -110,3 +102,4 @@
                 Click="OnCloseClick" />
     </Grid>
 </Window>
+

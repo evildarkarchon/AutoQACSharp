@@ -10,15 +10,13 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
-using AutoQAC.Services.State;
 
 namespace AutoQAC.Services.Process;
 
-public sealed class ProcessExecutionService : IProcessExecutionService, IDisposable
+public sealed class ProcessExecutionService(ILoggingService logger)
+    : IProcessExecutionService, IDisposable
 {
-    private readonly SemaphoreSlim _processSlots;
-    private readonly ILoggingService _logger;
-    private readonly IStateService _stateService;
+    private readonly SemaphoreSlim _processSlots = new(1, 1);
 
     /// <summary>
     /// Known xEdit process name fragments for orphan detection.
@@ -28,17 +26,8 @@ public sealed class ProcessExecutionService : IProcessExecutionService, IDisposa
 
     private const string PidFileName = "autoqac-pids.json";
     private const int GracePeriodMs = 2500;
-    private const int SemaphoreTimeoutMs = 60_000;
-    private const int SemaphoreWarningMs = 10_000;
 
-    public ProcessExecutionService(IStateService stateService, ILoggingService logger)
-    {
-        _logger = logger;
-        _stateService = stateService;
-
-        // Hardcoded to 1: xEdit enforces single-instance via file locking
-        _processSlots = new SemaphoreSlim(1, 1);
-    }
+    // Hardcoded to 1: xEdit enforces single-instance via file locking
 
     public async Task<ProcessResult> ExecuteAsync(
         ProcessStartInfo startInfo,
@@ -75,19 +64,19 @@ public sealed class ProcessExecutionService : IProcessExecutionService, IDisposa
             var outputLines = new ConcurrentQueue<string>();
             var errorLines = new ConcurrentQueue<string>();
 
-            process.OutputDataReceived += (s, e) =>
+            process.OutputDataReceived += (_, e) =>
             {
                 if (e.Data == null) return;
                 outputLines.Enqueue(e.Data);
                 outputProgress?.Report(e.Data);
             };
 
-            process.ErrorDataReceived += (s, e) =>
+            process.ErrorDataReceived += (_, e) =>
             {
                 if (e.Data != null) errorLines.Enqueue(e.Data);
             };
 
-            _logger.Debug("Starting process: {FileName} {Arguments}", startInfo.FileName, startInfo.Arguments);
+            logger.Debug("Starting process: {FileName} {Arguments}", startInfo.FileName, startInfo.Arguments);
 
             try
             {
@@ -97,7 +86,7 @@ public sealed class ProcessExecutionService : IProcessExecutionService, IDisposa
             }
             catch (Exception ex)
             {
-                _logger.Error(ex, "Failed to start process: {FileName}", startInfo.FileName);
+                logger.Error(ex, "Failed to start process: {FileName}", startInfo.FileName);
                 return new ProcessResult { ExitCode = -1, ErrorLines = [ex.Message] };
             }
 
@@ -109,7 +98,7 @@ public sealed class ProcessExecutionService : IProcessExecutionService, IDisposa
             }
             catch (Exception ex)
             {
-                _logger.Warning("[Orphan] Failed to track process PID {Pid}: {Error}", processId, ex.Message);
+                logger.Warning("[Orphan] Failed to track process PID {Pid}: {Error}", processId, ex.Message);
             }
 
             // Notify caller of the started process (for CleaningOrchestrator to hold a reference)
@@ -135,7 +124,7 @@ public sealed class ProcessExecutionService : IProcessExecutionService, IDisposa
             {
                 timedOut = timeoutCts?.IsCancellationRequested ?? false;
 
-                _logger.Warning(timedOut
+                logger.Warning(timedOut
                     ? "Process execution timed out."
                     : "Process execution cancelled by user.");
 
@@ -159,7 +148,7 @@ public sealed class ProcessExecutionService : IProcessExecutionService, IDisposa
                 }
                 catch (Exception ex)
                 {
-                    _logger.Warning("[Orphan] Failed to untrack process PID {Pid}: {Error}", processId, ex.Message);
+                    logger.Warning("[Orphan] Failed to untrack process PID {Pid}: {Error}", processId, ex.Message);
                 }
             }
 
@@ -198,28 +187,28 @@ public sealed class ProcessExecutionService : IProcessExecutionService, IDisposa
 
         if (forceKill)
         {
-            _logger.Information("[Termination] Force killing process tree (PID: {Pid})", process.Id);
+            logger.Information("[Termination] Force killing process tree (PID: {Pid})", process.Id);
             try
             {
                 process.Kill(entireProcessTree: true);
                 await process.WaitForExitAsync(ct).ConfigureAwait(false);
-                _logger.Information("[Termination] Process tree killed successfully (PID: {Pid})", process.Id);
+                logger.Information("[Termination] Process tree killed successfully (PID: {Pid})", process.Id);
                 return TerminationResult.ForceKilled;
             }
             catch (InvalidOperationException)
             {
-                _logger.Debug("[Termination] Process already exited before Kill could execute");
+                logger.Debug("[Termination] Process already exited before Kill could execute");
                 return TerminationResult.AlreadyExited;
             }
             catch (Win32Exception ex)
             {
-                _logger.Error(ex, "[Termination] Failed to kill process tree (PID: {Pid})", process.Id);
+                logger.Error(ex, "[Termination] Failed to kill process tree (PID: {Pid})", process.Id);
                 return TerminationResult.ForceKilled; // Best effort -- it may have partially worked
             }
         }
 
         // Graceful path: try CloseMainWindow
-        _logger.Information("[Termination] Attempting graceful termination (PID: {Pid})", process.Id);
+        logger.Information("[Termination] Attempting graceful termination (PID: {Pid})", process.Id);
         bool closeResult;
         try
         {
@@ -234,7 +223,7 @@ public sealed class ProcessExecutionService : IProcessExecutionService, IDisposa
         {
             // CloseMainWindow returned false -- process may not have a visible main window.
             // Skip the grace period, caller should escalate.
-            _logger.Debug("[Termination] CloseMainWindow returned false (no window) -- returning GracePeriodExpired for escalation");
+            logger.Debug("[Termination] CloseMainWindow returned false (no window) -- returning GracePeriodExpired for escalation");
             return TerminationResult.GracePeriodExpired;
         }
 
@@ -245,13 +234,13 @@ public sealed class ProcessExecutionService : IProcessExecutionService, IDisposa
         try
         {
             await process.WaitForExitAsync(graceCts.Token).ConfigureAwait(false);
-            _logger.Information("[Termination] Process exited gracefully (PID: {Pid})", process.Id);
+            logger.Information("[Termination] Process exited gracefully (PID: {Pid})", process.Id);
             return TerminationResult.GracefulExit;
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
             // Grace period expired, process still running
-            _logger.Information("[Termination] Grace period expired, process still running (PID: {Pid})", process.Id);
+            logger.Information("[Termination] Grace period expired, process still running (PID: {Pid})", process.Id);
             return TerminationResult.GracePeriodExpired;
         }
     }
@@ -281,7 +270,7 @@ public sealed class ProcessExecutionService : IProcessExecutionService, IDisposa
         });
 
         await SaveTrackedProcessesAsync(pidFilePath, tracked, ct).ConfigureAwait(false);
-        _logger.Debug("[Orphan] Tracking process PID {Pid} for plugin {Plugin}", process.Id, pluginName);
+        logger.Debug("[Orphan] Tracking process PID {Pid} for plugin {Plugin}", process.Id, pluginName);
     }
 
     public async Task UntrackProcessAsync(int pid, CancellationToken ct = default)
@@ -298,7 +287,7 @@ public sealed class ProcessExecutionService : IProcessExecutionService, IDisposa
             return; // PID was not in the list
 
         await SaveTrackedProcessesAsync(pidFilePath, updated, ct).ConfigureAwait(false);
-        _logger.Debug("[Orphan] Untracked process PID {Pid}", pid);
+        logger.Debug("[Orphan] Untracked process PID {Pid}", pid);
     }
 
     public async Task CleanOrphanedProcessesAsync(CancellationToken ct = default)
@@ -313,7 +302,7 @@ public sealed class ProcessExecutionService : IProcessExecutionService, IDisposa
         if (tracked.Count == 0)
             return;
 
-        _logger.Information("[Orphan] Checking {Count} tracked processes for orphans", tracked.Count);
+        logger.Information("[Orphan] Checking {Count} tracked processes for orphans", tracked.Count);
 
         foreach (var entry in tracked)
         {
@@ -323,40 +312,40 @@ public sealed class ProcessExecutionService : IProcessExecutionService, IDisposa
 
                 if (IsXEditProcess(process, entry.StartTime))
                 {
-                    _logger.Information("[Orphan] Detected orphaned xEdit process (PID: {Pid}, Plugin: {Plugin})", entry.Pid, entry.PluginName);
+                    logger.Information("[Orphan] Detected orphaned xEdit process (PID: {Pid}, Plugin: {Plugin})", entry.Pid, entry.PluginName);
                     try
                     {
                         process.Kill(entireProcessTree: true);
                         await process.WaitForExitAsync(ct).ConfigureAwait(false);
-                        _logger.Information("[Orphan] Killed orphaned process (PID: {Pid})", entry.Pid);
+                        logger.Information("[Orphan] Killed orphaned process (PID: {Pid})", entry.Pid);
                     }
                     catch (InvalidOperationException)
                     {
-                        _logger.Debug("[Orphan] Orphaned process already exited (PID: {Pid})", entry.Pid);
+                        logger.Debug("[Orphan] Orphaned process already exited (PID: {Pid})", entry.Pid);
                     }
                     catch (Win32Exception ex)
                     {
-                        _logger.Error(ex, "[Orphan] Failed to kill orphaned process (PID: {Pid})", entry.Pid);
+                        logger.Error(ex, "[Orphan] Failed to kill orphaned process (PID: {Pid})", entry.Pid);
                     }
                 }
                 else
                 {
-                    _logger.Debug("[Orphan] PID {Pid} is not an xEdit process (name: {Name}) -- skipping", entry.Pid, process.ProcessName);
+                    logger.Debug("[Orphan] PID {Pid} is not an xEdit process (name: {Name}) -- skipping", entry.Pid, process.ProcessName);
                 }
             }
             catch (ArgumentException)
             {
-                _logger.Debug("[Orphan] Process no longer exists (PID: {Pid})", entry.Pid);
+                logger.Debug("[Orphan] Process no longer exists (PID: {Pid})", entry.Pid);
             }
             catch (InvalidOperationException)
             {
-                _logger.Debug("[Orphan] Cannot access process (PID: {Pid}) -- access denied or exited", entry.Pid);
+                logger.Debug("[Orphan] Cannot access process (PID: {Pid}) -- access denied or exited", entry.Pid);
             }
         }
 
         // Clear the PID file after processing all entries
         await SaveTrackedProcessesAsync(pidFilePath, new List<TrackedProcess>(), ct).ConfigureAwait(false);
-        _logger.Information("[Orphan] Cleared stale PID file entries: {Count}", tracked.Count);
+        logger.Information("[Orphan] Cleared stale PID file entries: {Count}", tracked.Count);
     }
 
     /// <summary>
@@ -368,7 +357,7 @@ public sealed class ProcessExecutionService : IProcessExecutionService, IDisposa
         try
         {
             var name = process.ProcessName.ToLowerInvariant();
-            var isXEdit = XEditProcessNames.Any(xEditName => name.Contains(xEditName));
+            var isXEdit = XEditProcessNames.Any(name.Contains);
 
             if (!isXEdit)
                 return false;

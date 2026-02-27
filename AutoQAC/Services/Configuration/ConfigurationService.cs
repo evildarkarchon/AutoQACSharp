@@ -187,7 +187,7 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
         try
         {
             var content = await File.ReadAllTextAsync(path, ct).ConfigureAwait(false);
-            var loaded = _deserializer.Deserialize<UserConfiguration>(content);
+            var loaded = _deserializer.Deserialize<UserConfiguration?>(content);
             if (loaded == null)
             {
                 _logger.Warning("[Config] User configuration file was empty. Using default configuration.");
@@ -391,7 +391,7 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
             result.AddRange(mainGameList);
         }
 
-        if (variant == GameVariant.TTW)
+        if (variant == GameVariant.Ttw)
         {
             var fo3Key = GetGameKey(GameType.Fallout3);
             if (userConfig.SkipLists.TryGetValue(fo3Key, out var userFo3List))
@@ -759,7 +759,6 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
         _configChanges.Dispose();
         _skipListChanges.Dispose();
         Volatile.Write(ref _disposeState, 2);
-        GC.SuppressFinalize(this);
     }
 
     private void ThrowIfDisposed()

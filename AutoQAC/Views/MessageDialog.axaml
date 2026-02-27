@@ -37,8 +37,6 @@
             <Button Content="{Binding ShowDetailsExpanded, Converter={StaticResource DetailsButtonConverter}}"
                     Command="{Binding ToggleDetailsCommand}"
                     Classes="hyperlink"
-                    Padding="0"
-                    Background="Transparent"
                     HorizontalAlignment="Left" />
 
             <Border IsVisible="{Binding ShowDetailsExpanded}"

@@ -556,7 +556,7 @@ AutoQAC_Data:
   #region TTW/Enderal Variant Skip List Tests
 
   /// <summary>
-  /// TTW variant: GetSkipListAsync for FNV with GameVariant.TTW should include FO3 entries.
+  /// TTW variant: GetSkipListAsync for FNV with GameVariant.Ttw should include FO3 entries.
   /// </summary>
   [Fact]
   public async Task GetSkipListAsync_TTW_ShouldMergeFO3EntriesIntoFNV()
@@ -585,7 +585,7 @@ Skip_Lists:
     var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
 
     // Act
-    var list = await service.GetSkipListAsync(GameType.FalloutNewVegas, GameVariant.TTW);
+    var list = await service.GetSkipListAsync(GameType.FalloutNewVegas, GameVariant.Ttw);
 
     // Assert
     list.Should().Contain("FalloutNV.esm", "FNV entries from Main.yaml should be included");

@@ -9,7 +9,7 @@ public enum GameVariant
     None,
 
     /// <summary>Tale of Two Wastelands -- FNV with FO3 content merged in.</summary>
-    TTW,
+    Ttw,
 
     /// <summary>Enderal -- Total conversion mod for Skyrim SE.</summary>
     Enderal

@@ -10,8 +10,6 @@ namespace AutoQAC.Converters;
 /// </summary>
 public sealed class IntEqualsConverter : IValueConverter
 {
-    public static IntEqualsConverter Instance { get; } = new();
-
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
         if (value is int intValue && parameter is string paramStr && int.TryParse(paramStr, out var paramInt))

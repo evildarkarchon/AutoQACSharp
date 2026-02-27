@@ -33,7 +33,6 @@ namespace AutoQAC.Tests.Services;
 public sealed class ProcessExecutionServiceTests : IDisposable
 {
     private readonly ILoggingService _mockLogger;
-    private readonly IStateService _mockState;
 
     /// <summary>
     /// Initializes test fixtures with default mock configurations.
@@ -41,10 +40,6 @@ public sealed class ProcessExecutionServiceTests : IDisposable
     public ProcessExecutionServiceTests()
     {
         _mockLogger = Substitute.For<ILoggingService>();
-        _mockState = Substitute.For<IStateService>();
-
-        var defaultState = new AppState();
-        _mockState.CurrentState.Returns(defaultState);
     }
 
     public void Dispose()
@@ -65,7 +60,7 @@ public sealed class ProcessExecutionServiceTests : IDisposable
     public async Task ExecuteAsync_WhenProcessNotFound_ShouldReturnFailedResult()
     {
         // Arrange
-        using var service = new ProcessExecutionService(_mockState, _mockLogger);
+        using var service = new ProcessExecutionService(_mockLogger);
 
         var startInfo = new ProcessStartInfo
         {
@@ -100,7 +95,7 @@ public sealed class ProcessExecutionServiceTests : IDisposable
     public async Task Dispose_ShouldPreventFurtherExecution()
     {
         // Arrange
-        var service = new ProcessExecutionService(_mockState, _mockLogger);
+        var service = new ProcessExecutionService(_mockLogger);
 
         // Act
         service.Dispose();
@@ -125,7 +120,7 @@ public sealed class ProcessExecutionServiceTests : IDisposable
     public async Task ExecuteAsync_ShouldCaptureConcurrentStdoutAndStderrWithoutLoss()
     {
         // Arrange
-        using var service = new ProcessExecutionService(_mockState, _mockLogger);
+        using var service = new ProcessExecutionService(_mockLogger);
         var startInfo = new ProcessStartInfo
         {
             FileName = "cmd.exe",
@@ -150,7 +145,7 @@ public sealed class ProcessExecutionServiceTests : IDisposable
     public async Task CleanOrphanedProcessesAsync_ShouldNotLeakProcessHandlesAcrossRepeatedRuns()
     {
         // Arrange
-        using var service = new ProcessExecutionService(_mockState, _mockLogger);
+        using var service = new ProcessExecutionService(_mockLogger);
         var getPidFilePathMethod = typeof(ProcessExecutionService)
             .GetMethod("GetPidFilePath", BindingFlags.Instance | BindingFlags.NonPublic);
         getPidFilePathMethod.Should().NotBeNull();

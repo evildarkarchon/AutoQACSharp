@@ -9,10 +9,8 @@ using AutoQAC.Models;
 
 namespace AutoQAC.Services.GameDetection;
 
-public sealed class GameDetectionService : IGameDetectionService
+public sealed class GameDetectionService(ILoggingService logger) : IGameDetectionService
 {
-    private readonly ILoggingService _logger;
-
     private static readonly Dictionary<string, GameType> ExecutablePatterns = new(StringComparer.OrdinalIgnoreCase)
     {
         // Oblivion
@@ -53,11 +51,6 @@ public sealed class GameDetectionService : IGameDetectionService
         { "Fallout4_VR.esm", GameType.Fallout4Vr },
     };
 
-    public GameDetectionService(ILoggingService logger)
-    {
-        _logger = logger;
-    }
-
     public GameType DetectFromExecutable(string executablePath)
     {
         if (string.IsNullOrWhiteSpace(executablePath)) return GameType.Unknown;
@@ -66,7 +59,7 @@ public sealed class GameDetectionService : IGameDetectionService
         // Remove version numbers or extra bits if necessary? 
         // The reference Python implementation splits by space and takes the first part in some cases,
         // but the patterns usually match the filename directly.
-        
+
         // Try exact match first
         if (ExecutablePatterns.TryGetValue(fileName, out var gameType))
         {
@@ -117,13 +110,13 @@ public sealed class GameDetectionService : IGameDetectionService
         }
         catch (Exception ex)
         {
-            _logger.Error(ex, $"Failed to read load order file: {loadOrderPath}");
+            logger.Error(ex, $"Failed to read load order file: {loadOrderPath}");
         }
 
         return GameType.Unknown;
     }
 
-    public GameVariant DetectVariant(GameType baseGame, IReadOnlyList<string> pluginNames)
+    public GameVariant DetectVariant(GameType baseGame, IReadOnlyList<string>? pluginNames)
     {
         if (pluginNames == null || pluginNames.Count == 0)
             return GameVariant.None;
@@ -132,8 +125,8 @@ public sealed class GameDetectionService : IGameDetectionService
         {
             if (pluginNames.Any(p => p.Equals("TaleOfTwoWastelands.esm", StringComparison.OrdinalIgnoreCase)))
             {
-                _logger.Information("Detected TTW (Tale of Two Wastelands) variant");
-                return GameVariant.TTW;
+                logger.Information("Detected TTW (Tale of Two Wastelands) variant");
+                return GameVariant.Ttw;
             }
         }
 
@@ -143,7 +136,7 @@ public sealed class GameDetectionService : IGameDetectionService
                 p.Equals("Enderal - Forgotten Stories.esm", StringComparison.OrdinalIgnoreCase) ||
                 p.Equals("Enderal.esm", StringComparison.OrdinalIgnoreCase)))
             {
-                _logger.Information("Detected Enderal variant");
+                logger.Information("Detected Enderal variant");
                 return GameVariant.Enderal;
             }
         }

@@ -4,22 +4,30 @@
              xmlns:local="using:AutoQAC"
              xmlns:converters="using:AutoQAC.Converters"
              RequestedThemeVariant="Default">
-             <!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->
+    <!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->
 
     <Application.Resources>
-        <converters:GameTypeDisplayConverter x:Key="GameTypeDisplayConverter"/>
-        <converters:IsTrueConverter x:Key="IsTrueConverter"/>
-        <converters:IsFalseConverter x:Key="IsFalseConverter"/>
-        <converters:IsNotNullConverter x:Key="IsNotNullConverter"/>
-        <converters:IntEqualsConverter x:Key="IntEqualsConverter"/>
+        <converters:GameTypeDisplayConverter x:Key="GameTypeDisplayConverter" />
+        <converters:IsTrueConverter x:Key="IsTrueConverter" />
+        <converters:IsFalseConverter x:Key="IsFalseConverter" />
+        <converters:IsNotNullConverter x:Key="IsNotNullConverter" />
+        <converters:IntEqualsConverter x:Key="IntEqualsConverter" />
     </Application.Resources>
 
     <Application.DataTemplates>
-        <local:ViewLocator/>
+        <local:ViewLocator />
     </Application.DataTemplates>
 
     <Application.Styles>
         <FluentTheme />
-        <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml"/>
+        <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml" />
+        <Style Selector="Button.hyperlink">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Foreground" Value="{DynamicResource SystemAccentColor}" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
     </Application.Styles>
 </Application>

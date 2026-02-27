@@ -12,16 +12,9 @@ namespace AutoQAC.Services.Cleaning;
 /// Reads xEdit log files from disk after each plugin's cleaning process exits.
 /// Handles missing files, stale logs, and IOExceptions with a single retry after 200ms delay.
 /// </summary>
-public sealed class XEditLogFileService : IXEditLogFileService
+public sealed class XEditLogFileService(ILoggingService logger) : IXEditLogFileService
 {
     private const int RetryDelayMs = 200;
-
-    private readonly ILoggingService _logger;
-
-    public XEditLogFileService(ILoggingService logger)
-    {
-        _logger = logger;
-    }
 
     /// <inheritdoc />
     public string GetLogFilePath(string xEditExecutablePath)
@@ -44,7 +37,7 @@ public sealed class XEditLogFileService : IXEditLogFileService
         // Check existence
         if (!File.Exists(logPath))
         {
-            _logger.Debug("Log file not found: {Path}", logPath);
+            logger.Debug("Log file not found: {Path}", logPath);
             return (new List<string>(), $"Log file not found: {logPath}");
         }
 
@@ -52,7 +45,7 @@ public sealed class XEditLogFileService : IXEditLogFileService
         var logModifiedUtc = File.GetLastWriteTimeUtc(logPath);
         if (logModifiedUtc < processStartTime.ToUniversalTime())
         {
-            _logger.Debug("Log file is stale (modified {Modified}, process started {Started})", logModifiedUtc, processStartTime);
+            logger.Debug("Log file is stale (modified {Modified}, process started {Started})", logModifiedUtc, processStartTime);
             return (new List<string>(), "Log file is stale (predates this cleaning run)");
         }
 
@@ -64,7 +57,7 @@ public sealed class XEditLogFileService : IXEditLogFileService
         }
         catch (IOException firstEx)
         {
-            _logger.Debug("First read attempt failed for {Path}: {Error}. Retrying in {Delay}ms...",
+            logger.Debug("First read attempt failed for {Path}: {Error}. Retrying in {Delay}ms...",
                 logPath, firstEx.Message, RetryDelayMs);
 
             await Task.Delay(RetryDelayMs, ct).ConfigureAwait(false);
@@ -76,7 +69,7 @@ public sealed class XEditLogFileService : IXEditLogFileService
             }
             catch (IOException secondEx)
             {
-                _logger.Warning("Failed to read log file after retry: {Path}: {Error}", logPath, secondEx.Message);
+                logger.Warning("Failed to read log file after retry: {Path}: {Error}", logPath, secondEx.Message);
                 return (new List<string>(), $"Failed to read log file: {secondEx.Message}");
             }
         }

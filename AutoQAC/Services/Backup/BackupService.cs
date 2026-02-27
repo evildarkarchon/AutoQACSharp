@@ -13,26 +13,19 @@ namespace AutoQAC.Services.Backup;
 /// <summary>
 /// Manages plugin file backup, restore, and session retention.
 /// </summary>
-public sealed class BackupService : IBackupService
+public sealed class BackupService(ILoggingService logger) : IBackupService
 {
-    private readonly ILoggingService _logger;
-
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true
     };
-
-    public BackupService(ILoggingService logger)
-    {
-        _logger = logger;
-    }
 
     public string CreateSessionDirectory(string backupRoot)
     {
         var sessionName = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
         var sessionDir = Path.Combine(backupRoot, sessionName);
         Directory.CreateDirectory(sessionDir);
-        _logger.Information("Created backup session directory: {SessionDir}", sessionDir);
+        logger.Information("Created backup session directory: {SessionDir}", sessionDir);
         return sessionDir;
     }
 
@@ -57,18 +50,18 @@ public sealed class BackupService : IBackupService
             File.Copy(plugin.FullPath, destPath, overwrite: false);
 
             var fileSize = new FileInfo(destPath).Length;
-            _logger.Debug("Backed up {Plugin} ({Size} bytes) to {Dest}", plugin.FileName, fileSize, destPath);
+            logger.Debug("Backed up {Plugin} ({Size} bytes) to {Dest}", plugin.FileName, fileSize, destPath);
 
             return BackupResult.Ok(fileSize);
         }
         catch (IOException ex)
         {
-            _logger.Warning("Backup failed for {Plugin}: {Error}", plugin.FileName, ex.Message);
+            logger.Warning("Backup failed for {Plugin}: {Error}", plugin.FileName, ex.Message);
             return BackupResult.Failure($"I/O error backing up '{plugin.FileName}': {ex.Message}");
         }
         catch (UnauthorizedAccessException ex)
         {
-            _logger.Warning("Backup failed for {Plugin}: {Error}", plugin.FileName, ex.Message);
+            logger.Warning("Backup failed for {Plugin}: {Error}", plugin.FileName, ex.Message);
             return BackupResult.Failure($"Access denied backing up '{plugin.FileName}': {ex.Message}");
         }
     }
@@ -80,7 +73,7 @@ public sealed class BackupService : IBackupService
         await using var stream = new FileStream(metadataPath, FileMode.Create, FileAccess.Write, FileShare.None);
         await JsonSerializer.SerializeAsync(stream, session, JsonOptions, ct).ConfigureAwait(false);
 
-        _logger.Debug("Wrote session metadata to {Path}", metadataPath);
+        logger.Debug("Wrote session metadata to {Path}", metadataPath);
     }
 
     public async Task<List<BackupSession>> GetBackupSessionsAsync(string backupRoot, CancellationToken ct = default)
@@ -103,7 +96,7 @@ public sealed class BackupService : IBackupService
             var metadataPath = Path.Combine(dir, "session.json");
             if (!File.Exists(metadataPath))
             {
-                _logger.Debug("Skipping directory without session.json: {Dir}", dir);
+                logger.Debug("Skipping directory without session.json: {Dir}", dir);
                 continue;
             }
 
@@ -121,11 +114,11 @@ public sealed class BackupService : IBackupService
             }
             catch (JsonException ex)
             {
-                _logger.Warning("Corrupt session.json in {Dir}: {Error}", dir, ex.Message);
+                logger.Warning("Corrupt session.json in {Dir}: {Error}", dir, ex.Message);
             }
             catch (IOException ex)
             {
-                _logger.Warning("Failed to read session.json in {Dir}: {Error}", dir, ex.Message);
+                logger.Warning("Failed to read session.json in {Dir}: {Error}", dir, ex.Message);
             }
         }
 
@@ -148,7 +141,7 @@ public sealed class BackupService : IBackupService
         }
 
         File.Copy(backupPath, entry.OriginalPath, overwrite: true);
-        _logger.Information("Restored {Plugin} to {Path}", entry.FileName, entry.OriginalPath);
+        logger.Information("Restored {Plugin} to {Path}", entry.FileName, entry.OriginalPath);
     }
 
     public void RestoreSession(BackupSession session)
@@ -195,11 +188,11 @@ public sealed class BackupService : IBackupService
             try
             {
                 Directory.Delete(dir, recursive: true);
-                _logger.Information("Deleted old backup session: {Dir}", dir);
+                logger.Information("Deleted old backup session: {Dir}", dir);
             }
             catch (Exception ex)
             {
-                _logger.Warning("Failed to delete old backup session {Dir}: {Error}", dir, ex.Message);
+                logger.Warning("Failed to delete old backup session {Dir}: {Error}", dir, ex.Message);
             }
         }
     }

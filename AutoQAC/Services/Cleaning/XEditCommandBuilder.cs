@@ -12,15 +12,8 @@ public interface IXEditCommandBuilder
     ProcessStartInfo? BuildCommand(PluginInfo plugin, GameType gameType);
 }
 
-public sealed class XEditCommandBuilder : IXEditCommandBuilder
+public sealed class XEditCommandBuilder(IStateService stateService) : IXEditCommandBuilder
 {
-    private readonly IStateService _stateService;
-
-    public XEditCommandBuilder(IStateService stateService)
-    {
-        _stateService = stateService;
-    }
-
     public ProcessStartInfo? BuildCommand(PluginInfo plugin, GameType gameType)
     {
         if (gameType == GameType.Unknown)
@@ -28,7 +21,7 @@ public sealed class XEditCommandBuilder : IXEditCommandBuilder
             return null; // Safety: refuse to build command without known game type
         }
 
-        var config = _stateService.CurrentState;
+        var config = stateService.CurrentState;
         var xEditPath = config.XEditExecutablePath;
 
         if (string.IsNullOrEmpty(xEditPath)) return null;

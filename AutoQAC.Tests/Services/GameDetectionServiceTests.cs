@@ -382,7 +382,7 @@ SomeMod.esp
         var result = service.DetectVariant(GameType.FalloutNewVegas, plugins);
 
         // Assert
-        result.Should().Be(GameVariant.TTW);
+        result.Should().Be(GameVariant.Ttw);
     }
 
     /// <summary>
@@ -399,7 +399,7 @@ SomeMod.esp
         var result = service.DetectVariant(GameType.FalloutNewVegas, plugins);
 
         // Assert
-        result.Should().Be(GameVariant.TTW);
+        result.Should().Be(GameVariant.Ttw);
     }
 
     /// <summary>
@@ -478,10 +478,26 @@ SomeMod.esp
     {
         // Arrange
         var service = new GameDetectionService(Substitute.For<ILoggingService>());
-        var plugins = new List<string>();
+        var plugins = Array.Empty<string>();
 
         // Act
         var result = service.DetectVariant(GameType.FalloutNewVegas, plugins);
+
+        // Assert
+        result.Should().Be(GameVariant.None);
+    }
+
+    /// <summary>
+    /// Null plugin list: should return None.
+    /// </summary>
+    [Fact]
+    public void DetectVariant_ShouldReturnNone_WhenPluginListIsNull()
+    {
+        // Arrange
+        var service = new GameDetectionService(Substitute.For<ILoggingService>());
+
+        // Act
+        var result = service.DetectVariant(GameType.FalloutNewVegas, null);
 
         // Assert
         result.Should().Be(GameVariant.None);

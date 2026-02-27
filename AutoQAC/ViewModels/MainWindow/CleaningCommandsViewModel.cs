@@ -40,28 +40,22 @@ public sealed class CleaningCommandsViewModel : ViewModelBase, IDisposable
     private readonly Interaction<Unit, Unit> _showRestoreInteraction;
     private readonly Interaction<Unit, Unit> _showAboutInteraction;
 
-    private string _statusText = "Ready";
-
     public string StatusText
     {
-        get => _statusText;
-        set => this.RaiseAndSetIfChanged(ref _statusText, value);
-    }
-
-    private ObservableCollection<ValidationError> _validationErrors = new();
+        get;
+        set => this.RaiseAndSetIfChanged(ref field, value);
+    } = "Ready";
 
     public ObservableCollection<ValidationError> ValidationErrors
     {
-        get => _validationErrors;
-        set => this.RaiseAndSetIfChanged(ref _validationErrors, value);
-    }
-
-    private bool _hasValidationErrors;
+        get;
+        set => this.RaiseAndSetIfChanged(ref field, value);
+    } = new();
 
     public bool HasValidationErrors
     {
-        get => _hasValidationErrors;
-        set => this.RaiseAndSetIfChanged(ref _hasValidationErrors, value);
+        get;
+        set => this.RaiseAndSetIfChanged(ref field, value);
     }
 
     private readonly ObservableAsPropertyHelper<bool> _isCleaning;
@@ -324,7 +318,7 @@ public sealed class CleaningCommandsViewModel : ViewModelBase, IDisposable
         }
         else
         {
-            var selectedCount = state.PluginsToClean.Count(p => p.IsSelected && !p.IsInSkipList);
+            var selectedCount = state.PluginsToClean.Count(p => p is { IsSelected: true, IsInSkipList: false });
             if (selectedCount == 0)
             {
                 errors.Add(new ValidationError(

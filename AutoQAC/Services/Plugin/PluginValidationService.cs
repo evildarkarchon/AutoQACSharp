@@ -9,10 +9,8 @@ using AutoQAC.Models;
 
 namespace AutoQAC.Services.Plugin;
 
-public sealed class PluginValidationService : IPluginValidationService
+public sealed class PluginValidationService(ILoggingService logger) : IPluginValidationService
 {
-    private readonly ILoggingService _logger;
-
     /// <summary>
     /// Valid plugin file extensions (case-insensitive).
     /// </summary>
@@ -25,12 +23,7 @@ public sealed class PluginValidationService : IPluginValidationService
     /// Prefix characters used by plugins.txt and MO2 load order files.
     /// * = enabled, + = MO2 enabled mod, - = MO2 disabled mod.
     /// </summary>
-    private static readonly HashSet<char> PrefixChars = new() { '*', '+', '-' };
-
-    public PluginValidationService(ILoggingService logger)
-    {
-        _logger = logger;
-    }
+    private static readonly HashSet<char> PrefixChars = ['*', '+', '-'];
 
     public async Task<List<PluginInfo>> GetPluginsFromLoadOrderAsync(
         string loadOrderPath,
@@ -41,7 +34,7 @@ public sealed class PluginValidationService : IPluginValidationService
 
         if (string.IsNullOrWhiteSpace(loadOrderPath) || !File.Exists(loadOrderPath))
         {
-            _logger.Warning("Load order file not found or empty path: {LoadOrderPath}", loadOrderPath);
+            logger.Warning("Load order file not found or empty path: {LoadOrderPath}", loadOrderPath);
             return plugins;
         }
 
@@ -71,7 +64,7 @@ public sealed class PluginValidationService : IPluginValidationService
         }
         catch (Exception ex)
         {
-            _logger.Error(ex, "Failed to parse load order: {LoadOrderPath}", loadOrderPath);
+            logger.Error(ex, "Failed to parse load order: {LoadOrderPath}", loadOrderPath);
         }
 
         return plugins;
@@ -129,7 +122,7 @@ public sealed class PluginValidationService : IPluginValidationService
     {
         using var reader = new StreamReader(path, detectEncodingFromByteOrderMarks: true);
         var content = await reader.ReadToEndAsync(ct).ConfigureAwait(false);
-        return content.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
+        return content.Split(["\r\n", "\r", "\n"], StringSplitOptions.None);
     }
 
     /// <summary>
@@ -157,7 +150,7 @@ public sealed class PluginValidationService : IPluginValidationService
         // Step 4: If empty after stripping prefix, skip (separator line)
         if (string.IsNullOrWhiteSpace(trimmed))
         {
-            _logger.Debug("Separator line stripped (empty after prefix removal)");
+            logger.Debug("Separator line stripped (empty after prefix removal)");
             return null;
         }
 
@@ -165,7 +158,7 @@ public sealed class PluginValidationService : IPluginValidationService
         // would have been trimmed already -- specifically check for null bytes and other controls)
         if (trimmed.Any(c => c < 0x20 && c != '\t'))
         {
-            _logger.Warning(
+            logger.Warning(
                 "Skipping malformed load order entry (contains control characters): {Entry}",
                 SanitizeForLog(trimmed));
             return null;
@@ -174,7 +167,7 @@ public sealed class PluginValidationService : IPluginValidationService
         // Step 6: Check for path separators (/ or \) -- indicates a full path, not a plugin name
         if (trimmed.Contains('\\') || trimmed.Contains('/'))
         {
-            _logger.Warning("Skipping malformed load order entry (contains path separators): {Entry}", trimmed);
+            logger.Warning("Skipping malformed load order entry (contains path separators): {Entry}", trimmed);
             return null;
         }
 
@@ -182,7 +175,7 @@ public sealed class PluginValidationService : IPluginValidationService
         var extension = Path.GetExtension(trimmed);
         if (!ValidExtensions.Contains(extension))
         {
-            _logger.Debug("Skipping non-plugin entry (invalid extension '{Extension}'): {Entry}", extension, trimmed);
+            logger.Debug("Skipping non-plugin entry (invalid extension '{Extension}'): {Entry}", extension, trimmed);
             return null;
         }
 

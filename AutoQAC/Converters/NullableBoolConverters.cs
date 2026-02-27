@@ -10,8 +10,6 @@ namespace AutoQAC.Converters;
 /// </summary>
 public sealed class IsTrueConverter : IValueConverter
 {
-    public static IsTrueConverter Instance { get; } = new();
-
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
         => value is true;
 
@@ -25,8 +23,6 @@ public sealed class IsTrueConverter : IValueConverter
 /// </summary>
 public sealed class IsFalseConverter : IValueConverter
 {
-    public static IsFalseConverter Instance { get; } = new();
-
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
         => value is false;
 
@@ -40,8 +36,6 @@ public sealed class IsFalseConverter : IValueConverter
 /// </summary>
 public sealed class IsNotNullConverter : IValueConverter
 {
-    public static IsNotNullConverter Instance { get; } = new();
-
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
         => value is not null;
 

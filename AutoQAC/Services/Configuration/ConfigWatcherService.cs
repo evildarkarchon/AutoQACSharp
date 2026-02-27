@@ -99,9 +99,9 @@ public sealed class ConfigWatcherService : IConfigWatcherService
                 NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size
             };
 
-            var fswObservable = Observable.FromEventPattern<FileSystemEventHandler, FileSystemEventArgs>(
-                    h => watcher.Changed += h,
-                    h => watcher.Changed -= h)
+            var fswObservable = Observable.FromEventPattern<FileSystemEventArgs>(
+                    watcher,
+                    nameof(FileSystemWatcher.Changed))
                 .Throttle(TimeSpan.FromMilliseconds(500))
                 .ObserveOn(TaskPoolScheduler.Default)
                 .SelectMany(_ => Observable.FromAsync(HandleFileChangedAsync))

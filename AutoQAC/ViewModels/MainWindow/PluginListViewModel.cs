@@ -16,23 +16,18 @@ namespace AutoQAC.ViewModels.MainWindow;
 /// </summary>
 public sealed class PluginListViewModel : ViewModelBase, IDisposable
 {
-    private readonly IStateService _stateService;
     private readonly CompositeDisposable _disposables = new();
-
-    private ObservableCollection<PluginInfo> _pluginsToClean = new();
 
     public ObservableCollection<PluginInfo> PluginsToClean
     {
-        get => _pluginsToClean;
-        set => this.RaiseAndSetIfChanged(ref _pluginsToClean, value);
-    }
-
-    private PluginInfo? _selectedPlugin;
+        get;
+        set => this.RaiseAndSetIfChanged(ref field, value);
+    } = new();
 
     public PluginInfo? SelectedPlugin
     {
-        get => _selectedPlugin;
-        set => this.RaiseAndSetIfChanged(ref _selectedPlugin, value);
+        get;
+        set => this.RaiseAndSetIfChanged(ref field, value);
     }
 
     // Commands
@@ -41,13 +36,11 @@ public sealed class PluginListViewModel : ViewModelBase, IDisposable
 
     public PluginListViewModel(IStateService stateService)
     {
-        _stateService = stateService;
-
         // Define observables for command enablement
-        var hasPlugins = _stateService.StateChanged
+        var hasPlugins = stateService.StateChanged
             .Select(s => s.PluginsToClean.Count > 0);
 
-        var isCleaning = _stateService.StateChanged
+        var isCleaning = stateService.StateChanged
             .Select(s => s.IsCleaning);
 
         // Plugin selection commands - disabled during cleaning, enabled when plugins exist
@@ -56,6 +49,8 @@ public sealed class PluginListViewModel : ViewModelBase, IDisposable
             (hasP, cleaning) => hasP && !cleaning);
         SelectAllCommand = ReactiveCommand.Create(SelectAllPlugins, canSelectPlugins);
         DeselectAllCommand = ReactiveCommand.Create(DeselectAllPlugins, canSelectPlugins);
+        _disposables.Add(SelectAllCommand);
+        _disposables.Add(DeselectAllCommand);
     }
 
     /// <summary>

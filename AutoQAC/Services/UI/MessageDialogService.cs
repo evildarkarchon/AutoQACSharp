@@ -104,7 +104,7 @@ public sealed class MessageDialogService : IMessageDialogService
 
         var panel = new StackPanel
         {
-            Margin = new Avalonia.Thickness(20),
+            Margin = new Thickness(20),
             Spacing = 12
         };
 
@@ -126,7 +126,7 @@ public sealed class MessageDialogService : IMessageDialogService
         panel.Children.Add(new TextBlock
         {
             Text = "How would you like to proceed?",
-            Margin = new Avalonia.Thickness(0, 4, 0, 0)
+            Margin = new Thickness(0, 4, 0, 0)
         });
 
         var buttonPanel = new StackPanel

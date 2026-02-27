@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -83,8 +82,8 @@ public sealed class LegacyMigrationService : ILegacyMigrationService
         try
         {
             var legacyContent = await File.ReadAllTextAsync(legacyPath, ct).ConfigureAwait(false);
-            migratedConfig = _deserializer.Deserialize<UserConfiguration>(legacyContent);
-            if (migratedConfig == null)
+            var deserializedConfig = _deserializer.Deserialize<UserConfiguration?>(legacyContent);
+            if (deserializedConfig is null)
             {
                 return new MigrationResult(
                     Attempted: true,
@@ -92,6 +91,8 @@ public sealed class LegacyMigrationService : ILegacyMigrationService
                     WarningMessage: "Legacy config file was empty or could not be parsed.",
                     FailedFiles: [LegacyConfigFile]);
             }
+
+            migratedConfig = deserializedConfig;
         }
         catch (Exception ex)
         {

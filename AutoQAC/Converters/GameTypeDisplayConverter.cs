@@ -10,9 +10,7 @@ namespace AutoQAC.Converters;
 /// </summary>
 public sealed class GameTypeDisplayConverter : IValueConverter
 {
-    public static GameTypeDisplayConverter Instance { get; } = new();
-
-    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
         if (value is GameType gameType)
         {
@@ -21,7 +19,7 @@ public sealed class GameTypeDisplayConverter : IValueConverter
         return value?.ToString() ?? string.Empty;
     }
 
-    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
         // Not typically needed for display-only scenarios
         if (value is string displayName)
