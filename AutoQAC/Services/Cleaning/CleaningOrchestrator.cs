@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Collections.Frozen;
 using System.Diagnostics;
 using System.Linq;
-using System.Reactive.Disposables;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
 using System.Threading;
@@ -193,7 +192,7 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
             else if (gameType != GameType.Unknown)
             {
                 var skipList = await _configService.GetSkipListAsync(gameType, gameVariant, ct)
-                    .ConfigureAwait(false) ?? [];
+                    .ConfigureAwait(false);
                 var skipSet = new HashSet<string>(skipList, StringComparer.OrdinalIgnoreCase);
 
                 pluginsToClean = allPlugins
@@ -387,14 +386,7 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
                                 _currentProcess = proc;
                             }
 
-                            // Start hang detection monitoring for this process
-                            _hangMonitorSubscription?.Dispose();
-                            _hangMonitorSubscription = _hangDetection.MonitorProcess(proc)
-                                .Subscribe(
-                                    isHung => _hangDetected.OnNext(isHung),
-                                    _ => { }, // Error: monitor completed unexpectedly
-                                    () => { } // Completed: process exited
-                                );
+                            StartHangMonitoring(proc);
                         }).ConfigureAwait(false);
 
                     // If timed out and callback provided, ask user if they want to retry
@@ -434,7 +426,7 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
                 var logStats = result.Statistics;
                 string? logParseWarning = null;
 
-                if (result.Success && result.Status == CleaningStatus.Cleaned)
+                if (result is { Success: true, Status: CleaningStatus.Cleaned })
                 {
                     var xEditPath = config.XEditExecutablePath ?? string.Empty;
                     var (logLines, logError) = await _logFileService.ReadLogFileAsync(
@@ -514,7 +506,6 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
         {
             // Cancellation is not an error -- preserve partial results
             _logger.Information("Cleaning workflow cancelled");
-            wasCancelled = true;
 
             // Write partial backup metadata if any backups were made
             if (sessionDir != null && backupEntries.Count > 0)
@@ -528,7 +519,10 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
                         SessionDirectory = sessionDir,
                         Plugins = backupEntries
                     };
-                    await _backupService.WriteSessionMetadataAsync(sessionDir, partialBackupSession).ConfigureAwait(false);
+                    await _backupService.WriteSessionMetadataAsync(
+                        sessionDir,
+                        partialBackupSession,
+                        CancellationToken.None).ConfigureAwait(false);
                 }
                 catch (Exception backupEx)
                 {
@@ -615,7 +609,10 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
 
         try
         {
-            cts?.Cancel();
+            if (cts is not null)
+            {
+                _ = cts.CancelAsync();
+            }
         }
         catch (ObjectDisposedException)
         {
@@ -637,7 +634,7 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
             {
                 if (!proc.HasExited)
                 {
-                    var result = await _processService.TerminateProcessAsync(proc, forceKill: false)
+                    var result = await _processService.TerminateProcessAsync(proc, forceKill: false, ct: CancellationToken.None)
                         .ConfigureAwait(false);
 
                     if (result == TerminationResult.GracePeriodExpired)
@@ -668,7 +665,10 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
 
         try
         {
-            cts?.Cancel();
+            if (cts is not null)
+            {
+                _ = cts.CancelAsync();
+            }
         }
         catch (ObjectDisposedException)
         {
@@ -688,7 +688,7 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
             {
                 if (!proc.HasExited)
                 {
-                    await _processService.TerminateProcessAsync(proc, forceKill: true)
+                    await _processService.TerminateProcessAsync(proc, forceKill: true, ct: CancellationToken.None)
                         .ConfigureAwait(false);
                 }
             }
@@ -750,10 +750,10 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
 
         // Build skip set
         HashSet<string>? skipSet = null;
-        if (!disableSkipLists && gameType != GameType.Unknown)
+        if (!disableSkipLists)
         {
             var skipList = await _configService.GetSkipListAsync(gameType, gameVariant, ct)
-                .ConfigureAwait(false) ?? [];
+                .ConfigureAwait(false);
             skipSet = new HashSet<string>(skipList, StringComparer.OrdinalIgnoreCase);
         }
 
@@ -836,6 +836,18 @@ public sealed class CleaningOrchestrator : ICleaningOrchestrator, IDisposable
         GameType.Oblivion => true,
         _ => false
     };
+
+    private void StartHangMonitoring(System.Diagnostics.Process process)
+    {
+        // Ensure only one active monitor subscription per xEdit process lifecycle.
+        _hangMonitorSubscription?.Dispose();
+        _hangMonitorSubscription = _hangDetection.MonitorProcess(process)
+            .Subscribe(
+                isHung => _hangDetected.OnNext(isHung),
+                _ => { }, // Error: monitor completed unexpectedly
+                () => { } // Completed: process exited
+            );
+    }
 
     private void LogSessionSummary(CleaningSessionResult session)
     {

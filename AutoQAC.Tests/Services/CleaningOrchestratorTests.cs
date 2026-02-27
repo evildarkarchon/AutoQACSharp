@@ -47,7 +47,10 @@ public sealed class CleaningOrchestratorTests
         _hangDetectionMock = Substitute.For<IHangDetectionService>();
 
         // Default mock setup for GetSkipListAsync to return empty list instead of null
-        _configServiceMock.GetSkipListAsync(Arg.Any<GameType>())
+        _configServiceMock.GetSkipListAsync(
+                Arg.Any<GameType>(),
+                Arg.Any<GameVariant>(),
+                Arg.Any<CancellationToken>())
             .Returns(new List<string>());
 
         // Default mock setup for LoadUserConfigAsync to return default config (DisableSkipLists = false)
@@ -335,7 +338,10 @@ public sealed class CleaningOrchestratorTests
         _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>())
             .Returns(true);
 
-        _configServiceMock.GetSkipListAsync(Arg.Any<GameType>())
+        _configServiceMock.GetSkipListAsync(
+                Arg.Any<GameType>(),
+                Arg.Any<GameVariant>(),
+                Arg.Any<CancellationToken>())
             .Returns(new List<string>());
 
         _pluginServiceMock.FilterSkippedPlugins(plugins, Arg.Any<List<string>>())
@@ -987,7 +993,10 @@ public sealed class CleaningOrchestratorTests
             .Returns(new CleaningResult { Status = CleaningStatus.Cleaned });
 
         // Skip list contains base game ESMs
-        _configServiceMock.GetSkipListAsync(GameType.SkyrimSe)
+        _configServiceMock.GetSkipListAsync(
+                GameType.SkyrimSe,
+                Arg.Any<GameVariant>(),
+                Arg.Any<CancellationToken>())
             .Returns(new List<string> { "Skyrim.esm", "Update.esm" });
 
         // DisableSkipLists is ENABLED
@@ -1037,7 +1046,10 @@ public sealed class CleaningOrchestratorTests
             .Returns(new CleaningResult { Status = CleaningStatus.Cleaned });
 
         // Skip list contains base game ESMs
-        _configServiceMock.GetSkipListAsync(GameType.SkyrimSe)
+        _configServiceMock.GetSkipListAsync(
+                GameType.SkyrimSe,
+                Arg.Any<GameVariant>(),
+                Arg.Any<CancellationToken>())
             .Returns(new List<string> { "Skyrim.esm", "Update.esm" });
 
         // DisableSkipLists is DISABLED (default)

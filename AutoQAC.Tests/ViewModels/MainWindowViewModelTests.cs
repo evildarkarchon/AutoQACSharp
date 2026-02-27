@@ -144,7 +144,10 @@ public sealed class MainWindowViewModelTests
                 .Returns(expectedPlugins);
 
             // Setup skip list (required for ApplySkipListStatus)
-            _configServiceMock.GetSkipListAsync(Arg.Any<GameType>())
+            _configServiceMock.GetSkipListAsync(
+                    Arg.Any<GameType>(),
+                    Arg.Any<GameVariant>(),
+                    Arg.Any<CancellationToken>())
                 .Returns(new List<string>());
 
             // Act
@@ -679,7 +682,10 @@ public sealed class MainWindowViewModelTests
             .Returns(expectedPlugins);
 
         // Setup skip list (required for ApplySkipListStatus)
-        _configServiceMock.GetSkipListAsync(Arg.Any<GameType>())
+        _configServiceMock.GetSkipListAsync(
+                Arg.Any<GameType>(),
+                Arg.Any<GameVariant>(),
+                Arg.Any<CancellationToken>())
             .Returns(new List<string>());
 
         var stateSubject = new BehaviorSubject<AppState>(new AppState());

@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Reflection;
-using System.Reactive.Subjects;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Models.Configuration;
@@ -14,7 +13,6 @@ using AutoQAC.Services.Process;
 using AutoQAC.Services.State;
 using FluentAssertions;
 using NSubstitute;
-using NSubstitute.ExceptionExtensions;
 
 namespace AutoQAC.Tests.Services;
 
@@ -157,8 +155,8 @@ public sealed class ProcessExecutionServiceTests : IDisposable
             .GetMethod("GetPidFilePath", BindingFlags.Instance | BindingFlags.NonPublic);
         getPidFilePathMethod.Should().NotBeNull();
 
-        var pidFilePath = (string)getPidFilePathMethod!.Invoke(service, null)!;
-        var currentProcess = System.Diagnostics.Process.GetCurrentProcess();
+        var pidFilePath = (string)getPidFilePathMethod.Invoke(service, null)!;
+        var currentProcess = Process.GetCurrentProcess();
         var startHandles = currentProcess.HandleCount;
 
         // Act
@@ -209,7 +207,10 @@ public sealed class ProcessExecutionServiceTests : IDisposable
         var hangDetectionMock = Substitute.For<IHangDetectionService>();
 
         // Default setup for GetSkipListAsync (with GameVariant parameter)
-        configServiceMock.GetSkipListAsync(Arg.Any<GameType>(), Arg.Any<GameVariant>())
+        configServiceMock.GetSkipListAsync(
+                Arg.Any<GameType>(),
+                Arg.Any<GameVariant>(),
+                Arg.Any<CancellationToken>())
             .Returns(new List<string>());
 
         // Default setup for LoadUserConfigAsync
@@ -251,7 +252,7 @@ public sealed class ProcessExecutionServiceTests : IDisposable
                 Arg.Any<PluginInfo>(),
                 Arg.Any<IProgress<string>>(),
                 Arg.Any<CancellationToken>(),
-                Arg.Any<Action<System.Diagnostics.Process>?>())
+                Arg.Any<Action<Process>?>())
             .Returns(new CleaningResult
             {
                 Status = CleaningStatus.Cleaned,
@@ -318,7 +319,7 @@ public sealed class ProcessExecutionServiceTests : IDisposable
                 Arg.Any<PluginInfo>(),
                 Arg.Any<IProgress<string>>(),
                 Arg.Any<CancellationToken>(),
-                Arg.Any<Action<System.Diagnostics.Process>?>())
+                Arg.Any<Action<Process>?>())
             .Returns(async callInfo =>
             {
                 cleaningStarted.TrySetResult(true);
@@ -338,7 +339,10 @@ public sealed class ProcessExecutionServiceTests : IDisposable
         var hangDetectionMock = Substitute.For<IHangDetectionService>();
         var processServiceMock = Substitute.For<IProcessExecutionService>();
 
-        configServiceMock.GetSkipListAsync(Arg.Any<GameType>(), Arg.Any<GameVariant>())
+        configServiceMock.GetSkipListAsync(
+                Arg.Any<GameType>(),
+                Arg.Any<GameVariant>(),
+                Arg.Any<CancellationToken>())
             .Returns(new List<string>());
         configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>())
             .Returns(new UserConfiguration());
@@ -413,7 +417,7 @@ public sealed class ProcessExecutionServiceTests : IDisposable
         // should not be called. This verifies the null-check path.
         await processServiceMock.DidNotReceive()
             .TerminateProcessAsync(
-                Arg.Any<System.Diagnostics.Process>(),
+                Arg.Any<Process>(),
                 Arg.Any<bool>(),
                 Arg.Any<CancellationToken>());
 
@@ -440,7 +444,7 @@ public sealed class ProcessExecutionServiceTests : IDisposable
         // But the code path through ForceStopCleaningAsync was exercised.
         await processServiceMock.DidNotReceive()
             .TerminateProcessAsync(
-                Arg.Any<System.Diagnostics.Process>(),
+                Arg.Any<Process>(),
                 Arg.Any<bool>(),
                 Arg.Any<CancellationToken>());
 

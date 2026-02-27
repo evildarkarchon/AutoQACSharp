@@ -32,7 +32,10 @@ public sealed class SkipListViewModelTests
 
         // Default setup for GetSkipListAsync - returns empty list (no defaults)
         // Individual tests can override this for specific scenarios
-        _configServiceMock.GetSkipListAsync(Arg.Any<GameType>())
+        _configServiceMock.GetSkipListAsync(
+                Arg.Any<GameType>(),
+                Arg.Any<GameVariant>(),
+                Arg.Any<CancellationToken>())
             .Returns(new List<string>());
 
         // Default setup for GetDefaultSkipListAsync - returns empty list (no defaults from Main.yaml)
@@ -128,7 +131,10 @@ public sealed class SkipListViewModelTests
             .Returns(skipList);
 
         // GetSkipListAsync returns merged list (same as user list in this test)
-        _configServiceMock.GetSkipListAsync(GameType.SkyrimSe)
+        _configServiceMock.GetSkipListAsync(
+                GameType.SkyrimSe,
+                Arg.Any<GameVariant>(),
+                Arg.Any<CancellationToken>())
             .Returns(skipList);
 
         var vm = CreateViewModel();
@@ -340,7 +346,7 @@ public sealed class SkipListViewModelTests
     {
         // Arrange
         _configServiceMock.GetGameSpecificSkipListAsync(GameType.SkyrimSe, Arg.Any<CancellationToken>())
-            .Returns(new List<string> { "Plugin.esp" });
+            .Returns(["Plugin.esp"]);
 
         var vm = CreateViewModel();
         await vm.LoadSkipListAsync();
@@ -361,7 +367,7 @@ public sealed class SkipListViewModelTests
     {
         // Arrange
         _configServiceMock.GetGameSpecificSkipListAsync(GameType.SkyrimSe, Arg.Any<CancellationToken>())
-            .Returns(new List<string> { "Plugin.esp" });
+            .Returns(["Plugin.esp"]);
 
         var vm = CreateViewModel();
         await vm.LoadSkipListAsync();
@@ -393,7 +399,7 @@ public sealed class SkipListViewModelTests
     {
         // Arrange
         _configServiceMock.GetGameSpecificSkipListAsync(GameType.SkyrimSe, Arg.Any<CancellationToken>())
-            .Returns(new List<string> { "Plugin.esp" });
+            .Returns(["Plugin.esp"]);
 
         var vm = CreateViewModel();
         await vm.LoadSkipListAsync();
@@ -412,7 +418,7 @@ public sealed class SkipListViewModelTests
     {
         // Arrange
         _configServiceMock.GetGameSpecificSkipListAsync(GameType.SkyrimSe, Arg.Any<CancellationToken>())
-            .Returns(new List<string> { "Original.esp" });
+            .Returns(["Original.esp"]);
 
         var vm = CreateViewModel();
         await vm.LoadSkipListAsync();
@@ -576,7 +582,10 @@ public sealed class SkipListViewModelTests
             .Returns(userSkipList);
 
         // GetSkipListAsync returns merged list (includes defaults)
-        _configServiceMock.GetSkipListAsync(GameType.SkyrimSe)
+        _configServiceMock.GetSkipListAsync(
+                GameType.SkyrimSe,
+                Arg.Any<GameVariant>(),
+                Arg.Any<CancellationToken>())
             .Returns(mergedSkipList);
 
         var vm = CreateViewModel();
@@ -619,7 +628,10 @@ public sealed class SkipListViewModelTests
         _configServiceMock.GetGameSpecificSkipListAsync(GameType.SkyrimSe, Arg.Any<CancellationToken>())
             .Returns(userSkipList);
 
-        _configServiceMock.GetSkipListAsync(GameType.SkyrimSe)
+        _configServiceMock.GetSkipListAsync(
+                GameType.SkyrimSe,
+                Arg.Any<GameVariant>(),
+                Arg.Any<CancellationToken>())
             .Returns(mergedSkipList);
 
         var vm = CreateViewModel();
@@ -649,7 +661,7 @@ public sealed class SkipListViewModelTests
         await vm.LoadSkipListAsync();
 
         // Act & Assert
-        FluentActions.Invoking(() => vm.Dispose())
+        FluentActions.Invoking(vm.Dispose)
             .Should().NotThrow();
     }
 
