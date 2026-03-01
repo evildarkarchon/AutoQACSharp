@@ -13,13 +13,29 @@ public interface IPluginLoadingService
 {
     /// <summary>
     /// Gets plugins for the specified game.
-    /// Uses Mutagen if supported, falls back to file-based loading.
+    /// Uses Mutagen for supported games and returns an empty list when loading is unsuccessful.
+    /// Callers that need detailed failure reasons should use TryGetPluginsAsync.
+    /// Callers that want file-based loading should call GetPluginsFromFileAsync explicitly.
     /// </summary>
     /// <param name="gameType">The game type to load plugins for.</param>
     /// <param name="customDataFolder">Optional custom data folder path to override registry detection.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>List of plugins from the game's load order.</returns>
     Task<List<PluginInfo>> GetPluginsAsync(
+        GameType gameType,
+        string? customDataFolder = null,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Attempts to load plugins for a Mutagen-supported game and returns a typed outcome.
+    /// This allows callers to distinguish unsupported game, missing data folder, empty listings,
+    /// and runtime failures without inferring state from plugin count alone.
+    /// </summary>
+    /// <param name="gameType">The game type to load plugins for.</param>
+    /// <param name="customDataFolder">Optional explicit data folder path to use instead of auto-detection.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>Typed plugin loading outcome including status and plugin list.</returns>
+    Task<PluginLoadingResult> TryGetPluginsAsync(
         GameType gameType,
         string? customDataFolder = null,
         CancellationToken ct = default);

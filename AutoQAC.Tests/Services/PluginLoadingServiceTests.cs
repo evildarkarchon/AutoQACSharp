@@ -1,9 +1,9 @@
+using System.Reflection;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.Plugin;
 using FluentAssertions;
 using NSubstitute;
-using System.Reflection;
 
 namespace AutoQAC.Tests.Services;
 
@@ -99,6 +99,174 @@ public sealed class PluginLoadingServiceTests
         result.Should().BeEquivalentTo(expectedPlugins);
         await _mockPluginValidation.Received(1)
             .GetPluginsFromLoadOrderAsync(loadOrderPath, Arg.Any<string?>(), Arg.Any<CancellationToken>());
+    }
+
+    #endregion
+
+    #region TryGetPluginsAsync Tests
+
+    [Fact]
+    public async Task TryGetPluginsAsync_WithMutagenSupportedGame_ShouldReturnSuccessWithPlugins()
+    {
+        // Arrange
+        var dataFolder = @"C:\Games\SkyrimSE\Data";
+        var sut = new PluginLoadingService(
+            _mockPluginValidation,
+            _mockLogger,
+            _ => null,
+            (_, _, _) =>
+            (
+                dataFolder,
+                (IReadOnlyList<string>)new List<string>
+                {
+                    "Skyrim.esm",
+                    "Update.esm",
+                    "MyPatch.esp"
+                }
+            ));
+
+        // Act
+        var result = await sut.TryGetPluginsAsync(GameType.SkyrimSe, dataFolder);
+
+        // Assert
+        result.Status.Should().Be(PluginLoadingStatus.Success);
+        result.Plugins.Should().HaveCount(3);
+        result.DataFolder.Should().Be(dataFolder);
+        result.Plugins[0].FullPath.Should().Be(Path.Combine(dataFolder, "Skyrim.esm"));
+        result.Plugins[1].FullPath.Should().Be(Path.Combine(dataFolder, "Update.esm"));
+        result.Plugins[2].FullPath.Should().Be(Path.Combine(dataFolder, "MyPatch.esp"));
+    }
+
+    [Theory]
+    [InlineData(GameType.Fallout3)]
+    [InlineData(GameType.FalloutNewVegas)]
+    [InlineData(GameType.Oblivion)]
+    [InlineData(GameType.Unknown)]
+    public async Task TryGetPluginsAsync_WithUnsupportedGame_ShouldReturnUnsupportedStatus(GameType gameType)
+    {
+        // Act
+        var result = await _sut.TryGetPluginsAsync(gameType);
+
+        // Assert
+        result.Status.Should().Be(PluginLoadingStatus.UnsupportedGame);
+        result.Plugins.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task TryGetPluginsAsync_WhenMutagenReturnsNoDataFolder_ShouldReturnDataFolderNotFound()
+    {
+        // Arrange
+        var sut = new PluginLoadingService(
+            _mockPluginValidation,
+            _mockLogger,
+            _ => null,
+            (_, _, _) => (null, (IReadOnlyList<string>)new List<string>()));
+
+        // Act
+        var result = await sut.TryGetPluginsAsync(GameType.SkyrimSe, @"C:\Missing\Data");
+
+        // Assert
+        result.Status.Should().Be(PluginLoadingStatus.DataFolderNotFound);
+        result.Plugins.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task TryGetPluginsAsync_WhenMutagenReturnsEmptyLoadOrder_ShouldReturnNoPluginsDiscovered()
+    {
+        // Arrange
+        var dataFolder = @"C:\Games\SkyrimSE\Data";
+        var sut = new PluginLoadingService(
+            _mockPluginValidation,
+            _mockLogger,
+            _ => null,
+            (_, _, _) => (dataFolder, (IReadOnlyList<string>)new List<string>()));
+
+        // Act
+        var result = await sut.TryGetPluginsAsync(GameType.SkyrimSe, dataFolder);
+
+        // Assert
+        result.Status.Should().Be(PluginLoadingStatus.NoPluginsDiscovered);
+        result.Plugins.Should().BeEmpty();
+        result.DataFolder.Should().Be(dataFolder);
+    }
+
+    [Fact]
+    public async Task TryGetPluginsAsync_WhenMutagenThrows_ShouldReturnFailedStatus()
+    {
+        // Arrange
+        var sut = new PluginLoadingService(
+            _mockPluginValidation,
+            _mockLogger,
+            _ => null,
+            (_, _, _) => throw new InvalidOperationException("Mutagen failure"));
+
+        // Act
+        var result = await sut.TryGetPluginsAsync(GameType.SkyrimSe, @"C:\Games\SkyrimSE\Data");
+
+        // Assert
+        result.Status.Should().Be(PluginLoadingStatus.Failed);
+        result.Plugins.Should().BeEmpty();
+        result.FailureReason.Should().Contain("Mutagen failure");
+    }
+
+    [Fact]
+    public async Task TryGetPluginsAsync_ShouldReturnTaskBeforeMutagenListingCompletes()
+    {
+        // Arrange
+        var dataFolder = @"C:\Games\SkyrimSE\Data";
+        using var providerStarted = new ManualResetEventSlim(false);
+        using var providerRelease = new ManualResetEventSlim(false);
+
+        var sut = new PluginLoadingService(
+            _mockPluginValidation,
+            _mockLogger,
+            _ => null,
+            (_, _, ct) =>
+            {
+                providerStarted.Set();
+                providerRelease.Wait(ct);
+                return (dataFolder, (IReadOnlyList<string>)new List<string> { "Skyrim.esm" });
+            });
+
+        // Act
+        var outerCallTask = Task.Factory.StartNew(
+            () => sut.TryGetPluginsAsync(GameType.SkyrimSe, dataFolder, CancellationToken.None),
+            CancellationToken.None,
+            TaskCreationOptions.None,
+            TaskScheduler.Default);
+
+        Task<PluginLoadingResult>? innerTask = null;
+
+        try
+        {
+            providerStarted.Wait(TimeSpan.FromSeconds(1)).Should().BeTrue("provider should be invoked");
+
+            var completed = await Task.WhenAny(outerCallTask, Task.Delay(250));
+            completed.Should().Be(outerCallTask,
+                "TryGetPluginsAsync should return promptly and not block until Mutagen listing completes");
+
+            innerTask = await outerCallTask;
+            innerTask.IsCompleted.Should().BeFalse("provider is still blocked and result should not be complete yet");
+        }
+        finally
+        {
+            providerRelease.Set();
+        }
+
+        var result = await innerTask!;
+        result.Status.Should().Be(PluginLoadingStatus.Success);
+        result.Plugins.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void PluginLoadingResult_PluginsProperty_ShouldBeReadOnlyList()
+    {
+        // Act
+        var pluginsProperty = typeof(PluginLoadingResult).GetProperty(nameof(PluginLoadingResult.Plugins));
+
+        // Assert
+        pluginsProperty.Should().NotBeNull();
+        pluginsProperty!.PropertyType.Should().Be(typeof(IReadOnlyList<PluginInfo>));
     }
 
     #endregion

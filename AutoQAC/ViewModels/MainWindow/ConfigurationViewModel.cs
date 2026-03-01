@@ -616,31 +616,66 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
 
         // Load skip list for the current game
         var skipList = await _configService.GetSkipListAsync(gameType, ct: CancellationToken.None);
+        var hasMutagenStatusMessage = false;
 
         // Try Mutagen first if supported
         if (_pluginLoadingService.IsGameSupportedByMutagen(gameType))
         {
-            try
+            StatusText = $"Loading plugins via Mutagen for {gameType}...";
+            var loadResult = await _pluginLoadingService.TryGetPluginsAsync(gameType, customDataFolder);
+
+            if (!string.IsNullOrWhiteSpace(loadResult.DataFolder))
             {
-                StatusText = $"Loading plugins via Mutagen for {gameType}...";
-                var plugins = await _pluginLoadingService.GetPluginsAsync(gameType, customDataFolder);
-
-                if (plugins.Count > 0)
-                {
-                    // Apply skip list filtering and mark IsInSkipList
-                    var pluginsWithSkipStatus =
-                        ApplySkipListStatus(plugins, skipList, gameType, DisableSkipListsEnabled);
-                    _stateService.SetPluginsToClean(pluginsWithSkipStatus);
-                    StatusText = $"Loaded {plugins.Count} plugins for {gameType}";
-                    return;
-                }
-
-                // Mutagen returned empty, might need file-based fallback
-                _logger.Information("Mutagen returned no plugins for {GameType}, fallback to file-based", gameType);
+                GameDataFolder = loadResult.DataFolder;
             }
-            catch (Exception ex)
+
+            switch (loadResult.Status)
             {
-                _logger.Warning("Mutagen failed for {GameType}: {Message}", gameType, ex.Message);
+                case PluginLoadingStatus.Success:
+                    {
+                        var pluginsWithSkipStatus =
+                            ApplySkipListStatus(loadResult.Plugins, skipList, gameType, DisableSkipListsEnabled);
+                        _stateService.SetPluginsToClean(pluginsWithSkipStatus);
+                        StatusText = $"Loaded {loadResult.Plugins.Count} plugins for {gameType}";
+                        return;
+                    }
+                case PluginLoadingStatus.NoPluginsDiscovered:
+                    _logger.Information(
+                        "Mutagen returned no plugins for {GameType}; file-based loading can be used if configured",
+                        gameType);
+                    StatusText =
+                        $"No plugins discovered via Mutagen for {gameType}. Verify the game has a valid load order and/or set a Data Folder override.";
+                    hasMutagenStatusMessage = true;
+                    break;
+                case PluginLoadingStatus.DataFolderNotFound:
+                    _logger.Information(
+                        "Mutagen could not resolve data folder for {GameType}; file-based loading can be used if configured",
+                        gameType);
+                    StatusText =
+                        $"Could not resolve {gameType} data folder via Mutagen. Set a game data folder override.";
+                    hasMutagenStatusMessage = true;
+                    break;
+                case PluginLoadingStatus.Failed:
+                    _logger.Warning(
+                        "Mutagen failed for {GameType}: {Message}",
+                        gameType,
+                        loadResult.FailureReason ?? "Unknown error");
+                    StatusText =
+                        $"Failed to load plugins via Mutagen for {gameType}. Verify Data Folder settings and check logs for details.";
+                    hasMutagenStatusMessage = true;
+                    break;
+                case PluginLoadingStatus.UnsupportedGame:
+                    // Should not occur inside IsGameSupportedByMutagen branch, but keep safe fallback.
+                    StatusText =
+                        $"{gameType} is not supported by Mutagen in this flow. Use file-based loading if configured.";
+                    hasMutagenStatusMessage = true;
+                    break;
+                default:
+                    _logger.Warning("Unexpected plugin loading status from Mutagen path: {Status}", loadResult.Status);
+                    StatusText =
+                        $"Unexpected plugin loading result for {gameType}. Verify Data Folder settings and check logs for details.";
+                    hasMutagenStatusMessage = true;
+                    break;
             }
         }
 
@@ -666,9 +701,12 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
         {
             // No Mutagen support and no file path - need user to configure
             _stateService.SetPluginsToClean(new List<PluginInfo>());
-            StatusText = _pluginLoadingService.IsGameSupportedByMutagen(gameType)
-                ? $"Could not detect {gameType} installation"
-                : $"{gameType} requires a load order file";
+            if (!hasMutagenStatusMessage)
+            {
+                StatusText = _pluginLoadingService.IsGameSupportedByMutagen(gameType)
+                    ? $"Could not detect {gameType} installation"
+                    : $"{gameType} requires a load order file";
+            }
         }
     }
 
@@ -676,7 +714,7 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
     /// Applies skip list status to plugins, marking IsInSkipList for each plugin.
     /// If disableSkipLists is true, all plugins will have IsInSkipList = false.
     /// </summary>
-    internal static List<PluginInfo> ApplySkipListStatus(List<PluginInfo> plugins, List<string> skipList,
+    internal static List<PluginInfo> ApplySkipListStatus(IReadOnlyList<PluginInfo> plugins, List<string> skipList,
         GameType gameType, bool disableSkipLists)
     {
         var skipSet = new HashSet<string>(skipList, StringComparer.OrdinalIgnoreCase);

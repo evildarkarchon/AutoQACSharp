@@ -8,7 +8,9 @@ using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using Microsoft.Win32;
 using Mutagen.Bethesda;
-using Mutagen.Bethesda.Environments;
+using Mutagen.Bethesda.Installs;
+using Mutagen.Bethesda.Plugins.Order;
+using Noggog;
 
 namespace AutoQAC.Services.Plugin;
 
@@ -21,6 +23,8 @@ public sealed class PluginLoadingService : IPluginLoadingService
     private readonly IPluginValidationService _pluginValidation;
     private readonly ILoggingService _logger;
     private readonly Func<GameType, string?> _registryDataFolderResolver;
+    private readonly Func<GameType, string?, CancellationToken, (string? DataFolder, IReadOnlyList<string> PluginFileNames)>
+        _mutagenListingProvider;
 
     /// <summary>
     /// Games supported by Mutagen for load order detection.
@@ -55,11 +59,14 @@ public sealed class PluginLoadingService : IPluginLoadingService
     public PluginLoadingService(
         IPluginValidationService pluginValidation,
         ILoggingService logger,
-        Func<GameType, string?>? registryDataFolderResolver = null)
+        Func<GameType, string?>? registryDataFolderResolver = null,
+        Func<GameType, string?, CancellationToken, (string? DataFolder, IReadOnlyList<string> PluginFileNames)>?
+            mutagenListingProvider = null)
     {
         _pluginValidation = pluginValidation;
         _logger = logger;
         _registryDataFolderResolver = registryDataFolderResolver ?? ResolveDataFolderFromRegistry;
+        _mutagenListingProvider = mutagenListingProvider ?? LoadMutagenListings;
     }
 
     /// <inheritdoc />
@@ -68,34 +75,87 @@ public sealed class PluginLoadingService : IPluginLoadingService
         string? customDataFolder = null,
         CancellationToken ct = default)
     {
-        if (gameType == GameType.Unknown)
+        var result = await TryGetPluginsAsync(gameType, customDataFolder, ct).ConfigureAwait(false);
+        return result.Status == PluginLoadingStatus.Success
+            ? result.Plugins.ToList()
+            : new List<PluginInfo>();
+    }
+
+    /// <inheritdoc />
+    public async Task<PluginLoadingResult> TryGetPluginsAsync(
+        GameType gameType,
+        string? customDataFolder = null,
+        CancellationToken ct = default)
+    {
+        if (gameType == GameType.Unknown || !IsGameSupportedByMutagen(gameType))
         {
-            _logger.Warning("Cannot load plugins for Unknown game type");
-            return new List<PluginInfo>();
+            _logger.Information(
+                "Game {GameType} is not supported by Mutagen, use GetPluginsFromFileAsync instead",
+                gameType);
+            return new PluginLoadingResult
+            {
+                Status = PluginLoadingStatus.UnsupportedGame,
+                Plugins = Array.Empty<PluginInfo>()
+            };
         }
 
-        if (IsGameSupportedByMutagen(gameType))
+        try
         {
-            try
-            {
-                return await LoadFromMutagenAsync(gameType, customDataFolder, ct).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                _logger.Warning(
-                    "Failed to load plugins via Mutagen for {GameType}, will need file-based fallback: {Message}",
-                    gameType,
-                    ex.Message);
-                // Return empty list - caller should prompt for file-based loading
-                return new List<PluginInfo>();
-            }
-        }
+            ct.ThrowIfCancellationRequested();
 
-        // Non-Mutagen games require file path
-        _logger.Information(
-            "Game {GameType} is not supported by Mutagen, use GetPluginsFromFileAsync instead",
-            gameType);
-        return new List<PluginInfo>();
+            var (resolvedDataFolder, pluginFileNames) = await Task
+                .Run(() => _mutagenListingProvider(gameType, customDataFolder, ct), ct)
+                .ConfigureAwait(false);
+
+            if (string.IsNullOrWhiteSpace(resolvedDataFolder))
+            {
+                _logger.Warning("Could not resolve data folder via Mutagen for {GameType}", gameType);
+                return new PluginLoadingResult
+                {
+                    Status = PluginLoadingStatus.DataFolderNotFound,
+                    Plugins = Array.Empty<PluginInfo>(),
+                    DataFolder = customDataFolder
+                };
+            }
+
+            var plugins = CreatePluginInfoList(gameType, resolvedDataFolder, pluginFileNames);
+            if (plugins.Count == 0)
+            {
+                _logger.Information("Mutagen returned an empty load order for {GameType}", gameType);
+                return new PluginLoadingResult
+                {
+                    Status = PluginLoadingStatus.NoPluginsDiscovered,
+                    Plugins = Array.Empty<PluginInfo>(),
+                    DataFolder = resolvedDataFolder
+                };
+            }
+
+            _logger.Information("Loaded {Count} plugins from {GameType} load order", plugins.Count, gameType);
+            return new PluginLoadingResult
+            {
+                Status = PluginLoadingStatus.Success,
+                Plugins = plugins.AsReadOnly(),
+                DataFolder = resolvedDataFolder
+            };
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning(
+                "Failed to load plugins via Mutagen for {GameType}; file-based loading can be used if configured: {Message}",
+                gameType,
+                ex.Message);
+            return new PluginLoadingResult
+            {
+                Status = PluginLoadingStatus.Failed,
+                Plugins = Array.Empty<PluginInfo>(),
+                DataFolder = customDataFolder,
+                FailureReason = ex.Message
+            };
+        }
     }
 
     /// <inheritdoc />
@@ -137,8 +197,10 @@ public sealed class PluginLoadingService : IPluginLoadingService
             try
             {
                 var release = MapToGameRelease(gameType);
-                using var env = GameEnvironment.Typical.Builder(release).Build();
-                return env.DataFolderPath.Path;
+                if (GameLocations.TryGetDataFolder(release, out var detectedDataFolder))
+                {
+                    return detectedDataFolder.Path;
+                }
             }
             catch (Exception ex)
             {
@@ -177,58 +239,65 @@ public sealed class PluginLoadingService : IPluginLoadingService
         return null;
     }
 
-    /// <summary>
-    /// Load plugins using Mutagen's GameEnvironment.
-    /// </summary>
-    private Task<List<PluginInfo>> LoadFromMutagenAsync(
+    private static List<PluginInfo> CreatePluginInfoList(
+        GameType gameType,
+        string dataFolder,
+        IReadOnlyList<string> pluginFileNames)
+    {
+        var plugins = new List<PluginInfo>(pluginFileNames.Count);
+
+        foreach (var fileName in pluginFileNames)
+        {
+            plugins.Add(new PluginInfo
+            {
+                FileName = fileName,
+                FullPath = Path.Combine(dataFolder, fileName),
+                IsInSkipList = false,
+                DetectedGameType = gameType
+            });
+        }
+
+        return plugins;
+    }
+
+    private static (string? DataFolder, IReadOnlyList<string> PluginFileNames) LoadMutagenListings(
         GameType gameType,
         string? customDataFolder,
         CancellationToken ct)
     {
-        return Task.Run(() =>
+        ct.ThrowIfCancellationRequested();
+
+        var release = MapToGameRelease(gameType);
+        var dataFolder = customDataFolder;
+
+        if (string.IsNullOrWhiteSpace(dataFolder))
+        {
+            if (!GameLocations.TryGetDataFolder(release, out var detectedDataFolder))
+            {
+                return (null, Array.Empty<string>());
+            }
+
+            dataFolder = detectedDataFolder.Path;
+        }
+
+        if (string.IsNullOrWhiteSpace(dataFolder))
+        {
+            return (null, Array.Empty<string>());
+        }
+
+        var listings = LoadOrder.GetLoadOrderListings(
+            release,
+            new DirectoryPath(dataFolder),
+            throwOnMissingMods: false);
+
+        var pluginFileNames = new List<string>();
+        foreach (var listing in listings)
         {
             ct.ThrowIfCancellationRequested();
+            pluginFileNames.Add(listing.ModKey.FileName);
+        }
 
-            var release = MapToGameRelease(gameType);
-
-            _logger.Information("Loading plugins via Mutagen for {GameType}", gameType);
-
-            // Use custom data folder if provided, otherwise use typical (registry-detected) path
-            using var env = string.IsNullOrEmpty(customDataFolder)
-                ? GameEnvironment.Typical.Builder(release).Build()
-                : GameEnvironment.Typical.Builder(release)
-                    .WithTargetDataFolder(customDataFolder)
-                    .Build();
-
-            var dataFolder = env.DataFolderPath.Path;
-            _logger.Debug("Data folder: {DataFolder}", dataFolder);
-
-            if (!string.IsNullOrEmpty(customDataFolder))
-            {
-                _logger.Information("Using custom data folder override: {CustomDataFolder}", customDataFolder);
-            }
-
-            var plugins = new List<PluginInfo>();
-
-            foreach (var listing in env.LoadOrder.ListedOrder)
-            {
-                ct.ThrowIfCancellationRequested();
-
-                var fileName = listing.ModKey.FileName;
-                var fullPath = Path.Combine(dataFolder, fileName);
-
-                plugins.Add(new PluginInfo
-                {
-                    FileName = fileName,
-                    FullPath = fullPath,
-                    IsInSkipList = false,
-                    DetectedGameType = gameType
-                });
-            }
-
-            _logger.Information("Loaded {Count} plugins from {GameType} load order", plugins.Count, gameType);
-            return plugins;
-        }, ct);
+        return (dataFolder, pluginFileNames);
     }
 
     /// <summary>

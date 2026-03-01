@@ -1,19 +1,19 @@
 using System.Reactive.Concurrency;
+using System.Reactive.Linq;
 using System.Reactive.Subjects;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Models.Configuration;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
+using AutoQAC.Services.Plugin;
 using AutoQAC.Services.State;
 using AutoQAC.Services.UI;
-using AutoQAC.Services.Plugin;
 using AutoQAC.ViewModels;
 using FluentAssertions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using ReactiveUI;
-using System.Reactive.Linq;
 
 namespace AutoQAC.Tests.ViewModels;
 
@@ -678,8 +678,13 @@ public sealed class MainWindowViewModelTests
 
         _pluginLoadingServiceMock.IsGameSupportedByMutagen(GameType.SkyrimSe)
             .Returns(true);
-        _pluginLoadingServiceMock.GetPluginsAsync(GameType.SkyrimSe, Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(expectedPlugins);
+        _pluginLoadingServiceMock.TryGetPluginsAsync(GameType.SkyrimSe, Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(new PluginLoadingResult
+            {
+                Status = PluginLoadingStatus.Success,
+                Plugins = expectedPlugins,
+                DataFolder = @"C:\Games\SkyrimSE\Data"
+            });
 
         // Setup skip list (required for ApplySkipListStatus)
         _configServiceMock.GetSkipListAsync(
@@ -709,11 +714,54 @@ public sealed class MainWindowViewModelTests
         await Task.Delay(100);
 
         // Assert
-        await _pluginLoadingServiceMock.Received(1).GetPluginsAsync(GameType.SkyrimSe, Arg.Any<string?>(), Arg.Any<CancellationToken>());
+        await _pluginLoadingServiceMock.Received(1).TryGetPluginsAsync(GameType.SkyrimSe, Arg.Any<string?>(), Arg.Any<CancellationToken>());
         _stateServiceMock.Received(1).SetPluginsToClean(Arg.Is<List<PluginInfo>>(list =>
             list.Count == 2 &&
             list.Any(p => p.FileName == "Plugin1.esp") &&
             list.Any(p => p.FileName == "Plugin2.esp")));
+    }
+
+    [Fact]
+    public async Task SelectedGame_ShouldShowSpecificStatusWithoutClaimingFallback_WhenMutagenReturnsNoPlugins()
+    {
+        // Arrange
+        _pluginLoadingServiceMock.IsGameSupportedByMutagen(GameType.SkyrimSe)
+            .Returns(true);
+        _pluginLoadingServiceMock.TryGetPluginsAsync(GameType.SkyrimSe, Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(new PluginLoadingResult
+            {
+                Status = PluginLoadingStatus.NoPluginsDiscovered,
+                Plugins = new List<PluginInfo>(),
+                DataFolder = @"C:\Games\SkyrimSE\Data"
+            });
+
+        _configServiceMock.GetSkipListAsync(
+                Arg.Any<GameType>(),
+                Arg.Any<GameVariant>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new List<string>());
+
+        var stateSubject = new BehaviorSubject<AppState>(new AppState());
+        _stateServiceMock.StateChanged.Returns(stateSubject);
+        _stateServiceMock.CurrentState.Returns(new AppState());
+
+        var vm = new MainWindowViewModel(
+            _configServiceMock,
+            _stateServiceMock,
+            _orchestratorMock,
+            _loggerMock,
+            _fileDialogMock,
+            _messageDialogMock,
+            _pluginServiceMock,
+            _pluginLoadingServiceMock);
+
+        // Act
+        vm.Configuration.SelectedGame = GameType.SkyrimSe;
+        await Task.Delay(100);
+
+        // Assert
+        vm.Configuration.StatusText.Should().Contain("No plugins discovered via Mutagen");
+        vm.Configuration.StatusText.Should().NotContain("trying load order file fallback");
     }
 
     #endregion
