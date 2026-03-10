@@ -21,9 +21,30 @@ public sealed class PluginAnalysisResult
     public PluginAnalysisResult(IReadOnlyList<PluginIssue> issues)
     {
         Issues = issues;
-        ItmCount = issues.Count(i => i.Type == IssueType.ItmRecord);
-        DeletedReferenceCount = issues.Count(i => i.Type == IssueType.DeletedReference);
-        DeletedNavmeshCount = issues.Count(i => i.Type == IssueType.DeletedNavmesh);
+
+        var itmCount = 0;
+        var deletedReferenceCount = 0;
+        var deletedNavmeshCount = 0;
+
+        foreach (var issue in issues)
+        {
+            switch (issue.Type)
+            {
+                case IssueType.ItmRecord:
+                    itmCount++;
+                    break;
+                case IssueType.DeletedReference:
+                    deletedReferenceCount++;
+                    break;
+                case IssueType.DeletedNavmesh:
+                    deletedNavmeshCount++;
+                    break;
+            }
+        }
+
+        ItmCount = itmCount;
+        DeletedReferenceCount = deletedReferenceCount;
+        DeletedNavmeshCount = deletedNavmeshCount;
     }
 
     /// <summary>True if no issues of any kind were found.</summary>

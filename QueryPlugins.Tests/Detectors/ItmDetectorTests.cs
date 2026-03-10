@@ -183,6 +183,47 @@ public sealed class ItmDetectorTests
         issues[0].FormKey.Should().Be(npc1.FormKey);
     }
 
+    [Fact]
+    public void FindItmRecords_PluginMissingFromCache_ThrowsArgumentException()
+    {
+        var masterMod = new SkyrimMod(MasterKey, SkyrimRelease.SkyrimSE);
+        var originalNpc = masterMod.Npcs.AddNew("OriginalNpc");
+
+        var pluginMod = new SkyrimMod(PluginKey, SkyrimRelease.SkyrimSE);
+        pluginMod.Npcs.Set(originalNpc.DeepCopy());
+
+        var laterMod = new SkyrimMod(ModKey.FromNameAndExtension("Later.esp"), SkyrimRelease.SkyrimSE);
+        var laterOverride = originalNpc.DeepCopy();
+        laterOverride.ShortName = "Later Change";
+        laterMod.Npcs.Set(laterOverride);
+
+        var cache = new ISkyrimModGetter[] { masterMod, laterMod }.ToImmutableLinkCache();
+
+        var act = () => _sut.FindItmRecords(pluginMod, cache);
+
+        act.Should().Throw<ArgumentException>()
+            .WithParameterName("linkCache")
+            .WithMessage("*does not contain analyzed plugin*");
+    }
+
+    [Fact]
+    public void FindItmRecords_PluginWithOnlyNewRecordsMissingFromCache_ThrowsArgumentException()
+    {
+        var masterMod = new SkyrimMod(MasterKey, SkyrimRelease.SkyrimSE);
+        masterMod.Npcs.AddNew("OriginalNpc");
+
+        var pluginMod = new SkyrimMod(PluginKey, SkyrimRelease.SkyrimSE);
+        pluginMod.Npcs.AddNew("NewNpc");
+
+        var cache = new ISkyrimModGetter[] { masterMod }.ToImmutableLinkCache();
+
+        var act = () => _sut.FindItmRecords(pluginMod, cache);
+
+        act.Should().Throw<ArgumentException>()
+            .WithParameterName("linkCache")
+            .WithMessage("*does not contain analyzed plugin*");
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     /// <summary>

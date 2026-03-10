@@ -17,6 +17,18 @@ public sealed class ItmDetector : IItmDetector
     {
         var pluginModKey = plugin.ModKey;
 
+        if (!linkCache.ListedOrder.Any(mod => mod.ModKey == pluginModKey))
+        {
+            throw new ArgumentException(
+                $"The supplied link cache does not contain analyzed plugin {pluginModKey}.",
+                nameof(linkCache));
+        }
+
+        return EnumerateItmRecords(plugin, linkCache, pluginModKey);
+    }
+
+    private static IEnumerable<PluginIssue> EnumerateItmRecords(IModGetter plugin, ILinkCache linkCache, ModKey pluginModKey)
+    {
         foreach (var record in plugin.EnumerateMajorRecords())
         {
             // New records defined in this plugin cannot be ITMs — they have no master to be identical to.
@@ -40,7 +52,14 @@ public sealed class ItmDetector : IItmDetector
             // at any index in a full load-order cache. Compare the plugin's version to the
             // next lower-priority context, which is the record it actually overrides.
             var pluginContextIndex = Array.FindIndex(allContexts, context => context.ModKey == pluginModKey);
-            if (pluginContextIndex < 0 || pluginContextIndex == allContexts.Length - 1)
+            if (pluginContextIndex < 0)
+            {
+                throw new ArgumentException(
+                    $"The supplied link cache does not contain analyzed plugin {pluginModKey} for record {record.FormKey}.",
+                    nameof(linkCache));
+            }
+
+            if (pluginContextIndex == allContexts.Length - 1)
                 continue;
 
             // Deep equality via Loqui-generated Equals(object) override.
