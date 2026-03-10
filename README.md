@@ -1,154 +1,99 @@
-# XEdit-PACT (C# Avalonia)
+# AutoQACSharp
 
-**Plugin Auto Cleaning Tool for Bethesda Game Plugins**
+AutoQACSharp is a Windows desktop tool for sequential cleaning of Bethesda plugins with xEdit Quick Auto Clean (`-QAC`). The main app is built with Avalonia and ReactiveUI, uses Serilog for logging, YamlDotNet for configuration, and Mutagen for plugin discovery where supported.
 
-A C# implementation of XEdit-PACT using the Avalonia UI framework with MVVM architecture. Automates the sequential cleaning of Bethesda game plugins using xEdit's Quick Auto Clean (-QAC) functionality.
+## Current Status
 
-## Project Status
+- The desktop app is past the old "foundation stage". Core configuration, plugin loading, cleaning orchestration, backup/restore, result reporting, and test coverage are all in place.
+- The solution currently contains four projects: `AutoQAC`, `AutoQAC.Tests`, `QueryPlugins`, and `QueryPlugins.Tests`.
+- The UI uses Avalonia, but the shipping app currently targets Windows (`net10.0-windows10.0.19041.0`) because it relies on Windows registry and process behavior for game discovery and xEdit integration.
 
-**Foundation Stage** - Core architecture and infrastructure in development.
+## Implemented Features
 
-**Reference Implementation**: The `Code_To_Port/` directory contains the Python/Qt and Rust/Slint implementations for reference. This directory is temporary and will be removed once feature parity is achieved.
+- Sequential xEdit orchestration with timeout handling, retry prompts, hang detection, graceful stop, and force-kill fallback.
+- Plugin discovery via Mutagen for Skyrim LE/SE/VR and Fallout 4/VR, with file-based load-order support for Fallout 3, Fallout: New Vegas, and Oblivion.
+- Per-game data folder overrides and per-game load order overrides.
+- Skip list management backed by `AutoQAC Main.yaml` defaults plus user overrides, including TTW and Enderal variant handling.
+- Plugin backup sessions before cleaning, retention cleanup, and a restore browser.
+- Dry-run preview showing which plugins will be cleaned or skipped before xEdit is launched.
+- Cleaning results windows with per-plugin stats and exportable session reports.
+- Debounced YAML config saves, external config file watching, startup log retention cleanup, and one-time legacy config migration.
+- A separate `QueryPlugins` library for Mutagen-based issue detection (ITMs, deleted references, deleted navmeshes) with its own tests.
 
-## Overview
-
-XEdit-PACT automates the process of cleaning game plugins (ESP/ESM/ESL files) to remove:
-- **ITMs (Identical To Master)**: Records that are identical to the master file
-- **UDRs (Undisabled References)**: References that should be disabled but aren't
-- **Deleted Navmeshes**: Navigation meshes that can cause crashes
-
-**IMPORTANT**: This tool cleans plugins **sequentially, one at a time**. Due to xEdit's file locking mechanisms, only one plugin can be cleaned at any given moment.
-
-## Technology Stack
-
-- **.NET 8**: Target framework
-- **Avalonia UI 11.3.8**: Cross-platform XAML-based UI framework
-- **ReactiveUI**: MVVM framework for reactive programming
-- **Fluent Design**: Modern UI theme
-- **C# 12**: Language features with nullable reference types
-
-## Architecture
-
-This project follows MVVM (Model-View-ViewModel) architecture:
-
-```
-AutoQAC/
-├── Models/              # Data models and business logic
-├── ViewModels/          # MVVM view models (presentation logic)
-├── Views/               # XAML views (UI)
-├── Assets/              # Images, icons, and resources
-├── App.axaml            # Application definition
-└── Program.cs           # Application entry point
-```
-
-### Key Design Principles
-
-1. **MVVM Pattern**: Strict separation of UI (Views), presentation logic (ViewModels), and business logic (Models)
-2. **Reactive Programming**: Using ReactiveUI for property changes and command handling
-3. **Sequential Processing**: One plugin at a time due to xEdit file locking constraints
-4. **Dependency Injection**: Services and dependencies injected via constructors
-5. **Thread Safety**: Proper async/await patterns for background operations
-6. **Cross-Platform**: Leveraging Avalonia's cross-platform capabilities
-
-## Development Setup
-
-### Prerequisites
-
-- **.NET 8 SDK** or later
-- **Visual Studio 2022** (recommended) or **JetBrains Rider**
-- Basic understanding of C#, XAML, and MVVM
-
-### Building and Running
-
-```bash
-# Restore dependencies
-dotnet restore
-
-# Build the project
-dotnet build
-
-# Run the application
-dotnet run --project AutoQAC
-
-# Build release version
-dotnet build -c Release
-```
+Note: the dry-run preview is a readiness check only. ITM/UDR/navmesh statistics still require an actual xEdit run.
 
 ## Supported Games
 
-| Game | Short Code | xEdit Executables |
-|------|------------|-------------------|
-| Fallout 3 | FO3 | FO3Edit.exe, FO3Edit64.exe |
-| Fallout New Vegas | FNV | FNVEdit.exe, FNVEdit64.exe |
-| Fallout 4 | FO4 | FO4Edit.exe, FO4Edit64.exe |
-| Skyrim Special Edition | SSE | SSEEdit.exe, SSEEdit64.exe |
-| Fallout 4 VR | FO4VR | FO4VREdit.exe |
-| Skyrim VR | SkyrimVR | TES5VREdit.exe |
+| Game | AutoQAC app | Plugin discovery |
+|------|-------------|------------------|
+| Skyrim (Legendary Edition) | Yes | Mutagen |
+| Skyrim Special Edition | Yes | Mutagen |
+| Skyrim VR | Yes | Mutagen |
+| Fallout 4 | Yes | Mutagen |
+| Fallout 4 VR | Yes | Mutagen |
+| Fallout 3 | Yes | File-based load order |
+| Fallout: New Vegas | Yes | File-based load order |
+| Oblivion | Yes | File-based load order |
 
-**Universal xEdit**: Also supports universal xEdit executables (`xEdit.exe`, `xEdit64.exe`) with automatic game detection.
+`QueryPlugins` also contains standalone detector support for Starfield analysis, but the desktop cleaning app does not currently expose Starfield cleaning.
 
-## Features (Planned)
+## Solution Layout
 
-### Core Functionality
-- [ ] Sequential cleaning of plugins (one at a time)
-- [ ] Skip list integration (base game files protected)
-- [ ] Auto-detection of game type
-- [ ] MO2 (Mod Organizer 2) integration
-- [ ] Configurable timeout per plugin
-- [ ] Real-time progress tracking
-- [ ] Comprehensive logging
+```text
+AutoQAC/             Avalonia desktop application
+AutoQAC.Tests/       Tests for the desktop app
+QueryPlugins/        Standalone Mutagen-based plugin analysis library
+QueryPlugins.Tests/  Tests for the analysis library
+AutoQAC Data/        Bundled YAML config and assets
+docs/mutagen/        Curated Mutagen reference docs
+Mutagen/             Read-only Mutagen git submodule
+```
 
-### Advanced Features
-- [ ] Record-level statistics (UDRs, ITMs, navmeshes, partial forms)
-- [ ] Partial Forms experimental support
-- [ ] Game detection from xEdit executable or load order
-- [ ] Configuration validation with feedback
-- [ ] Cancellation support
-- [ ] Detailed error reporting
+## Requirements
 
-## Critical Constraints
+- Windows 10 or 11
+- .NET 10 SDK
+- xEdit (`SSEEdit.exe`, `FO4Edit.exe`, `xEdit64.exe`, etc.)
+- Optional: Mod Organizer 2 for MO2 launch mode
 
-**⚠ SEQUENTIAL PROCESSING ONLY**: Due to xEdit's file locking mechanisms, this tool can only clean **one plugin at a time**. If multiple xEdit windows open simultaneously, close the application immediately and report the issue.
+## Build, Run, and Test
+
+```bash
+dotnet restore AutoQACSharp.slnx
+dotnet build AutoQACSharp.slnx
+dotnet run --project AutoQAC/AutoQAC.csproj
+dotnet test AutoQACSharp.slnx
+dotnet build AutoQAC/AutoQAC.csproj -c Release
+```
 
 ## Configuration Files
 
-Located in `AutoQAC Data/`:
-- `AutoQAC Main.yaml`: Game configurations, skip lists
-- `AutoQAC Config.yaml`: User settings, paths
-- `AutoQAC Ignore.yaml`: Additional ignore list
+- `AutoQAC Data/AutoQAC Main.yaml` - bundled defaults such as xEdit executable name lists and built-in skip lists.
+- `AutoQAC Data/AutoQAC Settings.yaml` - user settings, selected game, per-game overrides, log retention, and backup settings.
+- Legacy `AutoQAC Config.yaml` files are migrated on startup when present.
+- External edits to `AutoQAC Settings.yaml` are watched and reloaded when it is safe to do so.
 
-## Logging
+## Logs and Backups
 
-Application logs will be stored in:
-- `logs/autoqac_<timestamp>.log`: Rotating log files
+- Logs are written to `logs/` next to the running executable.
+- Backup sessions are written to `AutoQAC Backups/` next to the selected game's `Data` directory.
+- Session reports can be exported from the cleaning results window.
 
-## Reference Implementations
+## Important Constraint
 
-During development, refer to the reference implementations in `Code_To_Port/`:
+Only one plugin can be cleaned at a time. `ProcessExecutionService` and `CleaningOrchestrator` intentionally serialize xEdit launches because xEdit relies on single-instance file locking.
 
-- **Python/Qt Version**: Original implementation
-- **Rust/Slint Version**: Modern rewrite
+## Mutagen Reference Material
 
-These references will be removed once the C# implementation achieves feature parity.
+- Use `docs/mutagen/` first for quick API lookups.
+- Use the read-only `Mutagen/` submodule when the curated docs are not detailed enough.
 
 ## License
 
-GPL-3.0 License - See [LICENSE](LICENSE) for details.
+GPL-3.0. See `LICENSE`.
 
 ## Credits
 
-- **Original Author**: Poet (aka GuidanceOfGrace)
-- **C# Implementation**: In development
-- **xEdit Team**: For the powerful xEdit tools
-
-## Links
-
-- **Mod Organizer 2**: [GitHub Releases](https://github.com/ModOrganizer2/modorganizer/releases)
-- **SSEEdit**: [Nexus Mods](https://www.nexusmods.com/skyrimspecialedition/mods/164?tab=files)
-- **FO4Edit**: [Nexus Mods](https://www.nexusmods.com/fallout4/mods/2737/?tab=files)
-- **Avalonia UI**: [Official Documentation](https://docs.avaloniaui.net/)
-- **ReactiveUI**: [Official Documentation](https://www.reactiveui.net/)
-
----
-
-**Development Note**: This project is in the foundation stage. The reference implementations in `Code_To_Port/` are temporary and will be removed once feature parity is achieved.
+- Original AutoQAC / XEdit-PACT concept by Poet (GuidanceOfGrace)
+- xEdit by the TES5Edit/xEdit team
+- C# desktop implementation in this repository

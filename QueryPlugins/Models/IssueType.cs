@@ -8,7 +8,9 @@ public enum IssueType
 {
     /// <summary>
     /// Identical to Master — an override record that is byte-for-byte identical to the
-    /// version it overrides in its master. These records have no effect and can be removed.
+    /// immediately lower-priority version it overrides in the load order, whether that
+    /// version comes from a master or another override. These records have no effect and
+    /// can be removed.
     /// </summary>
     ItmRecord,
 

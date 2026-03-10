@@ -44,7 +44,8 @@ public sealed class ItmDetector : IItmDetector
             var formLinkInfo = FormLinkInformation.Factory(record);
             var allContexts = linkCache.ResolveAllSimpleContexts(formLinkInfo).ToArray();
 
-            // Need at least two versions: this plugin's override and a master to compare against.
+            // Need at least two versions: this plugin's override and the lower-priority
+            // version it overrides in the load order.
             if (allContexts.Length < 2)
                 continue;
 

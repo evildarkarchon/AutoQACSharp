@@ -1,330 +1,97 @@
-
 # CLAUDE.md
 
-This file provides guidance to Claude Code when working with this C# Avalonia MVVM project.
+Guidance for Claude Code when working in this repository.
 
 ## Project Overview
 
-This is a C# implementation of XEdit-PACT (Plugin Auto Cleaning Tool) using Avalonia UI framework with MVVM architecture.
+- `AutoQAC` is a Windows-only Avalonia desktop app for running xEdit Quick Auto Clean (`-QAC`) safely, one plugin at a time.
+- `QueryPlugins` is a separate Mutagen-based analysis library for detecting ITMs, deleted references, and deleted navmeshes.
+- The solution currently includes `AutoQAC`, `AutoQAC.Tests`, `QueryPlugins`, and `QueryPlugins.Tests`.
 
 ## Essential Commands
 
 ```bash
-# Build the project
-dotnet build
-
-# Run the application
-dotnet run --project AutoQAC
-
-# Run tests (with automatic coverage collection)
-dotnet test
-
-# Build release version
-dotnet build -c Release
-
-# Clean build artifacts
-dotnet clean
+dotnet build AutoQACSharp.slnx
+dotnet test AutoQACSharp.slnx
+dotnet run --project AutoQAC/AutoQAC.csproj
+dotnet build AutoQAC/AutoQAC.csproj -c Release
+dotnet clean AutoQACSharp.slnx
 ```
 
-## Technology Stack
-
-- **.NET 10**: Target framework (LTS)
-- **C# 13**: With nullable reference types enabled
-- **Avalonia UI 11.3.11**: Cross-platform XAML-based UI framework
-- **ReactiveUI 11.3.8**: MVVM framework for reactive programming
-- **Fluent Design**: Microsoft Fluent theme for Avalonia
-
-## Architecture & Design Principles
-
-### MVVM Pattern (Strict Adherence Required)
-
-This project follows strict MVVM architecture:
-
-1. **Models** (`AutoQAC/Models/`):
-   - Pure business logic and data structures
-   - No UI dependencies (no Avalonia, no ReactiveUI)
-   - Reusable, testable business logic
-   - Data transfer objects and domain models
-
-2. **ViewModels** (`AutoQAC/ViewModels/`):
-   - Inherit from `ReactiveObject` or `ViewModelBase`
-   - Presentation logic only
-   - Command handling via `ReactiveCommand`
-   - Property change notifications via `RaiseAndSetIfChanged`
-   - No direct UI manipulation (no controls, no windows)
-   - Communicate with Models for business logic
-
-3. **Views** (`AutoQAC/Views/`):
-   - XAML files with code-behind
-   - Pure UI rendering
-   - Data binding to ViewModels
-   - No business logic
-   - Minimal code-behind (only UI-specific logic)
-
-### Key Architectural Rules
-
-1. **Reactive Programming**:
-   - Use ReactiveUI's `ReactiveCommand` for all commands
-   - Use `RaiseAndSetIfChanged` for property setters
-   - Use `WhenAnyValue` for computed properties
-   - Use `ObservableAsPropertyHelper` for derived properties
-
-2. **Async/Await Patterns**:
-   - All I/O operations must be async
-   - Use `Task` and `async/await` for background operations
-   - Never block the UI thread
-   - Use `ReactiveCommand.CreateFromTask` for async commands
-
-3. **Dependency Injection**:
-   - Services injected via constructor parameters
-   - No static dependencies or service locators
-   - Use interfaces for testability
-   - Register services in `Program.cs` or `App.axaml.cs`
-
-4. **Thread Safety**:
-   - All ViewModel properties must be thread-safe
-   - Use `Dispatcher.UIThread.InvokeAsync` for cross-thread UI updates
-   - Protect shared state with proper synchronization
-   - Avoid `lock` statements; prefer async patterns
-
-5. **Error Handling**:
-   - Use structured exception handling
-   - Log errors appropriately
-   - Show user-friendly error messages via dialogs
-   - Never swallow exceptions silently
-
-### Project Structure
-
-```
-AutoQAC/
-├── Models/                  # Business logic and data models
-│   ├── Configuration/       # Config file management (YAML)
-│   ├── GameDetection/       # Game and xEdit detection
-│   ├── PluginCleaning/      # Core cleaning logic (sequential!)
-│   └── Logging/             # Logging infrastructure
-├── ViewModels/              # Presentation logic
-│   ├── MainWindowViewModel.cs
-│   ├── ProgressViewModel.cs
-│   └── SettingsViewModel.cs
-├── Views/                   # XAML UI
-│   ├── MainWindow.axaml
-│   ├── ProgressWindow.axaml
-│   └── SettingsWindow.axaml
-├── Assets/                  # Images, icons, resources
-├── App.axaml               # Application definition
-├── App.axaml.cs            # Application startup and DI setup
-├── Program.cs              # Entry point
-└── ViewLocator.cs          # Automatic View resolution
-```
-
-## C# and Avalonia Best Practices
-
-### Avalonia-Specific Guidelines
-
-1. **Data Binding**:
-   - Use compiled bindings by default: `{Binding Property}`
-   - For complex scenarios, use `{CompiledBinding Property}`
-   - Avoid code-behind data access; use ViewModels
-
-2. **XAML Styling**:
-   - Use Fluent theme as the base
-   - Define styles in `App.axaml` or separate resource dictionaries
-   - Use `StyleInclude` for modular styles
-
-3. **Controls and Layout**:
-   - Prefer `Grid`, `StackPanel`, `DockPanel` for layouts
-   - Use `ItemsControl`, `ListBox`, `DataGrid` for data display
-   - Leverage `ContentControl` for dynamic content
-
-4. **Dialogs and Windows**:
-   - Use `Window.ShowDialog()` for modal dialogs
-   - Use `Window.Show()` for non-modal windows
-   - Return results via `Close(result)` pattern
-
-### C# Code Guidelines
-
-1. **Nullable Reference Types**:
-   - Nullable reference types are ENABLED
-   - Always annotate nullability: `string?` vs `string`
-   - Use null-forgiving operator `!` sparingly and only when certain
-
-2. **Async/Await**:
-   - Async methods must end with `Async` suffix
-   - Always `await` async operations
-   - Never use `.Result` or `.Wait()` (causes deadlocks)
-   - Use `ConfigureAwait(false)` in library code
-
-3. **Code Organization**:
-   - One class per file
-   - File name matches class name
-   - Use meaningful namespaces matching folder structure
-   - Keep classes focused (Single Responsibility Principle)
-
-4. **Naming Conventions**:
-   - PascalCase for public members and types
-   - camelCase for private fields (with `_` prefix)
-   - UPPER_CASE for constants
-   - Descriptive names over abbreviations
-
-## Critical Application Constraints
-
-### Sequential Processing Requirement
-
-**⚠ CRITICAL**: This application can only clean **one plugin at a time** due to xEdit's file locking mechanisms.
-
-- Never attempt parallel or concurrent cleaning operations
-- Ensure only one xEdit process runs at any time
-- If multiple xEdit windows open, this is a critical bug
-- Process plugins in a strict sequential queue
-
-### Implementation Guidelines for Sequential Processing
-
-```csharp
-// Example: Sequential processing pattern
-public async Task CleanPluginsAsync(IEnumerable<string> plugins, CancellationToken cancellationToken)
-{
-    // CORRECT: Sequential processing
-    foreach (var plugin in plugins)
-    {
-        await CleanSinglePluginAsync(plugin, cancellationToken);
-    }
-
-    // WRONG: DO NOT use parallel processing
-    // await Task.WhenAll(plugins.Select(p => CleanSinglePluginAsync(p, cancellationToken)));
-}
-```
-
-## Critical Technical Constraints
-
-- **Target Framework**: .NET 10 (LTS)
-- **C# Version**: 13 with nullable reference types
-- **UI Framework**: Avalonia 11.3.11
-- **MVVM Framework**: ReactiveUI 11.3.8
-- **YAML Library**: YamlDotNet 16.3.0
-- **Logging**: Serilog with Console and File sinks
-- **Testing**: xUnit 2.9.3 with FluentAssertions 8.8.0 and NSubstitute 5.3.0
-- **DI**: Microsoft.Extensions.DependencyInjection 10.0.2
-- **Coverage**: Coverlet (MSBuild + Collector) with Cobertura XML output
-
-## xEdit Integration
-
-The application interfaces with xEdit (SSEEdit/FO4Edit) via `System.Diagnostics.Process`:
-
-- Commands built with `-QAC` flag for Quick Auto Clean
-- Support MO2 integration via `ModOrganizer.exe run` command wrapper
-- Optional `-iknowwhatimdoing -allowmakepartial` flags for Partial Forms
-- Timeout handling (default 300s per plugin)
-- Async output parsing for ITMs, UDRs, and deleted navmeshes
-- **CRITICAL**: Only one xEdit process at a time
-
-### Process Execution Pattern
-
-```csharp
-// Example pattern for xEdit subprocess (sequential only!)
-public async Task<CleaningResult> CleanPluginAsync(string pluginPath, CancellationToken cancellationToken)
-{
-    var process = new Process
-    {
-        StartInfo = new ProcessStartInfo
-        {
-            FileName = xEditPath,
-            Arguments = $"-QAC -autoload \"{pluginName}\"",
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true
-        }
-    };
-
-    // Async output reading
-    process.OutputDataReceived += (sender, args) => { /* Parse output */ };
-    process.Start();
-    process.BeginOutputReadLine();
-
-    // Wait with timeout
-    using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
-    using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
-
-    await process.WaitForExitAsync(linkedCts.Token);
-
-    return ParseResults(/* captured output */);
-}
-```
-
-## Configuration Files
-
-Located in `AutoQAC Data/`:
-
-- `AutoQAC Main.yaml`: Game configurations, plugin skip lists
-- `AutoQAC Config.yaml`: User settings, file paths
-- `AutoQAC Ignore.yaml`: Additional ignore list
-
-Use YamlDotNet for deserialization with proper error handling.
-
-## Logging Strategy
-
-- Use structured logging (Serilog recommended)
-- Rotating file logs in `logs/` directory
-- Log levels: Debug, Information, Warning, Error, Fatal
-- Include timestamps, thread IDs, and context
-- Never log sensitive user data
-
-## Testing Requirements
-
-- **Unit Tests**: Test ViewModels and Models independently (510+ tests)
-- **UI Tests**: Avalonia.Headless for automated UI testing (xUnit v2 required)
-- **Coverage Target**: Minimum 80% for critical paths
-- **Coverage Tooling**: Coverlet MSBuild auto-collects on every `dotnet test` run
-- **Mocking**: NSubstitute for dependency mocking -- ALL optional parameters must be matched in substitute calls (same constraint as Moq). Use NSubstitute.Analyzers.CSharp for compile-time misuse detection.
-
-## Common Pitfalls to Avoid
-
-1. **Parallel Processing**: NEVER attempt to clean multiple plugins simultaneously
-2. **UI Thread Deadlocks**: Always use `async/await`, never `.Result` or `.Wait()`
-3. **Memory Leaks**: Dispose of `IDisposable` objects, especially event subscriptions
-4. **Mixing MVVM Layers**: Keep Models, ViewModels, and Views strictly separated
-5. **Blocking Operations**: Never block the UI thread; use `Task.Run()` or async commands
-6. **Improper Binding**: Use compiled bindings; avoid string-based bindings
-7. **Static State**: Avoid static mutable state; use dependency injection
-8. **Exception Swallowing**: Always log exceptions and handle them gracefully
-
-## Development Workflow
-
-1. **Implement Models First**: Business logic before UI
-2. **Build ViewModels**: Presentation logic with ReactiveUI
-3. **Create Views Last**: XAML UI with data binding
-4. **Test Incrementally**: Verify each layer before moving on
-5. **Maintain Sequential Processing**: Always process plugins one at a time
-
-## Resources
-
-- **Avalonia Documentation**: https://docs.avaloniaui.net/
-- **ReactiveUI Documentation**: https://www.reactiveui.net/docs/
-- **C# Async Best Practices**: https://learn.microsoft.com/en-us/dotnet/csharp/asynchronous-programming/
-- **MVVM Pattern**: https://learn.microsoft.com/en-us/dotnet/architecture/maui/mvvm
-
-## Mutagen API Reference
-
-### Primary: `docs/mutagen/`
-
-The `docs/mutagen/` folder contains curated markdown documentation for Mutagen v0.53.1 packages. **Use this as the primary source** when looking up Mutagen types, interfaces, and API signatures.
-
-- Covers all Bethesda game packages (Core, Skyrim, Fallout4, Starfield, Oblivion, etc.)
-- Lightweight and fast to search — no build errors or missing dependencies
-- See `docs/mutagen/README.md` for an overview of available packages
-
-### Fallback: `Mutagen/` submodule
-
-The `Mutagen/` folder is a **read-only** Git submodule containing [Mutagen](https://github.com/Mutagen-Modding/Mutagen) v0.53.1 source code. Use it as a **fallback** when the `docs/mutagen/` documentation lacks the detail you need (e.g., full implementation specifics or generated record code).
-
-- **DO NOT** modify, build, or add files in `Mutagen/`
-- **DO NOT** include `Mutagen/` files in project builds or test runs
-- Diagnostic errors from the Mutagen folder are expected and should be ignored (missing dependencies, unresolved types, etc.)
-
-## Notes for Claude Code
-
-- Follow the MVVM pattern strictly
-- Use ReactiveUI patterns for all ViewModels
-- Keep async operations truly asynchronous
-- **CRITICAL**: Ensure sequential processing - only one plugin at a time
-- Write clean, maintainable C# code with proper error handling
+## Current Stack
+
+- .NET 10
+- C# 13 with nullable reference types enabled
+- `AutoQAC`: `net10.0-windows10.0.19041.0`
+- Avalonia 11.3.12
+- ReactiveUI.Avalonia 11.3.8
+- Microsoft.Extensions.DependencyInjection 10.0.3
+- Serilog 4.3.1 with console and file sinks
+- YamlDotNet 16.3.0
+- Mutagen 0.53.1
+- xUnit 2.9.3, FluentAssertions 8.8.0, NSubstitute 5.3.0, coverlet 8.0.0
+
+## Current Architecture
+
+- `AutoQAC/Infrastructure` contains DI wiring and logging.
+- `AutoQAC/Services` contains the main business logic, grouped into `Backup`, `Cleaning`, `Configuration`, `GameDetection`, `MO2`, `Monitoring`, `Plugin`, `Process`, `State`, and `UI`.
+- `AutoQAC/ViewModels/MainWindow` splits the main window into `ConfigurationViewModel`, `PluginListViewModel`, and `CleaningCommandsViewModel`, coordinated by `MainWindowViewModel`.
+- `MainWindow.axaml.cs` owns dialog and window interactions; ViewModels should not directly manipulate controls.
+- `IStateService` and `AppState` are the shared runtime state hub for cleaning progress, plugin lists, and session results.
+- `App.axaml.cs` builds the service provider, starts config watching, runs legacy config migration, and triggers log retention cleanup on startup.
+
+## Runtime Behavior To Preserve
+
+- Sequential cleaning is a hard requirement. Do not parallelize plugin cleaning or xEdit launches.
+- `ProcessExecutionService` intentionally uses a single process slot.
+- `CleaningOrchestrator` owns the end-to-end session flow: flush pending config, validate environment, detect game and variant, apply skip lists, optionally back up plugins, launch xEdit, parse results, and finalize the session.
+- Stop behavior is two-stage: graceful cancellation first, then force termination if needed.
+- Hang detection is CPU-based and flows through `IHangDetectionService` into the progress UI.
+- MO2 mode wraps xEdit with `ModOrganizer.exe run`.
+- Backups are skipped in MO2 mode because MO2 uses a virtual filesystem.
+- Mutagen-backed plugin discovery is used for `SkyrimLe`, `SkyrimSe`, `SkyrimVr`, `Fallout4`, and `Fallout4Vr`.
+- `Fallout3`, `FalloutNewVegas`, and `Oblivion` currently rely on file-based load-order loading.
+- Skip list merging includes bundled defaults, user overrides, and variant-specific handling for TTW and Enderal.
+
+## Coding Guidelines
+
+- Maintain strict MVVM boundaries.
+- Use `ReactiveCommand`, `RaiseAndSetIfChanged`, `WhenAnyValue`, and `ObservableAsPropertyHelper` for reactive state.
+- Keep I/O and process work async; never block the UI thread with `.Result` or `.Wait()`.
+- Use constructor injection through `ServiceCollectionExtensions`; avoid static mutable state and service locators.
+- Respect Windows-specific assumptions when touching registry probing, executable paths, or process handling.
+- If you touch Partial Forms support, verify end-to-end state flow first. The command-line flags exist, but the feature remains experimental.
+- Do not modify `Mutagen/`; treat it as read-only.
+
+## Testing Notes
+
+- `AutoQAC.Tests` covers models, services, view models, integration flows, and view subscription lifecycle behavior.
+- `QueryPlugins.Tests` covers the standalone detector library.
+- `dotnet test` auto-collects Cobertura coverage into each test project's `TestResults/coverage/` directory.
+- Use NSubstitute for mocks, and match optional parameters explicitly in substitute setups and assertions.
+- There is no separate Avalonia.Headless test project in the current solution. Do not document or depend on one unless you add it intentionally.
+
+## Important Files
+
+- `AutoQAC/App.axaml.cs`
+- `AutoQAC/Infrastructure/ServiceCollectionExtensions.cs`
+- `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs`
+- `AutoQAC/Services/Process/ProcessExecutionService.cs`
+- `AutoQAC/Services/Configuration/ConfigurationService.cs`
+- `AutoQAC/Services/Plugin/PluginLoadingService.cs`
+- `AutoQAC Data/AutoQAC Main.yaml`
+- `AutoQAC Data/AutoQAC Settings.yaml`
+
+## Mutagen Reference
+
+- Check `docs/mutagen/` first for fast lookups.
+- The curated docs are useful, but package references in this repo are on Mutagen 0.53.1. If something looks stale or mismatched, verify against the read-only `Mutagen/` submodule.
+- Do not build, modify, or add files under `Mutagen/`.
+
+## Common Pitfalls
+
+- Do not parallelize cleaning work.
+- Do not assume every game uses a file-based load order; check `PluginLoadingService` first.
+- Do not bypass `FlushPendingSavesAsync` before launching xEdit.
+- Do not claim UI test infrastructure that is not present.
+- Do not revert unrelated working-tree changes.
