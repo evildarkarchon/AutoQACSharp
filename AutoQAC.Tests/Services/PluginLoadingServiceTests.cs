@@ -241,11 +241,7 @@ public sealed class PluginLoadingServiceTests
         {
             providerStarted.Wait(TimeSpan.FromSeconds(1)).Should().BeTrue("provider should be invoked");
 
-            var completed = await Task.WhenAny(outerCallTask, Task.Delay(250));
-            completed.Should().Be(outerCallTask,
-                "TryGetPluginsAsync should return promptly and not block until Mutagen listing completes");
-
-            innerTask = await outerCallTask;
+            innerTask = await outerCallTask.WaitAsync(TimeSpan.FromMilliseconds(250));
             innerTask.IsCompleted.Should().BeFalse("provider is still blocked and result should not be complete yet");
         }
         finally

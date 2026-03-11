@@ -56,6 +56,23 @@ public sealed class MainWindowViewModelTests
         RxApp.MainThreadScheduler = Scheduler.Immediate;
     }
 
+    private static TaskCompletionSource<bool> CreateSignal()
+    {
+        return new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    private static Task WaitForSignalAsync(TaskCompletionSource<bool> signal)
+    {
+        return WaitForSignalAsync(signal.Task, "expected asynchronous test signal to be observed");
+    }
+
+    private static async Task WaitForSignalAsync(Task signalTask, string because)
+    {
+        var completedTask = await Task.WhenAny(signalTask, Task.Delay(TimeSpan.FromSeconds(2)));
+        completedTask.Should().Be(signalTask, because);
+        await signalTask;
+    }
+
     [Fact]
     public async Task StartCleaningCommand_ShouldCallOrchestrator_WhenCanStart()
     {
@@ -178,6 +195,7 @@ public sealed class MainWindowViewModelTests
         var tempFile = Path.GetTempFileName();
         try
         {
+            var initializationApplied = CreateSignal();
             var stateWithPlugins = new AppState
             {
                 XEditExecutablePath = tempFile,
@@ -193,6 +211,8 @@ public sealed class MainWindowViewModelTests
             // Setup config service to avoid NullReferenceException during InitializeAsync
             _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>())
                 .Returns(new UserConfiguration { LoadOrder = new(), XEdit = new(), ModOrganizer = new(), Settings = new() });
+            _stateServiceMock.When(x => x.UpdateState(Arg.Any<Func<AppState, AppState>>()))
+                .Do(_ => initializationApplied.TrySetResult(true));
 
             var vm = new MainWindowViewModel(
                 _configServiceMock,
@@ -204,8 +224,7 @@ public sealed class MainWindowViewModelTests
                 _pluginServiceMock,
                 _pluginLoadingServiceMock);
 
-            // Wait a bit for InitializeAsync to complete
-            await Task.Delay(50);
+            await WaitForSignalAsync(initializationApplied);
 
             // Set valid paths to enable command (use temp file for xEdit path)
             vm.Configuration.LoadOrderPath = "plugins.txt";
@@ -283,9 +302,12 @@ public sealed class MainWindowViewModelTests
     public async Task ConfigureLoadOrderCommand_ShouldHandlePluginParsingError()
     {
         // Arrange
+        var initializationApplied = CreateSignal();
         var stateSubject = new BehaviorSubject<AppState>(new AppState());
         _stateServiceMock.StateChanged.Returns(stateSubject);
         _stateServiceMock.CurrentState.Returns(new AppState());
+        _stateServiceMock.When(x => x.UpdateState(Arg.Any<Func<AppState, AppState>>()))
+            .Do(_ => initializationApplied.TrySetResult(true));
 
         // Setup config service to avoid NullReferenceException during InitializeAsync
         _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>())
@@ -305,8 +327,7 @@ public sealed class MainWindowViewModelTests
                 _pluginServiceMock,
                 _pluginLoadingServiceMock);
 
-            // Wait for InitializeAsync to complete
-            await Task.Delay(50);
+            await WaitForSignalAsync(initializationApplied);
 
             _fileDialogMock.OpenFileDialogAsync(
                     Arg.Any<string>(),
@@ -639,9 +660,20 @@ public sealed class MainWindowViewModelTests
     public async Task SelectedGame_ShouldPersistToConfiguration_WhenChanged()
     {
         // Arrange
+        var selectedGamePersisted = CreateSignal();
         var stateSubject = new BehaviorSubject<AppState>(new AppState());
         _stateServiceMock.StateChanged.Returns(stateSubject);
         _stateServiceMock.CurrentState.Returns(new AppState());
+        _configServiceMock.SetSelectedGameAsync(Arg.Any<GameType>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                if (callInfo.ArgAt<GameType>(0) == GameType.SkyrimSe)
+                {
+                    selectedGamePersisted.TrySetResult(true);
+                }
+
+                return Task.CompletedTask;
+            });
 
         var vm = new MainWindowViewModel(
             _configServiceMock,
@@ -656,8 +688,7 @@ public sealed class MainWindowViewModelTests
         // Act
         vm.Configuration.SelectedGame = GameType.SkyrimSe;
 
-        // Allow async subscription to execute
-        await Task.Delay(100);
+        await WaitForSignalAsync(selectedGamePersisted);
 
         // Assert
         await _configServiceMock.Received(1).SetSelectedGameAsync(GameType.SkyrimSe, Arg.Any<CancellationToken>());
@@ -670,6 +701,7 @@ public sealed class MainWindowViewModelTests
     public async Task SelectedGame_ShouldRefreshPlugins_WhenChangedToMutagenSupportedGame()
     {
         // Arrange
+        var pluginsLoaded = CreateSignal();
         var expectedPlugins = new List<PluginInfo>
         {
             new() { FileName = "Plugin1.esp", FullPath = "Data/Plugin1.esp" },
@@ -696,6 +728,17 @@ public sealed class MainWindowViewModelTests
         var stateSubject = new BehaviorSubject<AppState>(new AppState());
         _stateServiceMock.StateChanged.Returns(stateSubject);
         _stateServiceMock.CurrentState.Returns(new AppState());
+        _stateServiceMock.When(x => x.SetPluginsToClean(Arg.Any<List<PluginInfo>>()))
+            .Do(callInfo =>
+            {
+                var plugins = callInfo.Arg<List<PluginInfo>>();
+                if (plugins.Count == 2 &&
+                    plugins.Any(p => p.FileName == "Plugin1.esp") &&
+                    plugins.Any(p => p.FileName == "Plugin2.esp"))
+                {
+                    pluginsLoaded.TrySetResult(true);
+                }
+            });
 
         var vm = new MainWindowViewModel(
             _configServiceMock,
@@ -710,8 +753,7 @@ public sealed class MainWindowViewModelTests
         // Act
         vm.Configuration.SelectedGame = GameType.SkyrimSe;
 
-        // Allow async subscription to execute
-        await Task.Delay(100);
+        await WaitForSignalAsync(pluginsLoaded);
 
         // Assert
         await _pluginLoadingServiceMock.Received(1).TryGetPluginsAsync(GameType.SkyrimSe, Arg.Any<string?>(), Arg.Any<CancellationToken>());
@@ -722,9 +764,263 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
+    public async Task SelectedGame_ShouldPublishPendingApproximationsThenMergeBackgroundResults()
+    {
+        var approximationServiceMock = Substitute.For<IPluginIssueApproximationService>();
+        var pendingPluginsPublished = CreateSignal();
+        var approximationsMerged = CreateSignal();
+        var expectedPlugins = new List<PluginInfo>
+        {
+            new() { FileName = "Plugin1.esp", FullPath = @"C:\Games\SkyrimSE\Data\Plugin1.esp" }
+        };
+
+        _pluginLoadingServiceMock.IsGameSupportedByMutagen(GameType.SkyrimSe).Returns(true);
+        _pluginLoadingServiceMock.TryGetPluginsAsync(GameType.SkyrimSe, Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(new PluginLoadingResult
+            {
+                Status = PluginLoadingStatus.Success,
+                Plugins = expectedPlugins,
+                DataFolder = @"C:\Games\SkyrimSE\Data"
+            });
+
+        approximationServiceMock
+            .GetApproximationsAsync(GameType.SkyrimSe, @"C:\Games\SkyrimSE\Data", Arg.Any<CancellationToken>())
+            .Returns(
+            [
+                new PluginIssueApproximationResult
+                {
+                    FileName = "Plugin1.esp",
+                    FullPath = @"C:\Games\SkyrimSE\Data\Plugin1.esp",
+                    Approximation = PluginIssueApproximation.Available(3, 2, 1)
+                }
+            ]);
+
+        _configServiceMock.GetSkipListAsync(
+                Arg.Any<GameType>(),
+                Arg.Any<GameVariant>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new List<string>());
+
+        var stateSubject = new BehaviorSubject<AppState>(new AppState());
+        _stateServiceMock.StateChanged.Returns(stateSubject);
+        _stateServiceMock.CurrentState.Returns(new AppState());
+        _stateServiceMock.When(x => x.SetPluginsToClean(Arg.Any<List<PluginInfo>>()))
+            .Do(callInfo =>
+            {
+                var plugins = callInfo.Arg<List<PluginInfo>>();
+                if (plugins.Count == 1 &&
+                    plugins[0].Approximation.Status == PluginIssueApproximationStatus.Pending)
+                {
+                    pendingPluginsPublished.TrySetResult(true);
+                }
+            });
+        _stateServiceMock.When(x => x.MergePluginApproximations(Arg.Any<IReadOnlyList<PluginIssueApproximationResult>>()))
+            .Do(callInfo =>
+            {
+                var results = callInfo.Arg<IReadOnlyList<PluginIssueApproximationResult>>();
+                if (results.Count == 1 &&
+                    results[0].Approximation.Status == PluginIssueApproximationStatus.Available)
+                {
+                    approximationsMerged.TrySetResult(true);
+                }
+            });
+
+        var vm = new MainWindowViewModel(
+            _configServiceMock,
+            _stateServiceMock,
+            _orchestratorMock,
+            _loggerMock,
+            _fileDialogMock,
+            _messageDialogMock,
+            _pluginServiceMock,
+            _pluginLoadingServiceMock,
+            approximationServiceMock);
+
+        vm.Configuration.SelectedGame = GameType.SkyrimSe;
+        await WaitForSignalAsync(pendingPluginsPublished);
+        await WaitForSignalAsync(approximationsMerged);
+
+        _stateServiceMock.Received(1).SetPluginsToClean(Arg.Is<List<PluginInfo>>(list =>
+            list.Count == 1 &&
+            list[0].Approximation.Status == PluginIssueApproximationStatus.Pending));
+        await approximationServiceMock.Received(1)
+            .GetApproximationsAsync(GameType.SkyrimSe, @"C:\Games\SkyrimSE\Data", Arg.Any<CancellationToken>());
+        _stateServiceMock.Received(1).MergePluginApproximations(Arg.Is<IReadOnlyList<PluginIssueApproximationResult>>(results =>
+            results.Count == 1 &&
+            results[0].Approximation.Status == PluginIssueApproximationStatus.Available &&
+            results[0].Approximation.ItmCount == 3));
+    }
+
+    [Fact]
+    public async Task SelectedGame_ShouldKeepPluginListLoadedWhenApproximationFails()
+    {
+        var approximationServiceMock = Substitute.For<IPluginIssueApproximationService>();
+        var pluginsLoaded = CreateSignal();
+        var unavailableMerged = CreateSignal();
+        var expectedPlugins = new List<PluginInfo>
+        {
+            new() { FileName = "Plugin1.esp", FullPath = @"C:\Games\SkyrimSE\Data\Plugin1.esp" }
+        };
+
+        _pluginLoadingServiceMock.IsGameSupportedByMutagen(GameType.SkyrimSe).Returns(true);
+        _pluginLoadingServiceMock.TryGetPluginsAsync(GameType.SkyrimSe, Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(new PluginLoadingResult
+            {
+                Status = PluginLoadingStatus.Success,
+                Plugins = expectedPlugins,
+                DataFolder = @"C:\Games\SkyrimSE\Data"
+            });
+
+        approximationServiceMock
+            .GetApproximationsAsync(GameType.SkyrimSe, @"C:\Games\SkyrimSE\Data", Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("Approximation failed"));
+
+        _configServiceMock.GetSkipListAsync(
+                Arg.Any<GameType>(),
+                Arg.Any<GameVariant>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new List<string>());
+
+        var stateSubject = new BehaviorSubject<AppState>(new AppState());
+        _stateServiceMock.StateChanged.Returns(stateSubject);
+        _stateServiceMock.CurrentState.Returns(new AppState());
+        _stateServiceMock.When(x => x.SetPluginsToClean(Arg.Any<List<PluginInfo>>()))
+            .Do(callInfo =>
+            {
+                var plugins = callInfo.Arg<List<PluginInfo>>();
+                if (plugins.Count == 1 && plugins[0].FileName == "Plugin1.esp")
+                {
+                    pluginsLoaded.TrySetResult(true);
+                }
+            });
+        _stateServiceMock.When(x => x.MergePluginApproximations(Arg.Any<IReadOnlyList<PluginIssueApproximationResult>>()))
+            .Do(callInfo =>
+            {
+                var results = callInfo.Arg<IReadOnlyList<PluginIssueApproximationResult>>();
+                if (results.Count == 1 &&
+                    results[0].Approximation.Status == PluginIssueApproximationStatus.Unavailable)
+                {
+                    unavailableMerged.TrySetResult(true);
+                }
+            });
+
+        var vm = new MainWindowViewModel(
+            _configServiceMock,
+            _stateServiceMock,
+            _orchestratorMock,
+            _loggerMock,
+            _fileDialogMock,
+            _messageDialogMock,
+            _pluginServiceMock,
+            _pluginLoadingServiceMock,
+            approximationServiceMock);
+
+        vm.Configuration.SelectedGame = GameType.SkyrimSe;
+        await WaitForSignalAsync(pluginsLoaded);
+        await WaitForSignalAsync(unavailableMerged);
+
+        _stateServiceMock.Received(1).SetPluginsToClean(Arg.Any<List<PluginInfo>>());
+        _stateServiceMock.Received(1).MergePluginApproximations(Arg.Is<IReadOnlyList<PluginIssueApproximationResult>>(results =>
+            results.Count == 1 &&
+            results[0].Approximation.Status == PluginIssueApproximationStatus.Unavailable));
+    }
+
+    [Fact]
+    public async Task SelectedGame_ShouldNotStartApproximationRefresh_ForStalePluginLoad()
+    {
+        var approximationServiceMock = Substitute.For<IPluginIssueApproximationService>();
+        var approximationAttempted = CreateSignal();
+        var firstLoadStarted = CreateSignal();
+        var releaseFirstLoad = CreateSignal();
+        var unknownSelectionApplied = CreateSignal();
+        var stalePluginListApplied = CreateSignal();
+        var expectedPlugins = new List<PluginInfo>
+        {
+            new() { FileName = "Plugin1.esp", FullPath = @"C:\Games\SkyrimSE\Data\Plugin1.esp" }
+        };
+
+        _pluginLoadingServiceMock.IsGameSupportedByMutagen(GameType.SkyrimSe).Returns(true);
+        _pluginLoadingServiceMock.TryGetPluginsAsync(GameType.SkyrimSe, Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(async _ =>
+            {
+                firstLoadStarted.TrySetResult(true);
+                await releaseFirstLoad.Task;
+                return new PluginLoadingResult
+                {
+                    Status = PluginLoadingStatus.Success,
+                    Plugins = expectedPlugins,
+                    DataFolder = @"C:\Games\SkyrimSE\Data"
+                };
+            });
+
+        _configServiceMock.GetSkipListAsync(
+                Arg.Any<GameType>(),
+                Arg.Any<GameVariant>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new List<string>());
+
+        approximationServiceMock
+            .GetApproximationsAsync(Arg.Any<GameType>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                approximationAttempted.TrySetResult(true);
+                return Task.FromResult<IReadOnlyList<PluginIssueApproximationResult>>([]);
+            });
+
+        _stateServiceMock.When(x => x.SetPluginsToClean(Arg.Any<List<PluginInfo>>()))
+            .Do(callInfo =>
+            {
+                var plugins = callInfo.Arg<List<PluginInfo>>();
+                if (plugins.Count == 0)
+                {
+                    unknownSelectionApplied.TrySetResult(true);
+                }
+
+                if (plugins.Count == 1 &&
+                    plugins[0].FileName == "Plugin1.esp" &&
+                    plugins[0].Approximation.Status == PluginIssueApproximationStatus.Pending)
+                {
+                    stalePluginListApplied.TrySetResult(true);
+                }
+            });
+
+        var stateSubject = new BehaviorSubject<AppState>(new AppState());
+        _stateServiceMock.StateChanged.Returns(stateSubject);
+        _stateServiceMock.CurrentState.Returns(new AppState());
+
+        var vm = new MainWindowViewModel(
+            _configServiceMock,
+            _stateServiceMock,
+            _orchestratorMock,
+            _loggerMock,
+            _fileDialogMock,
+            _messageDialogMock,
+            _pluginServiceMock,
+            _pluginLoadingServiceMock,
+            approximationServiceMock);
+
+        vm.Configuration.SelectedGame = GameType.SkyrimSe;
+        await WaitForSignalAsync(firstLoadStarted);
+
+        vm.Configuration.SelectedGame = GameType.Unknown;
+        await WaitForSignalAsync(unknownSelectionApplied);
+
+        releaseFirstLoad.TrySetResult(true);
+        await WaitForSignalAsync(stalePluginListApplied);
+        await Task.Yield();
+        await Task.Yield();
+
+        approximationAttempted.Task.IsCompleted.Should().BeFalse(
+            "stale plugin loads should not start a background approximation refresh");
+        await approximationServiceMock.DidNotReceive()
+            .GetApproximationsAsync(Arg.Any<GameType>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task SelectedGame_ShouldShowSpecificStatusWithoutClaimingFallback_WhenMutagenReturnsNoPlugins()
     {
         // Arrange
+        var emptyPluginListPublished = CreateSignal();
         _pluginLoadingServiceMock.IsGameSupportedByMutagen(GameType.SkyrimSe)
             .Returns(true);
         _pluginLoadingServiceMock.TryGetPluginsAsync(GameType.SkyrimSe, Arg.Any<string?>(), Arg.Any<CancellationToken>())
@@ -744,6 +1040,14 @@ public sealed class MainWindowViewModelTests
         var stateSubject = new BehaviorSubject<AppState>(new AppState());
         _stateServiceMock.StateChanged.Returns(stateSubject);
         _stateServiceMock.CurrentState.Returns(new AppState());
+        _stateServiceMock.When(x => x.SetPluginsToClean(Arg.Any<List<PluginInfo>>()))
+            .Do(callInfo =>
+            {
+                if (callInfo.Arg<List<PluginInfo>>().Count == 0)
+                {
+                    emptyPluginListPublished.TrySetResult(true);
+                }
+            });
 
         var vm = new MainWindowViewModel(
             _configServiceMock,
@@ -757,7 +1061,7 @@ public sealed class MainWindowViewModelTests
 
         // Act
         vm.Configuration.SelectedGame = GameType.SkyrimSe;
-        await Task.Delay(100);
+        await WaitForSignalAsync(emptyPluginListPublished);
 
         // Assert
         vm.Configuration.StatusText.Should().Contain("No plugins discovered via Mutagen");

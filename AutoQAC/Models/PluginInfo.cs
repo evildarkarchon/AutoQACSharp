@@ -19,6 +19,7 @@ public sealed record PluginInfo
     public required string FullPath { get; init; }
     public bool IsInSkipList { get; init; }
     public GameType DetectedGameType { get; init; }
+    public PluginIssueApproximation Approximation { get; init; } = PluginIssueApproximation.Unavailable;
 
     /// <summary>
     /// Optional validation result from ValidatePluginFile.
@@ -31,4 +32,15 @@ public sealed record PluginInfo
     /// Background/services must treat this as read-only snapshot data.
     /// </summary>
     public bool IsSelected { get; set; } = true;
+
+    public bool HasApproximationPreview => Approximation.Status == PluginIssueApproximationStatus.Available;
+    public bool IsApproximationPending => Approximation.Status == PluginIssueApproximationStatus.Pending;
+
+    public string ApproximationDisplayText => Approximation.Status switch
+    {
+        PluginIssueApproximationStatus.Available =>
+            $"Approx. ITM {Approximation.ItmCount} | UDR {Approximation.DeletedReferenceCount} | Nav {Approximation.DeletedNavmeshCount}",
+        PluginIssueApproximationStatus.Pending => "Analyzing preview...",
+        _ => "Preview unavailable"
+    };
 }

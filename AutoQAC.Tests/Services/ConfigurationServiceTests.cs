@@ -12,6 +12,11 @@ public sealed class ConfigurationServiceTests : IDisposable
 {
     private readonly string _testDirectory;
 
+    private static TaskCompletionSource<bool> CreateSignal()
+    {
+        return new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
     public ConfigurationServiceTests()
     {
         _testDirectory = Path.Combine(Path.GetTempPath(), "AutoQACTests_" + Guid.NewGuid());
@@ -560,12 +565,20 @@ AutoQAC_Data:
 
         var changed = await service.LoadUserConfigAsync();
         changed.Settings.CleaningTimeout = 456;
+        var revertedToLastKnownGood = CreateSignal();
+        using var revertSubscription = service.UserConfigurationChanged.Subscribe(config =>
+        {
+            if (config.Settings.CleaningTimeout == 123)
+            {
+                revertedToLastKnownGood.TrySetResult(true);
+            }
+        });
 
         // Act
         using (var lockStream = new FileStream(configPath, FileMode.Open, FileAccess.Read, FileShare.None))
         {
             await service.SaveUserConfigAsync(changed);
-            await Task.Delay(1800);
+            await revertedToLastKnownGood.Task.WaitAsync(TimeSpan.FromSeconds(3));
         }
 
         // Assert

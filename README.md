@@ -16,11 +16,12 @@ AutoQACSharp is a Windows desktop tool for sequential cleaning of Bethesda plugi
 - Skip list management backed by `AutoQAC Main.yaml` defaults plus user overrides, including TTW and Enderal variant handling.
 - Plugin backup sessions before cleaning, retention cleanup, and a restore browser.
 - Dry-run preview showing which plugins will be cleaned or skipped before xEdit is launched.
+- Plugin-list preview counts for approximate ITMs, deleted references, and deleted navmeshes after Mutagen-backed refreshes for Skyrim LE/SE/VR and Fallout 4/VR.
 - Cleaning results windows with per-plugin stats and exportable session reports.
 - Debounced YAML config saves, external config file watching, startup log retention cleanup, and one-time legacy config migration.
 - A separate `QueryPlugins` library for Mutagen-based issue detection (ITMs, deleted references, deleted navmeshes) with its own tests.
 
-Note: the dry-run preview is a readiness check only. ITM/UDR/navmesh statistics still require an actual xEdit run.
+Note: the dry-run preview is a readiness check only. The plugin list can show Mutagen-based approximate issue previews for supported games, but authoritative ITM/UDR/navmesh statistics still come from an actual xEdit run.
 
 ## Supported Games
 

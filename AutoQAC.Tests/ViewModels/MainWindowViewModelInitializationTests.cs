@@ -54,13 +54,26 @@ public sealed class MainWindowViewModelInitializationTests
         RxApp.MainThreadScheduler = Scheduler.Immediate;
     }
 
+    private static TaskCompletionSource<bool> CreateSignal()
+    {
+        return new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    private static Task WaitForSignalAsync(TaskCompletionSource<bool> signal)
+    {
+        return signal.Task.WaitAsync(TimeSpan.FromSeconds(2));
+    }
+
     [Fact]
     public async Task Constructor_ShouldLoadConfigAndInitializeState()
     {
         // Arrange
+        var initializationApplied = CreateSignal();
         var stateSubject = new BehaviorSubject<AppState>(new AppState());
         _stateServiceMock.StateChanged.Returns(stateSubject);
         _stateServiceMock.CurrentState.Returns(new AppState());
+        _stateServiceMock.When(x => x.UpdateState(Arg.Any<Func<AppState, AppState>>()))
+            .Do(_ => initializationApplied.TrySetResult(true));
 
         var config = new UserConfiguration
         {
@@ -84,8 +97,7 @@ public sealed class MainWindowViewModelInitializationTests
             _pluginServiceMock,
             _pluginLoadingServiceMock);
 
-        // Allow async void to run
-        await Task.Delay(100);
+        await WaitForSignalAsync(initializationApplied);
 
         // Assert
         await _configServiceMock.Received(1).LoadUserConfigAsync(Arg.Any<CancellationToken>());

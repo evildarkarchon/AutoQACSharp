@@ -75,6 +75,42 @@ public sealed class CleaningOrchestratorTests
             _hangDetectionMock);
     }
 
+    private static TaskCompletionSource<bool> CreateSignal()
+    {
+        return new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    private static Task WaitForSignalAsync(TaskCompletionSource<bool> signal)
+    {
+        return WaitForSignalAsync(signal.Task, "expected test signal to be observed");
+    }
+
+    private static async Task WaitForCancellationAsync(CancellationToken ct)
+    {
+        if (ct.IsCancellationRequested)
+        {
+            return;
+        }
+
+        var cancellationSignal = CreateSignal();
+        using var registration = ct.Register(() => cancellationSignal.TrySetResult(true));
+        await WaitForSignalAsync(cancellationSignal.Task, "expected cancellation token to be canceled");
+        ct.IsCancellationRequested.Should().BeTrue("the token should be canceled before the helper returns");
+    }
+
+    private static async Task WaitForSignalAsync(Task signalTask, string because)
+    {
+        var completedTask = await Task.WhenAny(signalTask, Task.Delay(TimeSpan.FromSeconds(2)));
+        completedTask.Should().Be(signalTask, because);
+        await signalTask;
+    }
+
+    private static async Task WaitForCancellationAndThrowAsync(CancellationToken ct)
+    {
+        await WaitForCancellationAsync(ct);
+        ct.ThrowIfCancellationRequested();
+    }
+
     [Fact]
     public async Task StartCleaningAsync_ShouldProcessPlugins_WhenConfigIsValid()
     {
@@ -497,7 +533,7 @@ public sealed class CleaningOrchestratorTests
             .Returns(true);
 
         var cleanedPlugins = new List<string>();
-        var cleaningStartedEvent = new TaskCompletionSource<bool>();
+        var cleaningStartedEvent = CreateSignal();
 
         _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<IProgress<string>>(), Arg.Any<CancellationToken>(), Arg.Any<Action<System.Diagnostics.Process>?>())
             .Returns(async callInfo =>
@@ -512,26 +548,16 @@ public sealed class CleaningOrchestratorTests
                     cleaningStartedEvent.TrySetResult(true);
                 }
 
-                // Simulate cleaning work - handle cancellation gracefully
-                try
-                {
-                    await Task.Delay(200, ct);
-                }
-                catch (OperationCanceledException)
-                {
-                    // Expected when cancelled - return a cancelled/failed result
-                    return new CleaningResult { Status = CleaningStatus.Failed, Message = "Cancelled" };
-                }
+                await WaitForCancellationAsync(ct);
 
-                return new CleaningResult { Status = CleaningStatus.Cleaned };
+                return new CleaningResult { Status = CleaningStatus.Failed, Message = "Cancelled" };
             });
 
         // Act
         var cleaningTask = _orchestrator.StartCleaningAsync();
 
         // Wait for cleaning to start, then stop it
-        await cleaningStartedEvent.Task;
-        await Task.Delay(50); // Give a moment for the first clean to be in progress
+        await WaitForSignalAsync(cleaningStartedEvent);
         await _orchestrator.StopCleaningAsync();
 
         // Wait for task to complete
@@ -569,7 +595,7 @@ public sealed class CleaningOrchestratorTests
         _processServiceMock.TerminateProcessAsync(Arg.Any<Process>(), false, Arg.Any<CancellationToken>())
             .Returns(TerminationResult.GracePeriodExpired);
 
-        var processStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var processStarted = CreateSignal();
         var releasePlugin = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         _cleaningServiceMock.CleanPluginAsync(
@@ -637,13 +663,13 @@ public sealed class CleaningOrchestratorTests
                 processStarted.TrySetResult(true);
 
                 var ct = callInfo.ArgAt<CancellationToken>(2);
-                await Task.Delay(Timeout.Infinite, ct);
+                await WaitForCancellationAndThrowAsync(ct);
                 return new CleaningResult { Status = CleaningStatus.Cleaned, Success = true };
             });
 
         // Act
         var cleaningTask = _orchestrator.StartCleaningAsync();
-        await processStarted.Task;
+        await WaitForSignalAsync(processStarted);
         await _orchestrator.ForceStopCleaningAsync();
         await cleaningTask;
 
@@ -678,7 +704,7 @@ public sealed class CleaningOrchestratorTests
         _processServiceMock.TerminateProcessAsync(Arg.Any<Process>(), true, Arg.Any<CancellationToken>())
             .Returns(TerminationResult.ForceKilled);
 
-        var processStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var processStarted = CreateSignal();
 
         _cleaningServiceMock.CleanPluginAsync(
                 Arg.Any<PluginInfo>(),
@@ -691,13 +717,13 @@ public sealed class CleaningOrchestratorTests
                 processStarted.TrySetResult(true);
 
                 var ct = callInfo.ArgAt<CancellationToken>(2);
-                await Task.Delay(Timeout.Infinite, ct);
+                await WaitForCancellationAndThrowAsync(ct);
                 return new CleaningResult { Status = CleaningStatus.Cleaned, Success = true };
             });
 
         // Act
         var cleaningTask = _orchestrator.StartCleaningAsync();
-        await processStarted.Task;
+        await WaitForSignalAsync(processStarted);
         await _orchestrator.StopCleaningAsync();
         await _orchestrator.StopCleaningAsync();
         await cleaningTask;
@@ -851,8 +877,9 @@ public sealed class CleaningOrchestratorTests
         _hangDetectionMock.MonitorProcess(Arg.Any<Process>())
             .Returns(hangState);
 
-        var processStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var releasePlugin = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var processStarted = CreateSignal();
+        var releasePlugin = CreateSignal();
+        var hangForwarded = CreateSignal();
 
         _cleaningServiceMock.CleanPluginAsync(
                 Arg.Any<PluginInfo>(),
@@ -868,14 +895,21 @@ public sealed class CleaningOrchestratorTests
             });
 
         var hangEvents = new List<bool>();
-        using var sub = _orchestrator.HangDetected.Subscribe(hangEvents.Add);
+        using var sub = _orchestrator.HangDetected.Subscribe(isHung =>
+        {
+            hangEvents.Add(isHung);
+            if (isHung)
+            {
+                hangForwarded.TrySetResult(true);
+            }
+        });
 
         // Act
         var cleaningTask = _orchestrator.StartCleaningAsync();
-        await processStarted.Task;
+        await WaitForSignalAsync(processStarted);
 
         hangState.OnNext(true);
-        await Task.Delay(25);
+        await WaitForSignalAsync(hangForwarded);
 
         releasePlugin.SetResult(true);
         await cleaningTask;

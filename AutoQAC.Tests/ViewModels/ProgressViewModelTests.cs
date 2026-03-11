@@ -144,7 +144,7 @@ public sealed class ProgressViewModelTests
     /// causing race conditions or missed updates.
     /// </summary>
     [Fact]
-    public async Task ViewModel_ShouldHandleRapidStateUpdates()
+    public void ViewModel_ShouldHandleRapidStateUpdates()
     {
         // Arrange
         var vm = CreateViewModel();
@@ -165,9 +165,6 @@ public sealed class ProgressViewModelTests
             };
             _stateSubject.OnNext(state);
         }
-
-        // Small delay to allow updates to propagate
-        await Task.Delay(50);
 
         // Assert
         vm.Progress.Should().Be(100, "final progress should be 100");

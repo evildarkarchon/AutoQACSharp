@@ -34,6 +34,19 @@ public sealed class ProcessExecutionServiceTests : IDisposable
 {
     private readonly ILoggingService _mockLogger;
 
+    private static async Task WaitForCancellationAndThrowAsync(CancellationToken ct)
+    {
+        if (ct.IsCancellationRequested)
+        {
+            ct.ThrowIfCancellationRequested();
+        }
+
+        var cancellationSignal = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var registration = ct.Register(() => cancellationSignal.TrySetResult(true));
+        await cancellationSignal.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        ct.ThrowIfCancellationRequested();
+    }
+
     /// <summary>
     /// Initializes test fixtures with default mock configurations.
     /// </summary>
@@ -321,7 +334,7 @@ public sealed class ProcessExecutionServiceTests : IDisposable
                 // Block until cancellation -- let the exception propagate so the
                 // orchestrator's catch(OperationCanceledException) sets WasCancelled
                 var ct = callInfo.ArgAt<CancellationToken>(2);
-                await Task.Delay(Timeout.Infinite, ct);
+                await WaitForCancellationAndThrowAsync(ct);
                 return new CleaningResult { Status = CleaningStatus.Failed, Message = "Cancelled" };
             });
 

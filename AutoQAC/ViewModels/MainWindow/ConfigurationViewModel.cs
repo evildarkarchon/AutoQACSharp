@@ -30,7 +30,10 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
     private readonly IMessageDialogService _messageDialog;
     private readonly IPluginValidationService _pluginService;
     private readonly IPluginLoadingService _pluginLoadingService;
+    private readonly IPluginIssueApproximationService _pluginIssueApproximationService;
     private readonly CompositeDisposable _disposables = new();
+    private CancellationTokenSource? _pluginApproximationCts;
+    private int _pluginRefreshGeneration;
 
     // Observable properties
     private string? _loadOrderPath;
@@ -193,7 +196,8 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
         IFileDialogService fileDialog,
         IMessageDialogService messageDialog,
         IPluginValidationService pluginService,
-        IPluginLoadingService pluginLoadingService)
+        IPluginLoadingService pluginLoadingService,
+        IPluginIssueApproximationService? pluginIssueApproximationService = null)
     {
         _configService = configService;
         _stateService = stateService;
@@ -202,6 +206,7 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
         _messageDialog = messageDialog;
         _pluginService = pluginService;
         _pluginLoadingService = pluginLoadingService;
+        _pluginIssueApproximationService = pluginIssueApproximationService ?? NoOpPluginIssueApproximationService.Instance;
 
         // Initialize available games list
         AvailableGames = _pluginLoadingService.GetAvailableGames();
@@ -446,7 +451,12 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
                 // Apply skip list status if a game is selected
                 var skipList = await _configService.GetSkipListAsync(SelectedGame, ct: CancellationToken.None);
                 var pluginsWithSkipStatus =
-                    ApplySkipListStatus(plugins, skipList, SelectedGame, DisableSkipListsEnabled);
+                    ApplySkipListStatus(
+                        plugins,
+                        skipList,
+                        SelectedGame,
+                        DisableSkipListsEnabled,
+                        PluginIssueApproximation.Unavailable);
                 _stateService.SetPluginsToClean(pluginsWithSkipStatus);
                 StatusText = $"Loaded {plugins.Count} plugins from load order";
             }
@@ -573,6 +583,9 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
 
     private async Task RefreshPluginsForGameAsync(GameType gameType)
     {
+        var refreshGeneration = Interlocked.Increment(ref _pluginRefreshGeneration);
+        CancelPendingApproximation();
+
         if (gameType == GameType.Unknown)
         {
             _stateService.SetPluginsToClean(new List<PluginInfo>());
@@ -634,9 +647,19 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
                 case PluginLoadingStatus.Success:
                     {
                         var pluginsWithSkipStatus =
-                            ApplySkipListStatus(loadResult.Plugins, skipList, gameType, DisableSkipListsEnabled);
+                            ApplySkipListStatus(
+                                loadResult.Plugins,
+                                skipList,
+                                gameType,
+                                DisableSkipListsEnabled,
+                                PluginIssueApproximation.Pending);
                         _stateService.SetPluginsToClean(pluginsWithSkipStatus);
                         StatusText = $"Loaded {loadResult.Plugins.Count} plugins for {gameType}";
+                        StartApproximationRefresh(
+                            gameType,
+                            loadResult.DataFolder ?? GameDataFolder,
+                            pluginsWithSkipStatus,
+                            refreshGeneration);
                         return;
                     }
                 case PluginLoadingStatus.NoPluginsDiscovered:
@@ -687,7 +710,12 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
                 StatusText = $"Loading plugins from file for {gameType}...";
                 var plugins = await _pluginLoadingService.GetPluginsFromFileAsync(LoadOrderPath, GameDataFolder);
                 // Apply skip list filtering and mark IsInSkipList
-                var pluginsWithSkipStatus = ApplySkipListStatus(plugins, skipList, gameType, DisableSkipListsEnabled);
+                var pluginsWithSkipStatus = ApplySkipListStatus(
+                    plugins,
+                    skipList,
+                    gameType,
+                    DisableSkipListsEnabled,
+                    PluginIssueApproximation.Unavailable);
                 _stateService.SetPluginsToClean(pluginsWithSkipStatus);
                 StatusText = $"Loaded {plugins.Count} plugins from file";
             }
@@ -715,14 +743,122 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
     /// If disableSkipLists is true, all plugins will have IsInSkipList = false.
     /// </summary>
     internal static List<PluginInfo> ApplySkipListStatus(IReadOnlyList<PluginInfo> plugins, List<string> skipList,
-        GameType gameType, bool disableSkipLists)
+        GameType gameType, bool disableSkipLists, PluginIssueApproximation? approximation = null)
     {
         var skipSet = new HashSet<string>(skipList, StringComparer.OrdinalIgnoreCase);
         return plugins.Select(p => p with
         {
             IsInSkipList = !disableSkipLists && skipSet.Contains(p.FileName),
-            DetectedGameType = gameType
+            DetectedGameType = gameType,
+            Approximation = approximation ?? p.Approximation
         }).ToList();
+    }
+
+    private void StartApproximationRefresh(
+        GameType gameType,
+        string? dataFolder,
+        IReadOnlyList<PluginInfo> plugins,
+        int refreshGeneration)
+    {
+        if (string.IsNullOrWhiteSpace(dataFolder))
+        {
+            _stateService.MergePluginApproximations(CreateUnavailableApproximations(plugins));
+            return;
+        }
+
+        if (refreshGeneration != Volatile.Read(ref _pluginRefreshGeneration))
+        {
+            return;
+        }
+
+        var cts = new CancellationTokenSource();
+
+        var previous = Interlocked.Exchange(ref _pluginApproximationCts, cts);
+        if (refreshGeneration != Volatile.Read(ref _pluginRefreshGeneration))
+        {
+            Interlocked.CompareExchange(ref _pluginApproximationCts, null, cts);
+            CancelAndDisposeApproximation(previous);
+            cts.Dispose();
+            return;
+        }
+
+        CancelAndDisposeApproximation(previous);
+        _ = RunApproximationRefreshAsync(gameType, dataFolder, plugins, refreshGeneration, cts);
+    }
+
+    private async Task RunApproximationRefreshAsync(
+        GameType gameType,
+        string dataFolder,
+        IReadOnlyList<PluginInfo> plugins,
+        int refreshGeneration,
+        CancellationTokenSource cts)
+    {
+        try
+        {
+            var results = await _pluginIssueApproximationService
+                .GetApproximationsAsync(gameType, dataFolder, cts.Token)
+                .ConfigureAwait(false);
+
+            if (cts.IsCancellationRequested || refreshGeneration != Volatile.Read(ref _pluginRefreshGeneration))
+            {
+                return;
+            }
+
+            _stateService.MergePluginApproximations(
+                results.Count == 0 ? CreateUnavailableApproximations(plugins) : results);
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning("Plugin issue approximation refresh failed for {GameType}: {Message}", gameType, ex.Message);
+
+            if (!cts.IsCancellationRequested && refreshGeneration == Volatile.Read(ref _pluginRefreshGeneration))
+            {
+                _stateService.MergePluginApproximations(CreateUnavailableApproximations(plugins));
+            }
+        }
+        finally
+        {
+            Interlocked.CompareExchange(ref _pluginApproximationCts, null, cts);
+
+            cts.Dispose();
+        }
+    }
+
+    private static List<PluginIssueApproximationResult> CreateUnavailableApproximations(IReadOnlyList<PluginInfo> plugins)
+    {
+        return plugins.Select(plugin => new PluginIssueApproximationResult
+        {
+            FileName = plugin.FileName,
+            FullPath = plugin.FullPath,
+            Approximation = PluginIssueApproximation.Unavailable
+        }).ToList();
+    }
+
+    private void CancelPendingApproximation()
+    {
+        var cts = Interlocked.Exchange(ref _pluginApproximationCts, null);
+        CancelAndDisposeApproximation(cts);
+    }
+
+    private static void CancelAndDisposeApproximation(CancellationTokenSource? cts)
+    {
+        if (cts is null)
+        {
+            return;
+        }
+
+        try
+        {
+            cts.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+
+        cts.Dispose();
     }
 
     private void TogglePartialForms()
@@ -780,6 +916,20 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
+        CancelPendingApproximation();
         _disposables.Dispose();
+    }
+
+    private sealed class NoOpPluginIssueApproximationService : IPluginIssueApproximationService
+    {
+        public static NoOpPluginIssueApproximationService Instance { get; } = new();
+
+        public Task<IReadOnlyList<PluginIssueApproximationResult>> GetApproximationsAsync(
+            GameType gameType,
+            string dataFolder,
+            CancellationToken ct = default)
+        {
+            return Task.FromResult<IReadOnlyList<PluginIssueApproximationResult>>(Array.Empty<PluginIssueApproximationResult>());
+        }
     }
 }

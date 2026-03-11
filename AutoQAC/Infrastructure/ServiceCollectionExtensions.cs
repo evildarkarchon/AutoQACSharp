@@ -43,6 +43,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IGameDetectionService, GameDetectionService>();
         services.AddSingleton<IPluginValidationService, PluginValidationService>();
         services.AddSingleton<IPluginLoadingService, PluginLoadingService>();
+        services.AddSingleton<IPluginIssueApproximationService, PluginIssueApproximationService>();
         services.AddSingleton<IProcessExecutionService, ProcessExecutionService>();
         services.AddSingleton<IMo2ValidationService, Mo2ValidationService>();
         services.AddSingleton<IXEditCommandBuilder, XEditCommandBuilder>();

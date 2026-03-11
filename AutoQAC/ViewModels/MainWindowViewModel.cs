@@ -46,12 +46,13 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
         IFileDialogService fileDialog,
         IMessageDialogService messageDialog,
         IPluginValidationService pluginService,
-        IPluginLoadingService pluginLoadingService)
+        IPluginLoadingService pluginLoadingService,
+        IPluginIssueApproximationService? pluginIssueApproximationService = null)
     {
         // Create sub-ViewModels
         Configuration = new ConfigurationViewModel(
             configService, stateService, logger, fileDialog,
-            messageDialog, pluginService, pluginLoadingService);
+            messageDialog, pluginService, pluginLoadingService, pluginIssueApproximationService);
 
         PluginList = new PluginListViewModel(stateService);
 

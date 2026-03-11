@@ -45,6 +45,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\AutoQAC\AutoQAC.csproj" />
+    <ProjectReference Include="..\QueryPlugins\QueryPlugins.csproj" />
   </ItemGroup>
 
 </Project>

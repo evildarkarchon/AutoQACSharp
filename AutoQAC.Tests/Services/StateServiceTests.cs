@@ -182,9 +182,8 @@ public class StateServiceTests
             emittedStates.Add(state);
         });
 
-        // Initial emission from BehaviorSubject
-        await Task.Delay(10); // Small delay to ensure subscription is active
         var initialCount = emittedStates.Count;
+        initialCount.Should().Be(1, "BehaviorSubject should synchronously emit the initial state on subscribe");
 
         // Act
         var tasks = Enumerable.Range(0, numUpdates).Select(i => Task.Run(() =>
@@ -193,7 +192,6 @@ public class StateServiceTests
         }));
 
         await Task.WhenAll(tasks);
-        await Task.Delay(50); // Allow time for emissions to propagate
 
         // Assert
         // Should have received at least numUpdates emissions (plus initial)
@@ -447,6 +445,78 @@ public class StateServiceTests
         // Modifying the original list should not affect state
         plugins.Add(new PluginInfo { FileName = "d.esp", FullPath = "d.esp" });
         state.PluginsToClean.Should().HaveCount(3);
+    }
+
+    [Fact]
+    public void MergePluginApproximations_ShouldPreserveSelectionAndSkipState_AndMarkMissingPluginsUnavailable()
+    {
+        var plugins = new List<PluginInfo>
+        {
+            new()
+            {
+                FileName = "a.esp",
+                FullPath = @"C:\Data\a.esp",
+                IsSelected = false,
+                IsInSkipList = true,
+                Approximation = PluginIssueApproximation.Pending
+            },
+            new()
+            {
+                FileName = "b.esp",
+                FullPath = @"C:\Data\b.esp",
+                IsSelected = true,
+                Approximation = PluginIssueApproximation.Pending
+            }
+        };
+
+        _sut.SetPluginsToClean(plugins);
+
+        _sut.MergePluginApproximations(
+        [
+            new PluginIssueApproximationResult
+            {
+                FileName = "a.esp",
+                FullPath = @"C:\Data\a.esp",
+                Approximation = PluginIssueApproximation.Available(4, 2, 1)
+            }
+        ]);
+
+        var state = _sut.CurrentState;
+        state.PluginsToClean.Should().HaveCount(2);
+        state.PluginsToClean[0].IsSelected.Should().BeFalse();
+        state.PluginsToClean[0].IsInSkipList.Should().BeTrue();
+        state.PluginsToClean[0].Approximation.Status.Should().Be(PluginIssueApproximationStatus.Available);
+        state.PluginsToClean[0].Approximation.ItmCount.Should().Be(4);
+        state.PluginsToClean[1].Approximation.Status.Should().Be(PluginIssueApproximationStatus.Unavailable);
+    }
+
+    [Fact]
+    public void MergePluginApproximations_ShouldMarkAllPluginsUnavailable_WhenApproximationListIsEmpty()
+    {
+        var plugins = new List<PluginInfo>
+        {
+            new()
+            {
+                FileName = "a.esp",
+                FullPath = @"C:\Data\a.esp",
+                Approximation = PluginIssueApproximation.Pending
+            },
+            new()
+            {
+                FileName = "b.esp",
+                FullPath = @"C:\Data\b.esp",
+                Approximation = PluginIssueApproximation.Available(1, 2, 3)
+            }
+        };
+
+        _sut.SetPluginsToClean(plugins);
+
+        _sut.MergePluginApproximations([]);
+
+        var state = _sut.CurrentState;
+        state.PluginsToClean.Should().HaveCount(2);
+        state.PluginsToClean.Should().OnlyContain(plugin =>
+            plugin.Approximation.Status == PluginIssueApproximationStatus.Unavailable);
     }
 
     #endregion
@@ -769,17 +839,14 @@ public class StateServiceTests
             emittedStates.Add(state);
         });
 
-        // Initial emission from BehaviorSubject upon subscription
-        await Task.Delay(10);
         var initialCount = emittedStates.Count;
+        initialCount.Should().Be(1, "BehaviorSubject should synchronously emit the initial state on subscribe");
 
         // Act
         for (int i = 0; i < numUpdates; i++)
         {
             _sut.UpdateState(s => s with { Progress = i });
         }
-
-        await Task.Delay(50); // Allow emissions to propagate
 
         // Assert
         (emittedStates.Count - initialCount).Should().Be(numUpdates,

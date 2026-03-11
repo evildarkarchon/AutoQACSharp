@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Frozen;
+using System.Linq;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
 using System.Threading;
@@ -83,6 +84,48 @@ public sealed class StateService : IStateService, IDisposable
         UpdateState(s => s with
         {
             PluginsToClean = new List<PluginInfo>(plugins).AsReadOnly()
+        });
+    }
+
+    public void MergePluginApproximations(IReadOnlyList<PluginIssueApproximationResult> approximations)
+    {
+        UpdateState(s =>
+        {
+            if (s.PluginsToClean.Count == 0)
+            {
+                return s;
+            }
+
+            var byFullPath = approximations
+                .GroupBy(a => a.FullPath, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.Last(), StringComparer.OrdinalIgnoreCase);
+            var byFileName = approximations
+                .GroupBy(a => a.FileName, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.Last(), StringComparer.OrdinalIgnoreCase);
+
+            var merged = s.PluginsToClean
+                .Select(plugin =>
+                {
+                    if (byFullPath.TryGetValue(plugin.FullPath, out var fullPathMatch) ||
+                        byFileName.TryGetValue(plugin.FileName, out fullPathMatch))
+                    {
+                        return plugin with
+                        {
+                            Approximation = fullPathMatch.Approximation
+                        };
+                    }
+
+                    return plugin with
+                    {
+                        Approximation = PluginIssueApproximation.Unavailable
+                    };
+                })
+                .ToList();
+
+            return s with
+            {
+                PluginsToClean = merged.AsReadOnly()
+            };
         });
     }
 

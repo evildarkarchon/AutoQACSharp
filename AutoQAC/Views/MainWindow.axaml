@@ -300,9 +300,14 @@
                              Margin="5">
                         <ListBox.ItemTemplate>
                             <DataTemplate>
-                                <CheckBox IsChecked="{Binding IsSelected}"
-                                          Content="{Binding FileName}"
-                                          Margin="2" />
+                                <StackPanel Margin="2,3">
+                                    <CheckBox IsChecked="{Binding IsSelected}"
+                                              Content="{Binding FileName}" />
+                                    <TextBlock Text="{Binding ApproximationDisplayText}"
+                                               Margin="26,0,0,0"
+                                               FontSize="11"
+                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                </StackPanel>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
                     </ListBox>

@@ -14,6 +14,22 @@ public sealed class ConfigWatcherServiceTests : IDisposable
     private readonly string _testDirectory;
     private readonly string _configPath;
 
+    private static TaskCompletionSource<bool> CreateSignal()
+    {
+        return new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    private static Task WaitForSignalAsync(TaskCompletionSource<bool> signal, int timeoutMs = 8000)
+    {
+        return signal.Task.WaitAsync(TimeSpan.FromMilliseconds(timeoutMs));
+    }
+
+    private static Task AssertSignalNotSetAsync(TaskCompletionSource<bool> signal, int timeoutMs = 1200)
+    {
+        return FluentActions.Awaiting(() => signal.Task.WaitAsync(TimeSpan.FromMilliseconds(timeoutMs)))
+            .Should().ThrowAsync<TimeoutException>();
+    }
+
     public ConfigWatcherServiceTests()
     {
         _testDirectory = Path.Combine(Path.GetTempPath(), "AutoQACConfigWatcherTests_" + Guid.NewGuid());
@@ -44,6 +60,7 @@ public sealed class ConfigWatcherServiceTests : IDisposable
         var configService = Substitute.For<IConfigurationService>();
         var stateService = Substitute.For<IStateService>();
         var logger = Substitute.For<ILoggingService>();
+        var reloadObserved = CreateSignal();
         var reloadCount = 0;
 
         stateService.CurrentState.Returns(new AppState { IsCleaning = false });
@@ -53,6 +70,7 @@ public sealed class ConfigWatcherServiceTests : IDisposable
             .Returns(_ =>
             {
                 Interlocked.Increment(ref reloadCount);
+                reloadObserved.TrySetResult(true);
                 return Task.CompletedTask;
             });
 
@@ -63,7 +81,7 @@ public sealed class ConfigWatcherServiceTests : IDisposable
         File.WriteAllText(_configPath, "Selected_Game: Fallout4");
 
         // Assert
-        await WaitForConditionAsync(() => Volatile.Read(ref reloadCount) > 0);
+        await WaitForSignalAsync(reloadObserved);
         reloadCount.Should().BeGreaterThan(0);
     }
 
@@ -74,6 +92,7 @@ public sealed class ConfigWatcherServiceTests : IDisposable
         var configService = Substitute.For<IConfigurationService>();
         var stateService = Substitute.For<IStateService>();
         var logger = Substitute.For<ILoggingService>();
+        var reloadObserved = CreateSignal();
         var reloadCount = 0;
         var content = File.ReadAllText(_configPath);
         var currentHash = ComputeFileHash(_configPath);
@@ -85,6 +104,7 @@ public sealed class ConfigWatcherServiceTests : IDisposable
             .Returns(_ =>
             {
                 Interlocked.Increment(ref reloadCount);
+                reloadObserved.TrySetResult(true);
                 return Task.CompletedTask;
             });
 
@@ -93,7 +113,7 @@ public sealed class ConfigWatcherServiceTests : IDisposable
 
         // Act
         File.WriteAllText(_configPath, content);
-        await AssertValueRemainsAsync(() => Volatile.Read(ref reloadCount), expected: 0);
+        await AssertSignalNotSetAsync(reloadObserved);
 
         // Assert
         reloadCount.Should().Be(0);
@@ -106,6 +126,7 @@ public sealed class ConfigWatcherServiceTests : IDisposable
         var configService = Substitute.For<IConfigurationService>();
         var stateService = Substitute.For<IStateService>();
         var logger = Substitute.For<ILoggingService>();
+        var reloadObserved = CreateSignal();
         var reloadCount = 0;
         var stateSubject = new Subject<AppState>();
         var currentState = new AppState { IsCleaning = true };
@@ -117,6 +138,7 @@ public sealed class ConfigWatcherServiceTests : IDisposable
             .Returns(_ =>
             {
                 Interlocked.Increment(ref reloadCount);
+                reloadObserved.TrySetResult(true);
                 return Task.CompletedTask;
             });
 
@@ -125,7 +147,7 @@ public sealed class ConfigWatcherServiceTests : IDisposable
 
         // Act
         File.WriteAllText(_configPath, "Selected_Game: FalloutNewVegas");
-        await AssertValueRemainsAsync(() => Volatile.Read(ref reloadCount), expected: 0);
+        await AssertSignalNotSetAsync(reloadObserved);
 
         // Assert deferred while cleaning
         reloadCount.Should().Be(0);
@@ -134,7 +156,7 @@ public sealed class ConfigWatcherServiceTests : IDisposable
         currentState = currentState with { IsCleaning = false };
         stateSubject.OnNext(currentState);
 
-        await WaitForConditionAsync(() => Volatile.Read(ref reloadCount) > 0);
+        await WaitForSignalAsync(reloadObserved);
         reloadCount.Should().Be(1);
     }
 
@@ -145,6 +167,8 @@ public sealed class ConfigWatcherServiceTests : IDisposable
         var configService = Substitute.For<IConfigurationService>();
         var stateService = Substitute.For<IStateService>();
         var logger = Substitute.For<ILoggingService>();
+        var firstReloadAttempted = CreateSignal();
+        var successfulReloadObserved = CreateSignal();
         var reloadAttempts = 0;
         var successfulReloads = 0;
 
@@ -155,12 +179,14 @@ public sealed class ConfigWatcherServiceTests : IDisposable
             .Returns(_ =>
             {
                 var currentAttempt = Interlocked.Increment(ref reloadAttempts);
+                firstReloadAttempted.TrySetResult(true);
                 if (currentAttempt == 1)
                 {
                     throw new InvalidOperationException("Simulated reload failure");
                 }
 
                 Interlocked.Increment(ref successfulReloads);
+                successfulReloadObserved.TrySetResult(true);
                 return Task.CompletedTask;
             });
 
@@ -169,11 +195,11 @@ public sealed class ConfigWatcherServiceTests : IDisposable
 
         // Act - first change fails to reload
         File.WriteAllText(_configPath, "Selected_Game: Fallout4");
-        await WaitForConditionAsync(() => Volatile.Read(ref reloadAttempts) >= 1);
+        await WaitForSignalAsync(firstReloadAttempted);
 
         // Act - second change should still be processed successfully
         File.WriteAllText(_configPath, "Selected_Game: SkyrimVr");
-        await WaitForConditionAsync(() => Volatile.Read(ref successfulReloads) >= 1);
+        await WaitForSignalAsync(successfulReloadObserved);
 
         // Assert
         reloadAttempts.Should().BeGreaterThanOrEqualTo(2, "watcher should keep handling changes after one failed reload");
@@ -187,6 +213,8 @@ public sealed class ConfigWatcherServiceTests : IDisposable
         var configService = Substitute.For<IConfigurationService>();
         var stateService = Substitute.For<IStateService>();
         var logger = Substitute.For<ILoggingService>();
+        var firstReloadObserved = CreateSignal();
+        var secondReloadObserved = CreateSignal();
         var reloadCount = 0;
         var stateSubject = new Subject<AppState>();
         var currentState = new AppState { IsCleaning = true };
@@ -197,7 +225,16 @@ public sealed class ConfigWatcherServiceTests : IDisposable
         configService.ReloadFromDiskAsync(Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
-                Interlocked.Increment(ref reloadCount);
+                var currentReloadCount = Interlocked.Increment(ref reloadCount);
+                if (currentReloadCount == 1)
+                {
+                    firstReloadObserved.TrySetResult(true);
+                }
+                else if (currentReloadCount >= 2)
+                {
+                    secondReloadObserved.TrySetResult(true);
+                }
+
                 return Task.CompletedTask;
             });
 
@@ -206,52 +243,22 @@ public sealed class ConfigWatcherServiceTests : IDisposable
 
         // Trigger external change while cleaning -> defer
         File.WriteAllText(_configPath, "Selected_Game: FalloutNewVegas");
-        await AssertValueRemainsAsync(() => Volatile.Read(ref reloadCount), expected: 0);
+        await AssertSignalNotSetAsync(firstReloadObserved);
         reloadCount.Should().Be(0, "reload should be deferred while cleaning");
 
         // First cleaning end transition applies deferred change once
         currentState = currentState with { IsCleaning = false };
         stateSubject.OnNext(currentState);
-        await WaitForConditionAsync(() => Volatile.Read(ref reloadCount) == 1);
+        await WaitForSignalAsync(firstReloadObserved);
 
         // Subsequent non-cleaning transition should not re-apply same deferred change
         currentState = currentState with { IsCleaning = true };
         stateSubject.OnNext(currentState);
         currentState = currentState with { IsCleaning = false };
         stateSubject.OnNext(currentState);
-        await AssertValueRemainsAsync(() => Volatile.Read(ref reloadCount), expected: 1, durationMs: 900);
+        await AssertSignalNotSetAsync(secondReloadObserved, 900);
 
         reloadCount.Should().Be(1, "deferred change flag should be consumed after first apply");
-    }
-
-    private static async Task AssertValueRemainsAsync(
-        Func<int> valueProvider,
-        int expected,
-        int durationMs = 1200,
-        int pollMs = 50)
-    {
-        var stopAt = DateTime.UtcNow.AddMilliseconds(durationMs);
-        while (DateTime.UtcNow < stopAt)
-        {
-            valueProvider().Should().Be(expected);
-            await Task.Delay(pollMs);
-        }
-    }
-
-    private static async Task WaitForConditionAsync(Func<bool> condition, int timeoutMs = 8000)
-    {
-        var stopAt = DateTime.UtcNow.AddMilliseconds(timeoutMs);
-        while (DateTime.UtcNow < stopAt)
-        {
-            if (condition())
-            {
-                return;
-            }
-
-            await Task.Delay(50);
-        }
-
-        throw new TimeoutException("Condition was not met before timeout.");
     }
 
     private static string ComputeFileHash(string filePath)

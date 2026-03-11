@@ -44,4 +44,8 @@
     <PackageReference Include="Mutagen.Bethesda.Skyrim" Version="0.53.1" />
     <PackageReference Include="Mutagen.Bethesda.Fallout4" Version="0.53.1" />
   </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\QueryPlugins\QueryPlugins.csproj" />
+  </ItemGroup>
 </Project>
