@@ -519,6 +519,45 @@ public class StateServiceTests
             plugin.Approximation.Status == PluginIssueApproximationStatus.Unavailable);
     }
 
+    [Fact]
+    public void MergePluginApproximation_ShouldUpdateOnlyMatchingPlugin_AndLeaveOthersPending()
+    {
+        var plugins = new List<PluginInfo>
+        {
+            new()
+            {
+                FileName = "a.esp",
+                FullPath = @"C:\Data\a.esp",
+                IsSelected = false,
+                IsInSkipList = true,
+                Approximation = PluginIssueApproximation.Pending
+            },
+            new()
+            {
+                FileName = "b.esp",
+                FullPath = @"C:\Data\b.esp",
+                Approximation = PluginIssueApproximation.Pending
+            }
+        };
+
+        _sut.SetPluginsToClean(plugins);
+
+        _sut.MergePluginApproximation(new PluginIssueApproximationResult
+        {
+            FileName = "a.esp",
+            FullPath = @"C:\Data\a.esp",
+            Approximation = PluginIssueApproximation.Available(5, 4, 3)
+        });
+
+        var state = _sut.CurrentState;
+        state.PluginsToClean.Should().HaveCount(2);
+        state.PluginsToClean[0].IsSelected.Should().BeFalse();
+        state.PluginsToClean[0].IsInSkipList.Should().BeTrue();
+        state.PluginsToClean[0].Approximation.Status.Should().Be(PluginIssueApproximationStatus.Available);
+        state.PluginsToClean[0].Approximation.ItmCount.Should().Be(5);
+        state.PluginsToClean[1].Approximation.Status.Should().Be(PluginIssueApproximationStatus.Pending);
+    }
+
     #endregion
 
     #region Detailed Results Tests

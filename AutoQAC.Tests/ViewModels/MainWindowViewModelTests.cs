@@ -768,7 +768,8 @@ public sealed class MainWindowViewModelTests : ImmediateMainThreadSchedulerTestB
     {
         var approximationServiceMock = Substitute.For<IPluginIssueApproximationService>();
         var pendingPluginsPublished = CreateSignal();
-        var approximationsMerged = CreateSignal();
+        var approximationMergedBeforeCompletion = CreateSignal();
+        var allowApproximationCompletion = CreateSignal();
         var expectedPlugins = new List<PluginInfo>
         {
             new() { FileName = "Plugin1.esp", FullPath = @"C:\Games\SkyrimSE\Data\Plugin1.esp" }
@@ -784,16 +785,34 @@ public sealed class MainWindowViewModelTests : ImmediateMainThreadSchedulerTestB
             });
 
         approximationServiceMock
-            .GetApproximationsAsync(GameType.SkyrimSe, @"C:\Games\SkyrimSE\Data", Arg.Any<CancellationToken>())
-            .Returns(
-            [
-                new PluginIssueApproximationResult
+            .GetApproximationsAsync(
+                GameType.SkyrimSe,
+                @"C:\Games\SkyrimSE\Data",
+                Arg.Any<Action<PluginIssueApproximationResult>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(async callInfo =>
+            {
+                var callback = callInfo.ArgAt<Action<PluginIssueApproximationResult>>(2);
+                callback(new PluginIssueApproximationResult
                 {
                     FileName = "Plugin1.esp",
                     FullPath = @"C:\Games\SkyrimSE\Data\Plugin1.esp",
                     Approximation = PluginIssueApproximation.Available(3, 2, 1)
-                }
-            ]);
+                });
+
+                await WaitForSignalAsync(approximationMergedBeforeCompletion.Task, "expected incremental approximation merge before completion");
+                await allowApproximationCompletion.Task;
+
+                return
+                [
+                    new PluginIssueApproximationResult
+                    {
+                        FileName = "Plugin1.esp",
+                        FullPath = @"C:\Games\SkyrimSE\Data\Plugin1.esp",
+                        Approximation = PluginIssueApproximation.Available(3, 2, 1)
+                    }
+                ];
+            });
 
         _configServiceMock.GetSkipListAsync(
                 Arg.Any<GameType>(),
@@ -814,14 +833,13 @@ public sealed class MainWindowViewModelTests : ImmediateMainThreadSchedulerTestB
                     pendingPluginsPublished.TrySetResult(true);
                 }
             });
-        _stateServiceMock.When(x => x.MergePluginApproximations(Arg.Any<IReadOnlyList<PluginIssueApproximationResult>>()))
+        _stateServiceMock.When(x => x.MergePluginApproximation(Arg.Any<PluginIssueApproximationResult>()))
             .Do(callInfo =>
             {
-                var results = callInfo.Arg<IReadOnlyList<PluginIssueApproximationResult>>();
-                if (results.Count == 1 &&
-                    results[0].Approximation.Status == PluginIssueApproximationStatus.Available)
+                var result = callInfo.Arg<PluginIssueApproximationResult>();
+                if (result.Approximation.Status == PluginIssueApproximationStatus.Available)
                 {
-                    approximationsMerged.TrySetResult(true);
+                    approximationMergedBeforeCompletion.TrySetResult(true);
                 }
             });
 
@@ -838,13 +856,21 @@ public sealed class MainWindowViewModelTests : ImmediateMainThreadSchedulerTestB
 
         vm.Configuration.SelectedGame = GameType.SkyrimSe;
         await WaitForSignalAsync(pendingPluginsPublished);
-        await WaitForSignalAsync(approximationsMerged);
+        await WaitForSignalAsync(approximationMergedBeforeCompletion);
+        allowApproximationCompletion.TrySetResult(true);
 
         _stateServiceMock.Received(1).SetPluginsToClean(Arg.Is<List<PluginInfo>>(list =>
             list.Count == 1 &&
             list[0].Approximation.Status == PluginIssueApproximationStatus.Pending));
         await approximationServiceMock.Received(1)
-            .GetApproximationsAsync(GameType.SkyrimSe, @"C:\Games\SkyrimSE\Data", Arg.Any<CancellationToken>());
+            .GetApproximationsAsync(
+                GameType.SkyrimSe,
+                @"C:\Games\SkyrimSE\Data",
+                Arg.Any<Action<PluginIssueApproximationResult>>(),
+                Arg.Any<CancellationToken>());
+        _stateServiceMock.Received(1).MergePluginApproximation(Arg.Is<PluginIssueApproximationResult>(result =>
+            result.Approximation.Status == PluginIssueApproximationStatus.Available &&
+            result.Approximation.ItmCount == 3));
         _stateServiceMock.Received(1).MergePluginApproximations(Arg.Is<IReadOnlyList<PluginIssueApproximationResult>>(results =>
             results.Count == 1 &&
             results[0].Approximation.Status == PluginIssueApproximationStatus.Available &&
@@ -872,7 +898,7 @@ public sealed class MainWindowViewModelTests : ImmediateMainThreadSchedulerTestB
             });
 
         approximationServiceMock
-            .GetApproximationsAsync(GameType.SkyrimSe, @"C:\Games\SkyrimSE\Data", Arg.Any<CancellationToken>())
+            .GetApproximationsAsync(GameType.SkyrimSe, @"C:\Games\SkyrimSE\Data", ct: Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("Approximation failed"));
 
         _configServiceMock.GetSkipListAsync(
@@ -960,7 +986,7 @@ public sealed class MainWindowViewModelTests : ImmediateMainThreadSchedulerTestB
             .Returns(new List<string>());
 
         approximationServiceMock
-            .GetApproximationsAsync(Arg.Any<GameType>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .GetApproximationsAsync(Arg.Any<GameType>(), Arg.Any<string>(), ct: Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 approximationAttempted.TrySetResult(true);
@@ -1013,7 +1039,7 @@ public sealed class MainWindowViewModelTests : ImmediateMainThreadSchedulerTestB
         approximationAttempted.Task.IsCompleted.Should().BeFalse(
             "stale plugin loads should not start a background approximation refresh");
         await approximationServiceMock.DidNotReceive()
-            .GetApproximationsAsync(Arg.Any<GameType>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+            .GetApproximationsAsync(Arg.Any<GameType>(), Arg.Any<string>(), ct: Arg.Any<CancellationToken>());
     }
 
     [Fact]

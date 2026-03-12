@@ -796,7 +796,19 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
         try
         {
             var results = await _pluginIssueApproximationService
-                .GetApproximationsAsync(gameType, dataFolder, cts.Token)
+                .GetApproximationsAsync(
+                    gameType,
+                    dataFolder,
+                    approximation =>
+                    {
+                        if (cts.IsCancellationRequested || refreshGeneration != Volatile.Read(ref _pluginRefreshGeneration))
+                        {
+                            return;
+                        }
+
+                        _stateService.MergePluginApproximation(approximation);
+                    },
+                    cts.Token)
                 .ConfigureAwait(false);
 
             if (cts.IsCancellationRequested || refreshGeneration != Volatile.Read(ref _pluginRefreshGeneration))
@@ -927,6 +939,7 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
         public Task<IReadOnlyList<PluginIssueApproximationResult>> GetApproximationsAsync(
             GameType gameType,
             string dataFolder,
+            Action<PluginIssueApproximationResult>? onApproximationReady = null,
             CancellationToken ct = default)
         {
             return Task.FromResult<IReadOnlyList<PluginIssueApproximationResult>>(Array.Empty<PluginIssueApproximationResult>());

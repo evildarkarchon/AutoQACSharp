@@ -106,12 +106,11 @@ public sealed class StateService : IStateService, IDisposable
             var merged = s.PluginsToClean
                 .Select(plugin =>
                 {
-                    if (byFullPath.TryGetValue(plugin.FullPath, out var fullPathMatch) ||
-                        byFileName.TryGetValue(plugin.FileName, out fullPathMatch))
+                    if (TryGetApproximationMatch(plugin, byFullPath, byFileName, out var approximationMatch))
                     {
                         return plugin with
                         {
-                            Approximation = fullPathMatch.Approximation
+                            Approximation = approximationMatch.Approximation
                         };
                     }
 
@@ -120,6 +119,28 @@ public sealed class StateService : IStateService, IDisposable
                         Approximation = PluginIssueApproximation.Unavailable
                     };
                 })
+                .ToList();
+
+            return s with
+            {
+                PluginsToClean = merged.AsReadOnly()
+            };
+        });
+    }
+
+    public void MergePluginApproximation(PluginIssueApproximationResult approximation)
+    {
+        UpdateState(s =>
+        {
+            if (s.PluginsToClean.Count == 0)
+            {
+                return s;
+            }
+
+            var merged = s.PluginsToClean
+                .Select(plugin => IsApproximationMatch(plugin, approximation)
+                    ? plugin with { Approximation = approximation.Approximation }
+                    : plugin)
                 .ToList();
 
             return s with
@@ -239,5 +260,33 @@ public sealed class StateService : IStateService, IDisposable
         _cleaningCompletedSubject.Dispose();
         _detailedPluginResultSubject.Dispose();
         _isTerminatingSubject.Dispose();
+    }
+
+    private static bool TryGetApproximationMatch(
+        PluginInfo plugin,
+        IReadOnlyDictionary<string, PluginIssueApproximationResult> byFullPath,
+        IReadOnlyDictionary<string, PluginIssueApproximationResult> byFileName,
+        out PluginIssueApproximationResult approximation)
+    {
+        if (byFullPath.TryGetValue(plugin.FullPath, out var fullPathMatch))
+        {
+            approximation = fullPathMatch;
+            return true;
+        }
+
+        if (byFileName.TryGetValue(plugin.FileName, out var fileNameMatch))
+        {
+            approximation = fileNameMatch;
+            return true;
+        }
+
+        approximation = default!;
+        return false;
+    }
+
+    private static bool IsApproximationMatch(PluginInfo plugin, PluginIssueApproximationResult approximation)
+    {
+        return string.Equals(plugin.FullPath, approximation.FullPath, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(plugin.FileName, approximation.FileName, StringComparison.OrdinalIgnoreCase);
     }
 }

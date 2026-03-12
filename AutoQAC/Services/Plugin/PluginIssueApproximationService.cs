@@ -43,6 +43,7 @@ public sealed class PluginIssueApproximationService : IPluginIssueApproximationS
     public async Task<IReadOnlyList<PluginIssueApproximationResult>> GetApproximationsAsync(
         GameType gameType,
         string dataFolder,
+        Action<PluginIssueApproximationResult>? onApproximationReady = null,
         CancellationToken ct = default)
     {
         if (!IsSupportedGame(gameType) || string.IsNullOrWhiteSpace(dataFolder))
@@ -50,12 +51,13 @@ public sealed class PluginIssueApproximationService : IPluginIssueApproximationS
             return Array.Empty<PluginIssueApproximationResult>();
         }
 
-        return await Task.Run(() => AnalyzePlugins(gameType, dataFolder, ct), ct).ConfigureAwait(false);
+        return await Task.Run(() => AnalyzePlugins(gameType, dataFolder, onApproximationReady, ct), ct).ConfigureAwait(false);
     }
 
     private IReadOnlyList<PluginIssueApproximationResult> AnalyzePlugins(
         GameType gameType,
         string dataFolder,
+        Action<PluginIssueApproximationResult>? onApproximationReady,
         CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
@@ -70,14 +72,16 @@ public sealed class PluginIssueApproximationService : IPluginIssueApproximationS
 
             if (target.Plugin is null)
             {
-                results.Add(CreateUnavailableResult(target));
+                var unavailableResult = CreateUnavailableResult(target);
+                results.Add(unavailableResult);
+                onApproximationReady?.Invoke(unavailableResult);
                 continue;
             }
 
             try
             {
                 var analysis = _pluginQueryService.Analyse(target.Plugin, context.LinkCache, context.GameRelease);
-                results.Add(new PluginIssueApproximationResult
+                var result = new PluginIssueApproximationResult
                 {
                     FileName = target.FileName,
                     FullPath = target.FullPath,
@@ -85,7 +89,9 @@ public sealed class PluginIssueApproximationService : IPluginIssueApproximationS
                         analysis.ItmCount,
                         analysis.DeletedReferenceCount,
                         analysis.DeletedNavmeshCount)
-                });
+                };
+                results.Add(result);
+                onApproximationReady?.Invoke(result);
             }
             catch (OperationCanceledException)
             {
@@ -94,7 +100,9 @@ public sealed class PluginIssueApproximationService : IPluginIssueApproximationS
             catch (Exception ex)
             {
                 _logger.Warning("Approximation analysis failed for plugin {PluginName}: {Message}", target.FileName, ex.Message);
-                results.Add(CreateUnavailableResult(target));
+                var unavailableResult = CreateUnavailableResult(target);
+                results.Add(unavailableResult);
+                onApproximationReady?.Invoke(unavailableResult);
             }
         }
 

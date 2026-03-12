@@ -62,17 +62,51 @@ public sealed class PluginListViewModel : ViewModelBase, IDisposable
     /// </summary>
     public void OnStateChanged(AppState state)
     {
-        // Plugins list update - filter out skipped plugins from display
         var displayPlugins = state.PluginsToClean.Where(p => !p.IsInSkipList).ToList();
-        if (PluginsToClean.Count != displayPlugins.Count ||
-            !PluginsToClean.SequenceEqual(displayPlugins))
+
+        var index = 0;
+        while (index < displayPlugins.Count)
         {
-            PluginsToClean.Clear();
-            foreach (var p in displayPlugins)
+            var nextPlugin = displayPlugins[index];
+
+            if (index >= PluginsToClean.Count)
             {
-                PluginsToClean.Add(p);
+                PluginsToClean.Add(nextPlugin);
+                index++;
+                continue;
             }
+
+            if (PluginsToClean[index] == nextPlugin)
+            {
+                index++;
+                continue;
+            }
+
+            PluginsToClean[index] = nextPlugin;
+            if (SelectedPlugin is not null && IsSamePlugin(SelectedPlugin, nextPlugin))
+            {
+                SelectedPlugin = nextPlugin;
+            }
+
+            index++;
         }
+
+        while (PluginsToClean.Count > displayPlugins.Count)
+        {
+            var removedPlugin = PluginsToClean[^1];
+            if (SelectedPlugin is not null && IsSamePlugin(SelectedPlugin, removedPlugin))
+            {
+                SelectedPlugin = null;
+            }
+
+            PluginsToClean.RemoveAt(PluginsToClean.Count - 1);
+        }
+    }
+
+    private static bool IsSamePlugin(PluginInfo left, PluginInfo right)
+    {
+        return string.Equals(left.FullPath, right.FullPath, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(left.FileName, right.FileName, StringComparison.OrdinalIgnoreCase);
     }
 
     private void SelectAllPlugins()

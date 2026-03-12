@@ -74,7 +74,7 @@ public sealed class PluginIssueApproximationServiceTests
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
-        var act = () => sut.GetApproximationsAsync(GameType.SkyrimSe, @"C:\Game\Data", cts.Token);
+        var act = () => sut.GetApproximationsAsync(GameType.SkyrimSe, @"C:\Game\Data", ct: cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
         _queryService.DidNotReceiveWithAnyArgs().Analyse(default!, default!, default);
@@ -97,7 +97,7 @@ public sealed class PluginIssueApproximationServiceTests
                     []);
             });
 
-        var act = () => sut.GetApproximationsAsync(GameType.SkyrimSe, @"C:\Game\Data", cts.Token);
+        var act = () => sut.GetApproximationsAsync(GameType.SkyrimSe, @"C:\Game\Data", ct: cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
         _queryService.DidNotReceiveWithAnyArgs().Analyse(default!, default!, default);
@@ -131,5 +131,70 @@ public sealed class PluginIssueApproximationServiceTests
         results.Should().HaveCount(2);
         results.Single(r => r.FileName == "One.esp").Approximation.Status.Should().Be(PluginIssueApproximationStatus.Available);
         results.Single(r => r.FileName == "Two.esp").Approximation.Status.Should().Be(PluginIssueApproximationStatus.Unavailable);
+    }
+
+    [Fact]
+    public async Task GetApproximationsAsync_ShouldReportEachPluginThroughCallbackInOrder()
+    {
+        var plugin1 = new SkyrimMod(ModKey.FromNameAndExtension("One.esp"), SkyrimRelease.SkyrimSE);
+        var plugin2 = new SkyrimMod(ModKey.FromNameAndExtension("Two.esp"), SkyrimRelease.SkyrimSE);
+        var cache = new ISkyrimModGetter[] { plugin1, plugin2 }.ToImmutableLinkCache();
+        var reported = new List<PluginIssueApproximationResult>();
+
+        _queryService.Analyse(Arg.Is<IModGetter>(p => ReferenceEquals(p, plugin1)), Arg.Any<ILinkCache>(), GameRelease.SkyrimSE)
+            .Returns(new PluginAnalysisResult([new PluginIssue(FormKey.Null, null, IssueType.ItmRecord)]));
+        _queryService.Analyse(Arg.Is<IModGetter>(p => ReferenceEquals(p, plugin2)), Arg.Any<ILinkCache>(), GameRelease.SkyrimSE)
+            .Returns(new PluginAnalysisResult([new PluginIssue(FormKey.Null, null, IssueType.DeletedReference)]));
+
+        var sut = new PluginIssueApproximationService(
+            _logger,
+            _queryService,
+            (_, _, _) => new PluginIssueApproximationService.AnalysisContext(
+                GameRelease.SkyrimSE,
+                cache,
+                [
+                    new PluginIssueApproximationService.AnalysisTarget("One.esp", @"C:\Game\Data\One.esp", plugin1),
+                    new PluginIssueApproximationService.AnalysisTarget("Two.esp", @"C:\Game\Data\Two.esp", plugin2)
+                ]));
+
+        var results = await sut.GetApproximationsAsync(
+            GameType.SkyrimSe,
+            @"C:\Game\Data",
+            reported.Add,
+            CancellationToken.None);
+
+        results.Select(r => r.FileName).Should().Equal("One.esp", "Two.esp");
+        reported.Select(r => r.FileName).Should().Equal("One.esp", "Two.esp");
+        reported[0].Approximation.Status.Should().Be(PluginIssueApproximationStatus.Available);
+        reported[1].Approximation.Status.Should().Be(PluginIssueApproximationStatus.Available);
+    }
+
+    [Fact]
+    public async Task GetApproximationsAsync_ShouldReportUnavailableThroughCallback_WhenPluginAnalysisFails()
+    {
+        var plugin = new SkyrimMod(ModKey.FromNameAndExtension("Broken.esp"), SkyrimRelease.SkyrimSE);
+        var cache = new ISkyrimModGetter[] { plugin }.ToImmutableLinkCache();
+        var reported = new List<PluginIssueApproximationResult>();
+
+        _queryService.Analyse(Arg.Any<IModGetter>(), Arg.Any<ILinkCache>(), GameRelease.SkyrimSE)
+            .Returns(_ => throw new InvalidOperationException("boom"));
+
+        var sut = new PluginIssueApproximationService(
+            _logger,
+            _queryService,
+            (_, _, _) => new PluginIssueApproximationService.AnalysisContext(
+                GameRelease.SkyrimSE,
+                cache,
+                [new PluginIssueApproximationService.AnalysisTarget("Broken.esp", @"C:\Game\Data\Broken.esp", plugin)]));
+
+        var results = await sut.GetApproximationsAsync(
+            GameType.SkyrimSe,
+            @"C:\Game\Data",
+            reported.Add,
+            CancellationToken.None);
+
+        results.Should().ContainSingle();
+        reported.Should().ContainSingle();
+        reported[0].Approximation.Status.Should().Be(PluginIssueApproximationStatus.Unavailable);
     }
 }

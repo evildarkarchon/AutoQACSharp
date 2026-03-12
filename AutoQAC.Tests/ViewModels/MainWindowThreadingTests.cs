@@ -120,6 +120,61 @@ public sealed class MainWindowThreadingTests
         }
     }
 
+    [Fact]
+    public void PluginListViewModel_OnStateChanged_ShouldKeepUnchangedRows_WhenOneApproximationUpdates()
+    {
+        var stateService = Substitute.For<IStateService>();
+        stateService.StateChanged.Returns(Observable.Never<AppState>());
+        var viewModel = new PluginListViewModel(stateService);
+
+        try
+        {
+            var initialState = new AppState
+            {
+                PluginsToClean =
+                [
+                    new PluginInfo
+                    {
+                        FileName = "One.esp",
+                        FullPath = @"C:\Data\One.esp",
+                        Approximation = PluginIssueApproximation.Pending
+                    },
+                    new PluginInfo
+                    {
+                        FileName = "Two.esp",
+                        FullPath = @"C:\Data\Two.esp",
+                        Approximation = PluginIssueApproximation.Pending
+                    }
+                ]
+            };
+
+            viewModel.OnStateChanged(initialState);
+            var unchangedRow = viewModel.PluginsToClean[1];
+
+            var updatedState = initialState with
+            {
+                PluginsToClean =
+                [
+                    initialState.PluginsToClean[0] with
+                    {
+                        Approximation = PluginIssueApproximation.Available(2, 1, 0)
+                    },
+                    initialState.PluginsToClean[1]
+                ]
+            };
+
+            viewModel.OnStateChanged(updatedState);
+
+            viewModel.PluginsToClean.Should().HaveCount(2);
+            viewModel.PluginsToClean[1].Should().BeSameAs(unchangedRow);
+            viewModel.PluginsToClean[0].Approximation.Status.Should().Be(PluginIssueApproximationStatus.Available);
+        }
+        finally
+        {
+            viewModel.Dispose();
+        }
+    }
+
     private static async Task<T> WaitForSignalAsync<T>(Task<T> signalTask)
     {
         var completedTask = await Task.WhenAny(signalTask, Task.Delay(TimeSpan.FromSeconds(2)));
