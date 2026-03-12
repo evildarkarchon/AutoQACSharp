@@ -10,10 +10,6 @@ namespace AutoQAC.Tests.Services;
 /// <summary>
 /// Unit tests for <see cref="LogRetentionService"/> covering age-based and count-based
 /// retention modes, active log file protection, empty directories, and config errors.
-///
-/// LogRetentionService uses a hardcoded "logs" directory path relative to CWD.
-/// Tests create a "logs" subdirectory in a unique temp working directory,
-/// set CWD there, run the test, then restore CWD and clean up.
 /// </summary>
 public sealed class LogRetentionServiceTests : IDisposable
 {
@@ -21,27 +17,19 @@ public sealed class LogRetentionServiceTests : IDisposable
     private readonly ILoggingService _mockLogger;
     private readonly LogRetentionService _sut;
     private readonly string _testRoot;
-    private readonly string _originalCwd;
 
     public LogRetentionServiceTests()
     {
         _mockConfig = Substitute.For<IConfigurationService>();
         _mockLogger = Substitute.For<ILoggingService>();
-        _sut = new LogRetentionService(_mockConfig, _mockLogger);
 
         _testRoot = Path.Combine(Path.GetTempPath(), $"autoqac_logretention_test_{Guid.NewGuid():N}");
         Directory.CreateDirectory(_testRoot);
-
-        // Save and change CWD so the hardcoded "logs" resolves under our temp dir
-        _originalCwd = Directory.GetCurrentDirectory();
-        Directory.SetCurrentDirectory(_testRoot);
+        _sut = new LogRetentionService(_mockConfig, _mockLogger, LogsDir);
     }
 
     public void Dispose()
     {
-        // Restore original CWD before deleting
-        Directory.SetCurrentDirectory(_originalCwd);
-
         if (Directory.Exists(_testRoot))
         {
             try { Directory.Delete(_testRoot, recursive: true); }
@@ -80,9 +68,8 @@ public sealed class LogRetentionServiceTests : IDisposable
     [Fact]
     public async Task CleanupAsync_NoLogDirectory_DoesNothing()
     {
-        // Arrange -- ensure no "logs" directory exists under CWD
-        // (CWD is set to _testRoot by constructor; explicitly remove logs if any race created it)
-        var logsPath = Path.Combine(_testRoot, "logs");
+        // Arrange
+        var logsPath = LogsDir;
         if (Directory.Exists(logsPath))
             Directory.Delete(logsPath, recursive: true);
 

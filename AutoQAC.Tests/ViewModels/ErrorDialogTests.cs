@@ -9,6 +9,7 @@ using AutoQAC.Services.Configuration;
 using AutoQAC.Services.State;
 using AutoQAC.Services.UI;
 using AutoQAC.Services.Plugin;
+using AutoQAC.Tests.TestInfrastructure;
 using AutoQAC.ViewModels;
 using FluentAssertions;
 using NSubstitute;
@@ -20,7 +21,8 @@ namespace AutoQAC.Tests.ViewModels;
 /// <summary>
 /// Tests for error dialog functionality in MainWindowViewModel.
 /// </summary>
-public sealed class ErrorDialogTests
+[Collection(RxAppSchedulerCollection.Name)]
+public sealed class ErrorDialogTests : ImmediateMainThreadSchedulerTestBase
 {
     private readonly IConfigurationService _configServiceMock;
     private readonly IStateService _stateServiceMock;
@@ -55,8 +57,6 @@ public sealed class ErrorDialogTests
         // Default setup for SkipListChanged observable
         _configServiceMock.SkipListChanged
             .Returns(Observable.Never<GameType>());
-
-        RxApp.MainThreadScheduler = Scheduler.Immediate;
     }
 
     private MainWindowViewModel CreateViewModel()

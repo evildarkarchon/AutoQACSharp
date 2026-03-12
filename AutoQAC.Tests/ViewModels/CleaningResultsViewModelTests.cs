@@ -3,6 +3,7 @@ using System.Reactive.Linq;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.UI;
+using AutoQAC.Tests.TestInfrastructure;
 using AutoQAC.ViewModels;
 using FluentAssertions;
 using NSubstitute;
@@ -13,16 +14,14 @@ namespace AutoQAC.Tests.ViewModels;
 /// <summary>
 /// Unit tests for <see cref="CleaningResultsViewModel"/>.
 /// </summary>
-public sealed class CleaningResultsViewModelTests
+[Collection(RxAppSchedulerCollection.Name)]
+public sealed class CleaningResultsViewModelTests : ImmediateMainThreadSchedulerTestBase
 {
     private readonly ILoggingService _loggerMock;
     private readonly IFileDialogService _fileDialogMock;
 
     public CleaningResultsViewModelTests()
     {
-        // Force immediate execution for tests
-        RxApp.MainThreadScheduler = Scheduler.Immediate;
-
         _loggerMock = Substitute.For<ILoggingService>();
         _fileDialogMock = Substitute.For<IFileDialogService>();
     }

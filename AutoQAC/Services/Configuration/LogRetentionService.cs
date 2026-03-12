@@ -12,33 +12,45 @@ namespace AutoQAC.Services.Configuration;
 /// Cleans up old log files on app startup according to configured retention policy.
 /// Always skips the most recent log file (the active Serilog file).
 /// </summary>
-public sealed class LogRetentionService(IConfigurationService configService, ILoggingService logger)
-    : ILogRetentionService
+public sealed class LogRetentionService : ILogRetentionService
 {
-    private const string LogDirectory = "logs";
-    private const string LogFilePattern = "autoqac-*.log";
+    private readonly IConfigurationService _configService;
+    private readonly ILoggingService _logger;
+    private readonly string _logDirectory;
+
+    public LogRetentionService(IConfigurationService configService, ILoggingService logger)
+        : this(configService, logger, LogFilePaths.GetLogDirectory())
+    {
+    }
+
+    public LogRetentionService(IConfigurationService configService, ILoggingService logger, string logDirectory)
+    {
+        _configService = configService;
+        _logger = logger;
+        _logDirectory = Path.GetFullPath(logDirectory);
+    }
 
     public async Task CleanupAsync(CancellationToken ct = default)
     {
         try
         {
-            if (!Directory.Exists(LogDirectory))
+            if (!Directory.Exists(_logDirectory))
             {
-                logger.Debug("[LogRetention] Log directory does not exist, skipping cleanup");
+                _logger.Debug("[LogRetention] Log directory does not exist, skipping cleanup");
                 return;
             }
 
-            var config = await configService.LoadUserConfigAsync(ct);
+            var config = await _configService.LoadUserConfigAsync(ct);
             var settings = config.LogRetention;
 
-            var logFiles = Directory.GetFiles(LogDirectory, LogFilePattern)
+            var logFiles = Directory.GetFiles(_logDirectory, LogFilePaths.LogFilePattern)
                 .Select(f => new FileInfo(f))
                 .OrderByDescending(f => f.LastWriteTimeUtc)
                 .ToList();
 
             if (logFiles.Count <= 1)
             {
-                logger.Debug("[LogRetention] No old log files to clean up ({Count} total)", logFiles.Count);
+                _logger.Debug("[LogRetention] No old log files to clean up ({Count} total)", logFiles.Count);
                 return;
             }
 
@@ -81,11 +93,11 @@ public sealed class LogRetentionService(IConfigurationService configService, ILo
 
             if (deletedCount > 0)
             {
-                logger.Information("[LogRetention] Cleaned up {Count} old log files", deletedCount);
+                _logger.Information("[LogRetention] Cleaned up {Count} old log files", deletedCount);
             }
             else
             {
-                logger.Debug("[LogRetention] No log files exceeded retention policy");
+                _logger.Debug("[LogRetention] No log files exceeded retention policy");
             }
         }
         catch (OperationCanceledException)
@@ -94,7 +106,7 @@ public sealed class LogRetentionService(IConfigurationService configService, ILo
         }
         catch (Exception ex)
         {
-            logger.Warning("[LogRetention] Failed to complete log cleanup: {Message}", ex.Message);
+            _logger.Warning("[LogRetention] Failed to complete log cleanup: {Message}", ex.Message);
         }
     }
 
@@ -103,12 +115,12 @@ public sealed class LogRetentionService(IConfigurationService configService, ILo
         try
         {
             File.Delete(filePath);
-            logger.Debug("[LogRetention] Deleted old log file: {File}", Path.GetFileName(filePath));
+            _logger.Debug("[LogRetention] Deleted old log file: {File}", Path.GetFileName(filePath));
             return true;
         }
         catch (Exception ex)
         {
-            logger.Warning("[LogRetention] Failed to delete {File}: {Message}",
+            _logger.Warning("[LogRetention] Failed to delete {File}: {Message}",
                 Path.GetFileName(filePath), ex.Message);
             return false;
         }

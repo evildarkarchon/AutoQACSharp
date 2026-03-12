@@ -4,6 +4,7 @@ using System.Reactive.Subjects;
 using AutoQAC.Models;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.State;
+using AutoQAC.Tests.TestInfrastructure;
 using AutoQAC.ViewModels;
 using FluentAssertions;
 using NSubstitute;
@@ -15,7 +16,8 @@ namespace AutoQAC.Tests.ViewModels;
 /// Unit tests for <see cref="ProgressViewModel"/> covering progress tracking,
 /// state synchronization, per-plugin stats, results summary mode, and edge cases.
 /// </summary>
-public sealed class ProgressViewModelTests
+[Collection(RxAppSchedulerCollection.Name)]
+public sealed class ProgressViewModelTests : ImmediateMainThreadSchedulerTestBase
 {
     private readonly IStateService _stateServiceMock;
     private readonly ICleaningOrchestrator _orchestratorMock;
@@ -31,9 +33,6 @@ public sealed class ProgressViewModelTests
     /// </summary>
     public ProgressViewModelTests()
     {
-        // Force immediate execution for tests
-        RxApp.MainThreadScheduler = Scheduler.Immediate;
-
         _stateSubject = new BehaviorSubject<AppState>(new AppState());
         _pluginProcessedSubject = new Subject<(string, CleaningStatus)>();
         _detailedPluginResultSubject = new Subject<PluginCleaningResult>();

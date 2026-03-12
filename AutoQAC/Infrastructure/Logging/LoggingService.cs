@@ -9,18 +9,20 @@ public sealed class LoggingService : ILoggingService, IDisposable
     private readonly ILogger _logger;
 
     public LoggingService()
+        : this(LogFilePaths.GetLogDirectory())
     {
-        var logDirectory = Path.Combine(AppContext.BaseDirectory, "logs");
-        if (!Directory.Exists(logDirectory))
-        {
-            Directory.CreateDirectory(logDirectory);
-        }
+    }
+
+    public LoggingService(string logDirectory)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(logDirectory);
+        Directory.CreateDirectory(logDirectory);
 
         _logger = new LoggerConfiguration()
             .MinimumLevel.Debug()
             .WriteTo.Console(restrictedToMinimumLevel: Serilog.Events.LogEventLevel.Warning)
             .WriteTo.File(
-                path: Path.Combine(logDirectory, "autoqac-.log"),
+                path: Path.Combine(logDirectory, LogFilePaths.RollingLogFileName),
                 rollingInterval: RollingInterval.Day,
                 fileSizeLimitBytes: 5 * 1024 * 1024,
                 retainedFileCountLimit: 5,

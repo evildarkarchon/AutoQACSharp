@@ -111,6 +111,45 @@ public sealed class CleaningOrchestratorTests
         ct.ThrowIfCancellationRequested();
     }
 
+    private static Process StartSleeperProcess()
+    {
+        var process = Process.Start(new ProcessStartInfo
+        {
+            FileName = "powershell",
+            Arguments = "-NoProfile -Command \"Start-Sleep -Seconds 30\"",
+            UseShellExecute = false,
+            CreateNoWindow = true
+        });
+
+        process.Should().NotBeNull("a real external process is needed to exercise termination paths safely");
+        return process!;
+    }
+
+    private static void KillProcessIfRunning(Process? process)
+    {
+        if (process == null)
+        {
+            return;
+        }
+
+        try
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+                process.WaitForExit(2000);
+            }
+        }
+        catch
+        {
+            // Best-effort cleanup for test helper processes.
+        }
+        finally
+        {
+            process.Dispose();
+        }
+    }
+
     [Fact]
     public async Task StartCleaningAsync_ShouldProcessPlugins_WhenConfigIsValid()
     {
@@ -575,6 +614,7 @@ public sealed class CleaningOrchestratorTests
     public async Task StopCleaningAsync_ShouldTerminateActiveProcess_Gracefully_AndStoreGracePeriodExpiredResult()
     {
         // Arrange
+        Process? sleeper = null;
         var plugins = new List<PluginInfo>
         {
             new() { FileName = "Plugin1.esp", FullPath = "Path/Plugin1.esp", IsSelected = true }
@@ -598,38 +638,48 @@ public sealed class CleaningOrchestratorTests
         var processStarted = CreateSignal();
         var releasePlugin = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        _cleaningServiceMock.CleanPluginAsync(
-                Arg.Any<PluginInfo>(),
-                Arg.Any<IProgress<string>>(),
-                Arg.Any<CancellationToken>(),
-                Arg.Any<Action<Process>?>())
-            .Returns(async callInfo =>
-            {
-                callInfo.ArgAt<Action<Process>?>(3)?.Invoke(Process.GetCurrentProcess());
-                processStarted.TrySetResult(true);
+        try
+        {
+            sleeper = StartSleeperProcess();
 
-                await releasePlugin.Task;
-                return new CleaningResult { Status = CleaningStatus.Cleaned, Success = true };
-            });
+            _cleaningServiceMock.CleanPluginAsync(
+                    Arg.Any<PluginInfo>(),
+                    Arg.Any<IProgress<string>>(),
+                    Arg.Any<CancellationToken>(),
+                    Arg.Any<Action<Process>?>())
+                .Returns(async callInfo =>
+                {
+                    callInfo.ArgAt<Action<Process>?>(3)?.Invoke(sleeper);
+                    processStarted.TrySetResult(true);
 
-        // Act
-        var cleaningTask = _orchestrator.StartCleaningAsync();
-        await processStarted.Task;
-        await _orchestrator.StopCleaningAsync();
+                    await releasePlugin.Task;
+                    return new CleaningResult { Status = CleaningStatus.Cleaned, Success = true };
+                });
 
-        // Assert
-        await _processServiceMock.Received(1)
-            .TerminateProcessAsync(Arg.Any<Process>(), false, Arg.Any<CancellationToken>());
-        _orchestrator.LastTerminationResult.Should().Be(TerminationResult.GracePeriodExpired);
+            // Act
+            var cleaningTask = _orchestrator.StartCleaningAsync();
+            await processStarted.Task;
+            await _orchestrator.StopCleaningAsync();
 
-        releasePlugin.SetResult(true);
-        await cleaningTask;
+            // Assert
+            await _processServiceMock.Received(1)
+                .TerminateProcessAsync(Arg.Any<Process>(), false, Arg.Any<CancellationToken>());
+            _orchestrator.LastTerminationResult.Should().Be(TerminationResult.GracePeriodExpired);
+
+            releasePlugin.SetResult(true);
+            await cleaningTask;
+        }
+        finally
+        {
+            KillProcessIfRunning(sleeper);
+        }
     }
 
     [Fact]
     public async Task ForceStopCleaningAsync_ShouldTerminateActiveProcess_WithForceKillTrue()
     {
         // Arrange
+        Process? sleeper = null;
         var plugins = new List<PluginInfo>
         {
             new() { FileName = "Plugin1.esp", FullPath = "Path/Plugin1.esp", IsSelected = true }
@@ -652,36 +702,46 @@ public sealed class CleaningOrchestratorTests
 
         var processStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        _cleaningServiceMock.CleanPluginAsync(
-                Arg.Any<PluginInfo>(),
-                Arg.Any<IProgress<string>>(),
-                Arg.Any<CancellationToken>(),
-                Arg.Any<Action<Process>?>())
-            .Returns(async callInfo =>
-            {
-                callInfo.ArgAt<Action<Process>?>(3)?.Invoke(Process.GetCurrentProcess());
-                processStarted.TrySetResult(true);
+        try
+        {
+            sleeper = StartSleeperProcess();
 
-                var ct = callInfo.ArgAt<CancellationToken>(2);
-                await WaitForCancellationAndThrowAsync(ct);
-                return new CleaningResult { Status = CleaningStatus.Cleaned, Success = true };
-            });
+            _cleaningServiceMock.CleanPluginAsync(
+                    Arg.Any<PluginInfo>(),
+                    Arg.Any<IProgress<string>>(),
+                    Arg.Any<CancellationToken>(),
+                    Arg.Any<Action<Process>?>())
+                .Returns(async callInfo =>
+                {
+                    callInfo.ArgAt<Action<Process>?>(3)?.Invoke(sleeper);
+                    processStarted.TrySetResult(true);
 
-        // Act
-        var cleaningTask = _orchestrator.StartCleaningAsync();
-        await WaitForSignalAsync(processStarted);
-        await _orchestrator.ForceStopCleaningAsync();
-        await cleaningTask;
+                    var ct = callInfo.ArgAt<CancellationToken>(2);
+                    await WaitForCancellationAndThrowAsync(ct);
+                    return new CleaningResult { Status = CleaningStatus.Cleaned, Success = true };
+                });
 
-        // Assert
-        await _processServiceMock.Received(1)
-            .TerminateProcessAsync(Arg.Any<Process>(), true, Arg.Any<CancellationToken>());
+            // Act
+            var cleaningTask = _orchestrator.StartCleaningAsync();
+            await WaitForSignalAsync(processStarted);
+            await _orchestrator.ForceStopCleaningAsync();
+            await cleaningTask;
+
+            // Assert
+            await _processServiceMock.Received(1)
+                .TerminateProcessAsync(Arg.Any<Process>(), true, Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            KillProcessIfRunning(sleeper);
+        }
     }
 
     [Fact]
     public async Task StopCleaningAsync_WhenCalledTwiceDuringActiveProcess_ShouldEscalateToForceStop()
     {
         // Arrange
+        Process? sleeper = null;
         var plugins = new List<PluginInfo>
         {
             new() { FileName = "Plugin1.esp", FullPath = "Path/Plugin1.esp", IsSelected = true }
@@ -706,6 +766,68 @@ public sealed class CleaningOrchestratorTests
 
         var processStarted = CreateSignal();
 
+        try
+        {
+            sleeper = StartSleeperProcess();
+
+            _cleaningServiceMock.CleanPluginAsync(
+                    Arg.Any<PluginInfo>(),
+                    Arg.Any<IProgress<string>>(),
+                    Arg.Any<CancellationToken>(),
+                    Arg.Any<Action<Process>?>())
+                .Returns(async callInfo =>
+                {
+                    callInfo.ArgAt<Action<Process>?>(3)?.Invoke(sleeper);
+                    processStarted.TrySetResult(true);
+
+                    var ct = callInfo.ArgAt<CancellationToken>(2);
+                    await WaitForCancellationAndThrowAsync(ct);
+                    return new CleaningResult { Status = CleaningStatus.Cleaned, Success = true };
+                });
+
+            // Act
+            var cleaningTask = _orchestrator.StartCleaningAsync();
+            await WaitForSignalAsync(processStarted);
+            await _orchestrator.StopCleaningAsync();
+            await _orchestrator.StopCleaningAsync();
+            await cleaningTask;
+
+            // Assert
+            await _processServiceMock.Received(1)
+                .TerminateProcessAsync(Arg.Any<Process>(), false, Arg.Any<CancellationToken>());
+            await _processServiceMock.Received(1)
+                .TerminateProcessAsync(Arg.Any<Process>(), true, Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            KillProcessIfRunning(sleeper);
+        }
+    }
+
+    [Fact]
+    public async Task StopCleaningAsync_ShouldNotTerminateCurrentProcess_WhenTrackedProcessIsSelf()
+    {
+        // Arrange
+        var plugins = new List<PluginInfo>
+        {
+            new() { FileName = "Plugin1.esp", FullPath = "Path/Plugin1.esp", IsSelected = true }
+        };
+
+        var appState = new AppState
+        {
+            LoadOrderPath = "plugins.txt",
+            XEditExecutablePath = "xedit.exe",
+            CurrentGameType = GameType.SkyrimSe,
+            PluginsToClean = plugins
+        };
+        _stateServiceMock.CurrentState.Returns(appState);
+
+        _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var processStarted = CreateSignal();
+        var releasePlugin = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
         _cleaningServiceMock.CleanPluginAsync(
                 Arg.Any<PluginInfo>(),
                 Arg.Any<IProgress<string>>(),
@@ -716,8 +838,7 @@ public sealed class CleaningOrchestratorTests
                 callInfo.ArgAt<Action<Process>?>(3)?.Invoke(Process.GetCurrentProcess());
                 processStarted.TrySetResult(true);
 
-                var ct = callInfo.ArgAt<CancellationToken>(2);
-                await WaitForCancellationAndThrowAsync(ct);
+                await releasePlugin.Task;
                 return new CleaningResult { Status = CleaningStatus.Cleaned, Success = true };
             });
 
@@ -725,14 +846,13 @@ public sealed class CleaningOrchestratorTests
         var cleaningTask = _orchestrator.StartCleaningAsync();
         await WaitForSignalAsync(processStarted);
         await _orchestrator.StopCleaningAsync();
-        await _orchestrator.StopCleaningAsync();
-        await cleaningTask;
 
         // Assert
-        await _processServiceMock.Received(1)
-            .TerminateProcessAsync(Arg.Any<Process>(), false, Arg.Any<CancellationToken>());
-        await _processServiceMock.Received(1)
-            .TerminateProcessAsync(Arg.Any<Process>(), true, Arg.Any<CancellationToken>());
+        await _processServiceMock.DidNotReceive()
+            .TerminateProcessAsync(Arg.Any<Process>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
+
+        releasePlugin.SetResult(true);
+        await cleaningTask;
     }
 
     [Fact]

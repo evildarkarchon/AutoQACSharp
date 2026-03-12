@@ -9,13 +9,15 @@ using AutoQAC.Services.Configuration;
 using AutoQAC.Services.State;
 using AutoQAC.Services.UI;
 using AutoQAC.Services.Plugin;
+using AutoQAC.Tests.TestInfrastructure;
 using AutoQAC.ViewModels;
 using NSubstitute;
 using ReactiveUI;
 
 namespace AutoQAC.Tests.ViewModels;
 
-public sealed class MainWindowViewModelInitializationTests
+[Collection(RxAppSchedulerCollection.Name)]
+public sealed class MainWindowViewModelInitializationTests : ImmediateMainThreadSchedulerTestBase
 {
     private readonly IConfigurationService _configServiceMock;
     private readonly IStateService _stateServiceMock;
@@ -50,8 +52,6 @@ public sealed class MainWindowViewModelInitializationTests
         // Default setup for SkipListChanged observable
         _configServiceMock.SkipListChanged
             .Returns(Observable.Never<GameType>());
-
-        RxApp.MainThreadScheduler = Scheduler.Immediate;
     }
 
     private static TaskCompletionSource<bool> CreateSignal()

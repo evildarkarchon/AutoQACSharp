@@ -36,11 +36,14 @@ public sealed class PluginListViewModel : ViewModelBase, IDisposable
 
     public PluginListViewModel(IStateService stateService)
     {
+        var stateChanged = stateService.StateChanged
+            .ObserveOn(RxApp.MainThreadScheduler);
+
         // Define observables for command enablement
-        var hasPlugins = stateService.StateChanged
+        var hasPlugins = stateChanged
             .Select(s => s.PluginsToClean.Count > 0);
 
-        var isCleaning = stateService.StateChanged
+        var isCleaning = stateChanged
             .Select(s => s.IsCleaning);
 
         // Plugin selection commands - disabled during cleaning, enabled when plugins exist

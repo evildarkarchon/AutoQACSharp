@@ -58,11 +58,17 @@ public sealed class CleaningCommandsViewModel : ViewModelBase, IDisposable
         set => this.RaiseAndSetIfChanged(ref field, value);
     }
 
-    private readonly ObservableAsPropertyHelper<bool> _isCleaning;
-    public bool IsCleaning => _isCleaning.Value;
+    public bool IsCleaning
+    {
+        get;
+        private set => this.RaiseAndSetIfChanged(ref field, value);
+    }
 
-    private readonly ObservableAsPropertyHelper<bool> _canStartCleaning;
-    public bool CanStartCleaning => _canStartCleaning.Value;
+    public bool CanStartCleaning
+    {
+        get;
+        private set => this.RaiseAndSetIfChanged(ref field, value);
+    }
 
     // Commands
     public ReactiveCommand<Unit, Unit> StartCleaningCommand { get; }
@@ -102,29 +108,7 @@ public sealed class CleaningCommandsViewModel : ViewModelBase, IDisposable
         _showRestoreInteraction = showRestoreInteraction;
         _showAboutInteraction = showAboutInteraction;
 
-        // IsCleaning OAPH from state
-        _isCleaning = _stateService.StateChanged
-            .Select(s => s.IsCleaning)
-            .ToProperty(this, x => x.IsCleaning);
-        _disposables.Add(_isCleaning);
-
-        // Define canStart observable from state only (no cross-VM dependencies)
-        var hasPlugins = _stateService.StateChanged
-            .Select(s => s.PluginsToClean.Count > 0);
-
-        var hasXEditPath = _stateService.StateChanged
-            .Select(s => !string.IsNullOrEmpty(s.XEditExecutablePath));
-
-        var canStart = hasPlugins.CombineLatest(hasXEditPath,
-            this.WhenAnyValue(x => x.IsCleaning),
-            (hasP, hasXEdit, isCleaning) =>
-                hasP &&
-                hasXEdit &&
-                !isCleaning);
-
-        _canStartCleaning = canStart
-            .ToProperty(this, x => x.CanStartCleaning);
-        _disposables.Add(_canStartCleaning);
+        var canStart = this.WhenAnyValue(x => x.CanStartCleaning);
 
         StartCleaningCommand = ReactiveCommand.CreateFromTask(
             StartCleaningAsync,
@@ -164,6 +148,20 @@ public sealed class CleaningCommandsViewModel : ViewModelBase, IDisposable
     /// </summary>
     public void OnStateChanged(AppState state)
     {
+        RxApp.MainThreadScheduler.Schedule(state, (_, currentState) =>
+        {
+            ApplyState(currentState);
+            return Disposable.Empty;
+        });
+    }
+
+    private void ApplyState(AppState state)
+    {
+        IsCleaning = state.IsCleaning;
+        CanStartCleaning = state.PluginsToClean.Count > 0 &&
+                           !string.IsNullOrEmpty(state.XEditExecutablePath) &&
+                           !state.IsCleaning;
+
         if (state.IsCleaning)
         {
             StatusText = $"Cleaning: {state.CurrentPlugin} ({state.Progress}/{state.TotalPlugins})";

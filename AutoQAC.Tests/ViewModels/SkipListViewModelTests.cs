@@ -5,6 +5,7 @@ using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.Configuration;
 using AutoQAC.Services.State;
+using AutoQAC.Tests.TestInfrastructure;
 using AutoQAC.ViewModels;
 using FluentAssertions;
 using NSubstitute;
@@ -12,7 +13,8 @@ using ReactiveUI;
 
 namespace AutoQAC.Tests.ViewModels;
 
-public sealed class SkipListViewModelTests
+[Collection(RxAppSchedulerCollection.Name)]
+public sealed class SkipListViewModelTests : ImmediateMainThreadSchedulerTestBase
 {
     private readonly IConfigurationService _configServiceMock;
     private readonly IStateService _stateServiceMock;
@@ -42,8 +44,6 @@ public sealed class SkipListViewModelTests
         // Individual tests can override this for specific scenarios
         _configServiceMock.GetDefaultSkipListAsync(Arg.Any<GameType>())
             .Returns(new List<string>());
-
-        RxApp.MainThreadScheduler = Scheduler.Immediate;
     }
 
     private SkipListViewModel CreateViewModel()

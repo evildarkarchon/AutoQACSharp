@@ -5,6 +5,17 @@ namespace AutoQAC.Tests.Views;
 public sealed class ViewSubscriptionLifecycleTests
 {
     [Fact]
+    public void MainWindowValidationPanel_ShouldRenderValidationErrorMessage()
+    {
+        // Arrange
+        var source = File.ReadAllText(GetRepoFilePath("AutoQAC/Views/MainWindow.axaml"));
+
+        // Assert
+        source.Should().Contain("Text=\"{Binding Message}\"",
+            "inline validation errors should show the specific reason, not just the title and fix step");
+    }
+
+    [Fact]
     public void SkipListWindow_ShouldTrackSubscriptionsInCompositeDisposable_AndDisposeOnClose()
     {
         // Arrange

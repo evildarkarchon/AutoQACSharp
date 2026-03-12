@@ -607,6 +607,12 @@ public sealed class CleaningOrchestrator(
         {
             try
             {
+                if (proc.Id == Environment.ProcessId)
+                {
+                    logger.Error(null, "[Termination] Refusing to terminate the AutoQAC process during stop request");
+                    return;
+                }
+
                 if (!proc.HasExited)
                 {
                     var result = await processService.TerminateProcessAsync(proc, forceKill: false, ct: CancellationToken.None)
@@ -661,6 +667,12 @@ public sealed class CleaningOrchestrator(
         {
             try
             {
+                if (proc.Id == Environment.ProcessId)
+                {
+                    logger.Error(null, "[Termination] Refusing to terminate the AutoQAC process during force stop request");
+                    return;
+                }
+
                 if (!proc.HasExited)
                 {
                     await processService.TerminateProcessAsync(proc, forceKill: true, ct: CancellationToken.None)

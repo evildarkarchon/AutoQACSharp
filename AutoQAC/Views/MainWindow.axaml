@@ -248,6 +248,9 @@
                                     <TextBlock Text="{Binding Title}"
                                                FontWeight="SemiBold"
                                                Foreground="#8B4513" />
+                                    <TextBlock Text="{Binding Message}"
+                                               TextWrapping="Wrap"
+                                               Foreground="#5D4037" />
                                     <TextBlock Text="{Binding FixStep}"
                                                TextWrapping="Wrap"
                                                Foreground="#5D4037"
