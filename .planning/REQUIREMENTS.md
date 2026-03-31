@@ -39,9 +39,9 @@ Requirements for this bugfix milestone. Each maps to roadmap phases.
 
 ### Cleanup
 
-- [ ] **CLN-01**: Dead stdout parsing code paths removed from `CleaningService`
-- [ ] **CLN-02**: Old timestamp-based log staleness detection replaced by offset-based approach
-- [ ] **CLN-03**: Stale test mocks and unused parameters cleaned up
+- [x] **CLN-01**: Dead stdout parsing code paths removed from `CleaningService`
+- [x] **CLN-02**: Old timestamp-based log staleness detection replaced by offset-based approach
+- [x] **CLN-03**: Stale test mocks and unused parameters cleaned up
 
 ## v2 Requirements
 
@@ -86,9 +86,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ORC-01 | Phase 3 | Complete |
 | ORC-02 | Phase 3 | Complete |
 | ORC-03 | Phase 3 | Complete |
-| CLN-01 | Phase 4 | Pending |
-| CLN-02 | Phase 4 | Pending |
-| CLN-03 | Phase 4 | Pending |
+| CLN-01 | Phase 4 | Complete |
+| CLN-02 | Phase 4 | Complete |
+| CLN-03 | Phase 4 | Complete |
 
 **Coverage:**
 - v1 requirements: 18 total

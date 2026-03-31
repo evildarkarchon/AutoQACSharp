@@ -74,7 +74,7 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 04-01-PLAN.md -- Delete obsolete log file methods, legacy tests, and remove dead IXEditOutputParser from CleaningService
+- [x] 04-01-PLAN.md -- Delete obsolete log file methods, legacy tests, and remove dead IXEditOutputParser from CleaningService
 - [ ] 04-02-PLAN.md -- Remove dead IProgress parameter chain and ProcessResult OutputLines/ErrorLines fields, update all tests
 
 ## Progress
