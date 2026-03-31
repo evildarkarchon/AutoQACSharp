@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -168,57 +167,4 @@ public sealed class XEditLogFileService(ILoggingService logger) : IXEditLogFileS
         return string.Empty;
     }
 
-    // ────────────────────────────────────────────────────────────────────
-    //  Legacy methods (preserved for CleaningOrchestrator compatibility)
-    // ────────────────────────────────────────────────────────────────────
-
-    /// <inheritdoc />
-    [Obsolete("Use GetLogFilePath(string, GameType) instead.")]
-    public string GetLogFilePath(string xEditExecutablePath)
-    {
-        var dir = Path.GetDirectoryName(xEditExecutablePath);
-        if (string.IsNullOrEmpty(dir))
-            throw new ArgumentException("Invalid xEdit executable path.", nameof(xEditExecutablePath));
-        var stem = Path.GetFileNameWithoutExtension(xEditExecutablePath).ToUpperInvariant();
-        return Path.Combine(dir, $"{stem}_log.txt");
-    }
-
-    /// <inheritdoc />
-    [Obsolete("Use ReadLogContentAsync instead.")]
-    public async Task<(List<string> lines, string? error)> ReadLogFileAsync(
-        string xEditExecutablePath,
-        DateTime processStartTime,
-        CancellationToken ct = default)
-    {
-        // Legacy implementation preserved for CleaningOrchestrator compatibility (Phase 3 replaces this call)
-#pragma warning disable CS0618 // Obsolete
-        var logPath = GetLogFilePath(xEditExecutablePath);
-#pragma warning restore CS0618
-
-        if (!File.Exists(logPath))
-            return (new List<string>(), $"Log file not found: {logPath}");
-
-        var logModifiedUtc = File.GetLastWriteTimeUtc(logPath);
-        if (logModifiedUtc < processStartTime.ToUniversalTime())
-            return (new List<string>(), "Log file is stale (predates this cleaning run)");
-
-        try
-        {
-            var lines = await File.ReadAllLinesAsync(logPath, ct).ConfigureAwait(false);
-            return (lines.ToList(), null);
-        }
-        catch (IOException)
-        {
-            await Task.Delay(200, ct).ConfigureAwait(false);
-            try
-            {
-                var lines = await File.ReadAllLinesAsync(logPath, ct).ConfigureAwait(false);
-                return (lines.ToList(), null);
-            }
-            catch (IOException secondEx)
-            {
-                return (new List<string>(), $"Failed to read log file: {secondEx.Message}");
-            }
-        }
-    }
 }

@@ -1,5 +1,3 @@
-using System;
-using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Models;
@@ -15,39 +13,6 @@ namespace AutoQAC.Services.Cleaning;
 /// </summary>
 public interface IXEditLogFileService
 {
-    // ────────────────────────────────────────────────────────────────────
-    //  Legacy methods (preserved for CleaningOrchestrator compatibility)
-    // ────────────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Computes the expected log file path for the given xEdit executable.
-    /// Convention: same directory, {STEM_UPPERCASE}_log.txt.
-    /// </summary>
-    /// <param name="xEditExecutablePath">Full path to the xEdit executable.</param>
-    /// <returns>Full path to the expected log file.</returns>
-    [Obsolete("Use GetLogFilePath(string, GameType) instead. Will be removed in Phase 4.")]
-    string GetLogFilePath(string xEditExecutablePath);
-
-    /// <summary>
-    /// Reads the xEdit log file, with staleness detection and IOException retry.
-    /// </summary>
-    /// <param name="xEditExecutablePath">Full path to the xEdit executable (used to compute log path).</param>
-    /// <param name="processStartTime">UTC time when the xEdit process was started, for staleness detection.</param>
-    /// <param name="ct">Cancellation token.</param>
-    /// <returns>
-    /// A tuple of (lines, error). On success, lines contains the log file content and error is null.
-    /// On failure, lines is empty and error describes the problem.
-    /// </returns>
-    [Obsolete("Use ReadLogContentAsync instead. Will be removed in Phase 4.")]
-    Task<(List<string> lines, string? error)> ReadLogFileAsync(
-        string xEditExecutablePath,
-        DateTime processStartTime,
-        CancellationToken ct = default);
-
-    // ────────────────────────────────────────────────────────────────────
-    //  Game-aware methods (offset-based API)
-    // ────────────────────────────────────────────────────────────────────
-
     /// <summary>
     /// Returns the expected main log file path for the given game type and xEdit directory.
     /// Uses xEdit's <c>{wbAppName}Edit_log.txt</c> naming convention.
