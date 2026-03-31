@@ -86,7 +86,6 @@ public sealed class ProcessExecutionServiceTests : IDisposable
 
         // Assert
         result.ExitCode.Should().Be(-1, "startup failure should return -1 exit code");
-        result.ErrorLines.Should().NotBeEmpty("error details should be captured");
 
         // Verify logging occurred
         _mockLogger.Received(1).Error(
@@ -241,7 +240,6 @@ public sealed class ProcessExecutionServiceTests : IDisposable
         // Default: CleanPluginAsync succeeds and captures the onProcessStarted callback
         cleaningServiceMock.CleanPluginAsync(
                 Arg.Any<PluginInfo>(),
-                Arg.Any<IProgress<string>>(),
                 Arg.Any<CancellationToken>(),
                 Arg.Any<Action<Process>?>())
             .Returns(new CleaningResult
@@ -308,7 +306,6 @@ public sealed class ProcessExecutionServiceTests : IDisposable
             .Returns(true);
         cleaningServiceMock.CleanPluginAsync(
                 Arg.Any<PluginInfo>(),
-                Arg.Any<IProgress<string>>(),
                 Arg.Any<CancellationToken>(),
                 Arg.Any<Action<Process>?>())
             .Returns(async callInfo =>
@@ -316,7 +313,7 @@ public sealed class ProcessExecutionServiceTests : IDisposable
                 cleaningStarted.TrySetResult(true);
                 // Block until cancellation -- let the exception propagate so the
                 // orchestrator's catch(OperationCanceledException) sets WasCancelled
-                var ct = callInfo.ArgAt<CancellationToken>(2);
+                var ct = callInfo.ArgAt<CancellationToken>(1);
                 await WaitForCancellationAndThrowAsync(ct);
                 return new CleaningResult { Status = CleaningStatus.Failed, Message = "Cancelled" };
             });

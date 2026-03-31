@@ -59,10 +59,9 @@ public sealed class CleaningServiceTests
         var processResult = new ProcessResult
         {
             ExitCode = 0,
-            OutputLines = new List<string> { "Undeleting: Foo", "Done." },
             TimedOut = false
         };
-        _mockProcess.ExecuteAsync(startInfo, Arg.Any<IProgress<string>>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+        _mockProcess.ExecuteAsync(startInfo, Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns(processResult);
 
         // Act
@@ -73,7 +72,7 @@ public sealed class CleaningServiceTests
         result.Status.Should().Be(CleaningStatus.Cleaned);
         result.Statistics.Should().BeNull("CleaningService no longer parses output; orchestrator handles log parsing");
 
-        await _mockProcess.Received(1).ExecuteAsync(startInfo, Arg.Any<IProgress<string>>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+        await _mockProcess.Received(1).ExecuteAsync(startInfo, Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -101,7 +100,7 @@ public sealed class CleaningServiceTests
         // Assert
         result.Success.Should().BeTrue();
         result.Status.Should().Be(CleaningStatus.Skipped);
-        await _mockProcess.DidNotReceive().ExecuteAsync(Arg.Any<System.Diagnostics.ProcessStartInfo>(), Arg.Any<IProgress<string>>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+        await _mockProcess.DidNotReceive().ExecuteAsync(Arg.Any<System.Diagnostics.ProcessStartInfo>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }
 
     #region Error Path Tests
@@ -148,7 +147,6 @@ public sealed class CleaningServiceTests
         // Process should never be called since command building failed
         await _mockProcess.DidNotReceive().ExecuteAsync(
             Arg.Any<System.Diagnostics.ProcessStartInfo>(),
-            Arg.Any<IProgress<string>>(),
             Arg.Any<TimeSpan?>(),
             Arg.Any<CancellationToken>());
     }
@@ -193,10 +191,9 @@ public sealed class CleaningServiceTests
         var processResult = new ProcessResult
         {
             ExitCode = -1,
-            OutputLines = new List<string> { "Started cleaning..." },
             TimedOut = true
         };
-        _mockProcess.ExecuteAsync(startInfo, Arg.Any<IProgress<string>>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+        _mockProcess.ExecuteAsync(startInfo, Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns(processResult);
 
         // Act
@@ -244,11 +241,9 @@ public sealed class CleaningServiceTests
         var processResult = new ProcessResult
         {
             ExitCode = 1, // Non-zero indicates error
-            OutputLines = new List<string> { "Error: Failed to read plugin file" },
-            ErrorLines = new List<string> { "Exception occurred" },
             TimedOut = false
         };
-        _mockProcess.ExecuteAsync(startInfo, Arg.Any<IProgress<string>>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+        _mockProcess.ExecuteAsync(startInfo, Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns(processResult);
 
         // Act
@@ -296,10 +291,9 @@ public sealed class CleaningServiceTests
         var processResult = new ProcessResult
         {
             ExitCode = 0,
-            OutputLines = new List<string> { "Done." },
             TimedOut = false
         };
-        _mockProcess.ExecuteAsync(startInfo, Arg.Any<IProgress<string>>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+        _mockProcess.ExecuteAsync(startInfo, Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns(processResult);
 
         // Act
@@ -346,7 +340,7 @@ public sealed class CleaningServiceTests
             .Returns(startInfo);
 
         // Mock process to throw OperationCanceledException
-        _mockProcess.ExecuteAsync(startInfo, Arg.Any<IProgress<string>>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+        _mockProcess.ExecuteAsync(startInfo, Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new OperationCanceledException());
 
         // Act
@@ -391,7 +385,7 @@ public sealed class CleaningServiceTests
             .Returns(startInfo);
 
         // Mock process to throw unexpected exception
-        _mockProcess.ExecuteAsync(startInfo, Arg.Any<IProgress<string>>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+        _mockProcess.ExecuteAsync(startInfo, Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("Unexpected error during process execution"));
 
         // Act
