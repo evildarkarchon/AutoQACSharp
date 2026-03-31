@@ -21,7 +21,6 @@ public sealed class CleaningService(
 {
     public async Task<CleaningResult> CleanPluginAsync(
         PluginInfo plugin,
-        IProgress<string>? progress = null,
         CancellationToken ct = default,
         Action<System.Diagnostics.Process>? onProcessStarted = null)
     {
@@ -74,7 +73,7 @@ public sealed class CleaningService(
                 gameDisplayName,
                 timeout.TotalSeconds);
 
-            var result = await processService.ExecuteAsync(command, progress, timeout, ct, onProcessStarted).ConfigureAwait(false);
+            var result = await processService.ExecuteAsync(command, timeout, ct, onProcessStarted).ConfigureAwait(false);
 
             sw.Stop();
 

@@ -10,7 +10,6 @@ public interface ICleaningService
     // Main cleaning entry point
     Task<CleaningResult> CleanPluginAsync(
         PluginInfo plugin,
-        IProgress<string>? progress = null,
         CancellationToken ct = default,
         Action<System.Diagnostics.Process>? onProcessStarted = null);
 

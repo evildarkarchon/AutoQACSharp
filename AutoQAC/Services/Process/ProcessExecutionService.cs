@@ -30,7 +30,6 @@ public sealed class ProcessExecutionService(ILoggingService logger)
 
     public async Task<ProcessResult> ExecuteAsync(
         ProcessStartInfo startInfo,
-        IProgress<string>? outputProgress = null,
         TimeSpan? timeout = null,
         CancellationToken ct = default,
         Action<System.Diagnostics.Process>? onProcessStarted = null,
@@ -67,7 +66,7 @@ public sealed class ProcessExecutionService(ILoggingService logger)
             catch (Exception ex)
             {
                 logger.Error(ex, "Failed to start process: {FileName}", startInfo.FileName);
-                return new ProcessResult { ExitCode = -1, ErrorLines = [ex.Message] };
+                return new ProcessResult { ExitCode = -1 };
             }
 
             // Track PID after successful start
@@ -135,8 +134,6 @@ public sealed class ProcessExecutionService(ILoggingService logger)
             return new ProcessResult
             {
                 ExitCode = timedOut ? -1 : (process.HasExited ? process.ExitCode : -1),
-                OutputLines = [],
-                ErrorLines = [],
                 TimedOut = timedOut
             };
         }

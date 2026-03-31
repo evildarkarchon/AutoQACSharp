@@ -328,12 +328,6 @@ public sealed class CleaningOrchestrator(
                     }
                 }
 
-                // Progress reporting
-                var progress = new Progress<string>(output =>
-                {
-                    logger.Debug("xEdit output: {Output}", output);
-                });
-
                 // Clean plugin with retry logic for timeouts
                 var pluginStopwatch = Stopwatch.StartNew();
                 var xEditDir = System.IO.Path.GetDirectoryName(config.XEditExecutablePath ?? string.Empty) ?? string.Empty;
@@ -360,7 +354,6 @@ public sealed class CleaningOrchestrator(
 
                     result = await cleaningService.CleanPluginAsync(
                         plugin,
-                        progress,
                         cts.Token,
                         onProcessStarted: proc =>
                         {
