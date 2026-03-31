@@ -71,30 +71,30 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| LOG-01 | Pending | Pending |
-| LOG-02 | Pending | Pending |
-| LOG-03 | Pending | Pending |
-| OFF-01 | Pending | Pending |
-| OFF-02 | Pending | Pending |
-| OFF-03 | Pending | Pending |
-| OFF-04 | Pending | Pending |
-| PAR-01 | Pending | Pending |
-| PAR-02 | Pending | Pending |
-| PAR-03 | Pending | Pending |
-| PRC-01 | Pending | Pending |
-| PRC-02 | Pending | Pending |
-| ORC-01 | Pending | Pending |
-| ORC-02 | Pending | Pending |
-| ORC-03 | Pending | Pending |
-| CLN-01 | Pending | Pending |
-| CLN-02 | Pending | Pending |
-| CLN-03 | Pending | Pending |
+| LOG-01 | Phase 1 | Pending |
+| LOG-02 | Phase 1 | Pending |
+| LOG-03 | Phase 1 | Pending |
+| OFF-01 | Phase 1 | Pending |
+| OFF-02 | Phase 1 | Pending |
+| OFF-03 | Phase 1 | Pending |
+| OFF-04 | Phase 1 | Pending |
+| PRC-01 | Phase 2 | Pending |
+| PRC-02 | Phase 2 | Pending |
+| PAR-01 | Phase 3 | Pending |
+| PAR-02 | Phase 3 | Pending |
+| PAR-03 | Phase 3 | Pending |
+| ORC-01 | Phase 3 | Pending |
+| ORC-02 | Phase 3 | Pending |
+| ORC-03 | Phase 3 | Pending |
+| CLN-01 | Phase 4 | Pending |
+| CLN-02 | Phase 4 | Pending |
+| CLN-03 | Phase 4 | Pending |
 
 **Coverage:**
 - v1 requirements: 18 total
-- Mapped to phases: 0
-- Unmapped: 18 ⚠️
+- Mapped to phases: 18
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-30*
-*Last updated: 2026-03-30 after initial definition*
+*Last updated: 2026-03-30 after roadmap creation*
