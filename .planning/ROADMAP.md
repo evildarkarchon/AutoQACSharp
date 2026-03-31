@@ -45,7 +45,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 02-01-PLAN.md -- Remove stdout/stderr redirect plumbing from ProcessExecutionService and delete dead capture test
+- [x] 02-01-PLAN.md -- Remove stdout/stderr redirect plumbing from ProcessExecutionService and delete dead capture test
 
 ### Phase 3: Integration -- Log-First Parsing
 **Goal**: The cleaning orchestrator reads xEdit results from log files after process exit, replacing the broken stdout-based pipeline with accurate log-based parsing

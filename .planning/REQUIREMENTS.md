@@ -28,8 +28,8 @@ Requirements for this bugfix milestone. Each maps to roadmap phases.
 
 ### Process Layer
 
-- [ ] **PRC-01**: `ProcessExecutionService` no longer redirects stdout/stderr (xEdit writes nothing there)
-- [ ] **PRC-02**: MO2 wrapping continues to work correctly without stdout redirection
+- [x] **PRC-01**: `ProcessExecutionService` no longer redirects stdout/stderr (xEdit writes nothing there)
+- [x] **PRC-02**: MO2 wrapping continues to work correctly without stdout redirection
 
 ### Orchestration
 
@@ -78,8 +78,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | OFF-02 | Phase 1 | Complete |
 | OFF-03 | Phase 1 | Complete |
 | OFF-04 | Phase 1 | Complete |
-| PRC-01 | Phase 2 | Pending |
-| PRC-02 | Phase 2 | Pending |
+| PRC-01 | Phase 2 | Complete |
+| PRC-02 | Phase 2 | Complete |
 | PAR-01 | Phase 3 | Pending |
 | PAR-02 | Phase 3 | Pending |
 | PAR-03 | Phase 3 | Pending |
