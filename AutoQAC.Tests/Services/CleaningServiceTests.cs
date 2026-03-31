@@ -68,19 +68,13 @@ public sealed class CleaningServiceTests
         _mockProcess.ExecuteAsync(startInfo, Arg.Any<IProgress<string>>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns(processResult);
 
-        // Mock Output Parser
-        var stats = new CleaningStatistics { ItemsUndeleted = 1 };
-        _mockOutputParser.ParseOutput(processResult.OutputLines)
-            .Returns(stats);
-
         // Act
         var result = await service.CleanPluginAsync(plugin);
 
         // Assert
         result.Success.Should().BeTrue();
         result.Status.Should().Be(CleaningStatus.Cleaned);
-        result.Statistics.Should().NotBeNull();
-        result.Statistics!.ItemsUndeleted.Should().Be(1);
+        result.Statistics.Should().BeNull("CleaningService no longer parses output; orchestrator handles log parsing");
 
         await _mockProcess.Received(1).ExecuteAsync(startInfo, Arg.Any<IProgress<string>>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }
@@ -315,10 +309,6 @@ public sealed class CleaningServiceTests
         };
         _mockProcess.ExecuteAsync(startInfo, Arg.Any<IProgress<string>>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns(processResult);
-
-        // Mock output parser
-        _mockOutputParser.ParseOutput(processResult.OutputLines)
-            .Returns(new CleaningStatistics());
 
         // Act
         var result = await service.CleanPluginAsync(plugin);

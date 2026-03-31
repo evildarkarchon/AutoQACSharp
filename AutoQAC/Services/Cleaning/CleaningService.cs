@@ -103,16 +103,13 @@ public sealed class CleaningService(
                 };
             }
 
-            // 4. Parse Output (Offload to thread pool)
-            var stats = await Task.Run(() => outputParser.ParseOutput(result.OutputLines), ct).ConfigureAwait(false);
-
+            // Statistics intentionally omitted -- orchestrator parses from log file (per D-02)
             return new CleaningResult
             {
                 Success = true,
                 Status = CleaningStatus.Cleaned,
                 Message = "Cleaning completed successfully.",
-                Duration = sw.Elapsed,
-                Statistics = stats
+                Duration = sw.Elapsed
             };
 
         }
