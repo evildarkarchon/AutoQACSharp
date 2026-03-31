@@ -40,10 +40,16 @@ public sealed record CleaningSessionResult
     public IReadOnlyList<PluginCleaningResult> PluginResults { get; init; } = Array.Empty<PluginCleaningResult>();
 
     /// <summary>
-    /// Gets plugins that were successfully cleaned.
+    /// Gets plugins that were successfully cleaned (includes AlreadyClean).
     /// </summary>
     public IEnumerable<PluginCleaningResult> CleanedPlugins =>
-        PluginResults.Where(r => r.Status == CleaningStatus.Cleaned);
+        PluginResults.Where(r => r.Status is CleaningStatus.Cleaned or CleaningStatus.AlreadyClean);
+
+    /// <summary>
+    /// Gets plugins that completed but had nothing to clean.
+    /// </summary>
+    public IEnumerable<PluginCleaningResult> AlreadyCleanPlugins =>
+        PluginResults.Where(r => r.Status == CleaningStatus.AlreadyClean);
 
     /// <summary>
     /// Gets plugins that failed to clean.
@@ -110,6 +116,10 @@ public sealed record CleaningSessionResult
             if (FailedCount > 0)
                 return $"Completed with errors: {CleanedCount} cleaned, {FailedCount} failed, {SkippedCount} skipped";
 
+            var alreadyCleanCount = AlreadyCleanPlugins.Count();
+            if (alreadyCleanCount > 0)
+                return $"Completed: {CleanedCount} cleaned ({alreadyCleanCount} already clean), {SkippedCount} skipped";
+
             return $"Completed: {CleanedCount} cleaned, {SkippedCount} skipped";
         }
     }
@@ -159,6 +169,16 @@ public sealed record CleaningSessionResult
             foreach (var result in CleanedPlugins)
             {
                 sb.AppendLine($"  {result.PluginName}: {result.Summary} ({result.Duration:mm\\:ss})");
+            }
+            sb.AppendLine();
+        }
+
+        if (AlreadyCleanPlugins.Any())
+        {
+            sb.AppendLine("--- Already Clean Plugins ---");
+            foreach (var result in AlreadyCleanPlugins)
+            {
+                sb.AppendLine($"  {result.PluginName}");
             }
             sb.AppendLine();
         }

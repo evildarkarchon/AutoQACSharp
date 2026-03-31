@@ -21,7 +21,8 @@ public enum CleaningStatus
 {
     Cleaned,
     Skipped,
-    Failed
+    Failed,
+    AlreadyClean
 }
 
 public sealed record CleaningStatistics

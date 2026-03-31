@@ -88,6 +88,9 @@ public sealed record PluginCleaningResult
             if (Status == CleaningStatus.Failed)
                 return $"Failed: {Message}";
 
+            if (Status == CleaningStatus.AlreadyClean)
+                return "Already clean";
+
             if (TotalProcessed == 0)
                 return "No changes";
 

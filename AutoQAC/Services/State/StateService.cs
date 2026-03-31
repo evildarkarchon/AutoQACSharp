@@ -222,6 +222,7 @@ public sealed class StateService : IStateService, IDisposable
             switch (status)
             {
                 case CleaningStatus.Cleaned:
+                case CleaningStatus.AlreadyClean:
                     cleaned.Add(plugin);
                     break;
                 case CleaningStatus.Failed:
