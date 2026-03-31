@@ -27,12 +27,12 @@ Correctly parse xEdit cleaning results from log files so users get accurate feed
 
 ### Active
 
-- [ ] Parse xEdit cleaning results from log files instead of stdout
-- [ ] Read log files from xEdit install directory after process exit
+- [x] Parse xEdit cleaning results from log files instead of stdout — Validated in Phase 3
+- [x] Read log files from xEdit install directory after process exit — Validated in Phase 3
 - [x] Handle appending log behavior (track file position before launch, read only new content) — Validated in Phase 1
-- [x] Detect and surface xEdit exceptions from `<basename>Exception.log` — Validated in Phase 1
-- [ ] Maintain "running" status with hang detection during xEdit execution
-- [ ] Parse results post-exit using existing regex patterns against log file content
+- [x] Detect and surface xEdit exceptions from `<basename>Exception.log` — Validated in Phase 1, wired in Phase 3
+- [x] Maintain "running" status with hang detection during xEdit execution — Validated in Phase 3 (unchanged, confirmed working)
+- [x] Parse results post-exit using existing regex patterns against log file content — Validated in Phase 3
 
 ### Out of Scope
 
@@ -68,6 +68,9 @@ Correctly parse xEdit cleaning results from log files so users get accurate feed
 |----------|-----------|---------|
 | Parse from log files, not stdout | xEdit does not write to stdout/stderr | Phase 2 removed stdout redirect; Phase 3 will wire log parsing |
 | Remove dead stdout/stderr redirection | ProcessExecutionService captured empty streams; xEdit uses log files | Implemented in Phase 2 |
+| Offset-based log reading in orchestrator | Per-plugin offset capture isolates each plugin's log output | Implemented in Phase 3 |
+| AlreadyClean status for nothing-to-clean | Completion line + zero stats = distinct status, not misleading zeros | Implemented in Phase 3 |
+| Force-kill guard before log read | Terminated xEdit may not flush log; skip read and return failure | Implemented in Phase 3 |
 | Track file offset before launch | Logs append, need to isolate current run's output | Implemented in Phase 1 |
 | Keep hang detection during execution | No stdout progress available, but CPU monitoring still valuable | — Pending |
 | GameType-based log naming (not executable stem) | Supports universal xEdit.exe with game flags; maps to xEdit wbAppName convention | Implemented in Phase 1 |
@@ -91,4 +94,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-31 after Phase 2 completion — dead stdout/stderr capture removed from ProcessExecutionService*
+*Last updated: 2026-03-31 after Phase 3 completion — orchestrator rewired to offset-based log reading with nothing-to-clean detection*
