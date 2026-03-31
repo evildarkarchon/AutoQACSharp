@@ -34,5 +34,5 @@
   "agent_skills": {},
   "resolve_model_ids": "omit",
   "mode": "interactive",
-  "granularity": "coarse"
+  "granularity": "fine"
 }
