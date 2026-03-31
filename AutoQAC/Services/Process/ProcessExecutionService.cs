@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -52,8 +51,6 @@ public sealed class ProcessExecutionService(ILoggingService logger)
                 FileName = fileName,
                 Arguments = arguments,
                 WorkingDirectory = workingDirectory,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
                 UseShellExecute = false,
                 CreateNoWindow = false
             };
@@ -61,28 +58,11 @@ public sealed class ProcessExecutionService(ILoggingService logger)
             using var process = new System.Diagnostics.Process();
             process.StartInfo = processStartInfo;
 
-            var outputLines = new ConcurrentQueue<string>();
-            var errorLines = new ConcurrentQueue<string>();
-
-            process.OutputDataReceived += (_, e) =>
-            {
-                if (e.Data == null) return;
-                outputLines.Enqueue(e.Data);
-                outputProgress?.Report(e.Data);
-            };
-
-            process.ErrorDataReceived += (_, e) =>
-            {
-                if (e.Data != null) errorLines.Enqueue(e.Data);
-            };
-
             logger.Debug("Starting process: {FileName} {Arguments}", startInfo.FileName, startInfo.Arguments);
 
             try
             {
                 process.Start();
-                process.BeginOutputReadLine();
-                process.BeginErrorReadLine();
             }
             catch (Exception ex)
             {
@@ -155,8 +135,8 @@ public sealed class ProcessExecutionService(ILoggingService logger)
             return new ProcessResult
             {
                 ExitCode = timedOut ? -1 : (process.HasExited ? process.ExitCode : -1),
-                OutputLines = outputLines.ToList(),
-                ErrorLines = errorLines.ToList(),
+                OutputLines = [],
+                ErrorLines = [],
                 TimedOut = timedOut
             };
         }
