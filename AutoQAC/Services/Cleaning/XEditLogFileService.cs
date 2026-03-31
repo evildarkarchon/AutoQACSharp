@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
+using AutoQAC.Models;
 
 namespace AutoQAC.Services.Cleaning;
 
@@ -17,6 +18,7 @@ public sealed class XEditLogFileService(ILoggingService logger) : IXEditLogFileS
     private const int RetryDelayMs = 200;
 
     /// <inheritdoc />
+    [Obsolete("Use GetLogFilePath(string, GameType) instead.")]
     public string GetLogFilePath(string xEditExecutablePath)
     {
         var dir = Path.GetDirectoryName(xEditExecutablePath);
@@ -27,6 +29,7 @@ public sealed class XEditLogFileService(ILoggingService logger) : IXEditLogFileS
     }
 
     /// <inheritdoc />
+    [Obsolete("Use ReadLogContentAsync instead.")]
     public async Task<(List<string> lines, string? error)> ReadLogFileAsync(
         string xEditExecutablePath,
         DateTime processStartTime,
@@ -74,4 +77,29 @@ public sealed class XEditLogFileService(ILoggingService logger) : IXEditLogFileS
             }
         }
     }
+
+    // ────────────────────────────────────────────────────────────────────
+    //  Game-aware methods (stub implementations -- Task 2 will replace)
+    // ────────────────────────────────────────────────────────────────────
+
+    /// <inheritdoc />
+    public string GetLogFilePath(string xEditDirectory, GameType gameType)
+        => throw new NotImplementedException("Will be implemented in Task 2.");
+
+    /// <inheritdoc />
+    public string GetExceptionLogFilePath(string xEditDirectory, GameType gameType)
+        => throw new NotImplementedException("Will be implemented in Task 2.");
+
+    /// <inheritdoc />
+    public long CaptureOffset(string logFilePath)
+        => throw new NotImplementedException("Will be implemented in Task 2.");
+
+    /// <inheritdoc />
+    public Task<LogReadResult> ReadLogContentAsync(
+        string xEditDirectory,
+        GameType gameType,
+        long mainLogOffset,
+        long exceptionLogOffset,
+        CancellationToken ct = default)
+        => throw new NotImplementedException("Will be implemented in Task 2.");
 }
