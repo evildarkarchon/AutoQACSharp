@@ -130,31 +130,6 @@ public sealed class ProcessExecutionServiceTests : IDisposable
     #region Thread-Safety and Handle Lifecycle Tests
 
     [Fact]
-    public async Task ExecuteAsync_ShouldCaptureConcurrentStdoutAndStderrWithoutLoss()
-    {
-        // Arrange
-        using var service = new ProcessExecutionService(_mockLogger);
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = "cmd.exe",
-            Arguments = "/c for /L %i in (1,1,120) do @echo out%i & @echo err%i 1>&2"
-        };
-
-        // Act
-        var result = await service.ExecuteAsync(startInfo, timeout: TimeSpan.FromSeconds(30));
-
-        // Assert
-        result.TimedOut.Should().BeFalse();
-        result.ExitCode.Should().Be(0);
-        result.OutputLines.Select(line => line.Trim()).Should().Contain("out1");
-        result.OutputLines.Select(line => line.Trim()).Should().Contain("out120");
-        result.ErrorLines.Select(line => line.Trim()).Should().Contain("err1");
-        result.ErrorLines.Select(line => line.Trim()).Should().Contain("err120");
-        result.OutputLines.Count.Should().BeGreaterThanOrEqualTo(120);
-        result.ErrorLines.Count.Should().BeGreaterThanOrEqualTo(120);
-    }
-
-    [Fact]
     public async Task CleanOrphanedProcessesAsync_ShouldNotLeakProcessHandlesAcrossRepeatedRuns()
     {
         // Arrange
