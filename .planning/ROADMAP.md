@@ -42,10 +42,10 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. xEdit launches and completes successfully without stdout/stderr redirection, and the process exits normally
   2. MO2-wrapped xEdit launches continue to work correctly (process lifecycle, PID tracking, WaitForExitAsync all intact)
-**Plans**: TBD
+**Plans**: 1 plan
 
 Plans:
-- [ ] 02-01: TBD
+- [ ] 02-01-PLAN.md -- Remove stdout/stderr redirect plumbing from ProcessExecutionService and delete dead capture test
 
 ### Phase 3: Integration -- Log-First Parsing
 **Goal**: The cleaning orchestrator reads xEdit results from log files after process exit, replacing the broken stdout-based pipeline with accurate log-based parsing
@@ -85,6 +85,6 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation -- Game-Aware Log File Service | 2/2 | Complete | 2026-03-31 |
-| 2. Process Layer -- Stop Stdout Capture | 0/? | Not started | - |
+| 2. Process Layer -- Stop Stdout Capture | 0/1 | Not started | - |
 | 3. Integration -- Log-First Parsing | 0/? | Not started | - |
 | 4. Cleanup -- Remove Dead Code | 0/? | Not started | - |
