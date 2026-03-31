@@ -7,7 +7,7 @@
   "firecrawl": false,
   "exa_search": false,
   "git": {
-    "branching_strategy": "none",
+    "branching_strategy": "phase",
     "phase_branch_template": "gsd/phase-{phase}-{slug}",
     "milestone_branch_template": "gsd/{milestone}-{slug}",
     "quick_branch_template": null
@@ -16,17 +16,17 @@
     "research": true,
     "plan_check": true,
     "verifier": true,
-    "nyquist_validation": false,
-    "auto_advance": true,
+    "nyquist_validation": true,
+    "auto_advance": false,
     "node_repair": true,
     "node_repair_budget": 2,
     "ui_phase": true,
     "ui_safety_gate": true,
     "text_mode": false,
-    "research_before_questions": false,
+    "research_before_questions": true,
     "discuss_mode": "discuss",
     "skip_discuss": false,
-    "_auto_chain_active": true
+    "_auto_chain_active": false
   },
   "hooks": {
     "context_warnings": true

@@ -1,12 +1,12 @@
-# AutoQAC — xEdit Log Parsing Fix
+# AutoQAC
 
 ## What This Is
 
-AutoQAC is a Windows-only Avalonia desktop app that runs xEdit Quick Auto Clean (`-QAC`) safely, one plugin at a time, with Mutagen-based plugin analysis. This milestone fixes the fundamental bug where the app tries to parse xEdit's stdout/stderr for cleaning results, when xEdit actually writes its output to log files in its install directory.
+AutoQAC is a Windows-only Avalonia desktop app that runs xEdit Quick Auto Clean (`-QAC`) safely, one plugin at a time, with Mutagen-based plugin analysis. It correctly parses xEdit cleaning results from log files, providing accurate feedback on what was cleaned, skipped, removed, or undeleted.
 
 ## Core Value
 
-Correctly parse xEdit cleaning results from log files so users get accurate feedback on what was cleaned, skipped, removed, or undeleted.
+Accurate, automated xEdit Quick Auto Clean with reliable result reporting.
 
 ## Requirements
 
@@ -24,43 +24,32 @@ Correctly parse xEdit cleaning results from log files so users get accurate feed
 - ✓ YAML-based configuration with file watching and auto-save — existing
 - ✓ Plugin issue approximations via Mutagen analysis — existing
 - ✓ Avalonia MVVM UI with reactive state management — existing
+- ✓ Parse xEdit cleaning results from log files instead of stdout — v1.0
+- ✓ Read log files from xEdit install directory after process exit — v1.0
+- ✓ Handle appending log behavior (offset-based reading) — v1.0
+- ✓ Detect and surface xEdit exceptions from exception log files — v1.0
+- ✓ Maintain "running" status with hang detection during xEdit execution — v1.0
+- ✓ Parse results post-exit using regex patterns against log content — v1.0
+- ✓ Dead stdout parsing code paths fully removed — v1.0
+- ✓ Timestamp-based log staleness replaced by offset-based reading — v1.0
+- ✓ Stale test mocks and unused parameters cleaned up — v1.0
 
 ### Active
 
-None — all milestone requirements validated.
-
-### Recently Validated (Phases 1-4)
-
-- ✓ Parse xEdit cleaning results from log files instead of stdout — Validated in Phase 3
-- ✓ Read log files from xEdit install directory after process exit — Validated in Phase 3
-- ✓ Handle appending log behavior (track file position before launch, read only new content) — Validated in Phase 1
-- ✓ Detect and surface xEdit exceptions from `<basename>Exception.log` — Validated in Phase 1, wired in Phase 3
-- ✓ Maintain "running" status with hang detection during xEdit execution — Validated in Phase 3 (unchanged, confirmed working)
-- ✓ Parse results post-exit using existing regex patterns against log file content — Validated in Phase 3
-- ✓ Dead stdout parsing code paths removed — Validated in Phase 4
-- ✓ Timestamp-based log staleness detection replaced by offset-based reading — Validated in Phase 4
-- ✓ Stale test mocks and unused parameters cleaned up — Validated in Phase 4
+None — planning next milestone.
 
 ### Out of Scope
 
-- New features or UI enhancements — this milestone is strictly bugfixes
 - Real-time line-by-line progress during xEdit execution — xEdit only writes logs on exit
 - Changes to the Mutagen submodule or QueryPlugins library
 - Parallelizing cleaning work
+- Offline mode or non-Windows support
 
 ## Context
 
-**The bug:** The current `ProcessExecutionService` and `IXEditOutputParser` assume xEdit writes to stdout/stderr. xEdit does not — it writes log files to its own install directory on process exit.
+Shipped v1.0 with the xEdit log parsing fix. The app now correctly reads xEdit results from log files (`<game>Edit_log.txt`) using offset-based reading that isolates each plugin's output. All dead stdout parsing code has been removed. 680 tests passing across AutoQAC and QueryPlugins.
 
-**Log file naming:**
-- Normal output: `<game>Edit_log.txt` (e.g., `FO4Edit_log.txt`, `SSEEdit_log.txt`)
-- Exceptions: `<basename of executable>Exception.log`
-
-**Log behavior:** xEdit appends to log files on exit, so the app must record the file size/offset before launching xEdit and read only the new content after exit.
-
-**Regex patterns:** The existing patterns (`Removing:`, `Undeleting:`, `Skipping:`, `Making Partial Form:`) are correct — they just need to be applied to log file content instead of stdout.
-
-**Progress during execution:** Since no output is available until exit, the UI should show a "running" status indicator while CPU-based hang detection continues to operate.
+Tech stack: .NET 10, C# 13, Avalonia 11.3, ReactiveUI, Mutagen 0.53.1, Serilog, YamlDotNet.
 
 ## Constraints
 
@@ -73,33 +62,31 @@ None — all milestone requirements validated.
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Parse from log files, not stdout | xEdit does not write to stdout/stderr | Phase 2 removed stdout redirect; Phase 3 will wire log parsing |
-| Remove dead stdout/stderr redirection | ProcessExecutionService captured empty streams; xEdit uses log files | Implemented in Phase 2 |
-| Offset-based log reading in orchestrator | Per-plugin offset capture isolates each plugin's log output | Implemented in Phase 3 |
-| AlreadyClean status for nothing-to-clean | Completion line + zero stats = distinct status, not misleading zeros | Implemented in Phase 3 |
-| Force-kill guard before log read | Terminated xEdit may not flush log; skip read and return failure | Implemented in Phase 3 |
-| Track file offset before launch | Logs append, need to isolate current run's output | Implemented in Phase 1 |
-| Keep hang detection during execution | No stdout progress available, but CPU monitoring still valuable | Confirmed working in Phase 3 |
-| Remove dead code after log-first pipeline | Obsolete stdout parsing, timestamp detection, unused params all removed | Implemented in Phase 4 |
-| GameType-based log naming (not executable stem) | Supports universal xEdit.exe with game flags; maps to xEdit wbAppName convention | Implemented in Phase 1 |
-| Exponential backoff retry for file contention | Windows antivirus/indexer may briefly lock log files after xEdit exits | Implemented in Phase 1 (3 retries, 100/200/400ms) |
+| Parse from log files, not stdout | xEdit does not write to stdout/stderr | ✓ Implemented in v1.0 |
+| Remove dead stdout/stderr redirection | ProcessExecutionService captured empty streams | ✓ Implemented in v1.0 |
+| Offset-based log reading in orchestrator | Per-plugin offset capture isolates each plugin's log output | ✓ Implemented in v1.0 |
+| AlreadyClean status for nothing-to-clean | Completion line + zero stats = distinct status, not misleading zeros | ✓ Implemented in v1.0 |
+| Force-kill guard before log read | Terminated xEdit may not flush log; skip read and return failure | ✓ Implemented in v1.0 |
+| GameType-based log naming (not executable stem) | Supports universal xEdit.exe with game flags; maps to xEdit wbAppName convention | ✓ Implemented in v1.0 |
+| Exponential backoff retry for file contention | Windows antivirus/indexer may briefly lock log files after xEdit exits | ✓ Implemented in v1.0 |
+| Remove dead code after log-first pipeline | Obsolete stdout parsing, timestamp detection, unused params all removed | ✓ Implemented in v1.0 |
 
 ## Evolution
 
 This document evolves at phase transitions and milestone boundaries.
 
-**After each phase transition** (via `/gsd:transition`):
+**After each phase transition:**
 1. Requirements invalidated? → Move to Out of Scope with reason
 2. Requirements validated? → Move to Validated with phase reference
 3. New requirements emerged? → Add to Active
 4. Decisions to log? → Add to Key Decisions
 5. "What This Is" still accurate? → Update if drifted
 
-**After each milestone** (via `/gsd:complete-milestone`):
+**After each milestone:**
 1. Full review of all sections
 2. Core Value check — still the right priority?
 3. Audit Out of Scope — reasons still valid?
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-31 after Phase 4 completion — all dead stdout code removed, milestone complete*
+*Last updated: 2026-03-31 after v1.0 milestone — xEdit log parsing fix shipped*
