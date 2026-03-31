@@ -336,9 +336,11 @@ public sealed class CleaningOrchestrator(
 
                 // Clean plugin with retry logic for timeouts
                 var pluginStopwatch = Stopwatch.StartNew();
-                var pluginStartTime = DateTime.UtcNow;
+                var xEditDir = System.IO.Path.GetDirectoryName(config.XEditExecutablePath ?? string.Empty) ?? string.Empty;
                 CleaningResult result;
                 var attemptNumber = 0;
+                long mainLogOffset = 0;
+                long exceptionLogOffset = 0;
 
                 do
                 {
@@ -349,6 +351,12 @@ public sealed class CleaningOrchestrator(
                         logger.Information("Retry attempt {Attempt} for plugin: {Plugin}",
                             attemptNumber, plugin.FileName);
                     }
+
+                    // Capture log offsets before each xEdit launch (per D-03: per-plugin, inside retry loop)
+                    var mainLogPath = logFileService.GetLogFilePath(xEditDir, gameType);
+                    var exceptionLogPath = logFileService.GetExceptionLogFilePath(xEditDir, gameType);
+                    mainLogOffset = logFileService.CaptureOffset(mainLogPath);
+                    exceptionLogOffset = logFileService.CaptureOffset(exceptionLogPath);
 
                     result = await cleaningService.CleanPluginAsync(
                         plugin,
@@ -397,36 +405,57 @@ public sealed class CleaningOrchestrator(
                     _currentProcess = null;
                 }
 
-                // Attempt to enrich stats from the xEdit log file (preferred over stdout stats)
-                var logStats = result.Statistics;
+                // Read log content using offset-based API (replaces legacy timestamp-based ReadLogFileAsync)
+                CleaningStatistics? logStats = null;
                 string? logParseWarning = null;
+                var finalStatus = result.Status;
 
-                if (result is { Success: true, Status: CleaningStatus.Cleaned })
+                // Guard: only read logs if process was not killed/cancelled (per D-04)
+                if (!_isStopRequested && result.Status != CleaningStatus.Skipped)
                 {
-                    var xEditPath = config.XEditExecutablePath ?? string.Empty;
-                    var (logLines, logError) = await logFileService.ReadLogFileAsync(
-                        xEditPath, pluginStartTime, cts.Token).ConfigureAwait(false);
+                    var logResult = await logFileService.ReadLogContentAsync(
+                        xEditDir, gameType, mainLogOffset, exceptionLogOffset, cts.Token).ConfigureAwait(false);
 
-                    if (logError != null)
+                    if (logResult.Warning != null)
                     {
-                        logger.Warning("Log parse warning for {Plugin}: {Warning}", plugin.FileName, logError);
-                        logParseWarning = logError;
-                        // Keep stdout-based stats as fallback
+                        logger.Warning("Log read warning for {Plugin}: {Warning}", plugin.FileName, logResult.Warning);
+                        logParseWarning = logResult.Warning;
                     }
-                    else if (logLines.Count > 0)
+
+                    // PAR-01: Apply existing regex patterns to log file content
+                    if (logResult.LogLines.Count > 0)
                     {
-                        // Prefer log-file-based stats over stdout stats
-                        logStats = outputParser.ParseOutput(logLines);
+                        logStats = outputParser.ParseOutput(logResult.LogLines);
                         logger.Debug("Parsed log file stats for {Plugin}: {Removed} ITM, {Undeleted} UDR",
                             plugin.FileName, logStats.ItemsRemoved, logStats.ItemsUndeleted);
+
+                        // PAR-02: Nothing-to-clean detection (per D-05)
+                        var hasCompletionLine = logResult.LogLines.Any(outputParser.IsCompletionLine);
+                        if (hasCompletionLine && logStats is { ItemsRemoved: 0, ItemsUndeleted: 0, ItemsSkipped: 0, PartialFormsCreated: 0 })
+                        {
+                            finalStatus = CleaningStatus.AlreadyClean;
+                        }
                     }
+
+                    // PAR-03: Exception log surfacing (per D-06)
+                    if (logResult.ExceptionContent != null)
+                    {
+                        logParseWarning = logResult.ExceptionContent;
+                        finalStatus = CleaningStatus.Failed;
+                        logger.Warning("xEdit exception log for {Plugin}: {Content}",
+                            plugin.FileName, logResult.ExceptionContent);
+                    }
+                }
+                else if (_isStopRequested)
+                {
+                    logParseWarning = "xEdit was terminated -- no log available";
                 }
 
                 // Create detailed result
                 var pluginCleaningResult = new PluginCleaningResult
                 {
                     PluginName = plugin.FileName,
-                    Status = result.Status,
+                    Status = finalStatus,
                     Success = result.Success,
                     Message = result.TimedOut && attemptNumber >= maxRetryAttempts
                         ? $"Cleaning timed out after {attemptNumber} attempts."
