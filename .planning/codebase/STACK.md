@@ -13,7 +13,7 @@
 ## Runtime
 
 **Environment:**
-- .NET 10 (Preview/RC - `net10.0` and `net10.0-windows10.0.19041.0`)
+- .NET 10 (`net10.0` and `net10.0-windows10.0.19041.0`)
 - Windows 10+ only for the main app (`AutoQAC.csproj` targets `net10.0-windows10.0.19041.0`)
 - `QueryPlugins` is cross-platform capable (`net10.0`) but only consumed by the Windows app
 
