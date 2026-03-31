@@ -71,10 +71,11 @@ Plans:
   1. No code path in the application attempts to read or parse xEdit stdout/stderr output
   2. All tests pass with updated mocks that reflect the log-file-only parsing pipeline (no stale stdout-based assertions)
   3. The old timestamp-based log staleness detection is fully replaced by offset-based reading
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 04-01: TBD
+- [ ] 04-01-PLAN.md -- Delete obsolete log file methods, legacy tests, and remove dead IXEditOutputParser from CleaningService
+- [ ] 04-02-PLAN.md -- Remove dead IProgress parameter chain and ProcessResult OutputLines/ErrorLines fields, update all tests
 
 ## Progress
 
@@ -86,5 +87,5 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4
 |-------|----------------|--------|-----------|
 | 1. Foundation -- Game-Aware Log File Service | 2/2 | Complete | 2026-03-31 |
 | 2. Process Layer -- Stop Stdout Capture | 1/1 | Complete | 2026-03-31 |
-| 3. Integration -- Log-First Parsing | 0/2 | Not started | - |
-| 4. Cleanup -- Remove Dead Code | 0/? | Not started | - |
+| 3. Integration -- Log-First Parsing | 2/2 | Complete | 2026-03-31 |
+| 4. Cleanup -- Remove Dead Code | 0/2 | Not started | - |
