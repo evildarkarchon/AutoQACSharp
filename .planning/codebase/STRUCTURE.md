@@ -1,325 +1,346 @@
 # Codebase Structure
 
-**Analysis Date:** 2026-02-06
+**Analysis Date:** 2026-03-30
 
 ## Directory Layout
 
 ```
 AutoQACSharp/
-├── AutoQAC/                        # Main application
-│   ├── Models/                     # Domain entities and value objects
-│   │   ├── Configuration/          # YAML configuration model classes
-│   │   ├── AppState.cs             # Central immutable app state record
-│   │   ├── GameType.cs             # Game enum (Skyrim, Fallout, etc.)
-│   │   ├── PluginInfo.cs           # Plugin metadata record
-│   │   ├── CleaningResult.cs        # Single plugin result
-│   │   ├── CleaningSessionResult.cs # Session summary with multiple results
-│   │   └── PluginCleaningResult.cs  # Detailed per-plugin cleaning data
-│   ├── Services/                   # Business logic and orchestration
-│   │   ├── Cleaning/               # xEdit subprocess and parsing
-│   │   │   ├── ICleaningOrchestrator.cs
-│   │   │   ├── CleaningOrchestrator.cs  # Sequential workflow
-│   │   │   ├── ICleaningService.cs
-│   │   │   ├── CleaningService.cs
-│   │   │   ├── XEditCommandBuilder.cs
-│   │   │   └── XEditOutputParser.cs
-│   │   ├── Configuration/          # YAML config file I/O
-│   │   │   ├── IConfigurationService.cs
-│   │   │   └── ConfigurationService.cs
-│   │   ├── GameDetection/          # Detect game from executable
-│   │   │   ├── IGameDetectionService.cs
-│   │   │   └── GameDetectionService.cs
-│   │   ├── Plugin/                 # Load plugins from various sources
-│   │   │   ├── IPluginLoadingService.cs
-│   │   │   ├── PluginLoadingService.cs
-│   │   │   ├── IPluginValidationService.cs
-│   │   │   └── PluginValidationService.cs
-│   │   ├── Process/                # Subprocess execution
-│   │   │   ├── IProcessExecutionService.cs
-│   │   │   └── ProcessExecutionService.cs
-│   │   ├── State/                  # Central state and observables
-│   │   │   ├── IStateService.cs
-│   │   │   └── StateService.cs
-│   │   ├── MO2/                    # Mod Organizer 2 integration
-│   │   │   ├── IMO2ValidationService.cs
-│   │   │   └── MO2ValidationService.cs
-│   │   └── UI/                     # Dialog services
-│   │       ├── IFileDialogService.cs
-│   │       ├── FileDialogService.cs
-│   │       ├── IMessageDialogService.cs
-│   │       └── MessageDialogService.cs
-│   ├── ViewModels/                 # Presentation logic
-│   │   ├── ViewModelBase.cs        # Base class extending ReactiveObject
-│   │   ├── MainWindowViewModel.cs  # Orchestrates UI and services
-│   │   ├── ProgressViewModel.cs    # Real-time cleaning progress
-│   │   ├── SettingsViewModel.cs    # Game path and option settings
-│   │   ├── SkipListViewModel.cs    # Skip list management UI
-│   │   ├── CleaningResultsViewModel.cs # Results summary
-│   │   ├── PartialFormsWarningViewModel.cs # Partial forms dialog
-│   │   └── MessageDialogViewModel.cs # Generic message dialog
-│   ├── Views/                      # XAML UI and minimal code-behind
-│   │   ├── MainWindow.axaml        # Primary window with plugin list
-│   │   ├── MainWindow.axaml.cs     # Interaction handlers for dialogs
-│   │   ├── ProgressWindow.axaml    # Real-time cleaning progress
-│   │   ├── SettingsWindow.axaml    # Configuration window
-│   │   ├── SkipListWindow.axaml    # Skip list editor
-│   │   ├── CleaningResultsWindow.axaml # Results display
-│   │   ├── MessageDialog.axaml     # Generic message dialog
-│   │   └── PartialFormsWarningDialog.axaml # Partial forms warning
-│   ├── Infrastructure/             # Cross-cutting concerns
-│   │   ├── Logging/                # Logging abstractions
-│   │   │   ├── ILoggingService.cs
-│   │   │   └── LoggingService.cs
-│   │   ├── ServiceCollectionExtensions.cs # DI registration
-│   │   └── (Converters moved to separate dir)
-│   ├── Converters/                 # XAML value converters
-│   │   └── GameTypeDisplayConverter.cs # Game type enum to string
-│   ├── Assets/                     # Images, icons, embedded resources
-│   ├── AutoQAC Data/               # YAML config files (user-writable)
-│   │   ├── AutoQAC Main.yaml       # Game skip lists and metadata
-│   │   ├── AutoQAC Config.yaml     # User settings (paths, game choice)
-│   │   └── AutoQAC Ignore.yaml     # Additional ignore list
-│   ├── logs/                       # Runtime log files (generated)
-│   ├── App.axaml                   # Application XAML root
-│   ├── App.axaml.cs                # Application startup and DI setup
-│   ├── Program.cs                  # Entry point
-│   ├── ViewLocator.cs              # Auto-resolve ViewModels to Views
-│   ├── AutoQAC.csproj              # Project configuration
-│   └── Properties/                 # Metadata and signing
+├── AutoQAC/                    # Main desktop application (WinExe)
+│   ├── Assets/                 # App icons and resources
+│   ├── AutoQAC Data/           # Bundled YAML configs (copied to output)
+│   ├── Converters/             # Avalonia value converters
+│   ├── Infrastructure/         # DI wiring and logging
+│   │   └── Logging/            # Serilog wrapper
+│   ├── Models/                 # Domain models and records
+│   │   └── Configuration/      # YAML-mapped config models
+│   ├── Properties/             # Build properties and publish profiles
+│   │   └── PublishProfiles/    # Publish configuration
+│   ├── Services/               # Business logic organized by domain
+│   │   ├── Backup/             # Plugin backup and restore
+│   │   ├── Cleaning/           # xEdit orchestration and parsing
+│   │   ├── Configuration/      # YAML config read/write/watch
+│   │   ├── GameDetection/      # Game type detection from exe/load order
+│   │   ├── MO2/                # Mod Organizer 2 validation
+│   │   ├── Monitoring/         # Process hang detection
+│   │   ├── Plugin/             # Plugin loading and validation
+│   │   ├── Process/            # Process execution and PID tracking
+│   │   ├── State/              # Centralized reactive state
+│   │   └── UI/                 # File/message dialog abstractions
+│   ├── ViewModels/             # MVVM ViewModels
+│   │   └── MainWindow/         # Sub-ViewModels for main window
+│   ├── Views/                  # Avalonia XAML views
+│   ├── App.axaml               # Application XAML
+│   ├── App.axaml.cs            # Composition root
+│   ├── app.manifest            # Windows app manifest
+│   └── AutoQAC.csproj          # Project file
 │
-├── AutoQAC.Tests/                  # Test project (xUnit)
-│   ├── Services/                   # Service layer tests
-│   │   ├── CleaningOrchestratorTests.cs
-│   │   ├── CleaningServiceTests.cs
-│   │   ├── ConfigurationServiceSkipListTests.cs
-│   │   └── (more service tests)
-│   ├── ViewModels/                 # ViewModel tests
-│   ├── Models/                     # Model tests
-│   │   ├── AppStateTests.cs
-│   │   ├── CleaningSessionResultTests.cs
-│   │   └── PluginCleaningResultTests.cs
-│   ├── Integration/                # End-to-end tests
-│   │   ├── DependencyInjectionTests.cs
-│   │   └── GameSelectionIntegrationTests.cs
-│   └── AutoQAC.Tests.csproj
+├── AutoQAC.Tests/              # Unit and integration tests for AutoQAC
+│   ├── Integration/            # DI container and game selection tests
+│   ├── Models/                 # Model record tests
+│   ├── Services/               # Service-level tests (one file per service)
+│   │   └── UI/                 # UI service tests
+│   ├── TestInfrastructure/     # Test collection definitions (Rx scheduler)
+│   ├── ViewModels/             # ViewModel tests
+│   └── Views/                  # View subscription lifecycle tests
 │
-├── Code_To_Port/                   # Reference implementations (temporary)
-│   ├── CLAUDE.md                   # Architecture of Python/Qt version
-│   ├── AutoQACLib/                 # Python source for reference
-│   └── (Rust/Slint version also present)
+├── QueryPlugins/               # Standalone Mutagen analysis library
+│   ├── Detectors/              # Issue detector interfaces
+│   │   └── Games/              # Per-game detector implementations
+│   ├── Models/                 # Analysis result models
+│   ├── IPluginQueryService.cs  # Top-level service interface
+│   ├── PluginQueryService.cs   # Service implementation
+│   └── QueryPlugins.csproj     # Project file
 │
-├── docs/                           # Documentation
-├── openspec/                       # OpenSpec proposal templates
-├── CLAUDE.md                       # Project-specific AI assistant guidelines
-├── AGENTS.md                       # OpenSpec agent documentation
-├── README.md                       # Project overview
-├── ROADMAP.md                      # Development roadmap
-└── .planning/codebase/             # Codebase analysis documents (this directory)
-    ├── ARCHITECTURE.md             # This file's counterpart
-    ├── STRUCTURE.md                # This file
-    ├── CONVENTIONS.md              # (generated on quality focus)
-    ├── TESTING.md                  # (generated on quality focus)
-    ├── STACK.md                    # (generated on tech focus)
-    └── INTEGRATIONS.md             # (generated on tech focus)
+├── QueryPlugins.Tests/         # Unit tests for QueryPlugins
+│   ├── Detectors/              # Detector tests
+│   │   └── Games/              # Per-game detector tests
+│   └── Models/                 # Model tests
+│
+├── AutoQAC Data/               # Runtime data folder (top-level copy)
+├── Mutagen/                    # READ-ONLY git submodule (reference only)
+├── docs/                       # Documentation
+│   └── mutagen/                # Curated Mutagen API docs
+├── Release/                    # Published build output
+├── AutoQACSharp.slnx           # Solution file (XML format)
+└── CLAUDE.md                   # AI assistant instructions
 ```
 
 ## Directory Purposes
 
-**Models/**
-- Purpose: Domain entities, value objects, configuration DTOs
-- Contains: C# records, enums, immutable data structures
-- Key files: `AppState.cs` (central state object), `GameType.cs` (supported games enum), `Configuration/` subdirectory for YAML mapping classes
-- Pattern: Immutable records with init-only or derived properties
+**`AutoQAC/Infrastructure/`:**
+- Purpose: DI composition and cross-cutting infrastructure
+- Contains: Service registration extensions, logging abstraction
+- Key files:
+  - `ServiceCollectionExtensions.cs` -- All DI registrations grouped by concern
+  - `Logging/ILoggingService.cs` -- Logging interface
+  - `Logging/LoggingService.cs` -- Serilog wrapper implementation
+  - `Logging/LogFilePaths.cs` -- Log file path resolution
 
-**Services/**
-- Purpose: Business logic, orchestration, external integrations
-- Contains: Interfaces and implementations for all domain operations
-- Subdirectories mirror concerns: Cleaning, Configuration, GameDetection, Plugin, Process, State, MO2, UI
-- Pattern: Interface-first design, dependency injection via constructor, async/await throughout
+**`AutoQAC/Models/`:**
+- Purpose: Immutable domain records and enums
+- Contains: All data types shared across services and ViewModels
+- Key files:
+  - `AppState.cs` -- Central application state record
+  - `PluginInfo.cs` -- Plugin metadata with skip list and approximation status
+  - `GameType.cs` -- Enum of supported games (8 values + Unknown)
+  - `GameVariant.cs` -- Enum for TTW and Enderal variants
+  - `CleaningResult.cs` -- Single-plugin cleaning result + `CleaningStatus` enum + `CleaningStatistics`
+  - `CleaningSessionResult.cs` -- Full session result with aggregated stats
+  - `PluginIssueApproximation.cs` -- Mutagen-based ITM/UDR/navmesh preview data
+  - `ValidationError.cs` -- Structured pre-clean validation error
+  - `DryRunResult.cs` -- Dry-run preview result per plugin
+  - `BackupResult.cs` -- Backup operation result
+  - `BackupSession.cs` -- Backup session metadata (serialized to session.json)
+  - `TerminationResult.cs` -- Process termination outcome enum
 
-**Services/Cleaning/**
-- Purpose: Manage xEdit subprocess execution and output parsing
-- Key abstractions: `ICleaningOrchestrator` (high-level workflow), `ICleaningService` (subprocess execution), `XEditCommandBuilder` (command-line generation), `XEditOutputParser` (output parsing)
-- Sequential processing: Loop through plugins one at a time (CRITICAL CONSTRAINT)
+**`AutoQAC/Models/Configuration/`:**
+- Purpose: YAML-mapped configuration models (deserialized with YamlDotNet)
+- Key files:
+  - `UserConfiguration.cs` -- User settings, paths, skip lists, per-game overrides (maps to `AutoQAC Settings.yaml`)
+  - `MainConfiguration.cs` -- Bundled read-only config with default skip lists and xEdit names (maps to `AutoQAC Main.yaml`)
+  - `RetentionSettings.cs` -- Log retention configuration
+  - `BackupSettings.cs` -- Backup configuration (enabled, max sessions)
 
-**Services/Configuration/**
-- Purpose: YAML file I/O for game metadata and user settings
-- Loads: `MainConfiguration` (game skip lists) and `UserConfiguration` (user paths)
-- Observable: SkipListChanged and UserConfigurationChanged for reactive UI
+**`AutoQAC/Services/Cleaning/`:**
+- Purpose: xEdit cleaning orchestration and output parsing
+- Key files:
+  - `CleaningOrchestrator.cs` -- Full session coordinator (~870 lines)
+  - `ICleaningOrchestrator.cs` -- Orchestrator interface with start/stop/preview methods
+  - `CleaningService.cs` -- Single-plugin cleaning via ProcessExecutionService
+  - `ICleaningService.cs` -- Cleaning interface
+  - `XEditCommandBuilder.cs` -- Builds ProcessStartInfo with xEdit flags
+  - `XEditOutputParser.cs` -- Parses xEdit output for statistics
+  - `XEditLogFileService.cs` -- Reads xEdit log files
+  - `IXEditLogFileService.cs` -- Log file reading interface
 
-**Services/Plugin/**
-- Purpose: Load plugins from various sources with polymorphism
-- Mutagen-first: SkyrimLE, SkyrimSE, SkyrimVR, Fallout4, Fallout4VR via Mutagen library
-- Fallback: File-based loading for unsupported games (Oblivion, Fallout3, FalloutNewVegas)
-- Output: List<PluginInfo> with skip list status pre-calculated
+**`AutoQAC/Services/Configuration/`:**
+- Purpose: YAML config persistence, external change detection, migrations
+- Key files:
+  - `ConfigurationService.cs` -- Core read/write with debounced saves
+  - `IConfigurationService.cs` -- Full configuration interface (~80 lines)
+  - `ConfigWatcherService.cs` -- FileSystemWatcher for external YAML edits
+  - `LegacyMigrationService.cs` -- One-time legacy config migration
+  - `LogRetentionService.cs` -- Old log file cleanup
 
-**Services/State/**
-- Purpose: Central state management and reactive observables
-- Pattern: Single `IStateService` singleton with `AppState` immutable record and functional updates
-- Observables: StateChanged, ProgressChanged, PluginProcessed, CleaningCompleted for reactive binding
+**`AutoQAC/Services/Plugin/`:**
+- Purpose: Plugin discovery, validation, and Mutagen-based analysis
+- Key files:
+  - `PluginLoadingService.cs` -- Mutagen and file-based plugin loading
+  - `IPluginLoadingService.cs` -- Plugin loading interface
+  - `PluginValidationService.cs` -- File existence and extension validation
+  - `PluginIssueApproximationService.cs` -- Mutagen-based ITM/UDR/navmesh preview
+  - `IPluginIssueApproximationService.cs` -- Approximation interface
 
-**ViewModels/**
-- Purpose: Presentation logic and command handling
-- Base: `ViewModelBase` extends `ReactiveObject` for property change notifications
-- Patterns: `RaiseAndSetIfChanged` for properties, `ObservableAsPropertyHelper` for computed properties, `ReactiveCommand` for user actions, `Interaction<TInput, TOutput>` for cross-window communication
-- Key ViewModel: `MainWindowViewModel` - orchestrator between UI and services
+**`AutoQAC/Services/State/`:**
+- Purpose: Centralized reactive application state
+- Key files:
+  - `StateService.cs` -- Thread-safe state hub with observable streams
+  - `IStateService.cs` -- State interface (~67 lines)
 
-**Views/**
-- Purpose: XAML UI rendering and minimal code-behind
-- Pattern: DataContext bound to ViewModel, interaction handlers registered in code-behind constructor
-- Code-behind responsibilities: Interaction handler registration (dialogs, results display), dependency injection of services for callback handlers
-- No business logic: All logic delegated to ViewModels and Services
+**`AutoQAC/Services/Process/`:**
+- Purpose: Single-slot process execution with PID tracking
+- Key files:
+  - `ProcessExecutionService.cs` -- Process launcher with timeout, orphan cleanup, termination
+  - `IProcessExecutionService.cs` -- Process execution interface + `ProcessResult` record
 
-**Infrastructure/**
-- Purpose: Cross-cutting concerns and framework setup
-- Logging: `ILoggingService` interface with implementation
-- DI Setup: `ServiceCollectionExtensions.cs` registers all services and ViewModels
-- Converters: XAML value converters (GameTypeDisplayConverter)
+**`AutoQAC/Services/Monitoring/`:**
+- Purpose: xEdit hang detection via CPU polling
+- Key files:
+  - `HangDetectionService.cs` -- CPU-based hang detection with Rx observable
+  - `IHangDetectionService.cs` -- Hang detection interface
 
-**Assets/**
-- Purpose: Application resources (images, icons, fonts)
-- Location: Referenced in XAML via `avares://AutoQAC/Assets/`
+**`AutoQAC/Services/Backup/`:**
+- Purpose: Pre-cleaning plugin backup and restore
+- Key files:
+  - `BackupService.cs` -- Session directory management, copy, restore, retention
+  - `IBackupService.cs` -- Backup interface
 
-**AutoQAC Data/**
-- Purpose: User-writable YAML configuration files
-- Not committed: Listed in .gitignore
-- Files: `AutoQAC Main.yaml`, `AutoQAC Config.yaml`, `AutoQAC Ignore.yaml`
+**`AutoQAC/Services/GameDetection/`:**
+- Purpose: Game type detection from xEdit name and load order
+- Key files:
+  - `GameDetectionService.cs` -- Detection logic including variant detection
+  - `IGameDetectionService.cs` -- Detection interface
 
-**logs/**
-- Purpose: Runtime log files
-- Not committed: Listed in .gitignore
-- Generated at runtime by LoggingService
+**`AutoQAC/Services/MO2/`:**
+- Purpose: Mod Organizer 2 validation
+- Key files:
+  - `Mo2ValidationService.cs` -- MO2 path validation
+  - `IMo2ValidationService.cs` -- MO2 validation interface
 
-**AutoQAC.Tests/**
-- Purpose: Unit and integration test coverage
-- Structure: Mirrors main project (Services/, ViewModels/, Models/)
-- Framework: xUnit with FluentAssertions
-- Key tests: DependencyInjectionTests, GameSelectionIntegrationTests, CleaningOrchestratorTests
+**`AutoQAC/Services/UI/`:**
+- Purpose: Dialog service abstractions (testable)
+- Key files:
+  - `FileDialogService.cs` -- Avalonia file/folder dialog wrapper
+  - `IFileDialogService.cs` -- File dialog interface
+  - `MessageDialogService.cs` -- Error/warning/confirm/retry dialog service
+  - `IMessageDialogService.cs` -- Message dialog interface
+
+**`AutoQAC/ViewModels/`:**
+- Purpose: All MVVM ViewModels
+- Key files:
+  - `ViewModelBase.cs` -- Base class extending `ReactiveObject`
+  - `MainWindowViewModel.cs` -- Slim orchestrator composing 3 sub-VMs
+  - `ProgressViewModel.cs` -- Live cleaning progress and dry-run preview
+  - `SettingsViewModel.cs` -- Settings editing
+  - `SkipListViewModel.cs` -- Skip list editing
+  - `RestoreViewModel.cs` -- Backup restore browser
+  - `CleaningResultsViewModel.cs` -- Post-session results
+  - `PartialFormsWarningViewModel.cs` -- Experimental feature warning
+  - `MessageDialogViewModel.cs` -- Generic dialog ViewModel
+  - `AboutViewModel.cs` -- About dialog
+
+**`AutoQAC/ViewModels/MainWindow/`:**
+- Purpose: Sub-ViewModels that compose `MainWindowViewModel`
+- Key files:
+  - `ConfigurationViewModel.cs` -- Paths, game selection, auto-save, plugin loading (~950 lines)
+  - `PluginListViewModel.cs` -- Plugin collection with efficient diffing
+  - `CleaningCommandsViewModel.cs` -- Start/stop/preview commands and validation
+
+**`AutoQAC/Views/`:**
+- Purpose: Avalonia XAML views and code-behind
+- Key files:
+  - `MainWindow.axaml` + `MainWindow.axaml.cs` -- Main window with interaction handler registration
+  - `ProgressWindow.axaml` + `.cs` -- Live progress display
+  - `SettingsWindow.axaml` + `.cs` -- Settings dialog
+  - `SkipListWindow.axaml` + `.cs` -- Skip list editor
+  - `RestoreWindow.axaml` + `.cs` -- Backup restore browser
+  - `CleaningResultsWindow.axaml` + `.cs` -- Post-session results display
+  - `AboutWindow.axaml` + `.cs` -- About dialog
+  - `MessageDialog.axaml` + `.cs` -- Generic message dialog
+  - `PartialFormsWarningDialog.axaml` + `.cs` -- Experimental feature warning
+
+**`AutoQAC/Converters/`:**
+- Purpose: Avalonia XAML value converters
+- Key files:
+  - `GameTypeDisplayConverter.cs` -- Converts `GameType` enum to display string
+  - `IntEqualsConverter.cs` -- Integer equality comparison for binding
+  - `NullableBoolConverters.cs` -- Nullable bool tri-state converters
+
+**`QueryPlugins/`:**
+- Purpose: Standalone Mutagen-based plugin analysis library
+- Key files:
+  - `IPluginQueryService.cs` -- Top-level analysis interface
+  - `PluginQueryService.cs` -- Orchestrates ITM + game-specific detectors
+  - `Detectors/IItmDetector.cs` -- ITM detection interface
+  - `Detectors/ItmDetector.cs` -- Cross-game ITM detection via link cache
+  - `Detectors/IGameSpecificDetector.cs` -- Per-game UDR/navmesh interface
+  - `Detectors/Games/SkyrimDetector.cs` -- Skyrim LE/SE/VR detector
+  - `Detectors/Games/Fallout4Detector.cs` -- Fallout 4/4VR detector
+  - `Detectors/Games/StarfieldDetector.cs` -- Starfield detector
+  - `Detectors/Games/OblivionDetector.cs` -- Oblivion detector
+  - `Models/PluginAnalysisResult.cs` -- Aggregated analysis result
+  - `Models/PluginIssue.cs` -- Single issue record (FormKey, EditorID, IssueType)
+  - `Models/IssueType.cs` -- Issue category enum (ITM, DeletedReference, DeletedNavmesh)
 
 ## Key File Locations
 
 **Entry Points:**
-- `AutoQAC/Program.cs`: Application entry point, builds Avalonia AppBuilder
-- `AutoQAC/App.axaml.cs`: Framework initialization, dependency injection setup, MainWindow instantiation
-- `AutoQAC/Views/MainWindow.axaml`: Primary UI window
+- `AutoQAC/App.axaml.cs` -- Application startup, DI composition root
+- `AutoQAC/Infrastructure/ServiceCollectionExtensions.cs` -- All service registrations
 
-**Configuration & Startup:**
-- `AutoQAC/AutoQAC.csproj`: Project file (target .NET 9, Avalonia 11.3.8, ReactiveUI)
-- `AutoQAC/Infrastructure/ServiceCollectionExtensions.cs`: DI registration for all services
+**Configuration:**
+- `AutoQAC Data/AutoQAC Main.yaml` -- Bundled defaults: skip lists, xEdit names, version info
+- `AutoQAC Data/AutoQAC Settings.yaml` -- User settings: paths, game selection, per-game overrides
+- `AutoQAC/AutoQAC.csproj` -- Project dependencies, TFM, build settings
 
 **Core Logic:**
-- `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs`: Main cleaning workflow orchestrator (sequential processing)
-- `AutoQAC/Services/Configuration/ConfigurationService.cs`: YAML config loading and caching
-- `AutoQAC/Services/State/StateService.cs`: Central state store with observable streams
-- `AutoQAC/Models/AppState.cs`: Immutable state definition
+- `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs` -- Full cleaning session flow
+- `AutoQAC/Services/State/StateService.cs` -- Central state management
+- `AutoQAC/Services/Plugin/PluginLoadingService.cs` -- Plugin discovery
+- `AutoQAC/Services/Plugin/PluginIssueApproximationService.cs` -- Mutagen analysis bridge
+- `AutoQAC/Services/Configuration/ConfigurationService.cs` -- YAML persistence
 
-**ViewModel Layer:**
-- `AutoQAC/ViewModels/MainWindowViewModel.cs`: Orchestrates UI, commands, and service interactions
-- `AutoQAC/ViewModels/ViewModelBase.cs`: Base class for all ViewModels
-
-**Test Entry Points:**
-- `AutoQAC.Tests/Integration/DependencyInjectionTests.cs`: Verifies DI setup
-- `AutoQAC.Tests/Services/CleaningOrchestratorTests.cs`: Tests cleaning workflow
-- `AutoQAC.Tests/Models/CleaningSessionResultTests.cs`: Tests result aggregation
+**Testing:**
+- `AutoQAC.Tests/Services/CleaningOrchestratorTests.cs` -- Orchestrator tests
+- `AutoQAC.Tests/Services/StateServiceTests.cs` -- State management tests
+- `AutoQAC.Tests/ViewModels/MainWindowViewModelTests.cs` -- ViewModel tests
+- `AutoQAC.Tests/Integration/DependencyInjectionTests.cs` -- DI container resolution tests
+- `QueryPlugins.Tests/Detectors/` -- Detector tests by game
 
 ## Naming Conventions
 
 **Files:**
-- PascalCase matching class name: `CleaningService.cs` contains `CleaningService` class
-- Interface files: `ICleaningService.cs` for `ICleaningService` interface
-- XAML files: `MainWindow.axaml`, `MainWindow.axaml.cs` for code-behind
-- Test files: `{ClassUnderTest}Tests.cs`, e.g., `CleaningOrchestratorTests.cs`
+- Services: `{Name}Service.cs` with matching `I{Name}Service.cs` interface
+- ViewModels: `{Name}ViewModel.cs`
+- Views: `{Name}.axaml` + `{Name}.axaml.cs` code-behind
+- Models: PascalCase matching the type name
+- Tests: `{ServiceName}Tests.cs` (no `Test` suffix on folders)
 
 **Directories:**
-- PascalCase for namespaces: `AutoQAC.Services.Cleaning`, `AutoQAC.ViewModels`
-- Subdirectories mirror functionality domains
-- YAML config files: "AutoQAC {Name}.yaml"
-
-**C# Naming:**
-- Classes: `PascalCase` (e.g., `CleaningOrchestrator`, `MainWindowViewModel`)
-- Interfaces: `IPascalCase` (e.g., `ICleaningService`, `IStateService`)
-- Private fields: `_camelCase` (e.g., `_cleaningService`, `_logger`)
-- Properties: `PascalCase` (e.g., `CurrentState`, `PluginsToClean`)
-- Public methods: `PascalCase` (e.g., `StartCleaningAsync`, `AddDetailedCleaningResult`)
-- Async methods: Suffix with `Async` (e.g., `GetPluginsAsync`, `ValidatePathsAsync`)
-- Records: `PascalCase` with immutable init-only properties (e.g., `PluginInfo`, `CleaningSessionResult`)
-
-**Enums:**
-- Enum type: `PascalCase` (e.g., `GameType`, `CleaningStatus`)
-- Enum values: `PascalCase` (e.g., `GameType.SkyrimSe`, `CleaningStatus.Cleaned`)
-
-**Constants:**
-- UPPER_CASE (limited usage in codebase, prefer readonly properties)
+- Service groups: Singular noun matching the domain (`Backup/`, `Cleaning/`, `Plugin/`)
+- Test mirrors: Flat `Services/`, `ViewModels/`, `Models/`, `Views/`, `Integration/`
 
 ## Where to Add New Code
 
-**New Feature - Cleaning Enhancement:**
-- Primary code: `AutoQAC/Services/Cleaning/` (new interface + implementation)
-- Models: `AutoQAC/Models/` if new domain entity needed
-- Tests: `AutoQAC.Tests/Services/` with corresponding test class
-- Integration: Register in `Infrastructure/ServiceCollectionExtensions.cs` → `AddBusinessLogic()`
+**New Service:**
+1. Create `I{Name}Service.cs` (interface) and `{Name}Service.cs` (implementation) in the appropriate `AutoQAC/Services/{Domain}/` subdirectory
+2. Register in `AutoQAC/Infrastructure/ServiceCollectionExtensions.cs` under the appropriate `Add*()` method
+3. Add tests in `AutoQAC.Tests/Services/{Name}ServiceTests.cs`
+4. Use constructor injection -- all services are registered as Singleton
 
-**New ViewModel & Dialog Window:**
-- ViewModel: `AutoQAC/ViewModels/{FeatureName}ViewModel.cs` inheriting `ViewModelBase`
-- View: `AutoQAC/Views/{FeatureName}Window.axaml` and `.axaml.cs`
-- Registration: `ServiceCollectionExtensions.cs` → `AddViewModels()` and `AddViews()` (transient)
-- Interaction: Define `Interaction<TInput, TOutput>` in ViewModel, register handler in MainWindow or parent View
+**New ViewModel:**
+1. Create `{Name}ViewModel.cs` in `AutoQAC/ViewModels/`
+2. Extend `ViewModelBase` (which extends `ReactiveObject`)
+3. Register in `ServiceCollectionExtensions.AddViewModels()` as Transient
+4. If it needs dialog interaction, add an `Interaction<TInput, TOutput>` to `MainWindowViewModel` and register the handler in `MainWindow.axaml.cs`
+5. Add tests in `AutoQAC.Tests/ViewModels/{Name}ViewModelTests.cs`
 
-**New Model/Value Object:**
-- Location: `AutoQAC/Models/{FeatureName}.cs`
-- Pattern: Immutable record or sealed class
-- Usage: No external dependencies (except YamlDotNet for configuration models)
+**New View:**
+1. Create `{Name}.axaml` + `{Name}.axaml.cs` in `AutoQAC/Views/`
+2. Register in `ServiceCollectionExtensions.AddViews()` as Transient
+3. Set `DataContext` in code-behind constructor, not in XAML
+4. Register any interaction handlers in `MainWindow.axaml.cs`
 
-**New Service Interface:**
-- Interface: `AutoQAC/Services/{Domain}/INewService.cs`
-- Implementation: `AutoQAC/Services/{Domain}/NewService.cs`
-- Registration: `ServiceCollectionExtensions.cs` as Singleton in `AddBusinessLogic()`
-- Dependencies: Injected via constructor
+**New Model:**
+1. Create in `AutoQAC/Models/` (or `AutoQAC/Models/Configuration/` for YAML-mapped types)
+2. Use `sealed record` for immutable data with `with` expression support
+3. Use `sealed class` only for YAML-mapped config models (YamlDotNet requires mutable setters)
 
-**Configuration/Metadata:**
-- YAML config: Add to `AutoQAC Data/AutoQAC Main.yaml`
-- Model class: Update `Models/Configuration/MainConfiguration.cs` or `UserConfiguration.cs`
-- Access: Through `IConfigurationService`
+**New Converter:**
+1. Create in `AutoQAC/Converters/`
+2. Implement `IValueConverter` or `IMultiValueConverter`
 
-**Testing:**
-- Unit test: `AutoQAC.Tests/Services/{Service}Tests.cs` or `AutoQAC.Tests/ViewModels/{ViewModel}Tests.cs`
-- Framework: xUnit with FluentAssertions
-- Mocking: Moq for service dependencies
-- Pattern: Arrange-Act-Assert with descriptive test names
+**New Game Detector (QueryPlugins):**
+1. Create in `QueryPlugins/Detectors/Games/{Game}Detector.cs`
+2. Implement `IGameSpecificDetector`
+3. Register in `PluginQueryService` default constructor
+4. Add tests in `QueryPlugins.Tests/Detectors/Games/{Game}DetectorTests.cs`
 
-**UI Assets/Resources:**
-- Images/Icons: `AutoQAC/Assets/` (organized by type if many)
-- Referenced in XAML: `<Image Source="avares://AutoQAC/Assets/{filename}" />`
+**New Integration Test:**
+1. Create in `AutoQAC.Tests/Integration/`
 
 ## Special Directories
 
-**AutoQAC Data/:**
-- Purpose: User-writable YAML configuration storage
-- Generated: At first run or when user configures paths
-- Committed: No (listed in .gitignore)
-- Files: `AutoQAC Main.yaml`, `AutoQAC Config.yaml`, `AutoQAC Ignore.yaml`
+**`Mutagen/`:**
+- Purpose: Read-only git submodule of the Mutagen library source
+- Generated: No (submodule checkout)
+- Committed: As submodule reference only
+- Do NOT build, modify, or add files here
 
-**logs/:**
-- Purpose: Runtime application logs
-- Generated: At runtime by LoggingService
-- Committed: No (listed in .gitignore)
-- Pattern: Rotating logs per session
+**`AutoQAC Data/` (inside `AutoQAC/`):**
+- Purpose: Bundled YAML configs and app icons
+- Copied to output directory via `<None Include="AutoQAC Data\**" CopyToOutputDirectory="PreserveNewest" />`
+- Contains `AutoQAC Main.yaml` (bundled defaults) and icon files
 
-**Code_To_Port/:**
-- Purpose: Reference implementations (Python/Qt and Rust/Slint) for feature porting
-- Committed: Yes (temporary until feature parity achieved)
-- Status: To be removed once C# implementation complete
-- Usage: Read-only reference during development
+**`AutoQAC Data/` (at repo root):**
+- Purpose: Top-level copy of runtime data for development and Release builds
+- Contains the same files as `AutoQAC/AutoQAC Data/`
 
-**Properties/:**
-- Purpose: Project metadata and assembly information
-- Key file: `AssemblyInfo.cs` (auto-generated from .csproj)
+**`docs/mutagen/`:**
+- Purpose: Curated Mutagen API documentation for quick reference
+- Check here first before consulting the `Mutagen/` submodule source
 
-**.planning/codebase/:**
-- Purpose: Codebase analysis documents for future Claude instances
-- Documents: ARCHITECTURE.md, STRUCTURE.md, CONVENTIONS.md, TESTING.md, STACK.md, INTEGRATIONS.md, CONCERNS.md
-- Committed: Yes (reference only, not auto-generated)
+**`Release/`:**
+- Purpose: Published build output directory
+- Generated: Yes (by `dotnet publish`)
+- Not committed to git
+
+**`AutoQAC/logs/`:**
+- Purpose: Serilog file sink output at runtime
+- Generated: Yes (at runtime)
+- Not committed to git
 
 ---
 
-*Structure analysis: 2026-02-06*
+*Structure analysis: 2026-03-30*

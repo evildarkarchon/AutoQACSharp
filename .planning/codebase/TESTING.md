@@ -1,378 +1,539 @@
 # Testing Patterns
 
-**Analysis Date:** 2026-02-06
+**Analysis Date:** 2026-03-30
 
-## Test Framework
+## Test Framework Stack
 
 **Runner:**
 - xUnit 2.9.3
-- Config: `AutoQAC.Tests.csproj` with implicit global usings
-- Test project targets: `net10.0-windows10.0.19041.0`
+- Microsoft.NET.Test.Sdk 18.0.1
+- xunit.runner.visualstudio 3.1.5
+- Config: MSBuild properties in `.csproj` files (no separate `xunit.runner.json`)
 
 **Assertion Library:**
 - FluentAssertions 8.8.0
-- All assertions use fluent API: `.Should().Be()`, `.Should().NotBeNull()`, `.Should().HaveCount()`
+- Global `using FluentAssertions;` in `QueryPlugins.Tests` (not in `AutoQAC.Tests`)
+- Global `using Xunit;` in both test projects
+
+**Mocking Library:**
+- NSubstitute 5.3.0
+- NSubstitute.Analyzers.CSharp 1.0.17 (compile-time correctness checks)
 
 **Run Commands:**
 ```bash
-dotnet test                    # Run all tests
-dotnet test --watch           # Watch mode (re-run on changes)
-dotnet test --collect:"XPlat Code Coverage"  # Coverage collection
-dotnet build && dotnet test   # Build then test
+dotnet test AutoQACSharp.slnx           # Run all tests with coverage
+dotnet test AutoQAC.Tests               # Run AutoQAC tests only
+dotnet test QueryPlugins.Tests          # Run QueryPlugins tests only
 ```
+
+## Coverage Configuration
+
+**Tooling:**
+- coverlet.collector 8.0.0 + coverlet.msbuild 8.0.0
+- Auto-collected on every `dotnet test` run (MSBuild properties in `.csproj`)
+
+**AutoQAC.Tests coverage config** (`AutoQAC.Tests/AutoQAC.Tests.csproj`):
+```xml
+<CollectCoverage>true</CollectCoverage>
+<CoverletOutputFormat>cobertura</CoverletOutputFormat>
+<CoverletOutput>./TestResults/coverage/</CoverletOutput>
+<Include>[AutoQAC]*</Include>
+<Exclude>[AutoQAC.Tests]*</Exclude>
+<ExcludeByAttribute>ExcludeFromCodeCoverage</ExcludeByAttribute>
+```
+
+**QueryPlugins.Tests coverage config** (`QueryPlugins.Tests/QueryPlugins.Tests.csproj`):
+```xml
+<CollectCoverage>true</CollectCoverage>
+<CoverletOutputFormat>cobertura</CoverletOutputFormat>
+<CoverletOutput>./TestResults/coverage/</CoverletOutput>
+<Include>[QueryPlugins]*</Include>
+<Exclude>[QueryPlugins.Tests]*</Exclude>
+<ExcludeByAttribute>ExcludeFromCodeCoverage</ExcludeByAttribute>
+```
+
+**Output Location:** `TestResults/coverage/` within each test project directory.
+
+**View Coverage:**
+```bash
+dotnet test AutoQACSharp.slnx /p:CollectCoverage=true
+# Cobertura XML outputs to each test project's TestResults/coverage/
+```
+
+**No enforced coverage threshold** -- coverage is collected but no minimum percentage is gated.
 
 ## Test File Organization
 
-**Location:**
-- Tests co-located in `AutoQAC.Tests/` project parallel to source
-- Folder structure mirrors source structure:
-  - Source: `AutoQAC/Models/` → Tests: `AutoQAC.Tests/Models/`
-  - Source: `AutoQAC/Services/Cleaning/` → Tests: `AutoQAC.Tests/Services/`
-  - Source: `AutoQAC/ViewModels/` → Tests: `AutoQAC.Tests/ViewModels/`
+**Location:** Separate test projects mirror the source project structure.
 
 **Naming:**
-- Pattern: `{ClassName}Tests.cs`
-- Examples: `AppStateTests.cs`, `CleaningServiceTests.cs`, `MainWindowViewModelTests.cs`
+- Test class: `{ClassName}Tests` (e.g., `ConfigurationServiceTests`, `AppStateTests`)
+- Test method: `{Method}_Should{Expected}_When{Condition}` or `{Method}_{Scenario}_{ExpectedResult}`
+  - Examples: `LoadUserConfig_ShouldCreateDefault_WhenFileNotFound`
+  - Examples: `BuildCommand_ReturnsNull_WhenXEditPathIsEmpty`
+  - Shorter forms also used: `InitialState_IsEmpty`, `StateChanged_EmitsOnUpdate`
 
 **Structure:**
 ```
 AutoQAC.Tests/
-├── Integration/              # Integration tests
-│   ├── DependencyInjectionTests.cs
-│   └── GameSelectionIntegrationTests.cs
-├── Models/                   # Model unit tests
-│   ├── AppStateTests.cs
-│   ├── CleaningSessionResultTests.cs
-│   └── PluginCleaningResultTests.cs
-├── Services/                 # Service unit tests
-│   ├── CleaningServiceTests.cs
-│   ├── ConfigurationServiceTests.cs
-│   ├── XEditCommandBuilderTests.cs
-│   └── [17 service test files]
-└── ViewModels/               # ViewModel unit tests
-    ├── MainWindowViewModelTests.cs
-    ├── ProgressViewModelTests.cs
-    └── [4 ViewModel test files]
+  Integration/
+    DependencyInjectionTests.cs           # DI container wiring tests
+    GameSelectionIntegrationTests.cs      # Cross-service integration tests
+  Models/
+    AppStateTests.cs                      # Record computed property tests
+    CleaningSessionResultTests.cs         # Result model tests
+    PluginCleaningResultTests.cs          # Result model tests
+  Services/
+    BackupServiceTests.cs                 # File-system-based backup tests
+    CleaningOrchestratorTests.cs          # Core orchestration flow tests
+    CleaningServiceTests.cs               # Plugin cleaning tests
+    ConfigurationServiceTests.cs          # Config load/save/skip list tests
+    ConfigurationServiceSkipListTests.cs  # Skip list merging tests
+    ConfigWatcherServiceTests.cs          # File watcher tests
+    GameDetectionServiceTests.cs          # Game detection from executables
+    HangDetectionServiceTests.cs          # CPU monitoring tests
+    LegacyMigrationServiceTests.cs        # Config migration tests
+    LogRetentionServiceTests.cs           # Log cleanup tests
+    LogRetentionServicePathTests.cs       # Log path resolution tests
+    PluginIssueApproximationServiceTests.cs  # Mutagen analysis tests
+    PluginLoadingServiceTests.cs          # Plugin discovery tests
+    PluginValidationServiceTests.cs       # File validation tests
+    ProcessExecutionServiceTests.cs       # Process lifecycle tests
+    StateServiceTests.cs                  # State management tests
+    XEditCommandBuilderTests.cs           # Command construction tests
+    XEditLogFileServiceTests.cs           # Log parsing tests
+    XEditOutputParserTests.cs             # Output parsing tests
+    AppShutdownDisposalTests.cs           # Service disposal on shutdown
+  TestInfrastructure/
+    RxAppSchedulerTestCollection.cs       # RxApp scheduler test helpers
+  ViewModels/
+    CleaningResultsViewModelTests.cs
+    ErrorDialogTests.cs
+    MainWindowViewModelTests.cs
+    MainWindowViewModelInitializationTests.cs
+    MainWindowThreadingTests.cs           # Threading/scheduler tests
+    PartialFormsWarningViewModelTests.cs
+    ProgressViewModelTests.cs
+    SkipListViewModelTests.cs
+  Views/
+    ViewSubscriptionLifecycleTests.cs     # Source-code assertion tests
+
+QueryPlugins.Tests/
+  Detectors/
+    Games/
+      Fallout4DetectorTests.cs
+      OblivionDetectorTests.cs
+      SkyrimDetectorTests.cs
+      StarfieldDetectorTests.cs
+    ItmDetectorTests.cs
+  Models/
+    PluginAnalysisResultTests.cs
 ```
 
-## Test Structure
+## Test Patterns
 
-**Suite Organization:**
+### Arrange-Act-Assert
+
+All tests follow strict AAA pattern with `// Arrange`, `// Act`, `// Assert` comments:
+
 ```csharp
-public sealed class AppStateTests
+[Fact]
+public async Task LoadUserConfig_ShouldCreateDefault_WhenFileNotFound()
 {
-    #region Computed Property Tests
+    // Arrange
+    var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
 
-    [Theory]
-    [InlineData("plugins.txt", true)]
-    [InlineData(null, false)]
-    public void IsLoadOrderConfigured_ShouldReturnCorrectValue(string? path, bool expected)
-    {
-        // Arrange
-        var state = new AppState { LoadOrderPath = path };
+    // Act
+    var config = await service.LoadUserConfigAsync();
+    await service.FlushPendingSavesAsync();
 
-        // Assert
-        state.IsLoadOrderConfigured.Should().Be(expected);
-    }
-
-    #endregion
-
-    #region Default Values Tests
-
-    [Fact]
-    public void Constructor_ShouldHaveCorrectDefaults()
-    {
-        // Act
-        var state = new AppState();
-
-        // Assert
-        state.Progress.Should().Be(0);
-    }
-
-    #endregion
+    // Assert
+    config.Should().NotBeNull();
+    File.Exists(expectedPath).Should().BeTrue();
 }
 ```
 
-**Patterns:**
-- Class declaration marked `sealed`: `public sealed class AppStateTests`
-- Test methods use descriptive names: `{MethodBeingTested}_{Scenario}_{ExpectedOutcome}`
-- Region markers organize related tests: `#region Computed Property Tests`
-- XML documentation on public test methods
+### Constructor Setup Pattern
 
-**Arrange-Act-Assert Pattern:**
-- Every test follows AAA: comment headers mark each section
-- Arrange: Set up test fixtures and mocks
-- Act: Execute the code under test
-- Assert: Verify results with FluentAssertions
+Most test classes create mocks and the SUT in the constructor:
 
-## Mocking
-
-**Framework:** Moq 4.20.72
-
-**Patterns:**
 ```csharp
-// Setup mocks in constructor
-private readonly Mock<IConfigurationService> _mockConfig;
-
-public CleaningServiceTests()
+public sealed class CleaningOrchestratorTests
 {
-    _mockConfig = new Mock<IConfigurationService>();
+    private readonly ICleaningService _cleaningServiceMock;
+    private readonly IStateService _stateServiceMock;
+    // ... all mock fields ...
+    private readonly CleaningOrchestrator _orchestrator;
+
+    public CleaningOrchestratorTests()
+    {
+        _cleaningServiceMock = Substitute.For<ICleaningService>();
+        _stateServiceMock = Substitute.For<IStateService>();
+        // ... create all mocks ...
+        _orchestrator = new CleaningOrchestrator(/* all mocks */);
+    }
+}
+```
+
+### Factory Method Pattern
+
+Some test classes use a `CreateViewModel()` or `CreateSut()` factory for flexible setup:
+
+```csharp
+private ProgressViewModel CreateViewModel()
+{
+    return new ProgressViewModel(_stateServiceMock, _orchestratorMock);
+}
+```
+
+### SUT Naming
+
+System Under Test is named either `_sut` (for simpler services) or by the actual type name:
+
+```csharp
+private readonly XEditOutputParser _sut;           // Simple service
+private readonly CleaningOrchestrator _orchestrator; // Complex orchestrator
+```
+
+## NSubstitute Mocking Patterns
+
+### Basic Mock Setup
+
+```csharp
+var logger = Substitute.For<ILoggingService>();
+var stateService = Substitute.For<IStateService>();
+```
+
+### Return Value Setup
+
+```csharp
+// Simple return
+_stateServiceMock.CurrentState.Returns(new AppState { XEditExecutablePath = "xEdit.exe" });
+
+// Async return
+_configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>())
+    .Returns(new UserConfiguration());
+
+// Return with argument matching
+_configServiceMock.GetSkipListAsync(
+    Arg.Any<GameType>(),
+    Arg.Any<GameVariant>(),
+    Arg.Any<CancellationToken>())
+    .Returns(new List<string>());
+```
+
+### Observable Mock Setup
+
+For services exposing `IObservable<T>`, use `BehaviorSubject<T>` or `Subject<T>`:
+
+```csharp
+var stateSubject = new BehaviorSubject<AppState>(new AppState());
+_stateServiceMock.StateChanged.Returns(stateSubject);
+
+// Emit state changes in tests:
+stateSubject.OnNext(new AppState { IsCleaning = true });
+
+// For observables that should never emit:
+_stateServiceMock.CleaningCompleted.Returns(Observable.Never<CleaningSessionResult>());
+```
+
+### Verification
+
+```csharp
+// Verify call was made
+await _orchestratorMock.Received(1)
+    .StartCleaningAsync(
+        Arg.Any<TimeoutRetryCallback>(),
+        Arg.Any<BackupFailureCallback>(),
+        Arg.Any<CancellationToken>());
+
+// Verify log message pattern
+logger.Received().Error(
+    Arg.Any<Exception>(),
+    Arg.Is<string>(msg => msg.Contains("Save failed after")),
+    Arg.Any<object[]>());
+```
+
+### Match Optional Parameters Explicitly
+
+Per project conventions, always match optional parameters explicitly in substitute setups:
+
+```csharp
+// Correct: explicit Arg.Any for optional CancellationToken
+_configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>())
+    .Returns(new UserConfiguration());
+
+// Correct: explicit Arg.Any for optional GameVariant
+_configServiceMock.GetSkipListAsync(
+    Arg.Any<GameType>(),
+    Arg.Any<GameVariant>(),
+    Arg.Any<CancellationToken>())
+    .Returns(new List<string>());
+```
+
+## Test Infrastructure
+
+### RxApp Scheduler Management (`AutoQAC.Tests/TestInfrastructure/RxAppSchedulerTestCollection.cs`)
+
+ViewModel tests that use ReactiveUI scheduling require special setup:
+
+**Collection Attribute** -- disables parallelization for tests sharing `RxApp.MainThreadScheduler`:
+```csharp
+[Collection(RxAppSchedulerCollection.Name)]
+public sealed class MainWindowViewModelTests : ImmediateMainThreadSchedulerTestBase
+```
+
+**ImmediateMainThreadSchedulerTestBase** -- sets `RxApp.MainThreadScheduler = Scheduler.Immediate` for synchronous execution in tests:
+```csharp
+public abstract class ImmediateMainThreadSchedulerTestBase : IDisposable
+{
+    private readonly RxAppMainThreadSchedulerScope _schedulerScope = new(Scheduler.Immediate);
+    public void Dispose() { _schedulerScope.Dispose(); DisposeCore(); }
+    protected virtual void DisposeCore() { }
+}
+```
+
+**RxAppEventLoopMainThreadSchedulerScope** -- for threading tests that need a real background scheduler thread:
+```csharp
+using var mainThreadScheduler = new RxAppEventLoopMainThreadSchedulerScope();
+var mainThreadId = await WaitForSignalAsync(mainThreadScheduler.ThreadIdTask);
+```
+
+**When to use which:**
+- Most ViewModel tests: extend `ImmediateMainThreadSchedulerTestBase` and add `[Collection(RxAppSchedulerCollection.Name)]`
+- Threading correctness tests: use `RxAppEventLoopMainThreadSchedulerScope` directly
+- Non-reactive service tests: no scheduler setup needed
+
+### Async Signal Helpers
+
+Several test classes define reusable signal/wait helpers:
+
+```csharp
+private static TaskCompletionSource<bool> CreateSignal()
+{
+    return new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 }
 
-// Setup return values
-_mockConfig.Setup(s => s.LoadMainConfigAsync(It.IsAny<CancellationToken>()))
-    .ReturnsAsync(mainConfig);
-
-// Setup async returns
-_mockProcess.Setup(p => p.ExecuteAsync(startInfo, It.IsAny<IProgress<string>>(), It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()))
-    .ReturnsAsync(processResult);
-
-// Verify calls
-_mockProcess.Verify(p => p.ExecuteAsync(...), Times.Once);
-_mockProcess.Verify(p => p.ExecuteAsync(...), Times.Never);
-
-// Pass mock object to class under test
-var service = new CleaningService(_mockConfig.Object, _mockState.Object);
+private static async Task WaitForSignalAsync(Task signalTask, string because)
+{
+    var completedTask = await Task.WhenAny(signalTask, Task.Delay(TimeSpan.FromSeconds(2)));
+    completedTask.Should().Be(signalTask, because);
+    await signalTask;
+}
 ```
 
-**What to Mock:**
-- External dependencies injected via constructor: `IConfigurationService`, `ILoggingService`, `IProcessExecutionService`
-- Database/file system I/O services
-- Long-running async operations
-- Services with complex initialization
+These are defined locally per test class (not in a shared base). Use them for:
+- Waiting for observable emissions
+- Waiting for cancellation tokens to fire
+- Coordinating async test flows with 2-second timeout safety net
 
-**What NOT to Mock:**
-- Models and records: Test with real instances
-- Value objects and data structures
-- Code under test (SUT - System Under Test)
-- Simple utility methods
+### File System Test Isolation
 
-## Fixtures and Factories
-
-**Test Data:**
-No dedicated fixture or factory classes detected. Test data created inline within tests:
+Tests that touch the file system create isolated temp directories:
 
 ```csharp
-// Example: Create test model directly
-var plugin = new PluginInfo
+public sealed class ConfigurationServiceTests : IDisposable
 {
-    FileName = "Mod.esp",
-    FullPath = "Mod.esp",
-    DetectedGameType = GameType.SkyrimSe,
-    IsInSkipList = false
-};
+    private readonly string _testDirectory;
 
-// Example: Create app state for testing
-var appState = new AppState
-{
-    CurrentGameType = GameType.SkyrimSe,
-    Progress = 5,
-    TotalPlugins = 10,
-    IsCleaning = true
-};
+    public ConfigurationServiceTests()
+    {
+        _testDirectory = Path.Combine(Path.GetTempPath(), "AutoQACTests_" + Guid.NewGuid());
+        Directory.CreateDirectory(_testDirectory);
+    }
 
-// Example: Create test data collections
-var lines = new List<string>
-{
-    "Undeleting: Some record",
-    "Removing: Bad record",
-    "Done."
-};
+    public void Dispose()
+    {
+        if (Directory.Exists(_testDirectory))
+        {
+            try { Directory.Delete(_testDirectory, true); }
+            catch { /* Ignore cleanup errors */ }
+        }
+    }
+}
 ```
 
-**Location:**
-- Test data created within test methods (Arrange section)
-- No shared fixture builders or factories
-- Simple inline construction for clarity and test isolation
-
-## Coverage
-
-**Requirements:**
-- Coverlet 6.0.4 available but no enforced coverage target detected
-- No minimum coverage percentage configured in project file
-- Coverage collection available via: `dotnet test --collect:"XPlat Code Coverage"`
-
-**View Coverage:**
-```bash
-# After running tests with coverage collection, coverage data is in TestResults/
-# Coverage report location: TestResults/{guid}/coverage.cobertura.xml
-```
+Pattern: `IDisposable` with temp directory cleanup. `BackupServiceTests` uses the same pattern.
 
 ## Test Types
 
-**Unit Tests:**
-- Scope: Test a single class method in isolation with mocked dependencies
-- Approach: Mock all external services, assert on return values and side effects
-- Examples: `AppStateTests.cs`, `XEditOutputParserTests.cs`, `PluginLoadingServiceTests.cs`
-- Count: ~15 unit test files
+### Unit Tests (Majority)
 
-**Integration Tests:**
-- Scope: Test multiple components together (e.g., DI container, service interactions)
-- Approach: Real service instances, minimal mocking, test end-to-end flows
-- Examples:
-  - `DependencyInjectionTests.cs` - Verifies all services resolve and correct lifetimes
-  - `GameSelectionIntegrationTests.cs` - Tests game selection workflow
-- Count: ~2 integration test files
+Service tests with mocked dependencies using NSubstitute:
+- `AutoQAC.Tests/Services/CleaningOrchestratorTests.cs` -- orchestration logic with 11+ mocked dependencies
+- `AutoQAC.Tests/Services/XEditCommandBuilderTests.cs` -- command construction
+- `AutoQAC.Tests/Services/GameDetectionServiceTests.cs` -- detection from executable names
 
-**E2E Tests:**
-- Status: Not implemented
-- Framework: Could use Avalonia.Headless for UI automation
-- Current focus: Unit and integration tests only
+Model tests for records and computed properties:
+- `AutoQAC.Tests/Models/AppStateTests.cs` -- `[Theory]` with `[InlineData]` for computed booleans
+- `AutoQAC.Tests/Models/CleaningSessionResultTests.cs`
 
-## Common Patterns
+ViewModel tests with mocked services:
+- `AutoQAC.Tests/ViewModels/MainWindowViewModelTests.cs`
+- `AutoQAC.Tests/ViewModels/ProgressViewModelTests.cs`
+- `AutoQAC.Tests/ViewModels/SkipListViewModelTests.cs`
 
-**Async Testing:**
+### Integration Tests (`AutoQAC.Tests/Integration/`)
+
+**DI Container Tests** (`DependencyInjectionTests.cs`):
+- Verify all services resolve from the real DI container
+- Verify singleton vs transient lifetime behavior
+- Use actual `ServiceCollection` with all `Add*()` extension methods
+
+**Cross-Service Integration** (`GameSelectionIntegrationTests.cs`):
+- Build real service provider, resolve real services
+- Test Mutagen support detection, game selection persistence
+- Use temp directories for config isolation
+
+### Source-Code Assertion Tests (`AutoQAC.Tests/Views/ViewSubscriptionLifecycleTests.cs`)
+
+A unique pattern that reads source `.cs` and `.axaml` files and asserts structural invariants:
 ```csharp
 [Fact]
-public async Task CleanPluginAsync_ShouldCallProcessAndReturnSuccess()
+public void ProgressWindow_ShouldUnsubscribePreviousViewModel_AndGuardDoubleDispose()
 {
-    // Arrange
-    var service = new CleaningService(...);
-    var plugin = new PluginInfo { ... };
-
-    // Act
-    var result = await service.CleanPluginAsync(plugin);
-
-    // Assert
-    result.Success.Should().BeTrue();
+    var source = File.ReadAllText(GetRepoFilePath("AutoQAC/Views/ProgressWindow.axaml.cs"));
+    source.Should().Contain("ProgressViewModel? _subscribedViewModel");
+    source.Should().Contain("bool _disposeHandled");
+    source.Should().Contain("DisposeViewModelIfNeeded()");
 }
 ```
 
-**Theory Tests (Parameterized):**
+Purpose: Enforce that Views track subscriptions and dispose correctly -- structural contracts without Avalonia.Headless.
+
+### QueryPlugins Tests
+
+Use in-memory Mutagen mod construction (no file I/O):
 ```csharp
-[Theory]
-[InlineData("plugins.txt", true)]
-[InlineData("C:\\Games\\plugins.txt", true)]
-[InlineData("", false)]
-[InlineData(null, false)]
-public void IsLoadOrderConfigured_ShouldReturnCorrectValue(string? path, bool expected)
-{
-    // Arrange & Act & Assert
-    var state = new AppState { LoadOrderPath = path };
-    state.IsLoadOrderConfigured.Should().Be(expected);
-}
+var mod = new SkyrimMod(PluginKey, SkyrimRelease.SkyrimSE);
+var cell = AddInteriorCell(mod);
+var placedObj = new PlacedObject(mod) { IsDeleted = true };
+cell.Persistent.Add(placedObj);
+
+var issues = _sut.FindDeletedReferences(mod).ToList();
+issues.Should().HaveCount(1);
 ```
 
-**Error Testing:**
+Pattern: Build Mutagen mods in memory, run detectors, assert issue counts and types.
+
+### Concurrency Tests
+
 ```csharp
 [Fact]
-public async Task CleanPluginAsync_WhenSkipped_ShouldReturnSkipped()
+public async Task ConcurrentLoadAndSave_ShouldNotCorruptConfigurationState()
 {
-    // Arrange
-    var service = new CleaningService(...);
-    var plugin = new PluginInfo { IsInSkipList = true };
-
-    // Act
-    var result = await service.CleanPluginAsync(plugin);
-
-    // Assert
-    result.Status.Should().Be(CleaningStatus.Skipped);
-    result.Success.Should().BeTrue();
+    var writer = Task.Run(async () => { /* 100 save iterations */ });
+    var readers = Enumerable.Range(0, 6).Select(_ => Task.Run(async () => { /* 100 read iterations */ }));
+    await Task.WhenAll(readers.Append(writer));
+    errors.Should().BeEmpty();
 }
 ```
 
-**Observable/Reactive Testing:**
-```csharp
-// From MainWindowViewModelTests.cs
-var stateSubject = new BehaviorSubject<AppState>(new AppState());
-_stateServiceMock.Setup(s => s.StateChanged).Returns(stateSubject);
+### Threading Tests
 
-// Setup RxApp for testing
-RxApp.MainThreadScheduler = Scheduler.Immediate;
-```
-
-**ViewModel Testing with Mocks:**
 ```csharp
-public sealed class MainWindowViewModelTests
+[Fact]
+public async Task MainWindowViewModel_ShouldMarshalCleaningCommandStateChangesToMainThreadScheduler()
 {
-    private readonly Mock<IConfigurationService> _configServiceMock;
-    private readonly Mock<IStateService> _stateServiceMock;
-    private readonly Mock<ICleaningOrchestrator> _orchestratorMock;
-    // ... other mocks
-
-    public MainWindowViewModelTests()
-    {
-        // Setup mocks in constructor
-        _stateServiceMock.Setup(s => s.StateChanged)
-            .Returns(Observable.Never<AppState>());
-        _configServiceMock.Setup(s => s.SkipListChanged)
-            .Returns(Observable.Never<GameType>());
-
-        RxApp.MainThreadScheduler = Scheduler.Immediate;
-    }
-
-    [Fact]
-    public async Task StartCleaningCommand_ShouldCallOrchestrator_WhenCanStart()
-    {
-        // Arrange
-        var vm = new MainWindowViewModel(
-            _configServiceMock.Object,
-            _stateServiceMock.Object,
-            _orchestratorMock.Object,
-            // ... other services
-        );
-
-        // Act
-        await vm.StartCleaningCommand.Execute();
-
-        // Assert
-        _orchestratorMock.Verify(x => x.StartCleaningAsync(...), Times.Once);
-    }
+    using var mainThreadScheduler = new RxAppEventLoopMainThreadSchedulerScope();
+    var mainThreadId = await WaitForSignalAsync(mainThreadScheduler.ThreadIdTask);
+    // ... push state from background thread, verify observation on main thread ...
+    (await WaitForSignalAsync(observedThread.Task)).Should().Be(mainThreadId);
 }
 ```
 
-## Test Naming & Documentation
+## Common FluentAssertions Patterns
 
-**Naming Convention:** `{MethodUnderTest}_{ScenarioOrCondition}_{ExpectedBehavior}`
-
-Examples:
-- `IsLoadOrderConfigured_ShouldReturnCorrectValue`
-- `CleanPluginAsync_ShouldCallProcessAndReturnSuccess`
-- `CleanPluginAsync_WhenSkipped_ShouldReturnSkipped`
-- `ParseOutput_CountsCorrectly`
-- `ParseOutput_ShouldHandleMalformedLines`
-- `Constructor_ShouldHaveCorrectDefaults`
-
-**Documentation:**
 ```csharp
-/// <summary>
-/// Verifies that IsLoadOrderConfigured returns true when LoadOrderPath has a value.
-/// </summary>
-[Theory]
-[InlineData("plugins.txt", true)]
-[InlineData(null, false)]
-public void IsLoadOrderConfigured_ShouldReturnCorrectValue(string? path, bool expected)
+// Basic value assertions
+result.Should().Be(expected);
+result.Should().BeNull();
+result.Should().NotBeNull();
+result.Should().BeTrue();
+
+// Collection assertions
+list.Should().BeEmpty();
+list.Should().ContainSingle();
+list.Should().HaveCount(2);
+list.Should().Contain("item");
+list.Should().NotContain("item");
+list.Should().OnlyContain(x => x != null);
+
+// Exception assertions (async)
+Func<Task> act = () => service.LoadMainConfigAsync();
+await act.Should().ThrowAsync<Exception>("corrupted YAML should cause an exception");
+
+// Exception assertions (sync)
+FluentActions.Invoking(() => service.Dispose())
+    .Should().NotThrow("dispose should complete without exception");
+
+// Range assertions
+value.Should().BeInRange(1000, 1099);
+value.Should().BeGreaterThan(0);
+
+// String assertions
+result.Arguments.Should().Contain("-QAC");
+result.Arguments.Should().NotContain("-SSE");
+
+// "because" clause for readable failure messages
+result.Should().Be(expected, $"LoadOrderPath '{path ?? "null"}' should result in ...");
+list.Should().Contain("Skyrim.esm", "user skip list plugins should be included");
 ```
 
-## Setup and Teardown
+## Key Test Areas
 
-**Setup:**
-- Constructor runs before each test (xUnit default)
-- Mocks created in constructor: `_mockConfig = new Mock<IConfigurationService>()`
-- Default mock behavior set in constructor
+**Well-Tested:**
+- `ConfigurationService` -- load, save, skip lists, debouncing, concurrency, error recovery, per-game overrides (`AutoQAC.Tests/Services/ConfigurationServiceTests.cs`, `ConfigurationServiceSkipListTests.cs`)
+- `CleaningOrchestrator` -- full session flow, cancellation, retry, backup integration, MO2 mode (`AutoQAC.Tests/Services/CleaningOrchestratorTests.cs`)
+- `StateService` -- state transitions, observable emissions (`AutoQAC.Tests/Services/StateServiceTests.cs`)
+- `XEditOutputParser` -- output line parsing, edge cases (`AutoQAC.Tests/Services/XEditOutputParserTests.cs`)
+- `XEditCommandBuilder` -- command construction for all game types (`AutoQAC.Tests/Services/XEditCommandBuilderTests.cs`)
+- `GameDetectionService` -- executable-based and load-order-based detection (`AutoQAC.Tests/Services/GameDetectionServiceTests.cs`)
+- `BackupService` -- backup, restore, session management, retention (`AutoQAC.Tests/Services/BackupServiceTests.cs`)
+- `MainWindowViewModel` -- command execution, state propagation, threading (`AutoQAC.Tests/ViewModels/MainWindowViewModelTests.cs`, `MainWindowThreadingTests.cs`)
+- `ProgressViewModel` -- progress tracking, per-plugin stats (`AutoQAC.Tests/ViewModels/ProgressViewModelTests.cs`)
+- QueryPlugins detectors -- Skyrim, Fallout4, Oblivion, Starfield, ITM detection (`QueryPlugins.Tests/Detectors/`)
+- DI container wiring (`AutoQAC.Tests/Integration/DependencyInjectionTests.cs`)
+- View subscription lifecycle (`AutoQAC.Tests/Views/ViewSubscriptionLifecycleTests.cs`)
 
-**Teardown:**
-- Not explicitly used (xUnit handles disposal)
-- Services implementing `IDisposable` not explicitly disposed in tests
-- Mocks are garbage collected after test completion
+**Under-Tested or Not Tested:**
+- `CleaningService` -- has tests but complex process-spawning paths are hard to test without real xEdit
+- `ProcessExecutionService` -- only non-process-spawning paths tested (startup failure, disposal); no real process tests
+- `ConfigWatcherService` -- file system watcher behavior (inherently racy)
+- `HangDetectionService` -- limited to observable creation and already-exited process; hard to test real CPU monitoring
+- `PluginIssueApproximationService` -- tested with injectable factory but limited coverage of real Mutagen analysis paths
+- `PluginLoadingService` -- depends on real game installations for Mutagen registry probing
+- `LegacyMigrationService` -- tested but limited scenarios
+- `LogRetentionService` -- tested for path resolution and cleanup logic
+- View code-behind (`.axaml.cs`) -- no Avalonia.Headless test project; structural assertions only
+- Converters (`GameTypeDisplayConverter`, `NullableBoolConverters`) -- no dedicated test files
+- `SettingsViewModel`, `RestoreViewModel`, `AboutViewModel` -- no dedicated test files found
+- `MessageDialogService`, `FileDialogService` -- UI-dependent, not easily unit-testable
 
-**Fixture Scope:**
-- Constructor runs before EACH test (per-test isolation)
-- No class-level shared state (prevents test pollution)
-- CompositeDisposable pattern in ViewModels cleaned up via `IDisposable`
+## Writing New Tests
 
-## Best Practices Observed
+**For a new service:**
+1. Create `AutoQAC.Tests/Services/{ServiceName}Tests.cs`
+2. Mock all dependencies with `Substitute.For<T>()`
+3. Set up default mock returns in constructor (especially for optional parameters)
+4. Follow `// Arrange` / `// Act` / `// Assert` pattern
+5. Use `#region` blocks to group related test scenarios
 
-1. **Test Isolation:** Each test creates fresh mocks via constructor
-2. **Single Responsibility:** Each test verifies one behavior
-3. **Readable Assertions:** FluentAssertions provide descriptive failure messages
-4. **Async Awareness:** Async methods properly awaited with `async Task`
-5. **Null Handling:** Tests explicitly handle nullable reference types
-6. **Edge Cases:** Tests include boundary conditions (null, empty, valid values)
-7. **Mocking Strategy:** Mock external dependencies, test internal logic
-8. **No Test Interdependence:** Tests can run in any order
-9. **Sealed Classes:** Test classes marked `sealed` (minor performance optimization)
+**For a new ViewModel:**
+1. Create `AutoQAC.Tests/ViewModels/{ViewModelName}Tests.cs`
+2. Add `[Collection(RxAppSchedulerCollection.Name)]` attribute
+3. Extend `ImmediateMainThreadSchedulerTestBase`
+4. Mock services and set up `BehaviorSubject<AppState>` for `StateChanged`
+5. Set up `Observable.Never<T>()` for unused observables to prevent test hangs
+6. Use `CreateViewModel()` factory if setup varies between tests
+
+**For QueryPlugins tests:**
+1. Create test in `QueryPlugins.Tests/Detectors/Games/{GameName}DetectorTests.cs`
+2. Build Mutagen mods in-memory with `new SkyrimMod(key, release)`
+3. Add records programmatically, set flags (e.g., `IsDeleted = true`)
+4. Run detector methods, assert issue counts and types
+5. Always test: empty mod, wrong mod type, deleted records, non-deleted records
 
 ---
 
-*Testing analysis: 2026-02-06*
+*Testing analysis: 2026-03-30*

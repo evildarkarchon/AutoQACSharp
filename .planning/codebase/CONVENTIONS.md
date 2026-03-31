@@ -1,243 +1,312 @@
 # Coding Conventions
 
-**Analysis Date:** 2026-02-06
+**Analysis Date:** 2026-03-30
 
 ## Naming Patterns
 
 **Files:**
-- Class files match class name exactly: `AppState.cs`, `CleaningService.cs`
-- Interface files prefixed with `I`: `IConfigurationService.cs`, `ICleaningService.cs`
-- Test files suffixed with `Tests`: `AppStateTests.cs`, `CleaningServiceTests.cs`
-- ViewModel files suffixed with `ViewModel`: `MainWindowViewModel.cs`, `ProgressViewModel.cs`
-- View files match ViewModel but with `View` or window type: `MainWindow.axaml`, `ProgressWindow.axaml`
+- One public type per file, file named to match the type: `CleaningOrchestrator.cs`, `ICleaningOrchestrator.cs`
+- Interfaces get their own file prefixed with `I`: `ICleaningService.cs`, `IStateService.cs`
+- AXAML code-behind matches the view name: `MainWindow.axaml` / `MainWindow.axaml.cs`
+- Test files mirror source path with `Tests` suffix: `Services/CleaningOrchestrator.cs` -> `Services/CleaningOrchestratorTests.cs`
 
-**Functions/Methods:**
-- PascalCase for all public methods: `CleanPluginAsync()`, `LoadMainConfigAsync()`
-- Async methods must end with `Async` suffix: `CleanPluginAsync()`, `ExecuteAsync()`, `LoadMainConfigAsync()`
-- Command properties end with `Command`: `StartCleaningCommand`, `ConfigureLoadOrderCommand`, `ExportReportCommand`
-- Observable helper properties follow pattern: `_isMutagenSupported` (private backing field)
+**Classes:**
+- PascalCase for all types: `CleaningOrchestrator`, `PluginLoadingService`, `GameDetectionService`
+- Sealed by default for service implementations: `public sealed class ConfigurationService`
+- Sealed records for immutable data: `public sealed record AppState`, `public sealed record CleaningResult`
+- `sealed` on ViewModels: `public sealed class MainWindowViewModel`, `public sealed class CleaningCommandsViewModel`
 
-**Variables:**
-- camelCase for local variables and parameters: `maxProcesses`, `pluginPath`, `outputLines`
-- PascalCase for public properties: `LoadOrderPath`, `XEditPath`, `Mo2Path`
-- Private fields prefixed with underscore: `_configService`, `_logger`, `_fileDialog`
-- Private backing fields for observables: `_isMutagenSupported`, `_requiresLoadOrderFile`
+**Interfaces:**
+- Standard `I` prefix: `ICleaningService`, `IStateService`, `ILoggingService`
+- Placed in the same namespace as implementations
 
-**Types/Classes:**
-- PascalCase for all type names: `AppState`, `CleaningService`, `ProcessExecutionService`
-- Interface names start with `I`: `IConfigurationService`, `IStateService`, `ILoggingService`
-- Records use PascalCase: `AppState`, `CleaningResult`, `ProcessResult`
-- Enums use PascalCase values: `GameType.SkyrimSe`, `CleaningStatus.Cleaned`
+**Methods:**
+- PascalCase: `StartCleaningAsync`, `ValidateEnvironmentAsync`, `DetectFromExecutable`
+- Async suffix on all async methods: `LoadUserConfigAsync`, `FlushPendingSavesAsync`, `CleanPluginAsync`
+- Boolean methods use `Is`/`Has`/`Can` prefix: `IsGameSupportedByMutagen`, `HasApproximationPreview`
+
+**Properties:**
+- PascalCase: `CurrentState`, `IsCleaning`, `PluginsToClean`
+- Boolean properties use `Is`/`Has`/`Can` prefix: `IsLoadOrderConfigured`, `HasMigrationWarning`, `CanStartCleaning`
+- Nullable booleans for tri-state validation: `bool? IsXEditPathValid` (null = untouched, true = valid, false = invalid)
+
+**Private Fields:**
+- `_camelCase` with underscore prefix: `_stateService`, `_disposables`, `_cleaningCts`
+- Some newer code uses `field` keyword with semi-auto properties (C# 13): `set => this.RaiseAndSetIfChanged(ref field, value);`
 
 **Constants:**
-- Not widely used; when present, use UPPER_CASE (limited examples in codebase)
+- PascalCase: `PidFileName`, `GracePeriodMs`, `MainConfigFile`
+
+**Namespaces:**
+- Follow directory structure: `AutoQAC.Services.Cleaning`, `AutoQAC.ViewModels.MainWindow`, `AutoQAC.Models.Configuration`
+- File-scoped namespace declarations: `namespace AutoQAC.Services.Cleaning;`
 
 ## Code Style
 
 **Formatting:**
-- Implicit usings enabled via `<ImplicitUsings>enable</ImplicitUsings>`
-- Top-level namespace declarations: `namespace AutoQAC.ViewModels;` (not enclosed in braces)
-- Nullable reference types enabled: `<Nullable>enable</Nullable>`
-- Type annotations always include nullability: `string?` vs `string`
-- Null-forgiving operator `!` used sparingly and only when certain of non-null value
+- No `.editorconfig` in the project root (only in the Mutagen submodule)
+- Indentation: 4 spaces
+- Opening braces on new line for types and methods (Allman style)
+- Opening braces on same line for lambdas and short blocks
+- Expression-bodied members for simple single-expression methods:
+  ```csharp
+  private static bool RequiresFileLoadOrder(GameType gameType) => gameType switch { ... };
+  ```
 
 **Linting:**
-- No explicit .editorconfig or ESLint configuration detected
-- Code follows implicit .NET conventions and Visual Studio defaults
-- Consistent spacing and indentation (4 spaces)
+- NSubstitute.Analyzers.CSharp included in test projects for mock correctness
+- No explicit Roslyn analyzers or StyleCop configured
+- Nullable reference types enabled globally (`<Nullable>enable</Nullable>`)
+
+**C# Version Features Used:**
+- C# 13 semi-auto properties (field keyword): `set => this.RaiseAndSetIfChanged(ref field, value);`
+- Records with `with` expressions for immutable state: `s with { IsCleaning = true }`
+- Pattern matching: `is { IsInSkipList: false, IsSelected: true }`, `is not null`
+- Collection expressions: `return [];`
+- FrozenSet for immutable collections: `Enumerable.Empty<string>().ToFrozenSet()`
+- Switch expressions: `gameType switch { GameType.SkyrimSe => "SSE", ... }`
+- Primary constructors on services: `public sealed class ProcessExecutionService(ILoggingService logger)`
+- Target-typed `new()`: `private readonly Lock _lock = new();`
 
 ## Import Organization
 
 **Order:**
-1. System namespaces: `using System;`, `using System.Collections.Generic;`
-2. System.* extended namespaces: `using System.Reactive;`, `using System.Reactive.Linq;`
-3. Third-party libraries: `using YamlDotNet.Serialization;`, `using Serilog;`
-4. Avalonia/ReactiveUI: `using Avalonia.Controls;`, `using ReactiveUI;`
-5. Project namespaces: `using AutoQAC.Models;`, `using AutoQAC.Services.Cleaning;`
+1. `System.*` namespaces
+2. Third-party namespaces (Avalonia, ReactiveUI, YamlDotNet, Serilog, Mutagen)
+3. Project namespaces (`AutoQAC.*`, `QueryPlugins.*`)
 
 **Path Aliases:**
-- No global using aliases detected
-- Namespaces fully qualified throughout codebase
+- No path aliases configured; all imports use fully qualified namespace references
+
+**Global Usings:**
+- `AutoQAC.Tests` project has global `using Xunit;`
+- `QueryPlugins.Tests` project has global `using Xunit;` and `using FluentAssertions;`
+- Main projects do not use implicit usings (no `<ImplicitUsings>enable</ImplicitUsings>` in `AutoQAC.csproj`)
+- Test projects and QueryPlugins have `<ImplicitUsings>enable</ImplicitUsings>`
+
+## Reactive Patterns
+
+**ReactiveCommand Usage:**
+- Use `ReactiveCommand.CreateFromTask` for async commands:
+  ```csharp
+  StartCleaningCommand = ReactiveCommand.CreateFromTask(StartCleaningAsync, canStart);
+  ```
+- Use `ReactiveCommand.Create` for synchronous commands:
+  ```csharp
+  ExitCommand = ReactiveCommand.Create(Exit);
+  DismissValidationCommand = ReactiveCommand.Create(() => { ... });
+  ```
+- Guard commands with `canExecute` observables derived from `WhenAnyValue`:
+  ```csharp
+  var canStart = this.WhenAnyValue(x => x.CanStartCleaning);
+  StartCleaningCommand = ReactiveCommand.CreateFromTask(StartCleaningAsync, canStart);
+  ```
+
+**RaiseAndSetIfChanged:**
+- Two patterns coexist in the codebase:
+  1. Traditional backing field (used in `ProgressViewModel`, `ConfigurationViewModel`):
+     ```csharp
+     private string? _currentPlugin;
+     public string? CurrentPlugin
+     {
+         get => _currentPlugin;
+         set => this.RaiseAndSetIfChanged(ref _currentPlugin, value);
+     }
+     ```
+  2. C# 13 semi-auto property with `field` keyword (used in `CleaningCommandsViewModel`, `PluginListViewModel`):
+     ```csharp
+     public string StatusText
+     {
+         get;
+         set => this.RaiseAndSetIfChanged(ref field, value);
+     } = "Ready";
+     ```
+  - New code should prefer the semi-auto property pattern (pattern 2) when the backing field serves no other purpose.
+
+**WhenAnyValue / ObservableAsPropertyHelper:**
+- `WhenAnyValue` for observing single property changes:
+  ```csharp
+  var canShowSkipList = this.WhenAnyValue(x => x.IsCleaning).Select(cleaning => !cleaning);
+  ```
+- `CombineLatest` for multi-property guards:
+  ```csharp
+  var canSelectPlugins = hasPlugins.CombineLatest(isCleaning, (hasP, cleaning) => hasP && !cleaning);
+  ```
+- `ObservableAsPropertyHelper<T>` for derived read-only properties:
+  ```csharp
+  private readonly ObservableAsPropertyHelper<bool> _isMutagenSupported;
+  public bool IsMutagenSupported => _isMutagenSupported.Value;
+  ```
+
+**CompositeDisposable:**
+- Every ViewModel that subscribes to observables must own a `CompositeDisposable`:
+  ```csharp
+  private readonly CompositeDisposable _disposables = new();
+  ```
+- Add subscriptions to the composite: `_disposables.Add(subscription);`
+- Dispose in `Dispose()`: `_disposables.Dispose();`
+
+**Interaction Pattern:**
+- `Interaction<TInput, TOutput>` declared on the parent ViewModel (e.g., `MainWindowViewModel`)
+- Registered in the View code-behind (e.g., `MainWindow.axaml.cs`)
+- Passed to child ViewModels as constructor parameters
+- ViewModels invoke: `await _showProgressInteraction.Handle(Unit.Default);`
+
+## Async Patterns
+
+**Async/Await:**
+- All I/O and process work is async: `Task<T>` return types with `Async` suffix
+- Use `ConfigureAwait(false)` on all awaits in service layer code:
+  ```csharp
+  await configService.FlushPendingSavesAsync(ct).ConfigureAwait(false);
+  ```
+- ViewModel code does NOT use `ConfigureAwait(false)` (stays on UI thread)
+- Never block with `.Result` or `.Wait()`
+
+**CancellationToken:**
+- Accept `CancellationToken ct = default` as the last parameter on all async service methods
+- Thread through to inner calls: `await File.ReadAllTextAsync(path, ct)`
+- Use linked tokens for composite cancellation: `CancellationTokenSource.CreateLinkedTokenSource(ct)`
+- Check `ct.ThrowIfCancellationRequested()` at iteration boundaries
+
+**Fire-and-Forget:**
+- Discard prefix for intentional fire-and-forget: `_ = RunMigrationAsync(migrationService, viewModel, logger);`
+- Always wrap in try/catch to avoid unobserved exceptions
 
 ## Error Handling
 
-**Patterns:**
-- Structured try-catch blocks with specific exception types
-- Exceptions logged via `ILoggingService` with `Error()` and `Fatal()` methods
-- User-facing errors shown via `IMessageDialogService` dialogs
-- Exceptions generally not swallowed—errors propagated with logging
+**Exception Strategy:**
+- Services throw `InvalidOperationException` for configuration/validation failures with actionable messages:
+  ```csharp
+  throw new InvalidOperationException(
+      "Cannot start cleaning: game type could not be determined. " +
+      "Please select a game type in Settings...");
+  ```
+- `ArgumentException` for invalid input: `ArgumentException.ThrowIfNullOrWhiteSpace(logDirectory);`
+- `ObjectDisposedException` when using disposed services: `ThrowIfDisposed()` guard pattern
+- `OperationCanceledException` is caught separately and treated as non-error
 
-Example pattern from `CleaningService.cs`:
-```csharp
-try
-{
-    if (plugin.IsInSkipList)
-    {
-        return new CleaningResult { Success = true, Status = CleaningStatus.Skipped };
-    }
-    // ... processing ...
-}
-catch (Exception ex)
-{
-    _logger.Error(ex, "Error cleaning plugin: {PluginName}", plugin.FileName);
-    return new CleaningResult
-    {
-        Success = false,
-        Status = CleaningStatus.Failed,
-        Message = ex.Message
-    };
-}
-```
+**Logging:**
+- Use `ILoggingService` (wraps Serilog) for all logging
+- Structured logging with Serilog message templates:
+  ```csharp
+  logger.Information("Detected game type: {GameType}", detectedGame);
+  logger.Error(ex, "Error during cleaning workflow");
+  ```
+- Log levels: `Debug` for internal details, `Information` for workflow events, `Warning` for recoverable issues, `Error` for failures
+- Tag-prefix pattern for subsystem logs: `[Config]`, `[Termination]`, `[Startup]`, `[Migration]`, `[LogRetention]`
+- Session delimiters: `logger.Information("=== AutoQAC Session Start ===");`
 
-**Async Exception Handling:**
-- `async/await` used throughout; no `.Result` or `.Wait()` calls
-- `ConfigureAwait(false)` used in service layer code: `.ConfigureAwait(false)`
-- CancellationToken passed through all async chains: `async Task Method(CancellationToken ct)`
+**ViewModel Error Handling:**
+- Catch exceptions in command handlers, display via `IMessageDialogService`:
+  ```csharp
+  catch (Exception ex)
+  {
+      StatusText = $"Error: {ex.Message}";
+      _logger.Error(ex, "StartCleaningAsync failed");
+      await _messageDialog.ShowErrorAsync("Cleaning Failed", "An error occurred...", $"Error: {ex.Message}");
+  }
+  ```
+- Separate catch for `InvalidOperationException` (show validation errors) vs general `Exception` (show error dialog)
 
-## Logging
+## DI Patterns
 
-**Framework:** Serilog
+**Registration:**
+- Extension methods on `IServiceCollection` grouped by layer in `AutoQAC/Infrastructure/ServiceCollectionExtensions.cs`:
+  - `AddInfrastructure()` - logging
+  - `AddConfiguration()` - config, watchers, migration, log retention
+  - `AddState()` - state service
+  - `AddBusinessLogic()` - all domain services
+  - `AddUiServices()` - file dialogs, message dialogs
+  - `AddViewModels()` - all view models
+  - `AddViews()` - all views
 
-**Configuration:** `LoggingService.cs` initializes Serilog with:
-- Minimum level: Debug
-- Console output restricted to Warning level
-- Rolling file logs: `logs/autoqac-.log` with daily rolling, 5MB size limit, 5 files retained
-- Output template includes timestamp, level, message, and exception
+**Lifetime Choices:**
+- **Singleton:** All services, `MainWindowViewModel` (shared state hub)
+- **Transient:** All other ViewModels (`ProgressViewModel`, `SettingsViewModel`, etc.) and Views
+- No scoped registrations
 
-**Patterns:**
-- Log at entry/exit points: `_logger.Information()`, `_logger.Debug()`
-- Use structured logging with named parameters: `_logger.Information("Loading config for game: {GameType}", gameType)`
-- Log errors with exception: `_logger.Error(ex, "Error message: {Details}", details)`
-- Level mapping:
-  - `Debug`: Low-level diagnostic info, flow tracing
-  - `Information`: Important business events
-  - `Warning`: Recoverable issues
-  - `Error`: Exceptions caught and handled
-  - `Fatal`: Critical unrecoverable failures
+**Injection:**
+- Constructor injection everywhere; no service locator pattern
+- Primary constructors for simple services: `public sealed class ProcessExecutionService(ILoggingService logger)`
+- Traditional constructors for complex setup: `ConfigurationService`, `CleaningOrchestrator`
+- Optional dependencies with `= null` default: `IPluginIssueApproximationService? pluginIssueApproximationService = null`
 
-## Comments
+## MVVM Conventions
 
-**When to Comment:**
-- XML documentation (`///`) on public types and methods: `/// <summary>`, `/// <param>`, `/// <returns>`
-- Strategic inline comments for non-obvious logic (rare in this codebase)
-- Region markers used to organize large classes: `#region Summary Properties`
+**ViewModel Responsibilities:**
+- Own reactive properties, commands, and business logic coordination
+- Never reference Avalonia UI types or controls
+- Use `Interaction<TInput, TOutput>` for dialog triggers (not direct window references)
+- Manage subscriptions via `CompositeDisposable`
+- Implement `IDisposable` when holding subscriptions or resources
 
-**JSDoc/TSDoc:**
-- C# style with XML documentation tags
-- Summary, parameter descriptions, and return type documentation on public members
-- Example from `CleaningResultsViewModel.cs`:
-```csharp
-/// <summary>
-/// ViewModel for the cleaning results summary window.
-/// </summary>
-public sealed class CleaningResultsViewModel : ViewModelBase
-{
-    /// <summary>
-    /// Design-time constructor for XAML previewer.
-    /// </summary>
-    public CleaningResultsViewModel()
-```
+**View Responsibilities (code-behind):**
+- Register `Interaction` handlers that create and show windows/dialogs
+- Own dialog/window lifecycle (open, close, result handling)
+- `MainWindow.axaml.cs` is the Interaction registration hub
+- Views can receive services via constructor for interaction handling (e.g., `IFileDialogService`)
+- Track subscriptions in `CompositeDisposable` and dispose on window close
 
-## Function Design
+**MainWindowViewModel Decomposition:**
+- Split into sub-ViewModels: `ConfigurationViewModel`, `PluginListViewModel`, `CleaningCommandsViewModel`
+- Parent orchestrates cross-VM state via `OnStateChanged(AppState state)` callbacks
+- Sub-ViewModels receive dependencies via constructor, not parent
 
-**Size:**
-- Most public methods 20-60 lines
-- Complex logic extracted into private helper methods
-- Single responsibility principle strictly enforced
+**Service Responsibilities:**
+- All business logic lives in services, not ViewModels
+- Services communicate state via `IStateService` (BehaviorSubject-backed)
+- Services are stateless where possible; shared state flows through `AppState` record
 
-**Parameters:**
-- Dependency injection via constructor parameters (all services)
-- Method parameters use CancellationToken as last parameter: `(PluginInfo plugin, IProgress<string>? progress = null, CancellationToken ct = default)`
-- Optional parameters use null-coalescing defaults: `IProgress<string>? progress = null`
+**Model Conventions:**
+- Use `sealed record` for immutable data: `AppState`, `CleaningResult`, `PluginInfo`
+- Use `with` expressions for state transitions: `state with { IsCleaning = true }`
+- Configuration models use `sealed class` with YAML attributes: `UserConfiguration`
+- Enums for categorical values: `GameType`, `CleaningStatus`, `PluginWarningKind`
 
-**Return Values:**
-- Explicit return types (no implicit returns)
-- Async methods return `Task` or `Task<T>`: `Task<CleaningResult>`, `Task<ProcessResult>`
-- Methods returning multiple values use dedicated Result records: `CleaningResult`, `ProcessResult`
-- Observables returned for reactive properties: `IObservable<UserConfiguration>`
+## Disposal Patterns
 
-## Module Design
+**Service Disposal:**
+- Implement `IDisposable` and/or `IAsyncDisposable` when holding resources
+- Use `Interlocked.CompareExchange` for thread-safe dispose guards:
+  ```csharp
+  if (Interlocked.CompareExchange(ref _disposeState, 1, 0) != 0) return;
+  ```
+- Flush pending work before disposing (e.g., `ConfigurationService.FlushPendingSavesAsync`)
 
-**Exports:**
-- Public interfaces define contracts: `IConfigurationService`, `ICleaningService`
-- Implementation classes marked `sealed`: `sealed class ConfigurationService`, `sealed class CleaningService`
-- Private fields injected via constructor, never exposed
-- Public properties expose reactive state, never raw fields
+**ViewModel Disposal:**
+- Dispose `CompositeDisposable` in `Dispose()`
+- Propagate disposal to child ViewModels:
+  ```csharp
+  public void Dispose()
+  {
+      _disposables.Dispose();
+      Configuration.Dispose();
+      PluginList.Dispose();
+      Commands.Dispose();
+  }
+  ```
 
-**Barrel Files:**
-- Not widely used in this codebase
-- Services organized into logical folders: `Services/Cleaning/`, `Services/Configuration/`, `Services/UI/`
+**View Disposal:**
+- Override `OnClosed` to dispose subscriptions
+- Guard against double-dispose with boolean flags: `bool _disposeHandled`
 
-## MVVM Strict Adherence
+## Thread Safety
 
-**Models Layer** (`AutoQAC/Models/`):
-- Pure data structures with no UI or service dependencies
-- Records used for immutability: `public sealed record AppState`
-- Properties use init-only setters: `public string? LoadOrderPath { get; init; }`
-- Computed properties derive from other properties: `public bool IsLoadOrderConfigured => !string.IsNullOrEmpty(LoadOrderPath)`
+**State Service:**
+- `Lock _lock` protects `_currentState` read-modify-write
+- `BehaviorSubject.OnNext` called outside the lock to prevent subscriber deadlocks
+- `volatile` on `_currentState` for visibility across threads
 
-**ViewModels Layer** (`AutoQAC/ViewModels/`):
-- Inherit from `ViewModelBase` which extends `ReactiveObject`
-- All property changes via `RaiseAndSetIfChanged`: `this.RaiseAndSetIfChanged(ref _loadOrderPath, value)`
-- Computed properties via `ObservableAsPropertyHelper`: `private readonly ObservableAsPropertyHelper<bool> _isMutagenSupported;`
-- Commands are `ReactiveCommand`: `ReactiveCommand.Create()`, `ReactiveCommand.CreateFromTask()`
-- No direct UI manipulation; no Avalonia control references
-- Services injected via constructor, stored as private readonly fields
+**Configuration Service:**
+- `SemaphoreSlim _fileLock` for file I/O serialization
+- `Lock _stateLock` for in-memory state
+- Debounced save pipeline via `Subject<T>.Throttle` + `Observable.Switch`
 
-**Views Layer** (`AutoQAC/Views/`):
-- XAML files with minimal code-behind
-- Data binding to ViewModels: `{Binding PropertyName}`
-- No business logic; UI rendering only
-
-## Reactive Programming Patterns
-
-**Observables:**
-- `IObservable<T>` returned by services for reactive events
-- Example: `IObservable<UserConfiguration>` for configuration changes
-- Subscribed in ViewModels with `WhenAnyValue()`: `.WhenAnyValue(x => x.Property)`
-
-**Subscriptions:**
-- Subscriptions managed via `CompositeDisposable` in ViewModels
-- Added to disposable collection: `subscription.DisposeWith(_disposables)`
-- `OnActivated()` pattern for subscription lifecycle
-
-**Commands:**
-- `ReactiveCommand.Create()` for synchronous operations
-- `ReactiveCommand.CreateFromTask()` for async operations
-- Commands can be disabled based on observables via `.WhenAnyValue()` conditions
-
-## Dependency Injection
-
-**Service Registration:**
-- Centralized in `ServiceCollectionExtensions.cs` with extension methods
-- Methods organized by layer: `AddInfrastructure()`, `AddConfiguration()`, `AddState()`, `AddBusinessLogic()`, `AddUiServices()`, `AddViewModels()`, `AddViews()`
-- Scoped lifetimes:
-  - Singleton: `IStateService`, `IConfigurationService` (shared state)
-  - Transient: ViewModels (new instance per request)
-  - Transient: Services that operate on state
-
-**Constructor Injection:**
-- All services injected via constructor parameters
-- No static dependencies or service locators
-- Interfaces used for all external dependencies (testability)
-
-## Thread Safety & Async Patterns
-
-**Async/Await:**
-- All I/O operations async: file reads, process execution, network calls
-- `async/await` used exclusively; never `.Result` or `.Wait()`
-- `ConfigureAwait(false)` in library code to avoid UI thread capture
-- `CancellationToken` threaded through all async chains
-
-**Thread Synchronization:**
-- `SemaphoreSlim` for resource pooling: `_fileLock = new(1, 1)` in ConfigurationService
-- `SemaphoreSlim` for process slot management: `_processSlots = new(maxProcesses, maxProcesses)`
-- Async patterns preferred over locks for UI-safe operations
-
-**UI Thread Handling:**
-- `Dispatcher.UIThread.InvokeAsync()` for cross-thread UI updates (when needed)
-- ReactiveUI handles most threading automatically via RxApp.MainThreadScheduler
+**Process Service:**
+- `SemaphoreSlim _processSlots = new(1, 1)` enforces single xEdit process
+- Locks around `_currentProcess` and `_cleaningCts` references
 
 ---
 
-*Convention analysis: 2026-02-06*
+*Convention analysis: 2026-03-30*

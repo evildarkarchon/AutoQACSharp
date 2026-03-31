@@ -1,204 +1,202 @@
 # Codebase Concerns
 
-**Analysis Date:** 2026-02-06
+**Analysis Date:** 2026-03-30
 
-## Tech Debt
+## Architecture Concerns
 
-**Plugin FullPath Resolution Incomplete:**
-- Issue: `PluginValidationService.GetPluginsFromLoadOrderAsync()` cannot determine actual file paths. It sets `FullPath = FileName` as a placeholder because the method only reads plugins.txt filenames without access to the game data directory path.
-- Files: `AutoQAC/Services/Plugin/PluginValidationService.cs` (lines 36-50, 72)
-- Impact: `ValidatePluginExists()` cannot validate that plugins actually exist on disk (returns `true` optimistically for non-rooted paths). This could mask missing plugins until xEdit execution fails.
-- Fix approach: Pass game data directory path to `GetPluginsFromLoadOrderAsync()` or require callers to resolve full paths afterward. Consider caching resolved paths in `PluginInfo`.
+**CleaningOrchestrator is overly large and doing too much:**
+- Issue: `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs` is 872 lines and handles validation, game detection, skip list filtering, backup orchestration, retry logic, hang monitoring, process lifecycle, and session result building -- all in a single `StartCleaningAsync` method (~500 lines).
+- Files: `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs`
+- Impact: Hard to test individual phases in isolation. Adding new pre-clean or post-clean steps requires modifying this monolithic method. Bug risk increases with interleaved concerns.
+- Fix approach: Extract phases into dedicated pipeline steps (e.g., `PreCleanValidationStep`, `BackupStep`, `PluginCleaningStep`, `SessionFinalizationStep`) and have the orchestrator compose them. This preserves sequential execution while making each step independently testable.
 
-**Legacy Configuration Migration Incomplete:**
-- Issue: `ConfigurationService.MigrateLegacyConfigAsync()` logs intention to delete legacy file but does so outside the lock, with only warning-level error handling if deletion fails.
-- Files: `AutoQAC/Services/Configuration/ConfigurationService.cs` (lines 198-207)
-- Impact: Failed deletion leaves duplicate config files, potential user confusion on next startup. Migration success is not validated.
-- Fix approach: Add validation that legacy file is actually deleted, elevate failure to Error level, consider retry logic.
+**ConfigurationViewModel is the second-largest file at 948 lines:**
+- Issue: `AutoQAC/ViewModels/MainWindow/ConfigurationViewModel.cs` handles path configuration, game selection, plugin loading, skip list application, approximation refresh lifecycle, file dialog interactions, and migration warnings.
+- Files: `AutoQAC/ViewModels/MainWindow/ConfigurationViewModel.cs`
+- Impact: Difficult to reason about reactive subscription ordering. The approximation refresh logic alone (lines 757-874) is complex enough to warrant its own class.
+- Fix approach: Extract the approximation refresh lifecycle into a dedicated `PluginApproximationRefreshManager` class. Consider extracting game selection logic into a separate coordinator.
 
-**About Dialog Not Implemented:**
-- Issue: `MainWindowViewModel.ShowAbout()` has TODO comment and does nothing except set status text.
-- Files: `AutoQAC/ViewModels/MainWindowViewModel.cs` (line 780)
-- Impact: User request for help/version info is not fulfilled, appears as unresponsive UI.
-- Fix approach: Implement actual About dialog with version info and links.
+**Duplicated `RequiresFileLoadOrder` method:**
+- Issue: The same `RequiresFileLoadOrder(GameType)` switch expression is duplicated identically in two files.
+- Files: `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs` (line 819), `AutoQAC/Services/Cleaning/CleaningService.cs` (line 161)
+- Impact: If a new game is added that requires file-based load order, both copies must be updated. Easy to miss one.
+- Fix approach: Move to a shared static helper (e.g., `GameTypeExtensions.RequiresFileLoadOrder()`) or a method on `IPluginLoadingService`, which already has `IsGameSupportedByMutagen()` (the inverse concept).
 
-## Known Bugs
+**Duplicated `MapToGameRelease` method:**
+- Issue: The `MapToGameRelease(GameType)` switch expression is duplicated in two service files.
+- Files: `AutoQAC/Services/Plugin/PluginLoadingService.cs` (line 306), `AutoQAC/Services/Plugin/PluginIssueApproximationService.cs` (line 196)
+- Impact: Same risk as above -- adding a new Mutagen-supported game requires updating two copies.
+- Fix approach: Extract to a shared `GameTypeMapper` or extension method class.
 
-**Process Termination Race Condition:**
-- Symptoms: Process may not be fully terminated before disposal if `TerminateProcessGracefullyAsync()` completes but process still exists.
-- Files: `AutoQAC/Services/Process/ProcessExecutionService.cs` (lines 147-179)
-- Trigger: Cancellation token triggered during xEdit execution
-- Current mitigation: 2-second delay after `CloseMainWindow()` before checking `HasExited`, then force `Kill()` attempt
-- Risk: On slow systems or with locked files, xEdit may still hold file handles briefly after process object disposal, blocking subsequent cleaning runs
-- Workaround: Users can manually kill xEdit if subsequent plugins fail to load
+**Duplicated `ResolveConfigDirectory` method (4 copies):**
+- Issue: The debug-mode config directory resolution logic (walking up 6 parent directories to find `AutoQAC Data`) is copy-pasted across four services.
+- Files: `AutoQAC/Services/Configuration/ConfigurationService.cs` (line 80), `AutoQAC/Services/Configuration/ConfigWatcherService.cs` (line 54), `AutoQAC/Services/Configuration/LegacyMigrationService.cs` (line 41), `AutoQAC/Services/Process/ProcessExecutionService.cs` (line 377)
+- Impact: Any change to the resolution strategy must be applied in four places. The `ProcessExecutionService` copy uses the same logic for PID file location, which diverges slightly.
+- Fix approach: Create a shared `ConfigDirectoryResolver` utility class or inject the resolved directory from DI registration in `ServiceCollectionExtensions.cs`.
 
-**Potential Lock Deadlock in StateService:**
-- Symptoms: UI freezes if state updates are called from multiple threads concurrently
-- Files: `AutoQAC/Services/State/StateService.cs` (line 12 - uses `Lock` instead of `ReaderWriterLockSlim`)
-- Cause: Multiple synchronous state mutations could block if `BehaviorSubject.OnNext()` triggers observable subscriptions that attempt further state updates
-- Current mitigation: All state updates use immutable records, short lock durations
-- Risk: Higher with complex observable chains in ViewModels
-- Safer approach: Consider `ReaderWriterLockSlim` for read-heavy scenarios or fully async observable chains
+**Duplicated `IsSupportedGame` / `MutagenSupportedGames` logic:**
+- Issue: The set of Mutagen-supported games is defined as a `HashSet` in `PluginLoadingService` and separately as a method in `PluginIssueApproximationService`.
+- Files: `AutoQAC/Services/Plugin/PluginLoadingService.cs` (line 33), `AutoQAC/Services/Plugin/PluginIssueApproximationService.cs` (line 112)
+- Impact: The two lists could drift. `PluginIssueApproximationService.IsSupportedGame` should delegate to `PluginLoadingService.IsGameSupportedByMutagen` for a single source of truth.
+- Fix approach: Have `PluginIssueApproximationService` call `IPluginLoadingService.IsGameSupportedByMutagen()` instead of maintaining its own list.
+
+## Code Quality Concerns
+
+**`TogglePartialForms` is a no-op stub:**
+- Issue: The method body is empty with only placeholder comments referencing "Phase 6." The command is bound to a UI CheckBox but does nothing.
+- Files: `AutoQAC/ViewModels/MainWindow/ConfigurationViewModel.cs` (lines 876-882)
+- Impact: The Partial Forms feature is documented as experimental in `CLAUDE.md`. The toggle appears interactive but has no effect, which could confuse users.
+- Fix approach: Either implement the toggle behavior (persist to config, show warning dialog) or disable/hide the UI control until the feature is ready.
+
+**`UserConfiguration` is mutable and cloned via YAML round-trip:**
+- Issue: `ConfigurationService.CloneConfig()` serializes and deserializes through YAML to produce a deep copy. This is called on every `LoadUserConfigAsync` and `SaveUserConfigAsync` invocation -- sometimes multiple times per operation.
+- Files: `AutoQAC/Services/Configuration/ConfigurationService.cs` (line 703), `AutoQAC/Models/Configuration/UserConfiguration.cs`
+- Impact: YAML serialization is slow relative to alternatives. Each clone allocates strings, dictionaries, and lists. Under rapid config changes (debounced saves, skip list edits), this adds unnecessary GC pressure.
+- Fix approach: Either make `UserConfiguration` immutable (use `init` properties and records throughout) to eliminate cloning, or implement a targeted deep-copy method that avoids serialization.
+
+**`PluginInfo.IsSelected` is a mutable `set` on a `record`:**
+- Issue: `PluginInfo` is a `sealed record` (value semantics, `with` expressions) but `IsSelected` uses a mutable `set` accessor instead of `init`. This means the property can be mutated after construction, breaking the immutability contract of records.
+- Files: `AutoQAC/Models/PluginInfo.cs` (line 34)
+- Impact: The comment says "Mutation is only supported on the UI thread" but nothing enforces this. Background services reading `IsSelected` from `AppState.PluginsToClean` could see torn values. Additionally, `with` expressions on the record will copy the snapshot value of `IsSelected`, which may not reflect the UI's current state.
+- Fix approach: Two options: (1) Change to `init` and rebuild the plugin list when selection changes, or (2) separate selection state from `PluginInfo` entirely (e.g., a `Dictionary<string, bool>` for selections in `AppState`).
+
+**Backup failure dialog builds UI controls directly in a service:**
+- Issue: `MessageDialogService.ShowBackupFailureDialogAsync` constructs `Window`, `StackPanel`, `Button`, and `TextBlock` objects directly in code-behind, bypassing XAML and the MVVM pattern used everywhere else.
+- Files: `AutoQAC/Services/UI/MessageDialogService.cs` (lines 85-181)
+- Impact: Inconsistent with the rest of the app. Cannot be styled via AXAML themes. Not testable without a UI thread. Accessibility support (keyboard navigation, screen readers) may be incomplete.
+- Fix approach: Create a `BackupFailureDialog.axaml` view and `BackupFailureDialogViewModel` to match the pattern used by other dialogs (e.g., `MessageDialog`, `SettingsWindow`).
+
+**`ConfigurationService.Dispose()` synchronously blocks on async disposal:**
+- Issue: The synchronous `Dispose()` calls `DisposeAsync().AsTask().GetAwaiter().GetResult()`, which blocks the calling thread. If called on the UI thread, this could deadlock.
+- Files: `AutoQAC/Services/Configuration/ConfigurationService.cs` (line 737)
+- Impact: During application shutdown, `App.axaml.cs` disposes the service provider (line 82), which calls `Dispose()`. If a pending debounced save is in flight, this blocks the UI thread waiting for it to complete.
+- Fix approach: Ensure the DI container calls `DisposeAsync` (use `IAsyncDisposable` aware disposal), or make the shutdown handler await `FlushPendingSavesAsync` explicitly before disposing.
+
+**Inconsistent `DateTime.Now` vs `DateTime.UtcNow` usage:**
+- Issue: Session timing uses `DateTime.Now` (local time) for `StartTime`/`EndTime`, while backup timestamps and hang detection use `DateTime.UtcNow`. The PID tracking fallback uses `DateTime.Now`.
+- Files: `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs` (lines 62, 339, 455, 471), `AutoQAC/Services/Process/ProcessExecutionService.cs` (line 262), `AutoQAC/Services/Monitoring/HangDetectionService.cs` (line 69)
+- Impact: Mixing local and UTC time can cause subtle bugs around DST transitions. Backup timestamps in `session.json` are UTC but session durations are local-time-based.
+- Fix approach: Standardize on `DateTime.UtcNow` internally for all timing. Convert to local time only at display boundaries (ViewModels).
+
+## Missing Infrastructure
+
+**No input sanitization on plugin file names passed to process arguments:**
+- Issue: `XEditCommandBuilder.BuildCommand` embeds `plugin.FileName` directly into command-line arguments with only double-quote wrapping. If a plugin filename contains special characters (e.g., embedded quotes, backticks), the command could break or be exploited.
+- Files: `AutoQAC/Services/Cleaning/XEditCommandBuilder.cs` (line 41)
+- Impact: Low risk in practice (plugin names come from Mutagen or file parsing), but a defense-in-depth gap. Malicious plugin names could inject arguments.
+- Fix approach: Validate plugin filenames against a safe character set before building the command. Reject filenames containing `"`, `\`, or shell metacharacters.
+
+**No retry logic on PID file operations:**
+- Issue: `ProcessExecutionService.TrackProcessAsync` and `UntrackProcessAsync` read/write `autoqac-pids.json` without retry logic. File locking conflicts (e.g., antivirus scanners) can cause silent failures.
+- Files: `AutoQAC/Services/Process/ProcessExecutionService.cs` (lines 250-291, 404-428)
+- Impact: If PID tracking fails, orphan cleanup on next startup will miss processes. The bare `catch` blocks in `LoadTrackedProcessesAsync` (line 417) silently swallow errors and return an empty list.
+- Fix approach: Add retry-with-backoff similar to `ConfigurationService.SaveToDiskWithRetryAsync`. Log warnings on partial failures instead of silently swallowing.
+
+**Bare `catch` blocks suppress all exceptions without logging:**
+- Issue: Several methods use bare `catch` (no exception type, no variable) which swallows all exceptions silently. This makes debugging difficult when things go wrong.
+- Files: `AutoQAC/Services/Process/ProcessExecutionService.cs` (lines 260, 370, 417), `AutoQAC/Services/Configuration/ConfigWatcherService.cs` (line 256), `AutoQAC/ViewModels/AboutViewModel.cs` (line 186)
+- Impact: Errors in process start time retrieval, xEdit process identification, PID file parsing, YAML validation, and version detection are silently lost. Failures appear as "everything is fine" instead of logged warnings.
+- Fix approach: Replace bare `catch` with `catch (Exception ex)` and log at `Debug` or `Warning` level. At minimum, capture the exception type.
+
+## Technical Debt
+
+**All services are registered as Singletons:**
+- Issue: Every service in `ServiceCollectionExtensions.cs` is registered as `Singleton`, including services that hold per-session state (`CleaningOrchestrator` has `_currentProcess`, `_cleaningCts`).
+- Files: `AutoQAC/Infrastructure/ServiceCollectionExtensions.cs`
+- Impact: Singleton lifecycle is correct for a desktop app with a single window, but it means services must carefully manage their own state reset between cleaning sessions. The `finally` block in `CleaningOrchestrator.StartCleaningAsync` handles this, but any missed reset leads to stale state across sessions.
+- Fix approach: Document this design decision explicitly. Consider using a factory pattern for `CleaningOrchestrator` to create fresh instances per session, which would eliminate the state-reset burden.
+
+**Dry-run duplicates significant game-detection and filtering logic from StartCleaningAsync:**
+- Issue: `CleaningOrchestrator.RunDryRunAsync` (lines 689-796) duplicates the game detection, variant detection, skip list loading, and plugin filtering logic from `StartCleaningAsync` (lines 96-215). The two methods can drift independently.
+- Files: `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs`
+- Impact: Changes to the filtering pipeline (e.g., adding a new validation step) must be applied in both methods. Discrepancies between dry-run and actual cleaning would confuse users.
+- Fix approach: Extract the shared preparation logic (validate, detect game, load skip list, filter plugins) into a `PrepareCleaningSession` method that both `StartCleaningAsync` and `RunDryRunAsync` call.
+
+**Fire-and-forget interaction handles in CleaningCommandsViewModel:**
+- Issue: The progress and preview interaction handles are discarded with `_ = _showProgressInteraction.Handle(Unit.Default)` without awaiting or observing errors.
+- Files: `AutoQAC/ViewModels/MainWindow/CleaningCommandsViewModel.cs` (lines 190, 240)
+- Impact: If the interaction handler throws (e.g., window creation fails), the exception is silently swallowed. The user sees no error feedback.
+- Fix approach: Await the handle and wrap in try-catch, or subscribe to the returned observable with an error handler.
+
+## Risk Areas
+
+**PluginInfo mutation across threads:**
+- Issue: `PluginInfo.IsSelected` is a mutable property on a record that lives in `AppState.PluginsToClean`. The UI thread mutates `IsSelected` via checkbox binding, while background threads (CleaningOrchestrator) read it to determine which plugins to clean.
+- Files: `AutoQAC/Models/PluginInfo.cs` (line 34), `AutoQAC/ViewModels/MainWindow/PluginListViewModel.cs` (lines 116, 124), `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs` (lines 163, 175, 180)
+- Why fragile: No synchronization protects concurrent read/write of `IsSelected`. The cleaning orchestrator reads `PluginsToClean` from state and filters by `IsSelected` -- if the user toggles a checkbox while this runs, the behavior is undefined.
+- Safe modification: Always snapshot the plugin list before entering the cleaning loop. The orchestrator already creates a new `pluginsToClean` list, but the individual `PluginInfo` records inside share identity with the UI's copies.
+- Test coverage: No tests validate concurrent access to `IsSelected` across threads.
+
+**Process termination race condition window:**
+- Issue: `CleaningOrchestrator.StopCleaningAsync` reads `_currentProcess` under `_processLock`, then calls `TerminateProcessAsync` outside the lock. Between reading the reference and calling terminate, the cleaning loop could null out `_currentProcess` and dispose the process object.
+- Files: `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs` (lines 599-633)
+- Impact: This could cause `InvalidOperationException` when calling `process.Id` or `process.HasExited` on a disposed process. The existing `catch (InvalidOperationException)` blocks mitigate this, but the code relies on exception handling for flow control.
+- Fix approach: Hold the lock while checking `HasExited` and initiating termination, or use a reference-counted wrapper that prevents disposal while termination is in progress.
+
+**ConfigWatcherService deferred changes flag is volatile but not atomic with the hash update:**
+- Issue: `_hasDeferredChanges` is `volatile bool` and `_lastKnownExternalHash` is a plain reference. In `HandleFileChangedAsync`, the hash is updated and deferred flag is set in separate statements. If two file change events race (unlikely but possible), the flag and hash could become inconsistent.
+- Files: `AutoQAC/Services/Configuration/ConfigWatcherService.cs` (lines 33, 178-182)
+- Impact: Very low probability due to the 500ms throttle. The worst case is a missed reload or a spurious reload, both of which are benign.
+- Fix approach: Wrap the hash-and-flag update in a `lock` for correctness, even if the race window is vanishingly small.
 
 ## Security Considerations
 
-**No Input Validation on xEdit Arguments:**
-- Risk: `XEditCommandBuilder.BuildCommand()` directly interpolates `plugin.FileName` into command line without escaping or validation
-- Files: `AutoQAC/Services/Cleaning/XEditCommandBuilder.cs` (line 43)
-- Current mitigation: `plugin.FileName` comes from parsed plugins.txt (trusted source), not user input
-- Recommendations: Add validation that plugin filename doesn't contain shell metacharacters (`|`, `&`, `;`, etc.), use argument array instead of string concatenation where possible
+**Process execution does not validate executable path contents:**
+- Issue: `ProcessExecutionService.ExecuteAsync` accepts any `ProcessStartInfo` and launches the process. While the caller (CleaningService) provides the xEdit path from user configuration, there is no validation that the executable is actually xEdit (no signature check, no filename pattern enforcement at the execution layer).
+- Files: `AutoQAC/Services/Process/ProcessExecutionService.cs` (lines 32-170)
+- Current mitigation: The UI validates that the path ends with `.exe` and xEdit process names are used for orphan detection. The orchestrator validates the configuration before calling clean.
+- Recommendations: Add a warning log if the launched executable name does not match known xEdit patterns. This is a defense-in-depth measure -- the primary protection is the user choosing the correct file.
 
-**File Path Traversal Not Checked:**
-- Risk: Configuration files could specify arbitrary paths via `LoadOrder.File` or `XEdit.Binary`, including network paths
-- Files: `AutoQAC/Services/Configuration/ConfigurationService.cs` (lines 237-247), `MainWindowViewModel` file selection
-- Current mitigation: `File.Exists()` checks prevent non-existent paths, but symbolic links or junction points could redirect execution
-- Recommendations: Validate paths don't contain `..`, check for symlinks on Windows (`.IsReparsePoint`), log suspicious path choices
+**PID file is world-readable JSON:**
+- Issue: `autoqac-pids.json` stores process IDs and plugin names in plain JSON. Any local process can read it.
+- Files: `AutoQAC/Services/Process/ProcessExecutionService.cs` (lines 404-428)
+- Current mitigation: The file contains only PIDs and plugin filenames -- no credentials or sensitive data. It is written to the app's data directory.
+- Recommendations: No action needed. The data is non-sensitive and the threat model (local desktop app) does not warrant encryption.
 
-**Logging May Expose Sensitive Paths:**
-- Risk: File paths logged at Information/Debug levels could reveal user system structure
-- Files: Throughout logging calls in services
-- Current mitigation: None - logs contain full paths to xEdit, load order files, plugins
-- Recommendations: Consider masking home directories in logs, or adding sensitive data redaction to LoggingService
-
-## Performance Bottlenecks
-
-**Sequential-Only Processing - Scaling Limit:**
-- Problem: Architecture intentionally processes one plugin at a time due to xEdit's file locking. This is correct but means cleaning time scales linearly with plugin count.
-- Files: `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs` (lines 148-235)
-- Current bottleneck: A mod list with 500 plugins at 30 seconds each = 4+ hours cleaning time
-- Improvement path: Cannot parallelize xEdit execution (architectural constraint), but could optimize:
-  1. Pre-validate all plugins before starting (fail fast)
-  2. Cache skip list loading to disk instead of memory
-  3. Batch output parsing (currently per-plugin)
-
-**Regex Compilation on Every Parse:**
-- Problem: `XEditOutputParser` uses `GeneratedRegex` (compiled at compile-time, so this is actually fine - ignore this concern)
-- Files: `AutoQAC/Services/Cleaning/XEditOutputParser.cs` (lines 16-26)
-- Status: Already optimized - generated regexes are AOT-compiled
-
-**Configuration File Disk I/O Not Batched:**
-- Problem: Each configuration operation acquires `_fileLock` and reads/writes entire file. Multiple rapid config changes trigger multiple disk I/O operations.
-- Files: `AutoQAC/Services/Configuration/ConfigurationService.cs` (lines 95, 132, 215)
-- Impact: Noticeable lag when user rapidly changes settings or toggles skip lists
-- Improvement path: Implement dirty-flag pattern with periodic batch writes, debounce observable changes
-
-**MainWindowViewModel is Very Large:**
-- Problem: `MainWindowViewModel` is 904 lines - likely handling multiple concerns
-- Files: `AutoQAC/ViewModels/MainWindowViewModel.cs` (entire file)
-- Impact: Harder to test, higher chance of bugs in UI logic, slower to compile
-- Improvement path: Extract plugin loading logic to separate `PluginSelectionViewModel`, clean results display to separate `ResultsViewModel`
-
-## Fragile Areas
-
-**Game Detection Fallback Path Unclear:**
-- Files: `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs` (lines 74-95)
-- Why fragile: If xEdit auto-detection fails and load order has no extension to hint game type, cleaning proceeds with `GameType.Unknown`. Skip list lookup then returns empty, potentially cleaning undesired plugins.
-- Safe modification: Add explicit game type validation before processing. Log warning if game type remains Unknown after detection attempts.
-- Test coverage: Covered in `CleaningOrchestratorTests`, but edge case of Unknown game type needs explicit test
-
-**Plugin FullPath Placeholder Creates Two Code Paths:**
-- Files: `AutoQAC/Services/Plugin/PluginValidationService.cs` (lines 100-115)
-- Why fragile: `ValidatePluginExists()` behaves differently depending on whether `FullPath` is absolute or relative. Callers must understand this distinction.
-- Safe modification: Document contract clearly - either require rooted paths in `PluginInfo` at construction, or refuse validation for relative paths with explicit error
-- Test coverage: No tests for `ValidatePluginExists()` with relative paths
-
-**CancellationTokenSource Lock Synchronization:**
-- Files: `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs` (lines 24, 138-141, 269-283, 301-305)
-- Why fragile: `_cleaningCts` is locked but also checked by `StopCleaning()` and accessed in finally block. If `StopCleaning()` is called during disposal, race condition on null check is possible.
-- Safe modification: Use `Interlocked` operations instead of lock for null check, or ensure `StopCleaning()` cannot be called after `Dispose()` starts
-- Test coverage: No explicit tests for concurrent `StopCleaning()` + cleanup scenarios
-
-**XEdit Command Building Doesn't Validate Game Type:**
-- Files: `AutoQAC/Services/Cleaning/XEditCommandBuilder.cs` (lines 34-37, 80-91)
-- Why fragile: `GetGameFlag()` returns empty string for `GameType.Unknown`, producing command like `-QAC` without game flag. xEdit's behavior is undefined.
-- Safe modification: Throw or return null if `GameType.Unknown` is passed, force caller to resolve before building
-- Test coverage: Tests exist but don't cover Unknown game type scenario
-
-## Scaling Limits
-
-**State Immutability Creates Allocations:**
-- Current capacity: Each state update creates new immutable `AppState` record. With frequent progress updates (per-plugin), this creates garbage collection pressure.
-- Limit: On systems with 1000+ plugins, per-plugin state updates could accumulate allocations
-- Scaling path: Profile with large mod lists. If necessary, switch to mutable state with lock-based synchronization, or batch state updates
-
-**Configuration Cache Single-Level:**
-- Current capacity: `_mainConfigCache` in `ConfigurationService` is never invalidated
-- Limit: If user edits YAML file externally, application continues with stale config
-- Scaling path: Add cache invalidation on file modification detection (File System Watcher), or make cache invalidation explicit command
-
-**ObservableAsPropertyHelper Subscriptions Not Cleaned:**
-- Current capacity: `MainWindowViewModel` creates multiple observable chains (e.g., `RequiresLoadOrderFile`, `IsMutagenSupported`)
-- Limit: Long-lived ViewModels could accumulate subscriptions if not properly disposed
-- Scaling path: Verify all observables are disposed in `ViewModelBase.Dispose()` via `CompositeDisposable`
-
-## Dependencies at Risk
-
-**Mutagen Version Lock to Old API:**
-- Risk: Mutagen 0.52.0 is not latest (0.54+ exists). Potential security patches or bug fixes in newer versions not applied.
-- Impact: `PluginLoadingService` uses Mutagen for games like Skyrim SE and Fallout 4. Version mismatch could cause load failures.
-- Files: `AutoQAC/Services/Plugin/PluginLoadingService.cs` (uses Mutagen imports)
-- Migration plan: Evaluate Mutagen 0.54+ for compatibility, update if no breaking changes. Test plugin loading after upgrade.
-
-**Avalonia 11.3.11 Not Latest LTS:**
-- Risk: Avalonia 11.4+ may have critical fixes. Project targets net10.0 which may have different compatibility requirements.
-- Impact: UI rendering issues, performance problems, accessibility bugs
-- Migration plan: Check Avalonia release notes for any security/stability improvements, test on actual net10.0 runtime
-
-**YamlDotNet 16.3.0 Vulnerable?**
-- Risk: Older YAML parsers had security issues. 16.3.0 released Jan 2024 - check advisories.
-- Impact: Malicious YAML in config files could be exploited
-- Files: `AutoQAC/Services/Configuration/ConfigurationService.cs` (uses `IDeserializer`)
-- Mitigation: Add YAML schema validation (only allow expected keys), or pin to known-safe version
-
-## Missing Critical Features
-
-**No Dry-Run Mode:**
-- Problem: Users cannot test configuration without actually cleaning plugins. Mistakes can corrupt plugin files.
-- Blocks: Safe testing workflow
-- Recommendation: Add `--dry-run` flag to orchestrator, return `CleaningStatus.Skipped` for all plugins without calling xEdit
-
-**No Configuration Validation UI:**
-- Problem: Invalid paths or games only discovered during cleaning start, not in Settings screen
-- Blocks: Early error detection, user confidence
-- Recommendation: Add `ValidateSettingsAsync()` button in Settings tab, show detailed errors for each path
-
-**No Undo/Rollback:**
-- Problem: Cleaned plugins cannot be restored from within application
-- Blocks: Safety for new users
-- Recommendation: Document manual backup approach, or implement backup before cleaning
+**Backup restore overwrites files unconditionally:**
+- Issue: `BackupService.RestorePlugin` calls `File.Copy(backupPath, entry.OriginalPath, overwrite: true)` without any confirmation beyond the UI dialog that triggered the restore.
+- Files: `AutoQAC/Services/Backup/BackupService.cs` (line 143)
+- Current mitigation: The `RestoreViewModel` UI asks for user confirmation before restoring.
+- Recommendations: Consider creating a backup of the current file before overwriting with the restored version, so the user has a way to undo a restore.
 
 ## Test Coverage Gaps
 
-**ProcessExecutionService Process Termination Edge Cases:**
-- What's not tested: Process that ignores `CloseMainWindow()` and requires force `Kill()`, process that dies after `WaitForExitAsync()` but before disposal
-- Files: `AutoQAC/Services/Process/ProcessExecutionService.cs` (lines 147-179)
-- Risk: Process handle leaks, file locks persisting, next cleaning run fails to start xEdit
-- Priority: High - affects core cleaning loop
+**SettingsViewModel has zero test coverage:**
+- What's not tested: Settings loading, saving, validation (timeout ranges, path validation), unsaved change detection, and the reset-to-defaults flow.
+- Files: `AutoQAC/ViewModels/SettingsViewModel.cs` (610 lines)
+- Risk: Settings validation bugs could allow invalid timeout values (0 or negative), invalid paths, or silently fail to save.
+- Priority: Medium -- the SettingsWindow is a commonly used feature.
 
-**Configuration Migration Failure Paths:**
-- What's not tested: Legacy file exists but new file also exists (merge scenario), disk is full during migration, permission denied on delete
-- Files: `AutoQAC/Services/Configuration/ConfigurationService.cs` (lines 147-207)
-- Risk: Config corruption, user data loss, application startup failure
-- Priority: High - affects first launch
+**RestoreViewModel has zero test coverage:**
+- What's not tested: Session listing, plugin restore, error handling during restore, empty state handling.
+- Files: `AutoQAC/ViewModels/RestoreViewModel.cs` (289 lines)
+- Risk: Restore failures could silently corrupt plugin files if error handling is incomplete.
+- Priority: Medium -- backup restore is a critical safety feature.
 
-**Skip List Loading for Unknown GameType:**
-- What's not tested: `CleaningOrchestrator` behavior when game type remains Unknown after detection, fallback to local skip lists
-- Files: `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs` (lines 74-95, 114-131)
-- Risk: Unexpected plugins cleaned due to empty skip list
-- Priority: Medium - affects safety
+**AboutViewModel has zero test coverage:**
+- What's not tested: Version detection, URL launching, license loading.
+- Files: `AutoQAC/ViewModels/AboutViewModel.cs` (191 lines)
+- Risk: Low -- purely informational UI.
+- Priority: Low.
 
-**Concurrent State Updates:**
-- What's not tested: Multiple rapid `UpdateState()` calls from different tasks, state update during `FinishCleaning()`
-- Files: `AutoQAC/Services/State/StateService.cs` (entire class)
-- Risk: Race conditions, lost updates, UI display of incorrect progress
-- Priority: Medium - affects progress accuracy with high concurrency
+**ConfigurationViewModel and CleaningCommandsViewModel have minimal direct test coverage:**
+- What's not tested: These are tested indirectly through `MainWindowViewModelTests` and `MainWindowThreadingTests`, but the split ViewModels have no dedicated test files. Complex flows like approximation refresh cancellation, game selection with fallback to file-based loading, and pre-clean validation are only exercised through integration paths.
+- Files: `AutoQAC/ViewModels/MainWindow/ConfigurationViewModel.cs` (948 lines), `AutoQAC/ViewModels/MainWindow/CleaningCommandsViewModel.cs` (487 lines)
+- Risk: Regressions in reactive subscription ordering (e.g., `DisableSkipListsEnabled` race condition avoidance in `InitializeAsync`) are not covered by dedicated tests.
+- Priority: High -- these are the most complex ViewModels.
 
-**PluginValidationService with Non-Rooted Paths:**
-- What's not tested: `ValidatePluginExists()` returns true for relative paths (always), filtering behavior with mixed rooted/non-rooted paths
-- Files: `AutoQAC/Services/Plugin/PluginValidationService.cs` (lines 100-116)
-- Risk: No actual validation occurs, bad plugins not caught
-- Priority: Low - placeholder design, needs redesign before relying on validation
+**PluginQueryService (QueryPlugins orchestrator) has zero test coverage:**
+- What's not tested: The `Analyse` method that combines ITM detection, deleted references, and deleted navmeshes. The individual detectors are tested, but the composition is not.
+- Files: `QueryPlugins/PluginQueryService.cs` (88 lines)
+- Risk: If the composition order matters (e.g., link cache state) or if an exception in one detector should not prevent others from running, this would not be caught.
+- Priority: Medium.
+
+**MessageDialogService is not tested (Avalonia UI dependency):**
+- What's not tested: Dialog display, button click handling, thread marshaling, backup failure dialog flow.
+- Files: `AutoQAC/Services/UI/MessageDialogService.cs` (191 lines)
+- Risk: The backup failure dialog's code-behind UI construction is the most fragile part. No automated verification that buttons map to correct `BackupFailureChoice` values.
+- Priority: Low -- requires UI test infrastructure (Avalonia.Headless) that is explicitly not in the project.
 
 ---
 
-*Concerns audit: 2026-02-06*
+*Concerns audit: 2026-03-30*
