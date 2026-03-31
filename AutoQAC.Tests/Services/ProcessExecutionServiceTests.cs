@@ -204,10 +204,18 @@ public sealed class ProcessExecutionServiceTests : IDisposable
         backupServiceMock.BackupPlugin(Arg.Any<PluginInfo>(), Arg.Any<string>())
             .Returns(BackupResult.Ok(1024));
 
-        // Default setup for log file service
-        logFileServiceMock.ReadLogFileAsync(
-                Arg.Any<string>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
-            .Returns((new List<string>(), (string?)"Log file not found"));
+        // Default setup for log file service (offset-based API)
+        logFileServiceMock.GetLogFilePath(Arg.Any<string>(), Arg.Any<GameType>())
+            .Returns("fake_log.txt");
+        logFileServiceMock.GetExceptionLogFilePath(Arg.Any<string>(), Arg.Any<GameType>())
+            .Returns("fake_exception.log");
+        logFileServiceMock.CaptureOffset(Arg.Any<string>())
+            .Returns(0L);
+        logFileServiceMock.ReadLogContentAsync(
+                Arg.Any<string>(), Arg.Any<GameType>(),
+                Arg.Any<long>(), Arg.Any<long>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new LogReadResult { LogLines = new List<string>() });
 
         var plugins = new List<PluginInfo>
         {
@@ -329,9 +337,17 @@ public sealed class ProcessExecutionServiceTests : IDisposable
             .Returns(new List<string>());
         configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>())
             .Returns(new UserConfiguration());
-        logFileServiceMock.ReadLogFileAsync(
-                Arg.Any<string>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
-            .Returns((new List<string>(), (string?)"Log file not found"));
+        logFileServiceMock.GetLogFilePath(Arg.Any<string>(), Arg.Any<GameType>())
+            .Returns("fake_log.txt");
+        logFileServiceMock.GetExceptionLogFilePath(Arg.Any<string>(), Arg.Any<GameType>())
+            .Returns("fake_exception.log");
+        logFileServiceMock.CaptureOffset(Arg.Any<string>())
+            .Returns(0L);
+        logFileServiceMock.ReadLogContentAsync(
+                Arg.Any<string>(), Arg.Any<GameType>(),
+                Arg.Any<long>(), Arg.Any<long>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new LogReadResult { LogLines = new List<string>() });
         gameDetectionServiceMock.DetectVariant(Arg.Any<GameType>(), Arg.Any<List<string>>())
             .Returns(GameVariant.None);
         backupServiceMock.BackupPlugin(Arg.Any<PluginInfo>(), Arg.Any<string>())

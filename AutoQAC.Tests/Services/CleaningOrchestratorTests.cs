@@ -57,9 +57,18 @@ public sealed class CleaningOrchestratorTests
         _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>())
             .Returns(new UserConfiguration());
 
-        // Default mock setup for log file service: return empty lines (no log file found)
-        _logFileServiceMock.ReadLogFileAsync(Arg.Any<string>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
-            .Returns((new List<string>(), (string?)"Log file not found"));
+        // Default mock setup for log file service: offset-based API (empty log scenario)
+        _logFileServiceMock.GetLogFilePath(Arg.Any<string>(), Arg.Any<GameType>())
+            .Returns("fake_log.txt");
+        _logFileServiceMock.GetExceptionLogFilePath(Arg.Any<string>(), Arg.Any<GameType>())
+            .Returns("fake_exception.log");
+        _logFileServiceMock.CaptureOffset(Arg.Any<string>())
+            .Returns(0L);
+        _logFileServiceMock.ReadLogContentAsync(
+                Arg.Any<string>(), Arg.Any<GameType>(),
+                Arg.Any<long>(), Arg.Any<long>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new LogReadResult { LogLines = new List<string>() });
 
         _orchestrator = new CleaningOrchestrator(
             _cleaningServiceMock,
@@ -1467,6 +1476,204 @@ public sealed class CleaningOrchestratorTests
         var ex = await act.Should().ThrowAsync<InvalidOperationException>();
         ex.Which.Message.Should().Contain("MO2", "error message should reference MO2");
         ex.Which.Message.Should().Contain("Settings", "error message should guide user to Settings");
+    }
+
+    #endregion
+
+    #region Log-Based Parsing Tests
+
+    /// <summary>
+    /// Verifies that when cleaning succeeds and log file has content, the orchestrator
+    /// parses statistics from the log using the offset-based API.
+    /// </summary>
+    [Fact]
+    public async Task StartCleaningAsync_ShouldParseStatsFromLogFile_WhenCleaningSucceeds()
+    {
+        // Arrange
+        var plugin = new PluginInfo { FileName = "TestMod.esp", FullPath = "Path/TestMod.esp", IsSelected = true };
+        var appState = new AppState
+        {
+            LoadOrderPath = "plugins.txt",
+            XEditExecutablePath = @"C:\xEdit\SSEEdit.exe",
+            CurrentGameType = GameType.SkyrimSe,
+            PluginsToClean = new List<PluginInfo> { plugin }
+        };
+        _stateServiceMock.CurrentState.Returns(appState);
+
+        _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        _cleaningServiceMock.CleanPluginAsync(
+                Arg.Any<PluginInfo>(),
+                Arg.Any<IProgress<string>>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<Action<Process>?>())
+            .Returns(new CleaningResult { Success = true, Status = CleaningStatus.Cleaned });
+
+        var logLines = new List<string> { "Removing: [ARMO:00012345]", "Undeleting: [NPC_:00067890]" };
+        _logFileServiceMock.ReadLogContentAsync(
+                Arg.Any<string>(), Arg.Any<GameType>(),
+                Arg.Any<long>(), Arg.Any<long>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new LogReadResult { LogLines = logLines });
+
+        _outputParserMock.ParseOutput(Arg.Any<List<string>>())
+            .Returns(new CleaningStatistics { ItemsRemoved = 1, ItemsUndeleted = 1 });
+
+        // Act
+        await _orchestrator.StartCleaningAsync();
+
+        // Assert
+        _outputParserMock.Received(1).ParseOutput(Arg.Any<List<string>>());
+        _stateServiceMock.Received(1).AddDetailedCleaningResult(Arg.Is<PluginCleaningResult>(r =>
+            r.PluginName == "TestMod.esp" &&
+            r.Statistics != null &&
+            r.Statistics.ItemsRemoved == 1 &&
+            r.Statistics.ItemsUndeleted == 1));
+    }
+
+    /// <summary>
+    /// Verifies that when log contains a completion line but zero cleaning stats,
+    /// the plugin status is set to AlreadyClean.
+    /// </summary>
+    [Fact]
+    public async Task StartCleaningAsync_ShouldSetAlreadyClean_WhenCompletionLineButZeroStats()
+    {
+        // Arrange
+        var plugin = new PluginInfo { FileName = "CleanMod.esp", FullPath = "Path/CleanMod.esp", IsSelected = true };
+        var appState = new AppState
+        {
+            LoadOrderPath = "plugins.txt",
+            XEditExecutablePath = @"C:\xEdit\SSEEdit.exe",
+            CurrentGameType = GameType.SkyrimSe,
+            PluginsToClean = new List<PluginInfo> { plugin }
+        };
+        _stateServiceMock.CurrentState.Returns(appState);
+
+        _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        _cleaningServiceMock.CleanPluginAsync(
+                Arg.Any<PluginInfo>(),
+                Arg.Any<IProgress<string>>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<Action<Process>?>())
+            .Returns(new CleaningResult { Success = true, Status = CleaningStatus.Cleaned });
+
+        var logLines = new List<string> { "Done." };
+        _logFileServiceMock.ReadLogContentAsync(
+                Arg.Any<string>(), Arg.Any<GameType>(),
+                Arg.Any<long>(), Arg.Any<long>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new LogReadResult { LogLines = logLines });
+
+        _outputParserMock.ParseOutput(Arg.Any<List<string>>())
+            .Returns(new CleaningStatistics());
+        _outputParserMock.IsCompletionLine("Done.").Returns(true);
+
+        // Act
+        await _orchestrator.StartCleaningAsync();
+
+        // Assert
+        _stateServiceMock.Received(1).AddDetailedCleaningResult(Arg.Is<PluginCleaningResult>(r =>
+            r.PluginName == "CleanMod.esp" &&
+            r.Status == CleaningStatus.AlreadyClean));
+    }
+
+    /// <summary>
+    /// Verifies that when the exception log contains content, the plugin status is set to Failed
+    /// and the exception text appears in LogParseWarning.
+    /// </summary>
+    [Fact]
+    public async Task StartCleaningAsync_ShouldSurfaceExceptionLog_WhenExceptionContentPresent()
+    {
+        // Arrange
+        var plugin = new PluginInfo { FileName = "CrashMod.esp", FullPath = "Path/CrashMod.esp", IsSelected = true };
+        var appState = new AppState
+        {
+            LoadOrderPath = "plugins.txt",
+            XEditExecutablePath = @"C:\xEdit\SSEEdit.exe",
+            CurrentGameType = GameType.SkyrimSe,
+            PluginsToClean = new List<PluginInfo> { plugin }
+        };
+        _stateServiceMock.CurrentState.Returns(appState);
+
+        _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        _cleaningServiceMock.CleanPluginAsync(
+                Arg.Any<PluginInfo>(),
+                Arg.Any<IProgress<string>>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<Action<Process>?>())
+            .Returns(new CleaningResult { Success = true, Status = CleaningStatus.Cleaned });
+
+        _logFileServiceMock.ReadLogContentAsync(
+                Arg.Any<string>(), Arg.Any<GameType>(),
+                Arg.Any<long>(), Arg.Any<long>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new LogReadResult
+            {
+                LogLines = new List<string>(),
+                ExceptionContent = "Access violation at 0x00400000"
+            });
+
+        // Act
+        await _orchestrator.StartCleaningAsync();
+
+        // Assert
+        _stateServiceMock.Received(1).AddDetailedCleaningResult(Arg.Is<PluginCleaningResult>(r =>
+            r.PluginName == "CrashMod.esp" &&
+            r.Status == CleaningStatus.Failed &&
+            r.LogParseWarning != null &&
+            r.LogParseWarning.Contains("Access violation")));
+    }
+
+    /// <summary>
+    /// Verifies that when a plugin cleaning returns Skipped (cancelled), the orchestrator
+    /// does NOT attempt to read the log file.
+    /// </summary>
+    [Fact]
+    public async Task StartCleaningAsync_ShouldSkipLogRead_WhenProcessWasCancelled()
+    {
+        // Arrange
+        var plugin = new PluginInfo { FileName = "Cancelled.esp", FullPath = "Path/Cancelled.esp", IsSelected = true };
+        var appState = new AppState
+        {
+            LoadOrderPath = "plugins.txt",
+            XEditExecutablePath = @"C:\xEdit\SSEEdit.exe",
+            CurrentGameType = GameType.SkyrimSe,
+            PluginsToClean = new List<PluginInfo> { plugin }
+        };
+        _stateServiceMock.CurrentState.Returns(appState);
+
+        _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        _cleaningServiceMock.CleanPluginAsync(
+                Arg.Any<PluginInfo>(),
+                Arg.Any<IProgress<string>>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<Action<Process>?>())
+            .Returns(new CleaningResult
+            {
+                Success = false,
+                Status = CleaningStatus.Skipped,
+                Message = "Operation cancelled."
+            });
+
+        // Act
+        await _orchestrator.StartCleaningAsync();
+
+        // Assert - log reading should be skipped
+        await _logFileServiceMock.DidNotReceive().ReadLogContentAsync(
+            Arg.Any<string>(), Arg.Any<GameType>(),
+            Arg.Any<long>(), Arg.Any<long>(),
+            Arg.Any<CancellationToken>());
+
+        _stateServiceMock.Received(1).AddDetailedCleaningResult(Arg.Is<PluginCleaningResult>(r =>
+            r.PluginName == "Cancelled.esp" &&
+            r.Status == CleaningStatus.Skipped));
     }
 
     #endregion
