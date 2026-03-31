@@ -17,7 +17,6 @@ public sealed class CleaningServiceTests
     private readonly ILoggingService _mockLogger;
     private readonly IProcessExecutionService _mockProcess;
     private readonly IXEditCommandBuilder _mockCommandBuilder;
-    private readonly IXEditOutputParser _mockOutputParser;
 
     public CleaningServiceTests()
     {
@@ -26,7 +25,6 @@ public sealed class CleaningServiceTests
         _mockLogger = Substitute.For<ILoggingService>();
         _mockProcess = Substitute.For<IProcessExecutionService>();
         _mockCommandBuilder = Substitute.For<IXEditCommandBuilder>();
-        _mockOutputParser = Substitute.For<IXEditOutputParser>();
     }
 
     [Fact]
@@ -38,8 +36,7 @@ public sealed class CleaningServiceTests
             _mockState,
             _mockLogger,
             _mockProcess,
-            _mockCommandBuilder,
-            _mockOutputParser);
+            _mockCommandBuilder);
 
         var plugin = new PluginInfo
         {
@@ -88,8 +85,7 @@ public sealed class CleaningServiceTests
             _mockState,
             _mockLogger,
             _mockProcess,
-            _mockCommandBuilder,
-            _mockOutputParser);
+            _mockCommandBuilder);
 
         var plugin = new PluginInfo
         {
@@ -123,8 +119,7 @@ public sealed class CleaningServiceTests
             _mockState,
             _mockLogger,
             _mockProcess,
-            _mockCommandBuilder,
-            _mockOutputParser);
+            _mockCommandBuilder);
 
         var plugin = new PluginInfo
         {
@@ -171,8 +166,7 @@ public sealed class CleaningServiceTests
             _mockState,
             _mockLogger,
             _mockProcess,
-            _mockCommandBuilder,
-            _mockOutputParser);
+            _mockCommandBuilder);
 
         var plugin = new PluginInfo
         {
@@ -227,8 +221,7 @@ public sealed class CleaningServiceTests
             _mockState,
             _mockLogger,
             _mockProcess,
-            _mockCommandBuilder,
-            _mockOutputParser);
+            _mockCommandBuilder);
 
         var plugin = new PluginInfo
         {
@@ -280,8 +273,7 @@ public sealed class CleaningServiceTests
             _mockState,
             _mockLogger,
             _mockProcess,
-            _mockCommandBuilder,
-            _mockOutputParser);
+            _mockCommandBuilder);
 
         var plugin = new PluginInfo
         {
@@ -334,8 +326,7 @@ public sealed class CleaningServiceTests
             _mockState,
             _mockLogger,
             _mockProcess,
-            _mockCommandBuilder,
-            _mockOutputParser);
+            _mockCommandBuilder);
 
         var plugin = new PluginInfo
         {
@@ -380,8 +371,7 @@ public sealed class CleaningServiceTests
             _mockState,
             _mockLogger,
             _mockProcess,
-            _mockCommandBuilder,
-            _mockOutputParser);
+            _mockCommandBuilder);
 
         var plugin = new PluginInfo
         {
@@ -432,8 +422,7 @@ public sealed class CleaningServiceTests
             _mockState,
             _mockLogger,
             _mockProcess,
-            _mockCommandBuilder,
-            _mockOutputParser);
+            _mockCommandBuilder);
 
         // State has load order but no xEdit path
         var appState = new AppState
@@ -463,8 +452,7 @@ public sealed class CleaningServiceTests
             _mockState,
             _mockLogger,
             _mockProcess,
-            _mockCommandBuilder,
-            _mockOutputParser);
+            _mockCommandBuilder);
 
         var tempXEdit = Path.GetTempFileName();
         try
@@ -505,8 +493,7 @@ public sealed class CleaningServiceTests
             _mockState,
             _mockLogger,
             _mockProcess,
-            _mockCommandBuilder,
-            _mockOutputParser);
+            _mockCommandBuilder);
 
         var tempXEdit = Path.GetTempFileName();
         try

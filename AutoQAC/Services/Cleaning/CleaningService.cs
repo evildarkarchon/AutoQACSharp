@@ -16,8 +16,7 @@ public sealed class CleaningService(
     IStateService stateService,
     ILoggingService logger,
     IProcessExecutionService processService,
-    IXEditCommandBuilder commandBuilder,
-    IXEditOutputParser outputParser)
+    IXEditCommandBuilder commandBuilder)
     : ICleaningService
 {
     public async Task<CleaningResult> CleanPluginAsync(
