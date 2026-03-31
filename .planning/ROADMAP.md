@@ -60,7 +60,7 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 03-01-PLAN.md -- Add CleaningStatus.AlreadyClean enum, propagate through models/state, remove dead stdout parsing from CleaningService
+- [x] 03-01-PLAN.md -- Add CleaningStatus.AlreadyClean enum, propagate through models/state, remove dead stdout parsing from CleaningService
 - [ ] 03-02-PLAN.md -- Rewire CleaningOrchestrator with offset-based log reading, force-kill guard, nothing-to-clean and exception log handling
 
 ### Phase 4: Cleanup -- Remove Dead Code

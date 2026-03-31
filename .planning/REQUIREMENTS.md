@@ -23,7 +23,7 @@ Requirements for this bugfix milestone. Each maps to roadmap phases.
 ### Result Parsing
 
 - [ ] **PAR-01**: Existing regex patterns (`Removing:`, `Undeleting:`, `Skipping:`, `Making Partial Form:`) are applied to log file content instead of stdout
-- [ ] **PAR-02**: Parser detects "nothing to clean" state (completion lines present but zero cleaning actions)
+- [x] **PAR-02**: Parser detects "nothing to clean" state (completion lines present but zero cleaning actions)
 - [ ] **PAR-03**: Exception log content is surfaced in cleaning results when present
 
 ### Process Layer
@@ -35,7 +35,7 @@ Requirements for this bugfix milestone. Each maps to roadmap phases.
 
 - [ ] **ORC-01**: `CleaningOrchestrator` captures log offset before launching xEdit and reads log after process exit
 - [ ] **ORC-02**: Orchestrator checks process termination status before attempting log read (force-killed xEdit writes no log)
-- [ ] **ORC-03**: Hang detection and "running" status continue to display during xEdit execution
+- [x] **ORC-03**: Hang detection and "running" status continue to display during xEdit execution
 
 ### Cleanup
 
@@ -81,11 +81,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PRC-01 | Phase 2 | Complete |
 | PRC-02 | Phase 2 | Complete |
 | PAR-01 | Phase 3 | Pending |
-| PAR-02 | Phase 3 | Pending |
+| PAR-02 | Phase 3 | Complete |
 | PAR-03 | Phase 3 | Pending |
 | ORC-01 | Phase 3 | Pending |
 | ORC-02 | Phase 3 | Pending |
-| ORC-03 | Phase 3 | Pending |
+| ORC-03 | Phase 3 | Complete |
 | CLN-01 | Phase 4 | Pending |
 | CLN-02 | Phase 4 | Pending |
 | CLN-03 | Phase 4 | Pending |
