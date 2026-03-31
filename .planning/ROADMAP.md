@@ -61,7 +61,7 @@ Plans:
 
 Plans:
 - [x] 03-01-PLAN.md -- Add CleaningStatus.AlreadyClean enum, propagate through models/state, remove dead stdout parsing from CleaningService
-- [ ] 03-02-PLAN.md -- Rewire CleaningOrchestrator with offset-based log reading, force-kill guard, nothing-to-clean and exception log handling
+- [x] 03-02-PLAN.md -- Rewire CleaningOrchestrator with offset-based log reading, force-kill guard, nothing-to-clean and exception log handling
 
 ### Phase 4: Cleanup -- Remove Dead Code
 **Goal**: All dead stdout parsing code paths, stale timestamp detection, and unused test infrastructure are removed so the codebase reflects the log-only parsing reality
