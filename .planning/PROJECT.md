@@ -66,7 +66,8 @@ Correctly parse xEdit cleaning results from log files so users get accurate feed
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Parse from log files, not stdout | xEdit does not write to stdout/stderr | — Pending |
+| Parse from log files, not stdout | xEdit does not write to stdout/stderr | Phase 2 removed stdout redirect; Phase 3 will wire log parsing |
+| Remove dead stdout/stderr redirection | ProcessExecutionService captured empty streams; xEdit uses log files | Implemented in Phase 2 |
 | Track file offset before launch | Logs append, need to isolate current run's output | Implemented in Phase 1 |
 | Keep hang detection during execution | No stdout progress available, but CPU monitoring still valuable | — Pending |
 | GameType-based log naming (not executable stem) | Supports universal xEdit.exe with game flags; maps to xEdit wbAppName convention | Implemented in Phase 1 |
@@ -90,4 +91,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-31 after Phase 1 completion — game-aware log file service built and verified*
+*Last updated: 2026-03-31 after Phase 2 completion — dead stdout/stderr capture removed from ProcessExecutionService*
