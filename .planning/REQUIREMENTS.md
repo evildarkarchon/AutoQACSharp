@@ -1,156 +1,100 @@
-# Requirements: AutoQACSharp
+# Requirements: AutoQAC — xEdit Log Parsing Fix
 
-**Defined:** 2026-02-06
-**Core Value:** Reliably clean every plugin in a load order with one click, without corrupting game data or cleaning plugins that shouldn't be touched.
+**Defined:** 2026-03-30
+**Core Value:** Correctly parse xEdit cleaning results from log files so users get accurate feedback on what was cleaned, skipped, removed, or undeleted.
 
 ## v1 Requirements
 
-### Process Management
+Requirements for this bugfix milestone. Each maps to roadmap phases.
 
-- [x] **PROC-01**: Graceful subprocess termination with escalation pattern (close -> wait -> terminate -> wait -> kill entire tree)
-- [x] **PROC-02**: Reliable stop/cancel that guarantees xEdit is dead before reporting cancelled
-- [x] **PROC-03**: Fix process termination race condition (file handles persisting after disposal)
-- [x] **PROC-04**: Fix CancellationTokenSource lock synchronization (race on null check in StopCleaning + Dispose)
-- [x] **PROC-05**: CPU usage threshold monitoring to detect hung xEdit processes
-- [x] **PROC-06**: Improved subprocess resource management (wait condition pattern, timeout on slot acquisition)
+### Log File Naming
 
-### Progress & Feedback
+- [ ] **LOG-01**: Service resolves correct log filename using game-aware prefix mapping (e.g., `SSEEdit_log.txt` for SkyrimSe, not executable-stem-based)
+- [ ] **LOG-02**: Service supports universal `xEdit.exe` with game flags by using game type, not executable name, to determine log filename
+- [ ] **LOG-03**: Service resolves exception log filename from executable stem uppercase (e.g., `SSEEDITException.log`)
 
-- [x] **PROG-01**: Real-time parsed progress callbacks during cleaning (per-record stats, not just raw lines)
-- [x] **PROG-02**: Pipe OutputDataReceived events to ProgressWindow with live xEdit output scrolling
-- [x] **PROG-03**: Enhanced environment validation messages (detailed error strings with actionable guidance)
+### Offset-Based Reading
 
-### Configuration
+- [ ] **OFF-01**: Service captures log file byte offset (via `FileInfo.Length`) before xEdit launch
+- [ ] **OFF-02**: Service reads only new content appended after the captured offset using `FileStream.Seek` with `FileShare.ReadWrite`
+- [ ] **OFF-03**: Service handles missing log file gracefully (first run, file doesn't exist yet — offset = 0)
+- [ ] **OFF-04**: Service retries file read on `IOException` with backoff (file contention from antivirus/indexer)
 
-- [x] **CONF-01**: Deferred configuration saves (debounced batch writes to prevent deadlocks)
-- [x] **CONF-02**: Configuration validation UI in Settings (real-time path validation with visual feedback)
-- [x] **CONF-03**: Configuration helper methods (get_all, update_multiple, batch operations)
-- [x] **CONF-04**: YAML cache invalidation by file modification time
-- [x] **CONF-05**: Configuration file disk I/O batching (dirty-flag pattern with debounce)
-- [x] **CONF-06**: Fix legacy configuration migration (deletion outside lock, no validation)
-- [x] **CONF-07**: Journal/log expiration setting support
+### Result Parsing
 
-### Plugin Handling
+- [ ] **PAR-01**: Existing regex patterns (`Removing:`, `Undeleting:`, `Skipping:`, `Making Partial Form:`) are applied to log file content instead of stdout
+- [ ] **PAR-02**: Parser detects "nothing to clean" state (completion lines present but zero cleaning actions)
+- [ ] **PAR-03**: Exception log content is surfaced in cleaning results when present
 
-- [x] **PLUG-01**: Plugin line validation edge cases (separator detection, malformed entries, BOM, encoding)
-- [x] **PLUG-02**: Fix PluginInfo FullPath resolution (FileName used as placeholder)
-- [x] **PLUG-03**: Fix PluginValidationService two code paths (relative vs absolute FullPath)
-- [x] **PLUG-04**: TTW (Tale of Two Wastelands) skip list inheritance from FNV
-- [x] **PLUG-05**: XEdit command building validation (reject GameType.Unknown)
+### Process Layer
 
-### State Management
+- [ ] **PRC-01**: `ProcessExecutionService` no longer redirects stdout/stderr (xEdit writes nothing there)
+- [ ] **PRC-02**: MO2 wrapping continues to work correctly without stdout redirection
 
-- [x] **STAT-01**: Fix potential lock deadlock in StateService (Lock vs ReaderWriterLockSlim or async patterns)
-- [x] **STAT-02**: Bulk state change optimization (reduce signal overhead for multi-property updates)
+### Orchestration
 
-### Safety Features
+- [ ] **ORC-01**: `CleaningOrchestrator` captures log offset before launching xEdit and reads log after process exit
+- [ ] **ORC-02**: Orchestrator checks process termination status before attempting log read (force-killed xEdit writes no log)
+- [ ] **ORC-03**: Hang detection and "running" status continue to display during xEdit execution
 
-- [x] **SAFE-01**: Dry-run mode (preview which plugins would be cleaned without invoking xEdit)
-- [x] **SAFE-02**: Plugin backup before cleaning (timestamped copies to backup directory)
-- [x] **SAFE-03**: Backup rollback UI (select backup point, selective plugin restore)
+### Cleanup
 
-### Game Detection
-
-- [x] **GAME-01**: Fix game detection fallback path (validate game type before proceeding, reject Unknown)
-
-### UI/UX
-
-- [x] **UI-01**: About dialog with version, build info, .NET version, links to project
-- [x] **UI-02**: MainWindowViewModel decomposition (extract plugin selection, results display)
-- [x] **UI-03**: Logging improvements (startup info, xEdit commands, session summary)
-
-### Monitoring
-
-- [x] **MON-01**: Log file monitoring (tail xEdit log files for diagnostics)
-
-### Test Coverage
-
-- [x] **TEST-01**: ProcessExecutionService process termination edge cases
-- [x] **TEST-02**: Configuration migration failure paths (merge, disk full, permission denied)
-- [x] **TEST-03**: Skip list loading for Unknown GameType
-- [x] **TEST-04**: Concurrent state updates from multiple tasks
-- [x] **TEST-05**: PluginValidationService with non-rooted paths
-- [x] **TEST-06**: Comprehensive test coverage for all new features (target 80% on critical paths)
-
-### Dependencies
-
-- [x] **DEP-01**: Evaluate and update Mutagen (0.52.0 -> latest compatible)
-- [x] **DEP-02**: YamlDotNet security advisory check and update if needed
-
-### Post-Parity
-
-- [x] **POST-01**: Remove Code_To_Port/ directory after feature parity verified
+- [ ] **CLN-01**: Dead stdout parsing code paths removed from `CleaningService`
+- [ ] **CLN-02**: Old timestamp-based log staleness detection replaced by offset-based approach
+- [ ] **CLN-03**: Stale test mocks and unused parameters cleaned up
 
 ## v2 Requirements
 
-### Enhanced UX
+Deferred to future milestone. Tracked but not in current roadmap.
 
-- **UX-01**: Auto-discovery of xEdit from common install locations (Steam, Program Files)
-- **UX-02**: Config export/import for shareable settings (timeouts, skip lists -- not paths)
-- **UX-03**: Backup retention policy UI (configurable days/count, disk space monitoring)
+### Enhanced Parsing
+
+- **ENH-01**: Parse per-record detail from Removing/Undeleting lines for detailed result display
+- **ENH-02**: Parse deleted navmesh warnings for actionable user guidance
+- **ENH-03**: Parse elapsed time and processed/removed counts from summary lines for cross-validation
+- **ENH-04**: Parse "Can't remove" warnings to surface records xEdit couldn't clean
+- **ENH-05**: Support `-R:` custom log path flag for users who redirect xEdit logs
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| Parallel plugin cleaning | xEdit file locking makes this impossible -- fundamental constraint |
-| Auto-updating | Security surface, complexity, and maintenance burden for a modding tool |
-| Built-in xEdit | Redistribution concerns, version mismatch issues, separate project |
-| Plugin content analysis/preview | Duplicates xEdit's analysis engine, enormous scope for marginal benefit |
-| Cloud sync of settings | Config contains machine-specific absolute paths, not portable |
-| Plugin dependency resolution | xEdit handles master dependencies internally during QAC |
-| Cross-platform support | xEdit is Windows-only |
+| Real-time log tailing during xEdit execution | xEdit writes logs only on exit, not incrementally |
+| New UI for raw log display | Scope creep beyond the parsing fix |
+| Log file truncation/management | xEdit manages its own log files (truncates at 3MB) |
+| LOOT dirty info parsing | Separate LOOT-compatible block, not part of cleaning messages |
+| Parallel log reading | Sequential cleaning is a hard requirement |
 
 ## Traceability
 
+Which phases cover which requirements. Updated during roadmap creation.
+
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PROC-01 | Phase 1 | Complete |
-| PROC-02 | Phase 1 | Complete |
-| PROC-03 | Phase 1 | Complete |
-| PROC-04 | Phase 1 | Complete |
-| PROC-05 | Phase 6 | Complete |
-| PROC-06 | Phase 1 | Complete |
-| PROG-01 | Phase 3 | Complete |
-| PROG-02 | Phase 3 | Complete |
-| PROG-03 | Phase 3 | Complete |
-| CONF-01 | Phase 1 | Complete |
-| CONF-02 | Phase 4 | Complete |
-| CONF-03 | Phase 4 | Complete |
-| CONF-04 | Phase 4 | Complete |
-| CONF-05 | Phase 1 | Complete |
-| CONF-06 | Phase 4 | Complete |
-| CONF-07 | Phase 4 | Complete |
-| PLUG-01 | Phase 2 | Complete |
-| PLUG-02 | Phase 2 | Complete |
-| PLUG-03 | Phase 2 | Complete |
-| PLUG-04 | Phase 2 | Complete |
-| PLUG-05 | Phase 2 | Complete |
-| STAT-01 | Phase 1 | Complete |
-| STAT-02 | Phase 3 | Complete |
-| SAFE-01 | Phase 5 | Complete |
-| SAFE-02 | Phase 5 | Complete |
-| SAFE-03 | Phase 5 | Complete |
-| GAME-01 | Phase 2 | Complete |
-| UI-01 | Phase 6 | Complete |
-| UI-02 | Phase 6 | Complete |
-| UI-03 | Phase 6 | Complete |
-| MON-01 | Phase 6 | Complete |
-| TEST-01 | Phase 7 | Complete |
-| TEST-02 | Phase 7 | Complete |
-| TEST-03 | Phase 7 | Complete |
-| TEST-04 | Phase 7 | Complete |
-| TEST-05 | Phase 7 | Complete |
-| TEST-06 | Phase 7 | Complete |
-| DEP-01 | Phase 7 | Complete |
-| DEP-02 | Phase 7 | Complete |
-| POST-01 | Phase 7 | Complete |
+| LOG-01 | Pending | Pending |
+| LOG-02 | Pending | Pending |
+| LOG-03 | Pending | Pending |
+| OFF-01 | Pending | Pending |
+| OFF-02 | Pending | Pending |
+| OFF-03 | Pending | Pending |
+| OFF-04 | Pending | Pending |
+| PAR-01 | Pending | Pending |
+| PAR-02 | Pending | Pending |
+| PAR-03 | Pending | Pending |
+| PRC-01 | Pending | Pending |
+| PRC-02 | Pending | Pending |
+| ORC-01 | Pending | Pending |
+| ORC-02 | Pending | Pending |
+| ORC-03 | Pending | Pending |
+| CLN-01 | Pending | Pending |
+| CLN-02 | Pending | Pending |
+| CLN-03 | Pending | Pending |
 
 **Coverage:**
-- v1 requirements: 40 total
-- Mapped to phases: 40
-- Unmapped: 0
+- v1 requirements: 18 total
+- Mapped to phases: 0
+- Unmapped: 18 ⚠️
 
 ---
-*Requirements defined: 2026-02-06*
-*Last updated: 2026-02-07 after Phase 7 completion*
+*Requirements defined: 2026-03-30*
+*Last updated: 2026-03-30 after initial definition*
