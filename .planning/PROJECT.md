@@ -27,12 +27,19 @@ Correctly parse xEdit cleaning results from log files so users get accurate feed
 
 ### Active
 
-- [x] Parse xEdit cleaning results from log files instead of stdout — Validated in Phase 3
-- [x] Read log files from xEdit install directory after process exit — Validated in Phase 3
-- [x] Handle appending log behavior (track file position before launch, read only new content) — Validated in Phase 1
-- [x] Detect and surface xEdit exceptions from `<basename>Exception.log` — Validated in Phase 1, wired in Phase 3
-- [x] Maintain "running" status with hang detection during xEdit execution — Validated in Phase 3 (unchanged, confirmed working)
-- [x] Parse results post-exit using existing regex patterns against log file content — Validated in Phase 3
+None — all milestone requirements validated.
+
+### Recently Validated (Phases 1-4)
+
+- ✓ Parse xEdit cleaning results from log files instead of stdout — Validated in Phase 3
+- ✓ Read log files from xEdit install directory after process exit — Validated in Phase 3
+- ✓ Handle appending log behavior (track file position before launch, read only new content) — Validated in Phase 1
+- ✓ Detect and surface xEdit exceptions from `<basename>Exception.log` — Validated in Phase 1, wired in Phase 3
+- ✓ Maintain "running" status with hang detection during xEdit execution — Validated in Phase 3 (unchanged, confirmed working)
+- ✓ Parse results post-exit using existing regex patterns against log file content — Validated in Phase 3
+- ✓ Dead stdout parsing code paths removed — Validated in Phase 4
+- ✓ Timestamp-based log staleness detection replaced by offset-based reading — Validated in Phase 4
+- ✓ Stale test mocks and unused parameters cleaned up — Validated in Phase 4
 
 ### Out of Scope
 
@@ -72,7 +79,8 @@ Correctly parse xEdit cleaning results from log files so users get accurate feed
 | AlreadyClean status for nothing-to-clean | Completion line + zero stats = distinct status, not misleading zeros | Implemented in Phase 3 |
 | Force-kill guard before log read | Terminated xEdit may not flush log; skip read and return failure | Implemented in Phase 3 |
 | Track file offset before launch | Logs append, need to isolate current run's output | Implemented in Phase 1 |
-| Keep hang detection during execution | No stdout progress available, but CPU monitoring still valuable | — Pending |
+| Keep hang detection during execution | No stdout progress available, but CPU monitoring still valuable | Confirmed working in Phase 3 |
+| Remove dead code after log-first pipeline | Obsolete stdout parsing, timestamp detection, unused params all removed | Implemented in Phase 4 |
 | GameType-based log naming (not executable stem) | Supports universal xEdit.exe with game flags; maps to xEdit wbAppName convention | Implemented in Phase 1 |
 | Exponential backoff retry for file contention | Windows antivirus/indexer may briefly lock log files after xEdit exits | Implemented in Phase 1 (3 retries, 100/200/400ms) |
 
@@ -94,4 +102,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-31 after Phase 3 completion — orchestrator rewired to offset-based log reading with nothing-to-clean detection*
+*Last updated: 2026-03-31 after Phase 4 completion — all dead stdout code removed, milestone complete*
