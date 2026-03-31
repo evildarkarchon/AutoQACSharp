@@ -32,7 +32,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 2 plans
 
 Plans:
-- [ ] 01-01-PLAN.md -- Define contracts (LogReadResult model + IXEditLogFileService interface) and implement game-aware XEditLogFileService with offset-based reading
+- [x] 01-01-PLAN.md -- Define contracts (LogReadResult model + IXEditLogFileService interface) and implement game-aware XEditLogFileService with offset-based reading
 - [ ] 01-02-PLAN.md -- Rewrite XEditLogFileServiceTests with comprehensive coverage for all 7 phase requirements
 
 ### Phase 2: Process Layer -- Stop Stdout Capture
@@ -84,7 +84,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation -- Game-Aware Log File Service | 0/2 | Planned | - |
+| 1. Foundation -- Game-Aware Log File Service | 1/2 | In Progress | - |
 | 2. Process Layer -- Stop Stdout Capture | 0/? | Not started | - |
 | 3. Integration -- Log-First Parsing | 0/? | Not started | - |
 | 4. Cleanup -- Remove Dead Code | 0/? | Not started | - |

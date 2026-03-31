@@ -9,16 +9,16 @@ Requirements for this bugfix milestone. Each maps to roadmap phases.
 
 ### Log File Naming
 
-- [ ] **LOG-01**: Service resolves correct log filename using game-aware prefix mapping (e.g., `SSEEdit_log.txt` for SkyrimSe, not executable-stem-based)
-- [ ] **LOG-02**: Service supports universal `xEdit.exe` with game flags by using game type, not executable name, to determine log filename
-- [ ] **LOG-03**: Service resolves exception log filename from executable stem uppercase (e.g., `SSEEDITException.log`)
+- [x] **LOG-01**: Service resolves correct log filename using game-aware prefix mapping (e.g., `SSEEdit_log.txt` for SkyrimSe, not executable-stem-based)
+- [x] **LOG-02**: Service supports universal `xEdit.exe` with game flags by using game type, not executable name, to determine log filename
+- [x] **LOG-03**: Service resolves exception log filename from game-aware prefix (e.g., `SSEEditException.log`)
 
 ### Offset-Based Reading
 
-- [ ] **OFF-01**: Service captures log file byte offset (via `FileInfo.Length`) before xEdit launch
-- [ ] **OFF-02**: Service reads only new content appended after the captured offset using `FileStream.Seek` with `FileShare.ReadWrite`
-- [ ] **OFF-03**: Service handles missing log file gracefully (first run, file doesn't exist yet — offset = 0)
-- [ ] **OFF-04**: Service retries file read on `IOException` with backoff (file contention from antivirus/indexer)
+- [x] **OFF-01**: Service captures log file byte offset (via `FileInfo.Length`) before xEdit launch
+- [x] **OFF-02**: Service reads only new content appended after the captured offset using `FileStream.Seek` with `FileShare.ReadWrite`
+- [x] **OFF-03**: Service handles missing log file gracefully (first run, file doesn't exist yet — offset = 0)
+- [x] **OFF-04**: Service retries file read on `IOException` with backoff (file contention from antivirus/indexer)
 
 ### Result Parsing
 
@@ -71,13 +71,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| LOG-01 | Phase 1 | Pending |
-| LOG-02 | Phase 1 | Pending |
-| LOG-03 | Phase 1 | Pending |
-| OFF-01 | Phase 1 | Pending |
-| OFF-02 | Phase 1 | Pending |
-| OFF-03 | Phase 1 | Pending |
-| OFF-04 | Phase 1 | Pending |
+| LOG-01 | Phase 1 | Complete |
+| LOG-02 | Phase 1 | Complete |
+| LOG-03 | Phase 1 | Complete |
+| OFF-01 | Phase 1 | Complete |
+| OFF-02 | Phase 1 | Complete |
+| OFF-03 | Phase 1 | Complete |
+| OFF-04 | Phase 1 | Complete |
 | PRC-01 | Phase 2 | Pending |
 | PRC-02 | Phase 2 | Pending |
 | PAR-01 | Phase 3 | Pending |
@@ -97,4 +97,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-03-30*
-*Last updated: 2026-03-30 after roadmap creation*
+*Last updated: 2026-03-31 after 01-01-PLAN.md completion*
