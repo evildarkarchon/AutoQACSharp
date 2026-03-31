@@ -29,8 +29,8 @@ Correctly parse xEdit cleaning results from log files so users get accurate feed
 
 - [ ] Parse xEdit cleaning results from log files instead of stdout
 - [ ] Read log files from xEdit install directory after process exit
-- [ ] Handle appending log behavior (track file position before launch, read only new content)
-- [ ] Detect and surface xEdit exceptions from `<basename>Exception.log`
+- [x] Handle appending log behavior (track file position before launch, read only new content) — Validated in Phase 1
+- [x] Detect and surface xEdit exceptions from `<basename>Exception.log` — Validated in Phase 1
 - [ ] Maintain "running" status with hang detection during xEdit execution
 - [ ] Parse results post-exit using existing regex patterns against log file content
 
@@ -67,8 +67,10 @@ Correctly parse xEdit cleaning results from log files so users get accurate feed
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
 | Parse from log files, not stdout | xEdit does not write to stdout/stderr | — Pending |
-| Track file offset before launch | Logs append, need to isolate current run's output | — Pending |
+| Track file offset before launch | Logs append, need to isolate current run's output | Implemented in Phase 1 |
 | Keep hang detection during execution | No stdout progress available, but CPU monitoring still valuable | — Pending |
+| GameType-based log naming (not executable stem) | Supports universal xEdit.exe with game flags; maps to xEdit wbAppName convention | Implemented in Phase 1 |
+| Exponential backoff retry for file contention | Windows antivirus/indexer may briefly lock log files after xEdit exits | Implemented in Phase 1 (3 retries, 100/200/400ms) |
 
 ## Evolution
 
@@ -88,4 +90,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-30 after initialization*
+*Last updated: 2026-03-31 after Phase 1 completion — game-aware log file service built and verified*
