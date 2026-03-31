@@ -57,11 +57,11 @@ Plans:
   3. When xEdit crashes and writes an exception log, the error details are surfaced to the user in the cleaning results
   4. When xEdit is force-killed (hang detection triggered), the user sees a failure status instead of the app trying to parse a nonexistent log
   5. During xEdit execution, the user sees a "running" status with hang detection still active
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 03-01: TBD
-- [ ] 03-02: TBD
+- [ ] 03-01-PLAN.md -- Add CleaningStatus.AlreadyClean enum, propagate through models/state, remove dead stdout parsing from CleaningService
+- [ ] 03-02-PLAN.md -- Rewire CleaningOrchestrator with offset-based log reading, force-kill guard, nothing-to-clean and exception log handling
 
 ### Phase 4: Cleanup -- Remove Dead Code
 **Goal**: All dead stdout parsing code paths, stale timestamp detection, and unused test infrastructure are removed so the codebase reflects the log-only parsing reality
@@ -85,6 +85,6 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation -- Game-Aware Log File Service | 2/2 | Complete | 2026-03-31 |
-| 2. Process Layer -- Stop Stdout Capture | 0/1 | Not started | - |
-| 3. Integration -- Log-First Parsing | 0/? | Not started | - |
+| 2. Process Layer -- Stop Stdout Capture | 1/1 | Complete | 2026-03-31 |
+| 3. Integration -- Log-First Parsing | 0/2 | Not started | - |
 | 4. Cleanup -- Remove Dead Code | 0/? | Not started | - |
