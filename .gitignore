@@ -477,3 +477,5 @@ AutoQAC Data/AutoQAC Settings.yaml
 test_output.txt
 .claude/settings.local.json
 .codex/test-bin/
+.opencode-obj
+.opencode-out
