@@ -1,3 +1,7 @@
+using System;
+using System.Reflection;
+using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 using AutoQAC.Infrastructure;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Services.Backup;
@@ -12,10 +16,6 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Microsoft.Extensions.DependencyInjection;
 using Serilog;
-using System;
-using System.Linq;
-using System.Reflection;
-using System.Runtime.InteropServices;
 
 namespace AutoQAC
 {
@@ -55,7 +55,8 @@ namespace AutoQAC
                 var backupService = Services.GetRequiredService<IBackupService>();
                 var messageDialog = Services.GetRequiredService<IMessageDialogService>();
 
-                var mainWindow = new MainWindow(viewModel, logger, fileDialog, configService, stateService, orchestrator, backupService, messageDialog);
+                var mainWindow = new MainWindow(viewModel, logger, fileDialog, configService, stateService,
+                    orchestrator, backupService, messageDialog);
                 desktop.MainWindow = mainWindow;
 
                 // Log startup diagnostics
@@ -73,7 +74,7 @@ namespace AutoQAC
                 var logRetention = Services.GetRequiredService<ILogRetentionService>();
                 _ = RunLogRetentionAsync(logRetention, logger);
 
-                desktop.ShutdownRequested += (sender, args) =>
+                desktop.ShutdownRequested += (_, _) =>
                 {
                     try
                     {
@@ -121,7 +122,7 @@ namespace AutoQAC
             }
         }
 
-        private static async System.Threading.Tasks.Task RunLogRetentionAsync(
+        private static async Task RunLogRetentionAsync(
             ILogRetentionService logRetention,
             ILoggingService logger)
         {
@@ -135,7 +136,7 @@ namespace AutoQAC
             }
         }
 
-        private static async System.Threading.Tasks.Task RunMigrationAsync(
+        private static async Task RunMigrationAsync(
             ILegacyMigrationService migrationService,
             MainWindowViewModel viewModel,
             ILoggingService logger)
@@ -143,7 +144,7 @@ namespace AutoQAC
             try
             {
                 var result = await migrationService.MigrateIfNeededAsync();
-                if (result.Attempted && !result.Success && result.WarningMessage != null)
+                if (result is { Attempted: true, Success: false, WarningMessage: not null })
                 {
                     viewModel.ShowMigrationWarning(result.WarningMessage);
                 }

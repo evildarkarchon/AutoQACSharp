@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Reactive;
 using System.Reactive.Disposables;
@@ -8,7 +9,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
-using AutoQAC.Models.Configuration;
 using AutoQAC.Services.Configuration;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Services.State;
@@ -24,170 +24,47 @@ namespace AutoQAC.ViewModels.MainWindow;
 public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
 {
     private readonly IConfigurationService _configService;
-    private readonly IStateService _stateService;
-    private readonly ILoggingService _logger;
-    private readonly IFileDialogService _fileDialog;
-    private readonly IMessageDialogService _messageDialog;
-    private readonly IPluginValidationService _pluginService;
-    private readonly IPluginLoadingService _pluginLoadingService;
-    private readonly IPluginIssueApproximationService _pluginIssueApproximationService;
     private readonly CompositeDisposable _disposables = new();
-    private CancellationTokenSource? _pluginApproximationCts;
-    private int _pluginRefreshGeneration;
+    private readonly IFileDialogService _fileDialog;
+
+    private readonly ObservableAsPropertyHelper<bool> _isGameSelected;
+
+    private readonly ObservableAsPropertyHelper<bool> _isMutagenSupported;
+    private readonly ILoggingService _logger;
+    private readonly IMessageDialogService _messageDialog;
+    private readonly IPluginIssueApproximationService _pluginIssueApproximationService;
+    private readonly IPluginLoadingService _pluginLoadingService;
+    private readonly IPluginValidationService _pluginService;
+
+    private readonly ObservableAsPropertyHelper<bool> _requiresLoadOrderFile;
+    private readonly IStateService _stateService;
+
+    private bool _disableSkipListsEnabled;
+
+    private string? _gameDataFolder;
+
+    private bool _hasGameDataFolderOverride;
+
+    private bool _hasMigrationWarning;
 
     // Observable properties
     private string? _loadOrderPath;
 
-    public string? LoadOrderPath
-    {
-        get => _loadOrderPath;
-        set => this.RaiseAndSetIfChanged(ref _loadOrderPath, value);
-    }
-
-    private string? _xEditPath;
-
-    public string? XEditPath
-    {
-        get => _xEditPath;
-        set => this.RaiseAndSetIfChanged(ref _xEditPath, value);
-    }
-
-    private string? _mo2Path;
-
-    public string? Mo2Path
-    {
-        get => _mo2Path;
-        set => this.RaiseAndSetIfChanged(ref _mo2Path, value);
-    }
+    private string? _migrationWarningMessage;
 
     private bool _mo2ModeEnabled;
 
-    public bool Mo2ModeEnabled
-    {
-        get => _mo2ModeEnabled;
-        set => this.RaiseAndSetIfChanged(ref _mo2ModeEnabled, value);
-    }
+    private string? _mo2Path;
 
     private bool _partialFormsEnabled;
-
-    public bool PartialFormsEnabled
-    {
-        get => _partialFormsEnabled;
-        set => this.RaiseAndSetIfChanged(ref _partialFormsEnabled, value);
-    }
-
-    private bool _disableSkipListsEnabled;
-
-    public bool DisableSkipListsEnabled
-    {
-        get => _disableSkipListsEnabled;
-        set => this.RaiseAndSetIfChanged(ref _disableSkipListsEnabled, value);
-    }
+    private CancellationTokenSource? _pluginApproximationCts;
+    private int _pluginRefreshGeneration;
 
     private GameType _selectedGame = GameType.Unknown;
 
-    public GameType SelectedGame
-    {
-        get => _selectedGame;
-        set => this.RaiseAndSetIfChanged(ref _selectedGame, value);
-    }
-
-    public IReadOnlyList<GameType> AvailableGames { get; }
-
-    private readonly ObservableAsPropertyHelper<bool> _isMutagenSupported;
-    public bool IsMutagenSupported => _isMutagenSupported.Value;
-
-    private readonly ObservableAsPropertyHelper<bool> _isGameSelected;
-    public bool IsGameSelected => _isGameSelected.Value;
-
-    private readonly ObservableAsPropertyHelper<bool> _requiresLoadOrderFile;
-    public bool RequiresLoadOrderFile => _requiresLoadOrderFile.Value;
-
-    private string? _gameDataFolder;
-
-    public string? GameDataFolder
-    {
-        get => _gameDataFolder;
-        set => this.RaiseAndSetIfChanged(ref _gameDataFolder, value);
-    }
-
-    private bool _hasGameDataFolderOverride;
-
-    public bool HasGameDataFolderOverride
-    {
-        get => _hasGameDataFolderOverride;
-        set => this.RaiseAndSetIfChanged(ref _hasGameDataFolderOverride, value);
-    }
-
-    #region Path Validation State (null = untouched, true = valid, false = invalid)
-
-    private bool? _isXEditPathValid;
-    public bool? IsXEditPathValid
-    {
-        get => _isXEditPathValid;
-        set => this.RaiseAndSetIfChanged(ref _isXEditPathValid, value);
-    }
-
-    private bool? _isMo2PathValid;
-    public bool? IsMo2PathValid
-    {
-        get => _isMo2PathValid;
-        set => this.RaiseAndSetIfChanged(ref _isMo2PathValid, value);
-    }
-
-    private bool? _isLoadOrderPathValid;
-    public bool? IsLoadOrderPathValid
-    {
-        get => _isLoadOrderPathValid;
-        set => this.RaiseAndSetIfChanged(ref _isLoadOrderPathValid, value);
-    }
-
-    private bool? _isGameDataFolderValid;
-    public bool? IsGameDataFolderValid
-    {
-        get => _isGameDataFolderValid;
-        set => this.RaiseAndSetIfChanged(ref _isGameDataFolderValid, value);
-    }
-
-    #endregion
-
-    private bool _hasMigrationWarning;
-
-    public bool HasMigrationWarning
-    {
-        get => _hasMigrationWarning;
-        set => this.RaiseAndSetIfChanged(ref _hasMigrationWarning, value);
-    }
-
-    private string? _migrationWarningMessage;
-
-    public string? MigrationWarningMessage
-    {
-        get => _migrationWarningMessage;
-        set => this.RaiseAndSetIfChanged(ref _migrationWarningMessage, value);
-    }
-
     private string _statusText = "Ready";
 
-    /// <summary>
-    /// Status text managed by configuration operations. The parent orchestrator
-    /// reads this to display in the status bar.
-    /// </summary>
-    public string StatusText
-    {
-        get => _statusText;
-        set => this.RaiseAndSetIfChanged(ref _statusText, value);
-    }
-
-    // Commands
-    public ReactiveCommand<Unit, Unit> ConfigureLoadOrderCommand { get; }
-    public ReactiveCommand<Unit, Unit> ConfigureXEditCommand { get; }
-    public ReactiveCommand<Unit, Unit> ConfigureMo2Command { get; }
-    public ReactiveCommand<Unit, Unit> ConfigureGameDataFolderCommand { get; }
-    public ReactiveCommand<Unit, Unit> ClearGameDataFolderOverrideCommand { get; }
-    public ReactiveCommand<Unit, Unit> TogglePartialFormsCommand { get; }
-    public ReactiveCommand<Unit, Unit> DismissMigrationWarningCommand { get; }
-    public ReactiveCommand<Unit, Unit> ResetSettingsCommand { get; }
+    private string? _xEditPath;
 
     public ConfigurationViewModel(
         IConfigurationService configService,
@@ -206,7 +83,8 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
         _messageDialog = messageDialog;
         _pluginService = pluginService;
         _pluginLoadingService = pluginLoadingService;
-        _pluginIssueApproximationService = pluginIssueApproximationService ?? NoOpPluginIssueApproximationService.Instance;
+        _pluginIssueApproximationService =
+            pluginIssueApproximationService ?? NoOpPluginIssueApproximationService.Instance;
 
         // Initialize available games list
         AvailableGames = _pluginLoadingService.GetAvailableGames();
@@ -257,15 +135,15 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
         var xEditValidation = this.WhenAnyValue(x => x.XEditPath)
             .Select(path => string.IsNullOrWhiteSpace(path)
                 ? (bool?)null
-                : System.IO.File.Exists(path) && path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                : File.Exists(path) && path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
             .Subscribe(v => IsXEditPathValid = v);
         _disposables.Add(xEditValidation);
 
         // MO2 is optional: null when empty, true/false when populated
         var mo2Validation = this.WhenAnyValue(x => x.Mo2Path)
             .Select(path => string.IsNullOrWhiteSpace(path)
-                ? (bool?)null
-                : (bool?)(System.IO.File.Exists(path) && path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)))
+                ? null
+                : (bool?)(File.Exists(path) && path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)))
             .Subscribe(v => IsMo2PathValid = v);
         _disposables.Add(mo2Validation);
 
@@ -278,12 +156,12 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
 
                 if (required)
                 {
-                    return !string.IsNullOrWhiteSpace(path) && System.IO.File.Exists(path);
+                    return !string.IsNullOrWhiteSpace(path) && File.Exists(path);
                 }
 
                 return string.IsNullOrWhiteSpace(path)
-                    ? (bool?)null
-                    : (bool?)System.IO.File.Exists(path);
+                    ? null
+                    : (bool?)File.Exists(path);
             })
             .Subscribe(v => IsLoadOrderPathValid = v);
         _disposables.Add(loadOrderValidation);
@@ -291,8 +169,8 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
         // Game data folder is optional: null when empty, true/false when populated
         var dataFolderValidation = this.WhenAnyValue(x => x.GameDataFolder)
             .Select(path => string.IsNullOrWhiteSpace(path)
-                ? (bool?)null
-                : (bool?)System.IO.Directory.Exists(path))
+                ? null
+                : (bool?)Directory.Exists(path))
             .Subscribe(v => IsGameDataFolderValid = v);
         _disposables.Add(dataFolderValidation);
 
@@ -345,6 +223,103 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
         _disposables.Add(disableSkipListsSubscription);
     }
 
+    public string? LoadOrderPath
+    {
+        get => _loadOrderPath;
+        set => this.RaiseAndSetIfChanged(ref _loadOrderPath, value);
+    }
+
+    public string? XEditPath
+    {
+        get => _xEditPath;
+        set => this.RaiseAndSetIfChanged(ref _xEditPath, value);
+    }
+
+    public string? Mo2Path
+    {
+        get => _mo2Path;
+        set => this.RaiseAndSetIfChanged(ref _mo2Path, value);
+    }
+
+    public bool Mo2ModeEnabled
+    {
+        get => _mo2ModeEnabled;
+        set => this.RaiseAndSetIfChanged(ref _mo2ModeEnabled, value);
+    }
+
+    public bool PartialFormsEnabled
+    {
+        get => _partialFormsEnabled;
+        set => this.RaiseAndSetIfChanged(ref _partialFormsEnabled, value);
+    }
+
+    public bool DisableSkipListsEnabled
+    {
+        get => _disableSkipListsEnabled;
+        set => this.RaiseAndSetIfChanged(ref _disableSkipListsEnabled, value);
+    }
+
+    public GameType SelectedGame
+    {
+        get => _selectedGame;
+        set => this.RaiseAndSetIfChanged(ref _selectedGame, value);
+    }
+
+    public IReadOnlyList<GameType> AvailableGames { get; }
+    public bool IsMutagenSupported => _isMutagenSupported.Value;
+    public bool IsGameSelected => _isGameSelected.Value;
+    public bool RequiresLoadOrderFile => _requiresLoadOrderFile.Value;
+
+    public string? GameDataFolder
+    {
+        get => _gameDataFolder;
+        set => this.RaiseAndSetIfChanged(ref _gameDataFolder, value);
+    }
+
+    public bool HasGameDataFolderOverride
+    {
+        get => _hasGameDataFolderOverride;
+        set => this.RaiseAndSetIfChanged(ref _hasGameDataFolderOverride, value);
+    }
+
+    public bool HasMigrationWarning
+    {
+        get => _hasMigrationWarning;
+        set => this.RaiseAndSetIfChanged(ref _hasMigrationWarning, value);
+    }
+
+    public string? MigrationWarningMessage
+    {
+        get => _migrationWarningMessage;
+        set => this.RaiseAndSetIfChanged(ref _migrationWarningMessage, value);
+    }
+
+    /// <summary>
+    ///     Status text managed by configuration operations. The parent orchestrator
+    ///     reads this to display in the status bar.
+    /// </summary>
+    public string StatusText
+    {
+        get => _statusText;
+        set => this.RaiseAndSetIfChanged(ref _statusText, value);
+    }
+
+    // Commands
+    public ReactiveCommand<Unit, Unit> ConfigureLoadOrderCommand { get; }
+    public ReactiveCommand<Unit, Unit> ConfigureXEditCommand { get; }
+    public ReactiveCommand<Unit, Unit> ConfigureMo2Command { get; }
+    public ReactiveCommand<Unit, Unit> ConfigureGameDataFolderCommand { get; }
+    public ReactiveCommand<Unit, Unit> ClearGameDataFolderOverrideCommand { get; }
+    public ReactiveCommand<Unit, Unit> TogglePartialFormsCommand { get; }
+    public ReactiveCommand<Unit, Unit> DismissMigrationWarningCommand { get; }
+    public ReactiveCommand<Unit, Unit> ResetSettingsCommand { get; }
+
+    public void Dispose()
+    {
+        CancelPendingApproximation();
+        _disposables.Dispose();
+    }
+
     /// <summary>
     /// Called by parent after construction to load config and initialize state.
     /// </summary>
@@ -380,7 +355,7 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
             // If no game was saved but we have a load order file, try to detect game and load plugins
             if (savedGame == GameType.Unknown &&
                 !string.IsNullOrEmpty(config.LoadOrder.File) &&
-                System.IO.File.Exists(config.LoadOrder.File))
+                File.Exists(config.LoadOrder.File))
             {
                 try
                 {
@@ -424,7 +399,7 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
         if (!string.IsNullOrEmpty(path))
         {
             // Validate file exists
-            if (!System.IO.File.Exists(path))
+            if (!File.Exists(path))
             {
                 await _messageDialog.ShowErrorAsync(
                     "File Not Found",
@@ -460,7 +435,7 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
                 _stateService.SetPluginsToClean(pluginsWithSkipStatus);
                 StatusText = $"Loaded {plugins.Count} plugins from load order";
             }
-            catch (System.IO.FileNotFoundException ex)
+            catch (FileNotFoundException ex)
             {
                 _logger.Error(ex, "Load order file not found");
                 await _messageDialog.ShowErrorAsync(
@@ -470,7 +445,7 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
                 StatusText = "Load order file not found";
                 return;
             }
-            catch (System.IO.IOException ex)
+            catch (IOException ex)
             {
                 _logger.Error(ex, "Failed to read load order file");
                 await _messageDialog.ShowErrorAsync(
@@ -529,7 +504,7 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
         if (!string.IsNullOrEmpty(path))
         {
             // Verify the folder exists
-            if (!System.IO.Directory.Exists(path))
+            if (!Directory.Exists(path))
             {
                 await _messageDialog.ShowErrorAsync(
                     "Folder Not Found",
@@ -645,23 +620,23 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
             switch (loadResult.Status)
             {
                 case PluginLoadingStatus.Success:
-                    {
-                        var pluginsWithSkipStatus =
-                            ApplySkipListStatus(
-                                loadResult.Plugins,
-                                skipList,
-                                gameType,
-                                DisableSkipListsEnabled,
-                                PluginIssueApproximation.Pending);
-                        _stateService.SetPluginsToClean(pluginsWithSkipStatus);
-                        StatusText = $"Loaded {loadResult.Plugins.Count} plugins for {gameType}";
-                        StartApproximationRefresh(
+                {
+                    var pluginsWithSkipStatus =
+                        ApplySkipListStatus(
+                            loadResult.Plugins,
+                            skipList,
                             gameType,
-                            loadResult.DataFolder ?? GameDataFolder,
-                            pluginsWithSkipStatus,
-                            refreshGeneration);
-                        return;
-                    }
+                            DisableSkipListsEnabled,
+                            PluginIssueApproximation.Pending);
+                    _stateService.SetPluginsToClean(pluginsWithSkipStatus);
+                    StatusText = $"Loaded {loadResult.Plugins.Count} plugins for {gameType}";
+                    StartApproximationRefresh(
+                        gameType,
+                        loadResult.DataFolder ?? GameDataFolder,
+                        pluginsWithSkipStatus,
+                        refreshGeneration);
+                    return;
+                }
                 case PluginLoadingStatus.NoPluginsDiscovered:
                     _logger.Information(
                         "Mutagen returned no plugins for {GameType}; file-based loading can be used if configured",
@@ -703,7 +678,7 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
         }
 
         // Fall back to file-based loading if we have a load order path
-        if (!string.IsNullOrEmpty(LoadOrderPath) && System.IO.File.Exists(LoadOrderPath))
+        if (!string.IsNullOrEmpty(LoadOrderPath) && File.Exists(LoadOrderPath))
         {
             try
             {
@@ -793,6 +768,8 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
         int refreshGeneration,
         CancellationTokenSource cts)
     {
+        var cancellationToken = cts.Token;
+
         try
         {
             var results = await _pluginIssueApproximationService
@@ -801,17 +778,19 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
                     dataFolder,
                     approximation =>
                     {
-                        if (cts.IsCancellationRequested || refreshGeneration != Volatile.Read(ref _pluginRefreshGeneration))
+                        if (cancellationToken.IsCancellationRequested ||
+                            refreshGeneration != Volatile.Read(ref _pluginRefreshGeneration))
                         {
                             return;
                         }
 
                         _stateService.MergePluginApproximation(approximation);
                     },
-                    cts.Token)
+                    cancellationToken)
                 .ConfigureAwait(false);
 
-            if (cts.IsCancellationRequested || refreshGeneration != Volatile.Read(ref _pluginRefreshGeneration))
+            if (cancellationToken.IsCancellationRequested ||
+                refreshGeneration != Volatile.Read(ref _pluginRefreshGeneration))
             {
                 return;
             }
@@ -819,14 +798,16 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
             _stateService.MergePluginApproximations(
                 results.Count == 0 ? CreateUnavailableApproximations(plugins) : results);
         }
-        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
         }
         catch (Exception ex)
         {
-            _logger.Warning("Plugin issue approximation refresh failed for {GameType}: {Message}", gameType, ex.Message);
+            _logger.Warning("Plugin issue approximation refresh failed for {GameType}: {Message}", gameType,
+                ex.Message);
 
-            if (!cts.IsCancellationRequested && refreshGeneration == Volatile.Read(ref _pluginRefreshGeneration))
+            if (!cancellationToken.IsCancellationRequested &&
+                refreshGeneration == Volatile.Read(ref _pluginRefreshGeneration))
             {
                 _stateService.MergePluginApproximations(CreateUnavailableApproximations(plugins));
             }
@@ -839,7 +820,8 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
         }
     }
 
-    private static List<PluginIssueApproximationResult> CreateUnavailableApproximations(IReadOnlyList<PluginInfo> plugins)
+    private static List<PluginIssueApproximationResult> CreateUnavailableApproximations(
+        IReadOnlyList<PluginInfo> plugins)
     {
         return plugins.Select(plugin => new PluginIssueApproximationResult
         {
@@ -926,12 +908,6 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
         HasMigrationWarning = true;
     }
 
-    public void Dispose()
-    {
-        CancelPendingApproximation();
-        _disposables.Dispose();
-    }
-
     private sealed class NoOpPluginIssueApproximationService : IPluginIssueApproximationService
     {
         public static NoOpPluginIssueApproximationService Instance { get; } = new();
@@ -942,7 +918,44 @@ public sealed class ConfigurationViewModel : ViewModelBase, IDisposable
             Action<PluginIssueApproximationResult>? onApproximationReady = null,
             CancellationToken ct = default)
         {
-            return Task.FromResult<IReadOnlyList<PluginIssueApproximationResult>>(Array.Empty<PluginIssueApproximationResult>());
+            return Task.FromResult<IReadOnlyList<PluginIssueApproximationResult>>(
+                Array.Empty<PluginIssueApproximationResult>());
         }
     }
+
+    #region Path Validation State (null = untouched, true = valid, false = invalid)
+
+    private bool? _isXEditPathValid;
+
+    public bool? IsXEditPathValid
+    {
+        get => _isXEditPathValid;
+        set => this.RaiseAndSetIfChanged(ref _isXEditPathValid, value);
+    }
+
+    private bool? _isMo2PathValid;
+
+    public bool? IsMo2PathValid
+    {
+        get => _isMo2PathValid;
+        set => this.RaiseAndSetIfChanged(ref _isMo2PathValid, value);
+    }
+
+    private bool? _isLoadOrderPathValid;
+
+    public bool? IsLoadOrderPathValid
+    {
+        get => _isLoadOrderPathValid;
+        set => this.RaiseAndSetIfChanged(ref _isLoadOrderPathValid, value);
+    }
+
+    private bool? _isGameDataFolderValid;
+
+    public bool? IsGameDataFolderValid
+    {
+        get => _isGameDataFolderValid;
+        set => this.RaiseAndSetIfChanged(ref _isGameDataFolderValid, value);
+    }
+
+    #endregion
 }

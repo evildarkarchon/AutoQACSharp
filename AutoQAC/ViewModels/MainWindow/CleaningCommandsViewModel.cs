@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Linq;
 using System.Reactive;
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
+using System.Text;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
@@ -13,6 +15,7 @@ using AutoQAC.Services.Configuration;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Services.State;
 using AutoQAC.Services.UI;
+using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using ReactiveUI;
 
@@ -24,62 +27,23 @@ namespace AutoQAC.ViewModels.MainWindow;
 /// </summary>
 public sealed class CleaningCommandsViewModel : ViewModelBase, IDisposable
 {
-    private readonly IStateService _stateService;
-    private readonly ICleaningOrchestrator _orchestrator;
     private readonly IConfigurationService _configService;
-    private readonly IPluginLoadingService _pluginLoadingService;
+
+    // ReSharper disable once CollectionNeverUpdated.Local
+    private readonly CompositeDisposable _disposables = new();
     private readonly ILoggingService _logger;
     private readonly IMessageDialogService _messageDialog;
-    private readonly CompositeDisposable _disposables = new();
+    private readonly ICleaningOrchestrator _orchestrator;
+    private readonly IPluginLoadingService _pluginLoadingService;
+    private readonly Interaction<Unit, Unit> _showAboutInteraction;
+    private readonly Interaction<List<DryRunResult>, Unit> _showPreviewInteraction;
 
     // Interaction references passed from parent
     private readonly Interaction<Unit, Unit> _showProgressInteraction;
-    private readonly Interaction<List<DryRunResult>, Unit> _showPreviewInteraction;
+    private readonly Interaction<Unit, Unit> _showRestoreInteraction;
     private readonly Interaction<Unit, bool> _showSettingsInteraction;
     private readonly Interaction<Unit, bool> _showSkipListInteraction;
-    private readonly Interaction<Unit, Unit> _showRestoreInteraction;
-    private readonly Interaction<Unit, Unit> _showAboutInteraction;
-
-    public string StatusText
-    {
-        get;
-        set => this.RaiseAndSetIfChanged(ref field, value);
-    } = "Ready";
-
-    public ObservableCollection<ValidationError> ValidationErrors
-    {
-        get;
-        set => this.RaiseAndSetIfChanged(ref field, value);
-    } = new();
-
-    public bool HasValidationErrors
-    {
-        get;
-        set => this.RaiseAndSetIfChanged(ref field, value);
-    }
-
-    public bool IsCleaning
-    {
-        get;
-        private set => this.RaiseAndSetIfChanged(ref field, value);
-    }
-
-    public bool CanStartCleaning
-    {
-        get;
-        private set => this.RaiseAndSetIfChanged(ref field, value);
-    }
-
-    // Commands
-    public ReactiveCommand<Unit, Unit> StartCleaningCommand { get; }
-    public ReactiveCommand<Unit, Unit> StopCleaningCommand { get; }
-    public ReactiveCommand<Unit, Unit> PreviewCommand { get; }
-    public ReactiveCommand<Unit, Unit> ExitCommand { get; }
-    public ReactiveCommand<Unit, Unit> ShowAboutCommand { get; }
-    public ReactiveCommand<Unit, Unit> ShowSettingsCommand { get; }
-    public ReactiveCommand<Unit, Unit> ShowSkipListCommand { get; }
-    public ReactiveCommand<Unit, Unit> RestoreBackupsCommand { get; }
-    public ReactiveCommand<Unit, Unit> DismissValidationCommand { get; }
+    private readonly IStateService _stateService;
 
     public CleaningCommandsViewModel(
         IStateService stateService,
@@ -141,6 +105,52 @@ public sealed class CleaningCommandsViewModel : ViewModelBase, IDisposable
             ValidationErrors.Clear();
             HasValidationErrors = false;
         });
+    }
+
+    public string StatusText
+    {
+        get;
+        set => this.RaiseAndSetIfChanged(ref field, value);
+    } = "Ready";
+
+    public ObservableCollection<ValidationError> ValidationErrors
+    {
+        get;
+        set => this.RaiseAndSetIfChanged(ref field, value);
+    } = new();
+
+    public bool HasValidationErrors
+    {
+        get;
+        set => this.RaiseAndSetIfChanged(ref field, value);
+    }
+
+    public bool IsCleaning
+    {
+        get;
+        private set => this.RaiseAndSetIfChanged(ref field, value);
+    }
+
+    public bool CanStartCleaning
+    {
+        get;
+        private set => this.RaiseAndSetIfChanged(ref field, value);
+    }
+
+    // Commands
+    public ReactiveCommand<Unit, Unit> StartCleaningCommand { get; }
+    public ReactiveCommand<Unit, Unit> StopCleaningCommand { get; }
+    public ReactiveCommand<Unit, Unit> PreviewCommand { get; }
+    public ReactiveCommand<Unit, Unit> ExitCommand { get; }
+    public ReactiveCommand<Unit, Unit> ShowAboutCommand { get; }
+    public ReactiveCommand<Unit, Unit> ShowSettingsCommand { get; }
+    public ReactiveCommand<Unit, Unit> ShowSkipListCommand { get; }
+    public ReactiveCommand<Unit, Unit> RestoreBackupsCommand { get; }
+    public ReactiveCommand<Unit, Unit> DismissValidationCommand { get; }
+
+    public void Dispose()
+    {
+        _disposables.Dispose();
     }
 
     /// <summary>
@@ -276,7 +286,7 @@ public sealed class CleaningCommandsViewModel : ViewModelBase, IDisposable
                 "xEdit executable path is not set.",
                 "Go to Edit > Settings and set the xEdit Path to your xEdit executable (SSEEdit.exe, FO4Edit.exe, etc.)."));
         }
-        else if (!System.IO.File.Exists(state.XEditExecutablePath))
+        else if (!File.Exists(state.XEditExecutablePath))
         {
             errors.Add(new ValidationError(
                 "xEdit not found",
@@ -297,7 +307,7 @@ public sealed class CleaningCommandsViewModel : ViewModelBase, IDisposable
                     $"{state.CurrentGameType} requires a load order file (plugins.txt/loadorder.txt).",
                     "Set the load order path in the main window under Configuration > Load Order File."));
             }
-            else if (!System.IO.File.Exists(state.LoadOrderPath))
+            else if (!File.Exists(state.LoadOrderPath))
             {
                 errors.Add(new ValidationError(
                     "Load order not found",
@@ -312,7 +322,8 @@ public sealed class CleaningCommandsViewModel : ViewModelBase, IDisposable
             errors.Add(new ValidationError(
                 "No plugins loaded",
                 "No plugins are available for cleaning.",
-                "Select a game from the dropdown, or browse for a load order file."));
+                new StringBuilder().Append("Select a game from the dropdown, or browse for a load order file.")
+                    .ToString()));
         }
         else
         {
@@ -327,22 +338,20 @@ public sealed class CleaningCommandsViewModel : ViewModelBase, IDisposable
         }
 
         // MO2 validation (only if MO2 mode enabled)
-        if (state.Mo2ModeEnabled)
+        if (!state.Mo2ModeEnabled) return errors;
+        if (string.IsNullOrEmpty(state.Mo2ExecutablePath))
         {
-            if (string.IsNullOrEmpty(state.Mo2ExecutablePath))
-            {
-                errors.Add(new ValidationError(
-                    "MO2 not configured",
-                    "MO2 mode is enabled but no MO2 executable path is set.",
-                    "Go to Edit > Settings and set the MO2 Path, or disable MO2 mode if not using Mod Organizer 2."));
-            }
-            else if (!System.IO.File.Exists(state.Mo2ExecutablePath))
-            {
-                errors.Add(new ValidationError(
-                    "MO2 not found",
-                    $"MO2 executable not found at: {state.Mo2ExecutablePath}",
-                    "Check the MO2 executable path in Edit > Settings, or disable MO2 mode."));
-            }
+            errors.Add(new ValidationError(
+                "MO2 not configured",
+                "MO2 mode is enabled but no MO2 executable path is set.",
+                "Go to Edit > Settings and set the MO2 Path, or disable MO2 mode if not using Mod Organizer 2."));
+        }
+        else if (!File.Exists(state.Mo2ExecutablePath))
+        {
+            errors.Add(new ValidationError(
+                "MO2 not found",
+                $"MO2 executable not found at: {state.Mo2ExecutablePath}",
+                "Check the MO2 executable path in Edit > Settings, or disable MO2 mode."));
         }
 
         return errors;
@@ -357,11 +366,11 @@ public sealed class CleaningCommandsViewModel : ViewModelBase, IDisposable
                       $"Attempt {attemptNumber} of 3 failed.\n\n" +
                       "Would you like to retry cleaning this plugin?";
 
-        var details = "Possible causes:\n" +
-                      "- The plugin is very large\n" +
-                      "- xEdit is processing slowly\n" +
-                      "- The system is under heavy load\n\n" +
-                      "You can increase the timeout in Edit > Settings if plugins regularly time out.";
+        const string details = "Possible causes:\n" +
+                               "- The plugin is very large\n" +
+                               "- xEdit is processing slowly\n" +
+                               "- The system is under heavy load\n\n" +
+                               "You can increase the timeout in Edit > Settings if plugins regularly time out.";
 
         return await _messageDialog.ShowRetryAsync("Plugin Timeout", message, details);
     }
@@ -411,7 +420,7 @@ public sealed class CleaningCommandsViewModel : ViewModelBase, IDisposable
 
     private void Exit()
     {
-        if (Avalonia.Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+        if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             desktop.Shutdown();
         }
@@ -478,10 +487,5 @@ public sealed class CleaningCommandsViewModel : ViewModelBase, IDisposable
             _logger.Error(ex, "Failed to show or process skip list dialog");
             StatusText = "Error opening skip list";
         }
-    }
-
-    public void Dispose()
-    {
-        _disposables.Dispose();
     }
 }
