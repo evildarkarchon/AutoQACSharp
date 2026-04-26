@@ -1,97 +1,61 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.Linq;
-using System.Reactive;
-using System.Reactive.Disposables;
-using System.Reactive.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.Configuration;
 using AutoQAC.Services.State;
-using ReactiveUI;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 
 namespace AutoQAC.ViewModels;
 
-public sealed class SkipListViewModel : ViewModelBase, IDisposable
+public sealed partial class SkipListViewModel : ViewModelBase, IDisposable
 {
     private readonly IConfigurationService _configService;
     private readonly IStateService _stateService;
     private readonly ILoggingService _logger;
-    private readonly CompositeDisposable _disposables = new();
 
-    // Original skip list for change tracking
     private List<string> _originalSkipList = [];
 
-    // Valid plugin extensions
     private static readonly string[] ValidExtensions = [".esp", ".esm", ".esl"];
 
-    #region Properties
-
+    [ObservableProperty]
     private GameType _selectedGame;
-    public GameType SelectedGame
-    {
-        get => _selectedGame;
-        set => this.RaiseAndSetIfChanged(ref _selectedGame, value);
-    }
 
     public IReadOnlyList<GameType> AvailableGames { get; }
 
     public ObservableCollection<string> SkipListEntries { get; } = new();
 
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(RemoveSelectedEntryCommand))]
     private string? _selectedEntry;
-    public string? SelectedEntry
-    {
-        get => _selectedEntry;
-        set => this.RaiseAndSetIfChanged(ref _selectedEntry, value);
-    }
 
     public ObservableCollection<string> AvailablePlugins { get; } = new();
 
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(AddSelectedPluginCommand))]
     private string? _selectedPlugin;
-    public string? SelectedPlugin
-    {
-        get => _selectedPlugin;
-        set => this.RaiseAndSetIfChanged(ref _selectedPlugin, value);
-    }
 
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(AddManualEntryCommand))]
     private string _manualEntryText = string.Empty;
-    public string ManualEntryText
-    {
-        get => _manualEntryText;
-        set => this.RaiseAndSetIfChanged(ref _manualEntryText, value);
-    }
 
+    [ObservableProperty]
     private string? _manualEntryError;
-    public string? ManualEntryError
-    {
-        get => _manualEntryError;
-        set => this.RaiseAndSetIfChanged(ref _manualEntryError, value);
-    }
 
-    private readonly ObservableAsPropertyHelper<bool> _hasUnsavedChanges;
-    public bool HasUnsavedChanges => _hasUnsavedChanges.Value;
+    [ObservableProperty]
+    private bool _hasUnsavedChanges;
 
+    [ObservableProperty]
     private bool _isLoading;
-    public bool IsLoading
-    {
-        get => _isLoading;
-        set => this.RaiseAndSetIfChanged(ref _isLoading, value);
-    }
 
-    #endregion
-
-    #region Commands
-
-    public ReactiveCommand<Unit, Unit> AddSelectedPluginCommand { get; }
-    public ReactiveCommand<Unit, Unit> AddManualEntryCommand { get; }
-    public ReactiveCommand<Unit, Unit> RemoveSelectedEntryCommand { get; }
-    public ReactiveCommand<Unit, bool> SaveCommand { get; }
-    public ReactiveCommand<Unit, bool> CancelCommand { get; }
-
-    #endregion
+    /// <summary>Raised when the user picks Save or Cancel. The view closes the dialog with this value.</summary>
+    public event Action<bool>? CloseRequested;
 
     public SkipListViewModel(
         IConfigurationService configService,
@@ -102,80 +66,44 @@ public sealed class SkipListViewModel : ViewModelBase, IDisposable
         _stateService = stateService;
         _logger = logger;
 
-        // Available games (excluding Unknown)
         AvailableGames = Enum.GetValues<GameType>()
             .Where(g => g != GameType.Unknown)
             .ToList()
             .AsReadOnly();
 
-        // Track changes to skip list entries
-        var entriesChanged = Observable.FromEventPattern<System.Collections.Specialized.NotifyCollectionChangedEventHandler,
-            System.Collections.Specialized.NotifyCollectionChangedEventArgs>(
-                h => SkipListEntries.CollectionChanged += h,
-                h => SkipListEntries.CollectionChanged -= h)
-            .Select(_ => Unit.Default)
-            .StartWith(Unit.Default);
-
-        _hasUnsavedChanges = entriesChanged
-            .Select(_ => !SkipListEntriesMatchOriginal())
-            .ToProperty(this, x => x.HasUnsavedChanges);
-        _disposables.Add(_hasUnsavedChanges);
-
-        // Can add from available plugins when one is selected
-        var canAddFromPlugins = this.WhenAnyValue(x => x.SelectedPlugin)
-            .Select(p => !string.IsNullOrEmpty(p));
-
-        // Can add manual entry when text is valid
-        var canAddManual = this.WhenAnyValue(x => x.ManualEntryText)
-            .Select(t => ValidatePluginName(t) == null);
-
-        // Can remove when entry is selected
-        var canRemove = this.WhenAnyValue(x => x.SelectedEntry)
-            .Select(e => !string.IsNullOrEmpty(e));
-
-        // Commands
-        AddSelectedPluginCommand = ReactiveCommand.Create(AddSelectedPlugin, canAddFromPlugins);
-        AddManualEntryCommand = ReactiveCommand.Create(AddManualEntry, canAddManual);
-        RemoveSelectedEntryCommand = ReactiveCommand.CreateFromTask(RemoveSelectedEntryAsync, canRemove);
-        SaveCommand = ReactiveCommand.CreateFromTask(SaveAsync);
-        CancelCommand = ReactiveCommand.Create(() => false);
-
-        // Update manual entry error message reactively
-        var manualEntrySubscription = this.WhenAnyValue(x => x.ManualEntryText)
-            .Subscribe(text => ManualEntryError = ValidatePluginName(text));
-        _disposables.Add(manualEntrySubscription);
-
-        // When game selection changes, reload skip list
-        var gameChangeSubscription = this.WhenAnyValue(x => x.SelectedGame)
-            .Skip(1) // Skip initial value
-            .Where(_ => !IsLoading)
-            .SelectMany(async game =>
-            {
-                await LoadSkipListForGameAsync(game);
-                return Unit.Default;
-            })
-            .Subscribe();
-        _disposables.Add(gameChangeSubscription);
+        SkipListEntries.CollectionChanged += OnSkipListEntriesChanged;
+        RecomputeHasUnsavedChanges();
     }
 
-    /// <summary>
-    /// Loads skip list data. Call this before showing the window.
-    /// </summary>
+    private void OnSkipListEntriesChanged(object? sender, NotifyCollectionChangedEventArgs e) =>
+        RecomputeHasUnsavedChanges();
+
+    private void RecomputeHasUnsavedChanges() =>
+        HasUnsavedChanges = !SkipListEntriesMatchOriginal();
+
+    partial void OnManualEntryTextChanged(string value) =>
+        ManualEntryError = ValidatePluginName(value);
+
+    partial void OnSelectedGameChanged(GameType value)
+    {
+        if (IsLoading) return;
+        _ = LoadSkipListForGameAsync(value);
+    }
+
     public async Task LoadSkipListAsync()
     {
         try
         {
             IsLoading = true;
 
-            // Get current game from state or use first available
             var currentGame = _stateService.CurrentState.CurrentGameType;
             if (currentGame == GameType.Unknown && AvailableGames.Count > 0)
             {
                 currentGame = AvailableGames[0];
             }
 
-            _selectedGame = currentGame;
-            this.RaisePropertyChanged(nameof(SelectedGame));
+            // IsLoading is true → OnSelectedGameChanged bails out; we load explicitly below.
+            SelectedGame = currentGame;
 
             await LoadSkipListForGameAsync(currentGame);
         }
@@ -211,17 +139,18 @@ public sealed class SkipListViewModel : ViewModelBase, IDisposable
             _originalSkipList.Clear();
             SkipListEntries.Clear();
         }
+        finally
+        {
+            RecomputeHasUnsavedChanges();
+        }
     }
 
     private async Task RefreshAvailablePluginsAsync()
     {
         AvailablePlugins.Clear();
 
-        // Get loaded plugins from state
         var loadedPlugins = _stateService.CurrentState.PluginsToClean;
 
-        // Get the merged skip list (user + defaults from Main.yaml)
-        // This ensures base game ESMs and DLCs are excluded from available plugins
         var mergedSkipList = await _configService.GetSkipListAsync(SelectedGame, ct: CancellationToken.None);
         var skipSet = new HashSet<string>(mergedSkipList, StringComparer.OrdinalIgnoreCase);
 
@@ -233,6 +162,9 @@ public sealed class SkipListViewModel : ViewModelBase, IDisposable
         SelectedPlugin = null;
     }
 
+    private bool CanAddSelectedPlugin() => !string.IsNullOrEmpty(SelectedPlugin);
+
+    [RelayCommand(CanExecute = nameof(CanAddSelectedPlugin))]
     private void AddSelectedPlugin()
     {
         if (string.IsNullOrEmpty(SelectedPlugin))
@@ -240,19 +172,20 @@ public sealed class SkipListViewModel : ViewModelBase, IDisposable
 
         var plugin = SelectedPlugin;
 
-        // Add to skip list
         if (!SkipListEntries.Contains(plugin, StringComparer.OrdinalIgnoreCase))
         {
             SkipListEntries.Add(plugin);
         }
 
-        // Remove from available plugins
         AvailablePlugins.Remove(plugin);
         SelectedPlugin = null;
 
         _logger.Debug("Added {Plugin} to skip list from loaded plugins", plugin);
     }
 
+    private bool CanAddManualEntry() => ValidatePluginName(ManualEntryText) == null && !string.IsNullOrWhiteSpace(ManualEntryText);
+
+    [RelayCommand(CanExecute = nameof(CanAddManualEntry))]
     private void AddManualEntry()
     {
         var entry = ManualEntryText.Trim();
@@ -264,7 +197,6 @@ public sealed class SkipListViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        // Check for duplicates
         if (SkipListEntries.Contains(entry, StringComparer.OrdinalIgnoreCase))
         {
             ManualEntryError = "Plugin already in skip list";
@@ -273,7 +205,6 @@ public sealed class SkipListViewModel : ViewModelBase, IDisposable
 
         SkipListEntries.Add(entry);
 
-        // Also remove from available plugins if present
         var toRemove = AvailablePlugins.FirstOrDefault(p =>
             string.Equals(p, entry, StringComparison.OrdinalIgnoreCase));
         if (toRemove != null)
@@ -287,6 +218,9 @@ public sealed class SkipListViewModel : ViewModelBase, IDisposable
         _logger.Debug("Added {Plugin} to skip list via manual entry", entry);
     }
 
+    private bool CanRemoveSelectedEntry() => !string.IsNullOrEmpty(SelectedEntry);
+
+    [RelayCommand(CanExecute = nameof(CanRemoveSelectedEntry))]
     private async Task RemoveSelectedEntryAsync()
     {
         if (string.IsNullOrEmpty(SelectedEntry))
@@ -295,15 +229,11 @@ public sealed class SkipListViewModel : ViewModelBase, IDisposable
         var entry = SelectedEntry;
         SkipListEntries.Remove(entry);
 
-        // Add back to available plugins if it was loaded AND not in the default skip list
         var loadedPlugins = _stateService.CurrentState.PluginsToClean;
         var isLoadedPlugin = loadedPlugins.Any(p => string.Equals(p.FileName, entry, StringComparison.OrdinalIgnoreCase));
 
         if (isLoadedPlugin)
         {
-            // Check if plugin is in the DEFAULT skip list (from Main.yaml), not the merged list
-            // We use GetDefaultSkipListAsync because the user's removal hasn't been saved yet,
-            // and GetSkipListAsync would still include the unsaved user entry
             var defaultSkipList = await _configService.GetDefaultSkipListAsync(SelectedGame, CancellationToken.None);
             var inDefaultSkipList = defaultSkipList.Any(s => string.Equals(s, entry, StringComparison.OrdinalIgnoreCase));
 
@@ -318,7 +248,8 @@ public sealed class SkipListViewModel : ViewModelBase, IDisposable
         _logger.Debug("Removed {Plugin} from skip list", entry);
     }
 
-    private async Task<bool> SaveAsync()
+    [RelayCommand]
+    private async Task SaveAsync()
     {
         try
         {
@@ -326,17 +257,21 @@ public sealed class SkipListViewModel : ViewModelBase, IDisposable
             await _configService.UpdateSkipListAsync(SelectedGame, skipList);
 
             _originalSkipList = skipList.ToList();
+            RecomputeHasUnsavedChanges();
             _logger.Information("Skip list saved for {Game} with {Count} entries",
                 SelectedGame, skipList.Count);
 
-            return true;
+            CloseRequested?.Invoke(true);
         }
         catch (Exception ex)
         {
             _logger.Error(ex, "Failed to save skip list");
-            return false;
+            CloseRequested?.Invoke(false);
         }
     }
+
+    [RelayCommand]
+    private void Cancel() => CloseRequested?.Invoke(false);
 
     private bool SkipListEntriesMatchOriginal()
     {
@@ -352,11 +287,11 @@ public sealed class SkipListViewModel : ViewModelBase, IDisposable
     private static string? ValidatePluginName(string? text)
     {
         if (string.IsNullOrWhiteSpace(text))
-            return null; // Empty is valid (just can't submit)
+            return null;
 
         text = text.Trim();
 
-        if (text.Length < 5) // Minimum: "a.esp"
+        if (text.Length < 5)
             return "Plugin name too short";
 
         var hasValidExtension = ValidExtensions.Any(ext =>
@@ -370,6 +305,6 @@ public sealed class SkipListViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
-        _disposables.Dispose();
+        SkipListEntries.CollectionChanged -= OnSkipListEntriesChanged;
     }
 }

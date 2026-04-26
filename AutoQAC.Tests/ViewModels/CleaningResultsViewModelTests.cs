@@ -1,21 +1,16 @@
-using System.Reactive.Concurrency;
-using System.Reactive.Linq;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.UI;
-using AutoQAC.Tests.TestInfrastructure;
 using AutoQAC.ViewModels;
 using FluentAssertions;
 using NSubstitute;
-using ReactiveUI;
 
 namespace AutoQAC.Tests.ViewModels;
 
 /// <summary>
 /// Unit tests for <see cref="CleaningResultsViewModel"/>.
 /// </summary>
-[Collection(RxAppSchedulerCollection.Name)]
-public sealed class CleaningResultsViewModelTests : ImmediateMainThreadSchedulerTestBase
+public sealed class CleaningResultsViewModelTests
 {
     private readonly ILoggingService _loggerMock;
     private readonly IFileDialogService _fileDialogMock;
@@ -305,16 +300,18 @@ public sealed class CleaningResultsViewModelTests : ImmediateMainThreadScheduler
     #region Command Tests
 
     [Fact]
-    public void CloseCommand_ShouldBeExecutable()
+    public void CloseCommand_ShouldRaiseCloseRequested()
     {
         // Arrange
         var vm = CreateViewModel();
+        var closed = false;
+        vm.CloseRequested += (_, _) => closed = true;
 
-        // Act & Assert
-        vm.CloseCommand.CanExecute.Subscribe(canExecute =>
-        {
-            canExecute.Should().BeTrue();
-        });
+        // Act
+        vm.CloseCommand.Execute(null);
+
+        // Assert
+        closed.Should().BeTrue();
     }
 
     [Fact]
@@ -331,7 +328,7 @@ public sealed class CleaningResultsViewModelTests : ImmediateMainThreadScheduler
         var vm = CreateViewModel();
 
         // Act
-        await vm.ExportReportCommand.Execute().FirstAsync();
+        await vm.ExportReportCommand.ExecuteAsync(null);
 
         // Assert - No file should be written
         _loggerMock.DidNotReceive()
@@ -353,7 +350,7 @@ public sealed class CleaningResultsViewModelTests : ImmediateMainThreadScheduler
         var vm = CreateViewModel();
 
         // Act
-        await vm.ExportReportCommand.Execute().FirstAsync();
+        await vm.ExportReportCommand.ExecuteAsync(null);
 
         // Assert
         _loggerMock.Received(1)
@@ -377,7 +374,7 @@ public sealed class CleaningResultsViewModelTests : ImmediateMainThreadScheduler
         var vm = CreateViewModel(sessionResult);
 
         // Act
-        await vm.ExportReportCommand.Execute().FirstAsync();
+        await vm.ExportReportCommand.ExecuteAsync(null);
 
         // Assert
         await _fileDialogMock.Received(1).SaveFileDialogAsync(

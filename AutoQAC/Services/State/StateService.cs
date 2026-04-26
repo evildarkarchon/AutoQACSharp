@@ -81,9 +81,25 @@ public sealed class StateService : IStateService, IDisposable
 
     public void SetPluginsToClean(List<PluginInfo> plugins)
     {
-        UpdateState(s => s with
+        UpdateState(s =>
         {
-            PluginsToClean = new List<PluginInfo>(plugins).AsReadOnly()
+            // Prune exclusions to entries whose path appears in the new list. A genuine
+            // plugin-list change (game switch, load-order swap, settings reset, startup)
+            // drops stale deselections; an in-place refresh of the same list (e.g. a
+            // skip-list toggle) preserves them because the paths still match.
+            var pruned = s.ExcludedPluginPaths;
+            if (pruned.Count > 0)
+            {
+                var newPaths = new HashSet<string>(plugins.Select(p => p.FullPath), StringComparer.OrdinalIgnoreCase);
+                pruned = pruned.Where(newPaths.Contains)
+                    .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+            }
+
+            return s with
+            {
+                PluginsToClean = new List<PluginInfo>(plugins).AsReadOnly(),
+                ExcludedPluginPaths = pruned
+            };
         });
     }
 
@@ -148,6 +164,11 @@ public sealed class StateService : IStateService, IDisposable
                 PluginsToClean = merged.AsReadOnly()
             };
         });
+    }
+
+    public void UpdateExcludedPlugins(Func<IReadOnlySet<string>, IReadOnlySet<string>> updater)
+    {
+        UpdateState(s => s with { ExcludedPluginPaths = updater(s.ExcludedPluginPaths) });
     }
 
     public void StartCleaning(List<PluginInfo> plugins)

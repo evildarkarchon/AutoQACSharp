@@ -15,20 +15,33 @@ public sealed class ViewSubscriptionLifecycleTests
             "inline validation errors should show the specific reason, not just the title and fix step");
     }
 
+    /// <summary>
+    /// After the migration to CommunityToolkit.Mvvm, dialog windows expose a
+    /// <c>CloseRequested</c> event from the ViewModel rather than ReactiveUI commands.
+    /// The View must subscribe in <c>DataContextChanged</c>, unsubscribe when the
+    /// DataContext is replaced, and unsubscribe again on close to prevent leaks.
+    /// </summary>
     [Fact]
-    public void SkipListWindow_ShouldTrackSubscriptionsInCompositeDisposable_AndDisposeOnClose()
+    public void SkipListWindow_ShouldSubscribeToCloseRequestedEvent_AndUnsubscribeOnClose()
     {
         // Arrange
         var source = File.ReadAllText(GetRepoFilePath("AutoQAC/Views/SkipListWindow.axaml.cs"));
 
         // Assert
-        source.Should().Contain("CompositeDisposable _disposables", "window should track Rx subscriptions");
-        source.Should().Contain("_disposables.Add(viewModel.SaveCommand.Subscribe", "save subscription must be tracked");
-        source.Should().Contain("_disposables.Add(viewModel.CancelCommand.Subscribe", "cancel subscription must be tracked");
-        source.Should().Contain("protected override void OnClosed", "cleanup should happen on close");
-        source.Should().Contain("_disposables.Dispose();", "all tracked subscriptions must be disposed");
+        source.Should().Contain("CloseRequested += OnCloseRequested",
+            "window should subscribe to the VM CloseRequested event");
+        source.Should().Contain("CloseRequested -= OnCloseRequested",
+            "window must unsubscribe to avoid leaking the VM after close");
+        source.Should().Contain("protected override void OnClosed",
+            "cleanup should happen on close");
     }
 
+    /// <summary>
+    /// ProgressWindow is special: it must guard against double-dispose (the user can
+    /// either click the close button on the title bar or have the VM raise
+    /// CloseRequested), and must dispose the previous VM when the DataContext is
+    /// reassigned.
+    /// </summary>
     [Fact]
     public void ProgressWindow_ShouldUnsubscribePreviousViewModel_AndGuardDoubleDispose()
     {

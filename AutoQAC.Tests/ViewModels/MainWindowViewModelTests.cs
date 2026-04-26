@@ -1,4 +1,3 @@
-using System.Reactive.Concurrency;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
 using AutoQAC.Infrastructure.Logging;
@@ -14,12 +13,10 @@ using AutoQAC.ViewModels;
 using FluentAssertions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
-using ReactiveUI;
 
 namespace AutoQAC.Tests.ViewModels;
 
-[Collection(RxAppSchedulerCollection.Name)]
-public sealed class MainWindowViewModelTests : ImmediateMainThreadSchedulerTestBase
+public sealed class MainWindowViewModelTests
 {
     private readonly IConfigurationService _configServiceMock;
     private readonly IStateService _stateServiceMock;
@@ -29,6 +26,7 @@ public sealed class MainWindowViewModelTests : ImmediateMainThreadSchedulerTestB
     private readonly IMessageDialogService _messageDialogMock;
     private readonly IPluginValidationService _pluginServiceMock;
     private readonly IPluginLoadingService _pluginLoadingServiceMock;
+    private readonly IUiDispatcher _uiDispatcher;
 
     public MainWindowViewModelTests()
     {
@@ -40,6 +38,7 @@ public sealed class MainWindowViewModelTests : ImmediateMainThreadSchedulerTestB
         _messageDialogMock = Substitute.For<IMessageDialogService>();
         _pluginServiceMock = Substitute.For<IPluginValidationService>();
         _pluginLoadingServiceMock = Substitute.For<IPluginLoadingService>();
+        _uiDispatcher = new SynchronousUiDispatcher();
 
         // Default setup for plugin loading service
         _pluginLoadingServiceMock.GetAvailableGames()
@@ -54,6 +53,23 @@ public sealed class MainWindowViewModelTests : ImmediateMainThreadSchedulerTestB
         // Default setup for SkipListChanged observable
         _configServiceMock.SkipListChanged
             .Returns(Observable.Never<GameType>());
+    }
+
+    /// <summary>
+    /// Tests that need <c>SelectedGame</c> assignment to trigger the auto-save / refresh
+    /// pipeline must mark <see cref="ConfigurationViewModel"/> as initialized. The
+    /// production code gates <c>OnSelectedGameChanged</c>'s side effects behind
+    /// <c>_initialized = true</c>, which is set inside <c>InitializeAsync</c> after
+    /// <see cref="IConfigurationService.LoadUserConfigAsync"/> succeeds. Without a real
+    /// config from the mock, <c>InitializeAsync</c> NREs silently and the gate stays
+    /// closed, so signal-based tests time out.
+    /// </summary>
+    private void EnableSelectedGameSideEffects()
+    {
+        _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>())
+            .Returns(new UserConfiguration { LoadOrder = new(), XEdit = new(), ModOrganizer = new(), Settings = new() });
+        _configServiceMock.GetSelectedGameAsync(Arg.Any<CancellationToken>())
+            .Returns(GameType.Unknown);
     }
 
     private static TaskCompletionSource<bool> CreateSignal()
@@ -85,7 +101,7 @@ public sealed class MainWindowViewModelTests : ImmediateMainThreadSchedulerTestB
                 XEditExecutablePath = tempFile,
                 PluginsToClean = new List<PluginInfo>
                 {
-                    new() { FileName = "Test.esp", FullPath = "Test.esp", IsSelected = true }
+                    new() { FileName = "Test.esp", FullPath = "Test.esp" }
                 }
             };
             var stateSubject = new BehaviorSubject<AppState>(stateWithPlugins);
@@ -100,14 +116,16 @@ public sealed class MainWindowViewModelTests : ImmediateMainThreadSchedulerTestB
                 _fileDialogMock,
                 _messageDialogMock,
                 _pluginServiceMock,
-                _pluginLoadingServiceMock);
+                _pluginLoadingServiceMock,
+                _uiDispatcher);
+            using var _ = vm.ShowProgressInteraction.RegisterHandler(_ => Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
 
             // Manually set properties to satisfy CanExecute (use temp file path)
             vm.Configuration.LoadOrderPath = "plugins.txt";
             vm.Configuration.XEditPath = tempFile; // Use actual existing file
 
             // Act
-            await vm.Commands.StartCleaningCommand.Execute();
+            await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
 
             // Assert - verify the 3-param overload with timeout and backup failure callbacks is called
             await _orchestratorMock.Received(1)
@@ -140,7 +158,8 @@ public sealed class MainWindowViewModelTests : ImmediateMainThreadSchedulerTestB
                 _fileDialogMock,
                 _messageDialogMock,
                 _pluginServiceMock,
-                _pluginLoadingServiceMock);
+                _pluginLoadingServiceMock,
+                _uiDispatcher);
 
             _fileDialogMock.OpenFileDialogAsync(
                     Arg.Any<string>(),
@@ -168,7 +187,7 @@ public sealed class MainWindowViewModelTests : ImmediateMainThreadSchedulerTestB
                 .Returns(new List<string>());
 
             // Act
-            await vm.Configuration.ConfigureLoadOrderCommand.Execute();
+            await vm.Configuration.ConfigureLoadOrderCommand.ExecuteAsync(null);
 
             // Assert
             _stateServiceMock.Received(1).UpdateConfigurationPaths(tempFile, Arg.Any<string>(), Arg.Any<string>());
@@ -201,7 +220,7 @@ public sealed class MainWindowViewModelTests : ImmediateMainThreadSchedulerTestB
                 XEditExecutablePath = tempFile,
                 PluginsToClean = new List<PluginInfo>
                 {
-                    new() { FileName = "Test.esp", FullPath = "Test.esp", IsSelected = true }
+                    new() { FileName = "Test.esp", FullPath = "Test.esp" }
                 }
             };
             var stateSubject = new BehaviorSubject<AppState>(stateWithPlugins);
@@ -222,7 +241,9 @@ public sealed class MainWindowViewModelTests : ImmediateMainThreadSchedulerTestB
                 _fileDialogMock,
                 _messageDialogMock,
                 _pluginServiceMock,
-                _pluginLoadingServiceMock);
+                _pluginLoadingServiceMock,
+                _uiDispatcher);
+            using var _ = vm.ShowProgressInteraction.RegisterHandler(_ => Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
 
             await WaitForSignalAsync(initializationApplied);
 
@@ -235,7 +256,7 @@ public sealed class MainWindowViewModelTests : ImmediateMainThreadSchedulerTestB
                 .ThrowsAsync(new InvalidOperationException("Configuration is invalid"));
 
             // Act
-            await vm.Commands.StartCleaningCommand.Execute();
+            await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
 
             // Assert - inline validation errors shown instead of modal dialog
             vm.Commands.StatusText.Should().Contain("error", "error message should be displayed in status");
@@ -276,7 +297,8 @@ public sealed class MainWindowViewModelTests : ImmediateMainThreadSchedulerTestB
             _fileDialogMock,
             _messageDialogMock,
             _pluginServiceMock,
-            _pluginLoadingServiceMock);
+            _pluginLoadingServiceMock,
+            _uiDispatcher);
 
         // Configure dialog to return null (user cancelled)
         _fileDialogMock.OpenFileDialogAsync(
@@ -286,7 +308,7 @@ public sealed class MainWindowViewModelTests : ImmediateMainThreadSchedulerTestB
             .Returns((string?)null);
 
         // Act
-        await vm.Configuration.ConfigureLoadOrderCommand.Execute();
+        await vm.Configuration.ConfigureLoadOrderCommand.ExecuteAsync(null);
 
         // Assert
         // State should not be updated when dialog is cancelled
@@ -325,7 +347,8 @@ public sealed class MainWindowViewModelTests : ImmediateMainThreadSchedulerTestB
                 _fileDialogMock,
                 _messageDialogMock,
                 _pluginServiceMock,
-                _pluginLoadingServiceMock);
+                _pluginLoadingServiceMock,
+                _uiDispatcher);
 
             await WaitForSignalAsync(initializationApplied);
 
@@ -340,7 +363,7 @@ public sealed class MainWindowViewModelTests : ImmediateMainThreadSchedulerTestB
                 .ThrowsAsync(new InvalidOperationException("Failed to parse load order"));
 
             // Act
-            await vm.Configuration.ConfigureLoadOrderCommand.Execute();
+            await vm.Configuration.ConfigureLoadOrderCommand.ExecuteAsync(null);
 
             // Assert
             vm.Configuration.StatusText.Should().Contain("Error", "error should be reflected in status");
@@ -384,7 +407,8 @@ public sealed class MainWindowViewModelTests : ImmediateMainThreadSchedulerTestB
             _fileDialogMock,
             _messageDialogMock,
             _pluginServiceMock,
-            _pluginLoadingServiceMock);
+            _pluginLoadingServiceMock,
+            _uiDispatcher);
 
         // Act - set properties on Configuration sub-VM (these don't affect CanStartCleaning
         // since it now reads from IStateService, but the state has no plugins/xEdit)
@@ -415,7 +439,8 @@ public sealed class MainWindowViewModelTests : ImmediateMainThreadSchedulerTestB
             _fileDialogMock,
             _messageDialogMock,
             _pluginServiceMock,
-            _pluginLoadingServiceMock);
+            _pluginLoadingServiceMock,
+            _uiDispatcher);
 
         // Set valid paths on Configuration sub-VM
         vm.Configuration.LoadOrderPath = "plugins.txt";
@@ -453,10 +478,11 @@ public sealed class MainWindowViewModelTests : ImmediateMainThreadSchedulerTestB
             _fileDialogMock,
             _messageDialogMock,
             _pluginServiceMock,
-            _pluginLoadingServiceMock);
+            _pluginLoadingServiceMock,
+            _uiDispatcher);
 
         // Act
-        await vm.Commands.StopCleaningCommand.Execute();
+        await vm.Commands.StopCleaningCommand.ExecuteAsync(null);
 
         // Assert
         await _orchestratorMock.Received(1).StopCleaningAsync();
@@ -488,10 +514,11 @@ public sealed class MainWindowViewModelTests : ImmediateMainThreadSchedulerTestB
             _fileDialogMock,
             _messageDialogMock,
             _pluginServiceMock,
-            _pluginLoadingServiceMock);
+            _pluginLoadingServiceMock,
+            _uiDispatcher);
 
         // Act
-        await vm.Commands.StopCleaningCommand.Execute();
+        await vm.Commands.StopCleaningCommand.ExecuteAsync(null);
 
         // Assert
         await _orchestratorMock.Received(1).ForceStopCleaningAsync();
@@ -524,10 +551,11 @@ public sealed class MainWindowViewModelTests : ImmediateMainThreadSchedulerTestB
             _fileDialogMock,
             _messageDialogMock,
             _pluginServiceMock,
-            _pluginLoadingServiceMock);
+            _pluginLoadingServiceMock,
+            _uiDispatcher);
 
         // Act
-        await vm.Commands.StopCleaningCommand.Execute();
+        await vm.Commands.StopCleaningCommand.ExecuteAsync(null);
 
         // Assert
         await _orchestratorMock.DidNotReceive().ForceStopCleaningAsync();
@@ -560,7 +588,8 @@ public sealed class MainWindowViewModelTests : ImmediateMainThreadSchedulerTestB
             _fileDialogMock,
             _messageDialogMock,
             _pluginServiceMock,
-            _pluginLoadingServiceMock);
+            _pluginLoadingServiceMock,
+            _uiDispatcher);
 
         // Act
         var newState = new AppState
@@ -609,7 +638,8 @@ public sealed class MainWindowViewModelTests : ImmediateMainThreadSchedulerTestB
             _fileDialogMock,
             _messageDialogMock,
             _pluginServiceMock,
-            _pluginLoadingServiceMock);
+            _pluginLoadingServiceMock,
+            _uiDispatcher);
 
         // Assert - AvailableGames is now on Configuration sub-VM
         vm.Configuration.AvailableGames.Should().BeEquivalentTo(expectedGames);
@@ -639,7 +669,8 @@ public sealed class MainWindowViewModelTests : ImmediateMainThreadSchedulerTestB
             _fileDialogMock,
             _messageDialogMock,
             _pluginServiceMock,
-            _pluginLoadingServiceMock);
+            _pluginLoadingServiceMock,
+            _uiDispatcher);
 
         // Act & Assert - Default is Unknown (not supported)
         vm.Configuration.IsMutagenSupported.Should().BeFalse();
@@ -660,6 +691,7 @@ public sealed class MainWindowViewModelTests : ImmediateMainThreadSchedulerTestB
     public async Task SelectedGame_ShouldPersistToConfiguration_WhenChanged()
     {
         // Arrange
+        EnableSelectedGameSideEffects();
         var selectedGamePersisted = CreateSignal();
         var stateSubject = new BehaviorSubject<AppState>(new AppState());
         _stateServiceMock.StateChanged.Returns(stateSubject);
@@ -683,7 +715,8 @@ public sealed class MainWindowViewModelTests : ImmediateMainThreadSchedulerTestB
             _fileDialogMock,
             _messageDialogMock,
             _pluginServiceMock,
-            _pluginLoadingServiceMock);
+            _pluginLoadingServiceMock,
+            _uiDispatcher);
 
         // Act
         vm.Configuration.SelectedGame = GameType.SkyrimSe;
@@ -701,6 +734,7 @@ public sealed class MainWindowViewModelTests : ImmediateMainThreadSchedulerTestB
     public async Task SelectedGame_ShouldRefreshPlugins_WhenChangedToMutagenSupportedGame()
     {
         // Arrange
+        EnableSelectedGameSideEffects();
         var pluginsLoaded = CreateSignal();
         var expectedPlugins = new List<PluginInfo>
         {
@@ -748,7 +782,8 @@ public sealed class MainWindowViewModelTests : ImmediateMainThreadSchedulerTestB
             _fileDialogMock,
             _messageDialogMock,
             _pluginServiceMock,
-            _pluginLoadingServiceMock);
+            _pluginLoadingServiceMock,
+            _uiDispatcher);
 
         // Act
         vm.Configuration.SelectedGame = GameType.SkyrimSe;
@@ -766,6 +801,7 @@ public sealed class MainWindowViewModelTests : ImmediateMainThreadSchedulerTestB
     [Fact]
     public async Task SelectedGame_ShouldPublishPendingApproximationsThenMergeBackgroundResults()
     {
+        EnableSelectedGameSideEffects();
         var approximationServiceMock = Substitute.For<IPluginIssueApproximationService>();
         var pendingPluginsPublished = CreateSignal();
         var approximationMergedBeforeCompletion = CreateSignal();
@@ -852,7 +888,8 @@ public sealed class MainWindowViewModelTests : ImmediateMainThreadSchedulerTestB
             _messageDialogMock,
             _pluginServiceMock,
             _pluginLoadingServiceMock,
-            approximationServiceMock);
+            _uiDispatcher,
+            pluginIssueApproximationService: approximationServiceMock);
 
         vm.Configuration.SelectedGame = GameType.SkyrimSe;
         await WaitForSignalAsync(pendingPluginsPublished);
@@ -880,6 +917,7 @@ public sealed class MainWindowViewModelTests : ImmediateMainThreadSchedulerTestB
     [Fact]
     public async Task SelectedGame_ShouldKeepPluginListLoadedWhenApproximationFails()
     {
+        EnableSelectedGameSideEffects();
         var approximationServiceMock = Substitute.For<IPluginIssueApproximationService>();
         var pluginsLoaded = CreateSignal();
         var unavailableMerged = CreateSignal();
@@ -939,7 +977,8 @@ public sealed class MainWindowViewModelTests : ImmediateMainThreadSchedulerTestB
             _messageDialogMock,
             _pluginServiceMock,
             _pluginLoadingServiceMock,
-            approximationServiceMock);
+            _uiDispatcher,
+            pluginIssueApproximationService: approximationServiceMock);
 
         vm.Configuration.SelectedGame = GameType.SkyrimSe;
         await WaitForSignalAsync(pluginsLoaded);
@@ -952,31 +991,27 @@ public sealed class MainWindowViewModelTests : ImmediateMainThreadSchedulerTestB
     }
 
     [Fact]
-    public async Task SelectedGame_ShouldNotStartApproximationRefresh_ForStalePluginLoad()
+    public async Task SelectedGame_StalePluginLoad_DoesNotOverwriteCurrentListOrStartApproximation()
     {
+        EnableSelectedGameSideEffects();
         var approximationServiceMock = Substitute.For<IPluginIssueApproximationService>();
         var approximationAttempted = CreateSignal();
         var firstLoadStarted = CreateSignal();
-        var releaseFirstLoad = CreateSignal();
         var unknownSelectionApplied = CreateSignal();
         var stalePluginListApplied = CreateSignal();
-        var expectedPlugins = new List<PluginInfo>
+        var firstLoadResult = new TaskCompletionSource<PluginLoadingResult>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var stalePlugins = new List<PluginInfo>
         {
             new() { FileName = "Plugin1.esp", FullPath = @"C:\Games\SkyrimSE\Data\Plugin1.esp" }
         };
 
         _pluginLoadingServiceMock.IsGameSupportedByMutagen(GameType.SkyrimSe).Returns(true);
         _pluginLoadingServiceMock.TryGetPluginsAsync(GameType.SkyrimSe, Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(async _ =>
+            .Returns(_ =>
             {
                 firstLoadStarted.TrySetResult(true);
-                await releaseFirstLoad.Task;
-                return new PluginLoadingResult
-                {
-                    Status = PluginLoadingStatus.Success,
-                    Plugins = expectedPlugins,
-                    DataFolder = @"C:\Games\SkyrimSE\Data"
-                };
+                return firstLoadResult.Task;
             });
 
         _configServiceMock.GetSkipListAsync(
@@ -1023,7 +1058,8 @@ public sealed class MainWindowViewModelTests : ImmediateMainThreadSchedulerTestB
             _messageDialogMock,
             _pluginServiceMock,
             _pluginLoadingServiceMock,
-            approximationServiceMock);
+            _uiDispatcher,
+            pluginIssueApproximationService: approximationServiceMock);
 
         vm.Configuration.SelectedGame = GameType.SkyrimSe;
         await WaitForSignalAsync(firstLoadStarted);
@@ -1031,11 +1067,20 @@ public sealed class MainWindowViewModelTests : ImmediateMainThreadSchedulerTestB
         vm.Configuration.SelectedGame = GameType.Unknown;
         await WaitForSignalAsync(unknownSelectionApplied);
 
-        releaseFirstLoad.TrySetResult(true);
-        await WaitForSignalAsync(stalePluginListApplied);
-        await Task.Yield();
-        await Task.Yield();
+        // Now release the superseded SkyrimSe load. The refresh's continuation should
+        // observe the bumped generation / cancelled token and bail out without writing.
+        firstLoadResult.SetResult(new PluginLoadingResult
+        {
+            Status = PluginLoadingStatus.Success,
+            Plugins = stalePlugins,
+            DataFolder = @"C:\Games\SkyrimSE\Data"
+        });
 
+        // Yield enough times for the awaiter continuation to run and exit.
+        for (var i = 0; i < 5; i++) await Task.Yield();
+
+        stalePluginListApplied.Task.IsCompleted.Should().BeFalse(
+            "stale plugin loads must not overwrite the current game's plugin list");
         approximationAttempted.Task.IsCompleted.Should().BeFalse(
             "stale plugin loads should not start a background approximation refresh");
         await approximationServiceMock.DidNotReceive()
@@ -1043,9 +1088,114 @@ public sealed class MainWindowViewModelTests : ImmediateMainThreadSchedulerTestB
     }
 
     [Fact]
+    public async Task ConfigureXEditAsync_PersistsNewlySelectedPath()
+    {
+        // Arrange
+        const string oldPath = @"C:\Tools\xEdit-old\xEdit.exe";
+        const string newPath = @"C:\Tools\xEdit-new\xEdit.exe";
+
+        var initialConfig = new UserConfiguration
+        {
+            LoadOrder = new(),
+            XEdit = new() { Binary = oldPath },
+            ModOrganizer = new(),
+            Settings = new()
+        };
+        _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>()).Returns(initialConfig);
+        _configServiceMock.GetSelectedGameAsync(Arg.Any<CancellationToken>()).Returns(GameType.Unknown);
+
+        _fileDialogMock.OpenFileDialogAsync(
+                "Select xEdit Executable",
+                Arg.Any<string>())
+            .Returns(newPath);
+
+        var stateSubject = new BehaviorSubject<AppState>(new AppState { XEditExecutablePath = oldPath });
+        _stateServiceMock.StateChanged.Returns(stateSubject);
+        _stateServiceMock.CurrentState.Returns(new AppState { XEditExecutablePath = oldPath });
+
+        UserConfiguration? savedConfig = null;
+        _configServiceMock.When(x => x.SaveUserConfigAsync(
+                Arg.Any<UserConfiguration>(),
+                Arg.Any<CancellationToken>()))
+            .Do(callInfo => savedConfig = callInfo.Arg<UserConfiguration>());
+
+        var vm = new MainWindowViewModel(
+            _configServiceMock,
+            _stateServiceMock,
+            _orchestratorMock,
+            _loggerMock,
+            _fileDialogMock,
+            _messageDialogMock,
+            _pluginServiceMock,
+            _pluginLoadingServiceMock,
+            _uiDispatcher);
+
+        // Act
+        await vm.Configuration.ConfigureXEditCommand.ExecuteAsync(null);
+
+        // Assert
+        savedConfig.Should().NotBeNull("SaveUserConfigAsync should be invoked after picking a new path");
+        savedConfig!.XEdit.Binary.Should().Be(newPath,
+            "the persisted xEdit path must reflect the user's just-selected file, not the stale VM property");
+    }
+
+    [Fact]
+    public async Task ConfigureMo2Async_PersistsNewlySelectedPath()
+    {
+        // Arrange
+        const string oldPath = @"C:\Tools\MO2-old\ModOrganizer.exe";
+        const string newPath = @"C:\Tools\MO2-new\ModOrganizer.exe";
+
+        var initialConfig = new UserConfiguration
+        {
+            LoadOrder = new(),
+            XEdit = new(),
+            ModOrganizer = new() { Binary = oldPath },
+            Settings = new()
+        };
+        _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>()).Returns(initialConfig);
+        _configServiceMock.GetSelectedGameAsync(Arg.Any<CancellationToken>()).Returns(GameType.Unknown);
+
+        _fileDialogMock.OpenFileDialogAsync(
+                "Select Mod Organizer 2 Executable",
+                Arg.Any<string>())
+            .Returns(newPath);
+
+        var stateSubject = new BehaviorSubject<AppState>(new AppState { Mo2ExecutablePath = oldPath });
+        _stateServiceMock.StateChanged.Returns(stateSubject);
+        _stateServiceMock.CurrentState.Returns(new AppState { Mo2ExecutablePath = oldPath });
+
+        UserConfiguration? savedConfig = null;
+        _configServiceMock.When(x => x.SaveUserConfigAsync(
+                Arg.Any<UserConfiguration>(),
+                Arg.Any<CancellationToken>()))
+            .Do(callInfo => savedConfig = callInfo.Arg<UserConfiguration>());
+
+        var vm = new MainWindowViewModel(
+            _configServiceMock,
+            _stateServiceMock,
+            _orchestratorMock,
+            _loggerMock,
+            _fileDialogMock,
+            _messageDialogMock,
+            _pluginServiceMock,
+            _pluginLoadingServiceMock,
+            _uiDispatcher);
+
+        // Act
+        await vm.Configuration.ConfigureMo2Command.ExecuteAsync(null);
+
+        // Assert
+        savedConfig.Should().NotBeNull("SaveUserConfigAsync should be invoked after picking a new path");
+        savedConfig!.ModOrganizer.Binary.Should().Be(newPath,
+            "the persisted MO2 path must reflect the user's just-selected file, not the stale VM property");
+    }
+
+    [Fact]
     public async Task SelectedGame_ShouldShowSpecificStatusWithoutClaimingFallback_WhenMutagenReturnsNoPlugins()
     {
         // Arrange
+        EnableSelectedGameSideEffects();
         var emptyPluginListPublished = CreateSignal();
         _pluginLoadingServiceMock.IsGameSupportedByMutagen(GameType.SkyrimSe)
             .Returns(true);
@@ -1083,7 +1233,8 @@ public sealed class MainWindowViewModelTests : ImmediateMainThreadSchedulerTestB
             _fileDialogMock,
             _messageDialogMock,
             _pluginServiceMock,
-            _pluginLoadingServiceMock);
+            _pluginLoadingServiceMock,
+            _uiDispatcher);
 
         // Act
         vm.Configuration.SelectedGame = GameType.SkyrimSe;
@@ -1117,7 +1268,8 @@ public sealed class MainWindowViewModelTests : ImmediateMainThreadSchedulerTestB
             _fileDialogMock,
             _messageDialogMock,
             _pluginServiceMock,
-            _pluginLoadingServiceMock);
+            _pluginLoadingServiceMock,
+            _uiDispatcher);
 
         // Act & Assert
         FluentActions.Invoking(vm.Dispose)

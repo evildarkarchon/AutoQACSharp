@@ -259,7 +259,7 @@ public sealed class CleaningOrchestratorTests
         // Arrange
         var plugins = new List<PluginInfo>
         {
-            new() { FileName = "Plugin1.esp", FullPath = "Path/Plugin1.esp", IsSelected = true }
+            new() { FileName = "Plugin1.esp", FullPath = "Path/Plugin1.esp" }
         };
 
         var appState = new AppState
@@ -297,7 +297,7 @@ public sealed class CleaningOrchestratorTests
         // Arrange
         var plugins = new List<PluginInfo>
         {
-            new() { FileName = "Plugin1.esp", FullPath = "Path/Plugin1.esp", IsSelected = true }
+            new() { FileName = "Plugin1.esp", FullPath = "Path/Plugin1.esp" }
         };
 
         var appState = new AppState
@@ -621,7 +621,7 @@ public sealed class CleaningOrchestratorTests
         Process? sleeper = null;
         var plugins = new List<PluginInfo>
         {
-            new() { FileName = "Plugin1.esp", FullPath = "Path/Plugin1.esp", IsSelected = true }
+            new() { FileName = "Plugin1.esp", FullPath = "Path/Plugin1.esp" }
         };
 
         var appState = new AppState
@@ -685,7 +685,7 @@ public sealed class CleaningOrchestratorTests
         Process? sleeper = null;
         var plugins = new List<PluginInfo>
         {
-            new() { FileName = "Plugin1.esp", FullPath = "Path/Plugin1.esp", IsSelected = true }
+            new() { FileName = "Plugin1.esp", FullPath = "Path/Plugin1.esp" }
         };
 
         var appState = new AppState
@@ -746,7 +746,7 @@ public sealed class CleaningOrchestratorTests
         Process? sleeper = null;
         var plugins = new List<PluginInfo>
         {
-            new() { FileName = "Plugin1.esp", FullPath = "Path/Plugin1.esp", IsSelected = true }
+            new() { FileName = "Plugin1.esp", FullPath = "Path/Plugin1.esp" }
         };
 
         var appState = new AppState
@@ -811,7 +811,7 @@ public sealed class CleaningOrchestratorTests
         // Arrange
         var plugins = new List<PluginInfo>
         {
-            new() { FileName = "Plugin1.esp", FullPath = "Path/Plugin1.esp", IsSelected = true }
+            new() { FileName = "Plugin1.esp", FullPath = "Path/Plugin1.esp" }
         };
 
         var appState = new AppState
@@ -859,7 +859,7 @@ public sealed class CleaningOrchestratorTests
     public async Task StartCleaningAsync_ShouldRetryTimedOutPlugin_WhenTimeoutCallbackReturnsTrue_ThenSucceed()
     {
         // Arrange
-        var plugin = new PluginInfo { FileName = "TimedOut.esp", FullPath = "Path/TimedOut.esp", IsSelected = true };
+        var plugin = new PluginInfo { FileName = "TimedOut.esp", FullPath = "Path/TimedOut.esp" };
         var appState = new AppState
         {
             LoadOrderPath = "plugins.txt",
@@ -927,7 +927,7 @@ public sealed class CleaningOrchestratorTests
     public async Task StartCleaningAsync_ShouldStopRetryingTimedOutPlugin_WhenTimeoutCallbackReturnsFalse()
     {
         // Arrange
-        var plugin = new PluginInfo { FileName = "TimedOut.esp", FullPath = "Path/TimedOut.esp", IsSelected = true };
+        var plugin = new PluginInfo { FileName = "TimedOut.esp", FullPath = "Path/TimedOut.esp" };
         var appState = new AppState
         {
             LoadOrderPath = "plugins.txt",
@@ -978,7 +978,7 @@ public sealed class CleaningOrchestratorTests
     public async Task StartCleaningAsync_ShouldForwardHangEvents_AndEmitFalseWhenPluginCompletes()
     {
         // Arrange
-        var plugin = new PluginInfo { FileName = "Plugin1.esp", FullPath = "Path/Plugin1.esp", IsSelected = true };
+        var plugin = new PluginInfo { FileName = "Plugin1.esp", FullPath = "Path/Plugin1.esp" };
         var appState = new AppState
         {
             LoadOrderPath = "plugins.txt",
@@ -1123,9 +1123,9 @@ public sealed class CleaningOrchestratorTests
         // Arrange
         var plugins = new List<PluginInfo>
         {
-            new() { FileName = "Skyrim.esm", FullPath = "Skyrim.esm", IsSelected = true },  // In skip list
-            new() { FileName = "Update.esm", FullPath = "Update.esm", IsSelected = true },  // In skip list
-            new() { FileName = "UserMod.esp", FullPath = "UserMod.esp", IsSelected = true }   // Not in skip list
+            new() { FileName = "Skyrim.esm", FullPath = "Skyrim.esm" },  // In skip list
+            new() { FileName = "Update.esm", FullPath = "Update.esm" },  // In skip list
+            new() { FileName = "UserMod.esp", FullPath = "UserMod.esp" }   // Not in skip list
         };
 
         var appState = new AppState
@@ -1176,9 +1176,9 @@ public sealed class CleaningOrchestratorTests
         // Arrange
         var plugins = new List<PluginInfo>
         {
-            new() { FileName = "Skyrim.esm", FullPath = "Skyrim.esm", IsSelected = true },  // In skip list
-            new() { FileName = "Update.esm", FullPath = "Update.esm", IsSelected = true },  // In skip list
-            new() { FileName = "UserMod.esp", FullPath = "UserMod.esp", IsSelected = true }   // Not in skip list
+            new() { FileName = "Skyrim.esm", FullPath = "Skyrim.esm" },  // In skip list
+            new() { FileName = "Update.esm", FullPath = "Update.esm" },  // In skip list
+            new() { FileName = "UserMod.esp", FullPath = "UserMod.esp" }   // Not in skip list
         };
 
         var appState = new AppState
@@ -1235,7 +1235,7 @@ public sealed class CleaningOrchestratorTests
         // Arrange
         var plugins = new List<PluginInfo>
         {
-            new() { FileName = "Plugin1.esp", FullPath = "Path/Plugin1.esp", IsSelected = true }
+            new() { FileName = "Plugin1.esp", FullPath = "Path/Plugin1.esp" }
         };
 
         var appState = new AppState
@@ -1281,8 +1281,8 @@ public sealed class CleaningOrchestratorTests
         {
             var plugins = new List<PluginInfo>
             {
-                new() { FileName = "Plugin1.esp", FullPath = "Path/Plugin1.esp", IsSelected = true },
-                new() { FileName = "Plugin2.esp", FullPath = "Path/Plugin2.esp", IsSelected = true }
+                new() { FileName = "Plugin1.esp", FullPath = "Path/Plugin1.esp" },
+                new() { FileName = "Plugin2.esp", FullPath = "Path/Plugin2.esp" }
             };
 
             var appState = new AppState
@@ -1333,9 +1333,9 @@ public sealed class CleaningOrchestratorTests
         // Arrange
         var plugins = new List<PluginInfo>
         {
-            new() { FileName = "Valid.esp", FullPath = "Path/Valid.esp", IsSelected = true },
-            new() { FileName = "Missing.esp", FullPath = "Path/Missing.esp", IsSelected = true },
-            new() { FileName = "AlsoValid.esp", FullPath = "Path/AlsoValid.esp", IsSelected = true }
+            new() { FileName = "Valid.esp", FullPath = "Path/Valid.esp" },
+            new() { FileName = "Missing.esp", FullPath = "Path/Missing.esp" },
+            new() { FileName = "AlsoValid.esp", FullPath = "Path/AlsoValid.esp" }
         };
 
         var appState = new AppState
@@ -1387,7 +1387,7 @@ public sealed class CleaningOrchestratorTests
         // Arrange
         var plugins = new List<PluginInfo>
         {
-            new() { FileName = "Plugin1.esp", FullPath = "Path/Plugin1.esp", IsSelected = true }
+            new() { FileName = "Plugin1.esp", FullPath = "Path/Plugin1.esp" }
         };
 
         var appState = new AppState
@@ -1431,7 +1431,7 @@ public sealed class CleaningOrchestratorTests
         // Arrange
         var plugins = new List<PluginInfo>
         {
-            new() { FileName = "Plugin1.esp", FullPath = "Path/Plugin1.esp", IsSelected = true }
+            new() { FileName = "Plugin1.esp", FullPath = "Path/Plugin1.esp" }
         };
 
         var appState = new AppState
@@ -1478,7 +1478,7 @@ public sealed class CleaningOrchestratorTests
     public async Task StartCleaningAsync_ShouldParseStatsFromLogFile_WhenCleaningSucceeds()
     {
         // Arrange
-        var plugin = new PluginInfo { FileName = "TestMod.esp", FullPath = "Path/TestMod.esp", IsSelected = true };
+        var plugin = new PluginInfo { FileName = "TestMod.esp", FullPath = "Path/TestMod.esp" };
         var appState = new AppState
         {
             LoadOrderPath = "plugins.txt",
@@ -1527,7 +1527,7 @@ public sealed class CleaningOrchestratorTests
     public async Task StartCleaningAsync_ShouldSetAlreadyClean_WhenCompletionLineButZeroStats()
     {
         // Arrange
-        var plugin = new PluginInfo { FileName = "CleanMod.esp", FullPath = "Path/CleanMod.esp", IsSelected = true };
+        var plugin = new PluginInfo { FileName = "CleanMod.esp", FullPath = "Path/CleanMod.esp" };
         var appState = new AppState
         {
             LoadOrderPath = "plugins.txt",
@@ -1574,7 +1574,7 @@ public sealed class CleaningOrchestratorTests
     public async Task StartCleaningAsync_ShouldSurfaceExceptionLog_WhenExceptionContentPresent()
     {
         // Arrange
-        var plugin = new PluginInfo { FileName = "CrashMod.esp", FullPath = "Path/CrashMod.esp", IsSelected = true };
+        var plugin = new PluginInfo { FileName = "CrashMod.esp", FullPath = "Path/CrashMod.esp" };
         var appState = new AppState
         {
             LoadOrderPath = "plugins.txt",
@@ -1622,7 +1622,7 @@ public sealed class CleaningOrchestratorTests
     public async Task StartCleaningAsync_ShouldSkipLogRead_WhenProcessWasCancelled()
     {
         // Arrange
-        var plugin = new PluginInfo { FileName = "Cancelled.esp", FullPath = "Path/Cancelled.esp", IsSelected = true };
+        var plugin = new PluginInfo { FileName = "Cancelled.esp", FullPath = "Path/Cancelled.esp" };
         var appState = new AppState
         {
             LoadOrderPath = "plugins.txt",

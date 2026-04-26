@@ -155,12 +155,14 @@ public sealed class CleaningOrchestrator(
                 }
             }
 
+            var excluded = config.ExcludedPluginPaths;
+
             List<PluginInfo> pluginsToClean;
             if (disableSkipLists)
             {
                 logger.Debug("Skip lists disabled by user setting - cleaning all selected plugins");
                 pluginsToClean = allPlugins
-                    .Where(p => p.IsSelected)
+                    .Where(p => !excluded.Contains(p.FullPath))
                     .Select(p => p with { DetectedGameType = gameType })
                     .ToList();
             }
@@ -172,12 +174,14 @@ public sealed class CleaningOrchestrator(
 
                 pluginsToClean = allPlugins
                     .Select(p => p with { IsInSkipList = skipSet.Contains(p.FileName), DetectedGameType = gameType })
-                    .Where(p => p is { IsInSkipList: false, IsSelected: true })
+                    .Where(p => !p.IsInSkipList && !excluded.Contains(p.FullPath))
                     .ToList();
             }
             else
             {
-                pluginsToClean = allPlugins.Where(p => p is { IsInSkipList: false, IsSelected: true }).ToList();
+                pluginsToClean = allPlugins
+                    .Where(p => !p.IsInSkipList && !excluded.Contains(p.FullPath))
+                    .ToList();
             }
 
             // 4b. File-existence validation (skipped in MO2 mode -- MO2 VFS resolves paths at runtime)
@@ -766,13 +770,15 @@ public sealed class CleaningOrchestrator(
             skipSet = new HashSet<string>(skipList, StringComparer.OrdinalIgnoreCase);
         }
 
+        var excluded = config.ExcludedPluginPaths;
+
         // Evaluate each plugin
         foreach (var plugin in allPlugins)
         {
             ct.ThrowIfCancellationRequested();
 
             // Not selected
-            if (!plugin.IsSelected)
+            if (excluded.Contains(plugin.FullPath))
             {
                 results.Add(new DryRunResult(plugin.FileName, DryRunStatus.WillSkip, "Not selected"));
                 continue;

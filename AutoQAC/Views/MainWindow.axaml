@@ -302,9 +302,9 @@
                              SelectedItem="{Binding PluginList.SelectedPlugin}"
                              Margin="5">
                         <ListBox.ItemTemplate>
-                            <DataTemplate>
+                            <DataTemplate x:DataType="mw:PluginListItem">
                                 <StackPanel Margin="2,3">
-                                    <CheckBox IsChecked="{Binding IsSelected}"
+                                    <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}"
                                               Content="{Binding FileName}" />
                                     <TextBlock Text="{Binding ApproximationDisplayText}"
                                                Margin="26,0,0,0"

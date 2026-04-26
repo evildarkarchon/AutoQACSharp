@@ -1,6 +1,5 @@
-﻿using System;
+using System;
 using Avalonia;
-using ReactiveUI.Avalonia;
 
 namespace AutoQAC
 {
@@ -21,7 +20,6 @@ namespace AutoQAC
 #if DEBUG
                 .WithDeveloperTools()
 #endif
-                .LogToTrace()
-                .UseReactiveUI(builder => builder.WithAvalonia());
+                .LogToTrace();
     }
 }

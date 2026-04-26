@@ -23,8 +23,8 @@ dotnet clean AutoQACSharp.slnx
 - .NET 10
 - C# 13 with nullable reference types enabled
 - `AutoQAC`: `net10.0-windows10.0.19041.0`
-- Avalonia 11.3.12
-- ReactiveUI.Avalonia 11.3.8
+- Avalonia 12.0.1 (DataGrid 12.0.0)
+- CommunityToolkit.Mvvm 8.4.2 (source-generator MVVM)
 - Microsoft.Extensions.DependencyInjection 10.0.3
 - Serilog 4.3.1 with console and file sinks
 - YamlDotNet 16.3.0
@@ -56,7 +56,12 @@ dotnet clean AutoQACSharp.slnx
 ## Coding Guidelines
 
 - Maintain strict MVVM boundaries.
-- Use `ReactiveCommand`, `RaiseAndSetIfChanged`, `WhenAnyValue`, and `ObservableAsPropertyHelper` for reactive state.
+- Use CommunityToolkit.Mvvm source generators for ViewModel state: `[ObservableProperty]` on private `_camelCase` fields, `[RelayCommand]` on private methods, `[NotifyPropertyChangedFor(...)]` and `[NotifyCanExecuteChangedFor(...)]` for derived/gated properties. Manual `SetProperty(ref field, value)` is allowed when the setter has side effects that don't fit `partial void OnXChanged` hooks.
+- Every concrete ViewModel must be `public sealed partial class … : ViewModelBase` (the `partial` is required for source generation).
+- ViewModels SHALL NOT depend on `ReactiveUI` or `System.Reactive`. UI-thread marshaling for service observables (e.g. `IStateService.StateChanged`) goes through the injected `IUiDispatcher` (`AutoQAC.Services.UI.IUiDispatcher`); production resolves to `AvaloniaUiDispatcher` (wraps `Dispatcher.UIThread`), tests use `SynchronousUiDispatcher`. Subscribe to `IObservable<T>` from services using `CallbackObserver<T>` (`AutoQAC.Services.UI.CallbackObserver`) so VMs don't pull in `System.Reactive`.
+- Dialog interactions use the in-house `Interaction<TInput, TOutput>` (`AutoQAC.Services.UI.Interactions`). The View code-behind calls `RegisterHandler` and stores the returned `IDisposable` for disposal on close. The in-house `Unit` (`AutoQAC.Services.UI.Interactions.Unit`) replaces `System.Reactive.Unit` for void-shaped interactions.
+- Dialog VMs that need to close with a result expose a `CloseRequested` C# event (`Action<bool>`, `Action<MessageDialogResult>`, or `EventHandler`) that the View subscribes to and disposes on `OnClosed`. The `[RelayCommand]` Save/Cancel methods invoke that event.
+- Services in `AutoQAC/Services` (notably `StateService` `BehaviorSubject` and `ConfigurationService` debounce pipeline) keep their `System.Reactive` use; the Rx ban applies only to the ViewModel layer.
 - Keep I/O and process work async; never block the UI thread with `.Result` or `.Wait()`.
 - Use constructor injection through `ServiceCollectionExtensions`; avoid static mutable state and service locators.
 - Respect Windows-specific assumptions when touching registry probing, executable paths, or process handling.
@@ -125,8 +130,8 @@ AutoQAC is a Windows-only Avalonia desktop app that runs xEdit Quick Auto Clean 
 - No `global.json` present; relies on whatever SDK is installed
 - No `Directory.Build.props`; each `.csproj` is self-contained
 ## Frameworks
-- Avalonia 11.3.12 - Cross-platform UI framework (Windows-only deployment)
-- ReactiveUI.Avalonia 11.3.8 - MVVM framework with reactive extensions
+- Avalonia 12.0.1 - Cross-platform UI framework (Windows-only deployment)
+- CommunityToolkit.Mvvm 8.4.2 - Source-generator MVVM framework
 - Microsoft.Extensions.DependencyInjection 10.0.3 - IoC container
 - xUnit 2.9.3 - Test runner and assertions
 - xunit.runner.visualstudio 3.1.5 - VS test adapter
@@ -140,13 +145,13 @@ AutoQAC is a Windows-only Avalonia desktop app that runs xEdit Quick Auto Clean 
 ## Key Dependencies
 | Package | Version | Purpose |
 |---------|---------|---------|
-| Avalonia | 11.3.12 | UI framework (core rendering, controls, themes) |
-| Avalonia.Desktop | 11.3.12 | Desktop platform backend |
-| Avalonia.Themes.Fluent | 11.3.12 | Fluent Design theme |
-| Avalonia.Fonts.Inter | 11.3.12 | Inter font family |
-| Avalonia.Controls.DataGrid | 11.3.12 | DataGrid control for plugin lists |
-| Avalonia.Diagnostics | 11.3.12 | Dev-only diagnostic overlay (excluded from Release builds) |
-| ReactiveUI.Avalonia | 11.3.8 | Reactive MVVM bindings for Avalonia |
+| Avalonia | 12.0.1 | UI framework (core rendering, controls, themes) |
+| Avalonia.Desktop | 12.0.1 | Desktop platform backend |
+| Avalonia.Themes.Fluent | 12.0.1 | Fluent Design theme |
+| Avalonia.Fonts.Inter | 12.0.1 | Inter font family |
+| Avalonia.Controls.DataGrid | 12.0.0 | DataGrid control for plugin lists |
+| AvaloniaUI.DiagnosticsSupport | 2.2.1 | Dev-only diagnostic overlay (excluded from Release builds) |
+| CommunityToolkit.Mvvm | 8.4.2 | Source-generator MVVM (`[ObservableProperty]`, `[RelayCommand]`) |
 | Mutagen.Bethesda | 0.53.1 | Core Bethesda plugin handling (load orders, game locations) |
 | Mutagen.Bethesda.Skyrim | 0.53.1 | Skyrim-specific record types (LE, SE, VR, Enderal) |
 | Mutagen.Bethesda.Fallout4 | 0.53.1 | Fallout 4 specific record types |
@@ -216,7 +221,7 @@ AutoQAC is a Windows-only Avalonia desktop app that runs xEdit Quick Auto Clean 
 - Boolean properties use `Is`/`Has`/`Can` prefix: `IsLoadOrderConfigured`, `HasMigrationWarning`, `CanStartCleaning`
 - Nullable booleans for tri-state validation: `bool? IsXEditPathValid` (null = untouched, true = valid, false = invalid)
 - `_camelCase` with underscore prefix: `_stateService`, `_disposables`, `_cleaningCts`
-- Some newer code uses `field` keyword with semi-auto properties (C# 13): `set => this.RaiseAndSetIfChanged(ref field, value);`
+- Some newer code uses `field` keyword with semi-auto properties (C# 13): `set => SetProperty(ref field, value);`
 - PascalCase: `PidFileName`, `GracePeriodMs`, `MainConfigFile`
 - Follow directory structure: `AutoQAC.Services.Cleaning`, `AutoQAC.ViewModels.MainWindow`, `AutoQAC.Models.Configuration`
 - File-scoped namespace declarations: `namespace AutoQAC.Services.Cleaning;`
@@ -229,7 +234,7 @@ AutoQAC is a Windows-only Avalonia desktop app that runs xEdit Quick Auto Clean 
 - NSubstitute.Analyzers.CSharp included in test projects for mock correctness
 - No explicit Roslyn analyzers or StyleCop configured
 - Nullable reference types enabled globally (`<Nullable>enable</Nullable>`)
-- C# 13 semi-auto properties (field keyword): `set => this.RaiseAndSetIfChanged(ref field, value);`
+- C# 13 semi-auto properties (field keyword): `set => SetProperty(ref field, value);`
 - Records with `with` expressions for immutable state: `s with { IsCleaning = true }`
 - Pattern matching: `is { IsInSkipList: false, IsSelected: true }`, `is not null`
 - Collection expressions: `return [];`
@@ -243,21 +248,18 @@ AutoQAC is a Windows-only Avalonia desktop app that runs xEdit Quick Auto Clean 
 - `QueryPlugins.Tests` project has global `using Xunit;` and `using FluentAssertions;`
 - Main projects do not use implicit usings (no `<ImplicitUsings>enable</ImplicitUsings>` in `AutoQAC.csproj`)
 - Test projects and QueryPlugins have `<ImplicitUsings>enable</ImplicitUsings>`
-## Reactive Patterns
-- Use `ReactiveCommand.CreateFromTask` for async commands:
-- Use `ReactiveCommand.Create` for synchronous commands:
-- Guard commands with `canExecute` observables derived from `WhenAnyValue`:
-- Two patterns coexist in the codebase:
-- `WhenAnyValue` for observing single property changes:
-- `CombineLatest` for multi-property guards:
-- `ObservableAsPropertyHelper<T>` for derived read-only properties:
-- Every ViewModel that subscribes to observables must own a `CompositeDisposable`:
-- Add subscriptions to the composite: `_disposables.Add(subscription);`
-- Dispose in `Dispose()`: `_disposables.Dispose();`
-- `Interaction<TInput, TOutput>` declared on the parent ViewModel (e.g., `MainWindowViewModel`)
-- Registered in the View code-behind (e.g., `MainWindow.axaml.cs`)
-- Passed to child ViewModels as constructor parameters
-- ViewModels invoke: `await _showProgressInteraction.Handle(Unit.Default);`
+## MVVM Patterns (CommunityToolkit.Mvvm)
+- Async commands: `[RelayCommand] private async Task FooAsync()` → generated `FooCommand` of type `IAsyncRelayCommand`.
+- Sync commands: `[RelayCommand] private void Foo()` → generated `FooCommand` of type `IRelayCommand`.
+- Gating: `[RelayCommand(CanExecute = nameof(CanFoo))]` with a `private bool CanFoo()` predicate.
+- Computed re-evaluation: annotate inputs with `[NotifyCanExecuteChangedFor(nameof(FooCommand))]` and `[NotifyPropertyChangedFor(nameof(ComputedProperty))]`.
+- Observable properties: `[ObservableProperty]` on `_camelCase` private fields. The class must be `partial`. Use `partial void OnXChanged(T value)` / `OnXChanging(T value)` hooks for side effects.
+- Manual setter pattern (when partial-method hooks don't fit, e.g. throttled validation): `set => SetProperty(ref field, value);`. Do NOT use `RaiseAndSetIfChanged`.
+- Computed properties: plain getters (`bool CanStart => !IsCleaning && Plugins.Count > 0;`) with the inputs annotated `[NotifyPropertyChangedFor(nameof(CanStart))]`.
+- UI-thread marshaling: subscribe to service `IObservable<T>` with `service.X.Subscribe(new CallbackObserver<T>(v => _uiDispatcher.Post(() => OnX(v))))`. Store the returned `IDisposable` and dispose in `Dispose()`.
+- Dialog interactions: in-house `Interaction<TInput, TOutput>` declared on `MainWindowViewModel`; the View code-behind calls `RegisterHandler(...)` and stores the returned `IDisposable` in a list, disposing all on `OnClosed`. ViewModels invoke `await _showProgressInteraction.Handle(Unit.Default);` (the in-house `Unit` lives in `AutoQAC.Services.UI.Interactions`).
+- Dialog VM close pattern: VM exposes `event Action<bool>? CloseRequested` (or `Action<MessageDialogResult>?`/`EventHandler?`); `[RelayCommand]` Save/Cancel methods invoke it; the View subscribes in `DataContextChanged` (or constructor) and unsubscribes in `OnClosed`.
+- Disposal: ViewModels that hold `IDisposable` subscriptions implement `IDisposable` and dispose them explicitly. No `CompositeDisposable` (Rx). Use a `List<IDisposable>` or individual fields.
 ## Async Patterns
 - All I/O and process work is async: `Task<T>` return types with `Async` suffix
 - Use `ConfigureAwait(false)` on all awaits in service layer code:
@@ -291,16 +293,16 @@ AutoQAC is a Windows-only Avalonia desktop app that runs xEdit Quick Auto Clean 
 - Traditional constructors for complex setup: `ConfigurationService`, `CleaningOrchestrator`
 - Optional dependencies with `= null` default: `IPluginIssueApproximationService? pluginIssueApproximationService = null`
 ## MVVM Conventions
-- Own reactive properties, commands, and business logic coordination
+- Own observable properties, commands, and business logic coordination
 - Never reference Avalonia UI types or controls
-- Use `Interaction<TInput, TOutput>` for dialog triggers (not direct window references)
-- Manage subscriptions via `CompositeDisposable`
+- Use the in-house `Interaction<TInput, TOutput>` for dialog triggers (not direct window references)
+- Manage subscriptions via explicit `IDisposable?` fields or a small `List<IDisposable>` (no `CompositeDisposable`)
 - Implement `IDisposable` when holding subscriptions or resources
 - Register `Interaction` handlers that create and show windows/dialogs
 - Own dialog/window lifecycle (open, close, result handling)
-- `MainWindow.axaml.cs` is the Interaction registration hub
+- `MainWindow.axaml.cs` is the Interaction registration hub; it stores each `RegisterHandler` `IDisposable` in a list and disposes them in `OnClosed`
 - Views can receive services via constructor for interaction handling (e.g., `IFileDialogService`)
-- Track subscriptions in `CompositeDisposable` and dispose on window close
+- Dialog code-behind subscribes to VM `CloseRequested` events on `DataContextChanged` and unsubscribes in `OnClosed`
 - Split into sub-ViewModels: `ConfigurationViewModel`, `PluginListViewModel`, `CleaningCommandsViewModel`
 - Parent orchestrates cross-VM state via `OnStateChanged(AppState state)` callbacks
 - Sub-ViewModels receive dependencies via constructor, not parent
@@ -315,7 +317,7 @@ AutoQAC is a Windows-only Avalonia desktop app that runs xEdit Quick Auto Clean 
 - Implement `IDisposable` and/or `IAsyncDisposable` when holding resources
 - Use `Interlocked.CompareExchange` for thread-safe dispose guards:
 - Flush pending work before disposing (e.g., `ConfigurationService.FlushPendingSavesAsync`)
-- Dispose `CompositeDisposable` in `Dispose()`
+- Dispose explicit `IDisposable?` fields (or iterate a `List<IDisposable>`) in `Dispose()`
 - Propagate disposal to child ViewModels:
 - Override `OnClosed` to dispose subscriptions
 - Guard against double-dispose with boolean flags: `bool _disposeHandled`
@@ -332,8 +334,8 @@ AutoQAC is a Windows-only Avalonia desktop app that runs xEdit Quick Auto Clean 
 ## Architecture
 
 ## Pattern Overview
-- Strict MVVM with ReactiveUI: ViewModels never touch Views directly; all dialog/window interactions go through `Interaction<TInput, TOutput>` handlers registered in code-behind
-- Centralized immutable state hub (`AppState` record + `IStateService`) with reactive `IObservable` streams driving all UI updates
+- Strict MVVM with CommunityToolkit.Mvvm: ViewModels never touch Views directly; all dialog/window interactions go through the in-house `Interaction<TInput, TOutput>` (`AutoQAC.Services.UI.Interactions`) whose handler the View code-behind registers
+- Centralized immutable state hub (`AppState` record + `IStateService`) with `IObservable` streams driving all UI updates; ViewModels subscribe via `CallbackObserver<T>` and marshal to the UI thread via injected `IUiDispatcher`
 - Sequential, single-process cleaning pipeline: one xEdit instance at a time, enforced by a `SemaphoreSlim(1,1)` process slot
 - Two-project architecture: `AutoQAC` (desktop app) depends on `QueryPlugins` (standalone Mutagen analysis library)
 ## Project Dependency Graph
@@ -353,9 +355,9 @@ AutoQAC is a Windows-only Avalonia desktop app that runs xEdit Quick Auto Clean 
 ### ViewModel Hierarchy
 ```
 ```
-- `MainWindowViewModel` owns `Interaction<TInput, TOutput>` instances that the code-behind registers handlers for
-- `MainWindowViewModel` subscribes to `IStateService.StateChanged` and dispatches `OnStateChanged(AppState)` to all three sub-VMs
-- Each sub-VM has its own `CompositeDisposable` and implements `IDisposable`
+- `MainWindowViewModel` owns the in-house `Interaction<TInput, TOutput>` instances that the code-behind registers handlers for
+- `MainWindowViewModel` subscribes to `IStateService.StateChanged` (via `CallbackObserver<AppState>` + `IUiDispatcher.Post`) and dispatches `OnStateChanged(AppState)` to all three sub-VMs
+- Each sub-VM holds its subscriptions in explicit `IDisposable` fields (or a small `List<IDisposable>`) and implements `IDisposable`. No `CompositeDisposable`.
 ### Standalone ViewModels (Transient, created per dialog):
 | ViewModel | Purpose | Created in |
 |-----------|---------|------------|
@@ -370,20 +372,20 @@ AutoQAC is a Windows-only Avalonia desktop app that runs xEdit Quick Auto Clean 
 ### View-ViewModel Binding Approach
 - `DataContext` is set in code-behind, not in XAML
 - Avalonia compiled bindings are enabled by default (`AvaloniaUseCompiledBindingsByDefault=true` in csproj)
-- `ViewModelBase` extends `ReactiveObject` for `INotifyPropertyChanged` support
-- Dialog results flow through `Interaction<TInput, TOutput>` -- ViewModel raises the interaction, View code-behind handles it by creating/showing the dialog window
-### Reactive Patterns Used
+- `ViewModelBase` extends `CommunityToolkit.Mvvm.ComponentModel.ObservableObject` for `INotifyPropertyChanged` support
+- Dialog results flow through the in-house `Interaction<TInput, TOutput>` -- ViewModel raises the interaction, View code-behind handles it by creating/showing the dialog window. Dialog VMs raise `CloseRequested` events for Save/Cancel close.
+### MVVM Patterns Used
 | Pattern | Usage |
 |---------|-------|
-| `RaiseAndSetIfChanged` | All mutable ViewModel properties |
-| `ReactiveCommand` | All commands (sync and async variants) |
-| `WhenAnyValue` | Computed properties and auto-save triggers |
-| `ObservableAsPropertyHelper` | Derived properties like `IsMutagenSupported`, `RequiresLoadOrderFile` |
-| `Interaction<TInput, TOutput>` | All ViewModel-to-View dialog interactions |
-| `BehaviorSubject<T>` | State service broadcasting (`StateChanged`, `IsTerminatingChanged`) |
-| `Subject<T>` | Event streams (`PluginProcessed`, `CleaningCompleted`, `HangDetected`) |
-| `CompositeDisposable` | Lifecycle cleanup in all ViewModels |
-| `ObserveOn(RxApp.MainThreadScheduler)` | Thread marshaling for UI updates from background state changes |
+| `[ObservableProperty]` | All mutable ViewModel properties (with `partial` class). Manual `SetProperty` for setters with side effects. |
+| `[RelayCommand]` | All commands (sync and async variants). Generates `XCommand` from `X` / `XAsync` methods. |
+| `[NotifyPropertyChangedFor]` / `[NotifyCanExecuteChangedFor]` | Computed-property and command re-evaluation triggers (replaces `WhenAnyValue` / `CombineLatest` in VMs) |
+| Computed read-only getters | Derived values like `IsMutagenSupported`, `RequiresLoadOrderFile` (replaces `ObservableAsPropertyHelper`) |
+| `Interaction<TInput, TOutput>` (`AutoQAC.Services.UI.Interactions`) | All ViewModel-to-View dialog interactions |
+| `IUiDispatcher` (`AutoQAC.Services.UI`) | UI-thread marshaling for service `IObservable<T>` callbacks; replaces `ObserveOn(RxApp.MainThreadScheduler)` |
+| `CallbackObserver<T>` (`AutoQAC.Services.UI`) | Subscribe to service observables without pulling `System.Reactive` into VMs |
+| `BehaviorSubject<T>` / `Subject<T>` (services only) | State service broadcasting and event streams; ViewModel layer no longer references these directly |
+| `event Action<TResult>? CloseRequested` | Dialog VM → View close coordination (replaces `ReactiveCommand<,>` Subscribe-to-close pattern) |
 ## Service Layer
 ### Service Groups and Responsibilities
 - `IConfigurationService` / `ConfigurationService` -- YAML read/write with debounced saves (500ms throttle), SHA256 change detection, skip list management, per-game data folder overrides, per-game load order overrides. File: `AutoQAC/Services/Configuration/ConfigurationService.cs`

@@ -1,35 +1,49 @@
 using System;
+using AutoQAC.Services.UI;
 using AutoQAC.ViewModels;
+using Avalonia.Controls;
 using Avalonia.Data.Converters;
-using ReactiveUI;
-using ReactiveUI.Avalonia;
 
 namespace AutoQAC.Views;
 
-public partial class MessageDialog : ReactiveWindow<MessageDialogViewModel>
+public partial class MessageDialog : Window
 {
-    /// <summary>
-    /// Converter for the details expand/collapse button text.
-    /// </summary>
     public static readonly FuncValueConverter<bool, string> DetailsButtonConverter =
         new(isExpanded => isExpanded ? "Hide Details" : "Show Details");
+
+    private MessageDialogViewModel? _vm;
 
     public MessageDialog()
     {
         InitializeComponent();
-
-        // Make converter available to XAML
         Resources["DetailsButtonConverter"] = DetailsButtonConverter;
+        DataContextChanged += OnDataContextChanged;
+    }
 
-        this.WhenActivated(d =>
+    private void OnDataContextChanged(object? sender, EventArgs e)
+    {
+        if (_vm is not null)
         {
-            if (ViewModel == null) return;
+            _vm.CloseRequested -= OnCloseRequested;
+            _vm = null;
+        }
+        if (DataContext is MessageDialogViewModel vm)
+        {
+            _vm = vm;
+            vm.CloseRequested += OnCloseRequested;
+        }
+    }
 
-            d(ViewModel.OkCommand.Subscribe(result => Close(result)));
-            d(ViewModel.CancelCommand.Subscribe(result => Close(result)));
-            d(ViewModel.YesCommand.Subscribe(result => Close(result)));
-            d(ViewModel.NoCommand.Subscribe(result => Close(result)));
-            d(ViewModel.RetryCommand.Subscribe(result => Close(result)));
-        });
+    private void OnCloseRequested(MessageDialogResult result) => Close(result);
+
+    protected override void OnClosed(EventArgs e)
+    {
+        if (_vm is not null)
+        {
+            _vm.CloseRequested -= OnCloseRequested;
+            _vm = null;
+        }
+        DataContextChanged -= OnDataContextChanged;
+        base.OnClosed(e);
     }
 }

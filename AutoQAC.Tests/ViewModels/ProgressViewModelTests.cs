@@ -1,14 +1,14 @@
-using System.Reactive.Concurrency;
+using System.ComponentModel;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
 using AutoQAC.Models;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.State;
+using AutoQAC.Services.UI;
 using AutoQAC.Tests.TestInfrastructure;
 using AutoQAC.ViewModels;
 using FluentAssertions;
 using NSubstitute;
-using ReactiveUI;
 
 namespace AutoQAC.Tests.ViewModels;
 
@@ -16,8 +16,7 @@ namespace AutoQAC.Tests.ViewModels;
 /// Unit tests for <see cref="ProgressViewModel"/> covering progress tracking,
 /// state synchronization, per-plugin stats, results summary mode, and edge cases.
 /// </summary>
-[Collection(RxAppSchedulerCollection.Name)]
-public sealed class ProgressViewModelTests : ImmediateMainThreadSchedulerTestBase
+public sealed class ProgressViewModelTests
 {
     private readonly IStateService _stateServiceMock;
     private readonly ICleaningOrchestrator _orchestratorMock;
@@ -27,6 +26,7 @@ public sealed class ProgressViewModelTests : ImmediateMainThreadSchedulerTestBas
     private readonly Subject<CleaningSessionResult> _cleaningCompletedSubject;
     private readonly BehaviorSubject<bool> _isTerminatingSubject;
     private readonly Subject<bool> _hangDetectedSubject;
+    private readonly IUiDispatcher _uiDispatcher;
 
     /// <summary>
     /// Initializes test fixtures with default mock configurations.
@@ -39,6 +39,7 @@ public sealed class ProgressViewModelTests : ImmediateMainThreadSchedulerTestBas
         _cleaningCompletedSubject = new Subject<CleaningSessionResult>();
         _isTerminatingSubject = new BehaviorSubject<bool>(false);
         _hangDetectedSubject = new Subject<bool>();
+        _uiDispatcher = new SynchronousUiDispatcher();
 
         _stateServiceMock = Substitute.For<IStateService>();
         _stateServiceMock.StateChanged.Returns(_stateSubject);
@@ -57,7 +58,7 @@ public sealed class ProgressViewModelTests : ImmediateMainThreadSchedulerTestBas
     /// </summary>
     private ProgressViewModel CreateViewModel()
     {
-        return new ProgressViewModel(_stateServiceMock, _orchestratorMock);
+        return new ProgressViewModel(_stateServiceMock, _orchestratorMock, _uiDispatcher);
     }
 
     [Fact]
@@ -88,9 +89,11 @@ public sealed class ProgressViewModelTests : ImmediateMainThreadSchedulerTestBas
         // Arrange
         _orchestratorMock.StopCleaningAsync().Returns(Task.CompletedTask);
         var vm = CreateViewModel();
+        // Activate IsCleaning so the StopCommand CanExecute is true.
+        _stateSubject.OnNext(new AppState { IsCleaning = true });
 
         // Act
-        await vm.StopCommand.Execute();
+        await vm.StopCommand.ExecuteAsync(null);
 
         // Assert
         await _orchestratorMock.Received(1).StopCleaningAsync();
@@ -149,9 +152,14 @@ public sealed class ProgressViewModelTests : ImmediateMainThreadSchedulerTestBas
         var vm = CreateViewModel();
         var updates = new List<int>();
 
-        // Track progress changes
-        vm.WhenAnyValue(x => x.Progress)
-            .Subscribe(p => updates.Add(p));
+        // Track progress changes via INotifyPropertyChanged.
+        vm.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(ProgressViewModel.Progress))
+            {
+                updates.Add(vm.Progress);
+            }
+        };
 
         // Act - Simulate rapid state updates
         for (int i = 0; i <= 100; i++)
@@ -355,8 +363,13 @@ public sealed class ProgressViewModelTests : ImmediateMainThreadSchedulerTestBas
         var vm = CreateViewModel();
         var progressTextChanges = new List<string>();
 
-        vm.WhenAnyValue(x => x.ProgressText)
-            .Subscribe(text => progressTextChanges.Add(text));
+        vm.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(ProgressViewModel.ProgressText))
+            {
+                progressTextChanges.Add(vm.ProgressText);
+            }
+        };
 
         // Act
         vm.Total = 10;
@@ -562,16 +575,14 @@ public sealed class ProgressViewModelTests : ImmediateMainThreadSchedulerTestBas
 
         // Start cleaning so Stop button would normally be enabled
         _stateSubject.OnNext(new AppState { IsCleaning = true });
-        vm.StopCommand.CanExecute.Subscribe(_ => { });
         vm.IsCleaning.Should().BeTrue();
+        vm.StopCommand.CanExecute(null).Should().BeTrue("Stop should be enabled while cleaning is active");
 
         // Act - begin termination
         _isTerminatingSubject.OnNext(true);
 
         // Assert
-        bool canExecute = false;
-        vm.StopCommand.CanExecute.Subscribe(x => canExecute = x);
-        canExecute.Should().BeFalse("Stop should be disabled while terminating");
+        vm.StopCommand.CanExecute(null).Should().BeFalse("Stop should be disabled while terminating");
     }
 
     /// <summary>
@@ -611,7 +622,7 @@ public sealed class ProgressViewModelTests : ImmediateMainThreadSchedulerTestBas
         vm.IsHangWarningVisible.Should().BeTrue();
 
         // Act - user dismisses warning
-        vm.DismissHangWarningCommand.Execute().Subscribe();
+        vm.DismissHangWarningCommand.Execute(null);
 
         // Assert
         vm.IsHangWarningVisible.Should().BeFalse("dismiss command should hide warning");
@@ -657,7 +668,7 @@ public sealed class ProgressViewModelTests : ImmediateMainThreadSchedulerTestBas
         _stateServiceMock.StateChanged.Returns(stateSubject);
 
         // Act
-        var vm = new ProgressViewModel(_stateServiceMock, _orchestratorMock);
+        var vm = new ProgressViewModel(_stateServiceMock, _orchestratorMock, _uiDispatcher);
 
         // Assert
         vm.Progress.Should().Be(3);

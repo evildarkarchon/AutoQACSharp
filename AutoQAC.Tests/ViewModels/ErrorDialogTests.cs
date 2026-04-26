@@ -1,4 +1,3 @@
-using System.Reactive.Concurrency;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
 using AutoQAC.Infrastructure.Logging;
@@ -14,15 +13,13 @@ using AutoQAC.ViewModels;
 using FluentAssertions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
-using ReactiveUI;
 
 namespace AutoQAC.Tests.ViewModels;
 
 /// <summary>
 /// Tests for error dialog functionality in MainWindowViewModel.
 /// </summary>
-[Collection(RxAppSchedulerCollection.Name)]
-public sealed class ErrorDialogTests : ImmediateMainThreadSchedulerTestBase
+public sealed class ErrorDialogTests
 {
     private readonly IConfigurationService _configServiceMock;
     private readonly IStateService _stateServiceMock;
@@ -32,6 +29,7 @@ public sealed class ErrorDialogTests : ImmediateMainThreadSchedulerTestBase
     private readonly IMessageDialogService _messageDialogMock;
     private readonly IPluginValidationService _pluginServiceMock;
     private readonly IPluginLoadingService _pluginLoadingServiceMock;
+    private readonly IUiDispatcher _uiDispatcher;
 
     public ErrorDialogTests()
     {
@@ -43,6 +41,7 @@ public sealed class ErrorDialogTests : ImmediateMainThreadSchedulerTestBase
         _messageDialogMock = Substitute.For<IMessageDialogService>();
         _pluginServiceMock = Substitute.For<IPluginValidationService>();
         _pluginLoadingServiceMock = Substitute.For<IPluginLoadingService>();
+        _uiDispatcher = new SynchronousUiDispatcher();
 
         // Default setup for plugin loading service
         _pluginLoadingServiceMock.GetAvailableGames()
@@ -73,7 +72,8 @@ public sealed class ErrorDialogTests : ImmediateMainThreadSchedulerTestBase
             _fileDialogMock,
             _messageDialogMock,
             _pluginServiceMock,
-            _pluginLoadingServiceMock);
+            _pluginLoadingServiceMock,
+            _uiDispatcher);
     }
 
     /// <summary>
@@ -87,7 +87,7 @@ public sealed class ErrorDialogTests : ImmediateMainThreadSchedulerTestBase
             XEditExecutablePath = xEditPath,
             PluginsToClean = new List<PluginInfo>
             {
-                new() { FileName = "Test.esp", FullPath = "Test.esp", IsSelected = true }
+                new() { FileName = "Test.esp", FullPath = "Test.esp" }
             }
         };
         var stateSubject = new BehaviorSubject<AppState>(validState);
@@ -102,7 +102,8 @@ public sealed class ErrorDialogTests : ImmediateMainThreadSchedulerTestBase
             _fileDialogMock,
             _messageDialogMock,
             _pluginServiceMock,
-            _pluginLoadingServiceMock);
+            _pluginLoadingServiceMock,
+            _uiDispatcher);
     }
 
     #region xEdit Validation Tests (Inline Validation Panel)
@@ -115,7 +116,7 @@ public sealed class ErrorDialogTests : ImmediateMainThreadSchedulerTestBase
         vm.Configuration.XEditPath = null;
 
         // Act
-        await vm.Commands.StartCleaningCommand.Execute();
+        await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
 
         // Assert - inline validation errors shown, no modal dialog
         vm.Commands.HasValidationErrors.Should().BeTrue("validation errors should be visible");
@@ -137,7 +138,7 @@ public sealed class ErrorDialogTests : ImmediateMainThreadSchedulerTestBase
         vm.Configuration.XEditPath = string.Empty;
 
         // Act
-        await vm.Commands.StartCleaningCommand.Execute();
+        await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
 
         // Assert - inline validation errors shown
         vm.Commands.HasValidationErrors.Should().BeTrue();
@@ -154,7 +155,7 @@ public sealed class ErrorDialogTests : ImmediateMainThreadSchedulerTestBase
             XEditExecutablePath = nonExistentPath,
             PluginsToClean = new List<PluginInfo>
             {
-                new() { FileName = "Test.esp", FullPath = "Test.esp", IsSelected = true }
+                new() { FileName = "Test.esp", FullPath = "Test.esp" }
             }
         };
         var stateSubject = new BehaviorSubject<AppState>(stateWithBadXEdit);
@@ -169,12 +170,13 @@ public sealed class ErrorDialogTests : ImmediateMainThreadSchedulerTestBase
             _fileDialogMock,
             _messageDialogMock,
             _pluginServiceMock,
-            _pluginLoadingServiceMock);
+            _pluginLoadingServiceMock,
+            _uiDispatcher);
 
         vm.Configuration.XEditPath = nonExistentPath;
 
         // Act
-        await vm.Commands.StartCleaningCommand.Execute();
+        await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
 
         // Assert - inline validation errors shown
         vm.Commands.HasValidationErrors.Should().BeTrue();
@@ -200,7 +202,7 @@ public sealed class ErrorDialogTests : ImmediateMainThreadSchedulerTestBase
                 XEditExecutablePath = tempFile,
                 PluginsToClean = new List<PluginInfo>
                 {
-                    new() { FileName = "Test.esp", FullPath = "Test.esp", IsSelected = true }
+                    new() { FileName = "Test.esp", FullPath = "Test.esp" }
                 }
             };
 
@@ -216,10 +218,11 @@ public sealed class ErrorDialogTests : ImmediateMainThreadSchedulerTestBase
                 _fileDialogMock,
                 _messageDialogMock,
                 _pluginServiceMock,
-                _pluginLoadingServiceMock);
+                _pluginLoadingServiceMock,
+                _uiDispatcher);
 
             // Act
-            await vm.Commands.StartCleaningCommand.Execute();
+            await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
 
             // Assert
             vm.Commands.HasValidationErrors.Should().BeTrue();
@@ -252,7 +255,7 @@ public sealed class ErrorDialogTests : ImmediateMainThreadSchedulerTestBase
             .Returns(nonExistentPath);
 
         // Act
-        await vm.Configuration.ConfigureLoadOrderCommand.Execute();
+        await vm.Configuration.ConfigureLoadOrderCommand.ExecuteAsync(null);
 
         // Assert
         await _messageDialogMock.Received(1).ShowErrorAsync(
@@ -284,7 +287,7 @@ public sealed class ErrorDialogTests : ImmediateMainThreadSchedulerTestBase
                 .Returns(new List<PluginInfo>());
 
             // Act
-            await vm.Configuration.ConfigureLoadOrderCommand.Execute();
+            await vm.Configuration.ConfigureLoadOrderCommand.ExecuteAsync(null);
 
             // Assert
             await _messageDialogMock.Received(1).ShowWarningAsync(
@@ -319,7 +322,7 @@ public sealed class ErrorDialogTests : ImmediateMainThreadSchedulerTestBase
                 .ThrowsAsync(new IOException("File in use"));
 
             // Act
-            await vm.Configuration.ConfigureLoadOrderCommand.Execute();
+            await vm.Configuration.ConfigureLoadOrderCommand.ExecuteAsync(null);
 
             // Assert
             await _messageDialogMock.Received(1).ShowErrorAsync(
@@ -346,13 +349,14 @@ public sealed class ErrorDialogTests : ImmediateMainThreadSchedulerTestBase
         try
         {
             var vm = CreateViewModelWithValidState(tempFile);
+            using var _ = vm.ShowProgressInteraction.RegisterHandler(_ => Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
             vm.Configuration.XEditPath = tempFile;
 
             _orchestratorMock.StartCleaningAsync(Arg.Any<TimeoutRetryCallback>(), Arg.Any<BackupFailureCallback>(), Arg.Any<CancellationToken>())
                 .ThrowsAsync(new InvalidOperationException("Configuration is invalid"));
 
             // Act
-            await vm.Commands.StartCleaningCommand.Execute();
+            await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
 
             // Assert - inline validation error shown instead of modal dialog
             vm.Commands.HasValidationErrors.Should().BeTrue("validation errors should be visible");
@@ -378,13 +382,14 @@ public sealed class ErrorDialogTests : ImmediateMainThreadSchedulerTestBase
         try
         {
             var vm = CreateViewModelWithValidState(tempFile);
+            using var _ = vm.ShowProgressInteraction.RegisterHandler(_ => Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
             vm.Configuration.XEditPath = tempFile;
 
             _orchestratorMock.StartCleaningAsync(Arg.Any<TimeoutRetryCallback>(), Arg.Any<BackupFailureCallback>(), Arg.Any<CancellationToken>())
                 .ThrowsAsync(new Exception("Unexpected error"));
 
             // Act
-            await vm.Commands.StartCleaningCommand.Execute();
+            await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
 
             // Assert - generic exceptions still use modal dialog (truly unexpected)
             await _messageDialogMock.Received(1).ShowErrorAsync(
@@ -411,6 +416,7 @@ public sealed class ErrorDialogTests : ImmediateMainThreadSchedulerTestBase
         try
         {
             var vm = CreateViewModelWithValidState(tempFile);
+            using var _ = vm.ShowProgressInteraction.RegisterHandler(_ => Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
             vm.Configuration.XEditPath = tempFile;
 
             TimeoutRetryCallback? capturedCallback = null;
@@ -421,7 +427,7 @@ public sealed class ErrorDialogTests : ImmediateMainThreadSchedulerTestBase
                 .Returns(Task.CompletedTask);
 
             // Act
-            await vm.Commands.StartCleaningCommand.Execute();
+            await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
 
             // Assert
             capturedCallback.Should().NotBeNull("Timeout callback should be passed to orchestrator");
@@ -441,6 +447,7 @@ public sealed class ErrorDialogTests : ImmediateMainThreadSchedulerTestBase
         try
         {
             var vm = CreateViewModelWithValidState(tempFile);
+            using var _ = vm.ShowProgressInteraction.RegisterHandler(_ => Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
             vm.Configuration.XEditPath = tempFile;
 
             TimeoutRetryCallback? capturedCallback = null;
@@ -453,7 +460,7 @@ public sealed class ErrorDialogTests : ImmediateMainThreadSchedulerTestBase
             _messageDialogMock.ShowRetryAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>())
                 .Returns(true);
 
-            await vm.Commands.StartCleaningCommand.Execute();
+            await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
 
             // Act - simulate timeout callback being invoked
             capturedCallback.Should().NotBeNull();
@@ -482,6 +489,7 @@ public sealed class ErrorDialogTests : ImmediateMainThreadSchedulerTestBase
         try
         {
             var vm = CreateViewModelWithValidState(tempFile);
+            using var _ = vm.ShowProgressInteraction.RegisterHandler(_ => Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
             vm.Configuration.XEditPath = tempFile;
 
             TimeoutRetryCallback? capturedCallback = null;
@@ -495,7 +503,7 @@ public sealed class ErrorDialogTests : ImmediateMainThreadSchedulerTestBase
             _messageDialogMock.ShowRetryAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>())
                 .Returns(false);
 
-            await vm.Commands.StartCleaningCommand.Execute();
+            await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
 
             // Act
             capturedCallback.Should().NotBeNull();

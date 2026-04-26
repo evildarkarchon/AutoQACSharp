@@ -26,6 +26,17 @@ public sealed record AppState
     public int TotalPlugins { get; init; }
     public IReadOnlyList<PluginInfo> PluginsToClean { get; init; } = [];
 
+    /// <summary>
+    /// Full paths (case-insensitive) of plugins the user has explicitly deselected from
+    /// the visible plugin list. Default is empty (everything selected). Storing exclusions
+    /// rather than selections keeps the default behaviour stable as <see cref="PluginsToClean"/>
+    /// is replaced by approximation merges. Path identity (rather than file name) prevents
+    /// deselections leaking across game switches or load-order changes when two plugins
+    /// happen to share a file name.
+    /// </summary>
+    public IReadOnlySet<string> ExcludedPluginPaths { get; init; } =
+        Enumerable.Empty<string>().ToFrozenSet(System.StringComparer.OrdinalIgnoreCase);
+
     // Results
     public IReadOnlySet<string> CleanedPlugins { get; init; } = Enumerable.Empty<string>().ToFrozenSet();
     public IReadOnlySet<string> FailedPlugins { get; init; } = Enumerable.Empty<string>().ToFrozenSet();

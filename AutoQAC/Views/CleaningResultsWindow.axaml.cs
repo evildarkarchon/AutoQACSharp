@@ -1,6 +1,6 @@
 using System;
-using Avalonia.Controls;
 using AutoQAC.ViewModels;
+using Avalonia.Controls;
 
 namespace AutoQAC.Views;
 
@@ -14,8 +14,17 @@ public partial class CleaningResultsWindow : Window
     public CleaningResultsWindow(CleaningResultsViewModel viewModel) : this()
     {
         DataContext = viewModel;
-
-        // Wire up the close command to close the window
-        viewModel.CloseCommand.Subscribe(_ => Close());
+        viewModel.CloseRequested += OnCloseRequested;
     }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        if (DataContext is CleaningResultsViewModel vm)
+        {
+            vm.CloseRequested -= OnCloseRequested;
+        }
+        base.OnClosed(e);
+    }
+
+    private void OnCloseRequested(object? sender, EventArgs e) => Close();
 }

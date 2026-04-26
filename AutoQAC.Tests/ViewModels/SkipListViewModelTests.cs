@@ -1,20 +1,16 @@
-using System.Reactive.Concurrency;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.Configuration;
 using AutoQAC.Services.State;
-using AutoQAC.Tests.TestInfrastructure;
 using AutoQAC.ViewModels;
 using FluentAssertions;
 using NSubstitute;
-using ReactiveUI;
 
 namespace AutoQAC.Tests.ViewModels;
 
-[Collection(RxAppSchedulerCollection.Name)]
-public sealed class SkipListViewModelTests : ImmediateMainThreadSchedulerTestBase
+public sealed class SkipListViewModelTests
 {
     private readonly IConfigurationService _configServiceMock;
     private readonly IStateService _stateServiceMock;
@@ -176,7 +172,7 @@ public sealed class SkipListViewModelTests : ImmediateMainThreadSchedulerTestBas
         vm.SelectedPlugin = "NewMod.esp";
 
         // Act
-        await vm.AddSelectedPluginCommand.Execute();
+        vm.AddSelectedPluginCommand.Execute(null);
 
         // Assert
         vm.SkipListEntries.Should().Contain("NewMod.esp");
@@ -196,8 +192,7 @@ public sealed class SkipListViewModelTests : ImmediateMainThreadSchedulerTestBas
         vm.SelectedPlugin = null;
 
         // Assert
-        var canExecute = await vm.AddSelectedPluginCommand.CanExecute.FirstAsync();
-        canExecute.Should().BeFalse();
+        vm.AddSelectedPluginCommand.CanExecute(null).Should().BeFalse();
     }
 
     #endregion
@@ -217,7 +212,7 @@ public sealed class SkipListViewModelTests : ImmediateMainThreadSchedulerTestBas
         vm.ManualEntryText = "NewPlugin.esp";
 
         // Act
-        await vm.AddManualEntryCommand.Execute();
+        vm.AddManualEntryCommand.Execute(null);
 
         // Assert
         vm.SkipListEntries.Should().Contain("NewPlugin.esp");
@@ -238,8 +233,7 @@ public sealed class SkipListViewModelTests : ImmediateMainThreadSchedulerTestBas
         vm.ManualEntryText = "InvalidFile.txt";
 
         // Assert
-        var canExecute = await vm.AddManualEntryCommand.CanExecute.FirstAsync();
-        canExecute.Should().BeFalse();
+        vm.AddManualEntryCommand.CanExecute(null).Should().BeFalse();
         vm.ManualEntryError.Should().Contain("Must end with");
     }
 
@@ -255,7 +249,7 @@ public sealed class SkipListViewModelTests : ImmediateMainThreadSchedulerTestBas
         await vm.LoadSkipListAsync();
 
         vm.ManualEntryText = "ExistingPlugin.esp";
-        await vm.AddManualEntryCommand.Execute();
+        vm.AddManualEntryCommand.Execute(null);
 
         // Assert
         vm.ManualEntryError.Should().Contain("already in skip list");
@@ -274,11 +268,11 @@ public sealed class SkipListViewModelTests : ImmediateMainThreadSchedulerTestBas
 
         // Act - add .esm
         vm.ManualEntryText = "Master.esm";
-        await vm.AddManualEntryCommand.Execute();
+        vm.AddManualEntryCommand.Execute(null);
 
         // Act - add .esl
         vm.ManualEntryText = "Light.esl";
-        await vm.AddManualEntryCommand.Execute();
+        vm.AddManualEntryCommand.Execute(null);
 
         // Assert
         vm.SkipListEntries.Should().Contain("Master.esm");
@@ -303,7 +297,7 @@ public sealed class SkipListViewModelTests : ImmediateMainThreadSchedulerTestBas
         vm.SelectedEntry = "ToRemove.esp";
 
         // Act
-        await vm.RemoveSelectedEntryCommand.Execute();
+        await vm.RemoveSelectedEntryCommand.ExecuteAsync(null);
 
         // Assert
         vm.SkipListEntries.Should().NotContain("ToRemove.esp");
@@ -335,7 +329,7 @@ public sealed class SkipListViewModelTests : ImmediateMainThreadSchedulerTestBas
         vm.SelectedEntry = "InSkipList.esp";
 
         // Act
-        await vm.RemoveSelectedEntryCommand.Execute();
+        await vm.RemoveSelectedEntryCommand.ExecuteAsync(null);
 
         // Assert
         vm.AvailablePlugins.Should().Contain("InSkipList.esp");
@@ -354,8 +348,7 @@ public sealed class SkipListViewModelTests : ImmediateMainThreadSchedulerTestBas
         vm.SelectedEntry = null;
 
         // Assert
-        var canExecute = await vm.RemoveSelectedEntryCommand.CanExecute.FirstAsync();
-        canExecute.Should().BeFalse();
+        vm.RemoveSelectedEntryCommand.CanExecute(null).Should().BeFalse();
     }
 
     #endregion
@@ -388,7 +381,7 @@ public sealed class SkipListViewModelTests : ImmediateMainThreadSchedulerTestBas
 
         // Act
         vm.ManualEntryText = "NewPlugin.esp";
-        await vm.AddManualEntryCommand.Execute();
+        vm.AddManualEntryCommand.Execute(null);
 
         // Assert
         vm.HasUnsavedChanges.Should().BeTrue();
@@ -407,7 +400,7 @@ public sealed class SkipListViewModelTests : ImmediateMainThreadSchedulerTestBas
         vm.SelectedEntry = "Plugin.esp";
 
         // Act
-        await vm.RemoveSelectedEntryCommand.Execute();
+        await vm.RemoveSelectedEntryCommand.ExecuteAsync(null);
 
         // Assert
         vm.HasUnsavedChanges.Should().BeTrue();
@@ -425,9 +418,9 @@ public sealed class SkipListViewModelTests : ImmediateMainThreadSchedulerTestBas
 
         // Add then remove
         vm.ManualEntryText = "New.esp";
-        await vm.AddManualEntryCommand.Execute();
+        vm.AddManualEntryCommand.Execute(null);
         vm.SelectedEntry = "New.esp";
-        await vm.RemoveSelectedEntryCommand.Execute();
+        await vm.RemoveSelectedEntryCommand.ExecuteAsync(null);
 
         // Assert
         vm.HasUnsavedChanges.Should().BeFalse();
@@ -448,10 +441,10 @@ public sealed class SkipListViewModelTests : ImmediateMainThreadSchedulerTestBas
         await vm.LoadSkipListAsync();
 
         vm.ManualEntryText = "NewPlugin.esp";
-        await vm.AddManualEntryCommand.Execute();
+        vm.AddManualEntryCommand.Execute(null);
 
         // Act
-        await vm.SaveCommand.Execute();
+        await vm.SaveCommand.ExecuteAsync(null);
 
         // Assert
         await _configServiceMock.Received(1).UpdateSkipListAsync(
@@ -461,7 +454,7 @@ public sealed class SkipListViewModelTests : ImmediateMainThreadSchedulerTestBas
     }
 
     [Fact]
-    public async Task SaveCommand_ShouldReturnTrue_OnSuccess()
+    public async Task SaveCommand_ShouldRequestCloseWithTrue_OnSuccess()
     {
         // Arrange
         _configServiceMock.GetGameSpecificSkipListAsync(GameType.SkyrimSe, Arg.Any<CancellationToken>())
@@ -470,8 +463,11 @@ public sealed class SkipListViewModelTests : ImmediateMainThreadSchedulerTestBas
         var vm = CreateViewModel();
         await vm.LoadSkipListAsync();
 
+        bool? result = null;
+        vm.CloseRequested += r => result = r;
+
         // Act
-        var result = await vm.SaveCommand.Execute();
+        await vm.SaveCommand.ExecuteAsync(null);
 
         // Assert
         result.Should().BeTrue();
@@ -482,7 +478,7 @@ public sealed class SkipListViewModelTests : ImmediateMainThreadSchedulerTestBas
     #region CancelCommand Tests
 
     [Fact]
-    public async Task CancelCommand_ShouldReturnFalse()
+    public async Task CancelCommand_ShouldRequestCloseWithFalse()
     {
         // Arrange
         _configServiceMock.GetGameSpecificSkipListAsync(GameType.SkyrimSe, Arg.Any<CancellationToken>())
@@ -491,8 +487,11 @@ public sealed class SkipListViewModelTests : ImmediateMainThreadSchedulerTestBas
         var vm = CreateViewModel();
         await vm.LoadSkipListAsync();
 
+        bool? result = null;
+        vm.CloseRequested += r => result = r;
+
         // Act
-        var result = await vm.CancelCommand.Execute();
+        vm.CancelCommand.Execute(null);
 
         // Assert
         result.Should().BeFalse();

@@ -1,20 +1,43 @@
 using System;
 using AutoQAC.ViewModels;
-using ReactiveUI.Avalonia;
-using ReactiveUI;
+using Avalonia.Controls;
 
 namespace AutoQAC.Views;
 
-public partial class PartialFormsWarningDialog : ReactiveWindow<PartialFormsWarningViewModel>
+public partial class PartialFormsWarningDialog : Window
 {
+    private PartialFormsWarningViewModel? _vm;
+
     public PartialFormsWarningDialog()
     {
         InitializeComponent();
-        this.WhenActivated(d =>
+        DataContextChanged += OnDataContextChanged;
+    }
+
+    private void OnDataContextChanged(object? sender, EventArgs e)
+    {
+        if (_vm is not null)
         {
-            if (ViewModel == null) return;
-            d(ViewModel.EnableCommand.Subscribe(result => Close(result)));
-            d(ViewModel.CancelCommand.Subscribe(result => Close(result)));
-        });
+            _vm.CloseRequested -= OnCloseRequested;
+            _vm = null;
+        }
+        if (DataContext is PartialFormsWarningViewModel vm)
+        {
+            _vm = vm;
+            vm.CloseRequested += OnCloseRequested;
+        }
+    }
+
+    private void OnCloseRequested(bool result) => Close(result);
+
+    protected override void OnClosed(EventArgs e)
+    {
+        if (_vm is not null)
+        {
+            _vm.CloseRequested -= OnCloseRequested;
+            _vm = null;
+        }
+        DataContextChanged -= OnDataContextChanged;
+        base.OnClosed(e);
     }
 }

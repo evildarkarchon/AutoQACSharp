@@ -26,9 +26,8 @@ namespace AutoQAC
         public override void Initialize()
         {
             AvaloniaXamlLoader.Load(this);
-#if DEBUG
-            this.AttachDeveloperTools();
-#endif
+            // DevTools are wired via .WithDeveloperTools() in Program.cs (DEBUG only).
+            // Calling AttachDeveloperTools here as well throws — the package rejects double-attach.
         }
 
         public override void OnFrameworkInitializationCompleted()
@@ -57,9 +56,10 @@ namespace AutoQAC
                 var orchestrator = Services.GetRequiredService<ICleaningOrchestrator>();
                 var backupService = Services.GetRequiredService<IBackupService>();
                 var messageDialog = Services.GetRequiredService<IMessageDialogService>();
+                var uiDispatcher = Services.GetRequiredService<IUiDispatcher>();
 
                 var mainWindow = new MainWindow(viewModel, logger, fileDialog, configService, stateService,
-                    orchestrator, backupService, messageDialog);
+                    orchestrator, backupService, messageDialog, uiDispatcher);
                 desktop.MainWindow = mainWindow;
 
                 // Log startup diagnostics
