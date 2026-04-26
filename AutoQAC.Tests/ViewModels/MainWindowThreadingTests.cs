@@ -1,4 +1,3 @@
-using System.Reactive.Concurrency;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
 using AutoQAC.Infrastructure.Logging;
@@ -13,19 +12,21 @@ using AutoQAC.ViewModels;
 using AutoQAC.ViewModels.MainWindow;
 using FluentAssertions;
 using NSubstitute;
-using ReactiveUI;
 
 namespace AutoQAC.Tests.ViewModels;
 
-[Collection(RxAppSchedulerCollection.Name)]
 public sealed class MainWindowThreadingTests
 {
     [Fact]
-    public async Task MainWindowViewModel_ShouldMarshalCleaningCommandStateChangesToMainThreadScheduler()
+    public async Task MainWindowViewModel_ShouldDispatchStateChangesThroughIUiDispatcher()
     {
-        using var mainThreadScheduler = new RxAppEventLoopMainThreadSchedulerScope();
+        // After the migration to CommunityToolkit.Mvvm, UI marshaling is delegated to
+        // IUiDispatcher rather than RxApp.MainThreadScheduler. This test verifies that
+        // the dispatcher is invoked for state-driven updates by capturing the thread on
+        // which the dispatcher's Post callbacks fire.
+        using var captureDispatcher = new ThreadCapturingUiDispatcher();
+        var dispatchedFromThread = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        var mainThreadId = await WaitForSignalAsync(mainThreadScheduler.ThreadIdTask);
         var currentState = new AppState();
         var stateSubject = new BehaviorSubject<AppState>(currentState);
         var configService = Substitute.For<IConfigurationService>();
@@ -56,14 +57,14 @@ public sealed class MainWindowThreadingTests
             Substitute.For<IFileDialogService>(),
             Substitute.For<IMessageDialogService>(),
             Substitute.For<IPluginValidationService>(),
-            pluginLoadingService);
+            pluginLoadingService,
+            captureDispatcher);
 
         try
         {
-            var observedThread = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
-            using var subscription = viewModel.Commands.WhenAnyValue(x => x.IsCleaning)
-                .Skip(1)
-                .Subscribe(_ => observedThread.TrySetResult(Environment.CurrentManagedThreadId));
+            // Reset capture state after construction (constructor performs the initial
+            // OnStateChanged dispatch synchronously on the calling thread).
+            captureDispatcher.Reset();
 
             await Task.Run(() =>
             {
@@ -71,7 +72,15 @@ public sealed class MainWindowThreadingTests
                 stateSubject.OnNext(currentState);
             });
 
-            (await WaitForSignalAsync(observedThread.Task)).Should().Be(mainThreadId);
+            // Wait for the dispatcher to be invoked at least once after the state change.
+            await captureDispatcher.WaitForNextPostAsync();
+
+            captureDispatcher.LastPostThreadId.Should().NotBe(0,
+                "the IUiDispatcher should receive the state-change callback");
+
+            // The actual VM property update must reflect the state change after dispatch.
+            viewModel.Commands.IsCleaning.Should().BeTrue(
+                "the synchronous dispatcher applies the callback inline so IsCleaning should be set");
         }
         finally
         {
@@ -80,16 +89,19 @@ public sealed class MainWindowThreadingTests
     }
 
     [Fact]
-    public async Task PluginListViewModel_CommandCanExecute_ShouldMarshalStateChangesToMainThreadScheduler()
+    public async Task PluginListViewModel_ShouldUpdateOnStateChanges_ThroughUiDispatcherFlow()
     {
-        using var mainThreadScheduler = new RxAppEventLoopMainThreadSchedulerScope();
-
-        var mainThreadId = await WaitForSignalAsync(mainThreadScheduler.ThreadIdTask);
+        // Originally this test verified that ReactiveCommand.CanExecute marshaled
+        // updates to RxApp.MainThreadScheduler. With CommunityToolkit.Mvvm there is no
+        // separate scheduler -- IRelayCommand.CanExecute returns synchronously and the
+        // parent VM dispatches OnStateChanged through IUiDispatcher. This test verifies
+        // the equivalent contract: when the parent dispatches OnStateChanged, the
+        // PluginListViewModel responds and command CanExecute reflects the new state.
         var currentState = new AppState
         {
             PluginsToClean =
             [
-                new PluginInfo { FileName = "Test.esp", FullPath = "Test.esp", IsSelected = true }
+                new PluginInfo { FileName = "Test.esp", FullPath = "Test.esp" }
             ]
         };
         var stateSubject = new BehaviorSubject<AppState>(currentState);
@@ -101,18 +113,20 @@ public sealed class MainWindowThreadingTests
 
         try
         {
-            var observedThread = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
-            using var subscription = viewModel.SelectAllCommand.CanExecute
-                .Skip(1)
-                .Subscribe(_ => observedThread.TrySetResult(Environment.CurrentManagedThreadId));
+            // Initially HasPlugins=true and IsCleaning=false → command CanExecute true.
+            viewModel.SelectAllCommand.CanExecute(null).Should().BeTrue();
 
+            // Simulate the parent VM dispatching state changes (this is what IUiDispatcher
+            // would call inline in the SynchronousUiDispatcher test setup).
             await Task.Run(() =>
             {
                 currentState = currentState with { IsCleaning = true };
-                stateSubject.OnNext(currentState);
             });
+            viewModel.OnStateChanged(currentState);
 
-            (await WaitForSignalAsync(observedThread.Task)).Should().Be(mainThreadId);
+            viewModel.IsCleaning.Should().BeTrue();
+            viewModel.SelectAllCommand.CanExecute(null).Should().BeFalse(
+                "command should be disabled while cleaning");
         }
         finally
         {
@@ -125,6 +139,7 @@ public sealed class MainWindowThreadingTests
     {
         var stateService = Substitute.For<IStateService>();
         stateService.StateChanged.Returns(Observable.Never<AppState>());
+        stateService.CurrentState.Returns(new AppState());
         var viewModel = new PluginListViewModel(stateService);
 
         try
@@ -175,10 +190,44 @@ public sealed class MainWindowThreadingTests
         }
     }
 
-    private static async Task<T> WaitForSignalAsync<T>(Task<T> signalTask)
+    /// <summary>
+    /// Test double <see cref="IUiDispatcher"/> that runs callbacks synchronously while
+    /// recording the thread id of the most recent post. Replaces the previous
+    /// <c>RxAppEventLoopMainThreadSchedulerScope</c> for verifying that VM state changes
+    /// are routed through the dispatcher abstraction.
+    /// </summary>
+    private sealed class ThreadCapturingUiDispatcher : IUiDispatcher, IDisposable
     {
-        var completedTask = await Task.WhenAny(signalTask, Task.Delay(TimeSpan.FromSeconds(2)));
-        completedTask.Should().Be(signalTask, "expected asynchronous test signal to be observed");
-        return await signalTask;
+        private TaskCompletionSource<int> _nextPost = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public int LastPostThreadId { get; private set; }
+
+        public void Reset()
+        {
+            LastPostThreadId = 0;
+            _nextPost = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        }
+
+        public Task WaitForNextPostAsync() => _nextPost.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        public void Post(Action action)
+        {
+            try
+            {
+                action();
+            }
+            finally
+            {
+                LastPostThreadId = Environment.CurrentManagedThreadId;
+                _nextPost.TrySetResult(LastPostThreadId);
+            }
+        }
+
+        public Task InvokeAsync(Func<Task> action) => action();
+
+        public void Dispose()
+        {
+            _nextPost.TrySetResult(0);
+        }
     }
 }

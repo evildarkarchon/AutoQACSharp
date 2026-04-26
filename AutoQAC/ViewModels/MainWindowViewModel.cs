@@ -1,8 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Reactive;
-using System.Reactive.Disposables;
-using System.Reactive.Linq;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.Cleaning;
@@ -10,8 +7,8 @@ using AutoQAC.Services.Configuration;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Services.State;
 using AutoQAC.Services.UI;
+using AutoQAC.Services.UI.Interactions;
 using AutoQAC.ViewModels.MainWindow;
-using ReactiveUI;
 
 namespace AutoQAC.ViewModels;
 
@@ -22,14 +19,13 @@ namespace AutoQAC.ViewModels;
 /// </summary>
 public sealed class MainWindowViewModel : ViewModelBase, IDisposable
 {
-    private readonly CompositeDisposable _disposables = new();
+    private readonly IUiDispatcher _uiDispatcher;
+    private readonly IDisposable _stateSubscription;
 
-    // Sub-ViewModels
     public ConfigurationViewModel Configuration { get; }
     public PluginListViewModel PluginList { get; }
     public CleaningCommandsViewModel Commands { get; }
 
-    // Interactions -- registered in MainWindow.axaml.cs
     public Interaction<Unit, Unit> ShowProgressInteraction { get; } = new();
     public Interaction<List<DryRunResult>, Unit> ShowPreviewInteraction { get; } = new();
     public Interaction<CleaningSessionResult, Unit> ShowCleaningResultsInteraction { get; } = new();
@@ -47,9 +43,11 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
         IMessageDialogService messageDialog,
         IPluginValidationService pluginService,
         IPluginLoadingService pluginLoadingService,
+        IUiDispatcher uiDispatcher,
         IPluginIssueApproximationService? pluginIssueApproximationService = null)
     {
-        // Create sub-ViewModels
+        _uiDispatcher = uiDispatcher;
+
         Configuration = new ConfigurationViewModel(
             configService, stateService, logger, fileDialog,
             messageDialog, pluginService, pluginLoadingService, pluginIssueApproximationService);
@@ -58,22 +56,16 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
 
         Commands = new CleaningCommandsViewModel(
             stateService, orchestrator, configService, pluginLoadingService,
-            logger,
-            messageDialog,
+            logger, messageDialog, uiDispatcher,
             ShowProgressInteraction, ShowPreviewInteraction,
             ShowSettingsInteraction, ShowSkipListInteraction,
             ShowRestoreInteraction, ShowAboutInteraction);
 
-        // Subscribe to state changes and dispatch to sub-VMs
-        var stateSubscription = stateService.StateChanged
-            .ObserveOn(RxApp.MainThreadScheduler)
-            .Subscribe(OnStateChanged);
-        _disposables.Add(stateSubscription);
+        _stateSubscription = stateService.StateChanged.Subscribe(
+            new CallbackObserver<AppState>(state => _uiDispatcher.Post(() => OnStateChanged(state))));
 
-        // Initialize from current state
         OnStateChanged(stateService.CurrentState);
 
-        // Kick off async initialization
         _ = Configuration.InitializeAsync();
     }
 
@@ -88,14 +80,11 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
     /// Shows a non-modal migration warning banner in the main window.
     /// Delegates to ConfigurationViewModel.
     /// </summary>
-    public void ShowMigrationWarning(string message)
-    {
-        Configuration.ShowMigrationWarning(message);
-    }
+    public void ShowMigrationWarning(string message) => Configuration.ShowMigrationWarning(message);
 
     public void Dispose()
     {
-        _disposables.Dispose();
+        _stateSubscription.Dispose();
         Configuration.Dispose();
         PluginList.Dispose();
         Commands.Dispose();

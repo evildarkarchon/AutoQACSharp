@@ -1,24 +1,31 @@
 using AutoQAC.ViewModels;
 using FluentAssertions;
-using System.Reactive.Linq;
 
 namespace AutoQAC.Tests.ViewModels;
 
 public sealed class PartialFormsWarningViewModelTests
 {
     [Fact]
-    public async Task EnableCommand_ShouldReturnTrue()
+    public void EnableCommand_ShouldRequestCloseWithTrue()
     {
         var vm = new PartialFormsWarningViewModel();
-        var result = await vm.EnableCommand.Execute();
+        bool? result = null;
+        vm.CloseRequested += r => result = r;
+
+        vm.EnableCommand.Execute(null);
+
         result.Should().BeTrue();
     }
 
     [Fact]
-    public async Task CancelCommand_ShouldReturnFalse()
+    public void CancelCommand_ShouldRequestCloseWithFalse()
     {
         var vm = new PartialFormsWarningViewModel();
-        var result = await vm.CancelCommand.Execute();
+        bool? result = null;
+        vm.CloseRequested += r => result = r;
+
+        vm.CancelCommand.Execute(null);
+
         result.Should().BeFalse();
     }
 }

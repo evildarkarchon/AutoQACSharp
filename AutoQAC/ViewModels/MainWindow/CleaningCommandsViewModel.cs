@@ -3,9 +3,6 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
-using System.Reactive;
-using System.Reactive.Disposables;
-using System.Reactive.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
@@ -15,9 +12,11 @@ using AutoQAC.Services.Configuration;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Services.State;
 using AutoQAC.Services.UI;
+using AutoQAC.Services.UI.Interactions;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
-using ReactiveUI;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 
 namespace AutoQAC.ViewModels.MainWindow;
 
@@ -25,25 +24,42 @@ namespace AutoQAC.ViewModels.MainWindow;
 /// Manages cleaning commands (start/stop/preview), validation errors,
 /// status text during cleaning, and pre-clean validation.
 /// </summary>
-public sealed class CleaningCommandsViewModel : ViewModelBase, IDisposable
+public sealed partial class CleaningCommandsViewModel : ViewModelBase, IDisposable
 {
     private readonly IConfigurationService _configService;
-
-    // ReSharper disable once CollectionNeverUpdated.Local
-    private readonly CompositeDisposable _disposables = new();
     private readonly ILoggingService _logger;
     private readonly IMessageDialogService _messageDialog;
     private readonly ICleaningOrchestrator _orchestrator;
     private readonly IPluginLoadingService _pluginLoadingService;
-    private readonly Interaction<Unit, Unit> _showAboutInteraction;
-    private readonly Interaction<List<DryRunResult>, Unit> _showPreviewInteraction;
+    private readonly IStateService _stateService;
+    private readonly IUiDispatcher _uiDispatcher;
 
-    // Interaction references passed from parent
     private readonly Interaction<Unit, Unit> _showProgressInteraction;
-    private readonly Interaction<Unit, Unit> _showRestoreInteraction;
+    private readonly Interaction<List<DryRunResult>, Unit> _showPreviewInteraction;
     private readonly Interaction<Unit, bool> _showSettingsInteraction;
     private readonly Interaction<Unit, bool> _showSkipListInteraction;
-    private readonly IStateService _stateService;
+    private readonly Interaction<Unit, Unit> _showRestoreInteraction;
+    private readonly Interaction<Unit, Unit> _showAboutInteraction;
+
+    [ObservableProperty]
+    private string _statusText = "Ready";
+
+    [ObservableProperty]
+    private ObservableCollection<ValidationError> _validationErrors = new();
+
+    [ObservableProperty]
+    private bool _hasValidationErrors;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(StopCleaningCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ShowSkipListCommand))]
+    [NotifyCanExecuteChangedFor(nameof(RestoreBackupsCommand))]
+    private bool _isCleaning;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(StartCleaningCommand))]
+    [NotifyCanExecuteChangedFor(nameof(PreviewCommand))]
+    private bool _canStartCleaning;
 
     public CleaningCommandsViewModel(
         IStateService stateService,
@@ -52,6 +68,7 @@ public sealed class CleaningCommandsViewModel : ViewModelBase, IDisposable
         IPluginLoadingService pluginLoadingService,
         ILoggingService logger,
         IMessageDialogService messageDialog,
+        IUiDispatcher uiDispatcher,
         Interaction<Unit, Unit> showProgressInteraction,
         Interaction<List<DryRunResult>, Unit> showPreviewInteraction,
         Interaction<Unit, bool> showSettingsInteraction,
@@ -65,105 +82,22 @@ public sealed class CleaningCommandsViewModel : ViewModelBase, IDisposable
         _pluginLoadingService = pluginLoadingService;
         _logger = logger;
         _messageDialog = messageDialog;
+        _uiDispatcher = uiDispatcher;
         _showProgressInteraction = showProgressInteraction;
         _showPreviewInteraction = showPreviewInteraction;
         _showSettingsInteraction = showSettingsInteraction;
         _showSkipListInteraction = showSkipListInteraction;
         _showRestoreInteraction = showRestoreInteraction;
         _showAboutInteraction = showAboutInteraction;
-
-        var canStart = this.WhenAnyValue(x => x.CanStartCleaning);
-
-        StartCleaningCommand = ReactiveCommand.CreateFromTask(
-            StartCleaningAsync,
-            canStart);
-
-        PreviewCommand = ReactiveCommand.CreateFromTask(
-            RunPreviewAsync,
-            canStart);
-
-        StopCleaningCommand = ReactiveCommand.CreateFromTask(
-            HandleStopAsync,
-            this.WhenAnyValue(x => x.IsCleaning));
-
-        ExitCommand = ReactiveCommand.Create(Exit);
-        ShowAboutCommand = ReactiveCommand.CreateFromTask(ShowAboutAsync);
-        ShowSettingsCommand = ReactiveCommand.CreateFromTask(ShowSettingsAsync);
-
-        // Skip list command - disabled during cleaning
-        var canShowSkipList = this.WhenAnyValue(x => x.IsCleaning)
-            .Select(cleaning => !cleaning);
-        ShowSkipListCommand = ReactiveCommand.CreateFromTask(ShowSkipListAsync, canShowSkipList);
-
-        // Restore backups command - disabled during cleaning
-        var canShowRestore = this.WhenAnyValue(x => x.IsCleaning)
-            .Select(cleaning => !cleaning);
-        RestoreBackupsCommand = ReactiveCommand.CreateFromTask(ShowRestoreAsync, canShowRestore);
-
-        DismissValidationCommand = ReactiveCommand.Create(() =>
-        {
-            ValidationErrors.Clear();
-            HasValidationErrors = false;
-        });
-    }
-
-    public string StatusText
-    {
-        get;
-        set => this.RaiseAndSetIfChanged(ref field, value);
-    } = "Ready";
-
-    public ObservableCollection<ValidationError> ValidationErrors
-    {
-        get;
-        set => this.RaiseAndSetIfChanged(ref field, value);
-    } = new();
-
-    public bool HasValidationErrors
-    {
-        get;
-        set => this.RaiseAndSetIfChanged(ref field, value);
-    }
-
-    public bool IsCleaning
-    {
-        get;
-        private set => this.RaiseAndSetIfChanged(ref field, value);
-    }
-
-    public bool CanStartCleaning
-    {
-        get;
-        private set => this.RaiseAndSetIfChanged(ref field, value);
-    }
-
-    // Commands
-    public ReactiveCommand<Unit, Unit> StartCleaningCommand { get; }
-    public ReactiveCommand<Unit, Unit> StopCleaningCommand { get; }
-    public ReactiveCommand<Unit, Unit> PreviewCommand { get; }
-    public ReactiveCommand<Unit, Unit> ExitCommand { get; }
-    public ReactiveCommand<Unit, Unit> ShowAboutCommand { get; }
-    public ReactiveCommand<Unit, Unit> ShowSettingsCommand { get; }
-    public ReactiveCommand<Unit, Unit> ShowSkipListCommand { get; }
-    public ReactiveCommand<Unit, Unit> RestoreBackupsCommand { get; }
-    public ReactiveCommand<Unit, Unit> DismissValidationCommand { get; }
-
-    public void Dispose()
-    {
-        _disposables.Dispose();
     }
 
     /// <summary>
-    /// Updates the status text during cleaning state changes. Called by parent on state changes.
+    /// Updates VM state from application state. Called by the parent VM when
+    /// <c>IStateService.StateChanged</c> fires; the parent has already marshaled
+    /// onto the UI thread via <c>IUiDispatcher</c>, so we just apply directly here.
     /// </summary>
-    public void OnStateChanged(AppState state)
-    {
-        RxApp.MainThreadScheduler.Schedule(state, (_, currentState) =>
-        {
-            ApplyState(currentState);
-            return Disposable.Empty;
-        });
-    }
+    public void OnStateChanged(AppState state) =>
+        _uiDispatcher.Post(() => ApplyState(state));
 
     private void ApplyState(AppState state)
     {
@@ -178,25 +112,25 @@ public sealed class CleaningCommandsViewModel : ViewModelBase, IDisposable
         }
     }
 
+    private bool CanStart() => CanStartCleaning;
+
+    [RelayCommand(CanExecute = nameof(CanStart))]
     private async Task StartCleaningAsync()
     {
-        // Clear previous validation errors
         ValidationErrors.Clear();
         HasValidationErrors = false;
 
-        // Run pre-clean validation
         var errors = ValidatePreClean();
         if (errors.Count > 0)
         {
             foreach (var error in errors)
                 ValidationErrors.Add(error);
             HasValidationErrors = true;
-            return; // Do not start cleaning
+            return;
         }
 
         try
         {
-            // Show progress window (non-modal)
             _ = _showProgressInteraction.Handle(Unit.Default);
 
             StatusText = "Cleaning started...";
@@ -225,13 +159,12 @@ public sealed class CleaningCommandsViewModel : ViewModelBase, IDisposable
         }
     }
 
-    private async Task RunPreviewAsync()
+    [RelayCommand(CanExecute = nameof(CanStart))]
+    private async Task PreviewAsync()
     {
-        // Clear previous validation errors (same as StartCleaningAsync)
         ValidationErrors.Clear();
         HasValidationErrors = false;
 
-        // Run pre-clean validation (same as StartCleaningAsync)
         var errors = ValidatePreClean();
         if (errors.Count > 0)
         {
@@ -246,7 +179,6 @@ public sealed class CleaningCommandsViewModel : ViewModelBase, IDisposable
             StatusText = "Running preview...";
             var results = await _orchestrator.RunDryRunAsync();
 
-            // Show preview in progress window via interaction
             _ = _showPreviewInteraction.Handle(results);
 
             StatusText = "Preview complete";
@@ -273,12 +205,128 @@ public sealed class CleaningCommandsViewModel : ViewModelBase, IDisposable
         }
     }
 
+    private bool CanStop() => IsCleaning;
+
+    [RelayCommand(CanExecute = nameof(CanStop))]
+    private async Task StopCleaningAsync()
+    {
+        StatusText = "Stopping...";
+        await _orchestrator.StopCleaningAsync();
+
+        if (_orchestrator.LastTerminationResult == TerminationResult.GracePeriodExpired)
+        {
+            var confirmed = await _messageDialog.ShowConfirmAsync(
+                "Force Terminate?",
+                "xEdit did not exit gracefully. Force terminate the process?");
+
+            if (confirmed)
+            {
+                await _orchestrator.ForceStopCleaningAsync();
+            }
+        }
+    }
+
+    [RelayCommand]
+    private void Exit()
+    {
+        if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+        {
+            desktop.Shutdown();
+        }
+    }
+
+    [RelayCommand]
+    private async Task ShowAboutAsync()
+    {
+        try
+        {
+            await _showAboutInteraction.Handle(Unit.Default);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "Failed to show about dialog");
+            StatusText = "Error opening about dialog";
+        }
+    }
+
+    [RelayCommand]
+    private async Task ShowSettingsAsync()
+    {
+        try
+        {
+            var result = await _showSettingsInteraction.Handle(Unit.Default);
+
+            if (result)
+            {
+                var config = await _configService.LoadUserConfigAsync();
+
+                _stateService.UpdateState(s => s with
+                {
+                    Mo2ModeEnabled = config.Settings.Mo2Mode,
+                    CleaningTimeout = config.Settings.CleaningTimeout
+                });
+
+                StatusText = "Settings saved";
+                _logger.Information("Settings updated from settings dialog");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "Failed to show or process settings dialog");
+            StatusText = "Error opening settings";
+        }
+    }
+
+    private bool CanShowSkipList() => !IsCleaning;
+
+    [RelayCommand(CanExecute = nameof(CanShowSkipList))]
+    private async Task ShowSkipListAsync()
+    {
+        try
+        {
+            var result = await _showSkipListInteraction.Handle(Unit.Default);
+
+            if (result)
+            {
+                StatusText = "Skip list saved";
+                _logger.Information("Skip list updated from skip list dialog");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "Failed to show or process skip list dialog");
+            StatusText = "Error opening skip list";
+        }
+    }
+
+    private bool CanRestoreBackups() => !IsCleaning;
+
+    [RelayCommand(CanExecute = nameof(CanRestoreBackups))]
+    private async Task RestoreBackupsAsync()
+    {
+        try
+        {
+            await _showRestoreInteraction.Handle(Unit.Default);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "Failed to show restore window");
+            StatusText = "Error opening restore window";
+        }
+    }
+
+    [RelayCommand]
+    private void DismissValidation()
+    {
+        ValidationErrors.Clear();
+        HasValidationErrors = false;
+    }
+
     private List<ValidationError> ValidatePreClean()
     {
         var errors = new List<ValidationError>();
         var state = _stateService.CurrentState;
 
-        // xEdit validation
         if (string.IsNullOrEmpty(state.XEditExecutablePath))
         {
             errors.Add(new ValidationError(
@@ -294,7 +342,6 @@ public sealed class CleaningCommandsViewModel : ViewModelBase, IDisposable
                 "Go to Edit > Settings and update the xEdit Path to the correct location."));
         }
 
-        // Load order / plugins validation
         var requiresLoadOrder = state.CurrentGameType != GameType.Unknown &&
                                 !_pluginLoadingService.IsGameSupportedByMutagen(state.CurrentGameType);
 
@@ -327,7 +374,9 @@ public sealed class CleaningCommandsViewModel : ViewModelBase, IDisposable
         }
         else
         {
-            var selectedCount = state.PluginsToClean.Count(p => p is { IsSelected: true, IsInSkipList: false });
+            var excluded = state.ExcludedPluginPaths;
+            var selectedCount = state.PluginsToClean
+                .Count(p => !p.IsInSkipList && !excluded.Contains(p.FullPath));
             if (selectedCount == 0)
             {
                 errors.Add(new ValidationError(
@@ -337,7 +386,6 @@ public sealed class CleaningCommandsViewModel : ViewModelBase, IDisposable
             }
         }
 
-        // MO2 validation (only if MO2 mode enabled)
         if (!state.Mo2ModeEnabled) return errors;
         if (string.IsNullOrEmpty(state.Mo2ExecutablePath))
         {
@@ -357,9 +405,6 @@ public sealed class CleaningCommandsViewModel : ViewModelBase, IDisposable
         return errors;
     }
 
-    /// <summary>
-    /// Handles timeout retry prompts for plugin cleaning.
-    /// </summary>
     private async Task<bool> HandleTimeoutRetryAsync(string pluginName, int timeoutSeconds, int attemptNumber)
     {
         var message = $"Cleaning of '{pluginName}' timed out after {timeoutSeconds} seconds.\n\n" +
@@ -375,117 +420,10 @@ public sealed class CleaningCommandsViewModel : ViewModelBase, IDisposable
         return await _messageDialog.ShowRetryAsync("Plugin Timeout", message, details);
     }
 
-    /// <summary>
-    /// Handles backup failure prompts during plugin cleaning.
-    /// </summary>
-    private async Task<BackupFailureChoice> HandleBackupFailureAsync(string pluginName, string errorMessage)
+    private async Task<BackupFailureChoice> HandleBackupFailureAsync(string pluginName, string errorMessage) =>
+        await _messageDialog.ShowBackupFailureDialogAsync(pluginName, errorMessage);
+
+    public void Dispose()
     {
-        return await _messageDialog.ShowBackupFailureDialogAsync(pluginName, errorMessage);
-    }
-
-    /// <summary>
-    /// Shows the backup restore browser window.
-    /// </summary>
-    private async Task ShowRestoreAsync()
-    {
-        try
-        {
-            await _showRestoreInteraction.Handle(Unit.Default);
-        }
-        catch (Exception ex)
-        {
-            _logger.Error(ex, "Failed to show restore window");
-            StatusText = "Error opening restore window";
-        }
-    }
-
-    private async Task HandleStopAsync()
-    {
-        StatusText = "Stopping...";
-        await _orchestrator.StopCleaningAsync();
-
-        // Path A: grace period expired -- ask user before force-killing
-        if (_orchestrator.LastTerminationResult == TerminationResult.GracePeriodExpired)
-        {
-            var confirmed = await _messageDialog.ShowConfirmAsync(
-                "Force Terminate?",
-                "xEdit did not exit gracefully. Force terminate the process?");
-
-            if (confirmed)
-            {
-                await _orchestrator.ForceStopCleaningAsync();
-            }
-        }
-    }
-
-    private void Exit()
-    {
-        if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
-        {
-            desktop.Shutdown();
-        }
-    }
-
-    private async Task ShowAboutAsync()
-    {
-        try
-        {
-            await _showAboutInteraction.Handle(Unit.Default);
-        }
-        catch (Exception ex)
-        {
-            _logger.Error(ex, "Failed to show about dialog");
-            StatusText = "Error opening about dialog";
-        }
-    }
-
-    private async Task ShowSettingsAsync()
-    {
-        try
-        {
-            var result = await _showSettingsInteraction.Handle(Unit.Default);
-
-            if (result)
-            {
-                // Settings were saved - reload configuration into state
-                var config = await _configService.LoadUserConfigAsync();
-
-                _stateService.UpdateState(s => s with
-                {
-                    Mo2ModeEnabled = config.Settings.Mo2Mode,
-                    CleaningTimeout = config.Settings.CleaningTimeout
-                });
-
-                StatusText = "Settings saved";
-                _logger.Information("Settings updated from settings dialog");
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.Error(ex, "Failed to show or process settings dialog");
-            StatusText = "Error opening settings";
-        }
-    }
-
-    private async Task ShowSkipListAsync()
-    {
-        try
-        {
-            var result = await _showSkipListInteraction.Handle(Unit.Default);
-
-            if (result)
-            {
-                StatusText = "Skip list saved";
-                _logger.Information("Skip list updated from skip list dialog");
-
-                // Note: Skip list change triggers a refresh via ConfigService.SkipListChanged
-                // which ConfigurationViewModel subscribes to. No need to refresh here.
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.Error(ex, "Failed to show or process skip list dialog");
-            StatusText = "Error opening skip list";
-        }
     }
 }

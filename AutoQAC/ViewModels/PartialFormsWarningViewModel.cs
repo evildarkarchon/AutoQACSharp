@@ -1,10 +1,16 @@
-using System.Reactive;
-using ReactiveUI;
+using System;
+using CommunityToolkit.Mvvm.Input;
 
 namespace AutoQAC.ViewModels;
 
-public sealed class PartialFormsWarningViewModel : ViewModelBase
+public sealed partial class PartialFormsWarningViewModel : ViewModelBase
 {
-    public ReactiveCommand<Unit, bool> EnableCommand { get; } = ReactiveCommand.Create(() => true);
-    public ReactiveCommand<Unit, bool> CancelCommand { get; } = ReactiveCommand.Create(() => false);
+    /// <summary>Raised when the user picks a button. The view closes the dialog with this value.</summary>
+    public event Action<bool>? CloseRequested;
+
+    [RelayCommand]
+    private void Enable() => CloseRequested?.Invoke(true);
+
+    [RelayCommand]
+    private void Cancel() => CloseRequested?.Invoke(false);
 }

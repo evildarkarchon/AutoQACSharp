@@ -187,14 +187,17 @@ public sealed class AppStateTests
                 CleanedPlugins = new HashSet<string>(),
                 SkippedPlugins = new HashSet<string>(),
                 FailedPlugins = new HashSet<string>(),
-                PluginsToClean = new List<PluginInfo>()
+                PluginsToClean = new List<PluginInfo>(),
+                ExcludedPluginPaths = new HashSet<string>()
             };
         var state2 = new AppState { Progress = 5, LoadOrderPath = "test.txt" }
             with { CleanedPlugins = state1.CleanedPlugins, SkippedPlugins = state1.SkippedPlugins,
-                   FailedPlugins = state1.FailedPlugins, PluginsToClean = state1.PluginsToClean };
+                   FailedPlugins = state1.FailedPlugins, PluginsToClean = state1.PluginsToClean,
+                   ExcludedPluginPaths = state1.ExcludedPluginPaths };
         var state3 = new AppState { Progress = 10, LoadOrderPath = "test.txt" }
             with { CleanedPlugins = state1.CleanedPlugins, SkippedPlugins = state1.SkippedPlugins,
-                   FailedPlugins = state1.FailedPlugins, PluginsToClean = state1.PluginsToClean };
+                   FailedPlugins = state1.FailedPlugins, PluginsToClean = state1.PluginsToClean,
+                   ExcludedPluginPaths = state1.ExcludedPluginPaths };
 
         // Assert
         state1.Should().Be(state2, "same property values and shared collection references should be equal");

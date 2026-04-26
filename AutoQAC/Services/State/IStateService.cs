@@ -21,6 +21,14 @@ public interface IStateService
     void MergePluginApproximation(PluginIssueApproximationResult approximation);
     void MergePluginApproximations(IReadOnlyList<PluginIssueApproximationResult> approximations);
     void StartCleaning(List<PluginInfo> plugins);
+
+    /// <summary>
+    /// Updates the set of plugin full paths the user has deselected from cleaning.
+    /// The updater receives the current set and returns the new set. Replaces the entire
+    /// set atomically so callers don't need to coordinate concurrent toggles. Path-based
+    /// identity prevents stale exclusions leaking when the visible plugin list changes.
+    /// </summary>
+    void UpdateExcludedPlugins(Func<IReadOnlySet<string>, IReadOnlySet<string>> updater);
     void FinishCleaning();
     void AddCleaningResult(string plugin, CleaningStatus status);
     void UpdateProgress(int current, int total);

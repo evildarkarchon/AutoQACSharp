@@ -218,7 +218,7 @@ public sealed class ProcessExecutionServiceTests : IDisposable
 
         var plugins = new List<PluginInfo>
         {
-            new() { FileName = "Test.esp", FullPath = @"C:\Data\Test.esp", IsSelected = true }
+            new() { FileName = "Test.esp", FullPath = @"C:\Data\Test.esp" }
         };
 
         var appState = new AppState
@@ -352,7 +352,7 @@ public sealed class ProcessExecutionServiceTests : IDisposable
 
         var plugins = new List<PluginInfo>
         {
-            new() { FileName = "Test.esp", FullPath = @"C:\Data\Test.esp", IsSelected = true }
+            new() { FileName = "Test.esp", FullPath = @"C:\Data\Test.esp" }
         };
         var appState = new AppState
         {

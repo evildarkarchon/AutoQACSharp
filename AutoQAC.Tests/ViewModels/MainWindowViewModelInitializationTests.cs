@@ -1,4 +1,3 @@
-using System.Reactive.Concurrency;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
 using AutoQAC.Infrastructure.Logging;
@@ -12,12 +11,10 @@ using AutoQAC.Services.Plugin;
 using AutoQAC.Tests.TestInfrastructure;
 using AutoQAC.ViewModels;
 using NSubstitute;
-using ReactiveUI;
 
 namespace AutoQAC.Tests.ViewModels;
 
-[Collection(RxAppSchedulerCollection.Name)]
-public sealed class MainWindowViewModelInitializationTests : ImmediateMainThreadSchedulerTestBase
+public sealed class MainWindowViewModelInitializationTests
 {
     private readonly IConfigurationService _configServiceMock;
     private readonly IStateService _stateServiceMock;
@@ -27,6 +24,7 @@ public sealed class MainWindowViewModelInitializationTests : ImmediateMainThread
     private readonly IMessageDialogService _messageDialogMock;
     private readonly IPluginValidationService _pluginServiceMock;
     private readonly IPluginLoadingService _pluginLoadingServiceMock;
+    private readonly IUiDispatcher _uiDispatcher;
 
     public MainWindowViewModelInitializationTests()
     {
@@ -38,6 +36,7 @@ public sealed class MainWindowViewModelInitializationTests : ImmediateMainThread
         _messageDialogMock = Substitute.For<IMessageDialogService>();
         _pluginServiceMock = Substitute.For<IPluginValidationService>();
         _pluginLoadingServiceMock = Substitute.For<IPluginLoadingService>();
+        _uiDispatcher = new SynchronousUiDispatcher();
 
         // Default setup for plugin loading service
         _pluginLoadingServiceMock.GetAvailableGames()
@@ -95,7 +94,8 @@ public sealed class MainWindowViewModelInitializationTests : ImmediateMainThread
             _fileDialogMock,
             _messageDialogMock,
             _pluginServiceMock,
-            _pluginLoadingServiceMock);
+            _pluginLoadingServiceMock,
+            _uiDispatcher);
 
         await WaitForSignalAsync(initializationApplied);
 

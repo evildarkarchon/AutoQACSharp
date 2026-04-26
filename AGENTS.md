@@ -23,8 +23,8 @@ dotnet clean AutoQACSharp.slnx
 - .NET 10
 - C# 13 with nullable reference types enabled
 - `AutoQAC`: `net10.0-windows10.0.19041.0`
-- Avalonia 11.3.12
-- ReactiveUI.Avalonia 11.3.8
+- Avalonia 12.0.1
+- CommunityToolkit.Mvvm 8.4.2 (source-generator MVVM)
 - Microsoft.Extensions.DependencyInjection 10.0.3
 - Serilog 4.3.1 with console and file sinks
 - YamlDotNet 16.3.0
@@ -56,7 +56,7 @@ dotnet clean AutoQACSharp.slnx
 ## Coding Guidelines
 
 - Maintain strict MVVM boundaries.
-- Use `ReactiveCommand`, `RaiseAndSetIfChanged`, `WhenAnyValue`, and `ObservableAsPropertyHelper` for reactive state.
+- Use CommunityToolkit.Mvvm source generators (`[ObservableProperty]`, `[RelayCommand]`, `[NotifyPropertyChangedFor]`, `[NotifyCanExecuteChangedFor]`) for ViewModel state. ViewModels MUST be `partial` for the source generators. Do not use `ReactiveUI` or `System.Reactive` in the ViewModel layer; service `IObservable<T>` streams are subscribed via `CallbackObserver<T>` and marshaled to the UI thread via the injected `IUiDispatcher`.
 - Keep I/O and process work async; never block the UI thread with `.Result` or `.Wait()`.
 - Use constructor injection through `ServiceCollectionExtensions`; avoid static mutable state and service locators.
 - Respect Windows-specific assumptions when touching registry probing, executable paths, or process handling.

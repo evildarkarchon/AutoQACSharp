@@ -1,6 +1,5 @@
-﻿using System;
+using System;
 using Avalonia;
-using ReactiveUI.Avalonia;
 
 namespace AutoQAC
 {
@@ -18,7 +17,9 @@ namespace AutoQAC
             => AppBuilder.Configure<App>()
                 .UsePlatformDetect()
                 .WithInterFont()
-                .LogToTrace()
-                .UseReactiveUI();
+#if DEBUG
+                .WithDeveloperTools()
+#endif
+                .LogToTrace();
     }
 }

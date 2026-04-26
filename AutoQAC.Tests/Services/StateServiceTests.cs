@@ -448,7 +448,7 @@ public class StateServiceTests
     }
 
     [Fact]
-    public void MergePluginApproximations_ShouldPreserveSelectionAndSkipState_AndMarkMissingPluginsUnavailable()
+    public void MergePluginApproximations_ShouldPreserveExclusionAndSkipState_AndMarkMissingPluginsUnavailable()
     {
         var plugins = new List<PluginInfo>
         {
@@ -456,7 +456,6 @@ public class StateServiceTests
             {
                 FileName = "a.esp",
                 FullPath = @"C:\Data\a.esp",
-                IsSelected = false,
                 IsInSkipList = true,
                 Approximation = PluginIssueApproximation.Pending
             },
@@ -464,12 +463,12 @@ public class StateServiceTests
             {
                 FileName = "b.esp",
                 FullPath = @"C:\Data\b.esp",
-                IsSelected = true,
                 Approximation = PluginIssueApproximation.Pending
             }
         };
 
         _sut.SetPluginsToClean(plugins);
+        _sut.UpdateExcludedPlugins(_ => new HashSet<string>(StringComparer.OrdinalIgnoreCase) { @"C:\Data\a.esp" });
 
         _sut.MergePluginApproximations(
         [
@@ -483,7 +482,7 @@ public class StateServiceTests
 
         var state = _sut.CurrentState;
         state.PluginsToClean.Should().HaveCount(2);
-        state.PluginsToClean[0].IsSelected.Should().BeFalse();
+        state.ExcludedPluginPaths.Should().Contain(@"C:\Data\a.esp");
         state.PluginsToClean[0].IsInSkipList.Should().BeTrue();
         state.PluginsToClean[0].Approximation.Status.Should().Be(PluginIssueApproximationStatus.Available);
         state.PluginsToClean[0].Approximation.ItmCount.Should().Be(4);
@@ -528,7 +527,6 @@ public class StateServiceTests
             {
                 FileName = "a.esp",
                 FullPath = @"C:\Data\a.esp",
-                IsSelected = false,
                 IsInSkipList = true,
                 Approximation = PluginIssueApproximation.Pending
             },
@@ -541,6 +539,7 @@ public class StateServiceTests
         };
 
         _sut.SetPluginsToClean(plugins);
+        _sut.UpdateExcludedPlugins(_ => new HashSet<string>(StringComparer.OrdinalIgnoreCase) { @"C:\Data\a.esp" });
 
         _sut.MergePluginApproximation(new PluginIssueApproximationResult
         {
@@ -551,11 +550,64 @@ public class StateServiceTests
 
         var state = _sut.CurrentState;
         state.PluginsToClean.Should().HaveCount(2);
-        state.PluginsToClean[0].IsSelected.Should().BeFalse();
+        state.ExcludedPluginPaths.Should().Contain(@"C:\Data\a.esp");
         state.PluginsToClean[0].IsInSkipList.Should().BeTrue();
         state.PluginsToClean[0].Approximation.Status.Should().Be(PluginIssueApproximationStatus.Available);
         state.PluginsToClean[0].Approximation.ItmCount.Should().Be(5);
         state.PluginsToClean[1].Approximation.Status.Should().Be(PluginIssueApproximationStatus.Pending);
+    }
+
+    /// <summary>
+    /// Regression: deselecting Update.esp under one game/load-order must not silently
+    /// skip a different Update.esp after the user switches games or picks a new load
+    /// order. The exclusion set is keyed by full path, and SetPluginsToClean prunes
+    /// entries whose paths are no longer present in the new list.
+    /// </summary>
+    [Fact]
+    public void SetPluginsToClean_ShouldDropExclusionsForPathsNotInNewList()
+    {
+        _sut.SetPluginsToClean([
+            new PluginInfo { FileName = "Update.esp", FullPath = @"C:\Skyrim\Data\Update.esp" }
+        ]);
+        _sut.UpdateExcludedPlugins(_ =>
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { @"C:\Skyrim\Data\Update.esp" });
+
+        _sut.SetPluginsToClean([
+            new PluginInfo { FileName = "Update.esp", FullPath = @"C:\Fallout4\Data\Update.esp" },
+            new PluginInfo { FileName = "Other.esp",  FullPath = @"C:\Fallout4\Data\Other.esp" }
+        ]);
+
+        var state = _sut.CurrentState;
+        state.PluginsToClean.Should().HaveCount(2);
+        state.ExcludedPluginPaths.Should()
+            .BeEmpty("the Skyrim Update.esp path is no longer in the visible list — its deselection must not bleed into Fallout 4");
+    }
+
+    /// <summary>
+    /// In-place refresh path: when SetPluginsToClean is called with the same plugin
+    /// still present (skip-list toggle, data-folder rebuild, post-approximation
+    /// re-push), the user's deselection must survive — only stale entries are pruned.
+    /// </summary>
+    [Fact]
+    public void SetPluginsToClean_ShouldRetainExclusionsForPathsStillInNewList()
+    {
+        _sut.SetPluginsToClean([
+            new PluginInfo { FileName = "Update.esp", FullPath = @"C:\Skyrim\Data\Update.esp" },
+            new PluginInfo { FileName = "Other.esp",  FullPath = @"C:\Skyrim\Data\Other.esp" }
+        ]);
+        _sut.UpdateExcludedPlugins(_ =>
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { @"C:\Skyrim\Data\Update.esp" });
+
+        _sut.SetPluginsToClean([
+            new PluginInfo { FileName = "Update.esp", FullPath = @"C:\Skyrim\Data\Update.esp" },
+            new PluginInfo { FileName = "Other.esp",  FullPath = @"C:\Skyrim\Data\Other.esp" },
+            new PluginInfo { FileName = "Extra.esp",  FullPath = @"C:\Skyrim\Data\Extra.esp" }
+        ]);
+
+        var state = _sut.CurrentState;
+        state.PluginsToClean.Should().HaveCount(3);
+        state.ExcludedPluginPaths.Should()
+            .ContainSingle().Which.Should().Be(@"C:\Skyrim\Data\Update.esp");
     }
 
     #endregion

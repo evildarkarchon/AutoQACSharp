@@ -1,82 +1,50 @@
 using System;
 using System.Collections.ObjectModel;
-using System.Reactive;
-using System.Reactive.Disposables;
-using System.Reactive.Linq;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.Backup;
 using AutoQAC.Services.UI;
-using ReactiveUI;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 
 namespace AutoQAC.ViewModels;
 
-public sealed class RestoreViewModel : ViewModelBase, IDisposable
+public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
 {
     private readonly IBackupService _backupService;
     private readonly IMessageDialogService _messageDialog;
     private readonly ILoggingService _logger;
-    private readonly CompositeDisposable _disposables = new();
 
     private string? _backupRoot;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasSessions))]
     private ObservableCollection<BackupSession> _sessions = new();
-    public ObservableCollection<BackupSession> Sessions
-    {
-        get => _sessions;
-        set => this.RaiseAndSetIfChanged(ref _sessions, value);
-    }
 
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(RestoreAllCommand))]
+    [NotifyCanExecuteChangedFor(nameof(DeleteSessionCommand))]
     private BackupSession? _selectedSession;
-    public BackupSession? SelectedSession
-    {
-        get => _selectedSession;
-        set => this.RaiseAndSetIfChanged(ref _selectedSession, value);
-    }
 
+    [ObservableProperty]
     private ObservableCollection<BackupPluginEntry> _selectedSessionPlugins = new();
-    public ObservableCollection<BackupPluginEntry> SelectedSessionPlugins
-    {
-        get => _selectedSessionPlugins;
-        set => this.RaiseAndSetIfChanged(ref _selectedSessionPlugins, value);
-    }
 
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(RestorePluginCommand))]
     private BackupPluginEntry? _selectedPlugin;
-    public BackupPluginEntry? SelectedPlugin
-    {
-        get => _selectedPlugin;
-        set => this.RaiseAndSetIfChanged(ref _selectedPlugin, value);
-    }
 
+    [ObservableProperty]
     private bool _isLoading;
-    public bool IsLoading
-    {
-        get => _isLoading;
-        set => this.RaiseAndSetIfChanged(ref _isLoading, value);
-    }
 
+    [ObservableProperty]
     private string _statusText = "Select a backup session to view plugins";
-    public string StatusText
-    {
-        get => _statusText;
-        set => this.RaiseAndSetIfChanged(ref _statusText, value);
-    }
 
-    private readonly ObservableAsPropertyHelper<bool> _hasSessions;
-    public bool HasSessions => _hasSessions.Value;
-
-    public ReactiveCommand<Unit, Unit> LoadSessionsCommand { get; }
-    public ReactiveCommand<Unit, Unit> RestorePluginCommand { get; }
-    public ReactiveCommand<Unit, Unit> RestoreAllCommand { get; }
-    public ReactiveCommand<Unit, Unit> DeleteSessionCommand { get; }
-    public ReactiveCommand<Unit, Unit> CloseCommand { get; }
+    public bool HasSessions => Sessions.Count > 0;
 
     public event EventHandler? CloseRequested;
 
-    /// <summary>
-    /// Design-time constructor.
-    /// </summary>
+    /// <summary>Design-time constructor.</summary>
     public RestoreViewModel() : this(null!, null!, null!) { }
 
     public RestoreViewModel(
@@ -87,54 +55,29 @@ public sealed class RestoreViewModel : ViewModelBase, IDisposable
         _backupService = backupService;
         _messageDialog = messageDialog;
         _logger = logger;
+    }
 
-        // HasSessions computed property
-        _hasSessions = this.WhenAnyValue(x => x.Sessions)
-            .Select(s => s.Count > 0)
-            .ToProperty(this, x => x.HasSessions);
-        _disposables.Add(_hasSessions);
+    partial void OnSelectedSessionChanged(BackupSession? value)
+    {
+        SelectedSessionPlugins.Clear();
+        SelectedPlugin = null;
 
-        // When SelectedSession changes, populate the plugins list
-        var selectedSessionSubscription = this.WhenAnyValue(x => x.SelectedSession)
-            .Subscribe(session =>
+        if (value != null)
+        {
+            foreach (var plugin in value.Plugins)
             {
-                SelectedSessionPlugins.Clear();
-                SelectedPlugin = null;
-
-                if (session != null)
-                {
-                    foreach (var plugin in session.Plugins)
-                    {
-                        SelectedSessionPlugins.Add(plugin);
-                    }
-                    StatusText = $"Session: {session.Timestamp:MMM d, yyyy h:mm tt} - {session.Plugins.Count} plugin(s)";
-                }
-                else
-                {
-                    StatusText = "Select a backup session to view plugins";
-                }
-            });
-        _disposables.Add(selectedSessionSubscription);
-
-        // Commands
-        LoadSessionsCommand = ReactiveCommand.CreateFromTask(LoadSessionsInternalAsync);
-
-        var canRestorePlugin = this.WhenAnyValue(x => x.SelectedPlugin)
-            .Select(p => p != null);
-        RestorePluginCommand = ReactiveCommand.CreateFromTask(RestorePluginAsync, canRestorePlugin);
-
-        var canRestoreAll = this.WhenAnyValue(x => x.SelectedSession)
-            .Select(s => s != null);
-        RestoreAllCommand = ReactiveCommand.CreateFromTask(RestoreAllAsync, canRestoreAll);
-
-        DeleteSessionCommand = ReactiveCommand.CreateFromTask(DeleteSessionAsync, canRestoreAll);
-
-        CloseCommand = ReactiveCommand.Create(() => CloseRequested?.Invoke(this, EventArgs.Empty));
+                SelectedSessionPlugins.Add(plugin);
+            }
+            StatusText = $"Session: {value.Timestamp:MMM d, yyyy h:mm tt} - {value.Plugins.Count} plugin(s)";
+        }
+        else
+        {
+            StatusText = "Select a backup session to view plugins";
+        }
     }
 
     /// <summary>
-    /// Sets the backup root path and triggers loading sessions.
-    /// Called from the view before display.
+    /// Sets the backup root path and triggers loading sessions. Called from the view before display.
     /// </summary>
     public async Task LoadSessionsAsync(string? dataFolderPath)
     {
@@ -145,10 +88,11 @@ public sealed class RestoreViewModel : ViewModelBase, IDisposable
         }
 
         _backupRoot = _backupService.GetBackupRoot(dataFolderPath);
-        await LoadSessionsInternalAsync();
+        await LoadSessions();
     }
 
-    private async Task LoadSessionsInternalAsync()
+    [RelayCommand]
+    private async Task LoadSessions()
     {
         if (string.IsNullOrEmpty(_backupRoot))
         {
@@ -169,8 +113,7 @@ public sealed class RestoreViewModel : ViewModelBase, IDisposable
                 Sessions.Add(session);
             }
 
-            // Notify HasSessions by re-raising
-            this.RaisePropertyChanged(nameof(Sessions));
+            OnPropertyChanged(nameof(HasSessions));
 
             StatusText = sessions.Count > 0
                 ? $"Found {sessions.Count} backup session(s)"
@@ -187,6 +130,9 @@ public sealed class RestoreViewModel : ViewModelBase, IDisposable
         }
     }
 
+    private bool CanRestorePlugin() => SelectedPlugin != null;
+
+    [RelayCommand(CanExecute = nameof(CanRestorePlugin))]
     private async Task RestorePluginAsync()
     {
         if (SelectedPlugin == null || SelectedSession == null)
@@ -209,6 +155,9 @@ public sealed class RestoreViewModel : ViewModelBase, IDisposable
         }
     }
 
+    private bool CanRestoreAll() => SelectedSession != null;
+
+    [RelayCommand(CanExecute = nameof(CanRestoreAll))]
     private async Task RestoreAllAsync()
     {
         if (SelectedSession == null)
@@ -217,7 +166,6 @@ public sealed class RestoreViewModel : ViewModelBase, IDisposable
         var pluginCount = SelectedSession.Plugins.Count;
         var timestamp = SelectedSession.Timestamp.ToString("MMM d, yyyy h:mm tt");
 
-        // Confirmation dialog required for Restore All
         var confirmed = await _messageDialog.ShowConfirmAsync(
             "Restore All Plugins",
             $"Restore all {pluginCount} plugin(s) from session {timestamp}?\n\n" +
@@ -244,6 +192,7 @@ public sealed class RestoreViewModel : ViewModelBase, IDisposable
         }
     }
 
+    [RelayCommand(CanExecute = nameof(CanRestoreAll))]
     private async Task DeleteSessionAsync()
     {
         if (SelectedSession == null)
@@ -268,7 +217,7 @@ public sealed class RestoreViewModel : ViewModelBase, IDisposable
 
             Sessions.Remove(SelectedSession);
             SelectedSession = null;
-            this.RaisePropertyChanged(nameof(Sessions));
+            OnPropertyChanged(nameof(HasSessions));
             StatusText = "Session deleted";
             _logger.Information("Deleted backup session: {Timestamp}", timestamp);
         }
@@ -282,8 +231,10 @@ public sealed class RestoreViewModel : ViewModelBase, IDisposable
         }
     }
 
+    [RelayCommand]
+    private void Close() => CloseRequested?.Invoke(this, EventArgs.Empty);
+
     public void Dispose()
     {
-        _disposables.Dispose();
     }
 }

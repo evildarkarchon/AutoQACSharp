@@ -1,7 +1,6 @@
 using System;
-using System.Reactive.Linq;
-using Avalonia.Controls;
 using AutoQAC.ViewModels;
+using Avalonia.Controls;
 
 namespace AutoQAC.Views;
 
@@ -15,20 +14,26 @@ public partial class RestoreWindow : Window
     public RestoreWindow(RestoreViewModel viewModel) : this()
     {
         DataContext = viewModel;
-
-        // Subscribe to CloseRequested to close the window
         viewModel.CloseRequested += OnCloseRequested;
     }
 
-    protected override void OnOpened(EventArgs e)
+    protected override async void OnOpened(EventArgs e)
     {
         base.OnOpened(e);
 
-        // Trigger session loading when the window opens
         if (DataContext is RestoreViewModel vm)
         {
-            vm.LoadSessionsCommand.Execute().Subscribe();
+            await vm.LoadSessionsCommand.ExecuteAsync(null);
         }
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        if (DataContext is RestoreViewModel vm)
+        {
+            vm.CloseRequested -= OnCloseRequested;
+        }
+        base.OnClosed(e);
     }
 
     private void OnCloseRequested(object? sender, EventArgs e)

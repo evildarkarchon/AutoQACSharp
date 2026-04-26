@@ -26,13 +26,6 @@ public sealed record PluginInfo
     /// </summary>
     public PluginWarningKind Warning { get; init; } = PluginWarningKind.None;
 
-    /// <summary>
-    /// Whether this plugin is selected for cleaning. Defaults to true.
-    /// Mutation is only supported on the UI thread (checkbox binding lifecycle).
-    /// Background/services must treat this as read-only snapshot data.
-    /// </summary>
-    public bool IsSelected { get; set; } = true;
-
     public bool HasApproximationPreview => Approximation.Status == PluginIssueApproximationStatus.Available;
     public bool IsApproximationPending => Approximation.Status == PluginIssueApproximationStatus.Pending;
 

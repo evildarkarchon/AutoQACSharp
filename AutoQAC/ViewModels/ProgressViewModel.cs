@@ -2,208 +2,138 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
-using System.Reactive;
-using System.Reactive.Disposables;
-using System.Reactive.Linq;
 using AutoQAC.Models;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.State;
-using ReactiveUI;
+using AutoQAC.Services.UI;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 
 namespace AutoQAC.ViewModels;
 
-public sealed class ProgressViewModel : ViewModelBase, IDisposable
+public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
 {
     private readonly IStateService _stateService;
     private readonly ICleaningOrchestrator _orchestrator;
-    private readonly CompositeDisposable _disposables = new();
+    private readonly IUiDispatcher _uiDispatcher;
+    private readonly List<IDisposable> _subscriptions = new();
 
-    private string? _currentPlugin;
-    public string? CurrentPlugin
-    {
-        get => _currentPlugin;
-        set => this.RaiseAndSetIfChanged(ref _currentPlugin, value);
-    }
-
-    private int _progress;
-    public int Progress
-    {
-        get => _progress;
-        set => this.RaiseAndSetIfChanged(ref _progress, value);
-    }
-
-    private int _total;
-    public int Total
-    {
-        get => _total;
-        set => this.RaiseAndSetIfChanged(ref _total, value);
-    }
-
-    private int _cleanedCount;
-    public int CleanedCount
-    {
-        get => _cleanedCount;
-        set => this.RaiseAndSetIfChanged(ref _cleanedCount, value);
-    }
-
-    private int _skippedCount;
-    public int SkippedCount
-    {
-        get => _skippedCount;
-        set => this.RaiseAndSetIfChanged(ref _skippedCount, value);
-    }
-
-    private int _failedCount;
-    public int FailedCount
-    {
-        get => _failedCount;
-        set => this.RaiseAndSetIfChanged(ref _failedCount, value);
-    }
-
-    private bool _isCleaning;
-    public bool IsCleaning
-    {
-        get => _isCleaning;
-        set => this.RaiseAndSetIfChanged(ref _isCleaning, value);
-    }
-
-    // Per-plugin live counter badges
-    private int _currentItmCount;
-    public int CurrentItmCount
-    {
-        get => _currentItmCount;
-        set => this.RaiseAndSetIfChanged(ref _currentItmCount, value);
-    }
-
-    private int _currentUdrCount;
-    public int CurrentUdrCount
-    {
-        get => _currentUdrCount;
-        set => this.RaiseAndSetIfChanged(ref _currentUdrCount, value);
-    }
-
-    private int _currentNavCount;
-    public int CurrentNavCount
-    {
-        get => _currentNavCount;
-        set => this.RaiseAndSetIfChanged(ref _currentNavCount, value);
-    }
-
-    private bool _hasCurrentPluginStats;
-    public bool HasCurrentPluginStats
-    {
-        get => _hasCurrentPluginStats;
-        set => this.RaiseAndSetIfChanged(ref _hasCurrentPluginStats, value);
-    }
-
-    // Accumulated completed plugins
-    public ObservableCollection<PluginCleaningResult> CompletedPlugins { get; } = new();
-
-    // Results summary mode
-    private bool _isShowingResults;
-    public bool IsShowingResults
-    {
-        get => _isShowingResults;
-        set => this.RaiseAndSetIfChanged(ref _isShowingResults, value);
-    }
-
-    private CleaningSessionResult? _sessionResult;
-    public CleaningSessionResult? SessionResult
-    {
-        get => _sessionResult;
-        set => this.RaiseAndSetIfChanged(ref _sessionResult, value);
-    }
-
-    private bool _wasCancelled;
-    public bool WasCancelled
-    {
-        get => _wasCancelled;
-        set => this.RaiseAndSetIfChanged(ref _wasCancelled, value);
-    }
-
-    private string _sessionSummaryText = string.Empty;
-    public string SessionSummaryText
-    {
-        get => _sessionSummaryText;
-        set => this.RaiseAndSetIfChanged(ref _sessionSummaryText, value);
-    }
-
-    // Session-wide totals for results summary
-    private int _totalItmCount;
-    public int TotalItmCount
-    {
-        get => _totalItmCount;
-        set => this.RaiseAndSetIfChanged(ref _totalItmCount, value);
-    }
-
-    private int _totalUdrCount;
-    public int TotalUdrCount
-    {
-        get => _totalUdrCount;
-        set => this.RaiseAndSetIfChanged(ref _totalUdrCount, value);
-    }
-
-    private int _totalNavCount;
-    public int TotalNavCount
-    {
-        get => _totalNavCount;
-        set => this.RaiseAndSetIfChanged(ref _totalNavCount, value);
-    }
-
-    // Termination in progress (stopping spinner)
-    private bool _isTerminating;
-    public bool IsTerminating
-    {
-        get => _isTerminating;
-        set => this.RaiseAndSetIfChanged(ref _isTerminating, value);
-    }
-
-    // Hang detection warning
-    private bool _isHangWarningVisible;
-    public bool IsHangWarningVisible
-    {
-        get => _isHangWarningVisible;
-        set => this.RaiseAndSetIfChanged(ref _isHangWarningVisible, value);
-    }
-
-    /// <summary>
-    /// True when the user has dismissed the warning via "Wait" -- prevents the warning
-    /// from reappearing until the next hang detection cycle (process resumes then hangs again).
-    /// </summary>
+    private bool _wasPreviouslyCleaning;
     private bool _hangWarningDismissed;
 
-    public ReactiveCommand<Unit, Unit> DismissHangWarningCommand { get; }
-    public ReactiveCommand<Unit, Unit> KillHungProcessCommand { get; }
+    [ObservableProperty]
+    private string? _currentPlugin;
 
-    // Dry-run preview mode
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ProgressText))]
+    private int _progress;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ProgressText))]
+    private int _total;
+
+    [ObservableProperty]
+    private int _cleanedCount;
+
+    [ObservableProperty]
+    private int _skippedCount;
+
+    [ObservableProperty]
+    private int _failedCount;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(StopCommand))]
+    private bool _isCleaning;
+
+    [ObservableProperty]
+    private int _currentItmCount;
+
+    [ObservableProperty]
+    private int _currentUdrCount;
+
+    [ObservableProperty]
+    private int _currentNavCount;
+
+    [ObservableProperty]
+    private bool _hasCurrentPluginStats;
+
+    public ObservableCollection<PluginCleaningResult> CompletedPlugins { get; } = new();
+
+    [ObservableProperty]
+    private bool _isShowingResults;
+
+    [ObservableProperty]
+    private CleaningSessionResult? _sessionResult;
+
+    [ObservableProperty]
+    private bool _wasCancelled;
+
+    [ObservableProperty]
+    private string _sessionSummaryText = string.Empty;
+
+    [ObservableProperty]
+    private int _totalItmCount;
+
+    [ObservableProperty]
+    private int _totalUdrCount;
+
+    [ObservableProperty]
+    private int _totalNavCount;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(StopCommand))]
+    private bool _isTerminating;
+
+    [ObservableProperty]
+    private bool _isHangWarningVisible;
+
+    [ObservableProperty]
     private bool _isPreviewMode;
-    public bool IsPreviewMode
-    {
-        get => _isPreviewMode;
-        set => this.RaiseAndSetIfChanged(ref _isPreviewMode, value);
-    }
 
     public ObservableCollection<DryRunResult> DryRunResults { get; } = new();
 
     public string PreviewDisclaimer => "Preview only -- does not detect ITMs/UDRs (requires xEdit)";
 
+    [ObservableProperty]
     private int _willCleanCount;
-    public int WillCleanCount
-    {
-        get => _willCleanCount;
-        set => this.RaiseAndSetIfChanged(ref _willCleanCount, value);
-    }
 
+    [ObservableProperty]
     private int _willSkipCount;
-    public int WillSkipCount
+
+    public string ProgressText => Total > 0
+        ? $"{Progress} / {Total} ({Progress * 100 / Total}%)"
+        : "0 / 0 (0%)";
+
+    /// <summary>Event raised when the window should close.</summary>
+    public event EventHandler? CloseRequested;
+
+    public ProgressViewModel(IStateService stateService, ICleaningOrchestrator orchestrator, IUiDispatcher uiDispatcher)
     {
-        get => _willSkipCount;
-        set => this.RaiseAndSetIfChanged(ref _willSkipCount, value);
+        _stateService = stateService;
+        _orchestrator = orchestrator;
+        _uiDispatcher = uiDispatcher;
+
+        _subscriptions.Add(_stateService.StateChanged.Subscribe(
+            new CallbackObserver<AppState>(state => _uiDispatcher.Post(() => OnStateChanged(state)))));
+
+        _subscriptions.Add(_stateService.DetailedPluginResult.Subscribe(
+            new CallbackObserver<PluginCleaningResult>(result => _uiDispatcher.Post(() => OnDetailedResult(result)))));
+
+        _subscriptions.Add(_stateService.CleaningCompleted.Subscribe(
+            new CallbackObserver<CleaningSessionResult>(session => _uiDispatcher.Post(() => OnCleaningCompleted(session)))));
+
+        _subscriptions.Add(_orchestrator.HangDetected.Subscribe(
+            new CallbackObserver<bool>(isHung => _uiDispatcher.Post(() => OnHangDetected(isHung)))));
+
+        _subscriptions.Add(_stateService.IsTerminatingChanged.Subscribe(
+            new CallbackObserver<bool>(isTerminating => _uiDispatcher.Post(() => IsTerminating = isTerminating))));
+
+        OnStateChanged(_stateService.CurrentState);
     }
 
     /// <summary>
-    /// Loads dry-run preview results into the ViewModel.
-    /// Sets IsPreviewMode to true and populates the DryRunResults collection.
+    /// Loads dry-run preview results into the ViewModel. Sets IsPreviewMode true and populates the
+    /// DryRunResults collection.
     /// </summary>
     public void LoadDryRunResults(List<DryRunResult> results)
     {
@@ -218,99 +148,30 @@ public sealed class ProgressViewModel : ViewModelBase, IDisposable
         IsShowingResults = true;
     }
 
-    public ReactiveCommand<Unit, Unit> StopCommand { get; }
+    private bool CanStop() => IsCleaning && !IsTerminating;
 
-    /// <summary>
-    /// Event raised when the window should close.
-    /// </summary>
-    public event EventHandler? CloseRequested;
+    [RelayCommand(CanExecute = nameof(CanStop))]
+    private async System.Threading.Tasks.Task StopAsync() => await _orchestrator.StopCleaningAsync();
 
-    public ReactiveCommand<Unit, Unit> CloseCommand { get; }
+    [RelayCommand]
+    private void Close() => CloseRequested?.Invoke(this, EventArgs.Empty);
 
-    private readonly ObservableAsPropertyHelper<string> _progressText;
-    public string ProgressText => _progressText.Value;
-
-    /// <summary>
-    /// Track whether we were previously in a cleaning state to detect session start.
-    /// </summary>
-    private bool _wasPreviouslyCleaning;
-
-    public ProgressViewModel(IStateService stateService, ICleaningOrchestrator orchestrator)
+    [RelayCommand]
+    private void DismissHangWarning()
     {
-        _stateService = stateService;
-        _orchestrator = orchestrator;
+        IsHangWarningVisible = false;
+        _hangWarningDismissed = true;
+    }
 
-        // StopCommand is only enabled when cleaning is in progress and not already terminating
-        var canStop = this.WhenAnyValue(x => x.IsCleaning, x => x.IsTerminating,
-            (cleaning, terminating) => cleaning && !terminating);
-        StopCommand = ReactiveCommand.CreateFromTask(() => _orchestrator.StopCleaningAsync(), canStop);
-
-        // CloseCommand raises an event to request window closure
-        CloseCommand = ReactiveCommand.Create(() => CloseRequested?.Invoke(this, EventArgs.Empty));
-
-        // Hang detection commands
-        DismissHangWarningCommand = ReactiveCommand.Create(() =>
-        {
-            IsHangWarningVisible = false;
-            _hangWarningDismissed = true;
-        });
-
-        KillHungProcessCommand = ReactiveCommand.CreateFromTask(async () =>
-        {
-            IsHangWarningVisible = false;
-            await _orchestrator.ForceStopCleaningAsync();
-        });
-
-        // StateChanged subscription with throttling for large plugin counts.
-        // ObserveOn(MainThreadScheduler) naturally coalesces rapid updates between UI frames.
-        // DistinctUntilChanged on IsCleaning ensures session start/stop transitions are never missed.
-        var stateChanged = _stateService.StateChanged
-            .ObserveOn(RxApp.MainThreadScheduler);
-
-        var stateSubscription = stateChanged.Subscribe(OnStateChanged);
-        _disposables.Add(stateSubscription);
-
-        // Subscribe to detailed per-plugin results (NOT throttled -- fires once per plugin)
-        var detailedResultSubscription = _stateService.DetailedPluginResult
-            .ObserveOn(RxApp.MainThreadScheduler)
-            .Subscribe(OnDetailedResult);
-        _disposables.Add(detailedResultSubscription);
-
-        // Subscribe to cleaning completed for results summary mode
-        var cleaningCompletedSubscription = _stateService.CleaningCompleted
-            .ObserveOn(RxApp.MainThreadScheduler)
-            .Subscribe(OnCleaningCompleted);
-        _disposables.Add(cleaningCompletedSubscription);
-
-        // Subscribe to hang detection from the orchestrator
-        var hangSubscription = _orchestrator.HangDetected
-            .ObserveOn(RxApp.MainThreadScheduler)
-            .Subscribe(OnHangDetected);
-        _disposables.Add(hangSubscription);
-
-        // Subscribe to termination state for stopping spinner
-        var terminatingSubscription = _stateService.IsTerminatingChanged
-            .ObserveOn(RxApp.MainThreadScheduler)
-            .Subscribe(isTerminating => IsTerminating = isTerminating);
-        _disposables.Add(terminatingSubscription);
-
-        // Computed progress text
-        _progressText = this.WhenAnyValue(
-            x => x.Progress,
-            x => x.Total,
-            (current, total) => total > 0
-                ? $"{current} / {total} ({current * 100 / total}%)"
-                : "0 / 0 (0%)")
-            .ToProperty(this, x => x.ProgressText);
-        _disposables.Add(_progressText);
-
-        // Initialize from current state
-        OnStateChanged(_stateService.CurrentState);
+    [RelayCommand]
+    private async System.Threading.Tasks.Task KillHungProcessAsync()
+    {
+        IsHangWarningVisible = false;
+        await _orchestrator.ForceStopCleaningAsync();
     }
 
     private void OnStateChanged(AppState state)
     {
-        // Detect new cleaning session start: IsCleaning transitions from false to true
         if (state.IsCleaning && !_wasPreviouslyCleaning)
         {
             ResetForNewSession();
@@ -328,16 +189,13 @@ public sealed class ProgressViewModel : ViewModelBase, IDisposable
 
     private void OnDetailedResult(PluginCleaningResult result)
     {
-        // Add to accumulated completed plugins list
         CompletedPlugins.Add(result);
 
-        // Update per-plugin counter badges from latest completed plugin's stats
         CurrentItmCount = result.ItemsRemoved;
         CurrentUdrCount = result.ItemsUndeleted;
         CurrentNavCount = result.Statistics?.PartialFormsCreated ?? 0;
         HasCurrentPluginStats = result.Statistics != null;
 
-        // Update running session-wide totals
         TotalItmCount = CompletedPlugins.Sum(p => p.ItemsRemoved);
         TotalUdrCount = CompletedPlugins.Sum(p => p.ItemsUndeleted);
         TotalNavCount = CompletedPlugins.Sum(p => p.Statistics?.PartialFormsCreated ?? 0);
@@ -350,10 +208,8 @@ public sealed class ProgressViewModel : ViewModelBase, IDisposable
         WasCancelled = session.WasCancelled;
         IsCleaning = false;
 
-        // Use the session's own summary text
         SessionSummaryText = session.SessionSummary;
 
-        // Calculate total counts from session results for accuracy
         TotalItmCount = session.TotalItemsRemoved;
         TotalUdrCount = session.TotalItemsUndeleted;
         TotalNavCount = session.TotalPartialFormsCreated;
@@ -363,7 +219,6 @@ public sealed class ProgressViewModel : ViewModelBase, IDisposable
     {
         if (isHung)
         {
-            // Only show warning if user hasn't dismissed it for this cycle
             if (!_hangWarningDismissed)
             {
                 IsHangWarningVisible = true;
@@ -371,7 +226,6 @@ public sealed class ProgressViewModel : ViewModelBase, IDisposable
         }
         else
         {
-            // Process resumed or plugin changed -- auto-dismiss warning and reset dismissed flag
             IsHangWarningVisible = false;
             _hangWarningDismissed = false;
         }
@@ -402,6 +256,10 @@ public sealed class ProgressViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
-        _disposables.Dispose();
+        foreach (var sub in _subscriptions)
+        {
+            sub.Dispose();
+        }
+        _subscriptions.Clear();
     }
 }

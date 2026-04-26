@@ -2,21 +2,16 @@ using System;
 using System.Diagnostics;
 using System.Linq;
 using System.Net.Http;
-using System.Reactive;
-using System.Reactive.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Threading.Tasks;
-using ReactiveUI;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 
 namespace AutoQAC.ViewModels;
 
-/// <summary>
-/// ViewModel for the About dialog. Displays version info, library versions,
-/// links, and provides a GitHub release update check.
-/// </summary>
-public sealed class AboutViewModel : ViewModelBase
+public sealed partial class AboutViewModel : ViewModelBase
 {
     private static readonly HttpClient HttpClient = new();
 
@@ -26,54 +21,34 @@ public sealed class AboutViewModel : ViewModelBase
         HttpClient.Timeout = TimeSpan.FromSeconds(10);
     }
 
-    // Version info (read-only)
     public string AppVersion { get; }
     public string InformationalVersion { get; }
     public string BuildDate { get; }
     public string DotNetVersion { get; }
     public string AvaloniaVersion { get; }
-    public string ReactiveUiVersion { get; }
+    public string MvvmToolkitVersion { get; }
 
-    // Links (constants)
     public string GitHubUrl => "https://github.com/evildarkarchon/AutoQACSharp";
     public string GitHubIssuesUrl => "https://github.com/evildarkarchon/AutoQACSharp/issues";
     public string XEditUrl => "https://github.com/TES5Edit/TES5Edit";
 
-    // Update check state
-    public string UpdateStatusText
-    {
-        get;
-        private set => this.RaiseAndSetIfChanged(ref field, value);
-    } = string.Empty;
+    [ObservableProperty]
+    private string _updateStatusText = string.Empty;
 
-    public bool IsCheckingUpdate
-    {
-        get;
-        private set => this.RaiseAndSetIfChanged(ref field, value);
-    }
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(CheckForUpdateCommand))]
+    private bool _isCheckingUpdate;
 
-    public bool UpdateAvailable
-    {
-        get;
-        private set => this.RaiseAndSetIfChanged(ref field, value);
-    }
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(OpenLatestReleaseCommand))]
+    private bool _updateAvailable;
 
-    public string? LatestVersionUrl
-    {
-        get;
-        private set => this.RaiseAndSetIfChanged(ref field, value);
-    }
-
-    // Commands
-    public ReactiveCommand<Unit, Unit> CheckForUpdateCommand { get; }
-    public ReactiveCommand<Unit, Unit> OpenGitHubCommand { get; }
-    public ReactiveCommand<Unit, Unit> OpenIssuesCommand { get; }
-    public ReactiveCommand<Unit, Unit> OpenXEditCommand { get; }
-    public ReactiveCommand<Unit, Unit> OpenLatestReleaseCommand { get; }
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(OpenLatestReleaseCommand))]
+    private string? _latestVersionUrl;
 
     public AboutViewModel()
     {
-        // Gather version info
         var assembly = Assembly.GetEntryAssembly();
         var version = assembly?.GetName().Version;
         AppVersion = version != null ? $"{version.Major}.{version.Minor}.{version.Build}" : "Unknown";
@@ -91,27 +66,14 @@ public sealed class AboutViewModel : ViewModelBase
         var avaloniaVer = avaloniaAssembly.GetName().Version;
         AvaloniaVersion = avaloniaVer != null ? $"{avaloniaVer.Major}.{avaloniaVer.Minor}.{avaloniaVer.Build}" : "Unknown";
 
-        var rxuiAssembly = typeof(ReactiveObject).Assembly;
-        var rxuiVer = rxuiAssembly.GetName().Version;
-        ReactiveUiVersion = rxuiVer != null ? $"{rxuiVer.Major}.{rxuiVer.Minor}.{rxuiVer.Build}" : "Unknown";
-
-        // Commands
-        var canCheckUpdate = this.WhenAnyValue(x => x.IsCheckingUpdate)
-            .Select(checking => !checking);
-
-        CheckForUpdateCommand = ReactiveCommand.CreateFromTask(CheckForUpdateAsync, canCheckUpdate);
-
-        OpenGitHubCommand = ReactiveCommand.Create(() => OpenUrl(GitHubUrl));
-        OpenIssuesCommand = ReactiveCommand.Create(() => OpenUrl(GitHubIssuesUrl));
-        OpenXEditCommand = ReactiveCommand.Create(() => OpenUrl(XEditUrl));
-
-        var canOpenRelease = this.WhenAnyValue(x => x.UpdateAvailable, x => x.LatestVersionUrl,
-            (available, url) => available && !string.IsNullOrEmpty(url));
-        OpenLatestReleaseCommand = ReactiveCommand.Create(
-            () => OpenUrl(LatestVersionUrl!),
-            canOpenRelease);
+        var toolkitAssembly = typeof(ObservableObject).Assembly;
+        var toolkitVer = toolkitAssembly.GetName().Version;
+        MvvmToolkitVersion = toolkitVer != null ? $"{toolkitVer.Major}.{toolkitVer.Minor}.{toolkitVer.Build}" : "Unknown";
     }
 
+    private bool CanCheckForUpdate() => !IsCheckingUpdate;
+
+    [RelayCommand(CanExecute = nameof(CanCheckForUpdate))]
     private async Task CheckForUpdateAsync()
     {
         IsCheckingUpdate = true;
@@ -174,6 +136,20 @@ public sealed class AboutViewModel : ViewModelBase
         }
     }
 
+    [RelayCommand]
+    private void OpenGitHub() => OpenUrl(GitHubUrl);
+
+    [RelayCommand]
+    private void OpenIssues() => OpenUrl(GitHubIssuesUrl);
+
+    [RelayCommand]
+    private void OpenXEdit() => OpenUrl(XEditUrl);
+
+    private bool CanOpenLatestRelease() => UpdateAvailable && !string.IsNullOrEmpty(LatestVersionUrl);
+
+    [RelayCommand(CanExecute = nameof(CanOpenLatestRelease))]
+    private void OpenLatestRelease() => OpenUrl(LatestVersionUrl!);
+
     private static void OpenUrl(string url)
     {
         try
@@ -185,7 +161,7 @@ public sealed class AboutViewModel : ViewModelBase
         }
         catch
         {
-            // Silently ignore if URL cannot be opened
+            // URL cannot be opened — silently ignore.
         }
     }
 }

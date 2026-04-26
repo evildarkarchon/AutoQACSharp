@@ -1,132 +1,71 @@
-using System.Reactive;
+using System;
 using AutoQAC.Services.UI;
-using ReactiveUI;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 
 namespace AutoQAC.ViewModels;
 
-/// <summary>
-/// ViewModel for a generic message dialog.
-/// </summary>
-public sealed class MessageDialogViewModel : ViewModelBase
+public sealed partial class MessageDialogViewModel : ViewModelBase
 {
+    [ObservableProperty]
     private string _title = string.Empty;
+
+    [ObservableProperty]
     private string _message = string.Empty;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasDetails))]
     private string? _details;
-    private bool _hasDetails;
+
+    [ObservableProperty]
     private bool _showDetailsExpanded;
+
+    [ObservableProperty]
     private string _iconGlyph = string.Empty;
+
+    [ObservableProperty]
     private string _iconColor = "Gray";
 
-    // Button visibility
+    [ObservableProperty]
     private bool _showOkButton;
+
+    [ObservableProperty]
     private bool _showCancelButton;
+
+    [ObservableProperty]
     private bool _showYesButton;
+
+    [ObservableProperty]
     private bool _showNoButton;
+
+    [ObservableProperty]
     private bool _showRetryButton;
 
-    public string Title
-    {
-        get => _title;
-        set => this.RaiseAndSetIfChanged(ref _title, value);
-    }
+    public bool HasDetails => !string.IsNullOrEmpty(Details);
 
-    public string Message
-    {
-        get => _message;
-        set => this.RaiseAndSetIfChanged(ref _message, value);
-    }
+    /// <summary>Raised when the user picks a button. The view closes the dialog with this value.</summary>
+    public event Action<MessageDialogResult>? CloseRequested;
 
-    public string? Details
-    {
-        get => _details;
-        set
-        {
-            this.RaiseAndSetIfChanged(ref _details, value);
-            HasDetails = !string.IsNullOrEmpty(value);
-        }
-    }
+    [RelayCommand]
+    private void Ok() => CloseRequested?.Invoke(MessageDialogResult.Ok);
 
-    public bool HasDetails
-    {
-        get => _hasDetails;
-        private set => this.RaiseAndSetIfChanged(ref _hasDetails, value);
-    }
+    [RelayCommand]
+    private void Cancel() => CloseRequested?.Invoke(MessageDialogResult.Cancel);
 
-    public bool ShowDetailsExpanded
-    {
-        get => _showDetailsExpanded;
-        set => this.RaiseAndSetIfChanged(ref _showDetailsExpanded, value);
-    }
+    [RelayCommand]
+    private void Yes() => CloseRequested?.Invoke(MessageDialogResult.Yes);
 
-    public string IconGlyph
-    {
-        get => _iconGlyph;
-        set => this.RaiseAndSetIfChanged(ref _iconGlyph, value);
-    }
+    [RelayCommand]
+    private void No() => CloseRequested?.Invoke(MessageDialogResult.No);
 
-    public string IconColor
-    {
-        get => _iconColor;
-        set => this.RaiseAndSetIfChanged(ref _iconColor, value);
-    }
+    [RelayCommand]
+    private void Retry() => CloseRequested?.Invoke(MessageDialogResult.Retry);
 
-    public bool ShowOkButton
-    {
-        get => _showOkButton;
-        set => this.RaiseAndSetIfChanged(ref _showOkButton, value);
-    }
+    [RelayCommand]
+    private void ToggleDetails() => ShowDetailsExpanded = !ShowDetailsExpanded;
 
-    public bool ShowCancelButton
-    {
-        get => _showCancelButton;
-        set => this.RaiseAndSetIfChanged(ref _showCancelButton, value);
-    }
-
-    public bool ShowYesButton
-    {
-        get => _showYesButton;
-        set => this.RaiseAndSetIfChanged(ref _showYesButton, value);
-    }
-
-    public bool ShowNoButton
-    {
-        get => _showNoButton;
-        set => this.RaiseAndSetIfChanged(ref _showNoButton, value);
-    }
-
-    public bool ShowRetryButton
-    {
-        get => _showRetryButton;
-        set => this.RaiseAndSetIfChanged(ref _showRetryButton, value);
-    }
-
-    // Commands
-    public ReactiveCommand<Unit, MessageDialogResult> OkCommand { get; }
-    public ReactiveCommand<Unit, MessageDialogResult> CancelCommand { get; }
-    public ReactiveCommand<Unit, MessageDialogResult> YesCommand { get; }
-    public ReactiveCommand<Unit, MessageDialogResult> NoCommand { get; }
-    public ReactiveCommand<Unit, MessageDialogResult> RetryCommand { get; }
-    public ReactiveCommand<Unit, Unit> ToggleDetailsCommand { get; }
-
-    public MessageDialogViewModel()
-    {
-        OkCommand = ReactiveCommand.Create(() => MessageDialogResult.Ok);
-        CancelCommand = ReactiveCommand.Create(() => MessageDialogResult.Cancel);
-        YesCommand = ReactiveCommand.Create(() => MessageDialogResult.Yes);
-        NoCommand = ReactiveCommand.Create(() => MessageDialogResult.No);
-        RetryCommand = ReactiveCommand.Create(() => MessageDialogResult.Retry);
-        ToggleDetailsCommand = ReactiveCommand.Create(() =>
-        {
-            ShowDetailsExpanded = !ShowDetailsExpanded;
-        });
-    }
-
-    /// <summary>
-    /// Configure the dialog for the specified button set.
-    /// </summary>
     public void ConfigureButtons(MessageDialogButtons buttons)
     {
-        // Reset all buttons
         ShowOkButton = false;
         ShowCancelButton = false;
         ShowYesButton = false;
@@ -158,28 +97,25 @@ public sealed class MessageDialogViewModel : ViewModelBase
         }
     }
 
-    /// <summary>
-    /// Configure the icon for the specified type.
-    /// </summary>
     public void ConfigureIcon(MessageDialogIcon icon)
     {
         switch (icon)
         {
             case MessageDialogIcon.Information:
-                IconGlyph = "\u2139"; // Information symbol
-                IconColor = "#0078D4"; // Blue
+                IconGlyph = "ℹ";
+                IconColor = "#0078D4";
                 break;
             case MessageDialogIcon.Warning:
-                IconGlyph = "\u26A0"; // Warning triangle
-                IconColor = "#FF8C00"; // Orange
+                IconGlyph = "⚠";
+                IconColor = "#FF8C00";
                 break;
             case MessageDialogIcon.Error:
-                IconGlyph = "\u274C"; // Cross mark
-                IconColor = "#D13438"; // Red
+                IconGlyph = "❌";
+                IconColor = "#D13438";
                 break;
             case MessageDialogIcon.Question:
-                IconGlyph = "?"; // Question mark
-                IconColor = "#0078D4"; // Blue
+                IconGlyph = "?";
+                IconColor = "#0078D4";
                 break;
             case MessageDialogIcon.None:
             default:

@@ -1,100 +1,144 @@
 using System;
+using System.Collections.Frozen;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
-using System.Reactive;
-using System.Reactive.Disposables;
-using System.Reactive.Linq;
 using AutoQAC.Models;
 using AutoQAC.Services.State;
-using ReactiveUI;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 
 namespace AutoQAC.ViewModels.MainWindow;
 
 /// <summary>
-/// Manages the plugin collection, select/deselect all commands, and
-/// skip list subscription for the main window plugin list.
+/// Manages the plugin collection and select/deselect all commands for the main
+/// window plugin list. Receives state via <see cref="OnStateChanged"/> from the
+/// parent VM (which marshals onto the UI thread via <c>IUiDispatcher</c>).
 /// </summary>
-public sealed class PluginListViewModel : ViewModelBase, IDisposable
+public sealed partial class PluginListViewModel : ViewModelBase, IDisposable
 {
-    private readonly CompositeDisposable _disposables = new();
+    private readonly IStateService _stateService;
 
-    public ObservableCollection<PluginInfo> PluginsToClean
-    {
-        get;
-        set => this.RaiseAndSetIfChanged(ref field, value);
-    } = new();
+    public ObservableCollection<PluginListItem> PluginsToClean { get; } = new();
 
-    public PluginInfo? SelectedPlugin
-    {
-        get;
-        set => this.RaiseAndSetIfChanged(ref field, value);
-    }
+    [ObservableProperty]
+    private PluginListItem? _selectedPlugin;
 
-    // Commands
-    public ReactiveCommand<Unit, Unit> SelectAllCommand { get; }
-    public ReactiveCommand<Unit, Unit> DeselectAllCommand { get; }
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(SelectAllCommand))]
+    [NotifyCanExecuteChangedFor(nameof(DeselectAllCommand))]
+    private bool _hasPlugins;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(SelectAllCommand))]
+    [NotifyCanExecuteChangedFor(nameof(DeselectAllCommand))]
+    private bool _isCleaning;
 
     public PluginListViewModel(IStateService stateService)
     {
-        var stateChanged = stateService.StateChanged
-            .ObserveOn(RxApp.MainThreadScheduler);
+        _stateService = stateService;
+        // No subscription here — the parent VM dispatches OnStateChanged on the UI thread.
+        // Initial pull from current state so commands reflect reality before first change event.
+        var initial = stateService.CurrentState;
+        HasPlugins = initial.PluginsToClean.Count > 0;
+        IsCleaning = initial.IsCleaning;
+    }
 
-        // Define observables for command enablement
-        var hasPlugins = stateChanged
-            .Select(s => s.PluginsToClean.Count > 0);
+    private bool CanSelectPlugins() => HasPlugins && !IsCleaning;
 
-        var isCleaning = stateChanged
-            .Select(s => s.IsCleaning);
+    [RelayCommand(CanExecute = nameof(CanSelectPlugins))]
+    private void SelectAll()
+    {
+        // Drop every visible plugin's path from the excluded set (they all become selected).
+        var visiblePaths = PluginsToClean.Select(p => p.FullPath).ToList();
+        _stateService.UpdateExcludedPlugins(current =>
+        {
+            if (current.Count == 0)
+            {
+                return current;
+            }
 
-        // Plugin selection commands - disabled during cleaning, enabled when plugins exist
-        var canSelectPlugins = hasPlugins.CombineLatest(
-            isCleaning,
-            (hasP, cleaning) => hasP && !cleaning);
-        SelectAllCommand = ReactiveCommand.Create(SelectAllPlugins, canSelectPlugins);
-        DeselectAllCommand = ReactiveCommand.Create(DeselectAllPlugins, canSelectPlugins);
-        _disposables.Add(SelectAllCommand);
-        _disposables.Add(DeselectAllCommand);
+            var next = new HashSet<string>(current, StringComparer.OrdinalIgnoreCase);
+            foreach (var path in visiblePaths)
+            {
+                next.Remove(path);
+            }
+
+            return next.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+        });
+    }
+
+    [RelayCommand(CanExecute = nameof(CanSelectPlugins))]
+    private void DeselectAll()
+    {
+        // Add every visible plugin's path to the excluded set (they all become deselected).
+        var visiblePaths = PluginsToClean.Select(p => p.FullPath).ToList();
+        _stateService.UpdateExcludedPlugins(current =>
+        {
+            var next = new HashSet<string>(current, StringComparer.OrdinalIgnoreCase);
+            foreach (var path in visiblePaths)
+            {
+                next.Add(path);
+            }
+
+            return next.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+        });
     }
 
     /// <summary>
-    /// Updates the plugin list from application state. Called by parent on state changes.
-    /// Filters out skipped plugins from display.
+    /// Updates the plugin list and gating flags from application state. Called by parent
+    /// on state changes (already on the UI thread).
     /// </summary>
     public void OnStateChanged(AppState state)
     {
+        IsCleaning = state.IsCleaning;
+        HasPlugins = state.PluginsToClean.Count > 0;
+
         var displayPlugins = state.PluginsToClean.Where(p => !p.IsInSkipList).ToList();
+        var excluded = state.ExcludedPluginPaths;
 
-        var index = 0;
-        while (index < displayPlugins.Count)
+        // 1. Sync each visible row position-by-position. Reuse the existing wrapper when
+        //    the underlying plugin matches by full path so the row's IsSelected stays in
+        //    sync without firing SelectionToggled back into state.
+        for (var i = 0; i < displayPlugins.Count; i++)
         {
-            var nextPlugin = displayPlugins[index];
+            var nextPlugin = displayPlugins[i];
+            var isSelected = !excluded.Contains(nextPlugin.FullPath);
 
-            if (index >= PluginsToClean.Count)
+            if (i >= PluginsToClean.Count)
             {
-                PluginsToClean.Add(nextPlugin);
-                index++;
+                PluginsToClean.Add(CreateItem(nextPlugin, isSelected));
                 continue;
             }
 
-            if (PluginsToClean[index] == nextPlugin)
+            var existing = PluginsToClean[i];
+            if (IsSamePlugin(existing.Info, nextPlugin))
             {
-                index++;
+                if (!ReferenceEquals(existing.Info, nextPlugin))
+                {
+                    existing.UpdateInfo(nextPlugin);
+                }
+
+                existing.SetSelectedFromState(isSelected);
                 continue;
             }
 
-            PluginsToClean[index] = nextPlugin;
-            if (SelectedPlugin is not null && IsSamePlugin(SelectedPlugin, nextPlugin))
+            // Different plugin at this slot — replace, but detach the old subscription first.
+            DetachItem(existing);
+            if (SelectedPlugin is not null && IsSamePlugin(SelectedPlugin.Info, existing.Info))
             {
-                SelectedPlugin = nextPlugin;
+                SelectedPlugin = null;
             }
 
-            index++;
+            PluginsToClean[i] = CreateItem(nextPlugin, isSelected);
         }
 
+        // 2. Trim trailing rows that no longer exist in state.
         while (PluginsToClean.Count > displayPlugins.Count)
         {
-            var removedPlugin = PluginsToClean[^1];
-            if (SelectedPlugin is not null && IsSamePlugin(SelectedPlugin, removedPlugin))
+            var removed = PluginsToClean[^1];
+            DetachItem(removed);
+            if (SelectedPlugin is not null && IsSamePlugin(SelectedPlugin.Info, removed.Info))
             {
                 SelectedPlugin = null;
             }
@@ -103,30 +147,52 @@ public sealed class PluginListViewModel : ViewModelBase, IDisposable
         }
     }
 
-    private static bool IsSamePlugin(PluginInfo left, PluginInfo right)
+    private PluginListItem CreateItem(PluginInfo info, bool isSelected)
     {
-        return string.Equals(left.FullPath, right.FullPath, StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(left.FileName, right.FileName, StringComparison.OrdinalIgnoreCase);
+        var item = new PluginListItem(info, isSelected);
+        item.SelectionToggled += OnRowSelectionToggled;
+        return item;
     }
 
-    private void SelectAllPlugins()
+    private void DetachItem(PluginListItem item)
     {
-        foreach (var plugin in PluginsToClean)
-        {
-            plugin.IsSelected = true;
-        }
+        item.SelectionToggled -= OnRowSelectionToggled;
     }
 
-    private void DeselectAllPlugins()
+    private void OnRowSelectionToggled(PluginListItem item, bool isSelected)
     {
-        foreach (var plugin in PluginsToClean)
+        var fullPath = item.FullPath;
+        _stateService.UpdateExcludedPlugins(current =>
         {
-            plugin.IsSelected = false;
-        }
+            var alreadyExcluded = current.Contains(fullPath);
+            if (isSelected ? !alreadyExcluded : alreadyExcluded)
+            {
+                return current;
+            }
+
+            var next = new HashSet<string>(current, StringComparer.OrdinalIgnoreCase);
+            if (isSelected)
+            {
+                next.Remove(fullPath);
+            }
+            else
+            {
+                next.Add(fullPath);
+            }
+
+            return next.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+        });
     }
+
+    private static bool IsSamePlugin(PluginInfo left, PluginInfo right) =>
+        string.Equals(left.FullPath, right.FullPath, StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(left.FileName, right.FileName, StringComparison.OrdinalIgnoreCase);
 
     public void Dispose()
     {
-        _disposables.Dispose();
+        foreach (var item in PluginsToClean)
+        {
+            DetachItem(item);
+        }
     }
 }

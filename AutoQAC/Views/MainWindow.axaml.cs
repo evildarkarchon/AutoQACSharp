@@ -1,5 +1,5 @@
-﻿using System.Collections.Generic;
-using System.Reactive;
+using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
@@ -8,9 +8,9 @@ using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
 using AutoQAC.Services.State;
 using AutoQAC.Services.UI;
+using AutoQAC.Services.UI.Interactions;
 using AutoQAC.ViewModels;
 using Avalonia.Controls;
-using ReactiveUI;
 
 namespace AutoQAC.Views;
 
@@ -23,6 +23,9 @@ public partial class MainWindow : Window
     private readonly ICleaningOrchestrator? _orchestrator;
     private readonly IBackupService? _backupService;
     private readonly IMessageDialogService? _messageDialog;
+    private readonly IUiDispatcher? _uiDispatcher;
+
+    private readonly List<IDisposable> _interactionRegistrations = new();
 
     public MainWindow()
     {
@@ -37,7 +40,8 @@ public partial class MainWindow : Window
         IStateService stateService,
         ICleaningOrchestrator orchestrator,
         IBackupService backupService,
-        IMessageDialogService messageDialog) : this()
+        IMessageDialogService messageDialog,
+        IUiDispatcher uiDispatcher) : this()
     {
         DataContext = viewModel;
         _logger = logger;
@@ -47,128 +51,108 @@ public partial class MainWindow : Window
         _orchestrator = orchestrator;
         _backupService = backupService;
         _messageDialog = messageDialog;
+        _uiDispatcher = uiDispatcher;
 
-        // Register the interaction handler for showing cleaning results
-        viewModel.ShowCleaningResultsInteraction.RegisterHandler(ShowCleaningResultsAsync);
-
-        // Register the interaction handler for showing settings window
-        viewModel.ShowSettingsInteraction.RegisterHandler(ShowSettingsAsync);
-
-        // Register the interaction handler for showing skip list window
-        viewModel.ShowSkipListInteraction.RegisterHandler(ShowSkipListAsync);
-
-        // Register the interaction handler for showing progress window
-        viewModel.ShowProgressInteraction.RegisterHandler(ShowProgressAsync);
-
-        // Register the interaction handler for showing dry-run preview
-        viewModel.ShowPreviewInteraction.RegisterHandler(ShowPreviewAsync);
-
-        // Register the interaction handler for showing restore window
-        viewModel.ShowRestoreInteraction.RegisterHandler(ShowRestoreAsync);
-
-        // Register the interaction handler for showing about window
-        viewModel.ShowAboutInteraction.RegisterHandler(ShowAboutAsync);
+        _interactionRegistrations.Add(viewModel.ShowCleaningResultsInteraction.RegisterHandler(ShowCleaningResultsAsync));
+        _interactionRegistrations.Add(viewModel.ShowSettingsInteraction.RegisterHandler(ShowSettingsAsync));
+        _interactionRegistrations.Add(viewModel.ShowSkipListInteraction.RegisterHandler(ShowSkipListAsync));
+        _interactionRegistrations.Add(viewModel.ShowProgressInteraction.RegisterHandler(ShowProgressAsync));
+        _interactionRegistrations.Add(viewModel.ShowPreviewInteraction.RegisterHandler(ShowPreviewAsync));
+        _interactionRegistrations.Add(viewModel.ShowRestoreInteraction.RegisterHandler(ShowRestoreAsync));
+        _interactionRegistrations.Add(viewModel.ShowAboutInteraction.RegisterHandler(ShowAboutAsync));
     }
 
-    private async Task ShowCleaningResultsAsync(IInteractionContext<CleaningSessionResult, Unit> context)
+    protected override void OnClosed(EventArgs e)
+    {
+        foreach (var registration in _interactionRegistrations)
+        {
+            registration.Dispose();
+        }
+        _interactionRegistrations.Clear();
+        base.OnClosed(e);
+    }
+
+    private async Task<Unit> ShowCleaningResultsAsync(CleaningSessionResult input)
     {
         if (_logger == null || _fileDialog == null)
         {
-            context.SetOutput(Unit.Default);
-            return;
+            return Unit.Default;
         }
 
-        var resultsViewModel = new CleaningResultsViewModel(
-            context.Input,
-            _logger,
-            _fileDialog);
-
-        var resultsWindow = new CleaningResultsWindow(resultsViewModel)
-        {
-            // Ensure the window is shown relative to this window
-        };
+        var resultsViewModel = new CleaningResultsViewModel(input, _logger, _fileDialog);
+        var resultsWindow = new CleaningResultsWindow(resultsViewModel);
 
         await resultsWindow.ShowDialog(this);
-        context.SetOutput(Unit.Default);
+        return Unit.Default;
     }
 
-    private async Task ShowSettingsAsync(IInteractionContext<Unit, bool> context)
+    private async Task<bool> ShowSettingsAsync(Unit input)
     {
-        if (_logger == null || _configService == null)
+        if (_logger == null || _configService == null || _uiDispatcher == null)
         {
-            context.SetOutput(false);
-            return;
+            return false;
         }
 
-        var settingsViewModel = new SettingsViewModel(_configService, _logger, _fileDialog);
+        var settingsViewModel = new SettingsViewModel(_configService, _logger, _uiDispatcher, _fileDialog);
 
-        // Load current settings before showing
         await settingsViewModel.LoadSettingsAsync();
 
         var settingsWindow = new SettingsWindow(settingsViewModel);
 
         var result = await settingsWindow.ShowDialog<bool?>(this);
 
-        // Dispose the ViewModel after dialog closes
         settingsViewModel.Dispose();
 
-        context.SetOutput(result ?? false);
+        return result ?? false;
     }
 
-    private async Task ShowSkipListAsync(IInteractionContext<Unit, bool> context)
+    private async Task<bool> ShowSkipListAsync(Unit input)
     {
         if (_logger == null || _configService == null || _stateService == null)
         {
-            context.SetOutput(false);
-            return;
+            return false;
         }
 
         var skipListViewModel = new SkipListViewModel(_configService, _stateService, _logger);
 
-        // Load current skip list before showing
         await skipListViewModel.LoadSkipListAsync();
 
         var skipListWindow = new SkipListWindow(skipListViewModel);
 
         var result = await skipListWindow.ShowDialog<bool?>(this);
 
-        // Dispose the ViewModel after dialog closes
         skipListViewModel.Dispose();
 
-        context.SetOutput(result ?? false);
+        return result ?? false;
     }
 
-    private Task ShowProgressAsync(IInteractionContext<Unit, Unit> context)
+    private Task<Unit> ShowProgressAsync(Unit input)
     {
-        if (_stateService == null || _orchestrator == null)
+        if (_stateService == null || _orchestrator == null || _uiDispatcher == null)
         {
-            context.SetOutput(Unit.Default);
-            return Task.CompletedTask;
+            return Task.FromResult(Unit.Default);
         }
 
-        var progressViewModel = new ProgressViewModel(_stateService, _orchestrator);
+        var progressViewModel = new ProgressViewModel(_stateService, _orchestrator, _uiDispatcher);
         var progressWindow = new ProgressWindow
         {
             DataContext = progressViewModel
         };
 
-        // Show non-modal - the window stays open and user can close it when done
         progressWindow.Show(this);
 
-        context.SetOutput(Unit.Default);
-        return Task.CompletedTask;
+        return Task.FromResult(Unit.Default);
     }
 
-    private Task ShowPreviewAsync(IInteractionContext<List<DryRunResult>, Unit> context)
+    private Task<Unit> ShowPreviewAsync(List<DryRunResult> input)
     {
-        if (_stateService == null || _orchestrator == null)
+        if (_stateService == null || _orchestrator == null || _uiDispatcher == null)
         {
-            context.SetOutput(Unit.Default);
-            return Task.CompletedTask;
+            return Task.FromResult(Unit.Default);
         }
 
-        var progressViewModel = new ProgressViewModel(_stateService, _orchestrator);
-        progressViewModel.LoadDryRunResults(context.Input);
+        var progressViewModel = new ProgressViewModel(_stateService, _orchestrator, _uiDispatcher);
+        progressViewModel.LoadDryRunResults(input);
 
         var progressWindow = new ProgressWindow
         {
@@ -176,50 +160,43 @@ public partial class MainWindow : Window
             Title = "Dry-Run Preview"
         };
 
-        // Subscribe to CloseRequested to close the window
         progressViewModel.CloseRequested += (_, _) => progressWindow.Close();
 
-        // Show non-modal
         progressWindow.Show(this);
 
-        context.SetOutput(Unit.Default);
-        return Task.CompletedTask;
+        return Task.FromResult(Unit.Default);
     }
 
-    private async Task ShowRestoreAsync(IInteractionContext<Unit, Unit> context)
+    private async Task<Unit> ShowRestoreAsync(Unit input)
     {
         if (_backupService == null || _messageDialog == null || _logger == null)
         {
-            context.SetOutput(Unit.Default);
-            return;
+            return Unit.Default;
         }
 
-        // Get the current game data folder from the ViewModel
         var vm = DataContext as MainWindowViewModel;
         var dataFolderPath = vm?.Configuration.GameDataFolder;
 
         var restoreViewModel = new RestoreViewModel(_backupService, _messageDialog, _logger);
 
-        // Load sessions with the data folder path
         await restoreViewModel.LoadSessionsAsync(dataFolderPath);
 
         var restoreWindow = new RestoreWindow(restoreViewModel);
 
         await restoreWindow.ShowDialog(this);
 
-        // Dispose the ViewModel after dialog closes
         restoreViewModel.Dispose();
 
-        context.SetOutput(Unit.Default);
+        return Unit.Default;
     }
 
-    private async Task ShowAboutAsync(IInteractionContext<Unit, Unit> context)
+    private async Task<Unit> ShowAboutAsync(Unit input)
     {
         var aboutViewModel = new AboutViewModel();
         var aboutWindow = new AboutWindow(aboutViewModel);
 
         await aboutWindow.ShowDialog(this);
 
-        context.SetOutput(Unit.Default);
+        return Unit.Default;
     }
 }
