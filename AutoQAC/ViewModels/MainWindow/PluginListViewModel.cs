@@ -37,7 +37,7 @@ public sealed class PluginListViewModel : ViewModelBase, IDisposable
     public PluginListViewModel(IStateService stateService)
     {
         var stateChanged = stateService.StateChanged
-            .ObserveOn(RxApp.MainThreadScheduler);
+            .ObserveOn(RxSchedulers.MainThreadScheduler);
 
         // Define observables for command enablement
         var hasPlugins = stateChanged

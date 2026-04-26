@@ -18,7 +18,10 @@ namespace AutoQAC
             => AppBuilder.Configure<App>()
                 .UsePlatformDetect()
                 .WithInterFont()
+#if DEBUG
+                .WithDeveloperTools()
+#endif
                 .LogToTrace()
-                .UseReactiveUI();
+                .UseReactiveUI(builder => builder.WithAvalonia());
     }
 }

@@ -365,7 +365,7 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
             .Skip(1) // Skip initial emission from constructor (before LoadSettingsAsync)
             .Where(_ => !_isLoading) // Suppress validation during LoadSettingsAsync
             .Throttle(TimeSpan.FromMilliseconds(400))
-            .ObserveOn(RxApp.MainThreadScheduler)
+            .ObserveOn(RxSchedulers.MainThreadScheduler)
             .Select(path => (bool?)validator(path))
             .Subscribe(valid => setValidation(valid));
         _disposables.Add(subscription);
@@ -386,7 +386,7 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
             .Skip(1) // Skip initial emission from constructor (before LoadSettingsAsync)
             .Where(_ => !_isLoading) // Suppress validation during LoadSettingsAsync
             .Throttle(TimeSpan.FromMilliseconds(400))
-            .ObserveOn(RxApp.MainThreadScheduler)
+            .ObserveOn(RxSchedulers.MainThreadScheduler)
             .Select(path => string.IsNullOrWhiteSpace(path) ? (bool?)null : validator(path))
             .Subscribe(valid => setValidation(valid));
         _disposables.Add(subscription);

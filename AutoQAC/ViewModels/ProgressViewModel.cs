@@ -265,32 +265,32 @@ public sealed class ProgressViewModel : ViewModelBase, IDisposable
         // ObserveOn(MainThreadScheduler) naturally coalesces rapid updates between UI frames.
         // DistinctUntilChanged on IsCleaning ensures session start/stop transitions are never missed.
         var stateChanged = _stateService.StateChanged
-            .ObserveOn(RxApp.MainThreadScheduler);
+            .ObserveOn(RxSchedulers.MainThreadScheduler);
 
         var stateSubscription = stateChanged.Subscribe(OnStateChanged);
         _disposables.Add(stateSubscription);
 
         // Subscribe to detailed per-plugin results (NOT throttled -- fires once per plugin)
         var detailedResultSubscription = _stateService.DetailedPluginResult
-            .ObserveOn(RxApp.MainThreadScheduler)
+            .ObserveOn(RxSchedulers.MainThreadScheduler)
             .Subscribe(OnDetailedResult);
         _disposables.Add(detailedResultSubscription);
 
         // Subscribe to cleaning completed for results summary mode
         var cleaningCompletedSubscription = _stateService.CleaningCompleted
-            .ObserveOn(RxApp.MainThreadScheduler)
+            .ObserveOn(RxSchedulers.MainThreadScheduler)
             .Subscribe(OnCleaningCompleted);
         _disposables.Add(cleaningCompletedSubscription);
 
         // Subscribe to hang detection from the orchestrator
         var hangSubscription = _orchestrator.HangDetected
-            .ObserveOn(RxApp.MainThreadScheduler)
+            .ObserveOn(RxSchedulers.MainThreadScheduler)
             .Subscribe(OnHangDetected);
         _disposables.Add(hangSubscription);
 
         // Subscribe to termination state for stopping spinner
         var terminatingSubscription = _stateService.IsTerminatingChanged
-            .ObserveOn(RxApp.MainThreadScheduler)
+            .ObserveOn(RxSchedulers.MainThreadScheduler)
             .Subscribe(isTerminating => IsTerminating = isTerminating);
         _disposables.Add(terminatingSubscription);
 

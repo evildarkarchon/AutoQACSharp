@@ -105,7 +105,7 @@
                     <TextBox Grid.Column="1"
                              Text="{Binding Configuration.GameDataFolder}"
                              IsReadOnly="True"
-                             Watermark="Auto-detected via Mutagen/registry" />
+                             PlaceholderText="Auto-detected via Mutagen/registry" />
                     <Panel Grid.Column="2" Width="24" VerticalAlignment="Center" Margin="5,0,0,0">
                         <TextBlock Text="&#x2713;"
                                    FontSize="16" FontWeight="Bold"
@@ -136,7 +136,7 @@
                     <TextBox Grid.Column="1"
                              Text="{Binding Configuration.LoadOrderPath}"
                              IsReadOnly="True"
-                             Watermark="Required for this game (plugins.txt/loadorder.txt)" />
+                             PlaceholderText="Required for this game (plugins.txt/loadorder.txt)" />
                     <Panel Grid.Column="2" Width="24" VerticalAlignment="Center" Margin="5,0,0,0">
                         <TextBlock Text="&#x2713;"
                                    FontSize="16" FontWeight="Bold"
@@ -161,7 +161,7 @@
                     <TextBox Grid.Column="1"
                              Text="{Binding Configuration.XEditPath}"
                              IsReadOnly="True"
-                             Watermark="Not configured" />
+                             PlaceholderText="Not configured" />
                     <Panel Grid.Column="2" Width="24" VerticalAlignment="Center" Margin="5,0,0,0">
                         <TextBlock Text="&#x2713;"
                                    FontSize="16" FontWeight="Bold"
@@ -186,7 +186,7 @@
                     <TextBox Grid.Column="1"
                              Text="{Binding Configuration.Mo2Path}"
                              IsReadOnly="True"
-                             Watermark="Optional - for MO2 mode" />
+                             PlaceholderText="Optional - for MO2 mode" />
                     <Panel Grid.Column="2" Width="24" VerticalAlignment="Center" Margin="5,0,0,0">
                         <TextBlock Text="&#x2713;"
                                    FontSize="16" FontWeight="Bold"

@@ -158,7 +158,7 @@ public sealed class CleaningCommandsViewModel : ViewModelBase, IDisposable
     /// </summary>
     public void OnStateChanged(AppState state)
     {
-        RxApp.MainThreadScheduler.Schedule(state, (_, currentState) =>
+        RxSchedulers.MainThreadScheduler.Schedule(state, (_, currentState) =>
         {
             ApplyState(currentState);
             return Disposable.Empty;

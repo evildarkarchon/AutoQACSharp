@@ -66,7 +66,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
 
         // Subscribe to state changes and dispatch to sub-VMs
         var stateSubscription = stateService.StateChanged
-            .ObserveOn(RxApp.MainThreadScheduler)
+            .ObserveOn(RxSchedulers.MainThreadScheduler)
             .Subscribe(OnStateChanged);
         _disposables.Add(stateSubscription);
 

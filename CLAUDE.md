@@ -96,7 +96,6 @@ dotnet clean AutoQACSharp.slnx
 - Do not claim UI test infrastructure that is not present.
 - Do not revert unrelated working-tree changes.
 
-<!-- GSD:project-start source:PROJECT.md -->
 ## Project
 
 **AutoQAC — xEdit Log Parsing Fix**
@@ -111,9 +110,7 @@ AutoQAC is a Windows-only Avalonia desktop app that runs xEdit Quick Auto Clean 
 - **Sequential**: One xEdit process at a time — no parallelization
 - **Read-only Mutagen/**: Do not modify the Mutagen submodule
 - **MVVM boundaries**: Service layer reads logs; ViewModels receive parsed results via state
-<!-- GSD:project-end -->
 
-<!-- GSD:stack-start source:codebase/STACK.md -->
 ## Technology Stack
 
 ## Languages
@@ -198,9 +195,7 @@ AutoQAC is a Windows-only Avalonia desktop app that runs xEdit Quick Auto Clean 
 - `AutoQAC` depends on `QueryPlugins`
 - `AutoQAC.Tests` depends on both `AutoQAC` and `QueryPlugins`
 - `QueryPlugins.Tests` depends on `QueryPlugins`
-<!-- GSD:stack-end -->
 
-<!-- GSD:conventions-start source:CONVENTIONS.md -->
 ## Conventions
 
 ## Naming Patterns
@@ -333,9 +328,7 @@ AutoQAC is a Windows-only Avalonia desktop app that runs xEdit Quick Auto Clean 
 - Debounced save pipeline via `Subject<T>.Throttle` + `Observable.Switch`
 - `SemaphoreSlim _processSlots = new(1, 1)` enforces single xEdit process
 - Locks around `_currentProcess` and `_cleaningCts` references
-<!-- GSD:conventions-end -->
 
-<!-- GSD:architecture-start source:ARCHITECTURE.md -->
 ## Architecture
 
 ## Pattern Overview
@@ -460,24 +453,3 @@ AutoQAC is a Windows-only Avalonia desktop app that runs xEdit Quick Auto Clean 
 - `ConfigurationService` uses retry logic for file I/O failures
 - `ProcessExecutionService` tracks PIDs and cleans orphaned processes on startup
 ## Cross-Cutting Concerns
-<!-- GSD:architecture-end -->
-
-<!-- GSD:workflow-start source:GSD defaults -->
-## GSD Workflow Enforcement
-
-Before using Edit, Write, or other file-changing tools, start work through a GSD command so planning artifacts and execution context stay in sync.
-
-Use these entry points:
-- `/gsd:quick` for small fixes, doc updates, and ad-hoc tasks
-- `/gsd:debug` for investigation and bug fixing
-- `/gsd:execute-phase` for planned phase work
-
-Do not make direct repo edits outside a GSD workflow unless the user explicitly asks to bypass it.
-<!-- GSD:workflow-end -->
-
-<!-- GSD:profile-start -->
-## Developer Profile
-
-> Profile not yet configured. Run `/gsd:profile-user` to generate your developer profile.
-> This section is managed by `generate-claude-profile` -- do not edit manually.
-<!-- GSD:profile-end -->

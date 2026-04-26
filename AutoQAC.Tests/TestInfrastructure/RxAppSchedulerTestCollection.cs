@@ -19,13 +19,13 @@ public sealed class RxAppMainThreadSchedulerScope : IDisposable
 
     public RxAppMainThreadSchedulerScope(IScheduler scheduler)
     {
-        _originalScheduler = RxApp.MainThreadScheduler;
-        RxApp.MainThreadScheduler = scheduler;
+        _originalScheduler = RxSchedulers.MainThreadScheduler;
+        RxSchedulers.MainThreadScheduler = scheduler;
     }
 
     public void Dispose()
     {
-        RxApp.MainThreadScheduler = _originalScheduler;
+        RxSchedulers.MainThreadScheduler = _originalScheduler;
     }
 }
 
@@ -45,7 +45,7 @@ public sealed class RxAppEventLoopMainThreadSchedulerScope : IDisposable
         })
         {
             IsBackground = true,
-            Name = "RxApp.MainThreadScheduler test thread"
+            Name = "RxSchedulers.MainThreadScheduler test thread"
         });
 
         _schedulerScope = new RxAppMainThreadSchedulerScope(_scheduler);

@@ -36,7 +36,7 @@
                         <Grid ColumnDefinitions="*,Auto,Auto">
                             <TextBox Grid.Column="0"
                                      Text="{Binding XEditPath}"
-                                     Watermark="Path to SSEEdit.exe, FO4Edit.exe, etc."
+                                     PlaceholderText="Path to SSEEdit.exe, FO4Edit.exe, etc."
                                      Margin="0,0,5,0" />
                             <!-- Validation indicator -->
                             <Panel Grid.Column="1" Width="24" VerticalAlignment="Center" Margin="0,0,5,0">
@@ -64,7 +64,7 @@
                         <Grid ColumnDefinitions="*,Auto,Auto">
                             <TextBox Grid.Column="0"
                                      Text="{Binding Mo2Path}"
-                                     Watermark="Path to ModOrganizer.exe (optional)"
+                                     PlaceholderText="Path to ModOrganizer.exe (optional)"
                                      Margin="0,0,5,0" />
                             <Panel Grid.Column="1" Width="24" VerticalAlignment="Center" Margin="0,0,5,0">
                                 <TextBlock Text="&#x2713;"
