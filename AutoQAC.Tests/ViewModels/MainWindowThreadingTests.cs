@@ -19,12 +19,12 @@ namespace AutoQAC.Tests.ViewModels;
 public sealed class MainWindowThreadingTests
 {
     [Fact]
-    public async Task MainWindowViewModel_ShouldDispatchStateChangesThroughIUiDispatcher()
+    public async Task MainWindowViewModel_ShouldPostStateChangesThroughIUiDispatcher()
     {
         // After the migration to CommunityToolkit.Mvvm, UI marshaling is delegated to
         // IUiDispatcher rather than RxApp.MainThreadScheduler. This test verifies that
-        // the dispatcher is invoked for state-driven updates by capturing the thread on
-        // which the dispatcher's Post callbacks fire.
+        // the dispatcher is invoked for state-driven updates. It does not claim real UI
+        // thread affinity because this test double executes callbacks inline.
         using var captureDispatcher = new ThreadCapturingUiDispatcher();
         var dispatchedFromThread = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -67,11 +67,8 @@ public sealed class MainWindowThreadingTests
             // OnStateChanged dispatch synchronously on the calling thread).
             captureDispatcher.Reset();
 
-            await Task.Run(() =>
-            {
-                currentState = currentState with { IsCleaning = true };
-                stateSubject.OnNext(currentState);
-            });
+            currentState = currentState with { IsCleaning = true };
+            stateSubject.OnNext(currentState);
 
             // Wait for the dispatcher to be invoked at least once after the state change.
             await captureDispatcher.WaitForNextPostAsync();
