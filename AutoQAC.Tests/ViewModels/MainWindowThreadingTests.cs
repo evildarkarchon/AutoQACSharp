@@ -7,6 +7,7 @@ using AutoQAC.Services.Configuration;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Services.State;
 using AutoQAC.Services.UI;
+using AutoQAC.Services.UI.Interactions;
 using AutoQAC.Tests.TestInfrastructure;
 using AutoQAC.ViewModels;
 using AutoQAC.ViewModels.MainWindow;
@@ -81,6 +82,53 @@ public sealed class MainWindowThreadingTests
             // The actual VM property update must reflect the state change after dispatch.
             viewModel.Commands.IsCleaning.Should().BeTrue(
                 "the synchronous dispatcher applies the callback inline so IsCleaning should be set");
+        }
+        finally
+        {
+            viewModel.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Verifies that the child command VM applies state immediately once the parent
+    /// has already marshaled the state notification onto the UI dispatcher.
+    /// </summary>
+    [Fact]
+    public void CleaningCommandsViewModel_OnStateChanged_ShouldApplyStateSynchronously()
+    {
+        var dispatcher = Substitute.For<IUiDispatcher>();
+        var pluginLoadingService = Substitute.For<IPluginLoadingService>();
+        var viewModel = new CleaningCommandsViewModel(
+            Substitute.For<IStateService>(),
+            Substitute.For<ICleaningOrchestrator>(),
+            Substitute.For<IConfigurationService>(),
+            pluginLoadingService,
+            Substitute.For<ILoggingService>(),
+            Substitute.For<IMessageDialogService>(),
+            dispatcher,
+            new Interaction<Unit, Unit>(),
+            new Interaction<List<DryRunResult>, Unit>(),
+            new Interaction<Unit, bool>(),
+            new Interaction<Unit, bool>(),
+            new Interaction<Unit, Unit>(),
+            new Interaction<Unit, Unit>());
+
+        try
+        {
+            var state = new AppState
+            {
+                XEditExecutablePath = @"C:\Tools\xEdit\SSEEdit.exe",
+                PluginsToClean =
+                [
+                    new PluginInfo { FileName = "Test.esp", FullPath = @"C:\Games\Data\Test.esp" }
+                ]
+            };
+
+            viewModel.OnStateChanged(state);
+
+            viewModel.CanStartCleaning.Should().BeTrue(
+                "the parent VM already dispatched state changes before invoking the child VM");
+            dispatcher.DidNotReceive().Post(Arg.Any<Action>());
         }
         finally
         {

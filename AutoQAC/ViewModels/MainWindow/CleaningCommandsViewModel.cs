@@ -96,8 +96,7 @@ public sealed partial class CleaningCommandsViewModel : ViewModelBase, IDisposab
     /// <c>IStateService.StateChanged</c> fires; the parent has already marshaled
     /// onto the UI thread via <c>IUiDispatcher</c>, so we just apply directly here.
     /// </summary>
-    public void OnStateChanged(AppState state) =>
-        _uiDispatcher.Post(() => ApplyState(state));
+    public void OnStateChanged(AppState state) => ApplyState(state);
 
     private void ApplyState(AppState state)
     {
