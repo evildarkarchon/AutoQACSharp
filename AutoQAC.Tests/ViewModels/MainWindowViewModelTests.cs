@@ -1140,6 +1140,48 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
+    public async Task ShowSettingsCommand_ShouldRefreshRuntimeConfigurationPaths_WhenSettingsAreSaved()
+    {
+        // Arrange
+        const string loadOrderPath = @"C:\Users\Test\AppData\Local\Skyrim Special Edition\plugins.txt";
+        const string mo2Path = @"C:\Tools\MO2\ModOrganizer.exe";
+        const string xEditPath = @"C:\Tools\xEdit\SSEEdit.exe";
+
+        var savedConfig = new UserConfiguration
+        {
+            LoadOrder = new LoadOrderConfig { File = loadOrderPath },
+            XEdit = new XEditConfig { Binary = xEditPath },
+            ModOrganizer = new ModOrganizerConfig { Binary = mo2Path },
+            Settings = new AutoQacSettings { Mo2Mode = true, CleaningTimeout = 600 }
+        };
+        _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>()).Returns(savedConfig);
+        _configServiceMock.GetSelectedGameAsync(Arg.Any<CancellationToken>()).Returns(GameType.Unknown);
+
+        var stateSubject = new BehaviorSubject<AppState>(new AppState());
+        _stateServiceMock.StateChanged.Returns(stateSubject);
+        _stateServiceMock.CurrentState.Returns(new AppState());
+
+        var vm = new MainWindowViewModel(
+            _configServiceMock,
+            _stateServiceMock,
+            _orchestratorMock,
+            _loggerMock,
+            _fileDialogMock,
+            _messageDialogMock,
+            _pluginServiceMock,
+            _pluginLoadingServiceMock,
+            _uiDispatcher);
+        using var _ = vm.ShowSettingsInteraction.RegisterHandler(_ => Task.FromResult(true));
+        _stateServiceMock.ClearReceivedCalls();
+
+        // Act
+        await vm.Commands.ShowSettingsCommand.ExecuteAsync(null);
+
+        // Assert
+        _stateServiceMock.Received(1).UpdateConfigurationPaths(loadOrderPath, mo2Path, xEditPath);
+    }
+
+    [Fact]
     public async Task ConfigureMo2Async_PersistsNewlySelectedPath()
     {
         // Arrange
