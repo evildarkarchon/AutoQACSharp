@@ -74,6 +74,29 @@ public sealed class ConfigurationServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task SaveUserConfig_ShouldPersistXEditBinaryAcrossFreshServiceReload()
+    {
+        // Arrange
+        var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
+        const string expectedXEditPath = @"C:\Tools\xEdit\SSEEdit.exe";
+        var config = new UserConfiguration
+        {
+            XEdit = new XEditConfig { Binary = expectedXEditPath }
+        };
+
+        // Act
+        await service.SaveUserConfigAsync(config);
+        await service.FlushPendingSavesAsync();
+
+        var freshService = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
+        var loaded = await freshService.LoadUserConfigAsync();
+
+        // Assert
+        loaded.XEdit.Binary.Should().Be(expectedXEditPath,
+            "the saved xEdit path must survive the debounced write and a fresh configuration service reload");
+    }
+
+    [Fact]
     public async Task FlushPendingSavesAsync_ShouldRecreateConfigDirectory_WhenDeletedBeforeWrite()
     {
         // Arrange
