@@ -260,6 +260,10 @@ public sealed partial class CleaningCommandsViewModel : ViewModelBase, IDisposab
             {
                 var config = await _configService.LoadUserConfigAsync();
 
+                _stateService.UpdateConfigurationPaths(
+                    config.LoadOrder.File,
+                    config.ModOrganizer.Binary,
+                    config.XEdit.Binary);
                 _stateService.UpdateState(s => s with
                 {
                     Mo2ModeEnabled = config.Settings.Mo2Mode,
