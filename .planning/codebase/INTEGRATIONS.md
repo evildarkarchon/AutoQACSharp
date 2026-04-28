@@ -1,256 +1,113 @@
 # External Integrations
 
-**Analysis Date:** 2026-03-30
+**Analysis Date:** 2026-04-28
 
-## Process Integration
+## APIs & External Services
 
-### xEdit (Primary External Process)
+**GitHub:**
+- GitHub Releases API - update-check flow fetches the latest release from `https://api.github.com/repos/evildarkarchon/AutoQACSharp/releases/latest` in `AutoQAC/ViewModels/AboutViewModel.cs`.
+  - SDK/Client: built-in `System.Net.Http.HttpClient` and `System.Text.Json`.
+  - Auth: none; public unauthenticated request with `User-Agent: AutoQACSharp/1.0`.
+- GitHub project and issue URLs - About window links to `https://github.com/evildarkarchon/AutoQACSharp` and `https://github.com/evildarkarchon/AutoQACSharp/issues` in `AutoQAC/ViewModels/AboutViewModel.cs`.
+  - SDK/Client: `System.Diagnostics.Process.Start` with `UseShellExecute = true`.
+  - Auth: none.
 
-AutoQAC's core function is launching xEdit with Quick Auto Clean (`-QAC`) flags, one plugin at a time.
+**xEdit / TES5Edit:**
+- xEdit executable - primary external process integration for Quick Auto Clean; command arguments include `-QAC`, `-autoexit`, `-autoload`, game flags for universal xEdit, and optional partial-form flags in `AutoQAC/Services/Cleaning/XEditCommandBuilder.cs`.
+  - SDK/Client: `System.Diagnostics.ProcessStartInfo` executed by `AutoQAC/Services/Process/ProcessExecutionService.cs`.
+  - Auth: none; user supplies local executable path in `AutoQAC/AutoQAC Data/AutoQAC Settings.yaml`.
+- xEdit logs - session statistics and exception details are read from xEdit log files by `AutoQAC/Services/Cleaning/XEditLogFileService.cs` and parsed by `AutoQAC/Services/Cleaning/XEditOutputParser.cs`.
+  - SDK/Client: local filesystem.
+  - Auth: none.
 
-**Command Builder:** `AutoQAC/Services/Cleaning/XEditCommandBuilder.cs`
-- Builds `ProcessStartInfo` with flags: `-QAC -autoexit -autoload "<plugin>"`
-- Adds game-type flag for universal `xEdit.exe` (e.g., `-SSE`, `-FO4`, `-TES4`)
-- Adds `-iknowwhatimdoing -allowmakepartial` when partial forms are enabled
-- In MO2 mode, wraps the entire command: `ModOrganizer.exe run "<xEdit>" -a "<args>"`
+**Mod Organizer 2:**
+- Mod Organizer 2 launch wrapper - MO2 mode runs `ModOrganizer.exe run "<xEdit>" -a "<args>"` from `AutoQAC/Services/Cleaning/XEditCommandBuilder.cs`.
+  - SDK/Client: local `ModOrganizer.exe` process via `System.Diagnostics.ProcessStartInfo`.
+  - Auth: none; user supplies local executable path in `AutoQAC/AutoQAC Data/AutoQAC Settings.yaml`.
+- MO2 running-state validation - detects running `ModOrganizer` processes in `AutoQAC/Services/MO2/MO2ValidationService.cs`.
+  - SDK/Client: `System.Diagnostics.Process.GetProcessesByName`.
+  - Auth: none.
 
-**Process Execution:** `AutoQAC/Services/Process/ProcessExecutionService.cs`
-- Single-slot semaphore (`SemaphoreSlim(1, 1)`) enforces sequential xEdit execution
-- Captures stdout/stderr via `RedirectStandardOutput`/`RedirectStandardError`
-- Timeout support with configurable duration (default 300 seconds from settings)
-- Two-stage termination: `CloseMainWindow()` first, then `Kill(entireProcessTree: true)` after 2.5s grace
-- PID tracking via `autoqac-pids.json` in the `AutoQAC Data` directory for orphan detection on startup
+**Bethesda game installations:**
+- Game data folder discovery - Mutagen `GameLocations.TryGetDataFolder` resolves supported games in `AutoQAC/Services/Plugin/PluginLoadingService.cs`.
+  - SDK/Client: `Mutagen.Bethesda.Installs.GameLocations`.
+  - Auth: none.
+- Windows registry fallback - probes Bethesda and Steam uninstall keys for install paths in `AutoQAC/Services/Plugin/PluginLoadingService.cs`.
+  - SDK/Client: `Microsoft.Win32.RegistryKey` over `RegistryHive.LocalMachine` and `RegistryHive.CurrentUser`, both 64-bit and 32-bit registry views.
+  - Auth: local user/Windows permissions only.
 
-**Output Parsing:** `AutoQAC/Services/Cleaning/XEditOutputParser.cs`
-- Regex-based parsing of xEdit stdout for: `Removing:`, `Undeleting:`, `Skipping:`, `Making Partial Form:`
-- Uses source-generated regex (`[GeneratedRegex(...)]`)
+## Data Storage
 
-**Log File Parsing:** `AutoQAC/Services/Cleaning/XEditLogFileService.cs`
-- Reads `<XEDIT_NAME>_log.txt` from the xEdit directory after each cleaning run
-- Staleness detection: rejects log files older than the process start time
-- Single retry with 200ms delay on `IOException` (xEdit may hold file lock briefly)
-- Log-file stats preferred over stdout stats when available
+**Databases:**
+- Not detected for the active application projects. No `DbContext`, connection string, or database client is used in `AutoQAC/`, `AutoQAC.Tests/`, `QueryPlugins/`, or `QueryPlugins.Tests/`.
+- The read-only `Mutagen/` submodule contains SQLite-related code, but it is not part of the active `AutoQACSharp.slnx` projects and should not be treated as this app's database integration.
 
-**Known xEdit process names** (for orphan detection):
-`sseedit`, `fo4edit`, `fo3edit`, `fnvedit`, `tes5vredit`, `xedit`, `fo76edit`, `tes4edit`
+**File Storage:**
+- Local YAML configuration - `AutoQAC/AutoQAC Data/AutoQAC Main.yaml` and `AutoQAC/AutoQAC Data/AutoQAC Settings.yaml`, loaded/saved through `AutoQAC/Services/Configuration/ConfigurationService.cs`.
+- Local config file watching - `FileSystemWatcher` monitors `AutoQAC Settings.yaml` in `AutoQAC/Services/Configuration/ConfigWatcherService.cs`.
+- Local logs - Serilog rolling file sink writes daily log files under the log directory resolved by `AutoQAC/Infrastructure/Logging/LogFilePaths.cs` and configured in `AutoQAC/Infrastructure/Logging/LoggingService.cs`.
+- Local backups - plugin backup sessions and `session.json` metadata are stored under `AutoQAC Backups/` by `AutoQAC/Services/Backup/BackupService.cs`.
+- Local PID tracking - `autoqac-pids.json` is used for process tracking/orphan cleanup in `AutoQAC/Services/Process/ProcessExecutionService.cs`.
+- Local load order files - file-based games use user-provided `plugins.txt`/load-order paths loaded by `AutoQAC/Services/Plugin/PluginLoadingService.cs` and validated by `AutoQAC/Services/Plugin/PluginValidationService.cs`.
 
-### Mod Organizer 2 (Optional Process Wrapper)
+**Caching:**
+- In-memory main config cache - `_mainConfigCache` in `AutoQAC/Services/Configuration/ConfigurationService.cs`.
+- In-memory pending/last-known-good user config snapshots - `_pendingConfig` and `_lastKnownGoodConfig` in `AutoQAC/Services/Configuration/ConfigurationService.cs`.
+- In-memory app state stream - `IStateService` / `StateService` in `AutoQAC/Services/State/`.
+- No external cache service such as Redis or Memcached is detected.
 
-**Validation:** `AutoQAC/Services/MO2/Mo2ValidationService.cs`
-- Checks if MO2 is running via `Process.GetProcessesByName("ModOrganizer")`
-- Validates the configured path points to `modorganizer.exe`
+## Authentication & Identity
 
-**Integration Pattern:**
-- When MO2 mode is enabled, xEdit is launched through MO2's `run` command
-- Backups are skipped in MO2 mode (MO2 uses a virtual filesystem)
-- File-existence validation is skipped in MO2 mode (MO2 VFS resolves paths at runtime)
+**Auth Provider:**
+- Not detected. The application has no login, OAuth, OpenID Connect, JWT, API key, or user identity provider integration in `AutoQAC/`, `QueryPlugins/`, or tests.
+  - Implementation: local desktop app with user-selected filesystem paths and unauthenticated public GitHub release lookup.
 
-## File System Integration
+## Monitoring & Observability
 
-### Configuration Files
+**Error Tracking:**
+- No external error-tracking provider is detected. Errors are logged locally through `AutoQAC/Infrastructure/Logging/ILoggingService.cs` and `AutoQAC/Infrastructure/Logging/LoggingService.cs`.
 
-**Location:** `AutoQAC Data/` directory (bundled with app, copied to output)
-
-| File | Purpose | Service |
-|------|---------|---------|
-| `AutoQAC Main.yaml` | Bundled defaults: skip lists, xEdit exe names, version | `ConfigurationService` |
-| `AutoQAC Settings.yaml` | User settings: paths, game selection, timeouts | `ConfigurationService` |
-| `autoqac-pids.json` | Tracked xEdit process PIDs for orphan detection | `ProcessExecutionService` |
-
-**Config Service:** `AutoQAC/Services/Configuration/ConfigurationService.cs`
-- YAML serialization via YamlDotNet with `NullNamingConvention`
-- Debounced save pipeline: 500ms throttle via `System.Reactive` before writing to disk
-- Retry logic: up to 2 retries with 100ms delay on save failure
-- Fallback to last-known-good config on persistent save failure
-- SHA256 hashing to detect external vs internal changes
-- Thread-safe with `SemaphoreSlim` for file I/O and `Lock` for in-memory state
-
-**Config Watcher:** `AutoQAC/Services/Configuration/ConfigWatcherService.cs`
-- `FileSystemWatcher` on `AutoQAC Settings.yaml` for external edits
-- 500ms throttle to coalesce rapid filesystem events
-- SHA256 content hashing to distinguish app-initiated saves from external edits
-- Defers reloading during active cleaning sessions; applies changes when cleaning ends
-- YAML validation before accepting external changes
-
-### Plugin Discovery
-
-**Mutagen-backed (preferred):** `AutoQAC/Services/Plugin/PluginLoadingService.cs`
-- Uses `Mutagen.Bethesda.Plugins.Order.LoadOrder.GetLoadOrderListings()` for supported games
-- Uses `Mutagen.Bethesda.Installs.GameLocations.TryGetDataFolder()` for auto-detection
-- Supported games: SkyrimLE, SkyrimSE, SkyrimVR, Fallout4, Fallout4VR
-
-**File-based (fallback):** `AutoQAC/Services/Plugin/PluginLoadingService.cs`
-- Reads `plugins.txt` from `Documents/My Games/<game>/` for non-Mutagen games
-- Used for: Fallout 3, Fallout New Vegas, Oblivion
-- Maps game types to folder names: `Fallout3`, `FalloutNV`, `Oblivion`
-
-### Backup System
-
-**Service:** `AutoQAC/Services/Backup/BackupService.cs`
-- Pre-cleaning file backup: copies plugin files to timestamped session directories
-- Backup root: `<game-install>/AutoQAC Backups/<yyyy-MM-dd_HH-mm-ss>/`
-- Session metadata: `session.json` in each session directory (System.Text.Json serialized)
-- Retention: configurable `MaxSessions` count; oldest sessions pruned after each cleaning run
-- Restore: copies backup files back to original paths
-- Skipped in MO2 mode (MO2 manages files through its virtual filesystem)
-
-### Log Files
-
-**Service:** `AutoQAC/Infrastructure/Logging/LoggingService.cs`
-- Serilog with rolling daily log files
-- File size limit: 5 MB per file, 5 retained files
-- Console output restricted to Warning+ level
-- Additional log retention cleanup via `ILogRetentionService` on startup
-
-## Game Detection
-
-### Registry Probing
-
-**Service:** `AutoQAC/Services/Plugin/PluginLoadingService.cs` (method `ResolveDataFolderFromRegistry`)
-- Probes Windows Registry for game install paths
-- Registry hives: `HKLM` and `HKCU`, both 32-bit and 64-bit views
-- Key patterns per game:
-  - `SOFTWARE\WOW6432Node\Bethesda Softworks\<game>`
-  - `SOFTWARE\Bethesda Softworks\<game>`
-  - `SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App <appid>`
-- Value names checked: `Installed Path`, `Install Path`, `InstallLocation`, `Path`
-- Normalizes paths: appends `\Data` if the install root is found
-
-**Steam App IDs mapped:**
-
-| Game | Steam App ID |
-|------|-------------|
-| Oblivion | 22330 |
-| Fallout 3 | 22300 |
-| Fallout New Vegas | 22380 |
-| Skyrim LE | 72850 |
-| Skyrim SE | 489830 |
-| Skyrim VR | 611670 |
-| Fallout 4 | 377160 |
-| Fallout 4 VR | 611660 |
-
-### Executable-Based Detection
-
-**Service:** `AutoQAC/Services/GameDetection/GameDetectionService.cs`
-- Maps xEdit executable filenames to game types (e.g., `sseedit` -> SkyrimSE, `fo4edit` -> Fallout4)
-- Supports 64-bit variants (e.g., `sseedit64`, `fo3edit64`)
-- Partial matching for versioned filenames (e.g., `SSEEdit 4.0.4`)
-
-### Load Order-Based Detection
-
-**Service:** `AutoQAC/Services/GameDetection/GameDetectionService.cs`
-- Scans load order file for known master ESMs (e.g., `Skyrim.esm`, `Fallout4.esm`)
-- Handles `plugins.txt` format (strips leading `*` enabled flags, ignores `#` comments)
-
-### Game Variant Detection
-
-**Service:** `AutoQAC/Services/GameDetection/GameDetectionService.cs`
-- Detects TTW (Tale of Two Wastelands) via `TaleOfTwoWastelands.esm` in FalloutNV load order
-- Detects Enderal via `Enderal - Forgotten Stories.esm` or `Enderal.esm` in SkyrimSE load order
-- Variants affect skip list merging (TTW includes FO3 skip list; Enderal uses its own key)
-
-## Mutagen Integration
-
-### In AutoQAC (Load Order Discovery)
-
-**Service:** `AutoQAC/Services/Plugin/PluginLoadingService.cs`
-- `LoadOrder.GetLoadOrderListings()` to enumerate the full load order for a game
-- `GameLocations.TryGetDataFolder()` to auto-detect game data folder from registry/standard paths
-- Game type mapping: `GameType` enum -> `Mutagen.Bethesda.GameRelease` enum
-
-### In AutoQAC (Plugin Issue Approximations)
-
-**Service:** `AutoQAC/Services/Plugin/PluginIssueApproximationService.cs`
-- Loads entire load order into memory using `LoadOrder.Import<ISkyrimModGetter>()` or `LoadOrder.Import<IFallout4ModGetter>()`
-- Creates `ImmutableLinkCache` for cross-reference resolution
-- Delegates analysis to `QueryPlugins.PluginQueryService`
-- Supported games: SkyrimLE, SkyrimSE, SkyrimVR, Fallout4, Fallout4VR
-- Streams results via callback (`onApproximationReady`) for progressive UI updates
-
-### In QueryPlugins (Plugin Analysis Library)
-
-**Service:** `QueryPlugins/PluginQueryService.cs`
-- Orchestrates detectors: ITM detector + game-specific detectors
-- Accepts `IModGetter`, `ILinkCache`, and `GameRelease` as inputs
-
-**ITM Detection:** `QueryPlugins/Detectors/ItmDetector.cs`
-- Game-agnostic: works on any `IModGetter`
-- Uses `ILinkCache.ResolveAllSimpleContexts()` to find all versions of a record
-- Compares plugin's override to the next lower-priority context via Loqui-generated `Equals()`
-- Excludes new records (FormKey matches plugin's ModKey) and deleted records
-
-**Game-Specific Detectors:**
-
-| Detector | File | Supported Releases |
-|----------|------|--------------------|
-| SkyrimDetector | `QueryPlugins/Detectors/Games/SkyrimDetector.cs` | SkyrimLE, SkyrimSE, SkyrimSEGog, SkyrimVR, EnderalLE, EnderalSE |
-| Fallout4Detector | `QueryPlugins/Detectors/Games/Fallout4Detector.cs` | Fallout4, Fallout4VR |
-| StarfieldDetector | `QueryPlugins/Detectors/Games/StarfieldDetector.cs` | Starfield |
-| OblivionDetector | `QueryPlugins/Detectors/Games/OblivionDetector.cs` | Oblivion |
-
-**Detection Capabilities:**
-- Deleted placed references (REFR/ACHR): checks `IsDeleted` flag on `IPlacedGetter` records
-- Deleted navigation meshes (NAVM): checks `IsDeleted` flag on `INavigationMeshGetter` records
-- Oblivion detector returns empty for navmeshes (game does not have them)
-
-## External Services
-
-### GitHub API (Update Check)
-
-**ViewModel:** `AutoQAC/ViewModels/AboutViewModel.cs`
-- Single outbound HTTP call to `https://api.github.com/repos/evildarkarchon/AutoQACSharp/releases/latest`
-- Uses `System.Net.Http.HttpClient` (static singleton, 10-second timeout)
-- User-Agent: `AutoQACSharp/1.0`
-- Parses `tag_name` and `html_url` from JSON response
-- Compares version against `Assembly.GetEntryAssembly().GetName().Version`
-- User-initiated only (no auto-update, no background polling)
-
-### No Other Network Dependencies
-
-- No telemetry or analytics
-- No cloud storage or remote databases
-- No authentication providers
-- No webhook endpoints
-- All game detection is local (registry + filesystem)
-- All configuration is local (YAML files)
-- All plugin analysis is local (Mutagen reads files from disk)
-
-## Process Monitoring
-
-### Hang Detection
-
-**Service:** `AutoQAC/Services/Monitoring/HangDetectionService.cs`
-- CPU-based monitoring using `Process.TotalProcessorTime`
-- Polls every 5 seconds (`PollIntervalMs`)
-- Flags as hung after 60 seconds of near-zero CPU (`HangThresholdMs`)
-- Near-zero threshold: < 0.5% CPU usage (`CpuThreshold`)
-- Uses `System.Reactive.Linq.Observable.Interval` for polling
-- Emits `true`/`false` via `IObservable<bool>` to drive UI warning
-- Automatically completes when process exits
-
-## Environment Configuration
-
-**Required for operation:**
-- xEdit executable path (configured in `AutoQAC Settings.yaml` or via Settings UI)
-- Game data folder (auto-detected via Mutagen/registry or user-configured)
-
-**Required for non-Mutagen games (FO3, FNV, Oblivion):**
-- Load order file path (`plugins.txt`)
-
-**Optional:**
-- MO2 executable path (only if MO2 mode is enabled)
-- Game data folder overrides (per-game in `AutoQAC Settings.yaml`)
-- Load order file overrides (per-game in `AutoQAC Settings.yaml`)
-
-**No secrets or API keys required.**
+**Logs:**
+- Serilog local logging with minimum level `Debug`, warnings to console, and rolling daily file logs configured in `AutoQAC/Infrastructure/Logging/LoggingService.cs`.
+- Startup diagnostics log version, .NET runtime, xEdit path, game type, MO2 mode, and plugin count in `AutoQAC/App.axaml.cs`.
+- Log retention cleanup runs on startup through `AutoQAC/Services/Configuration/LogRetentionService.cs`, invoked from `AutoQAC/App.axaml.cs`.
+- CPU-based hang detection emits state through `IHangDetectionService` in `AutoQAC/Services/Monitoring/HangDetectionService.cs`.
 
 ## CI/CD & Deployment
 
-**Hosting:** Local desktop application (no server deployment)
-**CI Pipeline:** No CI/CD detected (no `.github/workflows/`, no pipeline configs)
-**Release Build:** `dotnet build AutoQAC/AutoQAC.csproj -c Release`
-**Pre-built release:** `Release/` directory contains compiled output with native dependencies
+**Hosting:**
+- Windows desktop application. Build/run/test commands are documented in `README.md` and `AGENTS.md`.
+- No server hosting platform is detected for `AutoQAC/` or `QueryPlugins/`.
+
+**CI Pipeline:**
+- None detected at the repository root; `.github/workflows/*` is absent for the active repo.
+- The `Mutagen/` submodule contains its own `.github/workflows/` files, but `Mutagen/` is read-only reference material and not the active app pipeline.
+
+## Environment Configuration
+
+**Required env vars:**
+- Not detected. No required environment variables are used by the active application code.
+
+**Secrets location:**
+- Not applicable. No secret files or `.env` files were detected in the repo scan; `.gitignore` excludes `*.env`.
+- Runtime configuration values are non-secret local paths/settings in `AutoQAC/AutoQAC Data/AutoQAC Settings.yaml`.
+
+**Required user-provided paths/settings:**
+- xEdit executable path - stored under the `xEdit` section in `AutoQAC/AutoQAC Data/AutoQAC Settings.yaml`, consumed by `AutoQAC/Services/Cleaning/XEditCommandBuilder.cs` and validation flows in `AutoQAC/ViewModels/SettingsViewModel.cs`.
+- Load order path - stored under `Load_Order` in `AutoQAC/AutoQAC Data/AutoQAC Settings.yaml`, required for Fallout 3, Fallout: New Vegas, and Oblivion flows in `AutoQAC/Services/Cleaning/CleaningService.cs` and `AutoQAC/Services/Plugin/PluginLoadingService.cs`.
+- MO2 executable path - stored under `Mod_Organizer` in `AutoQAC/AutoQAC Data/AutoQAC Settings.yaml`, used when MO2 mode is enabled by `AutoQAC/Services/Cleaning/XEditCommandBuilder.cs`.
+- Per-game defaults and skip lists - bundled in `AutoQAC/AutoQAC Data/AutoQAC Main.yaml` and merged by configuration/plugin flows.
+
+## Webhooks & Callbacks
+
+**Incoming:**
+- None. No HTTP server, route handlers, webhook endpoints, sockets, or callback listeners are detected in the active application projects.
+
+**Outgoing:**
+- GitHub Releases API request from `AutoQAC/ViewModels/AboutViewModel.cs`.
+- Browser/shell URL opens for GitHub project, GitHub issues, latest release, and xEdit project URLs from `AutoQAC/ViewModels/AboutViewModel.cs`.
+- Local process launches for xEdit and optional MO2 wrapper from `AutoQAC/Services/Process/ProcessExecutionService.cs` and `AutoQAC/Services/Cleaning/XEditCommandBuilder.cs`.
 
 ---
 
-*Integration audit: 2026-03-30*
+*Integration audit: 2026-04-28*

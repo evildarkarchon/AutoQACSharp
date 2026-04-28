@@ -1,141 +1,106 @@
 # Technology Stack
 
-**Analysis Date:** 2026-03-30
+**Analysis Date:** 2026-04-28
 
 ## Languages
 
 **Primary:**
-- C# 13 with nullable reference types (`<Nullable>enable</Nullable>` in all projects)
+- C# 13 / .NET 10 - application, services, ViewModels, and test code in `AutoQAC/`, `AutoQAC.Tests/`, `QueryPlugins/`, and `QueryPlugins.Tests/`.
+- XAML / AXAML - Avalonia UI layout and resources in `AutoQAC/App.axaml` and `AutoQAC/Views/*.axaml`.
 
 **Secondary:**
-- XAML (Avalonia AXAML) for UI layout and resource definitions
+- YAML - runtime configuration defaults and user settings in `AutoQAC/AutoQAC Data/AutoQAC Main.yaml`, `AutoQAC/AutoQAC Data/AutoQAC Settings.yaml`, and `openspec/config.yaml`.
+- JSON - local tool/plugin configuration in `.opencode/package.json`, `.kilocode/package.json`, `.planning/config.json`, and generated backup/process metadata written by `AutoQAC/Services/Backup/BackupService.cs` and `AutoQAC/Services/Process/ProcessExecutionService.cs`.
+- XML - solution and Windows manifest metadata in `AutoQACSharp.slnx` and `AutoQAC/app.manifest`.
 
 ## Runtime
 
 **Environment:**
-- .NET 10 (`net10.0` and `net10.0-windows10.0.19041.0`)
-- Windows 10+ only for the main app (`AutoQAC.csproj` targets `net10.0-windows10.0.19041.0`)
-- `QueryPlugins` is cross-platform capable (`net10.0`) but only consumed by the Windows app
+- .NET SDK/runtime 10.0.203 detected locally via `dotnet --version`.
+- Desktop target for the main app: `net10.0-windows10.0.19041.0` in `AutoQAC/AutoQAC.csproj`.
+- Library target: `net10.0` in `QueryPlugins/QueryPlugins.csproj`.
+- Windows desktop process model: `[STAThread]` Avalonia startup in `AutoQAC/Program.cs`, Windows 10 compatibility manifest in `AutoQAC/app.manifest`, and Windows registry probing in `AutoQAC/Services/Plugin/PluginLoadingService.cs`.
 
 **Package Manager:**
-- NuGet (via `dotnet` CLI)
-- No `nuget.config` present; uses default NuGet feeds
-- No `global.json` present; relies on whatever SDK is installed
-- No `Directory.Build.props`; each `.csproj` is self-contained
+- NuGet via SDK-style `<PackageReference>` entries in `AutoQAC/AutoQAC.csproj`, `AutoQAC.Tests/AutoQAC.Tests.csproj`, `QueryPlugins/QueryPlugins.csproj`, and `QueryPlugins.Tests/QueryPlugins.Tests.csproj`.
+- npm is used only for local agent/tooling plugin folders: `.opencode/package.json` and `.kilocode/package.json`.
+- Lockfile: NuGet lock files are not present; npm lockfiles exist at `.opencode/package-lock.json` and `.kilocode/package-lock.json`.
 
 ## Frameworks
 
 **Core:**
-- Avalonia 11.3.12 - Cross-platform UI framework (Windows-only deployment)
-- ReactiveUI.Avalonia 11.3.8 - MVVM framework with reactive extensions
-- Microsoft.Extensions.DependencyInjection 10.0.3 - IoC container
+- Avalonia 12.0.1 - cross-platform UI framework used for the Windows desktop app; configured in `AutoQAC/Program.cs`, `AutoQAC/App.axaml`, and `AutoQAC/AutoQAC.csproj`.
+- Avalonia.Controls.DataGrid 12.0.0 - table/grid UI support referenced from `AutoQAC/AutoQAC.csproj` and used by `AutoQAC/Views/*.axaml`.
+- Avalonia.Themes.Fluent 12.0.1 and Avalonia.Fonts.Inter 12.0.1 - theme/font packages referenced in `AutoQAC/AutoQAC.csproj` and enabled by `.WithInterFont()` in `AutoQAC/Program.cs`.
+- CommunityToolkit.Mvvm 8.4.2 - source-generator MVVM attributes used in ViewModels such as `AutoQAC/ViewModels/AboutViewModel.cs`, `AutoQAC/ViewModels/SettingsViewModel.cs`, and `AutoQAC/ViewModels/MainWindow/ConfigurationViewModel.cs`.
+- Microsoft.Extensions.DependencyInjection 10.0.3 - application composition root and DI registrations in `AutoQAC/App.axaml.cs` and `AutoQAC/Infrastructure/ServiceCollectionExtensions.cs`.
+- Mutagen.Bethesda 0.53.1 family - Bethesda plugin load-order and record analysis support in `AutoQAC/Services/Plugin/PluginLoadingService.cs`, `AutoQAC/Services/Plugin/PluginIssueApproximationService.cs`, and `QueryPlugins/`.
+- YamlDotNet 16.3.0 - YAML serialization/deserialization for runtime configuration in `AutoQAC/Services/Configuration/ConfigurationService.cs` and validation in `AutoQAC/Services/Configuration/ConfigWatcherService.cs`.
+- Serilog 4.3.1 with Serilog.Sinks.Console 6.1.1 and Serilog.Sinks.File 7.0.0 - structured logging in `AutoQAC/Infrastructure/Logging/LoggingService.cs`.
+- System.Reactive APIs - observable/debounced configuration and UI pipelines in `AutoQAC/Services/Configuration/ConfigurationService.cs`, `AutoQAC/Services/Configuration/ConfigWatcherService.cs`, and `AutoQAC/Services/Monitoring/HangDetectionService.cs`.
 
 **Testing:**
-- xUnit 2.9.3 - Test runner and assertions
-- xunit.runner.visualstudio 3.1.5 - VS test adapter
-- FluentAssertions 8.8.0 - Fluent assertion library
-- NSubstitute 5.3.0 - Mocking framework
-- NSubstitute.Analyzers.CSharp 1.0.17 - Static analysis for NSubstitute usage
-- Microsoft.NET.Test.Sdk 18.0.1 - Test platform host
+- xUnit 2.9.3 - test runner for `AutoQAC.Tests/` and `QueryPlugins.Tests/`.
+- Microsoft.NET.Test.Sdk 18.0.1 - test SDK referenced in `AutoQAC.Tests/AutoQAC.Tests.csproj` and `QueryPlugins.Tests/QueryPlugins.Tests.csproj`.
+- FluentAssertions 8.8.0 - assertion library referenced by both test projects.
+- NSubstitute 5.3.0 and NSubstitute.Analyzers.CSharp 1.0.17 - mocking/analyzer packages referenced by both test projects.
+- coverlet.collector 8.0.0 and coverlet.msbuild 8.0.0 - Cobertura coverage collection configured in both test `.csproj` files.
 
 **Build/Dev:**
-- `dotnet build` / `dotnet test` / `dotnet run` (standard .NET CLI)
-- Solution format: `.slnx` (XML-based lightweight solution format)
-- `AutoQAC/app.manifest` declares Windows 10 compatibility
+- .NET SDK CLI - primary build, restore, run, and test commands from `README.md` and `AGENTS.md`.
+- SDK-style MSBuild projects - `AutoQAC/AutoQAC.csproj`, `AutoQAC.Tests/AutoQAC.Tests.csproj`, `QueryPlugins/QueryPlugins.csproj`, and `QueryPlugins.Tests/QueryPlugins.Tests.csproj`.
+- `.slnx` solution format - root solution file `AutoQACSharp.slnx` includes all four active projects.
+- AvaloniaUI.DiagnosticsSupport 2.2.1 - debug-only Avalonia developer tools support referenced in `AutoQAC/AutoQAC.csproj` and enabled in `AutoQAC/Program.cs` under `#if DEBUG`.
+- OpenSpec tooling configuration - artifact workflow metadata in `openspec/config.yaml` and project-local skills under `.claude/skills/` and `.opencode/skills/`.
+- Local agent plugin packages - `@opencode-ai/plugin`, `@kilocode/plugin` in `.opencode/package.json` and `@kilocode/plugin` in `.kilocode/package.json`.
 
 ## Key Dependencies
 
 **Critical:**
-
-| Package | Version | Purpose |
-|---------|---------|---------|
-| Avalonia | 11.3.12 | UI framework (core rendering, controls, themes) |
-| Avalonia.Desktop | 11.3.12 | Desktop platform backend |
-| Avalonia.Themes.Fluent | 11.3.12 | Fluent Design theme |
-| Avalonia.Fonts.Inter | 11.3.12 | Inter font family |
-| Avalonia.Controls.DataGrid | 11.3.12 | DataGrid control for plugin lists |
-| Avalonia.Diagnostics | 11.3.12 | Dev-only diagnostic overlay (excluded from Release builds) |
-| ReactiveUI.Avalonia | 11.3.8 | Reactive MVVM bindings for Avalonia |
-| Mutagen.Bethesda | 0.53.1 | Core Bethesda plugin handling (load orders, game locations) |
-| Mutagen.Bethesda.Skyrim | 0.53.1 | Skyrim-specific record types (LE, SE, VR, Enderal) |
-| Mutagen.Bethesda.Fallout4 | 0.53.1 | Fallout 4 specific record types |
-| Mutagen.Bethesda.Starfield | 0.53.1 | Starfield record types (QueryPlugins only) |
-| Mutagen.Bethesda.Oblivion | 0.53.1 | Oblivion record types (QueryPlugins only) |
+- `Avalonia` 12.0.1 - required for the desktop UI shell (`AutoQAC/Program.cs`, `AutoQAC/App.axaml.cs`, `AutoQAC/Views/*.axaml`).
+- `CommunityToolkit.Mvvm` 8.4.2 - required for `[ObservableProperty]`, `[RelayCommand]`, and generated ViewModel members in `AutoQAC/ViewModels/`.
+- `Mutagen.Bethesda` 0.53.1 and game packages - required for supported-game plugin discovery and approximation/analysis in `AutoQAC/Services/Plugin/PluginLoadingService.cs`, `AutoQAC/Services/Plugin/PluginIssueApproximationService.cs`, and `QueryPlugins/PluginQueryService.cs`.
+- `YamlDotNet` 16.3.0 - required to load and save `AutoQAC Data/*.yaml` in `AutoQAC/Services/Configuration/ConfigurationService.cs`.
+- `Serilog` 4.3.1 - required for operational logs and diagnostics through `AutoQAC/Infrastructure/Logging/ILoggingService.cs` and `AutoQAC/Infrastructure/Logging/LoggingService.cs`.
+- `Microsoft.Extensions.DependencyInjection` 10.0.3 - required for service/view/viewmodel wiring in `AutoQAC/Infrastructure/ServiceCollectionExtensions.cs`.
 
 **Infrastructure:**
-
-| Package | Version | Purpose |
-|---------|---------|---------|
-| Microsoft.Extensions.DependencyInjection | 10.0.3 | Service container (constructor injection) |
-| Serilog | 4.3.1 | Structured logging framework |
-| Serilog.Sinks.Console | 6.1.1 | Console log output (Warning+ in production) |
-| Serilog.Sinks.File | 7.0.0 | Rolling file log output (5MB limit, 5 retained) |
-| YamlDotNet | 16.3.0 | YAML serialization for configuration files |
-
-**Testing:**
-
-| Package | Version | Purpose |
-|---------|---------|---------|
-| coverlet.collector | 8.0.0 | Code coverage collector |
-| coverlet.msbuild | 8.0.0 | MSBuild coverage integration (auto-collects on `dotnet test`) |
+- `System.Diagnostics.Process` - launches xEdit and Mod Organizer 2 commands in `AutoQAC/Services/Process/ProcessExecutionService.cs` and `AutoQAC/Services/Cleaning/XEditCommandBuilder.cs`.
+- `Microsoft.Win32.Registry` - resolves Bethesda game install/data folders on Windows in `AutoQAC/Services/Plugin/PluginLoadingService.cs`.
+- `FileSystemWatcher` - watches user YAML settings for external edits in `AutoQAC/Services/Configuration/ConfigWatcherService.cs`.
+- `HttpClient` and `System.Text.Json` - checks latest GitHub release metadata in `AutoQAC/ViewModels/AboutViewModel.cs`.
+- `System.Text.Json` - writes backup session metadata and process PID tracking JSON in `AutoQAC/Services/Backup/BackupService.cs` and `AutoQAC/Services/Process/ProcessExecutionService.cs`.
 
 ## Configuration
 
-**Build Configuration:**
-- `AutoQAC/AutoQAC.csproj`: `WinExe` output, compiled Avalonia bindings enabled, COM interop enabled
-- `AutoQAC/AutoQAC.csproj`: Embeds build date as `AssemblyMetadata` via MSBuild `$([System.DateTime]::UtcNow)`
-- `AutoQAC/AutoQAC.csproj`: Copies `AutoQAC Data/` folder to output directory (`PreserveNewest`)
-- Debug vs Release: `Avalonia.Diagnostics` is included only in Debug builds
+**Environment:**
+- User-facing runtime settings are YAML files copied from `AutoQAC/AutoQAC Data/**` by `AutoQAC/AutoQAC.csproj`.
+- Bundled defaults, xEdit executable names, and skip lists live in `AutoQAC/AutoQAC Data/AutoQAC Main.yaml`.
+- User settings, selected game, paths, timeouts, CPU threshold, MO2 mode, and skip-list overrides live in `AutoQAC/AutoQAC Data/AutoQAC Settings.yaml`.
+- Debug builds resolve configuration from the repository `AutoQAC Data` directory when found; production builds use `AutoQAC Data` next to the executable in `AutoQAC/Services/Configuration/ConfigurationService.cs` and `AutoQAC/Services/Configuration/ConfigWatcherService.cs`.
+- No `.env` files are present in the repository scan; `.gitignore` excludes `*.env`.
 
-**Application Configuration:**
-- `AutoQAC Data/AutoQAC Main.yaml`: Bundled read-only config (skip lists, xEdit executable names, version info)
-- `AutoQAC Data/AutoQAC Settings.yaml`: User-editable config (game selection, paths, timeouts, MO2 mode)
-- No `.env` files; all configuration is file-based YAML
-- Config directory resolution walks up from `AppContext.BaseDirectory` in Debug mode to find the source `AutoQAC Data` folder
-
-**Coverage Configuration (both test projects):**
-- Auto-collected via MSBuild properties: `<CollectCoverage>true</CollectCoverage>`
-- Format: Cobertura XML
-- Output: `./TestResults/coverage/` per test project
-- Include/Exclude filters scope coverage to the project under test
+**Build:**
+- `AutoQACSharp.slnx` - root solution with four active projects.
+- `AutoQAC/AutoQAC.csproj` - Windows desktop app target, Avalonia compiled bindings, assets, copied YAML data, NuGet packages, and `QueryPlugins` project reference.
+- `QueryPlugins/QueryPlugins.csproj` - standalone Mutagen analysis library target and Mutagen package references.
+- `AutoQAC.Tests/AutoQAC.Tests.csproj` and `QueryPlugins.Tests/QueryPlugins.Tests.csproj` - test and coverage configuration.
+- `AutoQAC/app.manifest` - Windows 10 compatibility manifest for the desktop executable.
+- `openspec/config.yaml` - OpenSpec schema configuration for planning artifacts.
 
 ## Platform Requirements
 
 **Development:**
-- .NET 10 SDK (no `global.json` pins a specific version)
-- Windows 10+ (Windows SDK 10.0.19041.0 for the main app)
-- `dotnet build AutoQACSharp.slnx` builds all four projects
-- `dotnet test AutoQACSharp.slnx` runs tests with auto-coverage
-- `dotnet run --project AutoQAC/AutoQAC.csproj` launches the app
+- Windows 10 or Windows 11 for registry probing, xEdit process behavior, and `net10.0-windows10.0.19041.0` desktop target.
+- .NET 10 SDK; local environment reports SDK `10.0.203`.
+- xEdit executable such as `SSEEdit.exe`, `FO4Edit.exe`, or `xEdit64.exe`; command construction is in `AutoQAC/Services/Cleaning/XEditCommandBuilder.cs`.
+- Optional Mod Organizer 2 executable `ModOrganizer.exe`; MO2 validation is in `AutoQAC/Services/MO2/MO2ValidationService.cs`.
 
 **Production:**
-- Windows 10 or later (declared in `app.manifest`)
-- .NET 10 runtime (framework-dependent deployment)
-- Pre-built release in `Release/` directory includes `AutoQAC.exe` plus native Avalonia/Skia dependencies
-- Native DLLs bundled: `libSkiaSharp.dll`, `libHarfBuzzSharp.dll`, `av_libglesv2.dll`, `D3DCompiler_47_cor3.dll`, WPF interop DLLs
-
-## Mutagen Submodule
-
-- Git submodule at `Mutagen/` pinned to tag `0.53.1` (commit `bdbb6ff`)
-- Read-only reference; do not build or modify
-- Local docs available in `docs/mutagen/` for fast lookups
-- Package references in project files match the submodule version (0.53.1)
-
-## Solution Structure
-
-```
-AutoQACSharp.slnx
-  AutoQAC/AutoQAC.csproj           - Main desktop app (WinExe, net10.0-windows)
-  AutoQAC.Tests/AutoQAC.Tests.csproj - App test project (net10.0-windows)
-  QueryPlugins/QueryPlugins.csproj   - Plugin analysis library (net10.0)
-  QueryPlugins.Tests/QueryPlugins.Tests.csproj - Library tests (net10.0)
-```
-
-**Project References:**
-- `AutoQAC` depends on `QueryPlugins`
-- `AutoQAC.Tests` depends on both `AutoQAC` and `QueryPlugins`
-- `QueryPlugins.Tests` depends on `QueryPlugins`
+- Windows desktop deployment. The repository does not contain root `.github/workflows/*` CI/CD files or publish profiles.
+- Runtime writes operational logs under `logs/` next to the executable through `AutoQAC/Infrastructure/Logging/LoggingService.cs` and `AutoQAC/Infrastructure/Logging/LogFilePaths.cs`.
+- Runtime writes backup sessions under `AutoQAC Backups/` next to the game `Data` directory via `AutoQAC/Services/Backup/BackupService.cs`.
 
 ---
 
-*Stack analysis: 2026-03-30*
+*Stack analysis: 2026-04-28*
