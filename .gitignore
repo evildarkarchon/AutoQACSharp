@@ -479,3 +479,5 @@ test_output.txt
 .codex/test-bin/
 .opencode-obj
 .opencode-out
+# CocoIndex Code (ccc)
+/.cocoindex_code/

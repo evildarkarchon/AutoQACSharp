@@ -320,7 +320,7 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         // user's selection on disk.
         XEditPath = path;
         _stateService.UpdateConfigurationPaths(LoadOrderPath, Mo2Path, path);
-        await SaveConfigurationAsync();
+        await SaveConfigurationAsync(flushToDisk: true);
     }
 
     [RelayCommand]
@@ -335,7 +335,7 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         // See ConfigureXEditAsync — VM property must be set synchronously before save.
         Mo2Path = path;
         _stateService.UpdateConfigurationPaths(LoadOrderPath, path, XEditPath);
-        await SaveConfigurationAsync();
+        await SaveConfigurationAsync(flushToDisk: true);
     }
 
     private bool CanConfigureGameDataFolder() => IsGameSelected;
@@ -497,7 +497,11 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         PartialFormsEnabled = state.PartialFormsEnabled;
     }
 
-    private async Task SaveConfigurationAsync()
+    /// <summary>
+    /// Saves the current main-window configuration values, optionally forcing the
+    /// debounced configuration write to disk before returning for explicit Browse saves.
+    /// </summary>
+    private async Task SaveConfigurationAsync(bool flushToDisk = false)
     {
         var config = await _configService.LoadUserConfigAsync();
 
@@ -507,6 +511,10 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         config.Settings.DisableSkipLists = DisableSkipListsEnabled;
 
         await _configService.SaveUserConfigAsync(config);
+        if (flushToDisk)
+        {
+            await _configService.FlushPendingSavesAsync();
+        }
     }
 
     private async Task RefreshPluginsForGameAsync(GameType gameType)

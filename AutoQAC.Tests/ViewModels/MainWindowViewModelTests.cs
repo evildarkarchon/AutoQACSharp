@@ -10,6 +10,7 @@ using AutoQAC.Services.State;
 using AutoQAC.Services.UI;
 using AutoQAC.Tests.TestInfrastructure;
 using AutoQAC.ViewModels;
+using AutoQAC.ViewModels.MainWindow;
 using FluentAssertions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
@@ -1137,6 +1138,63 @@ public sealed class MainWindowViewModelTests
         savedConfig.Should().NotBeNull("SaveUserConfigAsync should be invoked after picking a new path");
         savedConfig!.XEdit.Binary.Should().Be(newPath,
             "the persisted xEdit path must reflect the user's just-selected file, not the stale VM property");
+    }
+
+    [Fact]
+    public async Task ConfigureXEditAsync_ShouldFlushBrowseSelectionToDisk()
+    {
+        // Arrange
+        const string oldPath = @"C:\Tools\xEdit-old\xEdit.exe";
+        const string newPath = @"C:\Tools\xEdit-new\xEdit.exe";
+        var configDirectory = Path.Combine(Path.GetTempPath(), "AutoQAC_XEditBrowse_" + Guid.NewGuid());
+        Directory.CreateDirectory(configDirectory);
+
+        var configService = new ConfigurationService(Substitute.For<ILoggingService>(), configDirectory);
+        var freshService = new ConfigurationService(Substitute.For<ILoggingService>(), configDirectory);
+        try
+        {
+            await configService.SaveUserConfigAsync(new UserConfiguration
+            {
+                LoadOrder = new(),
+                XEdit = new() { Binary = oldPath },
+                ModOrganizer = new(),
+                Settings = new()
+            });
+            await configService.FlushPendingSavesAsync();
+
+            var fileDialog = Substitute.For<IFileDialogService>();
+            fileDialog.OpenFileDialogAsync("Select xEdit Executable", Arg.Any<string>())
+                .Returns(newPath);
+
+            var stateService = new StateService();
+            var vm = new ConfigurationViewModel(
+                configService,
+                stateService,
+                Substitute.For<ILoggingService>(),
+                fileDialog,
+                _messageDialogMock,
+                _pluginServiceMock,
+                _pluginLoadingServiceMock);
+            await vm.InitializeAsync();
+
+            // Act
+            await vm.ConfigureXEditCommand.ExecuteAsync(null);
+
+            // Assert
+            var loaded = await freshService.LoadUserConfigAsync();
+            loaded.XEdit.Binary.Should().Be(newPath,
+                "the Browse button is an explicit save action and should be durable without waiting for the debounce timer");
+            stateService.CurrentState.XEditExecutablePath.Should().Be(newPath);
+        }
+        finally
+        {
+            await configService.DisposeAsync();
+            await freshService.DisposeAsync();
+            if (Directory.Exists(configDirectory))
+            {
+                Directory.Delete(configDirectory, true);
+            }
+        }
     }
 
     [Fact]
