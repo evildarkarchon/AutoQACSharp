@@ -144,9 +144,10 @@ public class XEditCommandBuilderTests
 
         var nestedPayload = result.ArgumentList[3];
         nestedPayload.Should().Contain("-autoload");
-        nestedPayload.Should().Contain(WorstCasePluginName);
         nestedPayload.Should().NotContain(plugin.FullPath, "D-07 requires MO2 -autoload to use the file-name-only target");
-        ParseWindowsCommandLine(nestedPayload).Should().Equal("-FO4", "-QAC", "-autoexit", "-autoload", WorstCasePluginName);
+        var parsedPayload = ParseWindowsCommandLine(nestedPayload);
+        parsedPayload.Should().Contain(WorstCasePluginName);
+        parsedPayload.Should().Equal("-FO4", "-QAC", "-autoexit", "-autoload", WorstCasePluginName);
     }
 
     [Theory]
@@ -159,7 +160,9 @@ public class XEditCommandBuilderTests
         var formatted = InvokeFormatMo2NestedArgument(nestedValue);
 
         // Assert
-        ParseWindowsCommandLine(formatted).Should().Equal(nestedValue, "D-06 requires MO2 -a to remain one value while its nested tokens survive MO2's parser");
+        ParseWindowsCommandLine(formatted).Should().Equal(
+            [nestedValue],
+            "D-06 requires MO2 -a to remain one value while its nested tokens survive MO2's parser");
     }
 
     private static PluginInfo CreatePlugin(string fileName, string? fullPath = null)

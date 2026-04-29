@@ -14,6 +14,10 @@ public interface IXEditCommandBuilder
 
 public sealed class XEditCommandBuilder(IStateService stateService) : IXEditCommandBuilder
 {
+    /// <summary>
+    /// Builds the direct xEdit or MO2-wrapped process start contract for cleaning a single plugin.
+    /// Returns <see langword="null"/> when required launch configuration is missing or the game type is unknown.
+    /// </summary>
     public ProcessStartInfo? BuildCommand(PluginInfo plugin, GameType gameType)
     {
         if (gameType == GameType.Unknown)
@@ -26,53 +30,123 @@ public sealed class XEditCommandBuilder(IStateService stateService) : IXEditComm
 
         if (string.IsNullOrEmpty(xEditPath)) return null;
 
-        var args = new List<string>();
+        var args = BuildXEditArguments(plugin, gameType, config.PartialFormsEnabled, xEditPath);
 
-        // 1. Game Type Flag (if universal)
+        if (config.Mo2ModeEnabled && !string.IsNullOrEmpty(config.Mo2ExecutablePath))
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = config.Mo2ExecutablePath,
+                WorkingDirectory = Path.GetDirectoryName(config.Mo2ExecutablePath),
+                UseShellExecute = false
+            };
+
+            startInfo.ArgumentList.Add("run");
+            startInfo.ArgumentList.Add(xEditPath);
+            startInfo.ArgumentList.Add("-a");
+            startInfo.ArgumentList.Add(BuildMo2NestedPayload(args));
+
+            return startInfo;
+        }
+
+        var directStartInfo = new ProcessStartInfo
+        {
+            FileName = xEditPath,
+            WorkingDirectory = Path.GetDirectoryName(xEditPath),
+            UseShellExecute = false
+        };
+
         var xEditName = Path.GetFileNameWithoutExtension(xEditPath);
         if (xEditName.StartsWith("xEdit", StringComparison.OrdinalIgnoreCase))
         {
-             args.Add(GetGameFlag(gameType));
+            directStartInfo.ArgumentList.Add(GetGameFlag(gameType));
         }
-        
-        // 2. Core Flags
-        args.Add("-QAC");
-        args.Add("-autoexit");
-        args.Add($"-autoload \"{plugin.FileName}\"");
 
-        // 3. Partial Forms
+        directStartInfo.ArgumentList.Add("-QAC");
+        directStartInfo.ArgumentList.Add("-autoexit");
+        // Lock the parsed argv intent of the old -autoload "Plugin.esp" command string without shell quoting.
+        directStartInfo.ArgumentList.Add("-autoload");
+        directStartInfo.ArgumentList.Add(plugin.FileName);
+
         if (config.PartialFormsEnabled)
         {
-             args.Add("-iknowwhatimdoing");
-             args.Add("-allowmakepartial");
+            directStartInfo.ArgumentList.Add("-iknowwhatimdoing");
+            directStartInfo.ArgumentList.Add("-allowmakepartial");
         }
 
-        var xEditArgs = string.Join(" ", args);
+        return directStartInfo;
+    }
 
-        // 4. MO2 Wrapping
-        if (config.Mo2ModeEnabled && !string.IsNullOrEmpty(config.Mo2ExecutablePath))
+    private static List<string> BuildXEditArguments(PluginInfo plugin, GameType gameType, bool partialFormsEnabled, string xEditPath)
+    {
+        var args = new List<string>();
+
+        var xEditName = Path.GetFileNameWithoutExtension(xEditPath);
+        if (xEditName.StartsWith("xEdit", StringComparison.OrdinalIgnoreCase))
         {
-            // Escape quotes in xEditArgs for the -a parameter
-            // We need to ensure that quotes inside xEditArgs are escaped so they don't break the outer quotes of -a "..."
-            var escapedXEditArgs = xEditArgs.Replace("\"", "\\\"");
-            var mo2Args = $"run \"{xEditPath}\" -a \"{escapedXEditArgs}\"";
-            
-            return new ProcessStartInfo
-            {
-                FileName = config.Mo2ExecutablePath,
-                Arguments = mo2Args,
-                WorkingDirectory = Path.GetDirectoryName(config.Mo2ExecutablePath)
-            };
+            args.Add(GetGameFlag(gameType));
         }
-        else
+
+        args.Add("-QAC");
+        args.Add("-autoexit");
+        // Lock the parsed argv intent of the old -autoload "Plugin.esp" command string without shell quoting.
+        args.Add("-autoload");
+        args.Add(plugin.FileName);
+
+        if (partialFormsEnabled)
         {
-            return new ProcessStartInfo
-            {
-                FileName = xEditPath,
-                Arguments = xEditArgs,
-                WorkingDirectory = Path.GetDirectoryName(xEditPath)
-            };
+            args.Add("-iknowwhatimdoing");
+            args.Add("-allowmakepartial");
         }
+
+        return args;
+    }
+
+    private static string BuildMo2NestedPayload(IReadOnlyList<string> args)
+    {
+        var formattedArgs = new List<string>(args.Count);
+        foreach (var arg in args)
+        {
+            formattedArgs.Add(FormatMo2NestedArgument(arg));
+        }
+
+        return string.Join(" ", formattedArgs);
+    }
+
+    /// <summary>
+    /// Formats one xEdit token for MO2's nested <c>-a</c> payload using Microsoft CRT quote/backslash rules.
+    /// MO2 owns a second parser boundary, so this is intentionally different from direct mode's raw <see cref="ProcessStartInfo.ArgumentList"/> tokens.
+    /// </summary>
+    private static string FormatMo2NestedArgument(string argument)
+    {
+        var formatted = new System.Text.StringBuilder();
+        formatted.Append('"');
+
+        var backslashes = 0;
+        foreach (var c in argument)
+        {
+            if (c == '\\')
+            {
+                backslashes++;
+                continue;
+            }
+
+            if (c == '"')
+            {
+                formatted.Append('\\', backslashes * 2 + 1);
+                formatted.Append('"');
+                backslashes = 0;
+                continue;
+            }
+
+            formatted.Append('\\', backslashes);
+            backslashes = 0;
+            formatted.Append(c);
+        }
+
+        formatted.Append('\\', backslashes * 2);
+        formatted.Append('"');
+        return formatted.ToString();
     }
 
     private static string GetGameFlag(GameType gameType) => gameType switch
