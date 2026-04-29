@@ -106,10 +106,17 @@ public enum BackupRetentionRowStatus
 /// <summary>
 /// Byte-level progress for a backup or restore file copy.
 /// </summary>
-/// <param name="FileName">The file name being copied, suitable for UI display.</param>
-/// <param name="BytesCopied">Bytes copied so far.</param>
-/// <param name="TotalBytes">Total bytes when known.</param>
-public sealed record BackupCopyProgress(string FileName, long BytesCopied, long? TotalBytes);
+/// <param name="FileName">The file or session name being processed, suitable for UI display.</param>
+/// <param name="BytesCopied">Bytes copied so far, or zero for count-only operations.</param>
+/// <param name="TotalBytes">Total bytes when known; null for count-only operations.</param>
+/// <param name="FilesCompleted">Count of files or sessions completed for count-based progress.</param>
+/// <param name="TotalFiles">Total files or sessions when known.</param>
+public sealed record BackupCopyProgress(
+    string FileName,
+    long BytesCopied,
+    long? TotalBytes,
+    int FilesCompleted = 0,
+    int? TotalFiles = null);
 
 /// <summary>
 /// Structured result from a single copy operation without raw exception text.

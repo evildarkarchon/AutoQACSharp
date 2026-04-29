@@ -315,9 +315,12 @@ public sealed class BackupService : IBackupService
 
         var currentSessionFullPath = GetComparableFullPath(currentSessionDir);
         var validSessions = await ClassifyRetentionDirectoriesAsync(backupRoot, rows, ct).ConfigureAwait(false);
+        var retentionTotal = rows.Count + validSessions.Count;
+        ReportRetentionProgress(progress, backupRoot, rows.Count, retentionTotal);
         if (ct.IsCancellationRequested)
         {
             AddRemainingRetentionRows(validSessions, rows, currentSessionFullPath);
+            ReportRetentionProgress(progress, backupRoot, rows.Count, rows.Count);
             return new BackupRetentionCleanupResult(BackupOperationStatus.Canceled, rows);
         }
 
@@ -331,12 +334,14 @@ public sealed class BackupService : IBackupService
         foreach (var session in kept)
         {
             rows.Add(new BackupRetentionRowResult(session.Directory, BackupRetentionRowStatus.Kept, null));
+            ReportRetentionProgress(progress, session.Directory, rows.Count, retentionTotal);
         }
 
         var currentSession = validSessions.FirstOrDefault(session => IsSamePath(session.Directory, currentSessionFullPath));
         if (currentSession is not null)
         {
             rows.Add(new BackupRetentionRowResult(currentSession.Directory, BackupRetentionRowStatus.Kept, null));
+            ReportRetentionProgress(progress, currentSession.Directory, rows.Count, retentionTotal);
         }
 
         foreach (var session in validNonCurrent.Skip(keepNonCurrent))
@@ -344,9 +349,11 @@ public sealed class BackupService : IBackupService
             ct.ThrowIfCancellationRequested();
             var deleteResult = await DeleteRetentionCandidateAsync(session.Directory, ct).ConfigureAwait(false);
             rows.Add(deleteResult.Row);
+            ReportRetentionProgress(progress, session.Directory, rows.Count, retentionTotal);
             if (deleteResult.Canceled)
             {
                 AddRemainingRetentionRows(validNonCurrent.Skip(keepNonCurrent).Where(candidate => candidate.Directory != session.Directory), rows, currentSessionFullPath);
+                ReportRetentionProgress(progress, session.Directory, rows.Count, rows.Count);
                 return new BackupRetentionCleanupResult(BackupOperationStatus.Canceled, rows);
             }
         }
@@ -375,13 +382,17 @@ public sealed class BackupService : IBackupService
         IProgress<BackupCopyProgress>? progress,
         CancellationToken ct)
     {
-        var backupPath = Path.Combine(sessionDir, entry.FileName);
+        if (!ValidateRestoreEntry(entry, sessionDir, out var backupPath, out var targetPath, out var failureReason))
+        {
+            return new BackupRestoreRowResult(entry.FileName, BackupRestoreRowStatus.Failed, failureReason, 0, entry.FileSizeBytes);
+        }
+
         if (!File.Exists(backupPath))
         {
             return new BackupRestoreRowResult(entry.FileName, BackupRestoreRowStatus.Failed, BackupFailureReason.MissingBackupFile, 0, entry.FileSizeBytes);
         }
 
-        var targetDir = Path.GetDirectoryName(entry.OriginalPath);
+        var targetDir = Path.GetDirectoryName(targetPath);
         try
         {
             if (!string.IsNullOrEmpty(targetDir))
@@ -397,7 +408,7 @@ public sealed class BackupService : IBackupService
 
         var copyResult = await _fileCopier.CopyAsync(
             backupPath,
-            entry.OriginalPath,
+            targetPath,
             BackupCopyOptions.AtomicReplace,
             progress,
             ct).ConfigureAwait(false);
@@ -418,6 +429,87 @@ public sealed class BackupService : IBackupService
         BackupFailureReason.TargetFolderCreationFailed => BackupFailureReason.TargetFolderCreationFailed,
         _ => BackupFailureReason.TargetWriteFailed
     };
+
+    /// <summary>
+    /// Validates untrusted restore metadata before it is used for source or target filesystem paths.
+    /// Backup file names must remain simple session-contained names, and restore targets must be rooted paths
+    /// that can be normalized before overwrite attempts.
+    /// </summary>
+    private static bool ValidateRestoreEntry(
+        BackupPluginEntry entry,
+        string sessionDir,
+        out string backupPath,
+        out string targetPath,
+        out BackupFailureReason failureReason)
+    {
+        backupPath = string.Empty;
+        targetPath = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(entry.FileName) ||
+            Path.IsPathRooted(entry.FileName) ||
+            !string.Equals(Path.GetFileName(entry.FileName), entry.FileName, StringComparison.Ordinal))
+        {
+            failureReason = BackupFailureReason.MissingBackupFile;
+            return false;
+        }
+
+        try
+        {
+            var sessionRoot = EnsureTrailingDirectorySeparator(Path.GetFullPath(sessionDir));
+            var resolvedBackupPath = Path.GetFullPath(Path.Combine(sessionRoot, entry.FileName));
+            if (!resolvedBackupPath.StartsWith(sessionRoot, StringComparison.OrdinalIgnoreCase))
+            {
+                failureReason = BackupFailureReason.MissingBackupFile;
+                return false;
+            }
+
+            backupPath = resolvedBackupPath;
+        }
+        catch (Exception ex) when (ex is ArgumentException or IOException or NotSupportedException or UnauthorizedAccessException)
+        {
+            failureReason = BackupFailureReason.MissingBackupFile;
+            return false;
+        }
+
+        try
+        {
+            if (string.IsNullOrWhiteSpace(entry.OriginalPath) || !Path.IsPathRooted(entry.OriginalPath))
+            {
+                failureReason = BackupFailureReason.TargetFolderCreationFailed;
+                return false;
+            }
+
+            targetPath = Path.GetFullPath(entry.OriginalPath);
+            failureReason = default;
+            return true;
+        }
+        catch (Exception ex) when (ex is ArgumentException or IOException or NotSupportedException or UnauthorizedAccessException)
+        {
+            failureReason = BackupFailureReason.TargetFolderCreationFailed;
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Ensures session containment checks compare against a directory prefix instead of a similarly named sibling.
+    /// </summary>
+    private static string EnsureTrailingDirectorySeparator(string path) =>
+        Path.EndsInDirectorySeparator(path) ? path : path + Path.DirectorySeparatorChar;
+
+    /// <summary>
+    /// Reports count-only retention cleanup progress through the shared backup progress model.
+    /// </summary>
+    private static void ReportRetentionProgress(
+        IProgress<BackupCopyProgress>? progress,
+        string sessionDirectory,
+        int filesCompleted,
+        int totalFiles) =>
+        progress?.Report(new BackupCopyProgress(
+            Path.GetFileName(sessionDirectory),
+            BytesCopied: 0,
+            TotalBytes: null,
+            filesCompleted,
+            totalFiles));
 
     private static BackupOperationStatus GetRestoreStatus(IReadOnlyCollection<BackupRestoreRowResult> rows)
     {

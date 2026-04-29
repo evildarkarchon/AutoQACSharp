@@ -701,6 +701,31 @@ public sealed class BackupServiceTests : IDisposable
             row.DisplayReason == "Cleanup deletion failed");
     }
 
+    /// <summary>
+    /// Verifies retention cleanup emits advancing count progress rather than only a static active operation.
+    /// </summary>
+    [Fact]
+    public async Task CleanupOldSessionsAsync_ReportsRetentionCountProgress()
+    {
+        // Arrange
+        var backupRoot = Path.Combine(_testRoot, "cleanup_async_progress");
+        await CreateSessionDirectoryWithMetadata(backupRoot, "2026-01-01_10-00-00");
+        await CreateSessionDirectoryWithMetadata(backupRoot, "2026-01-02_10-00-00");
+        var progressUpdates = new List<BackupCopyProgress>();
+
+        // Act
+        await _sut.CleanupOldSessionsAsync(
+            backupRoot,
+            maxSessionCount: 1,
+            progress: new Progress<BackupCopyProgress>(progressUpdates.Add));
+
+        // Assert
+        progressUpdates.Should().NotBeEmpty("retention cleanup must publish count progress for the UI");
+        progressUpdates.Should().Contain(update => update.TotalFiles == 2 && update.FilesCompleted > 0);
+        progressUpdates[^1].FilesCompleted.Should().Be(2);
+        progressUpdates[^1].TotalFiles.Should().Be(2);
+    }
+
     #endregion
 
     #region GetBackupRoot
