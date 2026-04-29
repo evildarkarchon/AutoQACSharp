@@ -331,6 +331,34 @@ public sealed class BackupServiceTests : IDisposable
             "Restore All must continue after an earlier plugin failure");
     }
 
+    /// <summary>
+    /// Verifies that structured restore recreates a missing target directory before copying the backup.
+    /// </summary>
+    [Fact]
+    public async Task RestorePluginAsync_MissingTargetDirectory_RecreatesDirectory()
+    {
+        // Arrange
+        var sessionDir = Path.Combine(_testRoot, "restore_missing_target_dir_session");
+        Directory.CreateDirectory(sessionDir);
+        File.WriteAllText(Path.Combine(sessionDir, "Recreate.esp"), "backup content");
+
+        var targetPath = Path.Combine(_testRoot, "missing_target_dir", "nested", "Recreate.esp");
+        var entry = new BackupPluginEntry
+        {
+            FileName = "Recreate.esp",
+            OriginalPath = targetPath,
+            FileSizeBytes = 14
+        };
+
+        // Act
+        var result = await _sut.RestorePluginAsync(entry, sessionDir);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Complete);
+        Directory.Exists(Path.GetDirectoryName(targetPath)!).Should().BeTrue();
+        File.ReadAllText(targetPath).Should().Be("backup content");
+    }
+
     [Fact]
     public async Task RestorePluginAsync_CanceledAtomicRestore_PreservesExistingTarget()
     {
@@ -369,7 +397,7 @@ public sealed class BackupServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task RestorePluginAsync_TargetFolderCreationFailure_ReturnsConciseReason()
+    public async Task RestorePluginAsync_TargetFolderCreationFailure_ReturnsFailedRow()
     {
         // Arrange
         var sessionDir = Path.Combine(_testRoot, "restore_bad_target_session");

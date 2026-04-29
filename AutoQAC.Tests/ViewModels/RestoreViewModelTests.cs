@@ -107,7 +107,7 @@ public sealed class RestoreViewModelTests
     }
 
     [Fact]
-    public async Task RestoreAllCommand_ShouldKeepPartialRestoreRowsVisibleInline()
+    public async Task RestoreAll_PartialResult_KeepsInlineRowsVisible()
     {
         var session = CreateSession(CreatePlugin("Update.esm"), CreatePlugin("Missing.esp"));
         _messageDialog.ShowConfirmAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
@@ -222,7 +222,7 @@ public sealed class RestoreViewModelTests
     }
 
     [Fact]
-    public async Task DisablesCommands_ShouldDisableRestoreAndDeleteCommandsWhileRestoreActive()
+    public async Task CancelRestore_DisablesCommands()
     {
         var plugin = CreatePlugin("Update.esm");
         var session = CreateSession(plugin);

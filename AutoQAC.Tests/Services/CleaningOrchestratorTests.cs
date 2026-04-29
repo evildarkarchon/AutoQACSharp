@@ -1899,6 +1899,40 @@ public sealed class CleaningOrchestratorTests
 
     #endregion
 
+    #region Sequential Source Guard Tests
+
+    /// <summary>
+    /// Verifies that the orchestrator source does not introduce parallel plugin cleaning constructs.
+    /// </summary>
+    [Fact]
+    public void CleaningOrchestrator_Source_DoesNotParallelizePluginCleaning()
+    {
+        // Arrange
+        var source = File.ReadAllText(GetSourcePath("AutoQAC", "Services", "Cleaning", "CleaningOrchestrator.cs"));
+
+        // Act & Assert
+        source.Should().NotContain("Task.WhenAll", "plugin cleaning must remain sequential");
+        source.Should().NotContain("Parallel.ForEachAsync", "plugin cleaning must remain sequential");
+        source.Should().NotContain("Task.Run", "plugin-loop work must not be parallelized through task scheduling");
+        source.IndexOf("BackupPluginAsync", StringComparison.Ordinal).Should().BeLessThan(
+            source.IndexOf("CleanPluginAsync", StringComparison.Ordinal),
+            "backup invocation must remain before the sequential xEdit cleaning call");
+    }
+
+    private static string GetSourcePath(params string[] segments)
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "AutoQACSharp.slnx")))
+        {
+            directory = directory.Parent;
+        }
+
+        directory.Should().NotBeNull("tests should run under the repository root");
+        return Path.Combine(new[] { directory!.FullName }.Concat(segments).ToArray());
+    }
+
+    #endregion
+
     #region Dispose Tests
 
     /// <summary>
