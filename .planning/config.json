@@ -41,6 +41,5 @@
   "granularity": "fine",
   "features": {
     "global_learnings": true
-  },
-  "context_window": 1000000
+  }
 }
