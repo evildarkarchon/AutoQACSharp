@@ -90,6 +90,15 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
     [ObservableProperty]
     private bool _isPreviewMode;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ActiveOperationLabel))]
+    [NotifyPropertyChangedFor(nameof(IsBackupOperationActive))]
+    [NotifyPropertyChangedFor(nameof(IsBackupCancelVisible))]
+    [NotifyPropertyChangedFor(nameof(IsCleanupCancelVisible))]
+    [NotifyPropertyChangedFor(nameof(BackupOperationProgressText))]
+    [NotifyCanExecuteChangedFor(nameof(CancelBackupOperationCommand))]
+    private BackupOperationState? _backupOperation;
+
     public ObservableCollection<DryRunResult> DryRunResults { get; } = new();
 
     public string PreviewDisclaimer => "Preview only -- does not detect ITMs/UDRs (requires xEdit)";
@@ -103,6 +112,30 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
     public string ProgressText => Total > 0
         ? $"{Progress} / {Total} ({Progress * 100 / Total}%)"
         : "0 / 0 (0%)";
+
+    public string ActiveOperationLabel => BackupOperation is { IsActive: true } operation
+        ? operation.Label
+        : CurrentPlugin is { Length: > 0 } plugin
+            ? $"Cleaning: {plugin}"
+            : "Cleaning:";
+
+    public bool IsBackupOperationActive => BackupOperation is { IsActive: true };
+
+    public bool IsBackupCancelVisible => BackupOperation is
+    {
+        IsActive: true,
+        CanCancel: true,
+        Kind: BackupOperationKind.Backup
+    };
+
+    public bool IsCleanupCancelVisible => BackupOperation is
+    {
+        IsActive: true,
+        CanCancel: true,
+        Kind: BackupOperationKind.RetentionCleanup
+    };
+
+    public string BackupOperationProgressText => FormatBackupOperationProgress(BackupOperation);
 
     /// <summary>Event raised when the window should close.</summary>
     public event EventHandler? CloseRequested;
@@ -170,6 +203,12 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
         await _orchestrator.ForceStopCleaningAsync();
     }
 
+    /// <summary>
+    /// Requests cancellation of the active backup or retention file operation without using the xEdit Stop path.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanCancelBackupOperation))]
+    private async System.Threading.Tasks.Task CancelBackupOperationAsync() => await _orchestrator.CancelBackupOperationAsync();
+
     private void OnStateChanged(AppState state)
     {
         if (state.IsCleaning && !_wasPreviouslyCleaning)
@@ -180,11 +219,48 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
 
         IsCleaning = state.IsCleaning;
         CurrentPlugin = state.CurrentPlugin;
+        OnPropertyChanged(nameof(ActiveOperationLabel));
         Progress = state.Progress;
         Total = state.TotalPlugins;
         CleanedCount = state.CleanedPlugins.Count;
         SkippedCount = state.SkippedPlugins.Count;
         FailedCount = state.FailedPlugins.Count;
+        BackupOperation = state.BackupOperation is { IsActive: true } operation ? operation : null;
+    }
+
+    private bool CanCancelBackupOperation() => BackupOperation is { IsActive: true, CanCancel: true };
+
+    /// <summary>
+    /// Formats count-only retention progress or byte-aware backup copy progress for the cleaning progress band.
+    /// </summary>
+    /// <param name="operation">The currently active non-xEdit file operation, or null when no file work is active.</param>
+    /// <returns>A concise user-facing progress string; empty when no operation is active.</returns>
+    private static string FormatBackupOperationProgress(BackupOperationState? operation)
+    {
+        if (operation is not { IsActive: true })
+        {
+            return string.Empty;
+        }
+
+        var totalFiles = operation.TotalFiles ?? 0;
+        var countText = totalFiles > 0
+            ? $"{operation.FilesCompleted} / {totalFiles} files"
+            : $"{operation.FilesCompleted} files";
+
+        return operation.TotalBytes is > 0
+            ? $"{countText} — {FormatBytes(operation.BytesCopied)} / {FormatBytes(operation.TotalBytes.Value)}"
+            : countText;
+    }
+
+    /// <summary>
+    /// Converts byte counts to the decimal display convention used by Phase 7 copy progress text.
+    /// </summary>
+    /// <param name="bytes">The byte count reported by the backup copy operation.</param>
+    /// <returns>A one-decimal megabyte string suitable for UI binding.</returns>
+    private static string FormatBytes(long bytes)
+    {
+        const double BytesPerMegabyte = 1024.0 * 1024.0;
+        return $"{bytes / BytesPerMegabyte:0.0} MB";
     }
 
     private void OnDetailedResult(PluginCleaningResult result)
@@ -251,6 +327,7 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
         WillSkipCount = 0;
         IsTerminating = false;
         IsHangWarningVisible = false;
+        BackupOperation = null;
         _hangWarningDismissed = false;
     }
 
