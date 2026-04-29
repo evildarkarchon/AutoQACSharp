@@ -1288,6 +1288,21 @@ public sealed class BackupServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task DeleteSessionAsync_SingleArgConstructor_UsesDirectoryBackupSessionDeleter()
+    {
+        var backupRoot = Path.Combine(_testRoot, "Backups");
+        var sessionDir = Path.Combine(backupRoot, "2026-04-29_08-00-00");
+        Directory.CreateDirectory(sessionDir);
+        var sut = new BackupService(_mockLogger);
+        var session = new BackupSession { SessionDirectory = sessionDir, Plugins = [] };
+
+        var result = await sut.DeleteSessionAsync(session, backupRoot, CancellationToken.None);
+
+        result.Status.Should().Be(BackupSessionDeleteStatus.Deleted);
+        Directory.Exists(sessionDir).Should().BeFalse("the convenience constructor must still wire the default directory deleter");
+    }
+
+    [Fact]
     public async Task DeleteSessionAsync_DeleterThrowsIOException_ReturnsFailedAndLogsTechnicalDetails()
     {
         var backupRoot = Path.Combine(_testRoot, "Backups");

@@ -41,7 +41,7 @@ public sealed class BackupService : IBackupService
     /// </summary>
     /// <param name="logger">Logger for technical diagnostics that should not be exposed in user-facing result rows.</param>
     public BackupService(ILoggingService logger)
-        : this(new BackupFileCopier(logger), logger)
+        : this(new BackupFileCopier(logger), logger, sessionDeleter: null)
     {
     }
 
