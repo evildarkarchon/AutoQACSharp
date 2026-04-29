@@ -304,7 +304,7 @@ public sealed class RestoreViewModelTests
 
         await vm.RestoreAllCommand.ExecuteAsync(null);
 
-        vm.RestoreProgressText.Should().Be("Restoring 0 / 1 plugins — 38.4 MB / 120.0 MB");
+        vm.RestoreProgressText.Should().Be("Restoring 1 / 1 plugins — 38.4 MB / 120.0 MB");
     }
 
     [Fact]

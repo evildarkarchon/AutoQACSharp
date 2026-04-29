@@ -1,6 +1,6 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
@@ -19,6 +19,7 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
     private readonly ILoggingService _logger;
 
     private string? _backupRoot;
+    private CancellationTokenSource? _restoreCts;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasSessions))]
@@ -49,6 +50,15 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
     private string _restoreSummaryText = string.Empty;
 
     [ObservableProperty]
+    private string _restoreProgressText = string.Empty;
+
+    [ObservableProperty]
+    private long _restoreBytesCopied;
+
+    [ObservableProperty]
+    private long? _restoreTotalBytes;
+
+    [ObservableProperty]
     private ObservableCollection<BackupRestoreRowResult> _restoreResults = new();
 
     [ObservableProperty]
@@ -58,6 +68,8 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
     [NotifyCanExecuteChangedFor(nameof(RestorePluginCommand))]
     [NotifyCanExecuteChangedFor(nameof(RestoreAllCommand))]
     [NotifyCanExecuteChangedFor(nameof(DeleteSessionCommand))]
+    [NotifyCanExecuteChangedFor(nameof(LoadSessionsCommand))]
+    [NotifyCanExecuteChangedFor(nameof(CancelRestoreCommand))]
     private bool _isRestoreActive;
 
     public bool HasSessions => Sessions.Count > 0;
@@ -111,7 +123,9 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
         await LoadSessions();
     }
 
-    [RelayCommand]
+    private bool CanLoadSessions() => !IsRestoreActive;
+
+    [RelayCommand(CanExecute = nameof(CanLoadSessions))]
     private async Task LoadSessions()
     {
         if (string.IsNullOrEmpty(_backupRoot))
@@ -173,8 +187,12 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
             IsRestoreActive = true;
             ClearRestoreResult();
             StatusText = $"Restoring: {plugin.FileName}";
+            RestoreProgressText = $"Restoring 1 / 1 plugins";
 
-            var result = await _backupService.RestorePluginAsync(plugin, session.SessionDirectory, progress: null, CancellationToken.None);
+            var cts = CreateRestoreCancellationSource();
+            var progress = CreateRestoreProgressReporter([plugin]);
+
+            var result = await _backupService.RestorePluginAsync(plugin, session.SessionDirectory, progress, cts.Token);
             ApplyRestoreResult(result);
             _logger.Information("Restore selected completed with status {Status} for plugin {Plugin}", result.Status, plugin.FileName);
         }
@@ -189,6 +207,7 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
         }
         finally
         {
+            DisposeRestoreCancellationSource(cancel: false);
             IsRestoreActive = false;
         }
     }
@@ -217,8 +236,12 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
             IsRestoreActive = true;
             ClearRestoreResult();
             StatusText = $"Restoring {pluginCount} plugin(s) from session";
+            RestoreProgressText = $"Restoring 0 / {pluginCount} plugins";
 
-            var result = await _backupService.RestoreSessionAsync(session, progress: null, CancellationToken.None);
+            var cts = CreateRestoreCancellationSource();
+            var progress = CreateRestoreProgressReporter(session.Plugins);
+
+            var result = await _backupService.RestoreSessionAsync(session, progress, cts.Token);
             ApplyRestoreResult(result);
             _logger.Information("Restore all completed with status {Status} for backup session {Timestamp}",
                 result.Status, timestamp);
@@ -234,8 +257,18 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
         }
         finally
         {
+            DisposeRestoreCancellationSource(cancel: false);
             IsRestoreActive = false;
         }
+    }
+
+    private bool CanCancelRestore() => IsRestoreActive;
+
+    [RelayCommand(CanExecute = nameof(CanCancelRestore))]
+    private void CancelRestore()
+    {
+        _restoreCts?.Cancel();
+        StatusText = "Cancel restore requested. The partial file will be deleted and completed/failed/canceled rows will remain visible.";
     }
 
     [RelayCommand(CanExecute = nameof(CanRestoreAll))]
@@ -287,8 +320,112 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
     {
         RestoreOutcomeTitle = string.Empty;
         RestoreSummaryText = string.Empty;
+        RestoreProgressText = string.Empty;
+        RestoreBytesCopied = 0;
+        RestoreTotalBytes = null;
         RestoreResults.Clear();
         IsRestoreResultVisible = false;
+    }
+
+    /// <summary>
+    /// Creates and owns the cancellation source for exactly one active restore operation.
+    /// </summary>
+    /// <returns>The newly created cancellation source.</returns>
+    private CancellationTokenSource CreateRestoreCancellationSource()
+    {
+        DisposeRestoreCancellationSource(cancel: false);
+        _restoreCts = new CancellationTokenSource();
+        return _restoreCts;
+    }
+
+    /// <summary>
+    /// Disposes the active restore cancellation source and optionally requests cancellation first.
+    /// </summary>
+    /// <param name="cancel">True when disposal should also cancel active restore work.</param>
+    private void DisposeRestoreCancellationSource(bool cancel)
+    {
+        var cts = _restoreCts;
+        _restoreCts = null;
+
+        if (cts == null)
+            return;
+
+        if (cancel)
+        {
+            cts.Cancel();
+        }
+
+        cts.Dispose();
+    }
+
+    /// <summary>
+    /// Builds a progress reporter that translates byte-level service progress into restore-window text.
+    /// </summary>
+    /// <param name="plugins">Plugins included in the current restore operation.</param>
+    /// <returns>A progress reporter safe for the backup service to call during restore copies.</returns>
+    private IProgress<BackupCopyProgress> CreateRestoreProgressReporter(IReadOnlyList<BackupPluginEntry> plugins) =>
+        new RestoreProgressReporter(progress => UpdateRestoreProgress(progress, plugins));
+
+    /// <summary>
+    /// Updates bindable progress fields with plugin position and decimal byte counts when available.
+    /// </summary>
+    /// <param name="progress">Latest copy progress from the backup service.</param>
+    /// <param name="plugins">Plugins included in the active restore operation.</param>
+    private void UpdateRestoreProgress(BackupCopyProgress progress, IReadOnlyList<BackupPluginEntry> plugins)
+    {
+        RestoreBytesCopied = progress.BytesCopied;
+        RestoreTotalBytes = progress.TotalBytes;
+
+        var currentIndex = -1;
+        for (var i = 0; i < plugins.Count; i++)
+        {
+            if (string.Equals(plugins[i].FileName, progress.FileName, StringComparison.OrdinalIgnoreCase))
+            {
+                currentIndex = i;
+                break;
+            }
+        }
+        var currentCount = currentIndex >= 0 ? currentIndex + 1 : Math.Min(RestoreResults.Count + 1, plugins.Count);
+        var text = $"Restoring {currentCount} / {plugins.Count} plugins";
+
+        if (progress.TotalBytes is { } totalBytes)
+        {
+            text += $" — {FormatBytes(progress.BytesCopied)} / {FormatBytes(totalBytes)}";
+        }
+
+        RestoreProgressText = text;
+    }
+
+    /// <summary>
+    /// Formats bytes as decimal units with one fractional digit for restore progress copy.
+    /// </summary>
+    /// <param name="bytes">Byte count to display.</param>
+    /// <returns>A concise decimal byte string such as <c>38.4 MB</c>.</returns>
+    private static string FormatBytes(long bytes)
+    {
+        const decimal kb = 1_000m;
+        const decimal mb = kb * 1_000m;
+        const decimal gb = mb * 1_000m;
+
+        return bytes switch
+        {
+            >= 1_000_000_000 => $"{bytes / gb:F1} GB",
+            >= 1_000_000 => $"{bytes / mb:F1} MB",
+            >= 1_000 => $"{bytes / kb:F1} KB",
+            _ => $"{bytes} B"
+        };
+    }
+
+    /// <summary>
+    /// Synchronously applies service progress so command tests and UI-bound properties observe updates immediately.
+    /// </summary>
+    private sealed class RestoreProgressReporter(Action<BackupCopyProgress> onProgress) : IProgress<BackupCopyProgress>
+    {
+        /// <summary>
+        /// Applies a progress update to the owning ViewModel.
+        /// </summary>
+        /// <param name="value">Progress value reported by the backup service.</param>
+        public void Report(BackupCopyProgress value) => onProgress(value);
     }
 
     /// <summary>
@@ -345,5 +482,6 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
+        DisposeRestoreCancellationSource(cancel: true);
     }
 }
