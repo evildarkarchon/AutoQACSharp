@@ -58,7 +58,7 @@ Plans:
 Plans:
 **Wave 1**
 - [x] 06-01-PLAN.md — Build direct xEdit and MO2 `ArgumentList` command contracts with difficult-character regression tests.
-- [ ] 06-02-PLAN.md — Preserve `ArgumentList` through the real process-start boundary using the existing helper process.
+- [x] 06-02-PLAN.md — Preserve `ArgumentList` through the real process-start boundary using the existing helper process.
 
 **Wave 2 (blocked on Wave 1 completion)**
 - [ ] 06-03-PLAN.md — Integrate safe command-build failure messaging and final phase verification.
@@ -133,7 +133,7 @@ Cross-cutting constraints:
 | 3. Integration -- Log-First Parsing | v1.0 xEdit Log Parsing Fix | 2/2 | Complete | 2026-03-31 |
 | 4. Cleanup -- Remove Dead Code | v1.0 xEdit Log Parsing Fix | 2/2 | Complete | 2026-03-31 |
 | 5. Process Stop & PID Safety | v1.0 Cleanup | 0/0 | Not started | - |
-| 6. Command Launch Escaping | v1.0 Cleanup | 0/0 | Not started | - |
+| 6. Command Launch Escaping | v1.0 Cleanup | 2/3 | In Progress | - |
 | 7. Backup Restore & Retention Safety | v1.0 Cleanup | 0/0 | Not started | - |
 | 8. Cleaning Orchestrator Decomposition | v1.0 Cleanup | 0/0 | Not started | - |
 | 9. Plugin Refresh & Approximation Performance | v1.0 Cleanup | 0/0 | Not started | - |
