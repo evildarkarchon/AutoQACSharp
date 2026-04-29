@@ -501,11 +501,11 @@ public sealed class CleaningServiceTests
     }
 
     /// <summary>
-    /// Verifies that CleanPluginAsync handles unexpected exceptions gracefully
-    /// and returns a Failed result with the error message.
+    /// Verifies that unexpected launch exceptions keep raw paths and command fragments out of
+    /// the user-facing result while still logging the technical exception for diagnostics.
     /// </summary>
     [Fact]
-    public async Task CleanPluginAsync_WhenUnexpectedExceptionThrown_ShouldReturnFailed()
+    public async Task CleanPluginAsync_WhenUnexpectedLaunchExceptionContainsPath_ShouldReturnSafeFailure()
     {
         // Arrange
         var service = new CleaningService(
@@ -517,24 +517,41 @@ public sealed class CleaningServiceTests
 
         var plugin = new PluginInfo
         {
-            FileName = "Mod.esp",
-            FullPath = "Mod.esp",
+            FileName = "LaunchException.esp",
+            FullPath = "LaunchException.esp",
             DetectedGameType = GameType.SkyrimSe,
             IsInSkipList = false
         };
 
-        // Configure state
-        var appState = new AppState { CurrentGameType = GameType.SkyrimSe };
+        const string xEditPath = @"C:\Tools With Spaces\SSEEdit.exe";
+        const string mo2Path = @"C:\MO2 With Spaces\ModOrganizer.exe";
+        const string nestedPayload = "-autoload LaunchException.esp";
+
+        var appState = new AppState
+        {
+            CurrentGameType = GameType.SkyrimSe,
+            XEditExecutablePath = xEditPath,
+            Mo2ExecutablePath = mo2Path,
+            Mo2ModeEnabled = true
+        };
         _mockState.CurrentState.Returns(appState);
 
-        // Mock command builder
-        var startInfo = new System.Diagnostics.ProcessStartInfo("xEdit.exe");
+        var startInfo = new System.Diagnostics.ProcessStartInfo(mo2Path);
+        startInfo.ArgumentList.Add("run");
+        startInfo.ArgumentList.Add(xEditPath);
+        startInfo.ArgumentList.Add("-a");
+        startInfo.ArgumentList.Add(nestedPayload);
         _mockCommandBuilder.BuildCommand(plugin, GameType.SkyrimSe)
             .Returns(startInfo);
 
-        // Mock process to throw unexpected exception
-        _mockProcess.ExecuteAsync(startInfo, Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .ThrowsAsync(new InvalidOperationException("Unexpected error during process execution"));
+        var exception = new InvalidOperationException(@"Failed to launch C:\Tools With Spaces\SSEEdit.exe via C:\MO2 With Spaces\ModOrganizer.exe run -a -autoload LaunchException.esp");
+        _mockProcess.ExecuteAsync(
+                startInfo,
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<Action<System.Diagnostics.Process>?>(),
+                Arg.Any<string?>())
+            .ThrowsAsync(exception);
 
         // Act
         var result = await service.CleanPluginAsync(plugin);
@@ -542,10 +559,16 @@ public sealed class CleaningServiceTests
         // Assert
         result.Success.Should().BeFalse("unexpected exception should result in failure");
         result.Status.Should().Be(CleaningStatus.Failed);
-        result.Message.Should().Contain("Unexpected error");
+        result.Message.Should().Contain(plugin.FileName);
+        result.Message.Should().Contain("See logs for technical details");
+        result.Message.Should().NotContain(xEditPath);
+        result.Message.Should().NotContain(mo2Path);
+        result.Message.Should().NotContain("run ");
+        result.Message.Should().NotContain("-a");
+        result.Message.Should().NotContain("Failed to launch");
 
         // Verify error was logged
-        _mockLogger.Received(1).Error(Arg.Any<Exception>(), "Error cleaning {Plugin}", "Mod.esp");
+        _mockLogger.Received(1).Error(exception, "Error cleaning {Plugin}", plugin.FileName);
     }
 
     #endregion
