@@ -82,7 +82,7 @@ Cross-cutting constraints:
 **Plans**: 5 plans
 Plans:
 **Wave 1**
-- [ ] 07-01-PLAN.md — Create backup/restore/retention result contracts and cancellable copy foundation.
+- [x] 07-01-PLAN.md — Create backup/restore/retention result contracts and cancellable copy foundation.
 
 **Wave 2 (blocked on Wave 1 completion)**
 - [ ] 07-02-PLAN.md — Implement structured async restore and retention service outcomes.

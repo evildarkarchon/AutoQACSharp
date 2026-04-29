@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Cleanup
 status: executing
-stopped_at: Phase 7 UI-SPEC approved
-last_updated: "2026-04-29T06:37:20.343Z"
-last_activity: 2026-04-29 -- Phase 07 planning complete
+stopped_at: Completed 07-01-PLAN.md
+last_updated: "2026-04-29T06:48:24.204Z"
+last_activity: 2026-04-29
 progress:
   total_phases: 7
   completed_phases: 2
   total_plans: 13
-  completed_plans: 8
-  percent: 62
+  completed_plans: 9
+  percent: 69
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-28)
 
 **Core value:** Accurate, automated xEdit Quick Auto Clean with reliable result reporting.
-**Current focus:** Phase 06 — command-launch-escaping
+**Current focus:** Phase 07 — backup-restore-retention-safety
 
 ## Current Position
 
-Phase: 06 (command-launch-escaping) — EXECUTING
-Plan: 4 of 4
+Phase: 07 (backup-restore-retention-safety) — EXECUTING
+Plan: 2 of 5
 Status: Ready to execute
-Last activity: 2026-04-29 -- Phase 07 planning complete
+Last activity: 2026-04-29
 
-Progress: [██████████] 100%
+Progress: [███████░░░] 69%
 
 ## Performance Metrics
 
@@ -54,6 +54,7 @@ Progress: [██████████] 100%
 | Phase 06 P02 | 5 min | 2 tasks | 3 files |
 | Phase 06 P03 | 2 min | 2 tasks | 3 files |
 | Phase 06 P04 | 16 min | 2 tasks | 4 files |
+| Phase 07 P01 | 6 min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -74,6 +75,9 @@ Progress: [██████████] 100%
 - [Phase 06]: Mocked launch-start failures remain on the existing xEdit exit-code failure path. — Plan 06-03 verifies ProcessResult exit-code failures do not add path or command text to CleaningResult.Message.
 - [Phase 06]: MO2 mode now fails command construction when Mo2ExecutablePath is null, empty, or whitespace instead of falling back to direct xEdit. — Plan 06-04 closes the MO2 missing-path verification gap.
 - [Phase 06]: Unexpected cleaning exceptions now log technical details but return a concise plugin-scoped message. — Plan 06-04 prevents configured paths and command fragments from reaching CleaningResult.Message.
+- [Phase 07]: Use managed FileStream copy behind IBackupFileCopier so later plans can swap internals without changing service/UI contracts. — Matches research recommendation for testable copy implementation while keeping the service boundary swappable.
+- [Phase 07]: Use ReplaceAtomically restore semantics to preserve existing target files until the temporary copy fully succeeds. — Prevents canceled or failed restore copies from corrupting existing plugin files.
+- [Phase 07]: Keep SourceMissing as an operation-neutral reason and map it to Missing backup file only in restore contexts. — Allows backup and restore callers to produce context-appropriate concise user labels without exposing raw path details.
 
 ### Pending Todos
 
@@ -92,6 +96,6 @@ Progress: [██████████] 100%
 
 ## Session Continuity
 
-Last session: 2026-04-29T05:53:37.196Z
-Stopped at: Phase 7 UI-SPEC approved
-Resume file: .planning/phases/07-backup-restore-retention-safety/07-UI-SPEC.md
+Last session: 2026-04-29T06:48:24.199Z
+Stopped at: Completed 07-01-PLAN.md
+Resume file: None
