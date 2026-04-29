@@ -2,37 +2,37 @@
 phase: 07-backup-restore-retention-safety
 reviewed: 2026-04-29T00:00:00Z
 depth: standard
-files_reviewed: 27
+files_reviewed: 26
 files_reviewed_list:
-  - AutoQAC/Infrastructure/ServiceCollectionExtensions.cs
-  - AutoQAC/Models/AppState.cs
   - AutoQAC/Models/BackupOperationResults.cs
-  - AutoQAC/Models/CleaningSessionResult.cs
-  - AutoQAC/Services/Backup/BackupCopyOptions.cs
-  - AutoQAC/Services/Backup/BackupFileCopier.cs
-  - AutoQAC/Services/Backup/BackupService.cs
-  - AutoQAC/Services/Backup/DirectoryBackupSessionDeleter.cs
   - AutoQAC/Services/Backup/IBackupFileCopier.cs
+  - AutoQAC/Services/Backup/BackupFileCopier.cs
+  - AutoQAC/Services/Backup/BackupCopyOptions.cs
   - AutoQAC/Services/Backup/IBackupService.cs
+  - AutoQAC/Infrastructure/ServiceCollectionExtensions.cs
+  - AutoQAC.Tests/Services/BackupFileCopierTests.cs
+  - AutoQAC.Tests/Models/BackupOperationResultTests.cs
+  - AutoQAC/Services/Backup/BackupService.cs
   - AutoQAC/Services/Backup/IBackupSessionDeleter.cs
-  - AutoQAC/Services/Cleaning/CleaningOrchestrator.cs
-  - AutoQAC/Services/Cleaning/ICleaningOrchestrator.cs
+  - AutoQAC/Services/Backup/DirectoryBackupSessionDeleter.cs
+  - AutoQAC.Tests/Services/BackupServiceTests.cs
+  - AutoQAC/Models/AppState.cs
+  - AutoQAC/Models/CleaningSessionResult.cs
   - AutoQAC/Services/State/IStateService.cs
   - AutoQAC/Services/State/StateService.cs
-  - AutoQAC/ViewModels/ProgressViewModel.cs
-  - AutoQAC/ViewModels/RestoreViewModel.cs
-  - AutoQAC/Views/ProgressWindow.axaml
-  - AutoQAC/Views/RestoreWindow.axaml
-  - AutoQAC.Tests/Models/BackupOperationResultTests.cs
-  - AutoQAC.Tests/Services/BackupFileCopierTests.cs
-  - AutoQAC.Tests/Services/BackupServiceTests.cs
+  - AutoQAC/Services/Cleaning/ICleaningOrchestrator.cs
+  - AutoQAC/Services/Cleaning/CleaningOrchestrator.cs
   - AutoQAC.Tests/Services/CleaningOrchestratorTests.cs
-  - AutoQAC.Tests/Services/ProcessExecutionServiceTests.cs
-  - AutoQAC.Tests/ViewModels/ProgressViewModelTests.cs
+  - AutoQAC/ViewModels/RestoreViewModel.cs
+  - AutoQAC/Views/RestoreWindow.axaml
   - AutoQAC.Tests/ViewModels/RestoreViewModelTests.cs
+  - AutoQAC/ViewModels/ProgressViewModel.cs
+  - AutoQAC/Views/ProgressWindow.axaml
+  - AutoQAC.Tests/ViewModels/ProgressViewModelTests.cs
+  - AutoQAC/Views/MainWindow.axaml.cs
 findings:
-  critical: 1
-  warning: 5
+  critical: 2
+  warning: 4
   info: 0
   total: 6
 status: issues_found
@@ -42,165 +42,130 @@ status: issues_found
 
 **Reviewed:** 2026-04-29T00:00:00Z  
 **Depth:** standard  
-**Files Reviewed:** 27  
+**Files Reviewed:** 26  
 **Status:** issues_found
 
 ## Summary
 
-Reviewed backup/restore/retention source, progress UI bindings, orchestrator integration, state service changes, and related tests. The implementation has one shippability blocker in restore progress threading that can break Avalonia UI updates, plus several robustness gaps where backup/retention operations can escape their structured result contracts and bypass the user-facing recovery flows.
+Reviewed backup copy semantics, backup/restore/retention services, orchestrator integration, state/progress ViewModels, Avalonia markup, and related tests. The main defects are in filesystem safety: backup creation and restore still trust metadata/path fields in ways that can write outside the intended backup session or overwrite arbitrary rooted paths. Additional behavioral gaps lose cancellation status, misorder sessions, and leak progress-window subscriptions.
 
 ## Critical Issues
 
-### CR-01: [BLOCKER] Restore progress mutates UI-bound ViewModel state from the copy worker thread
+### CR-01: [BLOCKER] Backup creation allows plugin file-name path traversal outside the session directory
 
-**File:** `AutoQAC/ViewModels/RestoreViewModel.cs:366-428`
+**File:** `AutoQAC/Services/Backup/BackupService.cs:81,133`
 
-**Issue:** `CreateRestoreProgressReporter` returns a custom `RestoreProgressReporter` whose `Report` method synchronously calls `UpdateRestoreProgress`. The backup service invokes `progress.Report(...)` from `BackupFileCopier.CopyFileContentsAsync`, which runs continuations with `ConfigureAwait(false)`. That means restore progress can update `RestoreProgressText`, `RestoreBytesCopied`, and other bindable state from a thread-pool thread instead of the Avalonia UI thread. Avalonia UI-bound collections/properties are not safe to mutate this way and can throw cross-thread exceptions during real restore progress, even though the tests pass because they use synchronous substitutes.
+**Issue:** Both `BackupPlugin` and `BackupPluginAsync` build the destination with `Path.Combine(sessionDir, plugin.FileName)` without validating that `plugin.FileName` is a simple file name. A malformed `PluginInfo` with `FileName = "..\\..\\victim.esp"` or a rooted file name can escape the backup session directory. The async path then writes through `IBackupFileCopier` with create-new semantics, so it can create files outside `sessionDir`; the legacy path has the same traversal risk. This breaks the retention/restore safety model and can write user-accessible files in unintended locations.
 
-**Fix:** Marshal restore progress through `IUiDispatcher` (or use `Progress<T>` constructed on the UI thread) and add a test with an asynchronous progress callback to prove updates are dispatched.
+**Fix:** Reject rooted, empty, or multi-segment plugin file names before combining paths, and verify the resolved destination remains under the normalized session root. Add tests for traversal and rooted `PluginInfo.FileName` in both sync and async backup paths.
 
 ```csharp
-private readonly IUiDispatcher _uiDispatcher;
-
-public RestoreViewModel(
-    IBackupService backupService,
-    IMessageDialogService messageDialog,
-    ILoggingService logger,
-    IUiDispatcher uiDispatcher)
+private static bool TryGetSessionFilePath(string sessionDir, string fileName, out string path)
 {
-    _backupService = backupService;
-    _messageDialog = messageDialog;
-    _logger = logger;
-    _uiDispatcher = uiDispatcher;
-}
+    path = string.Empty;
+    if (string.IsNullOrWhiteSpace(fileName) ||
+        Path.IsPathRooted(fileName) ||
+        !string.Equals(Path.GetFileName(fileName), fileName, StringComparison.Ordinal))
+    {
+        return false;
+    }
 
-private IProgress<BackupCopyProgress> CreateRestoreProgressReporter(IReadOnlyList<BackupPluginEntry> plugins) =>
-    new Progress<BackupCopyProgress>(progress =>
-        _uiDispatcher.Post(() => UpdateRestoreProgress(progress, plugins)));
+    var root = EnsureTrailingDirectorySeparator(Path.GetFullPath(sessionDir));
+    var resolved = Path.GetFullPath(Path.Combine(root, fileName));
+    if (!resolved.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+    {
+        return false;
+    }
+
+    path = resolved;
+    return true;
+}
+```
+
+### CR-02: [BLOCKER] Restore trusts session metadata target paths and can overwrite arbitrary rooted files
+
+**File:** `AutoQAC/Services/Backup/BackupService.cs:506-512,439-444`
+
+**Issue:** `ValidateRestoreEntry` only requires `entry.OriginalPath` to be rooted before passing it to `BackupCopyOptions.AtomicReplace`. A corrupted or malicious `session.json` can point `OriginalPath` at any file the current user can write, and the restore flow will overwrite it using the backup file from the selected session. The legacy `RestorePlugin` path is even less constrained (`BackupService.cs:210-223`) and performs no metadata validation at all. Rooted/normalized is not equivalent to safe; it simply makes the arbitrary overwrite deterministic.
+
+**Fix:** Treat restore metadata as untrusted. At minimum, require `Path.GetFileName(entry.OriginalPath)` to match `entry.FileName` and allow only plugin extensions; preferably pass the expected game Data folder/backup root into restore operations and require the target to remain under that root. Apply the same validation to the legacy restore method or remove/privatize it so callers cannot bypass the safe path.
+
+```csharp
+var targetPath = Path.GetFullPath(entry.OriginalPath);
+if (!string.Equals(Path.GetFileName(targetPath), entry.FileName, StringComparison.OrdinalIgnoreCase) ||
+    !PluginExtensions.Contains(Path.GetExtension(targetPath), StringComparer.OrdinalIgnoreCase) ||
+    !targetPath.StartsWith(EnsureTrailingDirectorySeparator(dataFolderRoot), StringComparison.OrdinalIgnoreCase))
+{
+    failureReason = BackupFailureReason.TargetFolderCreationFailed;
+    return false;
+}
 ```
 
 ## Warnings
 
-### WR-01: [WARNING] Source length is read outside the copier error-handling boundary
+### WR-01: [WARNING] Mixed failed+canceled restores are reported as Failed instead of Canceled/Partial
 
-**File:** `AutoQAC/Services/Backup/BackupFileCopier.cs:33-35`
+**File:** `AutoQAC/Services/Backup/BackupService.cs:544-559`
 
-**Issue:** `new FileInfo(sourcePath).Length` runs before the `try` block. If the source is deleted between `File.Exists` and `FileInfo.Length`, or if metadata access throws an `IOException`/`UnauthorizedAccessException`, the exception escapes `CopyAsync` instead of returning a structured `BackupCopyResult`. During cleaning this can abort the whole session and bypass the backup failure callback.
+**Issue:** `GetRestoreStatus` returns `Failed` whenever there are no restored rows and not every row is canceled. If one restore row fails (for example, missing backup file) and the user cancels before remaining rows run, the aggregate status becomes `Failed` even though cancellation occurred. The UI then shows “Restore Failed” rather than “Restore Canceled” and cancellation guidance is lost.
 
-**Fix:** Move output-path calculation and source length probing inside the `try`, and map source races to `SourceMissing` or `AccessDenied`/`TargetWriteFailed` as appropriate.
+**Fix:** Make cancellation participate in aggregate status whenever any row is canceled. If there are successes plus failures/cancellations, return `Partial`; if there are cancellations and no successes, return `Canceled` unless product requirements explicitly define a separate mixed-failure status.
 
 ```csharp
-var copiedBytes = 0L;
-long? totalBytes = null;
-var actualOutputPath = GetOutputPath(destinationPath, options);
-
-try
+if (rows.Any(row => row.Status == BackupRestoreRowStatus.Canceled))
 {
-    totalBytes = new FileInfo(sourcePath).Length;
-    await CopyFileContentsAsync(..., totalBytes.Value, ...).ConfigureAwait(false);
-    ...
-}
-catch (FileNotFoundException)
-{
-    return BackupCopyResult.Failed(sourcePath, destinationPath, BackupFailureReason.SourceMissing, copiedBytes, totalBytes);
-}
-catch (UnauthorizedAccessException)
-{
-    ...
+    return rows.Any(row => row.Status == BackupRestoreRowStatus.Restored)
+        ? BackupOperationStatus.Partial
+        : BackupOperationStatus.Canceled;
 }
 ```
 
-### WR-02: [WARNING] Backup session directory creation failures bypass structured backup results
+### WR-02: [WARNING] Backup session listing sorts by directory name instead of metadata timestamp
 
-**File:** `AutoQAC/Services/Backup/BackupService.cs:111`
+**File:** `AutoQAC/Services/Backup/BackupService.cs:168-170,189-193`
 
-**Issue:** `BackupPluginAsync` calls `Directory.CreateDirectory(sessionDir)` outside any error mapping. An invalid, inaccessible, or deleted backup root throws directly from the service instead of returning `BackupCreateResult` with `TargetFolderCreationFailed`/`AccessDenied`. In `CleaningOrchestrator`, that skips `onBackupFailure` entirely and ends the cleaning workflow through the generic exception path.
+**Issue:** `GetBackupSessionsAsync` claims to enumerate newest first, but it orders directories by `Path.GetFileName(dir)` before reading `session.json`. Retention cleanup correctly uses `BackupSession.Timestamp`, so the restore UI and cleanup policy can disagree if a session directory is renamed, manually copied, or recovered from another location. Users can see an older session above the true newest backup.
 
-**Fix:** Wrap session-directory creation in a targeted `try/catch`, log the technical exception, and return a structured failed backup result so the caller can offer Skip/Abort/Continue.
+**Fix:** Deserialize sessions first, then order the returned `BackupSession` instances by `Timestamp` descending with a directory-name tie breaker.
 
 ```csharp
-try
-{
-    Directory.CreateDirectory(sessionDir);
-}
-catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
-{
-    _logger.Warning("Failed to create backup session directory for {Plugin}: {Error}", plugin.FileName, ex.Message);
-    return new BackupCreateResult(
-        BackupOperationStatus.Failed,
-        plugin.FileName,
-        0,
-        null,
-        ex is UnauthorizedAccessException ? BackupFailureReason.AccessDenied : BackupFailureReason.TargetFolderCreationFailed);
-}
+return sessions
+    .OrderByDescending(session => session.Timestamp)
+    .ThenByDescending(session => Path.GetFileName(session.SessionDirectory), StringComparer.OrdinalIgnoreCase)
+    .ToList();
 ```
 
-### WR-03: [WARNING] Timestamp-only session directory names can collide within one second
+### WR-03: [WARNING] Progress windows leak subscriptions because their ViewModels are never disposed on close
 
-**File:** `AutoQAC/Services/Backup/BackupService.cs:50-52`
+**File:** `AutoQAC/Views/MainWindow.axaml.cs:136-144,154-165`
 
-**Issue:** `CreateSessionDirectory` uses only `yyyy-MM-dd_HH-mm-ss`. Two sessions started in the same second reuse the same directory because `Directory.CreateDirectory` is idempotent. That can cause duplicate backup files to fail with `CreateNew`, mix metadata from separate cleaning attempts, or make retention treat distinct sessions as one directory.
+**Issue:** `ShowProgressAsync` and `ShowPreviewAsync` create `ProgressViewModel` instances, but never dispose them when the `ProgressWindow` closes. `ProgressViewModel` subscribes to state, detailed result, completion, hang, and termination observables. Closing progress/preview windows leaves those subscriptions alive, causing stale ViewModels to keep receiving updates and retaining UI objects longer than intended.
 
-**Fix:** Preserve the readable timestamp but create a unique directory when the base name already exists, either by adding sub-second precision or a numeric suffix.
+**Fix:** Dispose the ViewModel from the window `Closed` event for both cleaning progress and dry-run preview windows. Also wire `CloseRequested` for the normal progress window if the close command is visible in result mode.
 
 ```csharp
-var baseName = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
-var sessionDir = Path.Combine(backupRoot, baseName);
-for (var suffix = 1; Directory.Exists(sessionDir); suffix++)
-{
-    sessionDir = Path.Combine(backupRoot, $"{baseName}-{suffix:00}");
-}
-Directory.CreateDirectory(sessionDir);
+var progressWindow = new ProgressWindow { DataContext = progressViewModel };
+progressWindow.Closed += (_, _) => progressViewModel.Dispose();
+progressViewModel.CloseRequested += (_, _) => progressWindow.Close();
+progressWindow.Show(this);
 ```
 
-### WR-04: [WARNING] Retention cancellation can throw instead of returning a canceled cleanup result
+### WR-04: [WARNING] Delete Session bypasses backup service safety and exposes raw exception details
 
-**File:** `AutoQAC/Services/Backup/BackupService.cs:317,349`
+**File:** `AutoQAC/ViewModels/RestoreViewModel.cs:294-312`
 
-**Issue:** `CleanupOldSessionsAsync` promises structured cleanup status, but cancellation during classification (`ClassifyRetentionDirectoriesAsync`) or just before a deletion (`ct.ThrowIfCancellationRequested()` in the delete loop) propagates `OperationCanceledException`. The orchestrator then falls into its outer cancellation handler with `backupCleanup == null`, so the user loses the retention rows and the session summary cannot report “Backup cleanup canceled”.
+**Issue:** `DeleteSessionAsync` deletes `SelectedSession.SessionDirectory` directly from the ViewModel instead of going through a backup service/deleter method with containment checks, retry behavior, and sanitized result mapping. It also passes `ex.Message` directly to the user-facing error dialog, while the rest of this phase intentionally avoids raw filesystem exception text in restore/retention rows. This creates inconsistent deletion semantics and can leak full local paths or OS error details.
 
-**Fix:** Catch expected cancellation inside `CleanupOldSessionsAsync`, add remaining directories/candidates as kept with `Canceled`, publish final progress, and return `BackupRetentionCleanupResult(BackupOperationStatus.Canceled, rows)`.
-
-```csharp
-try
-{
-    var validSessions = await ClassifyRetentionDirectoriesAsync(backupRoot, rows, ct).ConfigureAwait(false);
-    ...
-    ct.ThrowIfCancellationRequested();
-}
-catch (OperationCanceledException) when (ct.IsCancellationRequested)
-{
-    AddDirectoryRowsAsRemaining(
-        Directory.GetDirectories(backupRoot).Where(dir => rows.All(row => !IsSamePath(row.SessionDirectory, dir))),
-        rows);
-    return new BackupRetentionCleanupResult(BackupOperationStatus.Canceled, rows);
-}
-```
-
-### WR-05: [WARNING] Restore and backup byte units disagree for the same copy progress model
-
-**File:** `AutoQAC/ViewModels/ProgressViewModel.cs:260-263`; `AutoQAC/ViewModels/RestoreViewModel.cs:404-416`
-
-**Issue:** `ProgressViewModel` formats backup bytes as binary MiB while `RestoreViewModel` formats restore bytes as decimal MB/KB/GB. Both consume `BackupCopyProgress`, so the same 120,000,000-byte copy displays as different values depending on whether it is backup or restore. This is a quality defect in the user-facing progress contract and makes tests encode inconsistent semantics.
-
-**Fix:** Use one shared formatter for `BackupCopyProgress` consumers and update both test suites to assert the same convention.
+**Fix:** Add a structured backup-session delete method to `IBackupService` (or reuse an injected deletion service through the backup service), validate the selected directory is under `_backupRoot`, log technical exceptions, and show concise failure copy in the ViewModel.
 
 ```csharp
-internal static class BackupProgressTextFormatter
+var result = await _backupService.DeleteSessionAsync(_backupRoot, SelectedSession.SessionDirectory, ct);
+if (!result.Success)
 {
-    public static string FormatBytes(long bytes)
-    {
-        const decimal kb = 1_000m;
-        const decimal mb = kb * 1_000m;
-        const decimal gb = mb * 1_000m;
-        return bytes switch
-        {
-            >= 1_000_000_000 => $"{bytes / gb:F1} GB",
-            >= 1_000_000 => $"{bytes / mb:F1} MB",
-            >= 1_000 => $"{bytes / kb:F1} KB",
-            _ => $"{bytes} B"
-        };
-    }
+    await _messageDialog.ShowErrorAsync(
+        "Delete Failed",
+        "Failed to delete the backup session.",
+        "Technical details were written to the log.");
 }
 ```
 
