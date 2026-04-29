@@ -102,6 +102,48 @@ public sealed class ProcessExecutionIntegrationTests : IDisposable
         }
     }
 
+    /// <summary>
+    /// Verifies user cancellation reports a grace-period expiration without force-killing the helper or removing PID evidence.
+    /// </summary>
+    [Fact]
+    public async Task ExecuteAsync_UserCancellation_ShouldReturnGracePeriodExpiredKeepHelperRunningAndPreservePidEvidence()
+    {
+        var startedSignal = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var helperPid = 0;
+        using var cts = new CancellationTokenSource();
+
+        try
+        {
+            var executionTask = _service.ExecuteAsync(
+                HelperStartInfo("sleep 30000"),
+                timeout: TimeSpan.FromSeconds(30),
+                ct: cts.Token,
+                onProcessStarted: p => startedSignal.TrySetResult(p.Id),
+                pluginName: "UserStop.esp");
+
+            helperPid = await startedSignal.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await cts.CancelAsync();
+
+            var result = await executionTask.WaitAsync(TimeSpan.FromSeconds(5));
+
+            result.TimedOut.Should().BeFalse("a user stop is not the timeout path");
+            result.TerminationResult.Should().Be(TerminationResult.GracePeriodExpired);
+
+            using var helper = Process.GetProcessById(helperPid);
+            helper.HasExited.Should().BeFalse("user cancellation must leave the process for caller confirmation/manual follow-up");
+
+            var tracked = await _pidStore.LoadAsync();
+            tracked.Should().ContainSingle(entry =>
+                entry.Pid == helperPid &&
+                entry.PluginName == "UserStop.esp" &&
+                entry.SessionId == _sessionIdProvider.CurrentSessionId);
+        }
+        finally
+        {
+            KillIfRunning(helperPid);
+        }
+    }
+
     public void Dispose()
     {
         _service.Dispose();
@@ -143,6 +185,31 @@ public sealed class ProcessExecutionIntegrationTests : IDisposable
         finally
         {
             process.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Best-effort cleanup for a helper whose original <see cref="Process"/> instance may have been disposed by the service.
+    /// </summary>
+    private static void KillIfRunning(int pid)
+    {
+        if (pid <= 0)
+        {
+            return;
+        }
+
+        try
+        {
+            using var process = Process.GetProcessById(pid);
+            KillIfRunning(process);
+        }
+        catch (ArgumentException)
+        {
+            // Process already exited before cleanup could attach to it.
+        }
+        catch (InvalidOperationException)
+        {
+            // Process exited while cleanup was attaching to it.
         }
     }
 
