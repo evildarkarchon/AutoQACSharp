@@ -120,6 +120,67 @@ public sealed class CleaningOrchestratorTests
         ct.ThrowIfCancellationRequested();
     }
 
+    /// <summary>
+    /// Verifies that non-xEdit backup progress is stored in app state and published to subscribers.
+    /// </summary>
+    [Fact]
+    public void StateService_SetBackupOperation_PublishesBackupProgressState()
+    {
+        // Arrange
+        using var stateService = new StateService();
+        var observedStates = new List<AppState>();
+        using var subscription = stateService.StateChanged.Subscribe(observedStates.Add);
+
+        var operation = new BackupOperationState
+        {
+            Kind = BackupOperationKind.Backup,
+            Label = "Backing up: Example.esp",
+            FileName = "Example.esp",
+            FilesCompleted = 0,
+            TotalFiles = 1,
+            BytesCopied = 128,
+            TotalBytes = 256,
+            IsActive = true,
+            CanCancel = true
+        };
+
+        // Act
+        stateService.SetBackupOperation(operation);
+
+        // Assert
+        stateService.CurrentState.BackupOperation.Should().Be(operation);
+        observedStates.Should().Contain(state => state.BackupOperation == operation);
+    }
+
+    /// <summary>
+    /// Verifies that retention cleanup progress uses the same non-xEdit operation channel and can be cleared.
+    /// </summary>
+    [Fact]
+    public void StateService_ClearBackupOperation_PublishesClearedRetentionState()
+    {
+        // Arrange
+        using var stateService = new StateService();
+        var observedStates = new List<AppState>();
+        using var subscription = stateService.StateChanged.Subscribe(observedStates.Add);
+
+        stateService.SetBackupOperation(new BackupOperationState
+        {
+            Kind = BackupOperationKind.RetentionCleanup,
+            Label = "Cleaning up old backups",
+            FilesCompleted = 1,
+            TotalFiles = 3,
+            IsActive = true,
+            CanCancel = true
+        });
+
+        // Act
+        stateService.ClearBackupOperation();
+
+        // Assert
+        stateService.CurrentState.BackupOperation.Should().BeNull();
+        observedStates.Should().Contain(state => state.BackupOperation is null);
+    }
+
     private static Process StartSleeperProcess()
     {
         var process = Process.Start(new ProcessStartInfo
