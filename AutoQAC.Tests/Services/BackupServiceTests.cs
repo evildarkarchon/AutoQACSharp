@@ -170,6 +170,79 @@ public sealed class BackupServiceTests : IDisposable
         second.Error.Should().NotBeNullOrEmpty();
     }
 
+    /// <summary>
+    /// Verifies sync backup rejects plugin file names that would escape the selected backup session directory.
+    /// </summary>
+    [Fact]
+    public void BackupPlugin_FileNameTraversal_ReturnsFailureAndDoesNotEscapeSession()
+    {
+        // Arrange
+        var sourceFile = Path.Combine(_testRoot, "TraversalSource.esp");
+        File.WriteAllText(sourceFile, "fake plugin");
+        var plugin = new PluginInfo { FileName = "..\\outside.esp", FullPath = sourceFile };
+        var sessionDir = Path.Combine(_testRoot, "session_traversal_backup");
+        Directory.CreateDirectory(sessionDir);
+        var outsidePath = Path.Combine(_testRoot, "outside.esp");
+
+        // Act
+        var result = _sut.BackupPlugin(plugin, sessionDir);
+
+        // Assert
+        result.Success.Should().BeFalse();
+        result.Error.Should().Be("Invalid plugin file name for backup.");
+        File.Exists(outsidePath).Should().BeFalse("unsafe backup names must not escape the session directory");
+        Directory.GetFiles(sessionDir).Should().BeEmpty("unsafe backup names must not copy into the session either");
+    }
+
+    /// <summary>
+    /// Verifies async backup rejects traversal file names before invoking the copy abstraction.
+    /// </summary>
+    [Fact]
+    public async Task BackupPluginAsync_FileNameTraversal_ReturnsStructuredFailureAndDoesNotCopy()
+    {
+        // Arrange
+        var sourceFile = Path.Combine(_testRoot, "TraversalAsyncSource.esp");
+        await File.WriteAllTextAsync(sourceFile, "fake plugin");
+        var sessionDir = Path.Combine(_testRoot, "session_traversal_backup_async");
+        var copier = new CountingBackupFileCopier(BackupCopyResult.Complete(sourceFile, Path.Combine(sessionDir, "ignored.esp"), 11, 11));
+        var sut = new BackupService(copier, _mockLogger);
+        var plugin = new PluginInfo { FileName = "..\\outside.esp", FullPath = sourceFile };
+
+        // Act
+        var result = await sut.BackupPluginAsync(plugin, sessionDir);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Failed);
+        result.FailureReason.Should().Be(BackupFailureReason.SourceMissing);
+        copier.CallCount.Should().Be(0, "unsafe backup names must be rejected before copying starts");
+        File.Exists(Path.Combine(_testRoot, "outside.esp")).Should().BeFalse();
+    }
+
+    /// <summary>
+    /// Verifies async backup rejects rooted file names before they can override the session destination.
+    /// </summary>
+    [Fact]
+    public async Task BackupPluginAsync_RootedFileName_ReturnsStructuredFailureAndDoesNotCopy()
+    {
+        // Arrange
+        var sourceFile = Path.Combine(_testRoot, "RootedAsyncSource.esp");
+        await File.WriteAllTextAsync(sourceFile, "fake plugin");
+        var rootedDestination = Path.Combine(_testRoot, "rooted-outside.esp");
+        var sessionDir = Path.Combine(_testRoot, "session_rooted_backup_async");
+        var copier = new CountingBackupFileCopier(BackupCopyResult.Complete(sourceFile, rootedDestination, 11, 11));
+        var sut = new BackupService(copier, _mockLogger);
+        var plugin = new PluginInfo { FileName = rootedDestination, FullPath = sourceFile };
+
+        // Act
+        var result = await sut.BackupPluginAsync(plugin, sessionDir);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Failed);
+        result.FailureReason.Should().Be(BackupFailureReason.SourceMissing);
+        copier.CallCount.Should().Be(0, "rooted backup names must be rejected before copying starts");
+        File.Exists(rootedDestination).Should().BeFalse();
+    }
+
     [Fact]
     public async Task BackupPluginAsync_SessionDirectoryCreationFailure_ReturnsStructuredFailure()
     {
