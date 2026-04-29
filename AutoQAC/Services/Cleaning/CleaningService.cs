@@ -41,8 +41,10 @@ public sealed class CleaningService(
             }
 
             // 2. Build Command
+            // Snapshot state once so launch-mode messaging matches the mode used to build the command.
+            var state = stateService.CurrentState;
             // Determine game type from state if available, otherwise detect
-            var gameType = stateService.CurrentState.CurrentGameType;
+            var gameType = state.CurrentGameType;
             if (gameType == GameType.Unknown)
             {
                 // Fallback or error? Orchestrator usually sets this.
@@ -52,18 +54,24 @@ public sealed class CleaningService(
             var command = commandBuilder.BuildCommand(plugin, gameType);
             if (command == null)
             {
+                var launchMode = state.Mo2ModeEnabled ? "MO2" : "direct xEdit";
+                logger.Warning(
+                    "Failed to build {LaunchMode} launch command for {Plugin}; no process was started.",
+                    launchMode,
+                    plugin.FileName);
+
                 return new CleaningResult
                 {
                     Success = false,
                     Status = CleaningStatus.Failed,
-                    Message = "Failed to build xEdit command.",
+                    Message = $"Could not build {launchMode} launch command for {plugin.FileName}. No process was started. See logs for technical details.",
                     Duration = sw.Elapsed
                 };
             }
 
             // 3. Execute
             // Get timeout from settings
-            var timeoutSeconds = stateService.CurrentState.CleaningTimeout;
+            var timeoutSeconds = state.CleaningTimeout;
             var timeout = TimeSpan.FromSeconds(timeoutSeconds > 0 ? timeoutSeconds : 300);
             var gameDisplayName = gameDetection.GetGameDisplayName(gameType);
 
