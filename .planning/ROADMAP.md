@@ -61,7 +61,7 @@ Plans:
 - [x] 06-02-PLAN.md — Preserve `ArgumentList` through the real process-start boundary using the existing helper process.
 
 **Wave 2 (blocked on Wave 1 completion)**
-- [ ] 06-03-PLAN.md — Integrate safe command-build failure messaging and final phase verification.
+- [x] 06-03-PLAN.md — Integrate safe command-build failure messaging and final phase verification.
 
 Cross-cutting constraints:
 - Difficult-character coverage spans quotes/parser cases, Unicode, spaces, shell-sensitive punctuation, and one combined worst-case input.
