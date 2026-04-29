@@ -139,6 +139,24 @@ public partial class MainWindow : Window
             DataContext = progressViewModel
         };
 
+        // Defense in depth: ProgressWindow.OnDataContextChanged also subscribes to CloseRequested
+        // and ProgressWindow.OnClosed disposes the ViewModel via DisposeViewModelIfNeeded. The
+        // local guard below keeps disposal idempotent so the normal ShowProgressAsync path stays
+        // safe even if the ProgressWindow contract changes.
+        var progressDisposed = false;
+        void DisposeProgressViewModel()
+        {
+            if (progressDisposed)
+            {
+                return;
+            }
+            progressDisposed = true;
+            progressViewModel.Dispose();
+        }
+
+        progressViewModel.CloseRequested += (_, _) => progressWindow.Close();
+        progressWindow.Closed += (_, _) => DisposeProgressViewModel();
+
         progressWindow.Show(this);
 
         return Task.FromResult(Unit.Default);
