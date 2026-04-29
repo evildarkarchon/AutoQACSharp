@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Text;
+using System.Text.Json;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.Process;
@@ -103,6 +105,83 @@ public sealed class ProcessExecutionIntegrationTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies argument-list values survive the service clone and real process launch as exact UTF-8 JSON argv entries.
+    /// </summary>
+    [Fact]
+    public async Task ExecuteAsync_ArgumentListHelper_ShouldPreserveDifficultArgumentsThroughProcessStart()
+    {
+        var expectedArgs = new[]
+        {
+            "Quote \" literal",
+            "Résumé 測試 🚀",
+            "Shell & | ; ( ) ^ value",
+            "Quote\" Résumé 測試 🚀 & | ; ( ) ^ Spaces.esp"
+        };
+        Process? started = null;
+
+        try
+        {
+            var startInfo = HelperStartInfo(new[] { "argv-echo" }.Concat(expectedArgs).ToArray());
+            startInfo.RedirectStandardOutput = true;
+            startInfo.StandardOutputEncoding = Encoding.UTF8;
+
+            var outputTask = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var result = await _service.ExecuteAsync(
+                startInfo,
+                timeout: TimeSpan.FromSeconds(5),
+                onProcessStarted: process =>
+                {
+                    started = process;
+                    _ = ReadHelperJsonAsync(process, outputTask);
+                },
+                pluginName: "ArgumentList.esp");
+
+            result.ExitCode.Should().Be(0);
+            var stdout = await outputTask.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            JsonSerializer.Deserialize<string[]>(stdout).Should().Equal(expectedArgs);
+        }
+        finally
+        {
+            KillIfRunning(started);
+        }
+    }
+
+    /// <summary>
+    /// Verifies legacy callers that still use the single Arguments string keep working when no ArgumentList entries are present.
+    /// </summary>
+    [Fact]
+    public async Task ExecuteAsync_ArgumentsHelper_WhenArgumentListIsEmpty_ShouldPreserveLegacyArguments()
+    {
+        Process? started = null;
+
+        try
+        {
+            var startInfo = HelperStartInfo("argv-echo legacy-token");
+            startInfo.RedirectStandardOutput = true;
+            startInfo.StandardOutputEncoding = Encoding.UTF8;
+
+            var outputTask = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var result = await _service.ExecuteAsync(
+                startInfo,
+                timeout: TimeSpan.FromSeconds(5),
+                onProcessStarted: process =>
+                {
+                    started = process;
+                    _ = ReadHelperJsonAsync(process, outputTask);
+                },
+                pluginName: "LegacyArguments.esp");
+
+            result.ExitCode.Should().Be(0);
+            var stdout = await outputTask.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            JsonSerializer.Deserialize<string[]>(stdout).Should().Equal(new[] { "legacy-token" });
+        }
+        finally
+        {
+            KillIfRunning(started);
+        }
+    }
+
+    /// <summary>
     /// Verifies a canceled post-kill wait is reported as force-kill failure instead of success.
     /// </summary>
     [Fact]
@@ -190,6 +269,37 @@ public sealed class ProcessExecutionIntegrationTests : IDisposable
             UseShellExecute = false,
             CreateNoWindow = true
         };
+    }
+
+    /// <summary>
+    /// Creates helper start info that passes every supplied token through <see cref="ProcessStartInfo.ArgumentList"/>.
+    /// </summary>
+    private static ProcessStartInfo HelperStartInfo(params string[] argumentList)
+    {
+        var startInfo = HelperStartInfo(string.Empty);
+        foreach (var argument in argumentList)
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        return startInfo;
+    }
+
+    /// <summary>
+    /// Reads the helper's redirected stdout once so tests can assert JSON evidence after the process exits.
+    /// </summary>
+    private static async Task ReadHelperJsonAsync(
+        Process process,
+        TaskCompletionSource<string> outputTask)
+    {
+        try
+        {
+            outputTask.TrySetResult(await process.StandardOutput.ReadToEndAsync());
+        }
+        catch (Exception ex)
+        {
+            outputTask.TrySetException(ex);
+        }
     }
 
     private static void KillIfRunning(Process? process)

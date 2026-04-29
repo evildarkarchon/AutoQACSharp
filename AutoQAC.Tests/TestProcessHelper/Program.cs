@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Text;
+using System.Text.Json;
 
 if (args.Length == 0)
 {
@@ -18,6 +20,11 @@ switch (args[0])
 
     case "spawn-child":
         await SpawnChildAsync(ParseMilliseconds(args));
+        return 0;
+
+    case "argv-echo":
+        Console.OutputEncoding = Encoding.UTF8;
+        await Console.Out.WriteLineAsync(JsonSerializer.Serialize(args.Skip(1).ToArray()));
         return 0;
 
     default:
