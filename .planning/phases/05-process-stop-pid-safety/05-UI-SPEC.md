@@ -80,6 +80,8 @@ Accent reserved for: question/info dialog icon, existing hyperlink-style buttons
 - Force kill succeeds: neutral completion/cancelled state; avoid celebratory success styling.
 - Force kill fails: destructive/error state with concise message and optional expandable details/log reference.
 
+**Visual hierarchy / focal point:** The primary visual anchor for Phase 5 is the Stop / Force Terminate status row in the main and progress windows. During escalation, the confirmation prompt draws attention in this order: warning icon/title first, risk copy second, and the destructive `Force Terminate` action last; force-kill failure dialogs draw attention first to the error title, then the manual-close instruction, then expandable/log details.
+
 ---
 
 ## Copywriting Contract
@@ -98,12 +100,12 @@ Accent reserved for: question/info dialog icon, existing hyperlink-style buttons
 |-----------|------------|-------|------|-------------------|
 | First Stop click while cleaning | MainWindow status and ProgressWindow termination row | n/a | Status text: `Stopping... waiting for xEdit to exit` | Disable start/preview controls as already done during cleaning. Keep Stop available if it is the explicit second-click escalation path; otherwise show existing indeterminate stopping indicator. |
 | Grace period expires after user Stop | Existing `MessageDialog` through `IMessageDialogService` | `Force Terminate xEdit?` | `xEdit did not exit after the stop request. Force terminating can interrupt any remaining file or log writes. Do you want AutoQAC to force terminate xEdit now?` | Primary/default: `Yes` only if existing `YesNo` dialog remains. Preferred copy if button labels become customizable: `Force Terminate` and `Leave Running`. |
-| User declines force termination | Progress/result/status state | `Cleaning Stopped` | `AutoQAC stopped the cleaning session. xEdit was left running by your choice; close it manually when it is safe.` | Dialog close/OK only. Do not parse post-exit logs for the affected plugin. |
+| User declines force termination | Progress/result/status state | `Cleaning Stopped` | `AutoQAC stopped the cleaning session. xEdit was left running by your choice; close it manually when it is safe.` | Preferred close label: `Close Warning`. Do not parse post-exit logs for the affected plugin. |
 | Second Stop click during grace/confirmation path | MainWindow/ProgressWindow Stop button behavior | n/a | Treat as explicit escalation. If surfaced, status text: `Force terminating xEdit...` | No second prompt. |
-| Force kill succeeds | Progress/result/status state | `Cleaning Stopped` | `xEdit was force terminated and the cleaning session was stopped.` | Close/OK only. |
-| Force kill fails | Existing `MessageDialog` error | `Could Not Force Terminate xEdit` | `AutoQAC could not force terminate xEdit. xEdit may still be running; close it manually or check the log for details before starting another cleaning session.` | `OK`; expandable details may contain sanitized exception type/message or log reference, but no stack trace in primary body. |
-| Duplicate AutoQAC instance blocked | Startup message dialog or equivalent app-level error | `AutoQAC Is Already Running` | `Another AutoQAC window is already running. Close the existing window before starting AutoQAC again.` | `OK`; no technical mutex/PID details in primary body. |
-| PID file corrupt and recreated | Log plus optional warning only if surfaced during cleanup | `Process Tracking Reset` | `AutoQAC reset its process tracking file because it could not be read. Cleaning can continue, but previous orphan-process tracking may be incomplete.` | `OK`; detailed corrupt-file path belongs in logs, not primary UI. |
+| Force kill succeeds | Progress/result/status state | `Cleaning Stopped` | `xEdit was force terminated and the cleaning session was stopped.` | Preferred close label: `Close Stop Notice`. |
+| Force kill fails | Existing `MessageDialog` error | `Could Not Force Terminate xEdit` | `AutoQAC could not force terminate xEdit. xEdit may still be running; close it manually or check the log for details before starting another cleaning session.` | Preferred close label: `Close Warning`; expandable details may contain sanitized exception type/message or log reference, but no stack trace in primary body. |
+| Duplicate AutoQAC instance blocked | Startup message dialog or equivalent app-level error | `AutoQAC Is Already Running` | `Another AutoQAC window is already running. Close the existing window before starting AutoQAC again.` | Preferred close label: `Close AutoQAC Notice`; no technical mutex/PID details in primary body. |
+| PID file corrupt and recreated | Log plus optional warning only if surfaced during cleanup | `Process Tracking Reset` | `AutoQAC reset its process tracking file because it could not be read. Cleaning can continue, but previous orphan-process tracking may be incomplete.` | Preferred close label: `Close Process Tracking Notice`; detailed corrupt-file path belongs in logs, not primary UI. |
 
 ### Interaction Rules
 
@@ -111,6 +113,7 @@ Accent reserved for: question/info dialog icon, existing hyperlink-style buttons
 - Force-kill failure must be a first-class user-visible outcome, never reported as `ForceKilled` or as a normal cancellation.
 - When xEdit may still be running (`GracePeriodExpired` declined or `ForceKillFailed`), the affected plugin must not display log-derived success/cleaned results.
 - Keep detailed exception information in logs or expandable details. The primary dialog body must be concise and action-oriented.
+- Legacy constraint: if the existing `MessageDialog` API cannot customize single-button labels yet, legacy `OK` may remain only on untouched dialog plumbing. Any Phase 5-touched or newly customizable single-button outcome must use the preferred labels above instead of generic `OK`.
 - Maintain dialog ownership through existing `MessageDialog`/window-owner patterns; do not introduce an Avalonia Headless dependency or new UI framework.
 
 ---
