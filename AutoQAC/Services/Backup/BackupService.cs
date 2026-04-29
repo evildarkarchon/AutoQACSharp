@@ -120,17 +120,6 @@ public sealed class BackupService : IBackupService
                 BackupFailureReason.SourceMissing);
         }
 
-        if (!ValidateBackupDestination(plugin, sessionDir, out var destinationPath))
-        {
-            _logger.Warning("Rejected unsafe async backup file name for {Plugin}: {FileName}", plugin.FullPath, plugin.FileName);
-            return new BackupCreateResult(
-                BackupOperationStatus.Failed,
-                plugin.FileName,
-                BytesCopied: 0,
-                TotalBytes: null,
-                BackupFailureReason.SourceMissing);
-        }
-
         try
         {
             Directory.CreateDirectory(sessionDir);
@@ -144,6 +133,17 @@ public sealed class BackupService : IBackupService
                 BytesCopied: 0,
                 TotalBytes: null,
                 ex is UnauthorizedAccessException ? BackupFailureReason.AccessDenied : BackupFailureReason.TargetFolderCreationFailed);
+        }
+
+        if (!ValidateBackupDestination(plugin, sessionDir, out var destinationPath))
+        {
+            _logger.Warning("Rejected unsafe async backup file name for {Plugin}: {FileName}", plugin.FullPath, plugin.FileName);
+            return new BackupCreateResult(
+                BackupOperationStatus.Failed,
+                plugin.FileName,
+                BytesCopied: 0,
+                TotalBytes: null,
+                BackupFailureReason.SourceMissing);
         }
 
         var copyResult = await _fileCopier.CopyAsync(
@@ -675,13 +675,13 @@ public sealed class BackupService : IBackupService
             return BackupOperationStatus.Complete;
         }
 
-        if (rows.All(row => row.Status == BackupRestoreRowStatus.Canceled))
+        if (rows.Any(row => row.Status == BackupRestoreRowStatus.Restored))
         {
-            return BackupOperationStatus.Canceled;
+            return BackupOperationStatus.Partial;
         }
 
-        return rows.Any(row => row.Status == BackupRestoreRowStatus.Restored)
-            ? BackupOperationStatus.Partial
+        return rows.Any(row => row.Status == BackupRestoreRowStatus.Canceled)
+            ? BackupOperationStatus.Canceled
             : BackupOperationStatus.Failed;
     }
 
