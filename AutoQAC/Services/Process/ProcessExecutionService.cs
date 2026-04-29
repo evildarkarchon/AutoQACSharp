@@ -49,28 +49,15 @@ public sealed class ProcessExecutionService(
         try
         {
             var fileName = startInfo.FileName;
-            var arguments = startInfo.Arguments;
+            var arguments = GetArgumentSummary(startInfo);
             var workingDirectory = startInfo.WorkingDirectory;
 
-            var processStartInfo = new ProcessStartInfo
-            {
-                FileName = fileName,
-                Arguments = arguments,
-                WorkingDirectory = workingDirectory,
-                UseShellExecute = false,
-                CreateNoWindow = startInfo.CreateNoWindow,
-                RedirectStandardInput = startInfo.RedirectStandardInput,
-                RedirectStandardOutput = startInfo.RedirectStandardOutput,
-                RedirectStandardError = startInfo.RedirectStandardError,
-                StandardInputEncoding = startInfo.StandardInputEncoding,
-                StandardOutputEncoding = startInfo.StandardOutputEncoding,
-                StandardErrorEncoding = startInfo.StandardErrorEncoding
-            };
+            var processStartInfo = CloneStartInfoForLaunch(startInfo, fileName, workingDirectory);
 
             using var process = new System.Diagnostics.Process();
             process.StartInfo = processStartInfo;
 
-            logger.Debug("Starting process: {FileName} {Arguments}", startInfo.FileName, startInfo.Arguments);
+            logger.Debug("Starting process: {FileName} {Arguments}", startInfo.FileName, arguments);
 
             try
             {
@@ -167,6 +154,51 @@ public sealed class ProcessExecutionService(
             }
         }
     }
+
+    /// <summary>
+    /// Clones caller-supplied process start settings while preserving the mutually exclusive argument API in use.
+    /// </summary>
+    private static ProcessStartInfo CloneStartInfoForLaunch(
+        ProcessStartInfo startInfo,
+        string fileName,
+        string workingDirectory)
+    {
+        var processStartInfo = new ProcessStartInfo
+        {
+            FileName = fileName,
+            WorkingDirectory = workingDirectory,
+            UseShellExecute = false,
+            CreateNoWindow = startInfo.CreateNoWindow,
+            RedirectStandardInput = startInfo.RedirectStandardInput,
+            RedirectStandardOutput = startInfo.RedirectStandardOutput,
+            RedirectStandardError = startInfo.RedirectStandardError,
+            StandardInputEncoding = startInfo.StandardInputEncoding,
+            StandardOutputEncoding = startInfo.StandardOutputEncoding,
+            StandardErrorEncoding = startInfo.StandardErrorEncoding
+        };
+
+        if (startInfo.ArgumentList.Count > 0)
+        {
+            foreach (var argument in startInfo.ArgumentList)
+            {
+                processStartInfo.ArgumentList.Add(argument);
+            }
+        }
+        else
+        {
+            processStartInfo.Arguments = startInfo.Arguments;
+        }
+
+        return processStartInfo;
+    }
+
+    /// <summary>
+    /// Returns debug-safe argument context without treating legacy Arguments as the only launch source.
+    /// </summary>
+    private static string GetArgumentSummary(ProcessStartInfo startInfo) =>
+        startInfo.ArgumentList.Count > 0
+            ? $"{startInfo.ArgumentList.Count} argument-list entries"
+            : startInfo.Arguments;
 
     public async Task<TerminationResult> TerminateProcessAsync(
         System.Diagnostics.Process process,
