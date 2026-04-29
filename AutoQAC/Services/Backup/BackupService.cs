@@ -13,12 +13,14 @@ namespace AutoQAC.Services.Backup;
 /// <summary>
 /// Manages plugin file backup, restore, and session retention.
 /// </summary>
-public sealed class BackupService(ILoggingService logger) : IBackupService
+public sealed class BackupService(ILoggingService logger, IBackupFileCopier? fileCopier = null) : IBackupService
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true
     };
+
+    private readonly IBackupFileCopier _fileCopier = fileCopier ?? new BackupFileCopier(logger);
 
     public string CreateSessionDirectory(string backupRoot)
     {
@@ -64,6 +66,40 @@ public sealed class BackupService(ILoggingService logger) : IBackupService
             logger.Warning("Backup failed for {Plugin}: {Error}", plugin.FileName, ex.Message);
             return BackupResult.Failure($"Access denied backing up '{plugin.FileName}': {ex.Message}");
         }
+    }
+
+    public async Task<BackupCreateResult> BackupPluginAsync(
+        PluginInfo plugin,
+        string sessionDir,
+        IProgress<BackupCopyProgress>? progress = null,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(plugin.FullPath) || !Path.IsPathRooted(plugin.FullPath))
+        {
+            logger.Warning("Backup source path for {Plugin} is not rooted: {Path}", plugin.FileName, plugin.FullPath);
+            return new BackupCreateResult(
+                BackupOperationStatus.Failed,
+                plugin.FileName,
+                BytesCopied: 0,
+                TotalBytes: null,
+                BackupFailureReason.SourceMissing);
+        }
+
+        Directory.CreateDirectory(sessionDir);
+        var destinationPath = Path.Combine(sessionDir, plugin.FileName);
+        var copyResult = await _fileCopier.CopyAsync(
+            plugin.FullPath,
+            destinationPath,
+            BackupCopyOptions.CreateNewBackup,
+            progress,
+            ct).ConfigureAwait(false);
+
+        return new BackupCreateResult(
+            copyResult.Status,
+            plugin.FileName,
+            copyResult.BytesCopied,
+            copyResult.TotalBytes,
+            copyResult.FailureReason);
     }
 
     public async Task WriteSessionMetadataAsync(string sessionDir, BackupSession session, CancellationToken ct = default)
@@ -144,12 +180,50 @@ public sealed class BackupService(ILoggingService logger) : IBackupService
         logger.Information("Restored {Plugin} to {Path}", entry.FileName, entry.OriginalPath);
     }
 
+    public async Task<BackupRestoreResult> RestorePluginAsync(
+        BackupPluginEntry entry,
+        string sessionDir,
+        IProgress<BackupCopyProgress>? progress = null,
+        CancellationToken ct = default)
+    {
+        var row = await RestorePluginRowAsync(entry, sessionDir, progress, ct).ConfigureAwait(false);
+        var status = row.Status switch
+        {
+            BackupRestoreRowStatus.Restored => BackupOperationStatus.Complete,
+            BackupRestoreRowStatus.Canceled => BackupOperationStatus.Canceled,
+            _ => BackupOperationStatus.Failed
+        };
+
+        return new BackupRestoreResult(status, [row]);
+    }
+
     public void RestoreSession(BackupSession session)
     {
         foreach (var entry in session.Plugins)
         {
             RestorePlugin(entry, session.SessionDirectory);
         }
+    }
+
+    public async Task<BackupRestoreResult> RestoreSessionAsync(
+        BackupSession session,
+        IProgress<BackupCopyProgress>? progress = null,
+        CancellationToken ct = default)
+    {
+        var rows = new List<BackupRestoreRowResult>();
+
+        foreach (var entry in session.Plugins)
+        {
+            if (ct.IsCancellationRequested)
+            {
+                rows.Add(new BackupRestoreRowResult(entry.FileName, BackupRestoreRowStatus.Canceled, BackupFailureReason.Canceled, 0, entry.FileSizeBytes));
+                continue;
+            }
+
+            rows.Add(await RestorePluginRowAsync(entry, session.SessionDirectory, progress, ct).ConfigureAwait(false));
+        }
+
+        return new BackupRestoreResult(GetRestoreStatus(rows), rows);
     }
 
     public void CleanupOldSessions(string backupRoot, int maxSessionCount, string? currentSessionDir = null)
@@ -197,6 +271,24 @@ public sealed class BackupService(ILoggingService logger) : IBackupService
         }
     }
 
+    public Task<BackupRetentionCleanupResult> CleanupOldSessionsAsync(
+        string backupRoot,
+        int maxSessionCount,
+        string? currentSessionDir = null,
+        IProgress<BackupCopyProgress>? progress = null,
+        CancellationToken ct = default)
+    {
+        // Full retention warning/cancel behavior is implemented in the follow-up service plan; this contract keeps
+        // callers off UI-thread-blocking async shims while preserving today's cleanup semantics for compatibility.
+        if (ct.IsCancellationRequested)
+        {
+            return Task.FromResult(new BackupRetentionCleanupResult(BackupOperationStatus.Canceled, []));
+        }
+
+        CleanupOldSessions(backupRoot, maxSessionCount, currentSessionDir);
+        return Task.FromResult(new BackupRetentionCleanupResult(BackupOperationStatus.Complete, []));
+    }
+
     public string GetBackupRoot(string dataFolderPath)
     {
         var parentDir = Path.GetDirectoryName(dataFolderPath);
@@ -207,5 +299,72 @@ public sealed class BackupService(ILoggingService logger) : IBackupService
         }
 
         return Path.Combine(parentDir, "AutoQAC Backups");
+    }
+
+    private async Task<BackupRestoreRowResult> RestorePluginRowAsync(
+        BackupPluginEntry entry,
+        string sessionDir,
+        IProgress<BackupCopyProgress>? progress,
+        CancellationToken ct)
+    {
+        var backupPath = Path.Combine(sessionDir, entry.FileName);
+        if (!File.Exists(backupPath))
+        {
+            return new BackupRestoreRowResult(entry.FileName, BackupRestoreRowStatus.Failed, BackupFailureReason.MissingBackupFile, 0, entry.FileSizeBytes);
+        }
+
+        var targetDir = Path.GetDirectoryName(entry.OriginalPath);
+        try
+        {
+            if (!string.IsNullOrEmpty(targetDir))
+            {
+                Directory.CreateDirectory(targetDir);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            logger.Warning("Failed to create restore target directory for {Plugin}: {Error}", entry.FileName, ex.Message);
+            return new BackupRestoreRowResult(entry.FileName, BackupRestoreRowStatus.Failed, BackupFailureReason.TargetFolderCreationFailed, 0, entry.FileSizeBytes);
+        }
+
+        var copyResult = await _fileCopier.CopyAsync(
+            backupPath,
+            entry.OriginalPath,
+            BackupCopyOptions.AtomicReplace,
+            progress,
+            ct).ConfigureAwait(false);
+
+        return copyResult.Status switch
+        {
+            BackupOperationStatus.Complete => new BackupRestoreRowResult(entry.FileName, BackupRestoreRowStatus.Restored, null, copyResult.BytesCopied, copyResult.TotalBytes),
+            BackupOperationStatus.Canceled => new BackupRestoreRowResult(entry.FileName, BackupRestoreRowStatus.Canceled, BackupFailureReason.Canceled, copyResult.BytesCopied, copyResult.TotalBytes),
+            _ => new BackupRestoreRowResult(entry.FileName, BackupRestoreRowStatus.Failed, MapRestoreFailure(copyResult.FailureReason), copyResult.BytesCopied, copyResult.TotalBytes)
+        };
+    }
+
+    private static BackupFailureReason MapRestoreFailure(BackupFailureReason? reason) => reason switch
+    {
+        BackupFailureReason.SourceMissing => BackupFailureReason.MissingBackupFile,
+        BackupFailureReason.AccessDenied => BackupFailureReason.AccessDenied,
+        BackupFailureReason.Canceled => BackupFailureReason.Canceled,
+        BackupFailureReason.TargetFolderCreationFailed => BackupFailureReason.TargetFolderCreationFailed,
+        _ => BackupFailureReason.TargetWriteFailed
+    };
+
+    private static BackupOperationStatus GetRestoreStatus(IReadOnlyCollection<BackupRestoreRowResult> rows)
+    {
+        if (rows.Count == 0 || rows.All(row => row.Status == BackupRestoreRowStatus.Restored))
+        {
+            return BackupOperationStatus.Complete;
+        }
+
+        if (rows.All(row => row.Status == BackupRestoreRowStatus.Canceled))
+        {
+            return BackupOperationStatus.Canceled;
+        }
+
+        return rows.Any(row => row.Status == BackupRestoreRowStatus.Restored)
+            ? BackupOperationStatus.Partial
+            : BackupOperationStatus.Failed;
     }
 }

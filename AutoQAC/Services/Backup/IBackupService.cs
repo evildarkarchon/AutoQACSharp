@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -22,6 +23,15 @@ public interface IBackupService
     BackupResult BackupPlugin(PluginInfo plugin, string sessionDir);
 
     /// <summary>
+    /// Copies the plugin file to the session directory with structured status, byte progress, and cancellation support.
+    /// </summary>
+    Task<BackupCreateResult> BackupPluginAsync(
+        PluginInfo plugin,
+        string sessionDir,
+        IProgress<BackupCopyProgress>? progress = null,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// Writes session.json metadata sidecar to the session directory.
     /// </summary>
     Task WriteSessionMetadataAsync(string sessionDir, BackupSession session, CancellationToken ct = default);
@@ -37,14 +47,41 @@ public interface IBackupService
     void RestorePlugin(BackupPluginEntry entry, string sessionDir);
 
     /// <summary>
+    /// Restores a single plugin from backup to its original path with structured row-level outcome details.
+    /// </summary>
+    Task<BackupRestoreResult> RestorePluginAsync(
+        BackupPluginEntry entry,
+        string sessionDir,
+        IProgress<BackupCopyProgress>? progress = null,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// Restores all plugins from a session.
     /// </summary>
     void RestoreSession(BackupSession session);
 
     /// <summary>
+    /// Restores all plugins from a session while preserving partial, failed, and canceled aggregate outcomes.
+    /// </summary>
+    Task<BackupRestoreResult> RestoreSessionAsync(
+        BackupSession session,
+        IProgress<BackupCopyProgress>? progress = null,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// Deletes oldest sessions beyond maxSessionCount. Never deletes currentSessionDir.
     /// </summary>
     void CleanupOldSessions(string backupRoot, int maxSessionCount, string? currentSessionDir = null);
+
+    /// <summary>
+    /// Deletes oldest sessions beyond maxSessionCount with structured cleanup status for warning/cancel reporting.
+    /// </summary>
+    Task<BackupRetentionCleanupResult> CleanupOldSessionsAsync(
+        string backupRoot,
+        int maxSessionCount,
+        string? currentSessionDir = null,
+        IProgress<BackupCopyProgress>? progress = null,
+        CancellationToken ct = default);
 
     /// <summary>
     /// Resolves backup root path from game Data folder path.

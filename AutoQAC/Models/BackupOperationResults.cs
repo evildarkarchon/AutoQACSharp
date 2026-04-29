@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 
 namespace AutoQAC.Models;
 
@@ -51,6 +52,58 @@ public enum BackupFailureReason
 }
 
 /// <summary>
+/// Maps operation-neutral failure reasons to the concise labels allowed in user-facing restore and retention rows.
+/// </summary>
+public static class BackupFailureReasonExtensions
+{
+    private static readonly IReadOnlyDictionary<BackupFailureReason, string> DisplayLabels = new Dictionary<BackupFailureReason, string>
+    {
+        [BackupFailureReason.MissingBackupFile] = "Missing backup file",
+        [BackupFailureReason.AccessDenied] = "Access denied",
+        [BackupFailureReason.TargetFolderCreationFailed] = "Target folder creation failed",
+        [BackupFailureReason.TargetWriteFailed] = "Target write failed",
+        [BackupFailureReason.Canceled] = "Canceled",
+        [BackupFailureReason.CleanupDeletionFailed] = "Cleanup deletion failed"
+    };
+
+    /// <summary>
+    /// Returns the approved UI label for a reason, or null when callers must map neutral reasons themselves.
+    /// </summary>
+    public static string? ToDisplayLabel(this BackupFailureReason reason) =>
+        DisplayLabels.TryGetValue(reason, out var label) ? label : null;
+}
+
+/// <summary>
+/// Row-level outcome for restoring one plugin from a backup session.
+/// </summary>
+public enum BackupRestoreRowStatus
+{
+    /// <summary>The plugin was restored to its target path.</summary>
+    Restored,
+
+    /// <summary>The plugin could not be restored.</summary>
+    Failed,
+
+    /// <summary>The restore was canceled before this row completed.</summary>
+    Canceled
+}
+
+/// <summary>
+/// Row-level outcome for one retention cleanup candidate.
+/// </summary>
+public enum BackupRetentionRowStatus
+{
+    /// <summary>The old backup session directory was deleted.</summary>
+    Deleted,
+
+    /// <summary>The session was intentionally kept, such as the current or newest retained session.</summary>
+    Kept,
+
+    /// <summary>The session could not be deleted and remains on disk.</summary>
+    Failed
+}
+
+/// <summary>
 /// Byte-level progress for a backup or restore file copy.
 /// </summary>
 /// <param name="FileName">The file name being copied, suitable for UI display.</param>
@@ -75,20 +128,10 @@ public sealed record BackupCopyResult(
     long? TotalBytes,
     BackupFailureReason? FailureReason)
 {
-    private static readonly IReadOnlyDictionary<BackupFailureReason, string> DisplayLabels = new Dictionary<BackupFailureReason, string>
-    {
-        [BackupFailureReason.MissingBackupFile] = "Missing backup file",
-        [BackupFailureReason.AccessDenied] = "Access denied",
-        [BackupFailureReason.TargetFolderCreationFailed] = "Target folder creation failed",
-        [BackupFailureReason.TargetWriteFailed] = "Target write failed",
-        [BackupFailureReason.Canceled] = "Canceled",
-        [BackupFailureReason.CleanupDeletionFailed] = "Cleanup deletion failed"
-    };
-
     /// <summary>
     /// Gets the user-facing label for the failure reason, or null when callers must map the neutral reason themselves.
     /// </summary>
-    public string? DisplayReason => FailureReason is { } reason && DisplayLabels.TryGetValue(reason, out var label) ? label : null;
+    public string? DisplayReason => FailureReason?.ToDisplayLabel();
 
     /// <summary>
     /// Creates a completed copy result.
@@ -112,4 +155,97 @@ public sealed record BackupCopyResult(
     /// </summary>
     public static BackupCopyResult Canceled(string sourcePath, string destinationPath, long bytesCopied, long? totalBytes) =>
         new(BackupOperationStatus.Canceled, sourcePath, destinationPath, bytesCopied, totalBytes, BackupFailureReason.Canceled);
+}
+
+/// <summary>
+/// Structured result for creating one plugin backup during a cleaning session.
+/// </summary>
+/// <param name="Status">Backup creation status.</param>
+/// <param name="PluginName">Plugin file name shown in progress and results.</param>
+/// <param name="BytesCopied">Bytes copied before completion, failure, or cancellation.</param>
+/// <param name="TotalBytes">Total bytes when known.</param>
+/// <param name="FailureReason">Concise failure reason, if any.</param>
+public sealed record BackupCreateResult(
+    BackupOperationStatus Status,
+    string PluginName,
+    long BytesCopied,
+    long? TotalBytes,
+    BackupFailureReason? FailureReason)
+{
+    /// <summary>
+    /// Gets the approved UI display reason for failed or canceled backup creation.
+    /// </summary>
+    public string? DisplayReason => FailureReason?.ToDisplayLabel();
+}
+
+/// <summary>
+/// Structured restore result for one plugin row.
+/// </summary>
+/// <param name="FileName">Plugin file name.</param>
+/// <param name="Status">Row-level restore status.</param>
+/// <param name="FailureReason">Concise failure reason, if any.</param>
+/// <param name="BytesCopied">Bytes copied before completion, failure, or cancellation.</param>
+/// <param name="TotalBytes">Total bytes when known.</param>
+public sealed record BackupRestoreRowResult(
+    string FileName,
+    BackupRestoreRowStatus Status,
+    BackupFailureReason? FailureReason,
+    long BytesCopied,
+    long? TotalBytes)
+{
+    /// <summary>
+    /// Gets the approved UI display reason for failed or canceled restore rows.
+    /// </summary>
+    public string? DisplayReason => FailureReason?.ToDisplayLabel();
+}
+
+/// <summary>
+/// Aggregate structured result for restoring one or more plugins from a backup session.
+/// </summary>
+/// <param name="Status">Aggregate restore status.</param>
+/// <param name="Rows">Per-plugin restore rows.</param>
+public sealed record BackupRestoreResult(BackupOperationStatus Status, IReadOnlyList<BackupRestoreRowResult> Rows)
+{
+    /// <summary>Number of plugins restored successfully.</summary>
+    public int RestoredCount => Rows.Count(row => row.Status == BackupRestoreRowStatus.Restored);
+
+    /// <summary>Number of plugins that failed to restore.</summary>
+    public int FailedCount => Rows.Count(row => row.Status == BackupRestoreRowStatus.Failed);
+
+    /// <summary>Number of restore rows canceled before completion.</summary>
+    public int CanceledCount => Rows.Count(row => row.Status == BackupRestoreRowStatus.Canceled);
+}
+
+/// <summary>
+/// Structured retention cleanup result for one backup session directory.
+/// </summary>
+/// <param name="SessionDirectory">Session directory considered for cleanup.</param>
+/// <param name="Status">Row-level retention status.</param>
+/// <param name="FailureReason">Concise failure reason, if any.</param>
+public sealed record BackupRetentionRowResult(
+    string SessionDirectory,
+    BackupRetentionRowStatus Status,
+    BackupFailureReason? FailureReason)
+{
+    /// <summary>
+    /// Gets the approved UI display reason for failed retention cleanup rows.
+    /// </summary>
+    public string? DisplayReason => FailureReason?.ToDisplayLabel();
+}
+
+/// <summary>
+/// Aggregate structured result for backup retention cleanup.
+/// </summary>
+/// <param name="Status">Aggregate retention status.</param>
+/// <param name="Rows">Per-session retention cleanup rows.</param>
+public sealed record BackupRetentionCleanupResult(BackupOperationStatus Status, IReadOnlyList<BackupRetentionRowResult> Rows)
+{
+    /// <summary>Number of old backup session directories deleted.</summary>
+    public int DeletedCount => Rows.Count(row => row.Status == BackupRetentionRowStatus.Deleted);
+
+    /// <summary>Number of backup session directories intentionally kept.</summary>
+    public int SkippedCount => Rows.Count(row => row.Status == BackupRetentionRowStatus.Kept);
+
+    /// <summary>Number of backup session directories still present after cleanup.</summary>
+    public int RemainingCount => Rows.Count(row => row.Status is BackupRetentionRowStatus.Kept or BackupRetentionRowStatus.Failed);
 }
