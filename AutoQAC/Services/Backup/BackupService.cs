@@ -700,7 +700,7 @@ public sealed class BackupService : IBackupService
     /// <summary>
     /// Checks string-level containment of a normalized restore target under the trusted Data-folder root.
     /// Delegates to <see cref="BackupPathContainment.IsContained"/> so the canonical containment policy
-    /// is shared with RestoreViewModel.DeleteSessionAsync (Plan 07-13) and any future delete/restore
+    /// is shared with <see cref="DeleteSessionAsync"/> (Plan 07-13) and any future delete/restore
     /// safety boundaries. Does not resolve NTFS reparse points or symlinks; callers still constrain
     /// metadata before filesystem writes.
     /// </summary>
