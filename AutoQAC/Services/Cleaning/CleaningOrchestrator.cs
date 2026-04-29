@@ -314,6 +314,15 @@ public sealed class CleaningOrchestrator(
                             {
                                 case BackupFailureChoice.SkipPlugin:
                                     logger.Information("User chose to skip plugin after backup failure: {Plugin}", plugin.FileName);
+                                    var skippedResult = new PluginCleaningResult
+                                    {
+                                        PluginName = plugin.FileName,
+                                        Status = CleaningStatus.Skipped,
+                                        Success = false,
+                                        Message = "Backup failed - skipped by user"
+                                    };
+                                    pluginResults.Add(skippedResult);
+                                    stateService.AddDetailedCleaningResult(skippedResult);
                                     stateService.UpdateState(s => s with
                                     {
                                         SkippedPlugins = new HashSet<string>(s.SkippedPlugins)
@@ -335,6 +344,21 @@ public sealed class CleaningOrchestrator(
                                         };
                                         await backupService.WriteSessionMetadataAsync(sessionDir, partialSession, cts.Token).ConfigureAwait(false);
                                     }
+
+                                    wasCancelled = true;
+                                    var abortSessionResult = new CleaningSessionResult
+                                    {
+                                        StartTime = startTime,
+                                        EndTime = DateTime.Now,
+                                        GameType = gameType,
+                                        WasCancelled = true,
+                                        PluginResults = pluginResults,
+                                        BackupCleanup = backupCleanup
+                                    };
+
+                                    // Abort exits before the normal end-of-method finalization path, so emit completion state here.
+                                    stateService.FinishCleaningWithResults(abortSessionResult);
+                                    LogSessionSummary(abortSessionResult);
                                     return;
                                 case BackupFailureChoice.ContinueWithoutBackup:
                                     logger.Information("User chose to continue without backup for: {Plugin}", plugin.FileName);
