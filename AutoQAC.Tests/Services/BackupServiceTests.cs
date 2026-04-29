@@ -1187,6 +1187,128 @@ public sealed class BackupServiceTests : IDisposable
 
     #endregion
 
+    #region DeleteSessionAsync
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task DeleteSessionAsync_NullOrEmptyBackupRoot_ReturnsRejectedAndDoesNotInvokeDeleter(string? backupRoot)
+    {
+        // Null/empty/whitespace backupRoot must short-circuit before any deletion.
+        var deleter = new RecordingBackupSessionDeleter();
+        var sut = new BackupService(new CountingBackupFileCopier(BackupCopyResult.Complete("", "", 0, 0)), _mockLogger, deleter);
+        var session = new BackupSession { SessionDirectory = @"C:\Backups\session", Plugins = [] };
+
+        var result = await sut.DeleteSessionAsync(session, backupRoot!, CancellationToken.None);
+
+        result.Status.Should().Be(BackupSessionDeleteStatus.RejectedOutsideBackupRoot);
+        deleter.Attempts.Should().Be(0, "null/empty backup roots must fail before invoking the deleter");
+        deleter.DeletedDirectories.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task DeleteSessionAsync_SessionOutsideBackupRoot_ReturnsRejectedAndDoesNotInvokeDeleter()
+    {
+        var backupRoot = Path.Combine(_testRoot, "Backups");
+        Directory.CreateDirectory(backupRoot);
+        var outsideSession = Path.Combine(_testRoot, "OutsideSession");
+        Directory.CreateDirectory(outsideSession);
+        var deleter = new RecordingBackupSessionDeleter();
+        var sut = new BackupService(new CountingBackupFileCopier(BackupCopyResult.Complete("", "", 0, 0)), _mockLogger, deleter);
+        var session = new BackupSession { SessionDirectory = outsideSession, Plugins = [] };
+
+        var result = await sut.DeleteSessionAsync(session, backupRoot, CancellationToken.None);
+
+        result.Status.Should().Be(BackupSessionDeleteStatus.RejectedOutsideBackupRoot);
+        deleter.Attempts.Should().Be(0);
+        Directory.Exists(outsideSession).Should().BeTrue("rejected sessions must remain on disk");
+    }
+
+    [Fact]
+    public async Task DeleteSessionAsync_SiblingPrefixSession_ReturnsRejected()
+    {
+        // "Backups 2" must not be treated as inside "Backups" even though the string prefix matches
+        // before the trailing-separator normalization runs.
+        var backupRoot = Path.Combine(_testRoot, "Backups");
+        Directory.CreateDirectory(backupRoot);
+        var siblingSession = Path.Combine(_testRoot, "Backups 2", "2026-01-01_10-00-00");
+        Directory.CreateDirectory(siblingSession);
+        var deleter = new RecordingBackupSessionDeleter();
+        var sut = new BackupService(new CountingBackupFileCopier(BackupCopyResult.Complete("", "", 0, 0)), _mockLogger, deleter);
+        var session = new BackupSession { SessionDirectory = siblingSession, Plugins = [] };
+
+        var result = await sut.DeleteSessionAsync(session, backupRoot, CancellationToken.None);
+
+        result.Status.Should().Be(BackupSessionDeleteStatus.RejectedOutsideBackupRoot);
+        deleter.Attempts.Should().Be(0);
+        Directory.Exists(siblingSession).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task DeleteSessionAsync_TraversalNormalizationEscapesBackupRoot_ReturnsRejected()
+    {
+        // After Path.GetFullPath, a `..` segment that escapes the backup root must be rejected.
+        var backupRoot = Path.Combine(_testRoot, "Backups");
+        Directory.CreateDirectory(backupRoot);
+        var traversalPath = Path.Combine(backupRoot, "..", "OutsideSession");
+        Directory.CreateDirectory(Path.GetFullPath(traversalPath));
+        var deleter = new RecordingBackupSessionDeleter();
+        var sut = new BackupService(new CountingBackupFileCopier(BackupCopyResult.Complete("", "", 0, 0)), _mockLogger, deleter);
+        var session = new BackupSession { SessionDirectory = traversalPath, Plugins = [] };
+
+        var result = await sut.DeleteSessionAsync(session, backupRoot, CancellationToken.None);
+
+        result.Status.Should().Be(BackupSessionDeleteStatus.RejectedOutsideBackupRoot);
+        deleter.Attempts.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task DeleteSessionAsync_ContainedSession_InvokesDeleterAndReturnsDeleted()
+    {
+        var backupRoot = Path.Combine(_testRoot, "Backups");
+        var sessionDir = Path.Combine(backupRoot, "2026-04-29_07-30-00");
+        Directory.CreateDirectory(sessionDir);
+        // The recording deleter performs the actual delete so disk-state post-conditions can be observed.
+        var deleter = new RecordingBackupSessionDeleter(onDelete: dir =>
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        });
+        var sut = new BackupService(new CountingBackupFileCopier(BackupCopyResult.Complete("", "", 0, 0)), _mockLogger, deleter);
+        var session = new BackupSession { SessionDirectory = sessionDir, Plugins = [] };
+
+        var result = await sut.DeleteSessionAsync(session, backupRoot, CancellationToken.None);
+
+        result.Status.Should().Be(BackupSessionDeleteStatus.Deleted);
+        deleter.DeletedDirectories.Should().ContainSingle().Which.Should().Be(sessionDir);
+        Directory.Exists(sessionDir).Should().BeFalse("contained sessions must be deleted via the deleter seam");
+    }
+
+    [Fact]
+    public async Task DeleteSessionAsync_DeleterThrowsIOException_ReturnsFailedAndLogsTechnicalDetails()
+    {
+        var backupRoot = Path.Combine(_testRoot, "Backups");
+        var sessionDir = Path.Combine(backupRoot, "2026-04-29_07-30-00");
+        Directory.CreateDirectory(sessionDir);
+        var ioException = new IOException("simulated lock");
+        // The recording deleter rethrows the configured exception on first call to simulate
+        // a Windows AV/Explorer lock or transient IO failure.
+        var deleter = new ThrowingBackupSessionDeleter(ioException);
+        var sut = new BackupService(new CountingBackupFileCopier(BackupCopyResult.Complete("", "", 0, 0)), _mockLogger, deleter);
+        var session = new BackupSession { SessionDirectory = sessionDir, Plugins = [] };
+
+        var result = await sut.DeleteSessionAsync(session, backupRoot, CancellationToken.None);
+
+        result.Status.Should().Be(BackupSessionDeleteStatus.Failed);
+        // Log call must reference the exception so on-call diagnostics can correlate the failure.
+        _mockLogger.Received().Error(Arg.Is<Exception>(e => ReferenceEquals(e, ioException)), Arg.Any<string>(), Arg.Any<object?[]>());
+    }
+
+    #endregion
+
     #region GetBackupRoot
 
     [Fact]
@@ -1309,6 +1431,26 @@ public sealed class BackupServiceTests : IDisposable
             _onDelete?.Invoke(sessionDirectory);
             DeletedDirectories.Add(sessionDirectory);
             return Task.CompletedTask;
+        }
+    }
+
+    /// <summary>
+    /// Test deleter that throws a configured exception on every call. Used by Plan 07-13
+    /// DeleteSessionAsync RED tests to assert that BackupService maps expected IO failures
+    /// to <see cref="BackupSessionDeleteStatus.Failed"/> without leaking exception text.
+    /// </summary>
+    private sealed class ThrowingBackupSessionDeleter(Exception toThrow) : IBackupSessionDeleter
+    {
+        private readonly Exception _toThrow = toThrow;
+
+        public int Attempts { get; private set; }
+
+        /// <inheritdoc />
+        public Task DeleteAsync(string sessionDirectory, CancellationToken ct)
+        {
+            Attempts++;
+            ct.ThrowIfCancellationRequested();
+            throw _toThrow;
         }
     }
 

@@ -499,6 +499,199 @@ public sealed class RestoreViewModelTests
 
         vm.RestorePluginCommand.CanExecute(null).Should().BeFalse();
         vm.RestoreAllCommand.CanExecute(null).Should().BeFalse();
+        vm.DeleteSessionCommand.CanExecute(null).Should().BeFalse(
+            "DeleteSessionCommand must also be disabled when no trusted restore root is loaded -- unifies the safety story with Restore Selected/All gating from Plan 07-11");
+    }
+
+    /// <summary>
+    /// Helper that primes the backup service substitute with a backup root and one session,
+    /// then loads the ViewModel and selects the session. Used by the Plan 07-13 Delete Session
+    /// containment tests so they share a single setup pattern instead of duplicating arrange logic.
+    /// </summary>
+    private async Task<RestoreViewModel> CreateLoadedViewModelAsync(string dataFolderPath, string backupRoot, BackupSession session)
+    {
+        _backupService.GetBackupRoot(dataFolderPath).Returns(backupRoot);
+        _backupService.GetBackupSessionsAsync(backupRoot, Arg.Any<CancellationToken>()).Returns([session]);
+        var vm = CreateViewModel();
+        await vm.LoadSessionsAsync(dataFolderPath);
+        vm.SelectedSession = session;
+        return vm;
+    }
+
+    /// <summary>
+    /// Plan 07-13 RED: confirmed delete with a session directory clearly outside the loaded backup
+    /// root must fail closed. The ViewModel must surface the canonical out-of-root sentence in both
+    /// StatusText and the dialog details copy and must not invoke recursive filesystem deletion.
+    /// </summary>
+    [Fact]
+    public async Task DeleteSessionCommand_UnsafeSessionDirectoryOutsideBackupRoot_FailsClosed()
+    {
+        var dataFolder = @"C:\Games\Skyrim Special Edition\Data";
+        var backupRoot = @"C:\Games\Skyrim Special Edition\AutoQAC Backups";
+        var session = new BackupSession
+        {
+            Timestamp = new DateTime(2026, 4, 29, 7, 30, 0),
+            GameType = "Skyrim Special Edition",
+            SessionDirectory = @"C:\Outside\session",
+            Plugins = new List<BackupPluginEntry>()
+        };
+        var vm = await CreateLoadedViewModelAsync(dataFolder, backupRoot, session);
+        _messageDialog.ShowConfirmAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        _backupService.DeleteSessionAsync(session, backupRoot, Arg.Any<CancellationToken>())
+            .Returns(new BackupSessionDeleteResult(BackupSessionDeleteStatus.RejectedOutsideBackupRoot, session.SessionDirectory));
+
+        await vm.DeleteSessionCommand.ExecuteAsync(null);
+
+        vm.Sessions.Should().Contain(session, "rejected sessions must remain in the list");
+        vm.SelectedSession.Should().Be(session);
+        vm.StatusText.Should().Be("The selected backup session is outside the configured backup folder.");
+        await _messageDialog.Received(1).ShowErrorAsync(
+            "Delete Failed",
+            "Failed to delete the backup session.",
+            "The selected backup session is outside the configured backup folder.");
+    }
+
+    /// <summary>
+    /// Plan 07-13 RED: a sibling-prefix path such as <c>"AutoQAC Backups 2"</c> next to
+    /// <c>"AutoQAC Backups"</c> must fail closed even though the prefix string would naively match.
+    /// </summary>
+    [Fact]
+    public async Task DeleteSessionCommand_SiblingPrefixBackupRoot_FailsClosed()
+    {
+        var dataFolder = @"C:\Games\Data";
+        var backupRoot = @"C:\Games\AutoQAC Backups";
+        var session = new BackupSession
+        {
+            Timestamp = new DateTime(2026, 4, 29, 7, 30, 0),
+            GameType = "Skyrim Special Edition",
+            SessionDirectory = @"C:\Games\AutoQAC Backups 2\2026-04-29_07-30-00",
+            Plugins = new List<BackupPluginEntry>()
+        };
+        var vm = await CreateLoadedViewModelAsync(dataFolder, backupRoot, session);
+        _messageDialog.ShowConfirmAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        _backupService.DeleteSessionAsync(session, backupRoot, Arg.Any<CancellationToken>())
+            .Returns(new BackupSessionDeleteResult(BackupSessionDeleteStatus.RejectedOutsideBackupRoot, session.SessionDirectory));
+
+        await vm.DeleteSessionCommand.ExecuteAsync(null);
+
+        vm.StatusText.Should().Be("The selected backup session is outside the configured backup folder.");
+        await _messageDialog.Received(1).ShowErrorAsync(
+            "Delete Failed",
+            "Failed to delete the backup session.",
+            "The selected backup session is outside the configured backup folder.");
+    }
+
+    /// <summary>
+    /// Plan 07-13 RED: a session path that escapes the backup root through <c>..</c> traversal
+    /// must fail closed even when the unnormalized path string starts with the root.
+    /// </summary>
+    [Fact]
+    public async Task DeleteSessionCommand_ParentTraversalEscapesBackupRoot_FailsClosed()
+    {
+        var dataFolder = @"C:\Games\Data";
+        var backupRoot = @"C:\Games\AutoQAC Backups";
+        var session = new BackupSession
+        {
+            Timestamp = new DateTime(2026, 4, 29, 7, 30, 0),
+            GameType = "Skyrim Special Edition",
+            SessionDirectory = @"C:\Games\AutoQAC Backups\..\OutsideSession",
+            Plugins = new List<BackupPluginEntry>()
+        };
+        var vm = await CreateLoadedViewModelAsync(dataFolder, backupRoot, session);
+        _messageDialog.ShowConfirmAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        _backupService.DeleteSessionAsync(session, backupRoot, Arg.Any<CancellationToken>())
+            .Returns(new BackupSessionDeleteResult(BackupSessionDeleteStatus.RejectedOutsideBackupRoot, session.SessionDirectory));
+
+        await vm.DeleteSessionCommand.ExecuteAsync(null);
+
+        vm.StatusText.Should().Be("The selected backup session is outside the configured backup folder.");
+    }
+
+    /// <summary>
+    /// Plan 07-13 RED: when no trusted restore root is loaded (data folder null/empty),
+    /// <c>_backupRoot</c> stays null and DeleteSessionCommand must be disabled. Even direct
+    /// invocation must short-circuit before calling the backup service.
+    /// </summary>
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public async Task DeleteSessionCommand_NullBackupRoot_FailsClosed(string? dataFolderPath)
+    {
+        var session = CreateSession(CreatePlugin("Update.esm"));
+        var vm = CreateViewModel();
+        // _backupRoot stays null because LoadSessionsAsync receives a null/empty data folder.
+        await vm.LoadSessionsAsync(dataFolderPath);
+        vm.SelectedSession = session;
+
+        vm.DeleteSessionCommand.CanExecute(null).Should().BeFalse(
+            "DeleteSessionCommand must be disabled when _backupRoot is null/empty/whitespace");
+
+        // Direct execution must remain a no-op even if a caller bypasses CanExecute.
+        await vm.DeleteSessionCommand.ExecuteAsync(null);
+
+        await _backupService.DidNotReceive().DeleteSessionAsync(
+            Arg.Any<BackupSession>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// Plan 07-13 RED: a contained session whose deletion succeeds must remove the row from
+    /// Sessions, clear SelectedSession, raise HasSessions, and set StatusText to the canonical
+    /// success copy.
+    /// </summary>
+    [Fact]
+    public async Task DeleteSessionCommand_NormalContainedSession_DeletesAndUpdatesViewModelState()
+    {
+        var dataFolder = @"C:\Games\Data";
+        var backupRoot = @"C:\Games\AutoQAC Backups";
+        var session = new BackupSession
+        {
+            Timestamp = new DateTime(2026, 4, 29, 7, 30, 0),
+            GameType = "Skyrim Special Edition",
+            SessionDirectory = @"C:\Games\AutoQAC Backups\2026-04-29_07-30-00",
+            Plugins = new List<BackupPluginEntry>()
+        };
+        var vm = await CreateLoadedViewModelAsync(dataFolder, backupRoot, session);
+        _messageDialog.ShowConfirmAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        _backupService.DeleteSessionAsync(session, backupRoot, Arg.Any<CancellationToken>())
+            .Returns(new BackupSessionDeleteResult(BackupSessionDeleteStatus.Deleted, session.SessionDirectory));
+
+        await vm.DeleteSessionCommand.ExecuteAsync(null);
+
+        vm.Sessions.Should().NotContain(session);
+        vm.SelectedSession.Should().BeNull();
+        vm.HasSessions.Should().BeFalse();
+        vm.StatusText.Should().Be("Session deleted");
+    }
+
+    /// <summary>
+    /// Plan 07-13 RED: when the service reports a non-validation failure (locked file, IO error),
+    /// the ViewModel must show the generic "technical details written to the log" sentence and
+    /// must not include raw exception message content in the dialog or status text.
+    /// </summary>
+    [Fact]
+    public async Task DeleteSessionCommand_ServiceFailedStatus_LogsAndShowsConciseError()
+    {
+        var dataFolder = @"C:\Games\Data";
+        var backupRoot = @"C:\Games\AutoQAC Backups";
+        var session = new BackupSession
+        {
+            Timestamp = new DateTime(2026, 4, 29, 7, 30, 0),
+            GameType = "Skyrim Special Edition",
+            SessionDirectory = @"C:\Games\AutoQAC Backups\2026-04-29_07-30-00",
+            Plugins = new List<BackupPluginEntry>()
+        };
+        var vm = await CreateLoadedViewModelAsync(dataFolder, backupRoot, session);
+        _messageDialog.ShowConfirmAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        _backupService.DeleteSessionAsync(session, backupRoot, Arg.Any<CancellationToken>())
+            .Returns(new BackupSessionDeleteResult(BackupSessionDeleteStatus.Failed, session.SessionDirectory));
+
+        await vm.DeleteSessionCommand.ExecuteAsync(null);
+
+        vm.StatusText.Should().Be("Failed to delete the backup session. Technical details were written to the log.");
+        await _messageDialog.Received(1).ShowErrorAsync(
+            "Delete Failed",
+            "Failed to delete the backup session.",
+            "Technical details were written to the log.");
     }
 
     /// <summary>
