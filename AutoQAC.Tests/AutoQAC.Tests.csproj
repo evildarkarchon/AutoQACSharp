@@ -39,12 +39,18 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Remove="TestProcessHelper\**\*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\AutoQAC\AutoQAC.csproj" />
     <ProjectReference Include="..\QueryPlugins\QueryPlugins.csproj" />
+    <ProjectReference Include="TestProcessHelper\AutoQAC.TestProcessHelper.csproj" ReferenceOutputAssembly="false" OutputItemType="Content" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="TestProcessHelper\bin\$(Configuration)\net10.0\AutoQAC.TestProcessHelper.dll" CopyToOutputDirectory="PreserveNewest" Link="AutoQAC.TestProcessHelper.dll" />
   </ItemGroup>
 
 </Project>
