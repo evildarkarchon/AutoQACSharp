@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Cleanup
-status: executing
-stopped_at: Completed 07-10-PLAN.md
-last_updated: "2026-04-29T09:54:10.318Z"
-last_activity: 2026-04-29 -- Completed Phase 07 Plan 10
+status: verifying
+stopped_at: Completed 07-11-PLAN.md
+last_updated: "2026-04-29T10:04:29.399Z"
+last_activity: 2026-04-29
 progress:
   total_phases: 7
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 19
-  completed_plans: 18
-  percent: 95
+  completed_plans: 19
+  percent: 100
 ---
 
 # Project State
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-04-28)
 
 Phase: 07 (backup-restore-retention-safety) — EXECUTING
 Plan: 11 of 11
-Status: Ready to execute
-Last activity: 2026-04-29 -- Completed Phase 07 Plan 10
+Status: Phase complete — ready for verification
+Last activity: 2026-04-29
 
-Progress: [██████████] 95%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -63,6 +63,7 @@ Progress: [██████████] 95%
 | Phase 07 P08 | 2 min | 3 tasks | 5 files |
 | Phase 07 P09 | 7 min | 3 tasks | 4 files |
 | Phase 07 P10 | 2 min | 2 tasks | 3 files |
+| Phase 07 P11 | 8 min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -112,6 +113,9 @@ Progress: [██████████] 95%
 - [Phase 07]: Track BackupFileCopier output ownership with a local createdOutput flag set only after destination stream open succeeds. — Plan 07-10 closes the create-new existing-destination deletion gap without changing backup naming policy.
 - [Phase 07]: Gate BackupFileCopier partial-output deletion on copy-attempt ownership. — Plan 07-10 preserves pre-existing create-new backup files while still cleaning attempt-owned partial/temp outputs.
 - [Phase 07]: Keep atomic restore using the fixed .autoqac-tmp suffix for this gap-closure plan. — Unique same-directory temp naming remains documented as future hardening.
+- [Phase 07]: Restore services require an explicit trusted restore root and fail closed when missing or invalid — Plan 07-11 constrains restores to the configured game Data folder.
+- [Phase 07]: Restore target containment is string-level Path.GetFullPath validation and does not resolve NTFS reparse points or symlinks — This closes metadata redirection while documenting filesystem identity as future hardening.
+- [Phase 07]: RestoreWindow disables Restore Selected and Restore All until LoadSessionsAsync receives the configured game Data folder — This avoids opaque fail-closed UI attempts when no trusted root is loaded.
 
 ### Pending Todos
 
@@ -130,6 +134,6 @@ Progress: [██████████] 95%
 
 ## Session Continuity
 
-Last session: 2026-04-29T09:53:58.708Z
-Stopped at: Completed 07-10-PLAN.md
+Last session: 2026-04-29T10:03:59.831Z
+Stopped at: Completed 07-11-PLAN.md
 Resume file: None
