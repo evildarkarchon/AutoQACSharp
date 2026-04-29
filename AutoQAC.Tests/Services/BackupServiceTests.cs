@@ -746,6 +746,48 @@ public sealed class BackupServiceTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies cancellation after classification but before deleting an old session returns structured rows instead of throwing.
+    /// </summary>
+    [Fact]
+    public async Task CleanupOldSessionsAsync_PreDeleteCancellation_ReturnsCanceledRowsAndCounts()
+    {
+        // Arrange
+        var backupRoot = Path.Combine(_testRoot, "cleanup_async_pre_delete_cancel");
+        var oldSession = await CreateSessionDirectoryWithMetadata(backupRoot, "2026-01-01_10-00-00");
+        var newestSession = await CreateSessionDirectoryWithMetadata(backupRoot, "2026-01-02_10-00-00");
+        var deleter = new RecordingBackupSessionDeleter();
+        var sut = CreateBackupService(deleter);
+        using var cts = new CancellationTokenSource();
+        var progress = new SynchronousProgress<BackupCopyProgress>(update =>
+        {
+            if (update.FilesCompleted == 1)
+            {
+                cts.Cancel();
+            }
+        });
+
+        // Act
+        var result = await sut.CleanupOldSessionsAsync(
+            backupRoot,
+            maxSessionCount: 1,
+            progress: progress,
+            ct: cts.Token);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Canceled);
+        result.RemainingCount.Should().Be(2);
+        deleter.DeletedDirectories.Should().BeEmpty("cancellation before deletion should stop before deleting old sessions");
+        result.Rows.Should().Contain(row =>
+            row.SessionDirectory == newestSession &&
+            row.Status == BackupRetentionRowStatus.Kept &&
+            row.FailureReason == null);
+        result.Rows.Should().Contain(row =>
+            row.SessionDirectory == oldSession &&
+            row.Status == BackupRetentionRowStatus.Kept &&
+            row.DisplayReason == "Canceled");
+    }
+
+    /// <summary>
     /// Verifies retention cleanup reports a warning row when deletion fails once and then fails again after retry.
     /// </summary>
     [Fact]
@@ -896,6 +938,12 @@ public sealed class BackupServiceTests : IDisposable
             DeletedDirectories.Add(sessionDirectory);
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class SynchronousProgress<T>(Action<T> onReport) : IProgress<T>
+    {
+        /// <inheritdoc />
+        public void Report(T value) => onReport(value);
     }
 
     #endregion
