@@ -95,7 +95,7 @@ Plans:
 - [x] 07-05-PLAN.md — Complete cleaning progress UI cancel affordances and final Phase 7 verification.
 
 **Wave 5 (gap closure; blocked on Wave 4 completion)**
-- [ ] 07-06-PLAN.md — Close backup failure SkipPlugin/AbortSession session accounting and finalization gaps.
+- [x] 07-06-PLAN.md — Close backup failure SkipPlugin/AbortSession session accounting and finalization gaps.
 - [ ] 07-07-PLAN.md — Close restore metadata validation, retention progress, and TEST-04 coverage gaps.
 **UI hint**: yes
 
