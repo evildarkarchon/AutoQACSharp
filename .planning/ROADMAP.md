@@ -102,7 +102,7 @@ Plans:
 - [x] 07-08-PLAN.md — Close restore progress dispatcher, backup directory failure, and retention cancellation verification gaps.
 
 **Wave 7 (gap closure; blocked on Wave 6 completion)**
-- [ ] 07-09-PLAN.md — Close remaining backup destination containment, restore target metadata, and mixed cancellation status gaps.
+- [x] 07-09-PLAN.md — Close remaining backup destination containment, restore target metadata, and mixed cancellation status gaps.
 **UI hint**: yes
 
 ### Phase 8: Cleaning Orchestrator Decomposition
