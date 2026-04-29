@@ -61,7 +61,7 @@ updated: 2026-04-29
 
 | Requirement | Reason | Manual Check |
 |-------------|--------|--------------|
-| SAF-02: `TerminateProcessAsync(forceKill: true)` returns `ForceKillFailed` when post-kill wait is canceled | Auditor attempts with `sleep 30000` and `spawn-child 30000` helpers both returned `ForceKilled`; the helper exits quickly enough after `Kill(true)` that `WaitForExitAsync` completes before cancellation can surface. Testing the exact failure path requires a production seam or a reliably unkillable/inaccessible process fixture. | Review logs around `[Termination] Force kill wait was canceled` and treat a real-world occurrence as `ForceKillFailed`; add a test if a deterministic process fixture or seam is introduced. |
+| SAF-02: `TerminateProcessAsync(forceKill: true)` returns `ForceKillFailed` when post-kill wait is canceled | Auditor attempts with `sleep 30000` and `spawn-child 30000` helpers both returned `ForceKilled`; the helper exits quickly enough after `Kill(true)` that `WaitForExitAsync` completes before cancellation can surface. A 2026-04-29 re-audit also tried a pre-canceled token and near-immediate cancellation, but Windows/.NET still completed root-process termination first. Testing the exact failure path requires a production seam or a reliably unkillable/inaccessible process fixture. | Review logs around `[Termination] Force kill wait was canceled` and treat a real-world occurrence as `ForceKillFailed`; add a test if a deterministic process fixture or seam is introduced. |
 
 Optional smoke check: run `dotnet run --project AutoQAC/AutoQAC.csproj`, start a controlled cleaning session, click Stop once, and confirm the copy matches `05-UI-SPEC.md`.
 
@@ -91,3 +91,17 @@ Optional smoke check: run `dotnet run --project AutoQAC/AutoQAC.csproj`, start a
 - Added `ExecuteAsync_UserCancellation_ShouldReturnGracePeriodExpiredKeepHelperRunningAndPreservePidEvidence` to cover user Stop semantics with a real helper process.
 - Retained the force-kill post-wait cancellation scenario as manual-only because the current public API and helper process behavior do not make the failure deterministic without implementation changes.
 - Refreshed stale Wave 0 and per-task statuses from pending to current coverage state.
+
+## Validation Audit 2026-04-29 Re-Audit
+
+| Metric | Count |
+|--------|-------|
+| Gaps found | 1 |
+| Resolved | 0 |
+| Escalated | 1 |
+
+### Audit Notes
+
+- Re-ran the Phase 5 targeted validation suite; `Process`, `CleaningOrchestrator`, and `CleaningCommands` coverage passed 54/54.
+- Spawned the Nyquist auditor for the remaining SAF-02 wait-cancellation gap; adversarial attempts using a pre-canceled token and near-immediate cancellation still returned `ForceKilled` because helper processes exited before cancellation surfaced from `WaitForExitAsync`.
+- Kept the gap manual-only pending a production seam or deterministic process fixture that can force post-kill wait cancellation after `Kill(true)` is invoked.
