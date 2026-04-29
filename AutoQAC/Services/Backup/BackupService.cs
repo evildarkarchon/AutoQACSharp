@@ -222,21 +222,26 @@ public sealed class BackupService : IBackupService
 
     public void RestorePlugin(BackupPluginEntry entry, string sessionDir)
     {
-        var backupPath = Path.Combine(sessionDir, entry.FileName);
+        if (!ValidateRestoreEntry(entry, sessionDir, out var backupPath, out var targetPath, out _))
+        {
+            _logger.Warning("Rejected unsafe backup metadata for sync restore of {Plugin}", entry.FileName);
+            throw new InvalidOperationException("Backup metadata is not safe to restore.");
+        }
+
         if (!File.Exists(backupPath))
         {
             throw new FileNotFoundException($"Backup file not found: '{backupPath}'");
         }
 
         // Ensure the target directory exists
-        var targetDir = Path.GetDirectoryName(entry.OriginalPath);
+        var targetDir = Path.GetDirectoryName(targetPath);
         if (!string.IsNullOrEmpty(targetDir))
         {
             Directory.CreateDirectory(targetDir);
         }
 
-        File.Copy(backupPath, entry.OriginalPath, overwrite: true);
-        _logger.Information("Restored {Plugin} to {Path}", entry.FileName, entry.OriginalPath);
+        File.Copy(backupPath, targetPath, overwrite: true);
+        _logger.Information("Restored {Plugin} to {Path}", entry.FileName, targetPath);
     }
 
     public async Task<BackupRestoreResult> RestorePluginAsync(
@@ -546,7 +551,7 @@ public sealed class BackupService : IBackupService
     /// <summary>
     /// Validates untrusted restore metadata before it is used for source or target filesystem paths.
     /// Backup file names must remain simple session-contained names, and restore targets must be rooted paths
-    /// that can be normalized before overwrite attempts.
+    /// whose file name and extension match the backed-up plugin before overwrite attempts.
     /// </summary>
     private static bool ValidateRestoreEntry(
         BackupPluginEntry entry,
@@ -558,11 +563,11 @@ public sealed class BackupService : IBackupService
         backupPath = string.Empty;
         targetPath = string.Empty;
 
-        if (string.IsNullOrWhiteSpace(entry.FileName) ||
-            Path.IsPathRooted(entry.FileName) ||
-            !string.Equals(Path.GetFileName(entry.FileName), entry.FileName, StringComparison.Ordinal))
+        if (!IsSafeSessionRelativeName(entry.FileName, requirePluginExtension: true))
         {
-            failureReason = BackupFailureReason.MissingBackupFile;
+            failureReason = IsSafeSessionRelativeName(entry.FileName, requirePluginExtension: false)
+                ? BackupFailureReason.TargetFolderCreationFailed
+                : BackupFailureReason.MissingBackupFile;
             return false;
         }
 
@@ -586,13 +591,19 @@ public sealed class BackupService : IBackupService
 
         try
         {
-            if (string.IsNullOrWhiteSpace(entry.OriginalPath) || !Path.IsPathRooted(entry.OriginalPath))
+            if (!IsSafeRestoreTarget(entry))
             {
                 failureReason = BackupFailureReason.TargetFolderCreationFailed;
                 return false;
             }
 
             targetPath = Path.GetFullPath(entry.OriginalPath);
+            if (!IsNormalLocalDriveRoot(Path.GetPathRoot(targetPath)) || !IsApprovedPluginExtension(targetPath))
+            {
+                failureReason = BackupFailureReason.TargetFolderCreationFailed;
+                return false;
+            }
+
             failureReason = default;
             return true;
         }
@@ -602,6 +613,39 @@ public sealed class BackupService : IBackupService
             return false;
         }
     }
+
+    /// <summary>
+    /// Checks untrusted restore target metadata before directory creation or copy operations.
+    /// </summary>
+    /// <param name="entry">Backup entry whose original target path came from session metadata.</param>
+    /// <returns>True when the target is a local-drive rooted plugin path whose file name matches the backup file name.</returns>
+    private static bool IsSafeRestoreTarget(BackupPluginEntry entry)
+    {
+        if (string.IsNullOrWhiteSpace(entry.OriginalPath) ||
+            !Path.IsPathRooted(entry.OriginalPath) ||
+            entry.OriginalPath.StartsWith(@"\\", StringComparison.Ordinal) ||
+            entry.OriginalPath.StartsWith(@"\\?\", StringComparison.Ordinal) ||
+            entry.OriginalPath.StartsWith(@"\\.\", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (!string.Equals(Path.GetFileName(entry.OriginalPath), entry.FileName, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return IsApprovedPluginExtension(entry.OriginalPath);
+    }
+
+    /// <summary>
+    /// Checks whether a path root is a normal Windows local drive root such as <c>C:\</c>.
+    /// </summary>
+    private static bool IsNormalLocalDriveRoot(string? root) =>
+        root is { Length: 3 } &&
+        char.IsLetter(root[0]) &&
+        root[1] == ':' &&
+        (root[2] == Path.DirectorySeparatorChar || root[2] == Path.AltDirectorySeparatorChar);
 
     /// <summary>
     /// Ensures session containment checks compare against a directory prefix instead of a similarly named sibling.
