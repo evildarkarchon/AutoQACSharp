@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Cleanup
 status: executing
-stopped_at: Planned 07-08-PLAN.md
-last_updated: "2026-04-29T08:18:38.734Z"
-last_activity: 2026-04-29 -- Phase 07 planning complete
+stopped_at: Completed 07-08-PLAN.md
+last_updated: "2026-04-29T08:24:57.420Z"
+last_activity: 2026-04-29 -- Phase 07 Plan 08 complete
 progress:
   total_phases: 7
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 16
-  completed_plans: 15
-  percent: 94
+  completed_plans: 16
+  percent: 100
 ---
 
 # Project State
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-04-28)
 
 Phase: 07 (backup-restore-retention-safety) — EXECUTING
 Plan: 8 of 8
-Status: Ready to execute
-Last activity: 2026-04-29 -- Phase 07 planning complete
+Status: Phase 07 complete; ready for verification/milestone transition
+Last activity: 2026-04-29 -- Phase 07 Plan 08 complete
 
-Progress: [█████████░] 94%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -60,6 +60,7 @@ Progress: [█████████░] 94%
 | Phase 07 P05 | 5 min | 2 tasks | 6 files |
 | Phase 07 P06 | 2 min | 2 tasks | 2 files |
 | Phase 07 P07 | 5 min | 3 tasks | 6 files |
+| Phase 07 P08 | 2 min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -100,6 +101,9 @@ Progress: [█████████░] 94%
 - [Phase ?]: [Phase 07]: Treat backup session metadata as untrusted input: FileName must be simple/non-rooted and resolved backup path must stay inside the selected session directory. — Plan 07-07 closes restore traversal and absolute FileName verification gaps before copy operations.
 - [Phase ?]: [Phase 07]: Use rooted OriginalPath plus Path.GetFullPath normalization as the restore target safety policy available at the BackupService boundary. — BackupPluginEntry metadata does not carry a game data root, so service-level validation rejects unrooted targets and normalizes rooted overwrite paths.
 - [Phase ?]: [Phase 07]: Carry retention count progress on BackupCopyProgress optional count fields so AppState.BackupOperation can render cleanup progress without a new model. — This preserves the existing progress UI path while making retention cleanup progress data-flowing.
+- [Phase 07]: Restore progress from backup copy callbacks is marshaled through IUiDispatcher.Post before mutating bindable ViewModel state. — Plan 07-08 closes the async restore progress UI-thread gap.
+- [Phase 07]: BackupPluginAsync maps expected session-directory creation failures to structured BackupCreateResult failures. — Plan 07-08 keeps backup failure choice/session reporting on structured outcomes.
+- [Phase 07]: Retention cancellation at classification/pre-delete gates returns BackupRetentionCleanupResult(Canceled) with rows and counts. — Plan 07-08 prevents expected cleanup cancellation from escaping finalization.
 
 ### Pending Todos
 
@@ -118,6 +122,6 @@ Progress: [█████████░] 94%
 
 ## Session Continuity
 
-Last session: 2026-04-29T08:18:38.734Z
-Stopped at: Planned 07-08-PLAN.md
+Last session: 2026-04-29T08:24:57.415Z
+Stopped at: Completed 07-08-PLAN.md
 Resume file: None

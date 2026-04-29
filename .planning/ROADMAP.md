@@ -99,7 +99,7 @@ Plans:
 - [x] 07-07-PLAN.md — Close restore metadata validation, retention progress, and TEST-04 coverage gaps.
 
 **Wave 6 (gap closure; blocked on Wave 5 completion)**
-- [ ] 07-08-PLAN.md — Close restore progress dispatcher, backup directory failure, and retention cancellation verification gaps.
+- [x] 07-08-PLAN.md — Close restore progress dispatcher, backup directory failure, and retention cancellation verification gaps.
 **UI hint**: yes
 
 ### Phase 8: Cleaning Orchestrator Decomposition
@@ -157,7 +157,7 @@ Plans:
 | 4. Cleanup -- Remove Dead Code | v1.0 xEdit Log Parsing Fix | 2/2 | Complete | 2026-03-31 |
 | 5. Process Stop & PID Safety | v1.0 Cleanup | 0/0 | Not started | - |
 | 6. Command Launch Escaping | v1.0 Cleanup | 4/4 | Complete | 2026-04-29 |
-| 7. Backup Restore & Retention Safety | v1.0 Cleanup | 7/8 | In progress | - |
+| 7. Backup Restore & Retention Safety | v1.0 Cleanup | 8/8 | Complete | 2026-04-29 |
 | 8. Cleaning Orchestrator Decomposition | v1.0 Cleanup | 0/0 | Not started | - |
 | 9. Plugin Refresh & Approximation Performance | v1.0 Cleanup | 0/0 | Not started | - |
 | 10. Configuration Persistence Hardening | v1.0 Cleanup | 0/0 | Not started | - |
