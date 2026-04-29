@@ -1,65 +1,64 @@
 ---
 phase: 07-backup-restore-retention-safety
-verified: 2026-04-29T07:35:33Z
+verified: 2026-04-29T08:01:30Z
 status: gaps_found
-score: 7/12 must-haves verified
+score: 11/14 must-haves verified
 overrides_applied: 0
+re_verification:
+  previous_status: gaps_found
+  previous_score: 7/12
+  gaps_closed:
+    - "BackupFailureChoice.SkipPlugin now publishes a skipped PluginCleaningResult and BackupFailureChoice.AbortSession finalizes through FinishCleaningWithResults."
+    - "Restore metadata FileName traversal/absolute paths and unrooted OriginalPath are rejected before copying."
+    - "Retention cleanup now reports count progress through BackupCopyProgress and the orchestrator maps it into BackupOperationState."
+    - "TEST-04 now covers malicious metadata, access-denied restore mapping, target write failure, and cleanup deletion failure after retry."
+  gaps_remaining:
+    - "Restore copy progress still mutates RestoreViewModel UI-bound properties from the backup copy callback without IUiDispatcher marshalling."
+    - "BackupPluginAsync still lets backup session directory creation exceptions escape before structured BackupCreateResult/backup-failure callback handling."
+    - "CleanupOldSessionsAsync still lets cancellation during directory classification/pre-delete ThrowIfCancellationRequested escape instead of returning a structured canceled cleanup result."
+  regressions: []
 gaps:
-  - truth: "Backup failure choices finalize and report the session instead of leaving cleaning state or progress incomplete."
+  - truth: "Restore progress and cancellation remain usable during real async copy work."
     status: failed
-    reason: "Code-review CR-01 and CR-02 are real in the actual source: AbortSession returns before FinishCleaningWithResults, and SkipPlugin updates SkippedPlugins then continues without adding a PluginCleaningResult or progress increment."
+    reason: "RestoreViewModel.CreateRestoreProgressReporter uses a custom synchronous IProgress implementation that directly mutates UI-bound properties; BackupFileCopier reports from async copy continuations using ConfigureAwait(false), so real progress can arrive off the Avalonia UI thread."
     artifacts:
-      - path: "AutoQAC/Services/Cleaning/CleaningOrchestrator.cs"
-        issue: "Lines 315-323 SkipPlugin branch continues without pluginResults.Add or AddDetailedCleaningResult; lines 324-338 AbortSession returns inside the try block before final session completion."
+      - path: "AutoQAC/ViewModels/RestoreViewModel.cs"
+        issue: "Lines 366-428 create RestoreProgressReporter and call UpdateRestoreProgress directly; no IUiDispatcher or Progress<T> UI-context marshalling is injected or used."
+      - path: "AutoQAC.Tests/ViewModels/RestoreViewModelTests.cs"
+        issue: "Restore progress tests only report synchronously from substitutes and do not prove thread marshalling for async copy callbacks."
+    missing:
+      - "Marshal restore progress updates through IUiDispatcher (or another UI-thread-safe mechanism) before mutating RestoreProgressText, RestoreBytesCopied, RestoreTotalBytes, or RestoreResults-related state."
+      - "Add a regression test proving progress reported from an asynchronous/background callback is dispatched before UI-bound state changes."
+  - truth: "Backup creation failures are reported through structured backup failure choices instead of escaping the cleaning workflow."
+    status: failed
+    reason: "BackupService.BackupPluginAsync creates the backup session directory outside any failure mapping; IOException/UnauthorizedAccessException/ArgumentException can bypass BackupCreateResult, so CleaningOrchestrator never reaches the backup failure callback for that failure."
+    artifacts:
+      - path: "AutoQAC/Services/Backup/BackupService.cs"
+        issue: "Line 111 calls Directory.CreateDirectory(sessionDir) before CopyAsync and outside try/catch/result mapping."
       - path: "AutoQAC.Tests/Services/CleaningOrchestratorTests.cs"
-        issue: "No regression tests cover BackupFailureChoice.SkipPlugin or BackupFailureChoice.AbortSession; only ContinueWithoutBackup is tested."
+        issue: "Tests cover structured BackupCreateResult failures returned by the mock, but not a real BackupPluginAsync session-directory creation failure path."
     missing:
-      - "For SkipPlugin, add a skipped PluginCleaningResult, publish it through AddDetailedCleaningResult, and preserve progress/session accounting."
-      - "For AbortSession, route through FinishCleaningWithResults (or finalize before return) so IsCleaning is cleared and a final result is emitted."
-      - "Add tests for BackupFailureChoice.SkipPlugin and BackupFailureChoice.AbortSession."
-  - truth: "Restore safety validates backup-session metadata paths before copying."
+      - "Catch expected session-directory creation exceptions in BackupPluginAsync and return BackupCreateResult with AccessDenied or TargetFolderCreationFailed."
+      - "Add coverage proving backup session directory creation failure reaches BackupFailureCallback with a concise reason and does not bypass session reporting."
+  - truth: "Retention cleanup cancellation always returns a structured canceled cleanup result with rows/counts."
     status: failed
-    reason: "Code-review CR-03 is real: restore builds source and target paths directly from session metadata, allowing file-name path traversal/absolute backup paths and arbitrary OriginalPath overwrite targets."
+    reason: "CleanupOldSessionsAsync handles pre-canceled tokens and cancellation during retry/deletion, but cancellation during ClassifyRetentionDirectoriesAsync or the explicit pre-delete ct.ThrowIfCancellationRequested propagates OperationCanceledException. The orchestrator then reports whole-session cancellation with BackupCleanup still null."
     artifacts:
       - path: "AutoQAC/Services/Backup/BackupService.cs"
-        issue: "Lines 378-403 use Path.Combine(sessionDir, entry.FileName) and entry.OriginalPath without validating that FileName is a simple file name or that the resolved backup path stays under the session directory."
-    missing:
-      - "Reject or structurally fail restore rows whose FileName is rooted or contains traversal."
-      - "Ensure resolved backup paths remain contained within the selected backup session directory."
-      - "Validate/limit restore targets according to the trusted game data root or an equivalent safe target policy before overwriting."
-      - "Add malicious metadata regression tests for `..\\` and absolute FileName values."
-  - truth: "Retention cleanup progress is data-flowing, visible progress rather than a static active band."
-    status: failed
-    reason: "CleanupOldSessionsAsync accepts a progress sink and the orchestrator/UI wire a cleanup progress band, but the service never calls progress.Report, so count progress never advances for retention cleanup."
-    artifacts:
-      - path: "AutoQAC/Services/Backup/BackupService.cs"
-        issue: "Lines 297-357 accept IProgress<BackupCopyProgress>? progress but no progress.Report call exists anywhere in CleanupOldSessionsAsync or its retention helpers."
-      - path: "AutoQAC/Services/Cleaning/CleaningOrchestrator.cs"
-        issue: "Lines 713-743 create and pass retention progress to CleanupOldSessionsAsync, but no upstream data is produced."
-      - path: "AutoQAC/ViewModels/ProgressViewModel.cs"
-        issue: "Lines 238-252 can render count-only progress, but TotalFiles/FilesCompleted remain default because the retention service does not report them."
-    missing:
-      - "Report retention count progress after classification and after keep/delete/failure rows, or introduce a dedicated retention progress model."
-      - "Add a test proving Cleaning up old backups progresses beyond the initial static state."
-  - truth: "Maintainers can verify TEST-04 coverage for permission failures and cleanup deletion failures."
-    status: failed
-    reason: "The targeted Phase 7 tests pass, but coverage is incomplete for TEST-04: there is no restore permission/UnauthorizedAccess regression and no non-canceled cleanup-deletion-failure regression that proves Warning plus Cleanup deletion failed after retry."
-    artifacts:
-      - path: "AutoQAC.Tests/Services/BackupFileCopierTests.cs"
-        issue: "Covers cancellation, target preservation, progress, and missing source, but not UnauthorizedAccessException/Access denied or target write failure mapping."
+        issue: "Lines 317 and 349 can throw OperationCanceledException outside a catch that converts it to BackupRetentionCleanupResult(Canceled, rows)."
       - path: "AutoQAC.Tests/Services/BackupServiceTests.cs"
-        issue: "Covers missing target directory, partial restore, target-folder creation failure, retention current/newest/malformed/canceled paths, but no cleanup deletion failure after retry remains failed."
+        issue: "Cancellation tests cover pre-canceled tokens and retry-delay cancellation, not classification/pre-delete cancellation after some rows are known."
     missing:
-      - "Add restore permission/access-denied or copier UnauthorizedAccessException coverage."
-      - "Add CleanupOldSessionsAsync deletion failure coverage where retry also fails and result.Status is Warning with a Cleanup deletion failed row."
+      - "Catch OperationCanceledException inside CleanupOldSessionsAsync around classification and delete-loop cancellation gates, add remaining rows, report final progress, and return BackupOperationStatus.Canceled."
+      - "Add tests for cancellation during classification or just before deleting a candidate that assert rows/counts and no exception escape."
 ---
 
 # Phase 07: Backup Restore & Retention Safety Verification Report
 
 **Phase Goal:** Users can restore backups and run backup/retention work with clear failure reporting, cancellation, and progress while preserving sequential xEdit cleaning.  
-**Verified:** 2026-04-29T07:35:33Z  
+**Verified:** 2026-04-29T08:01:30Z  
 **Status:** gaps_found  
-**Re-verification:** No — initial verification
+**Re-verification:** Yes — after gap-closure plans 07-06 and 07-07
 
 ## Goal Achievement
 
@@ -67,70 +66,74 @@ gaps:
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | User can restore backups and receive clear row-level failure reporting when target directories are missing, backup files are missing, or target writes/access fail. | ✓ VERIFIED | `BackupService.cs:372-410` recreates target directories, maps directory creation failures to `Target folder creation failed`, maps missing backup files to `Missing backup file`, and maps copier `AccessDenied`/write failures through `MapRestoreFailure`; row labels are constrained by `BackupOperationResults.cs:57-74`. |
-| 2 | Restore All continues after individual plugin failures and distinguishes Complete, Partial, Failed, and Canceled with counts. | ✓ VERIFIED | `BackupService.cs:231-250` iterates every plugin and returns `GetRestoreStatus`; `BackupOperationResults.cs:207-217` exposes restored/failed/canceled counts; `BackupServiceTests.cs:300-331` verifies partial restore continues after missing backup. |
-| 3 | Restore Selected/All require overwrite confirmation and inline results remain visible for complete/partial/failed/canceled outcomes. | ✓ VERIFIED | `RestoreViewModel.cs:178-195` and `227-245` confirm selected/all restores; `ApplyRestoreResult` at `435-455` maps outcome titles and keeps inline rows; `RestoreWindow.axaml:94-154` renders progress/results inline with `Cancel Restore`. |
-| 4 | Active backup/restore copy cancellation deletes only active partial output/temp files and preserves existing restore targets. | ✓ VERIFIED | `BackupFileCopier.cs:62-79` deletes `actualOutputPath` on cancel/failure; `GetOutputPath` uses `.autoqac-tmp` for atomic restore; tests `CopyAsync_CanceledCreateNewCopy_DeletesPartialDestination` and `CopyAsync_CanceledAtomicReplace_PreservesExistingTarget` verify behavior. |
-| 5 | Retention cleanup protects the current session, keeps newest configured sessions, retries deletion once, and can return canceled. | ✓ VERIFIED | `BackupService.cs:316-357` excludes current before retention counting and returns Warning on failed rows; `478-512` retries once and treats cancellation distinctly; tests cover current/newest/malformed/canceled paths. |
-| 6 | User can distinguish cleanup-deletion failure outcomes for a session. | ⚠️ PARTIAL | The model/service can represent `Warning` and `Cleanup deletion failed` rows (`BackupOperationResults.cs:241-250`, `BackupService.cs:354-357`, `502-505`), and `CleaningSessionResult.cs:121-125` shows a cleanup warning summary. However, no production UI renders retention row reasons, and no test proves non-canceled cleanup deletion failure after retry. |
-| 7 | Cleaning-session backups remain per-plugin immediately before xEdit launch and xEdit cleaning remains sequential. | ✓ VERIFIED | In `CleaningOrchestrator.cs`, `await BackupPluginAsync` at line 284 occurs inside the plugin `foreach` before `CleanPluginAsync` at line 385. Grep found no `Task.WhenAll`, `Parallel.ForEachAsync`, or `Task.Run` in the orchestrator source. |
-| 8 | Cancel Backup/Cancel Cleanup are separate from xEdit Stop and do not terminate xEdit. | ✓ VERIFIED | `ICleaningOrchestrator.cs:54-58` exposes `CancelBackupOperationAsync`; `CleaningOrchestrator.cs:627-653` no-ops when `_currentProcess` is non-null and cancels only `_backupOperationCts`; `ProgressWindow.axaml:133-148` has separate `Cancel Backup`/`Cancel Cleanup` buttons. |
-| 9 | Backup failure choices finalize and report the session instead of leaving cleaning state or progress incomplete. | ✗ FAILED | Code-review CR-01/CR-02 confirmed: `CleaningOrchestrator.cs:315-323` SkipPlugin branch does not add a result/progress row; `324-338` AbortSession returns before `FinishCleaningWithResults`, leaving state completion dependent on finally cleanup only. |
-| 10 | Backup and retention progress are visible and data-flowing with file counts/byte progress when available. | ✗ FAILED | Backup copy progress flows (`BackupFileCopier.cs:121-138` → orchestrator progress), but retention cleanup does not: `BackupService.cs:297-357` accepts `progress` but never calls `progress.Report`, so cleanup UI stays at default count text. |
-| 11 | Restore safety validates untrusted backup-session metadata before copying. | ✗ FAILED | Code-review CR-03 confirmed: `BackupService.cs:378-403` uses `Path.Combine(sessionDir, entry.FileName)` and `entry.OriginalPath` directly without containment or target validation. |
-| 12 | Maintainer can verify SAF-04/TEST-04/PERF-04 clusters including permission and cleanup deletion failures. | ✗ FAILED | Targeted tests pass (103 tests), but grep/read of test files found no permission/UnauthorizedAccess restore/copy test and no non-canceled cleanup deletion failure test; only model labels and cancellation paths cover those terms. |
+| 1 | User can restore backups and receive clear row-level failure reporting when target directories are missing, backup files are missing, access is denied, or target writes fail. | ✓ VERIFIED | `BackupService.cs:385-420` validates rows, maps missing backup files, target folder failures, access denied, and target writes to `BackupFailureReason`; `BackupServiceTests.cs:400-542` covers target-folder failure, traversal/absolute metadata rejection, unrooted target rejection, and access-denied restore mapping. |
+| 2 | Restore All continues after individual plugin failures and distinguishes Complete, Partial, Failed, and Canceled with counts. | ✓ VERIFIED | `BackupService.cs:231-249` iterates all session plugins; `BackupOperationResults.cs:214-223` exposes restored/failed/canceled counts; existing restore-session tests cover partial continuation. |
+| 3 | Restore Selected/All require overwrite confirmation and inline results remain visible for complete/partial/failed/canceled outcomes. | ✓ VERIFIED | `RestoreViewModel.cs:178-195` and `227-245` require confirmations and call structured async restore APIs; `ApplyRestoreResult` at `435-455` keeps inline rows visible; `RestoreWindow.axaml:94-154` renders progress/results inline. |
+| 4 | Active backup/restore copy cancellation deletes only active partial output/temp files and preserves existing restore targets. | ✓ VERIFIED | `BackupFileCopier.cs:56-73` deletes `actualOutputPath`; atomic restore uses `.autoqac-tmp` at `76-79`; targeted copier/service tests pass. |
+| 5 | Retention cleanup protects the current session, keeps newest configured sessions, retries deletion once, and reports deletion failures as Warning rows. | ✓ VERIFIED | `BackupService.cs:327-364` keeps newest/current and returns Warning on failed rows; `570-599` retries deletion once and maps retry failure to `CleanupDeletionFailed`; `BackupServiceTests.cs:716-734` verifies warning after retry failure. |
+| 6 | Cleaning-session backups remain per-plugin immediately before xEdit launch and xEdit cleaning remains sequential. | ✓ VERIFIED | `CleaningOrchestrator.cs:265-284` processes plugins in a `foreach` and awaits backup before `CleanPluginAsync` at `409-420`; grep found no `Task.WhenAll`, `Parallel.ForEachAsync`, or `Task.Run` in `CleaningOrchestrator.cs`. |
+| 7 | Cancel Backup/Cancel Cleanup are separate from xEdit Stop and do not terminate xEdit. | ✓ VERIFIED | `CleaningOrchestrator.cs:651-677` no-ops cancellation when `_currentProcess` exists and only cancels `_backupOperationCts`; `ProgressWindow.axaml:133-148` has separate `Cancel Backup` and `Cancel Cleanup` buttons. |
+| 8 | Backup failure choices finalize and report the session instead of leaving cleaning state or progress incomplete. | ✓ VERIFIED | Gap closed by 07-06: `CleaningOrchestrator.cs:315-332` publishes skipped result for SkipPlugin; `333-362` writes partial metadata when present and calls `FinishCleaningWithResults` before return; tests at `CleaningOrchestratorTests.cs:1579-1688`. |
+| 9 | Restore safety validates untrusted backup-session metadata before copying. | ✓ VERIFIED | Gap closed by 07-07: `ValidateRestoreEntry` at `BackupService.cs:433-491` rejects rooted/traversing `FileName`, checks session containment with `Path.GetFullPath(sessionDir)`, and rejects unrooted targets; tests at `BackupServiceTests.cs:426-510`. |
+| 10 | Retention cleanup progress is data-flowing and visible rather than a static active band. | ✓ VERIFIED | Gap closed by 07-07: `BackupService.cs:319,337,344,352,356` reports retention progress; `CleaningOrchestrator.cs:737-750` maps count fields into `BackupOperationState`; `ProgressViewModel.cs:238-253` renders count-only progress. |
+| 11 | Maintainer can verify SAF-04/TEST-04/PERF-04 clusters including permission and cleanup deletion failures. | ✓ VERIFIED | Targeted tests passed (116 tests). Named tests now cover metadata traversal/absolute paths, unrooted targets, access-denied mapping, destination write failure, deletion failure after retry, progress, skip/abort gap closure, and sequential guard. |
+| 12 | Full automated solution remains green after Phase 7 changes. | ✓ VERIFIED | `dotnet test AutoQACSharp.slnx` passed: 728 AutoQAC.Tests and 59 QueryPlugins.Tests. |
+| 13 | Restore progress and cancellation remain usable during real async copy work. | ✗ FAILED | `RestoreViewModel.cs:366-428` directly mutates UI-bound properties from the progress reporter; no UI dispatcher marshalling exists despite copy callbacks occurring from async `ConfigureAwait(false)` paths in `BackupFileCopier`. |
+| 14 | Backup creation and retention cancellation failures remain structured in all expected filesystem/cancel paths. | ✗ FAILED | `BackupService.cs:111` can throw before returning `BackupCreateResult`; `BackupService.cs:317/349` can throw cancellation before returning `BackupRetentionCleanupResult(Canceled, rows)`. |
 
-**Score:** 7/12 truths verified
+**Score:** 11/14 truths verified
 
 ### Required Artifacts
 
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
-| `AutoQAC/Models/BackupOperationResults.cs` | Shared complete/partial/failed/canceled/warning result contracts and concise labels. | ✓ VERIFIED | Contains `BackupOperationStatus`, restore/retention row statuses, all six approved labels, aggregate count helpers. |
-| `AutoQAC/Services/Backup/BackupFileCopier.cs` | Managed async copy with cancellation, byte progress, overwrite policy, and safe partial cleanup. | ✓ VERIFIED | Substantive and wired through `IBackupFileCopier`; progress throttled; cancellation/failure cleanup implemented. |
-| `AutoQAC/Services/Backup/BackupService.cs` | Structured async backup, restore, and retention behavior. | ⚠️ PARTIAL | Restore/retention contracts are substantive, but metadata path validation is missing and retention progress sink is unused. |
-| `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs` | Backup/retention progress/cancel integration while preserving sequential cleaning. | ⚠️ PARTIAL | Sequential happy path and backup-cancel path are wired; backup failure Skip/Abort choices have finalization/accounting gaps. |
-| `AutoQAC/Models/AppState.cs` / `IStateService.cs` / `StateService.cs` | Separate non-xEdit operation state. | ✓ VERIFIED | `BackupOperationState`, `SetBackupOperation`, and `ClearBackupOperation` exist and are wired through state changes. |
-| `AutoQAC/ViewModels/RestoreViewModel.cs` / `RestoreWindow.axaml` | Restore confirmation, progress, cancellation, and inline result rows. | ✓ VERIFIED | Confirmation/cancel/progress/result properties and AXAML bindings exist; restore result rows bind display reasons. |
-| `AutoQAC/ViewModels/ProgressViewModel.cs` / `ProgressWindow.axaml` | Cleaning progress binding for backup/retention operation state and cancel commands. | ⚠️ PARTIAL | UI and command wiring exist; retention cleanup source does not produce count progress. |
+| `AutoQAC/Models/BackupOperationResults.cs` | Shared complete/partial/failed/canceled/warning result contracts and concise labels. | ✓ VERIFIED | Contains aggregate statuses, row statuses, approved labels, count helpers, and count-capable `BackupCopyProgress`. |
+| `AutoQAC/Services/Backup/BackupFileCopier.cs` | Managed async copy with cancellation, byte progress, overwrite policy, and safe partial cleanup. | ⚠️ PARTIAL | Substantive and tested for main paths, but `new FileInfo(sourcePath).Length` remains outside the try block (`line 35`), so source metadata races can still escape structured copy results. |
+| `AutoQAC/Services/Backup/BackupService.cs` | Structured async backup, restore, and retention behavior. | ⚠️ PARTIAL | Restore metadata validation and retention progress gaps are closed; backup session directory creation and some retention cancellation paths remain unstructured. |
+| `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs` | Backup/retention progress/cancel integration while preserving sequential cleaning. | ✓ VERIFIED | Sequential order preserved; SkipPlugin/AbortSession gap closure present; separate cancel API does not terminate xEdit. |
+| `AutoQAC/Models/AppState.cs` / `IStateService.cs` / `StateService.cs` | Separate non-xEdit operation state. | ✓ VERIFIED | `BackupOperationState`, `SetBackupOperation`, and `ClearBackupOperation` exist and are used by orchestrator/progress VM. |
+| `AutoQAC/ViewModels/RestoreViewModel.cs` / `RestoreWindow.axaml` | Restore confirmation, progress, cancellation, and inline result rows. | ⚠️ PARTIAL | Confirmation/result UI exists; restore progress callback is not UI-thread safe. |
+| `AutoQAC/ViewModels/ProgressViewModel.cs` / `ProgressWindow.axaml` | Cleaning progress binding for backup/retention operation state and cancel commands. | ✓ VERIFIED | Count/byte progress rendering and separate cancel buttons are wired; note byte unit consistency remains a non-blocking quality warning. |
 
 ### Key Link Verification
 
 | From | To | Via | Status | Details |
 |------|----|-----|--------|---------|
-| `IBackupService` | `BackupOperationResults` | Async method contracts use `BackupCreateResult`, `BackupRestoreResult`, `BackupRetentionCleanupResult`. | ✓ VERIFIED | `IBackupService.cs:28-84`. |
-| `BackupService` | `IBackupFileCopier` | Backup/restore delegates to `CopyAsync`. | ✓ VERIFIED | `BackupService.cs:113-118` and `398-403`. |
-| `CleaningOrchestrator` | `IBackupService.BackupPluginAsync` | Awaited inside plugin loop before xEdit cleaning. | ✓ VERIFIED | `CleaningOrchestrator.cs:284` before `CleanPluginAsync` at `385`. |
-| `CleaningOrchestrator` | `IBackupService.CleanupOldSessionsAsync` | Awaited before final session result emission. | ✓ VERIFIED | `CleaningOrchestrator.cs:515-535`. |
-| `ProgressViewModel` | `ICleaningOrchestrator.CancelBackupOperationAsync` | `CancelBackupOperationCommand`. | ✓ VERIFIED | `ProgressViewModel.cs:206-210`; AXAML buttons bind the command. |
-| `RestoreViewModel` | `IBackupService.RestoreSessionAsync` | Restore All awaits structured result. | ✓ VERIFIED | `RestoreViewModel.cs:241-245`. |
-| `BackupService.CleanupOldSessionsAsync` | Progress UI | `IProgress<BackupCopyProgress>` passed from orchestrator. | ✗ NOT WIRED | Parameter exists, but no `progress.Report` call exists in the retention cleanup implementation. |
+| `BackupService.RestorePluginRowAsync` | `ValidateRestoreEntry` | validation before path existence/copy | ✓ VERIFIED | `BackupService.cs:385-388` rejects invalid metadata before `File.Exists`, `Directory.CreateDirectory`, or `CopyAsync`. |
+| `BackupService.RestorePluginRowAsync` | `IBackupFileCopier.CopyAsync` | validated source/target paths | ✓ VERIFIED | `BackupService.cs:409-414` passes `backupPath` and normalized `targetPath` after validation. |
+| `BackupService.CleanupOldSessionsAsync` | progress UI | `IProgress<BackupCopyProgress>.Report` | ✓ VERIFIED | `ReportRetentionProgress` calls `progress?.Report`; orchestrator maps count fields to `BackupOperationState`; VM renders count text. |
+| `CleaningOrchestrator` | `IBackupService.BackupPluginAsync` | awaited inside plugin loop before xEdit cleaning | ✓ VERIFIED | Backup awaited at `CleaningOrchestrator.cs:284`; xEdit launch call begins at `409`. |
+| `CleaningOrchestrator` | `IBackupService.CleanupOldSessionsAsync` | awaited before final session result emission | ✓ VERIFIED | `CleaningOrchestrator.cs:539-544` awaits cleanup before `FinishCleaningWithResults` at `559`. |
+| `ProgressViewModel` | `ICleaningOrchestrator.CancelBackupOperationAsync` | cancel backup/cleanup command | ✓ VERIFIED | `ProgressViewModel.cs:206-210`; AXAML buttons bind same command. |
+| `RestoreViewModel` | UI-thread dispatcher | progress callback marshalling | ✗ NOT WIRED | `RestoreViewModel` has no injected `IUiDispatcher`; `RestoreProgressReporter.Report` calls the VM updater directly. |
 
 ### Data-Flow Trace (Level 4)
 
 | Artifact | Data Variable | Source | Produces Real Data | Status |
 |----------|---------------|--------|--------------------|--------|
-| `RestoreWindow.axaml` | `RestoreResults`, `RestoreOutcomeTitle`, `RestoreProgressText` | `RestoreViewModel` applies `BackupRestoreResult` returned by `IBackupService`. | Yes | ✓ FLOWING |
-| `ProgressWindow.axaml` | `BackupOperationProgressText` | `AppState.BackupOperation` set by `CleaningOrchestrator` progress callbacks. | Partial | ⚠️ PARTIAL — backup copy bytes flow; retention cleanup progress is static because service never reports count updates. |
-| `CleaningSessionResult` | `BackupCleanup` | `CleaningOrchestrator` awaits `CleanupOldSessionsAsync` before `FinishCleaningWithResults`. | Yes | ✓ FLOWING |
-| `BackupService.RestorePluginRowAsync` | `backupPath`, `entry.OriginalPath` | Backup session metadata entries. | Unsafe | ✗ HOLLOW SAFETY — data flows, but untrusted metadata is not validated before copy/overwrite. |
+| `RestoreWindow.axaml` | `RestoreResults`, `RestoreOutcomeTitle`, `RestoreProgressText` | `RestoreViewModel` applies `BackupRestoreResult` returned by `IBackupService`. | Yes, but progress threading unsafe | ⚠️ PARTIAL |
+| `ProgressWindow.axaml` | `BackupOperationProgressText` | `AppState.BackupOperation` set by `CleaningOrchestrator` progress callbacks. | Yes | ✓ FLOWING |
+| `CleaningSessionResult` | `BackupCleanup` | `CleaningOrchestrator` awaits `CleanupOldSessionsAsync` before finalization. | Yes for normal/warning paths; cancel during classification can bypass | ⚠️ PARTIAL |
+| `BackupService.RestorePluginRowAsync` | `backupPath`, `targetPath` | `ValidateRestoreEntry` from session metadata. | Yes, validated before copy | ✓ FLOWING |
 
 ### Behavioral Spot-Checks
 
 | Behavior | Command | Result | Status |
 |----------|---------|--------|--------|
-| Phase 7 targeted test clusters pass. | `dotnet test "AutoQAC.Tests/AutoQAC.Tests.csproj" --filter "FullyQualifiedName~BackupServiceTests|FullyQualifiedName~RestoreViewModelTests|FullyQualifiedName~CleaningOrchestratorTests|FullyQualifiedName~ProgressViewModelTests"` | Passed: 103, Failed: 0. | ✓ PASS |
-| Sequential xEdit launch invariant has no parallel constructs. | Grep/read `CleaningOrchestrator.cs` for `Task.WhenAll`, `Parallel.ForEachAsync`, `Task.Run`, and backup-before-clean order. | No parallel constructs found; backup call precedes `CleanPluginAsync`. | ✓ PASS |
-| Code-review blocker CR-01/CR-02 exists. | Source inspection of `CleaningOrchestrator.cs:315-338`. | SkipPlugin lacks result/progress; AbortSession returns before finalization. | ✗ FAIL |
-| Retention progress is reported by service. | Grep `BackupService.cs` for `progress.Report`. | No matches in retention cleanup implementation. | ✗ FAIL |
+| Phase 7 targeted test clusters pass. | `dotnet test "AutoQAC.Tests/AutoQAC.Tests.csproj" --filter "FullyQualifiedName~BackupServiceTests\|FullyQualifiedName~BackupFileCopierTests\|FullyQualifiedName~RestoreViewModelTests\|FullyQualifiedName~CleaningOrchestratorTests\|FullyQualifiedName~ProgressViewModelTests"` | Passed: 116, Failed: 0. | ✓ PASS |
+| Full solution tests pass. | `dotnet test "AutoQACSharp.slnx"` | Passed: 728 AutoQAC.Tests + 59 QueryPlugins.Tests. | ✓ PASS |
+| Sequential xEdit launch invariant has no parallel constructs. | Source grep/read for `Task.WhenAll`, `Parallel.ForEachAsync`, `Task.Run`. | No matches in `CleaningOrchestrator.cs`; backup precedes xEdit call. | ✓ PASS |
+| Restore progress uses UI dispatcher. | Source inspection of `RestoreViewModel.cs`. | No `IUiDispatcher`/dispatcher marshalling; direct progress callback mutation remains. | ✗ FAIL |
+| Backup session directory creation is structured. | Source inspection of `BackupService.cs:94-126`. | `Directory.CreateDirectory(sessionDir)` outside catch/result mapping. | ✗ FAIL |
+| Retention cancellation is structured for classification/pre-delete. | Source inspection of `BackupService.cs:317,349`. | `OperationCanceledException` can escape `CleanupOldSessionsAsync` before result creation. | ✗ FAIL |
 
 ### Requirements Coverage
 
 | Requirement | Source Plan | Description | Status | Evidence |
 |-------------|-------------|-------------|--------|----------|
-| SAF-04 | 07-01 through 07-05 | User can restore backups with clear failure reporting when directories are missing, permissions fail, or a session partially restores. | ✗ BLOCKED | Normal restore failure/result handling exists, but restore metadata path traversal/arbitrary target overwrite remains unvalidated. Backup failure choices also leave progress/session reporting inconsistent. |
-| TEST-04 | 07-01 through 07-05 | Maintainer can verify backup restore safety across missing target directories, permission failures, partial failures, and cleanup deletion failures. | ✗ BLOCKED | Targeted tests pass, but permission failure and non-canceled cleanup deletion failure coverage are absent. |
-| PERF-04 | 07-01 through 07-05 | User backup and retention operations remain cancellable and visible without parallelizing xEdit cleaning. | ⚠️ PARTIAL | Sequential xEdit and separate cancellation are verified, but retention progress does not data-flow beyond a static active band. |
+| SAF-04 | 07-01 through 07-07 | User can restore backups with clear failure reporting when directories are missing, permissions fail, or a session partially restores. | ⚠️ PARTIAL | Restore row-level safety is now implemented, including malicious metadata and access-denied mapping. Remaining backup creation exception escape means not all backup/restore filesystem failures enter clear user choice/reporting paths. |
+| TEST-04 | 07-01 through 07-07 | Maintainer can verify backup restore safety across missing target directories, permission failures, partial failures, and cleanup deletion failures. | ✓ SATISFIED | Targeted tests include missing target, metadata traversal/absolute path rejection, unrooted target rejection, partial restore, access denied, target write failure, and cleanup deletion failure after retry. |
+| PERF-04 | 07-01 through 07-07 | User backup and retention operations remain cancellable and visible without parallelizing xEdit cleaning. | ⚠️ PARTIAL | Sequential xEdit, visible backup/retention progress, and separate cancel buttons are verified. Retention cancellation is not structured for classification/pre-delete cancellation, and restore progress has UI-thread risk. |
 
 No additional Phase 7 requirement IDs were found in `.planning/REQUIREMENTS.md` beyond SAF-04, TEST-04, and PERF-04.
 
@@ -138,23 +141,24 @@ No additional Phase 7 requirement IDs were found in `.planning/REQUIREMENTS.md` 
 
 | File | Line | Pattern | Severity | Impact |
 |------|------|---------|----------|--------|
-| `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs` | 315-323 | Skip path updates state set directly then `continue`s without result publication. | 🛑 Blocker | Progress/session accounting can omit a plugin selected for cleaning. |
-| `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs` | 324-338 | Early `return` from inside cleaning workflow before final state emission. | 🛑 Blocker | User can be left without final cleaning result/state completion after aborting on backup failure. |
-| `AutoQAC/Services/Backup/BackupService.cs` | 378-403 | Untrusted metadata paths used directly for restore source and destination. | 🛑 Blocker | Malformed backup metadata can escape session source containment and overwrite arbitrary targets. |
-| `AutoQAC/Services/Backup/BackupService.cs` | 297-357 | Progress parameter accepted but unused. | 🛑 Blocker | Retention progress requirement is wired but hollow. |
-| `AutoQAC/Services/Backup/DirectoryBackupSessionDeleter.cs` | 13-17 | Synchronous recursive delete checks cancellation only before delete starts. | ⚠️ Warning | Cancel Cleanup is best-effort once a large directory deletion has begun. |
-| `AutoQAC/ViewModels/RestoreViewModel.cs` | 366-428 | Custom progress reporter updates VM synchronously from copy callbacks. | ⚠️ Warning | Possible UI-thread affinity hazard if service callbacks arrive off the UI thread. |
-| `AutoQAC/Models/CleaningSessionResult.cs` | 109 | `IsSuccess` ignores backup cleanup Warning/Canceled/Failed. | ⚠️ Warning | Callers using `IsSuccess` can treat cleanup warning/cancel as full success even though summary text calls it out. |
+| `AutoQAC/ViewModels/RestoreViewModel.cs` | 366-428 | Custom progress reporter directly mutates UI-bound properties. | 🛑 Blocker | Real async restore progress can update Avalonia-bound state off the UI thread. |
+| `AutoQAC/Services/Backup/BackupService.cs` | 111 | Filesystem operation outside structured backup failure mapping. | 🛑 Blocker | Backup session directory creation failures bypass BackupCreateResult and backup failure choices. |
+| `AutoQAC/Services/Backup/BackupService.cs` | 317, 349 | Cancellation gates outside structured retention result conversion. | 🛑 Blocker | Cleanup cancellation can be reported as whole-session cancellation without backup cleanup rows/counts. |
+| `AutoQAC/Services/Backup/BackupFileCopier.cs` | 35 | Source length read outside copier try/catch. | ⚠️ Warning | Source metadata race/access failures can escape structured copy results. |
+| `AutoQAC/Services/Backup/BackupService.cs` | 48-55 | Timestamp-only backup session directory name. | ⚠️ Warning | Two sessions in the same second can collide/mix backup files. |
+| `AutoQAC/ViewModels/ProgressViewModel.cs` / `RestoreViewModel.cs` | 260-263 / 404-416 | Inconsistent binary-vs-decimal byte formatting. | ⚠️ Warning | Same copy progress model can display different byte units in cleaning vs restore UI. |
 
 ### Human Verification Required
 
-No human verification is requested until blockers are fixed. After gap closure, a manual smoke test should verify RestoreWindow and ProgressWindow copy/spacing/visual affordances for restore partial/canceled rows and Cancel Backup/Cancel Cleanup because visual quality cannot be fully checked by source inspection.
+No human verification is requested until blockers are fixed. After gap closure, a manual smoke test should verify RestoreWindow and ProgressWindow visual affordances for partial/canceled rows and Cancel Backup/Cancel Cleanup because visual quality cannot be fully checked by source inspection.
 
 ### Gaps Summary
 
-Phase 7 delivers a substantial amount of the planned foundation: structured result models, cancellable copy behavior, atomic restore target preservation, restore UI confirmations/inline rows, separate non-xEdit cancellation controls, and sequential xEdit ordering are present and targeted tests pass. However, the phase goal is not fully achieved because several must-have safety/reporting paths are hollow or broken in production code. The advisory code-review blockers were checked against source and are real: backup failure Skip/Abort paths break final reporting/accounting, and restore trusts unvalidated metadata paths. Retention progress is also wired in UI/orchestrator but not produced by the service, and TEST-04 lacks required permission and cleanup-deletion-failure coverage.
+Plans 07-06 and 07-07 closed the previous verification gaps: backup failure Skip/Abort accounting now finalizes correctly, restore metadata is validated before copying, retention progress now data-flows into the UI path, and TEST-04 has the missing safety coverage. Automated Phase 7 and full solution tests pass, and sequential xEdit cleaning remains preserved.
+
+However, Phase 7 still cannot pass goal-backward verification. Independent inspection of the Phase 07 code review findings found one still-blocking restore progress threading defect and two structured-reporting/cancellation gaps in production paths not covered by the passing tests. These affect the phase goal directly because restore progress can fail during real async copy work, backup filesystem setup failures can bypass clear backup failure choices, and retention cancellation can lose cleanup rows/counts.
 
 ---
 
-_Verified: 2026-04-29T07:35:33Z_  
+_Verified: 2026-04-29T08:01:30Z_  
 _Verifier: the agent (gsd-verifier)_
