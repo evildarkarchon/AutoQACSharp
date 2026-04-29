@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using FluentAssertions;
 
 namespace AutoQAC.Tests.Views;
@@ -55,6 +56,50 @@ public sealed class ViewSubscriptionLifecycleTests
         source.Should().Contain("DisposeViewModelIfNeeded()", "cleanup must be centralized");
         source.Should().Contain("if (_disposeHandled)", "double-dispose guard must short-circuit");
         source.Should().Contain("DataContextChanged -= OnDataContextChanged;", "DataContext handler should be detached on dispose");
+    }
+
+    /// <summary>
+    /// The normal cleaning progress window path (<c>MainWindow.ShowProgressAsync</c>) must wire
+    /// <see cref="ProgressViewModel.CloseRequested"/> to close the window and must dispose the
+    /// ViewModel when the window closes, mirroring the preview-path lifecycle. Assertions use
+    /// regex (not exact substrings) so refactors that switch lambda <-> method-group syntax,
+    /// or rename the local idempotent guard variable, do not break the test.
+    ///
+    /// This composes with the existing <c>ProgressWindow.OnDataContextChanged</c> +
+    /// <c>OnClosed</c> -> <c>DisposeViewModelIfNeeded</c> contract as defense-in-depth, so a
+    /// literal <c>"Defense in depth"</c> comment is asserted to make the dual-subscription
+    /// contract explicit and refactor-resistant.
+    /// </summary>
+    [Fact]
+    public void MainWindowShowProgressAsync_ShouldWireProgressWindowCloseAndDisposal()
+    {
+        // Arrange
+        var source = File.ReadAllText(GetRepoFilePath("AutoQAC/Views/MainWindow.axaml.cs"));
+
+        // Assert -- 1. CloseRequested subscription (lambda OR method group)
+        Regex.IsMatch(source, @"progressViewModel\.CloseRequested\s*\+=").Should().BeTrue(
+            "ShowProgressAsync must subscribe to ProgressViewModel.CloseRequested");
+
+        // 2. progressWindow.Close() reachable from the CloseRequested handler
+        Regex.IsMatch(source, @"progressWindow\.Close\s*\(\s*\)").Should().BeTrue(
+            "CloseRequested handler must close the normal progress window");
+
+        // 3. progressWindow.Closed subscription (lambda OR method group)
+        Regex.IsMatch(source, @"progressWindow\.Closed\s*\+=").Should().BeTrue(
+            "ShowProgressAsync must subscribe to progressWindow.Closed for disposal");
+
+        // 4. progressViewModel.Dispose() reachable from the Closed handler scope
+        Regex.IsMatch(source, @"progressViewModel\.Dispose\s*\(\s*\)").Should().BeTrue(
+            "normal progress window close must dispose the ViewModel");
+
+        // 5. Boolean local guard variable (any of disposed/cleaned/done; bool or var)
+        Regex.IsMatch(source, @"(?:bool|var)\s+\w*(disposed|cleaned|done)\w*\s*=\s*false",
+            RegexOptions.IgnoreCase).Should().BeTrue(
+            "ShowProgressAsync must use a local idempotent dispose guard");
+
+        // 6. Defense-in-depth code comment makes the dual-subscription contract explicit
+        source.Should().Contain("Defense in depth",
+            "ShowProgressAsync must document why ProgressWindow.OnDataContextChanged + OnClosed and the new ShowProgressAsync wiring both subscribe to CloseRequested/Closed");
     }
 
     private static string GetRepoFilePath(string relativePath)
