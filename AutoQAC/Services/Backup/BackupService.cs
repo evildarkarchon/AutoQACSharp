@@ -78,7 +78,12 @@ public sealed class BackupService : IBackupService
             // Ensure session directory exists (idempotent)
             Directory.CreateDirectory(sessionDir);
 
-            var destPath = Path.Combine(sessionDir, plugin.FileName);
+            if (!ValidateBackupDestination(plugin, sessionDir, out var destPath))
+            {
+                _logger.Warning("Rejected unsafe backup file name for {Plugin}: {FileName}", plugin.FullPath, plugin.FileName);
+                return BackupResult.Failure("Invalid plugin file name for backup.");
+            }
+
             File.Copy(plugin.FullPath, destPath, overwrite: false);
 
             var fileSize = new FileInfo(destPath).Length;
@@ -115,6 +120,17 @@ public sealed class BackupService : IBackupService
                 BackupFailureReason.SourceMissing);
         }
 
+        if (!ValidateBackupDestination(plugin, sessionDir, out var destinationPath))
+        {
+            _logger.Warning("Rejected unsafe async backup file name for {Plugin}: {FileName}", plugin.FullPath, plugin.FileName);
+            return new BackupCreateResult(
+                BackupOperationStatus.Failed,
+                plugin.FileName,
+                BytesCopied: 0,
+                TotalBytes: null,
+                BackupFailureReason.SourceMissing);
+        }
+
         try
         {
             Directory.CreateDirectory(sessionDir);
@@ -130,7 +146,6 @@ public sealed class BackupService : IBackupService
                 ex is UnauthorizedAccessException ? BackupFailureReason.AccessDenied : BackupFailureReason.TargetFolderCreationFailed);
         }
 
-        var destinationPath = Path.Combine(sessionDir, plugin.FileName);
         var copyResult = await _fileCopier.CopyAsync(
             plugin.FullPath,
             destinationPath,
@@ -459,6 +474,74 @@ public sealed class BackupService : IBackupService
         BackupFailureReason.TargetFolderCreationFailed => BackupFailureReason.TargetFolderCreationFailed,
         _ => BackupFailureReason.TargetWriteFailed
     };
+
+    /// <summary>
+    /// Validates a backup destination file name and resolves the final backup path only after containment is proven.
+    /// </summary>
+    /// <param name="plugin">Plugin metadata whose file name came from discovery/configuration and is treated as untrusted path input.</param>
+    /// <param name="sessionDir">Backup session directory that must contain the resolved destination path.</param>
+    /// <param name="destinationPath">Resolved destination path when validation succeeds; otherwise an empty string.</param>
+    /// <returns>True when the plugin file name is simple and the resolved destination remains inside the session directory.</returns>
+    private static bool ValidateBackupDestination(PluginInfo plugin, string sessionDir, out string destinationPath)
+    {
+        destinationPath = string.Empty;
+        if (!IsSafeSessionRelativeName(plugin.FileName, requirePluginExtension: false))
+        {
+            return false;
+        }
+
+        try
+        {
+            var sessionRoot = EnsureTrailingDirectorySeparator(Path.GetFullPath(sessionDir));
+            var resolvedDestinationPath = Path.GetFullPath(Path.Combine(sessionRoot, plugin.FileName));
+            if (!resolvedDestinationPath.StartsWith(sessionRoot, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            destinationPath = resolvedDestinationPath;
+            return true;
+        }
+        catch (Exception ex) when (ex is ArgumentException or IOException or NotSupportedException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Checks whether a backup metadata name is a simple session-relative file name safe for path composition.
+    /// </summary>
+    /// <param name="fileName">Candidate file name from plugin discovery or backup session metadata.</param>
+    /// <param name="requirePluginExtension">True to allow only active plugin extensions (.esm, .esp, .esl).</param>
+    /// <returns>True when the name is non-rooted, single-segment, ADS-free, and optionally has an approved plugin extension.</returns>
+    private static bool IsSafeSessionRelativeName(string fileName, bool requirePluginExtension)
+    {
+        if (string.IsNullOrWhiteSpace(fileName) || Path.IsPathRooted(fileName))
+        {
+            return false;
+        }
+
+        if (!string.Equals(Path.GetFileName(fileName), fileName, StringComparison.Ordinal) ||
+            fileName.Contains(Path.DirectorySeparatorChar) ||
+            fileName.Contains(Path.AltDirectorySeparatorChar) ||
+            fileName.Contains(':'))
+        {
+            return false;
+        }
+
+        return !requirePluginExtension || IsApprovedPluginExtension(fileName);
+    }
+
+    /// <summary>
+    /// Checks whether a path ends with an active Bethesda plugin extension accepted by Phase 7 restore policy.
+    /// </summary>
+    private static bool IsApprovedPluginExtension(string path)
+    {
+        var extension = Path.GetExtension(path);
+        return string.Equals(extension, ".esm", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(extension, ".esp", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(extension, ".esl", StringComparison.OrdinalIgnoreCase);
+    }
 
     /// <summary>
     /// Validates untrusted restore metadata before it is used for source or target filesystem paths.
