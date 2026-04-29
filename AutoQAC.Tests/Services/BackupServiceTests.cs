@@ -367,6 +367,29 @@ public sealed class BackupServiceTests : IDisposable
             "a canceled restore overwrite must not truncate or remove the existing plugin file");
     }
 
+    [Fact]
+    public async Task RestorePluginAsync_TargetFolderCreationFailure_ReturnsConciseReason()
+    {
+        // Arrange
+        var sessionDir = Path.Combine(_testRoot, "restore_bad_target_session");
+        Directory.CreateDirectory(sessionDir);
+        File.WriteAllText(Path.Combine(sessionDir, "BadTarget.esp"), "backup content");
+
+        var entry = new BackupPluginEntry
+        {
+            FileName = "BadTarget.esp",
+            OriginalPath = Path.Combine(_testRoot, "bad\0folder", "BadTarget.esp"),
+            FileSizeBytes = 14
+        };
+
+        // Act
+        var result = await _sut.RestorePluginAsync(entry, sessionDir);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Failed);
+        result.Rows.Single().DisplayReason.Should().Be("Target folder creation failed");
+    }
+
     #endregion
 
     #region CleanupOldSessions
