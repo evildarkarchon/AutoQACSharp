@@ -646,29 +646,16 @@ public sealed class BackupService : IBackupService
 
     /// <summary>
     /// Checks string-level containment of a normalized restore target under the trusted Data-folder root.
-    /// This does not resolve NTFS reparse points or symlinks; callers still constrain metadata before filesystem writes.
+    /// Delegates to <see cref="BackupPathContainment.IsContained"/> so the canonical containment policy
+    /// is shared with RestoreViewModel.DeleteSessionAsync (Plan 07-13) and any future delete/restore
+    /// safety boundaries. Does not resolve NTFS reparse points or symlinks; callers still constrain
+    /// metadata before filesystem writes.
     /// </summary>
     /// <param name="targetPath">Restore target path that must remain inside the trusted root.</param>
     /// <param name="trustedRestoreRoot">Configured game Data folder that bounds restore overwrites.</param>
     /// <returns>True when both paths normalize and the target has the trusted root as a directory prefix.</returns>
-    private static bool IsRestoreTargetInsideTrustedRoot(string targetPath, string? trustedRestoreRoot)
-    {
-        if (string.IsNullOrWhiteSpace(trustedRestoreRoot))
-        {
-            return false;
-        }
-
-        try
-        {
-            var trustedRoot = EnsureTrailingDirectorySeparator(Path.GetFullPath(trustedRestoreRoot));
-            var normalizedTargetPath = Path.GetFullPath(targetPath);
-            return normalizedTargetPath.StartsWith(trustedRoot, StringComparison.OrdinalIgnoreCase);
-        }
-        catch (Exception ex) when (ex is ArgumentException or IOException or NotSupportedException or UnauthorizedAccessException)
-        {
-            return false;
-        }
-    }
+    private static bool IsRestoreTargetInsideTrustedRoot(string targetPath, string? trustedRestoreRoot) =>
+        BackupPathContainment.IsContained(targetPath, trustedRestoreRoot);
 
     /// <summary>
     /// Checks whether a path root is a normal Windows local drive root such as <c>C:\</c>.

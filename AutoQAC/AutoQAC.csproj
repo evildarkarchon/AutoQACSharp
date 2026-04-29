@@ -48,4 +48,10 @@
   <ItemGroup>
     <ProjectReference Include="..\QueryPlugins\QueryPlugins.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <!-- Expose internals to the test project so internal helpers like BackupPathContainment
+         can be exercised directly in unit tests without a public API surface change. -->
+    <InternalsVisibleTo Include="AutoQAC.Tests" />
+  </ItemGroup>
 </Project>
