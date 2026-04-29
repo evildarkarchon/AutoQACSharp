@@ -103,6 +103,35 @@ public sealed class ProcessExecutionIntegrationTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies a canceled post-kill wait is reported as force-kill failure instead of success.
+    /// </summary>
+    [Fact]
+    public async Task TerminateProcessAsync_ForceKill_WhenPostKillWaitIsCanceled_ShouldReturnForceKillFailed()
+    {
+        var waitStrategy = new CancelingProcessExitWaiter();
+        using var service = new ProcessExecutionService(
+            Substitute.For<ILoggingService>(),
+            _pidStore,
+            _sessionIdProvider,
+            waitStrategy);
+        using var process = System.Diagnostics.Process.Start(HelperStartInfo("sleep 30000"));
+        process.Should().NotBeNull("the helper process is required for force-kill validation");
+
+        try
+        {
+            var result = await service.TerminateProcessAsync(process!, forceKill: true);
+
+            process!.WaitForExit(2000).Should().BeTrue("force kill should be invoked before waiting for process exit");
+            result.Should().Be(TerminationResult.ForceKillFailed);
+            waitStrategy.Calls.Should().Be(1);
+        }
+        finally
+        {
+            KillIfRunning(process);
+        }
+    }
+
+    /// <summary>
     /// Verifies user cancellation reports a grace-period expiration without force-killing the helper or removing PID evidence.
     /// </summary>
     [Fact]
@@ -225,6 +254,20 @@ public sealed class ProcessExecutionIntegrationTests : IDisposable
             {
                 Directory.Delete(_directory, recursive: true);
             }
+        }
+    }
+
+    private sealed class CancelingProcessExitWaiter : IProcessExitWaiter
+    {
+        public int Calls { get; private set; }
+
+        /// <summary>
+        /// Simulates cancellation after force kill has been invoked but before the exit wait reports completion.
+        /// </summary>
+        public Task WaitForExitAsync(System.Diagnostics.Process process, CancellationToken ct)
+        {
+            Calls++;
+            throw new OperationCanceledException(ct);
         }
     }
 }

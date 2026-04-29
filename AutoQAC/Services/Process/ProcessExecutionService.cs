@@ -13,10 +13,12 @@ namespace AutoQAC.Services.Process;
 public sealed class ProcessExecutionService(
     ILoggingService logger,
     IPidStore pidStore,
-    IProcessSessionIdProvider sessionIdProvider)
+    IProcessSessionIdProvider sessionIdProvider,
+    IProcessExitWaiter? processExitWaiter = null)
     : IProcessExecutionService, IDisposable
 {
     private readonly SemaphoreSlim _processSlots = new(1, 1);
+    private readonly IProcessExitWaiter _processExitWaiter = processExitWaiter ?? new ProcessExitWaiter();
 
     /// <summary>
     /// Known xEdit process name fragments for orphan detection.
@@ -109,7 +111,7 @@ public sealed class ProcessExecutionService(
             try
             {
                 // Use WaitForExitAsync instead of TCS+Exited event (known .NET bug with Kill(true))
-                await process.WaitForExitAsync(linkedToken).ConfigureAwait(false);
+                await _processExitWaiter.WaitForExitAsync(process, linkedToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -188,7 +190,7 @@ public sealed class ProcessExecutionService(
             try
             {
                 process.Kill(entireProcessTree: true);
-                await process.WaitForExitAsync(ct).ConfigureAwait(false);
+                await _processExitWaiter.WaitForExitAsync(process, ct).ConfigureAwait(false);
                 logger.Information("[Termination] Process tree killed successfully (PID: {Pid})", process.Id);
                 return TerminationResult.ForceKilled;
             }
@@ -245,7 +247,7 @@ public sealed class ProcessExecutionService(
 
         try
         {
-            await process.WaitForExitAsync(graceCts.Token).ConfigureAwait(false);
+            await _processExitWaiter.WaitForExitAsync(process, graceCts.Token).ConfigureAwait(false);
             logger.Information("[Termination] Process exited gracefully (PID: {Pid})", process.Id);
             return TerminationResult.GracefulExit;
         }
@@ -318,7 +320,7 @@ public sealed class ProcessExecutionService(
                     try
                     {
                         process.Kill(entireProcessTree: true);
-                        await process.WaitForExitAsync(ct).ConfigureAwait(false);
+                        await _processExitWaiter.WaitForExitAsync(process, ct).ConfigureAwait(false);
                         logger.Information("[Orphan] Killed orphaned process (PID: {Pid})", entry.Pid);
                     }
                     catch (InvalidOperationException)
