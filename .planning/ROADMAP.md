@@ -38,7 +38,12 @@ Full details: [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP.md)
   2. User sees an accurate failure outcome if force-killing xEdit fails because of access, OS, or process-state errors.
   3. Maintainer can verify real child-process timeout, graceful stop, force-kill, and PID cleanup behavior through controlled integration tests.
   4. Maintainer can test PID tracking through injected storage/path abstractions with process-safe update behavior.
-**Plans**: TBD
+**Plans**: 4 plans
+Plans:
+- [ ] 05-01-PLAN.md — Build injectable, file-lock-protected PID storage with session-aware entries.
+- [ ] 05-02-PLAN.md — Correct process-service cancellation intent and force-kill result semantics.
+- [ ] 05-03-PLAN.md — Wire orchestrator/ViewModel stop confirmation, decline, failure, and log-safety behavior.
+- [ ] 05-04-PLAN.md — Add single-instance protection and controlled real-process integration tests.
 **UI hint**: yes
 
 ### Phase 6: Command Launch Escaping
