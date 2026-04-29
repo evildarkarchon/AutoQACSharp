@@ -140,6 +140,31 @@ public sealed class RestoreViewModelTests
     }
 
     [Fact]
+    public async Task RestoreAllCommand_FailedThenCanceledResult_ShowsCanceledSummaryWithFailedCount()
+    {
+        var session = CreateSession(CreatePlugin("Failed.esp"), CreatePlugin("Canceled.esp"));
+        _messageDialog.ShowConfirmAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        _backupService.RestoreSessionAsync(
+                session,
+                Arg.Any<IProgress<BackupCopyProgress>?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new BackupRestoreResult(
+                BackupOperationStatus.Canceled,
+                [
+                    new BackupRestoreRowResult("Failed.esp", BackupRestoreRowStatus.Failed, BackupFailureReason.TargetWriteFailed, 0, 1024),
+                    new BackupRestoreRowResult("Canceled.esp", BackupRestoreRowStatus.Canceled, BackupFailureReason.Canceled, 0, 1024)
+                ]));
+
+        var vm = CreateViewModel();
+        vm.SelectedSession = session;
+
+        await vm.RestoreAllCommand.ExecuteAsync(null);
+
+        vm.RestoreOutcomeTitle.Should().Be("Restore Canceled");
+        vm.RestoreSummaryText.Should().Contain("0 restored, 1 failed, 1 canceled");
+    }
+
+    [Fact]
     public async Task RestorePluginCommand_MissingBackupFile_ShouldShowStructuredInlineRowInsteadOfSyncException()
     {
         var plugin = CreatePlugin("Missing.esp");

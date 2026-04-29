@@ -492,6 +492,42 @@ public sealed class BackupServiceTests : IDisposable
     }
 
     /// <summary>
+    /// Verifies a failed row followed by cancellation remains visible as a canceled aggregate restore session.
+    /// </summary>
+    [Fact]
+    public async Task RestoreSessionAsync_FailedThenCanceledRows_ReturnsCanceled()
+    {
+        // Arrange
+        var sessionDir = Path.Combine(_testRoot, "restore_failed_then_canceled_session");
+        Directory.CreateDirectory(sessionDir);
+        File.WriteAllText(Path.Combine(sessionDir, "Fails.esp"), "backup content");
+        File.WriteAllText(Path.Combine(sessionDir, "Canceled.esp"), "backup content");
+        var firstTarget = Path.Combine(_testRoot, "restore_failed_then_canceled_target", "Fails.esp");
+        var secondTarget = Path.Combine(_testRoot, "restore_failed_then_canceled_target", "Canceled.esp");
+        using var cts = new CancellationTokenSource();
+        var copier = new FailingThenCancelingBackupFileCopier(cts);
+        var sut = new BackupService(copier, _mockLogger);
+        var session = new BackupSession
+        {
+            SessionDirectory = sessionDir,
+            Plugins = new List<BackupPluginEntry>
+            {
+                new() { FileName = "Fails.esp", OriginalPath = firstTarget, FileSizeBytes = 14 },
+                new() { FileName = "Canceled.esp", OriginalPath = secondTarget, FileSizeBytes = 14 }
+            }
+        };
+
+        // Act
+        var result = await sut.RestoreSessionAsync(session, ct: cts.Token);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Canceled);
+        result.FailedCount.Should().Be(1);
+        result.CanceledCount.Should().Be(1);
+        copier.CallCount.Should().Be(1, "the second row should be added as canceled before copying starts");
+    }
+
+    /// <summary>
     /// Verifies that structured restore recreates a missing target directory before copying the backup.
     /// </summary>
     [Fact]
@@ -1131,6 +1167,29 @@ public sealed class BackupServiceTests : IDisposable
         {
             CallCount++;
             return Task.FromResult(result);
+        }
+    }
+
+    private sealed class FailingThenCancelingBackupFileCopier(CancellationTokenSource cancellationSource) : IBackupFileCopier
+    {
+        private readonly CancellationTokenSource _cancellationSource = cancellationSource;
+
+        public int CallCount { get; private set; }
+
+        /// <inheritdoc />
+        public Task<BackupCopyResult> CopyAsync(
+            string sourcePath,
+            string destinationPath,
+            BackupCopyOptions options,
+            IProgress<BackupCopyProgress>? progress,
+            CancellationToken cancellationToken)
+        {
+            CallCount++;
+            _cancellationSource.Cancel();
+            return Task.FromResult(BackupCopyResult.Failed(
+                sourcePath,
+                destinationPath,
+                BackupFailureReason.TargetWriteFailed));
         }
     }
 
