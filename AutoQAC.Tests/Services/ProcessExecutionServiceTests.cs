@@ -256,8 +256,19 @@ public sealed class ProcessExecutionServiceTests : IDisposable
             .Returns(new UserConfiguration());
 
         // Default setup for backup service
-        backupServiceMock.BackupPlugin(Arg.Any<PluginInfo>(), Arg.Any<string>())
-            .Returns(BackupResult.Ok(1024));
+        backupServiceMock.BackupPluginAsync(
+                Arg.Any<PluginInfo>(),
+                Arg.Any<string>(),
+                Arg.Any<IProgress<BackupCopyProgress>?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new BackupCreateResult(BackupOperationStatus.Complete, "Test.esp", 1024, 1024, null));
+        backupServiceMock.CleanupOldSessionsAsync(
+                Arg.Any<string>(),
+                Arg.Any<int>(),
+                Arg.Any<string?>(),
+                Arg.Any<IProgress<BackupCopyProgress>?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new BackupRetentionCleanupResult(BackupOperationStatus.Complete, Array.Empty<BackupRetentionRowResult>()));
 
         // Default setup for log file service (offset-based API)
         logFileServiceMock.GetLogFilePath(Arg.Any<string>(), Arg.Any<GameType>())
@@ -421,8 +432,19 @@ public sealed class ProcessExecutionServiceTests : IDisposable
             .Returns(new LogReadResult { LogLines = new List<string>() });
         gameDetectionServiceMock.DetectVariant(Arg.Any<GameType>(), Arg.Any<List<string>>())
             .Returns(GameVariant.None);
-        backupServiceMock.BackupPlugin(Arg.Any<PluginInfo>(), Arg.Any<string>())
-            .Returns(BackupResult.Ok(1024));
+        backupServiceMock.BackupPluginAsync(
+                Arg.Any<PluginInfo>(),
+                Arg.Any<string>(),
+                Arg.Any<IProgress<BackupCopyProgress>?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new BackupCreateResult(BackupOperationStatus.Complete, "Test.esp", 1024, 1024, null));
+        backupServiceMock.CleanupOldSessionsAsync(
+                Arg.Any<string>(),
+                Arg.Any<int>(),
+                Arg.Any<string?>(),
+                Arg.Any<IProgress<BackupCopyProgress>?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new BackupRetentionCleanupResult(BackupOperationStatus.Complete, Array.Empty<BackupRetentionRowResult>()));
 
         var plugins = new List<PluginInfo>
         {
