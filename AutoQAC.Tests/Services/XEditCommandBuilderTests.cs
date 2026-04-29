@@ -151,6 +151,27 @@ public class XEditCommandBuilderTests
     }
 
     [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void BuildCommand_Mo2ModeWithoutMo2ExecutablePath_ShouldReturnNull(string? mo2ExecutablePath)
+    {
+        // Arrange
+        _stateServiceMock.CurrentState.Returns(new AppState
+        {
+            XEditExecutablePath = @"C:\Tools\SSEEdit.exe",
+            Mo2ModeEnabled = true,
+            Mo2ExecutablePath = mo2ExecutablePath
+        });
+
+        // Act
+        var result = _sut.BuildCommand(CreatePlugin("Plugin.esp"), GameType.SkyrimSe);
+
+        // Assert
+        result.Should().BeNull("D-09/D-11 require MO2 command-build failure before process start when MO2 mode is enabled without a usable MO2 executable path");
+    }
+
+    [Theory]
     [InlineData("Quote \"Case\".esp")]
     [InlineData("TrailingBackslash\\")]
     [InlineData("QuoteAndTrailingBackslash\\\"")]
