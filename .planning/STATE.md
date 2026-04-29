@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Cleanup
 status: executing
-stopped_at: Completed 07-09-PLAN.md
-last_updated: "2026-04-29T09:48:32.137Z"
-last_activity: 2026-04-29 -- Phase 07 planning complete
+stopped_at: Completed 07-10-PLAN.md
+last_updated: "2026-04-29T09:54:10.318Z"
+last_activity: 2026-04-29 -- Completed Phase 07 Plan 10
 progress:
   total_phases: 7
   completed_phases: 2
   total_plans: 19
-  completed_plans: 17
-  percent: 89
+  completed_plans: 18
+  percent: 95
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-04-28)
 ## Current Position
 
 Phase: 07 (backup-restore-retention-safety) — EXECUTING
-Plan: 9 of 11
+Plan: 11 of 11
 Status: Ready to execute
-Last activity: 2026-04-29 -- Phase 07 planning complete
+Last activity: 2026-04-29 -- Completed Phase 07 Plan 10
 
-Progress: [████████░░] 89%
+Progress: [██████████] 95%
 
 ## Performance Metrics
 
@@ -62,6 +62,7 @@ Progress: [████████░░] 89%
 | Phase 07 P07 | 5 min | 3 tasks | 6 files |
 | Phase 07 P08 | 2 min | 3 tasks | 5 files |
 | Phase 07 P09 | 7 min | 3 tasks | 4 files |
+| Phase 07 P10 | 2 min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -108,6 +109,9 @@ Progress: [████████░░] 89%
 - [Phase 07]: Treat PluginInfo.FileName and BackupPluginEntry metadata as untrusted filesystem input until validated as simple non-rooted plugin names. — Plan 07-09 closes backup traversal and restore metadata overwrite gaps found by verification.
 - [Phase 07]: Enforce restore targets as normal local-drive plugin paths with matching file names and .esm/.esp/.esl extensions. — Plan 07-09 prevents arbitrary rooted metadata from redirecting overwrites.
 - [Phase 07]: Report mixed failed+canceled restore sessions with no restored rows as aggregate Canceled. — Plan 07-09 keeps cancellation visible in service status and RestoreWindow title/copy when failures happened before cancellation.
+- [Phase 07]: Track BackupFileCopier output ownership with a local createdOutput flag set only after destination stream open succeeds. — Plan 07-10 closes the create-new existing-destination deletion gap without changing backup naming policy.
+- [Phase 07]: Gate BackupFileCopier partial-output deletion on copy-attempt ownership. — Plan 07-10 preserves pre-existing create-new backup files while still cleaning attempt-owned partial/temp outputs.
+- [Phase 07]: Keep atomic restore using the fixed .autoqac-tmp suffix for this gap-closure plan. — Unique same-directory temp naming remains documented as future hardening.
 
 ### Pending Todos
 
@@ -126,6 +130,6 @@ Progress: [████████░░] 89%
 
 ## Session Continuity
 
-Last session: 2026-04-29T09:22:05.906Z
-Stopped at: Completed 07-09-PLAN.md
+Last session: 2026-04-29T09:53:58.708Z
+Stopped at: Completed 07-10-PLAN.md
 Resume file: None

@@ -105,7 +105,7 @@ Plans:
 - [x] 07-09-PLAN.md — Close remaining backup destination containment, restore target metadata, and mixed cancellation status gaps.
 
 **Wave 8 (gap closure; blocked on Wave 7 completion)**
-- [ ] 07-10-PLAN.md — Close create-new backup copy existing-destination preservation gap.
+- [x] 07-10-PLAN.md — Close create-new backup copy existing-destination preservation gap.
 - [ ] 07-11-PLAN.md — Close trusted restore-root containment gap for restore metadata overwrites.
 **UI hint**: yes
 
