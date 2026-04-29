@@ -8,6 +8,17 @@ AutoQAC is a Windows-only Avalonia desktop app that runs xEdit Quick Auto Clean 
 
 Accurate, automated xEdit Quick Auto Clean with reliable result reporting.
 
+## Current Milestone: v1.0 Cleanup
+
+**Goal:** Address the concrete risks identified in `.planning/codebase/CONCERNS.md` while preserving sequential xEdit cleaning behavior.
+
+**Target features:**
+- Fix high-priority safety bugs in stop/force-kill behavior, command-line escaping, and backup restore failure handling.
+- Refactor the highest-risk responsibility concentrations around cleaning orchestration, configuration/plugin refresh, config persistence/watchers, and PID tracking.
+- Add coverage for process termination/orphan cleanup, command escaping, config watcher races, and backup restore safety.
+- Improve security posture for user-configured executable launches, user-facing error detail, and log/path exposure boundaries.
+- Reduce performance risk in approximation refresh, ITM context lookup, config cloning, and backup/retention operations.
+
 ## Requirements
 
 ### Validated
@@ -36,7 +47,11 @@ Accurate, automated xEdit Quick Auto Clean with reliable result reporting.
 
 ### Active
 
-None — planning next milestone.
+- [ ] Fix high-priority safety bugs identified in `.planning/codebase/CONCERNS.md`.
+- [ ] Refactor cleanup targets only where doing so reduces concrete regression risk.
+- [ ] Add missing safety and regression tests before or alongside risky changes.
+- [ ] Improve user-facing security/error boundaries without changing core cleaning behavior.
+- [ ] Reduce documented performance bottlenecks without parallelizing xEdit cleaning.
 
 ### Out of Scope
 
@@ -48,6 +63,8 @@ None — planning next milestone.
 ## Context
 
 Shipped v1.0 with the xEdit log parsing fix. The app now correctly reads xEdit results from log files (`<game>Edit_log.txt`) using offset-based reading that isolates each plugin's output. All dead stdout parsing code has been removed. 680 tests passing across AutoQAC and QueryPlugins.
+
+Current cleanup scope is driven by `.planning/codebase/CONCERNS.md` from 2026-04-28, covering safety bugs, refactor debt, test gaps, security polish, and performance bottlenecks.
 
 Tech stack: .NET 10, C# 13, Avalonia 11.3, ReactiveUI, Mutagen 0.53.1, Serilog, YamlDotNet.
 
@@ -89,4 +106,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-31 after v1.0 milestone — xEdit log parsing fix shipped*
+*Last updated: 2026-04-28 after v1.0 Cleanup milestone start*
