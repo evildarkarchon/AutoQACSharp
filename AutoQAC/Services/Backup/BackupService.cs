@@ -220,9 +220,9 @@ public sealed class BackupService : IBackupService
         return sessions;
     }
 
-    public void RestorePlugin(BackupPluginEntry entry, string sessionDir)
+    public void RestorePlugin(BackupPluginEntry entry, string sessionDir, string? trustedRestoreRoot)
     {
-        if (!ValidateRestoreEntry(entry, sessionDir, out var backupPath, out var targetPath, out _))
+        if (!ValidateRestoreEntry(entry, sessionDir, trustedRestoreRoot, out var backupPath, out var targetPath, out _))
         {
             _logger.Warning("Rejected unsafe backup metadata for sync restore of {Plugin}", entry.FileName);
             throw new InvalidOperationException("Backup metadata is not safe to restore.");
@@ -247,10 +247,11 @@ public sealed class BackupService : IBackupService
     public async Task<BackupRestoreResult> RestorePluginAsync(
         BackupPluginEntry entry,
         string sessionDir,
+        string? trustedRestoreRoot,
         IProgress<BackupCopyProgress>? progress = null,
         CancellationToken ct = default)
     {
-        var row = await RestorePluginRowAsync(entry, sessionDir, progress, ct).ConfigureAwait(false);
+        var row = await RestorePluginRowAsync(entry, sessionDir, trustedRestoreRoot, progress, ct).ConfigureAwait(false);
         var status = row.Status switch
         {
             BackupRestoreRowStatus.Restored => BackupOperationStatus.Complete,
@@ -261,16 +262,17 @@ public sealed class BackupService : IBackupService
         return new BackupRestoreResult(status, [row]);
     }
 
-    public void RestoreSession(BackupSession session)
+    public void RestoreSession(BackupSession session, string? trustedRestoreRoot)
     {
         foreach (var entry in session.Plugins)
         {
-            RestorePlugin(entry, session.SessionDirectory);
+            RestorePlugin(entry, session.SessionDirectory, trustedRestoreRoot);
         }
     }
 
     public async Task<BackupRestoreResult> RestoreSessionAsync(
         BackupSession session,
+        string? trustedRestoreRoot,
         IProgress<BackupCopyProgress>? progress = null,
         CancellationToken ct = default)
     {
@@ -284,7 +286,7 @@ public sealed class BackupService : IBackupService
                 continue;
             }
 
-            rows.Add(await RestorePluginRowAsync(entry, session.SessionDirectory, progress, ct).ConfigureAwait(false));
+            rows.Add(await RestorePluginRowAsync(entry, session.SessionDirectory, trustedRestoreRoot, progress, ct).ConfigureAwait(false));
         }
 
         return new BackupRestoreResult(GetRestoreStatus(rows), rows);
@@ -429,10 +431,11 @@ public sealed class BackupService : IBackupService
     private async Task<BackupRestoreRowResult> RestorePluginRowAsync(
         BackupPluginEntry entry,
         string sessionDir,
+        string? trustedRestoreRoot,
         IProgress<BackupCopyProgress>? progress,
         CancellationToken ct)
     {
-        if (!ValidateRestoreEntry(entry, sessionDir, out var backupPath, out var targetPath, out var failureReason))
+        if (!ValidateRestoreEntry(entry, sessionDir, trustedRestoreRoot, out var backupPath, out var targetPath, out var failureReason))
         {
             return new BackupRestoreRowResult(entry.FileName, BackupRestoreRowStatus.Failed, failureReason, 0, entry.FileSizeBytes);
         }
@@ -556,6 +559,7 @@ public sealed class BackupService : IBackupService
     private static bool ValidateRestoreEntry(
         BackupPluginEntry entry,
         string sessionDir,
+        string? trustedRestoreRoot,
         out string backupPath,
         out string targetPath,
         out BackupFailureReason failureReason)
@@ -598,7 +602,9 @@ public sealed class BackupService : IBackupService
             }
 
             targetPath = Path.GetFullPath(entry.OriginalPath);
-            if (!IsNormalLocalDriveRoot(Path.GetPathRoot(targetPath)) || !IsApprovedPluginExtension(targetPath))
+            if (!IsNormalLocalDriveRoot(Path.GetPathRoot(targetPath)) ||
+                !IsApprovedPluginExtension(targetPath) ||
+                !IsRestoreTargetInsideTrustedRoot(targetPath, trustedRestoreRoot))
             {
                 failureReason = BackupFailureReason.TargetFolderCreationFailed;
                 return false;
@@ -636,6 +642,32 @@ public sealed class BackupService : IBackupService
         }
 
         return IsApprovedPluginExtension(entry.OriginalPath);
+    }
+
+    /// <summary>
+    /// Checks string-level containment of a normalized restore target under the trusted Data-folder root.
+    /// This does not resolve NTFS reparse points or symlinks; callers still constrain metadata before filesystem writes.
+    /// </summary>
+    /// <param name="targetPath">Restore target path that must remain inside the trusted root.</param>
+    /// <param name="trustedRestoreRoot">Configured game Data folder that bounds restore overwrites.</param>
+    /// <returns>True when both paths normalize and the target has the trusted root as a directory prefix.</returns>
+    private static bool IsRestoreTargetInsideTrustedRoot(string targetPath, string? trustedRestoreRoot)
+    {
+        if (string.IsNullOrWhiteSpace(trustedRestoreRoot))
+        {
+            return false;
+        }
+
+        try
+        {
+            var trustedRoot = EnsureTrailingDirectorySeparator(Path.GetFullPath(trustedRestoreRoot));
+            var normalizedTargetPath = Path.GetFullPath(targetPath);
+            return normalizedTargetPath.StartsWith(trustedRoot, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is ArgumentException or IOException or NotSupportedException or UnauthorizedAccessException)
+        {
+            return false;
+        }
     }
 
     /// <summary>

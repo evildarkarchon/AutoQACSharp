@@ -20,6 +20,7 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
     private readonly IUiDispatcher _uiDispatcher;
 
     private string? _backupRoot;
+    private string? _trustedRestoreRoot;
     private CancellationTokenSource? _restoreCts;
 
     [ObservableProperty]
@@ -92,6 +93,8 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
         _uiDispatcher = uiDispatcher;
     }
 
+    private bool HasTrustedRestoreRoot => !string.IsNullOrWhiteSpace(_trustedRestoreRoot);
+
     partial void OnSelectedSessionChanged(BackupSession? value)
     {
         SelectedSessionPlugins.Clear();
@@ -116,13 +119,19 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
     /// </summary>
     public async Task LoadSessionsAsync(string? dataFolderPath)
     {
-        if (string.IsNullOrEmpty(dataFolderPath))
+        _trustedRestoreRoot = string.IsNullOrWhiteSpace(dataFolderPath) ? null : dataFolderPath;
+        RestorePluginCommand.NotifyCanExecuteChanged();
+        RestoreAllCommand.NotifyCanExecuteChanged();
+
+        if (!HasTrustedRestoreRoot)
         {
+            _backupRoot = null;
             StatusText = "No game data folder configured -- cannot locate backups";
             return;
         }
 
-        _backupRoot = _backupService.GetBackupRoot(dataFolderPath);
+        var trustedRestoreRoot = _trustedRestoreRoot!;
+        _backupRoot = _backupService.GetBackupRoot(trustedRestoreRoot);
         await LoadSessions();
     }
 
@@ -167,7 +176,7 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
         }
     }
 
-    private bool CanRestorePlugin() => SelectedPlugin != null && !IsRestoreActive;
+    private bool CanRestorePlugin() => SelectedPlugin != null && HasTrustedRestoreRoot && !IsRestoreActive;
 
     [RelayCommand(CanExecute = nameof(CanRestorePlugin))]
     private async Task RestorePluginAsync()
@@ -195,7 +204,7 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
             var cts = CreateRestoreCancellationSource();
             var progress = CreateRestoreProgressReporter([plugin]);
 
-            var result = await _backupService.RestorePluginAsync(plugin, session.SessionDirectory, progress, cts.Token);
+            var result = await _backupService.RestorePluginAsync(plugin, session.SessionDirectory, _trustedRestoreRoot, progress, cts.Token);
             ApplyRestoreResult(result);
             _logger.Information("Restore selected completed with status {Status} for plugin {Plugin}", result.Status, plugin.FileName);
         }
@@ -215,7 +224,7 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
         }
     }
 
-    private bool CanRestoreAll() => SelectedSession != null && !IsRestoreActive;
+    private bool CanRestoreAll() => SelectedSession != null && HasTrustedRestoreRoot && !IsRestoreActive;
 
     [RelayCommand(CanExecute = nameof(CanRestoreAll))]
     private async Task RestoreAllAsync()
@@ -244,7 +253,7 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
             var cts = CreateRestoreCancellationSource();
             var progress = CreateRestoreProgressReporter(session.Plugins);
 
-            var result = await _backupService.RestoreSessionAsync(session, progress, cts.Token);
+            var result = await _backupService.RestoreSessionAsync(session, _trustedRestoreRoot, progress, cts.Token);
             ApplyRestoreResult(result);
             _logger.Information("Restore all completed with status {Status} for backup session {Timestamp}",
                 result.Status, timestamp);

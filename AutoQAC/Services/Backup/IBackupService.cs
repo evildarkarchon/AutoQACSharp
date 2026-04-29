@@ -44,7 +44,7 @@ public interface IBackupService
     /// <summary>
     /// Restores a single plugin from backup to its original path.
     /// </summary>
-    void RestorePlugin(BackupPluginEntry entry, string sessionDir);
+    void RestorePlugin(BackupPluginEntry entry, string sessionDir, string? trustedRestoreRoot);
 
     /// <summary>
     /// Restores a single plugin from backup to its original path with structured row-level outcome details.
@@ -52,19 +52,21 @@ public interface IBackupService
     Task<BackupRestoreResult> RestorePluginAsync(
         BackupPluginEntry entry,
         string sessionDir,
+        string? trustedRestoreRoot,
         IProgress<BackupCopyProgress>? progress = null,
         CancellationToken ct = default);
 
     /// <summary>
     /// Restores all plugins from a session.
     /// </summary>
-    void RestoreSession(BackupSession session);
+    void RestoreSession(BackupSession session, string? trustedRestoreRoot);
 
     /// <summary>
     /// Restores all plugins from a session while preserving partial, failed, and canceled aggregate outcomes.
     /// </summary>
     Task<BackupRestoreResult> RestoreSessionAsync(
         BackupSession session,
+        string? trustedRestoreRoot,
         IProgress<BackupCopyProgress>? progress = null,
         CancellationToken ct = default);
 
