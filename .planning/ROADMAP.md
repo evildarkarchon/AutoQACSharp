@@ -40,10 +40,10 @@ Full details: [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP.md)
   4. Maintainer can test PID tracking through injected storage/path abstractions with process-safe update behavior.
 **Plans**: 4 plans
 Plans:
-- [ ] 05-01-PLAN.md — Build injectable, file-lock-protected PID storage with session-aware entries.
-- [ ] 05-02-PLAN.md — Correct process-service cancellation intent and force-kill result semantics.
-- [ ] 05-03-PLAN.md — Wire orchestrator/ViewModel stop confirmation, decline, failure, and log-safety behavior.
-- [ ] 05-04-PLAN.md — Add single-instance protection and controlled real-process integration tests.
+- [x] 05-01-PLAN.md — Build injectable, file-lock-protected PID storage with session-aware entries.
+- [x] 05-02-PLAN.md — Correct process-service cancellation intent and force-kill result semantics.
+- [x] 05-03-PLAN.md — Wire orchestrator/ViewModel stop confirmation, decline, failure, and log-safety behavior.
+- [x] 05-04-PLAN.md — Add single-instance protection and controlled real-process integration tests.
 **UI hint**: yes
 
 ### Phase 6: Command Launch Escaping
