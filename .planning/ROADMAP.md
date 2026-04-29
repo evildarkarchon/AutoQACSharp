@@ -96,7 +96,7 @@ Plans:
 
 **Wave 5 (gap closure; blocked on Wave 4 completion)**
 - [x] 07-06-PLAN.md — Close backup failure SkipPlugin/AbortSession session accounting and finalization gaps.
-- [ ] 07-07-PLAN.md — Close restore metadata validation, retention progress, and TEST-04 coverage gaps.
+- [x] 07-07-PLAN.md — Close restore metadata validation, retention progress, and TEST-04 coverage gaps.
 **UI hint**: yes
 
 ### Phase 8: Cleaning Orchestrator Decomposition

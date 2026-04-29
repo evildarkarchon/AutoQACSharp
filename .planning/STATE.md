@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Cleanup
-status: executing
-stopped_at: Completed 07-06-PLAN.md
-last_updated: "2026-04-29T07:46:47.887Z"
+status: verifying
+stopped_at: Completed 07-07-PLAN.md
+last_updated: "2026-04-29T07:54:02.387Z"
 last_activity: 2026-04-29
 progress:
   total_phases: 7
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 15
-  completed_plans: 14
-  percent: 93
+  completed_plans: 15
+  percent: 100
 ---
 
 # Project State
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-04-28)
 
 Phase: 07 (backup-restore-retention-safety) — EXECUTING
 Plan: 7 of 7
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-04-29
 
-Progress: [█████████░] 93%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -59,6 +59,7 @@ Progress: [█████████░] 93%
 | Phase 07 P04 | 5 min | 2 tasks | 3 files |
 | Phase 07 P05 | 5 min | 2 tasks | 6 files |
 | Phase 07 P06 | 2 min | 2 tasks | 2 files |
+| Phase 07 P07 | 5 min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -96,6 +97,9 @@ Progress: [█████████░] 93%
 - [Phase 07]: Use exact required behavioral test names plus a source-level sequential guard to make Phase 7 verification auditable. — Plan 07-05 final verification checks named tests and absence of parallel xEdit constructs.
 - [Phase 07]: Publish BackupFailureChoice.SkipPlugin as a skipped PluginCleaningResult instead of only mutating SkippedPlugins. — Plan 07-06 closes the backup failure accounting gap by making the user choice visible in detailed results and final session state.
 - [Phase 07]: Finalize BackupFailureChoice.AbortSession inside the backup-failure branch because it returns before the normal end-of-method session finalization path. — Plan 07-06 preserves partial metadata behavior while ensuring IsCleaning/result state is completed before returning.
+- [Phase ?]: [Phase 07]: Treat backup session metadata as untrusted input: FileName must be simple/non-rooted and resolved backup path must stay inside the selected session directory. — Plan 07-07 closes restore traversal and absolute FileName verification gaps before copy operations.
+- [Phase ?]: [Phase 07]: Use rooted OriginalPath plus Path.GetFullPath normalization as the restore target safety policy available at the BackupService boundary. — BackupPluginEntry metadata does not carry a game data root, so service-level validation rejects unrooted targets and normalizes rooted overwrite paths.
+- [Phase ?]: [Phase 07]: Carry retention count progress on BackupCopyProgress optional count fields so AppState.BackupOperation can render cleanup progress without a new model. — This preserves the existing progress UI path while making retention cleanup progress data-flowing.
 
 ### Pending Todos
 
@@ -114,6 +118,6 @@ Progress: [█████████░] 93%
 
 ## Session Continuity
 
-Last session: 2026-04-29T07:46:24.222Z
-Stopped at: Completed 07-06-PLAN.md
+Last session: 2026-04-29T07:53:38.270Z
+Stopped at: Completed 07-07-PLAN.md
 Resume file: None
