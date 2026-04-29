@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: Cleanup
 status: executing
 stopped_at: Completed 07-11-PLAN.md
-last_updated: "2026-04-29T10:56:54.603Z"
-last_activity: 2026-04-29 -- Phase 07 planning complete
+last_updated: "2026-04-29T11:07:19.153Z"
+last_activity: 2026-04-29
 progress:
   total_phases: 7
   completed_phases: 2
   total_plans: 22
-  completed_plans: 19
-  percent: 86
+  completed_plans: 20
+  percent: 91
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-04-28)
 ## Current Position
 
 Phase: 07 (backup-restore-retention-safety) — EXECUTING
-Plan: 11 of 11
+Plan: 2 of 14
 Status: Ready to execute
-Last activity: 2026-04-29 -- Phase 07 planning complete
+Last activity: 2026-04-29
 
-Progress: [██████████] 100%
+Progress: [█████████░] 91%
 
 ## Performance Metrics
 
@@ -64,6 +64,7 @@ Progress: [██████████] 100%
 | Phase 07 P09 | 7 min | 3 tasks | 4 files |
 | Phase 07 P10 | 2 min | 2 tasks | 3 files |
 | Phase 07 P11 | 8 min | 3 tasks | 5 files |
+| Phase 07 P12 | 3 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -116,6 +117,8 @@ Progress: [██████████] 100%
 - [Phase 07]: Restore services require an explicit trusted restore root and fail closed when missing or invalid — Plan 07-11 constrains restores to the configured game Data folder.
 - [Phase 07]: Restore target containment is string-level Path.GetFullPath validation and does not resolve NTFS reparse points or symlinks — This closes metadata redirection while documenting filesystem identity as future hardening.
 - [Phase 07]: RestoreWindow disables Restore Selected and Restore All until LoadSessionsAsync receives the configured game Data folder — This avoids opaque fail-closed UI attempts when no trusted root is loaded.
+- [Phase ?]: [Phase 07]: Add explicit normal-path CloseRequested + Closed wiring in MainWindow.ShowProgressAsync as defense-in-depth alongside the pre-existing ProgressWindow contract; document with a literal // Defense in depth comment and an idempotent local guard. — Plan 07-12 closes the normal progress window lifecycle verification gap.
+- [Phase ?]: [Phase 07]: Source-level lifecycle regression tests use Regex.IsMatch tolerant of method-group syntax and alternate guard names instead of exact substring matches. — Plan 07-12 prevents brittle assertions from breaking under valid refactors that preserve the lifecycle contract.
 
 ### Pending Todos
 
@@ -134,6 +137,6 @@ Progress: [██████████] 100%
 
 ## Session Continuity
 
-Last session: 2026-04-29T10:03:59.831Z
+Last session: 2026-04-29T11:06:57.706Z
 Stopped at: Completed 07-11-PLAN.md
 Resume file: None

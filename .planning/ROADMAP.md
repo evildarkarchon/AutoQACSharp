@@ -109,7 +109,7 @@ Plans:
 - [x] 07-11-PLAN.md — Close trusted restore-root containment gap for restore metadata overwrites.
 
 **Wave 9 (gap closure; blocked on Wave 8 completion)**
-- [ ] 07-12-PLAN.md — Close normal progress window result close and ViewModel disposal lifecycle gap (regex-loosened tests + defense-in-depth comment).
+- [x] 07-12-PLAN.md — Close normal progress window result close and ViewModel disposal lifecycle gap (regex-loosened tests + defense-in-depth comment).
 - [ ] 07-14-PLAN.md — Extract shared `BackupPathContainment` helper consumed by `BackupService` and Plan 07-13 (closes cross-AI review duplication finding).
 - [ ] 07-13-PLAN.md — Close RestoreWindow Delete Session backup-root containment gap via service-layer `IBackupService.DeleteSessionAsync` (depends on 07-14).
 **UI hint**: yes
