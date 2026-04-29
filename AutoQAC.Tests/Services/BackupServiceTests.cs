@@ -405,6 +405,57 @@ public sealed class BackupServiceTests : IDisposable
         act.Should().Throw<FileNotFoundException>();
     }
 
+    /// <summary>
+    /// Verifies legacy restore validates target metadata before copying mismatched plugin names.
+    /// </summary>
+    [Fact]
+    public void RestorePlugin_FileNameMismatch_ThrowsBeforeCopying()
+    {
+        // Arrange
+        var sessionDir = Path.Combine(_testRoot, "restore_sync_mismatch");
+        Directory.CreateDirectory(sessionDir);
+        File.WriteAllText(Path.Combine(sessionDir, "Backup.esp"), "backup content");
+        var targetPath = Path.Combine(_testRoot, "restore_sync_mismatch_target", "Different.esp");
+        var entry = new BackupPluginEntry
+        {
+            FileName = "Backup.esp",
+            OriginalPath = targetPath,
+            FileSizeBytes = 14
+        };
+
+        // Act
+        var act = () => _sut.RestorePlugin(entry, sessionDir);
+
+        // Assert
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("Backup metadata is not safe to restore.");
+        File.Exists(targetPath).Should().BeFalse("unsafe sync metadata must not be copied");
+        Directory.Exists(Path.GetDirectoryName(targetPath)!).Should().BeFalse("unsafe sync metadata must not create target directories");
+    }
+
+    /// <summary>
+    /// Verifies legacy restore keeps missing-backup compatibility when metadata is otherwise safe.
+    /// </summary>
+    [Fact]
+    public void RestorePlugin_MissingBackupFile_WithSafeMetadata_StillThrowsFileNotFoundException()
+    {
+        // Arrange
+        var sessionDir = Path.Combine(_testRoot, "restore_sync_missing_safe");
+        Directory.CreateDirectory(sessionDir);
+        var entry = new BackupPluginEntry
+        {
+            FileName = "MissingSafe.esp",
+            OriginalPath = Path.Combine(_testRoot, "restore_sync_missing_safe_target", "MissingSafe.esp"),
+            FileSizeBytes = 42
+        };
+
+        // Act
+        var act = () => _sut.RestorePlugin(entry, sessionDir);
+
+        // Assert
+        act.Should().Throw<FileNotFoundException>();
+    }
+
     [Fact]
     public async Task RestoreSessionAsync_ContinuesAfterPluginFailure()
     {
@@ -617,6 +668,95 @@ public sealed class BackupServiceTests : IDisposable
         result.Status.Should().Be(BackupOperationStatus.Failed);
         result.Rows.Single().DisplayReason.Should().Be("Target folder creation failed");
         copier.CallCount.Should().Be(0, "unsafe target metadata must be rejected before copying");
+    }
+
+    /// <summary>
+    /// Verifies restore rejects rooted targets whose file name does not match the backup metadata file name.
+    /// </summary>
+    [Fact]
+    public async Task RestorePluginAsync_OriginalPathFileNameMismatch_ReturnsTargetFolderCreationFailedAndDoesNotCopy()
+    {
+        // Arrange
+        var sessionDir = Path.Combine(_testRoot, "restore_target_mismatch_session");
+        Directory.CreateDirectory(sessionDir);
+        var backupPath = Path.Combine(sessionDir, "Backup.esp");
+        File.WriteAllText(backupPath, "backup content");
+        var targetPath = Path.Combine(_testRoot, "restore_target_mismatch", "Different.esp");
+        var copier = new CountingBackupFileCopier(BackupCopyResult.Complete(backupPath, targetPath, 14, 14));
+        var sut = new BackupService(copier, _mockLogger);
+        var entry = new BackupPluginEntry
+        {
+            FileName = "Backup.esp",
+            OriginalPath = targetPath,
+            FileSizeBytes = 14
+        };
+
+        // Act
+        var result = await sut.RestorePluginAsync(entry, sessionDir);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Failed);
+        result.Rows.Single().FailureReason.Should().Be(BackupFailureReason.TargetFolderCreationFailed);
+        copier.CallCount.Should().Be(0, "mismatched restore target names must be rejected before copying");
+        File.Exists(targetPath).Should().BeFalse();
+    }
+
+    /// <summary>
+    /// Verifies restore rejects non-plugin target extensions before overwrite attempts.
+    /// </summary>
+    [Fact]
+    public async Task RestorePluginAsync_NonPluginOriginalPathExtension_ReturnsTargetFolderCreationFailedAndDoesNotCopy()
+    {
+        // Arrange
+        var sessionDir = Path.Combine(_testRoot, "restore_target_extension_session");
+        Directory.CreateDirectory(sessionDir);
+        var backupPath = Path.Combine(sessionDir, "Readme.txt");
+        File.WriteAllText(backupPath, "not a plugin");
+        var targetPath = Path.Combine(_testRoot, "restore_target_extension", "Readme.txt");
+        var copier = new CountingBackupFileCopier(BackupCopyResult.Complete(backupPath, targetPath, 12, 12));
+        var sut = new BackupService(copier, _mockLogger);
+        var entry = new BackupPluginEntry
+        {
+            FileName = "Readme.txt",
+            OriginalPath = targetPath,
+            FileSizeBytes = 12
+        };
+
+        // Act
+        var result = await sut.RestorePluginAsync(entry, sessionDir);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Failed);
+        result.Rows.Single().FailureReason.Should().Be(BackupFailureReason.TargetFolderCreationFailed);
+        copier.CallCount.Should().Be(0, "non-plugin restore targets must be rejected before copying");
+        File.Exists(targetPath).Should().BeFalse();
+    }
+
+    /// <summary>
+    /// Verifies the stricter restore metadata policy still permits normal local plugin restore paths.
+    /// </summary>
+    [Fact]
+    public async Task RestorePluginAsync_NormalPluginPath_StillRestoresSuccessfully()
+    {
+        // Arrange
+        var sessionDir = Path.Combine(_testRoot, "restore_normal_plugin_session");
+        Directory.CreateDirectory(sessionDir);
+        File.WriteAllText(Path.Combine(sessionDir, "Normal.esl"), "backup content");
+        var targetPath = Path.Combine(_testRoot, "restore_normal_plugin_target", "Normal.esl");
+        var entry = new BackupPluginEntry
+        {
+            FileName = "Normal.esl",
+            OriginalPath = targetPath,
+            FileSizeBytes = 14
+        };
+
+        // Act
+        var result = await _sut.RestorePluginAsync(entry, sessionDir);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Complete);
+        result.RestoredCount.Should().Be(1);
+        File.ReadAllText(targetPath).Should().Be("backup content");
     }
 
     /// <summary>
