@@ -585,6 +585,128 @@ public sealed class ProgressViewModelTests
         vm.StopCommand.CanExecute(null).Should().BeFalse("Stop should be disabled while terminating");
     }
 
+    [Fact]
+    public void BackupOperation_ShowsCancelBackup()
+    {
+        // Arrange
+        var vm = CreateViewModel();
+
+        // Act
+        _stateSubject.OnNext(new AppState
+        {
+            IsCleaning = true,
+            BackupOperation = new BackupOperationState
+            {
+                Kind = BackupOperationKind.Backup,
+                Label = "Backing up: Update.esm",
+                FileName = "Update.esm",
+                FilesCompleted = 0,
+                TotalFiles = 1,
+                BytesCopied = 40 * 1024 * 1024,
+                TotalBytes = 100 * 1024 * 1024,
+                IsActive = true,
+                CanCancel = true
+            }
+        });
+
+        // Assert
+        vm.ActiveOperationLabel.Should().Be("Backing up: Update.esm");
+        vm.IsBackupOperationActive.Should().BeTrue();
+        vm.IsBackupCancelVisible.Should().BeTrue();
+        vm.IsCleanupCancelVisible.Should().BeFalse();
+        vm.BackupOperationProgressText.Should().Be("0 / 1 files — 40.0 MB / 100.0 MB");
+    }
+
+    [Fact]
+    public void CleanupOperation_ShowsCancelCleanup()
+    {
+        // Arrange
+        var vm = CreateViewModel();
+
+        // Act
+        _stateSubject.OnNext(new AppState
+        {
+            IsCleaning = true,
+            BackupOperation = new BackupOperationState
+            {
+                Kind = BackupOperationKind.RetentionCleanup,
+                Label = "Cleaning up old backups",
+                FilesCompleted = 2,
+                TotalFiles = 5,
+                IsActive = true,
+                CanCancel = true
+            }
+        });
+
+        // Assert
+        vm.ActiveOperationLabel.Should().Be("Cleaning up old backups");
+        vm.IsBackupOperationActive.Should().BeTrue();
+        vm.IsBackupCancelVisible.Should().BeFalse();
+        vm.IsCleanupCancelVisible.Should().BeTrue();
+        vm.BackupOperationProgressText.Should().Be("2 / 5 files");
+    }
+
+    [Fact]
+    public async Task CancelBackupOperationCommand_CallsOrchestratorOnce()
+    {
+        // Arrange
+        var vm = CreateViewModel();
+        _stateSubject.OnNext(new AppState
+        {
+            IsCleaning = true,
+            BackupOperation = new BackupOperationState
+            {
+                Kind = BackupOperationKind.Backup,
+                Label = "Backing up: Update.esm",
+                IsActive = true,
+                CanCancel = true
+            }
+        });
+
+        // Act
+        await vm.CancelBackupOperationCommand.ExecuteAsync(null);
+
+        // Assert
+        await _orchestratorMock.Received(1).CancelBackupOperationAsync();
+    }
+
+    [Fact]
+    public void Dispose_RemovesBackupOperationSubscription()
+    {
+        // Arrange
+        var vm = CreateViewModel();
+        _stateSubject.OnNext(new AppState
+        {
+            IsCleaning = true,
+            BackupOperation = new BackupOperationState
+            {
+                Kind = BackupOperationKind.Backup,
+                Label = "Backing up: BeforeDispose.esm",
+                IsActive = true,
+                CanCancel = true
+            }
+        });
+        vm.ActiveOperationLabel.Should().Be("Backing up: BeforeDispose.esm");
+
+        // Act
+        vm.Dispose();
+        _stateSubject.OnNext(new AppState
+        {
+            IsCleaning = true,
+            BackupOperation = new BackupOperationState
+            {
+                Kind = BackupOperationKind.RetentionCleanup,
+                Label = "Cleaning up old backups",
+                IsActive = true,
+                CanCancel = true
+            }
+        });
+
+        // Assert
+        vm.ActiveOperationLabel.Should().Be("Backing up: BeforeDispose.esm");
+        vm.IsCleanupCancelVisible.Should().BeFalse();
+    }
+
     /// <summary>
     /// Verifies that IsTerminating is reset when a new cleaning session starts.
     /// </summary>
