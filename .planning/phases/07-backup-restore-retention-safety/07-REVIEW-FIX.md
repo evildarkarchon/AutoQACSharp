@@ -1,65 +1,80 @@
 ---
 phase: 07-backup-restore-retention-safety
-fixed_at: 2026-04-29T01:13:32.3670975-07:00
+fixed_at: 2026-04-29T11:55:01Z
 review_path: .planning/phases/07-backup-restore-retention-safety/07-REVIEW.md
 iteration: 1
-findings_in_scope: 6
-fixed: 6
-skipped: 0
-status: all_fixed
+findings_in_scope: 7
+fixed: 4
+skipped: 3
+status: partial
 ---
 
 # Phase 07: Code Review Fix Report
 
-**Fixed at:** 2026-04-29T01:13:32.3670975-07:00
+**Fixed at:** 2026-04-29T11:55:01Z
 **Source review:** .planning/phases/07-backup-restore-retention-safety/07-REVIEW.md
 **Iteration:** 1
 
 **Summary:**
-- Findings in scope: 6
-- Fixed: 6
-- Skipped: 0
+- Findings in scope: 7
+- Fixed: 4
+- Skipped: 3
 
 ## Fixed Issues
 
-### CR-01: [BLOCKER] Restore progress mutates UI-bound ViewModel state from the copy worker thread
-
-**Files modified:** `AutoQAC/ViewModels/RestoreViewModel.cs`, `AutoQAC/Views/MainWindow.axaml.cs`, `AutoQAC.Tests/ViewModels/RestoreViewModelTests.cs`  
-**Commit:** 71b9d33  
-**Applied fix:** Injected `IUiDispatcher` into restore progress flow, updated manual construction, and added an asynchronous worker-thread progress test proving updates are posted before UI-bound state changes.
-
-### WR-01: [WARNING] Source length is read outside the copier error-handling boundary
-
-**Files modified:** `AutoQAC/Services/Backup/BackupFileCopier.cs`  
-**Commit:** d4e3c03  
-**Applied fix:** Moved output path and source length probing inside the structured copy error boundary and mapped disappearing source paths to structured failure results.
-
-### WR-02: [WARNING] Backup session directory creation failures bypass structured backup results
+### WR-01: WARNING — `BackupService(ILoggingService)` convenience constructor bypasses the deleter seam
 
 **Files modified:** `AutoQAC/Services/Backup/BackupService.cs`, `AutoQAC.Tests/Services/BackupServiceTests.cs`  
-**Commit:** 3e6e1f4  
-**Applied fix:** Wrapped async backup session directory creation in targeted exception handling and added coverage that directory creation failures return `BackupCreateResult` without invoking the copier.
+**Commit:** 916e87d  
+**Applied fix:** Forwarded the convenience constructor with an explicit `sessionDeleter: null` named argument and added a regression test covering `DeleteSessionAsync` through the single-argument constructor.
 
-### WR-03: [WARNING] Timestamp-only session directory names can collide within one second
+### WR-02: WARNING — `DeleteSessionAsync` does not call `ct.ThrowIfCancellationRequested()` before validation
 
 **Files modified:** `AutoQAC/Services/Backup/BackupService.cs`, `AutoQAC.Tests/Services/BackupServiceTests.cs`  
-**Commit:** 9aa30f3  
-**Applied fix:** Preserved timestamp directory names while adding numeric suffixes on collision, with coverage for distinct same-second session directory creation.
+**Commit:** cc2d951  
+**Applied fix:** Added an upfront cancellation check before validation/logging and added a regression test proving an already-canceled token throws before validation and warning logging.
 
-### WR-04: [WARNING] Retention cancellation can throw instead of returning a canceled cleanup result
+### WR-03: WARNING — Stale XML doc reference in `BackupService.IsRestoreTargetInsideTrustedRoot`
 
 **Files modified:** `AutoQAC/Services/Backup/BackupService.cs`  
-**Commit:** 8a58349  
-**Applied fix:** Caught expected retention cleanup cancellation inside `CleanupOldSessionsAsync`, added unreported directories as kept/canceled rows, and returned a structured canceled cleanup result.
+**Commit:** b6b3211  
+**Applied fix:** Rewrote the XML documentation to reference the service-layer `DeleteSessionAsync` containment consumer instead of the ViewModel.
 
-### WR-05: [WARNING] Restore and backup byte units disagree for the same copy progress model
+### IN-02: INFO — `ToString("MMM d, yyyy h:mm tt")` is repeated three times in `RestoreViewModel`
 
-**Files modified:** `AutoQAC/ViewModels/BackupProgressTextFormatter.cs`, `AutoQAC/ViewModels/ProgressViewModel.cs`, `AutoQAC/ViewModels/RestoreViewModel.cs`, `AutoQAC.Tests/ViewModels/ProgressViewModelTests.cs`  
-**Commit:** 16dae93  
-**Applied fix:** Added a shared decimal byte formatter for backup and restore progress text and updated progress ViewModel expectations to the shared convention.
+**Files modified:** `AutoQAC/ViewModels/RestoreViewModel.cs`  
+**Commit:** 5b37a44  
+**Applied fix:** Replaced the two inline timestamp format strings with `FormatSessionTimestamp(...)` so restore and delete session copy share one formatter.
+
+## Skipped Issues
+
+### IN-01: INFO — `EnsureTrailingDirectorySeparator` exists in two places
+
+**File:** `AutoQAC/Services/Backup/BackupPathContainment.cs:61-62`, `AutoQAC/Services/Backup/BackupService.cs:723-724`  
+**Reason:** Skipped as requested; REVIEW.md says this should be tracked in a future plan with no immediate change.  
+**Original issue:** The trailing-separator helper remains duplicated between backup session containment and trusted restore root containment.
+
+### IN-03: INFO — `RestoreViewModel.DeleteSessionAsync` does not log the canonical out-of-root rejection in `Information` form
+
+**File:** `AutoQAC/ViewModels/RestoreViewModel.cs:338-347`  
+**Reason:** Skipped as requested; REVIEW.md marks this as an intentional design choice with no code change.  
+**Original issue:** The ViewModel relies on the service-layer warning log and does not add a second information-level UI audit log.
+
+### IN-04: INFO — `MainWindowValidationPanel_ShouldRenderValidationErrorMessage` is unrelated to the rest of the file
+
+**File:** `AutoQAC.Tests/Views/ViewSubscriptionLifecycleTests.cs:8-17`  
+**Reason:** Skipped as requested; REVIEW.md says no change is required and the suggestion is cosmetic.  
+**Original issue:** A validation rendering test lives in a subscription lifecycle test class.
+
+## Verification
+
+- `dotnet test AutoQAC.Tests/AutoQAC.Tests.csproj --filter "DeleteSessionAsync_SingleArgConstructor_UsesDirectoryBackupSessionDeleter"` — passed (1/1).
+- `dotnet test AutoQAC.Tests/AutoQAC.Tests.csproj --filter "DeleteSessionAsync_AlreadyCanceledToken_ThrowsBeforeValidation"` — passed (1/1).
+- `dotnet test AutoQAC.Tests/AutoQAC.Tests.csproj --filter "FullyQualifiedName~RestoreViewModelTests"` — passed (27/27).
+- Initial `--no-restore` attempt for the first targeted test failed because the isolated worktree had no restored `project.assets.json`; reran with restore and it passed.
 
 ---
 
-_Fixed: 2026-04-29T01:13:32.3670975-07:00_  
+_Fixed: 2026-04-29T11:55:01Z_  
 _Fixer: the agent (gsd-code-fixer)_  
 _Iteration: 1_
