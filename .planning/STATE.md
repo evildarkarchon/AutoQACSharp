@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: Cleanup
 status: executing
 stopped_at: Completed 07-11-PLAN.md
-last_updated: "2026-04-29T11:07:19.153Z"
+last_updated: "2026-04-29T11:17:56.467Z"
 last_activity: 2026-04-29
 progress:
   total_phases: 7
   completed_phases: 2
   total_plans: 22
-  completed_plans: 20
-  percent: 91
+  completed_plans: 21
+  percent: 95
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-04-28)
 ## Current Position
 
 Phase: 07 (backup-restore-retention-safety) — EXECUTING
-Plan: 2 of 14
+Plan: 3 of 14
 Status: Ready to execute
 Last activity: 2026-04-29
 
-Progress: [█████████░] 91%
+Progress: [██████████] 95%
 
 ## Performance Metrics
 
@@ -65,6 +65,7 @@ Progress: [█████████░] 91%
 | Phase 07 P10 | 2 min | 2 tasks | 3 files |
 | Phase 07 P11 | 8 min | 3 tasks | 5 files |
 | Phase 07 P12 | 3 min | 2 tasks | 2 files |
+| Phase 07 P14 | 4 min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -119,6 +120,9 @@ Progress: [█████████░] 91%
 - [Phase 07]: RestoreWindow disables Restore Selected and Restore All until LoadSessionsAsync receives the configured game Data folder — This avoids opaque fail-closed UI attempts when no trusted root is loaded.
 - [Phase ?]: [Phase 07]: Add explicit normal-path CloseRequested + Closed wiring in MainWindow.ShowProgressAsync as defense-in-depth alongside the pre-existing ProgressWindow contract; document with a literal // Defense in depth comment and an idempotent local guard. — Plan 07-12 closes the normal progress window lifecycle verification gap.
 - [Phase ?]: [Phase 07]: Source-level lifecycle regression tests use Regex.IsMatch tolerant of method-group syntax and alternate guard names instead of exact substring matches. — Plan 07-12 prevents brittle assertions from breaking under valid refactors that preserve the lifecycle contract.
+- [Phase ?]: [Phase 07]: BackupPathContainment.IsContained is the single shared owner of string-level containment policy for backup/restore/delete safety boundaries — Plan 07-14 collapsed the duplicated normalize+trailing-separator+StartsWith pattern flagged HIGH-priority by the cross-AI review.
+- [Phase ?]: [Phase 07]: BackupPathContainment helper is internal with explicit InternalsVisibleTo(AutoQAC.Tests) instead of public — both consumers live in the AutoQAC assembly so internal visibility is sufficient and keeps the policy off the public API surface.
+- [Phase ?]: [Phase 07]: Plan 07-13 will consume BackupPathContainment.IsContained from RestoreViewModel.DeleteSessionAsync rather than reintroducing duplicate containment logic in the ViewModel layer — Plan 07-14 made the helper available as the single source of truth before Plan 07-13 lands.
 
 ### Pending Todos
 
@@ -137,6 +141,6 @@ Progress: [█████████░] 91%
 
 ## Session Continuity
 
-Last session: 2026-04-29T11:06:57.706Z
+Last session: 2026-04-29T11:17:56.462Z
 Stopped at: Completed 07-11-PLAN.md
 Resume file: None
