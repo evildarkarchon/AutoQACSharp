@@ -419,6 +419,97 @@ public sealed class BackupServiceTests : IDisposable
         result.Rows.Single().DisplayReason.Should().Be("Target folder creation failed");
     }
 
+    /// <summary>
+    /// Verifies restore treats metadata file names as untrusted and rejects traversal before invoking the copier.
+    /// </summary>
+    [Fact]
+    public async Task RestorePluginAsync_FileNameTraversal_ReturnsMissingBackupFileAndDoesNotCopy()
+    {
+        // Arrange
+        var sessionDir = Path.Combine(_testRoot, "restore_traversal_session");
+        Directory.CreateDirectory(sessionDir);
+        var outsideFile = Path.Combine(_testRoot, "outside.esp");
+        File.WriteAllText(outsideFile, "outside backup content");
+        var targetPath = Path.Combine(_testRoot, "restore_traversal_target", "Plugin.esp");
+        var copier = new CountingBackupFileCopier(BackupCopyResult.Complete(outsideFile, targetPath, 22, 22));
+        var sut = new BackupService(copier, _mockLogger);
+        var entry = new BackupPluginEntry
+        {
+            FileName = "..\\outside.esp",
+            OriginalPath = targetPath,
+            FileSizeBytes = 22
+        };
+
+        // Act
+        var result = await sut.RestorePluginAsync(entry, sessionDir);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Failed);
+        result.Rows.Single().DisplayReason.Should().Be("Missing backup file");
+        copier.CallCount.Should().Be(0, "unsafe metadata must be rejected before copying");
+        File.Exists(targetPath).Should().BeFalse("traversal metadata must not restore into the target path");
+    }
+
+    /// <summary>
+    /// Verifies restore rejects absolute metadata file names before they can escape the selected session directory.
+    /// </summary>
+    [Fact]
+    public async Task RestorePluginAsync_AbsoluteFileName_ReturnsMissingBackupFileAndDoesNotCopy()
+    {
+        // Arrange
+        var sessionDir = Path.Combine(_testRoot, "restore_absolute_session");
+        Directory.CreateDirectory(sessionDir);
+        var absoluteBackup = Path.Combine(_testRoot, "absolute.esp");
+        File.WriteAllText(absoluteBackup, "absolute backup content");
+        var targetPath = Path.Combine(_testRoot, "restore_absolute_target", "Plugin.esp");
+        var copier = new CountingBackupFileCopier(BackupCopyResult.Complete(absoluteBackup, targetPath, 23, 23));
+        var sut = new BackupService(copier, _mockLogger);
+        var entry = new BackupPluginEntry
+        {
+            FileName = absoluteBackup,
+            OriginalPath = targetPath,
+            FileSizeBytes = 23
+        };
+
+        // Act
+        var result = await sut.RestorePluginAsync(entry, sessionDir);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Failed);
+        result.Rows.Single().DisplayReason.Should().Be("Missing backup file");
+        copier.CallCount.Should().Be(0, "absolute backup metadata must not reach the copier");
+        File.Exists(targetPath).Should().BeFalse("absolute metadata must not restore into the target path");
+    }
+
+    /// <summary>
+    /// Verifies restore rejects unrooted original targets because they cannot be proven safe overwrite destinations.
+    /// </summary>
+    [Fact]
+    public async Task RestorePluginAsync_UnrootedOriginalPath_ReturnsTargetFolderCreationFailed()
+    {
+        // Arrange
+        var sessionDir = Path.Combine(_testRoot, "restore_unrooted_target_session");
+        Directory.CreateDirectory(sessionDir);
+        var backupPath = Path.Combine(sessionDir, "Relative.esp");
+        File.WriteAllText(backupPath, "backup content");
+        var copier = new CountingBackupFileCopier(BackupCopyResult.Complete(backupPath, "relative.esp", 14, 14));
+        var sut = new BackupService(copier, _mockLogger);
+        var entry = new BackupPluginEntry
+        {
+            FileName = "Relative.esp",
+            OriginalPath = "relative.esp",
+            FileSizeBytes = 14
+        };
+
+        // Act
+        var result = await sut.RestorePluginAsync(entry, sessionDir);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Failed);
+        result.Rows.Single().DisplayReason.Should().Be("Target folder creation failed");
+        copier.CallCount.Should().Be(0, "unsafe target metadata must be rejected before copying");
+    }
+
     #endregion
 
     #region CleanupOldSessions
@@ -586,6 +677,30 @@ public sealed class BackupServiceTests : IDisposable
         deleter.DeletedDirectories.Should().BeEmpty();
     }
 
+    /// <summary>
+    /// Verifies retention cleanup reports a warning row when deletion fails once and then fails again after retry.
+    /// </summary>
+    [Fact]
+    public async Task CleanupOldSessionsAsync_DeletionFailureAfterRetry_ReturnsWarning()
+    {
+        // Arrange
+        var backupRoot = Path.Combine(_testRoot, "cleanup_async_deletion_warning");
+        var oldSession = await CreateSessionDirectoryWithMetadata(backupRoot, "2026-01-01_10-00-00");
+        var deleter = new RecordingBackupSessionDeleter(_ => throw new IOException("locked"));
+        var sut = CreateBackupService(deleter);
+
+        // Act
+        var result = await sut.CleanupOldSessionsAsync(backupRoot, maxSessionCount: 0);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Warning);
+        deleter.Attempts.Should().Be(2, "deletion should be retried once after a transient failure");
+        result.Rows.Should().ContainSingle(row =>
+            row.SessionDirectory == oldSession &&
+            row.Status == BackupRetentionRowStatus.Failed &&
+            row.DisplayReason == "Cleanup deletion failed");
+    }
+
     #endregion
 
     #region GetBackupRoot
@@ -650,6 +765,23 @@ public sealed class BackupServiceTests : IDisposable
             CancellationToken cancellationToken)
         {
             Options = options;
+            return Task.FromResult(result);
+        }
+    }
+
+    private sealed class CountingBackupFileCopier(BackupCopyResult result) : IBackupFileCopier
+    {
+        public int CallCount { get; private set; }
+
+        /// <inheritdoc />
+        public Task<BackupCopyResult> CopyAsync(
+            string sourcePath,
+            string destinationPath,
+            BackupCopyOptions options,
+            IProgress<BackupCopyProgress>? progress,
+            CancellationToken cancellationToken)
+        {
+            CallCount++;
             return Task.FromResult(result);
         }
     }
