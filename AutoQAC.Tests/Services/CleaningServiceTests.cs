@@ -106,11 +106,11 @@ public sealed class CleaningServiceTests
     #region Error Path Tests
 
     /// <summary>
-    /// Verifies that CleanPluginAsync returns Failed status when the command builder
-    /// fails to build a command (returns null). This can happen with invalid configurations.
+    /// Verifies that direct xEdit command-build failures report a concise user-facing failure
+    /// without exposing configured executable paths or attempting to start a process.
     /// </summary>
     [Fact]
-    public async Task CleanPluginAsync_WhenCommandBuilderReturnsNull_ShouldReturnFailed()
+    public async Task CleanPluginAsync_WhenDirectCommandBuildFails_ShouldReturnSafeFailureWithoutStartingProcess()
     {
         // Arrange
         var service = new CleaningService(
@@ -122,14 +122,23 @@ public sealed class CleaningServiceTests
 
         var plugin = new PluginInfo
         {
-            FileName = "Mod.esp",
-            FullPath = "Mod.esp",
+            FileName = "NestedPayload Probe.esp",
+            FullPath = "NestedPayload Probe.esp",
             DetectedGameType = GameType.SkyrimSe,
             IsInSkipList = false
         };
 
-        // Configure state with a valid game type
-        var appState = new AppState { CurrentGameType = GameType.SkyrimSe };
+        const string xEditPath = @"C:\Tools With Spaces\SSEEdit.exe";
+        const string mo2Path = @"C:\MO2 With Spaces\ModOrganizer.exe";
+        const string syntheticNestedPayload = "run SSEEdit.exe -a -autoload NestedPayload Probe.esp";
+
+        var appState = new AppState
+        {
+            CurrentGameType = GameType.SkyrimSe,
+            XEditExecutablePath = xEditPath,
+            Mo2ExecutablePath = mo2Path,
+            Mo2ModeEnabled = false
+        };
         _mockState.CurrentState.Returns(appState);
 
         // Command builder returns null - simulating build failure
@@ -142,13 +151,152 @@ public sealed class CleaningServiceTests
         // Assert
         result.Success.Should().BeFalse("cleaning should fail when command cannot be built");
         result.Status.Should().Be(CleaningStatus.Failed);
-        result.Message.Should().Contain("Failed to build xEdit command");
+        result.Message.Should().Contain(plugin.FileName);
+        result.Message.Should().Contain("direct xEdit");
+        result.Message.Should().Contain("No process was started");
+        result.Message.Should().Contain("See logs for technical details");
+        result.Message.Should().NotContain(xEditPath);
+        result.Message.Should().NotContain(mo2Path);
+        result.Message.Should().NotContain("run ");
+        result.Message.Should().NotContain("-a");
+        result.Message.Should().NotContain(syntheticNestedPayload);
 
         // Process should never be called since command building failed
         await _mockProcess.DidNotReceive().ExecuteAsync(
             Arg.Any<System.Diagnostics.ProcessStartInfo>(),
             Arg.Any<TimeSpan?>(),
-            Arg.Any<CancellationToken>());
+            Arg.Any<CancellationToken>(),
+            Arg.Any<Action<System.Diagnostics.Process>?>(),
+            Arg.Any<string?>());
+    }
+
+    /// <summary>
+    /// Verifies that MO2 command-build failures identify MO2 mode while keeping the
+    /// user-facing result free of executable paths, nested payloads, and process launches.
+    /// </summary>
+    [Fact]
+    public async Task CleanPluginAsync_WhenMo2CommandBuildFails_ShouldReturnSafeFailureWithoutStartingProcess()
+    {
+        // Arrange
+        var service = new CleaningService(
+            _mockGameDetection,
+            _mockState,
+            _mockLogger,
+            _mockProcess,
+            _mockCommandBuilder);
+
+        var plugin = new PluginInfo
+        {
+            FileName = "NestedPayload Probe.esp",
+            FullPath = "NestedPayload Probe.esp",
+            DetectedGameType = GameType.SkyrimSe,
+            IsInSkipList = false
+        };
+
+        const string xEditPath = @"C:\Tools With Spaces\SSEEdit.exe";
+        const string mo2Path = @"C:\MO2 With Spaces\ModOrganizer.exe";
+        const string syntheticNestedPayload = "run SSEEdit.exe -a -autoload NestedPayload Probe.esp";
+
+        var appState = new AppState
+        {
+            CurrentGameType = GameType.SkyrimSe,
+            XEditExecutablePath = xEditPath,
+            Mo2ExecutablePath = mo2Path,
+            Mo2ModeEnabled = true
+        };
+        _mockState.CurrentState.Returns(appState);
+
+        _mockCommandBuilder.BuildCommand(plugin, GameType.SkyrimSe)
+            .Returns((System.Diagnostics.ProcessStartInfo?)null);
+
+        // Act
+        var result = await service.CleanPluginAsync(plugin);
+
+        // Assert
+        result.Success.Should().BeFalse("cleaning should fail when the MO2 command cannot be built");
+        result.Status.Should().Be(CleaningStatus.Failed);
+        result.Message.Should().Contain(plugin.FileName);
+        result.Message.Should().Contain("MO2");
+        result.Message.Should().Contain("No process was started");
+        result.Message.Should().Contain("See logs for technical details");
+        result.Message.Should().NotContain(xEditPath);
+        result.Message.Should().NotContain(mo2Path);
+        result.Message.Should().NotContain("run ");
+        result.Message.Should().NotContain("-a");
+        result.Message.Should().NotContain(syntheticNestedPayload);
+
+        await _mockProcess.DidNotReceive().ExecuteAsync(
+            Arg.Any<System.Diagnostics.ProcessStartInfo>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>(),
+            Arg.Any<Action<System.Diagnostics.Process>?>(),
+            Arg.Any<string?>());
+    }
+
+    /// <summary>
+    /// Verifies that mocked launch-start failures remain on the existing failed-flow path
+    /// and do not disclose configured executable paths or command-line payloads.
+    /// </summary>
+    [Fact]
+    public async Task CleanPluginAsync_WhenMockedLaunchStartFails_ShouldReturnExistingConciseFailure()
+    {
+        // Arrange
+        var service = new CleaningService(
+            _mockGameDetection,
+            _mockState,
+            _mockLogger,
+            _mockProcess,
+            _mockCommandBuilder);
+
+        var plugin = new PluginInfo
+        {
+            FileName = "LaunchStartFailure.esp",
+            FullPath = "LaunchStartFailure.esp",
+            DetectedGameType = GameType.SkyrimSe,
+            IsInSkipList = false
+        };
+
+        const string xEditPath = @"C:\Tools With Spaces\SSEEdit.exe";
+        const string mo2Path = @"C:\MO2 With Spaces\ModOrganizer.exe";
+        const string syntheticNestedPayload = "run SSEEdit.exe -a -autoload LaunchStartFailure.esp";
+
+        var appState = new AppState
+        {
+            CurrentGameType = GameType.SkyrimSe,
+            XEditExecutablePath = xEditPath,
+            Mo2ExecutablePath = mo2Path,
+            Mo2ModeEnabled = true
+        };
+        _mockState.CurrentState.Returns(appState);
+
+        var startInfo = new System.Diagnostics.ProcessStartInfo(mo2Path);
+        startInfo.ArgumentList.Add("run");
+        startInfo.ArgumentList.Add(xEditPath);
+        startInfo.ArgumentList.Add("-a");
+        startInfo.ArgumentList.Add(syntheticNestedPayload);
+        _mockCommandBuilder.BuildCommand(plugin, GameType.SkyrimSe)
+            .Returns(startInfo);
+
+        _mockProcess.ExecuteAsync(
+                startInfo,
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<Action<System.Diagnostics.Process>?>(),
+                Arg.Any<string?>())
+            .Returns(new ProcessResult { ExitCode = -1 });
+
+        // Act
+        var result = await service.CleanPluginAsync(plugin);
+
+        // Assert
+        result.Success.Should().BeFalse("a mocked launch-start failure should use the existing failed flow");
+        result.Status.Should().Be(CleaningStatus.Failed);
+        result.Message.Should().Be("xEdit exited with code -1");
+        result.Message.Should().NotContain(xEditPath);
+        result.Message.Should().NotContain(mo2Path);
+        result.Message.Should().NotContain("run ");
+        result.Message.Should().NotContain("-a");
+        result.Message.Should().NotContain(syntheticNestedPayload);
     }
 
     /// <summary>
