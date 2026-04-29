@@ -36,12 +36,6 @@ public sealed class BackupFileCopier(ILoggingService logger) : IBackupFileCopier
 
         try
         {
-            var outputDirectory = Path.GetDirectoryName(actualOutputPath);
-            if (!string.IsNullOrEmpty(outputDirectory))
-            {
-                Directory.CreateDirectory(outputDirectory);
-            }
-
             await CopyFileContentsAsync(
                 sourcePath,
                 actualOutputPath,
