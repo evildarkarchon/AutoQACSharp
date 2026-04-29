@@ -36,7 +36,6 @@
     "context_warnings": true
   },
   "agent_skills": {},
-  "resolve_model_ids": "omit",
   "mode": "interactive",
   "granularity": "fine",
   "features": {
