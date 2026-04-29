@@ -379,7 +379,7 @@ public sealed class BackupServiceTests : IDisposable
         };
 
         // Act
-        _sut.RestorePlugin(entry, sessionDir);
+        _sut.RestorePlugin(entry, sessionDir, Path.GetDirectoryName(restorePath)!);
 
         // Assert
         File.Exists(restorePath).Should().BeTrue("file should be restored to original path");
@@ -399,7 +399,7 @@ public sealed class BackupServiceTests : IDisposable
         };
 
         // Act
-        var act = () => _sut.RestorePlugin(entry, sessionDir);
+        var act = () => _sut.RestorePlugin(entry, sessionDir, Path.GetDirectoryName(entry.OriginalPath)!);
 
         // Assert
         act.Should().Throw<FileNotFoundException>();
@@ -424,7 +424,7 @@ public sealed class BackupServiceTests : IDisposable
         };
 
         // Act
-        var act = () => _sut.RestorePlugin(entry, sessionDir);
+        var act = () => _sut.RestorePlugin(entry, sessionDir, Path.GetDirectoryName(entry.OriginalPath)!);
 
         // Assert
         act.Should().Throw<InvalidOperationException>()
@@ -450,7 +450,7 @@ public sealed class BackupServiceTests : IDisposable
         };
 
         // Act
-        var act = () => _sut.RestorePlugin(entry, sessionDir);
+        var act = () => _sut.RestorePlugin(entry, sessionDir, Path.GetDirectoryName(entry.OriginalPath)!);
 
         // Assert
         act.Should().Throw<FileNotFoundException>();
@@ -477,7 +477,7 @@ public sealed class BackupServiceTests : IDisposable
         };
 
         // Act
-        var result = await _sut.RestoreSessionAsync(session);
+        var result = await _sut.RestoreSessionAsync(session, Path.GetDirectoryName(goodTarget)!);
 
         // Assert
         result.Status.Should().Be(BackupOperationStatus.Partial);
@@ -518,7 +518,7 @@ public sealed class BackupServiceTests : IDisposable
         };
 
         // Act
-        var result = await sut.RestoreSessionAsync(session, ct: cts.Token);
+        var result = await sut.RestoreSessionAsync(session, Path.GetDirectoryName(firstTarget)!, ct: cts.Token);
 
         // Assert
         result.Status.Should().Be(BackupOperationStatus.Canceled);
@@ -547,7 +547,7 @@ public sealed class BackupServiceTests : IDisposable
         };
 
         // Act
-        var result = await _sut.RestorePluginAsync(entry, sessionDir);
+        var result = await _sut.RestorePluginAsync(entry, sessionDir, Path.GetDirectoryName(targetPath)!);
 
         // Assert
         result.Status.Should().Be(BackupOperationStatus.Complete);
@@ -581,7 +581,7 @@ public sealed class BackupServiceTests : IDisposable
         };
 
         // Act
-        var result = await sut.RestorePluginAsync(entry, sessionDir);
+        var result = await sut.RestorePluginAsync(entry, sessionDir, Path.GetDirectoryName(targetPath)!);
 
         // Assert
         result.Status.Should().Be(BackupOperationStatus.Canceled);
@@ -608,7 +608,7 @@ public sealed class BackupServiceTests : IDisposable
         };
 
         // Act
-        var result = await _sut.RestorePluginAsync(entry, sessionDir);
+        var result = await _sut.RestorePluginAsync(entry, sessionDir, _testRoot);
 
         // Assert
         result.Status.Should().Be(BackupOperationStatus.Failed);
@@ -637,7 +637,7 @@ public sealed class BackupServiceTests : IDisposable
         };
 
         // Act
-        var result = await sut.RestorePluginAsync(entry, sessionDir);
+        var result = await sut.RestorePluginAsync(entry, sessionDir, Path.GetDirectoryName(targetPath)!);
 
         // Assert
         result.Status.Should().Be(BackupOperationStatus.Failed);
@@ -668,7 +668,7 @@ public sealed class BackupServiceTests : IDisposable
         };
 
         // Act
-        var result = await sut.RestorePluginAsync(entry, sessionDir);
+        var result = await sut.RestorePluginAsync(entry, sessionDir, Path.GetDirectoryName(targetPath)!);
 
         // Assert
         result.Status.Should().Be(BackupOperationStatus.Failed);
@@ -698,7 +698,7 @@ public sealed class BackupServiceTests : IDisposable
         };
 
         // Act
-        var result = await sut.RestorePluginAsync(entry, sessionDir);
+        var result = await sut.RestorePluginAsync(entry, sessionDir, _testRoot);
 
         // Assert
         result.Status.Should().Be(BackupOperationStatus.Failed);
@@ -728,7 +728,7 @@ public sealed class BackupServiceTests : IDisposable
         };
 
         // Act
-        var result = await sut.RestorePluginAsync(entry, sessionDir);
+        var result = await sut.RestorePluginAsync(entry, sessionDir, Path.GetDirectoryName(targetPath)!);
 
         // Assert
         result.Status.Should().Be(BackupOperationStatus.Failed);
@@ -759,7 +759,7 @@ public sealed class BackupServiceTests : IDisposable
         };
 
         // Act
-        var result = await sut.RestorePluginAsync(entry, sessionDir);
+        var result = await sut.RestorePluginAsync(entry, sessionDir, Path.GetDirectoryName(targetPath)!);
 
         // Assert
         result.Status.Should().Be(BackupOperationStatus.Failed);
@@ -787,7 +787,7 @@ public sealed class BackupServiceTests : IDisposable
         };
 
         // Act
-        var result = await _sut.RestorePluginAsync(entry, sessionDir);
+        var result = await _sut.RestorePluginAsync(entry, sessionDir, Path.GetDirectoryName(targetPath)!);
 
         // Assert
         result.Status.Should().Be(BackupOperationStatus.Complete);
@@ -820,11 +820,111 @@ public sealed class BackupServiceTests : IDisposable
         };
 
         // Act
-        var result = await sut.RestorePluginAsync(entry, sessionDir);
+        var result = await sut.RestorePluginAsync(entry, sessionDir, Path.GetDirectoryName(targetPath)!);
 
         // Assert
         result.Status.Should().Be(BackupOperationStatus.Failed);
         result.Rows.Single().DisplayReason.Should().Be("Access denied");
+    }
+
+    /// <summary>
+    /// Verifies restore rejects same-name plugin metadata that targets a path outside the trusted restore root.
+    /// </summary>
+    [Fact]
+    public async Task RestorePluginAsync_OriginalPathOutsideTrustedRoot_ReturnsTargetFolderCreationFailedAndDoesNotCopy()
+    {
+        // Arrange
+        var sessionDir = Path.Combine(_testRoot, "restore_outside_trusted_root_session");
+        Directory.CreateDirectory(sessionDir);
+        var backupPath = Path.Combine(sessionDir, "Backup.esp");
+        await File.WriteAllTextAsync(backupPath, "backup content");
+        var trustedRoot = Path.Combine(_testRoot, "Data");
+        var outsideTarget = Path.Combine(_testRoot, "Outside", "Backup.esp");
+        var copier = new CountingBackupFileCopier(BackupCopyResult.Complete(backupPath, outsideTarget, 14, 14));
+        var sut = new BackupService(copier, _mockLogger);
+        var entry = new BackupPluginEntry
+        {
+            FileName = "Backup.esp",
+            OriginalPath = outsideTarget,
+            FileSizeBytes = 14
+        };
+
+        // Act
+        var result = await sut.RestorePluginAsync(entry, sessionDir, trustedRoot);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Failed);
+        result.Rows.Single().FailureReason.Should().Be(BackupFailureReason.TargetFolderCreationFailed);
+        copier.CallCount.Should().Be(0, "out-of-root restore targets must be rejected before copying");
+        Directory.Exists(Path.GetDirectoryName(outsideTarget)!).Should().BeFalse("out-of-root restore targets must not create directories");
+        File.Exists(outsideTarget).Should().BeFalse();
+    }
+
+    /// <summary>
+    /// Verifies restore root prefix checks do not allow similarly named sibling directories.
+    /// </summary>
+    [Fact]
+    public async Task RestorePluginAsync_SiblingPrefixTrustedRoot_ReturnsTargetFolderCreationFailedAndDoesNotCopy()
+    {
+        // Arrange
+        var sessionDir = Path.Combine(_testRoot, "restore_sibling_prefix_session");
+        Directory.CreateDirectory(sessionDir);
+        var backupPath = Path.Combine(sessionDir, "Backup.esp");
+        await File.WriteAllTextAsync(backupPath, "backup content");
+        var trustedRoot = Path.Combine(_testRoot, "Data");
+        var siblingTarget = Path.Combine(_testRoot, "Data2", "Backup.esp");
+        var copier = new CountingBackupFileCopier(BackupCopyResult.Complete(backupPath, siblingTarget, 14, 14));
+        var sut = new BackupService(copier, _mockLogger);
+        var entry = new BackupPluginEntry
+        {
+            FileName = "Backup.esp",
+            OriginalPath = siblingTarget,
+            FileSizeBytes = 14
+        };
+
+        // Act
+        var result = await sut.RestorePluginAsync(entry, sessionDir, trustedRoot);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Failed);
+        result.Rows.Single().FailureReason.Should().Be(BackupFailureReason.TargetFolderCreationFailed);
+        copier.CallCount.Should().Be(0, "Data2 must not be considered contained by the Data trusted root");
+        Directory.Exists(Path.GetDirectoryName(siblingTarget)!).Should().BeFalse();
+        File.Exists(siblingTarget).Should().BeFalse();
+    }
+
+    /// <summary>
+    /// Verifies restore fails closed when no trusted restore root is supplied.
+    /// </summary>
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public async Task RestorePluginAsync_MissingTrustedRestoreRoot_ReturnsTargetFolderCreationFailedAndDoesNotCopy(string? trustedRestoreRoot)
+    {
+        // Arrange
+        var sessionDir = Path.Combine(_testRoot, "restore_missing_trusted_root_session", trustedRestoreRoot ?? "null");
+        Directory.CreateDirectory(sessionDir);
+        var backupPath = Path.Combine(sessionDir, "Backup.esp");
+        await File.WriteAllTextAsync(backupPath, "backup content");
+        var targetPath = Path.Combine(_testRoot, "Data", "Backup.esp");
+        var copier = new CountingBackupFileCopier(BackupCopyResult.Complete(backupPath, targetPath, 14, 14));
+        var sut = new BackupService(copier, _mockLogger);
+        var entry = new BackupPluginEntry
+        {
+            FileName = "Backup.esp",
+            OriginalPath = targetPath,
+            FileSizeBytes = 14
+        };
+
+        // Act
+        var result = await sut.RestorePluginAsync(entry, sessionDir, trustedRestoreRoot);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Failed);
+        result.Rows.Single().FailureReason.Should().Be(BackupFailureReason.TargetFolderCreationFailed);
+        copier.CallCount.Should().Be(0, "missing trusted roots must fail before target directory creation or copy");
+        Directory.Exists(Path.GetDirectoryName(targetPath)!).Should().BeFalse();
+        File.Exists(targetPath).Should().BeFalse();
     }
 
     #endregion

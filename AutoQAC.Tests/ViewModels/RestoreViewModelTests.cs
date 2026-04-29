@@ -48,6 +48,7 @@ public sealed class RestoreViewModelTests
         _backupService.RestorePluginAsync(
                 plugin,
                 session.SessionDirectory,
+                Arg.Any<string?>(),
                 Arg.Any<IProgress<BackupCopyProgress>?>(),
                 Arg.Any<CancellationToken>())
             .Returns(new BackupRestoreResult(
@@ -98,6 +99,7 @@ public sealed class RestoreViewModelTests
         _messageDialog.ShowConfirmAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         _backupService.RestoreSessionAsync(
                 session,
+                Arg.Any<string?>(),
                 Arg.Any<IProgress<BackupCopyProgress>?>(),
                 Arg.Any<CancellationToken>())
             .Returns(new BackupRestoreResult(status, rows));
@@ -118,6 +120,7 @@ public sealed class RestoreViewModelTests
         _messageDialog.ShowConfirmAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         _backupService.RestoreSessionAsync(
                 session,
+                Arg.Any<string?>(),
                 Arg.Any<IProgress<BackupCopyProgress>?>(),
                 Arg.Any<CancellationToken>())
             .Returns(new BackupRestoreResult(
@@ -146,6 +149,7 @@ public sealed class RestoreViewModelTests
         _messageDialog.ShowConfirmAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         _backupService.RestoreSessionAsync(
                 session,
+                Arg.Any<string?>(),
                 Arg.Any<IProgress<BackupCopyProgress>?>(),
                 Arg.Any<CancellationToken>())
             .Returns(new BackupRestoreResult(
@@ -173,6 +177,7 @@ public sealed class RestoreViewModelTests
         _backupService.RestorePluginAsync(
                 plugin,
                 session.SessionDirectory,
+                Arg.Any<string?>(),
                 Arg.Any<IProgress<BackupCopyProgress>?>(),
                 Arg.Any<CancellationToken>())
             .Returns(new BackupRestoreResult(
@@ -202,6 +207,7 @@ public sealed class RestoreViewModelTests
         _backupService.RestorePluginAsync(
                 plugin,
                 session.SessionDirectory,
+                Arg.Any<string?>(),
                 Arg.Any<IProgress<BackupCopyProgress>?>(),
                 Arg.Any<CancellationToken>())
             .Returns(new BackupRestoreResult(
@@ -228,11 +234,12 @@ public sealed class RestoreViewModelTests
         _messageDialog.ShowConfirmAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         _backupService.RestoreSessionAsync(
                 session,
+                Arg.Any<string?>(),
                 Arg.Any<IProgress<BackupCopyProgress>?>(),
                 Arg.Any<CancellationToken>())
             .Returns(callInfo =>
             {
-                restoreStarted.SetResult(callInfo.ArgAt<CancellationToken>(2));
+                restoreStarted.SetResult(callInfo.ArgAt<CancellationToken>(3));
                 return allowRestoreToComplete.Task;
             });
 
@@ -261,6 +268,7 @@ public sealed class RestoreViewModelTests
         _messageDialog.ShowConfirmAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         _backupService.RestoreSessionAsync(
                 session,
+                Arg.Any<string?>(),
                 Arg.Any<IProgress<BackupCopyProgress>?>(),
                 Arg.Any<CancellationToken>())
             .Returns(_ =>
@@ -292,6 +300,7 @@ public sealed class RestoreViewModelTests
         _messageDialog.ShowConfirmAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         _backupService.RestoreSessionAsync(
                 session,
+                Arg.Any<string?>(),
                 Arg.Any<IProgress<BackupCopyProgress>?>(),
                 Arg.Any<CancellationToken>())
             .Returns(_ =>
@@ -318,11 +327,12 @@ public sealed class RestoreViewModelTests
         _messageDialog.ShowConfirmAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         _backupService.RestoreSessionAsync(
                 session,
+                Arg.Any<string?>(),
                 Arg.Any<IProgress<BackupCopyProgress>?>(),
                 Arg.Any<CancellationToken>())
             .Returns(callInfo =>
             {
-                var progress = callInfo.ArgAt<IProgress<BackupCopyProgress>?>(1);
+                var progress = callInfo.ArgAt<IProgress<BackupCopyProgress>?>(2);
                 progress?.Report(new BackupCopyProgress("Large.esp", 38_400_000, 120_000_000));
                 return Task.FromResult(new BackupRestoreResult(
                     BackupOperationStatus.Complete,
@@ -345,11 +355,12 @@ public sealed class RestoreViewModelTests
         _messageDialog.ShowConfirmAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         _backupService.RestoreSessionAsync(
                 session,
+                Arg.Any<string?>(),
                 Arg.Any<IProgress<BackupCopyProgress>?>(),
                 Arg.Any<CancellationToken>())
             .Returns(async callInfo =>
             {
-                var progress = callInfo.ArgAt<IProgress<BackupCopyProgress>?>(1);
+                var progress = callInfo.ArgAt<IProgress<BackupCopyProgress>?>(2);
                 await Task.Run(() => progress?.Report(new BackupCopyProgress("Large.esp", 38_400_000, 120_000_000)));
                 await dispatcher.Posted.Task.WaitAsync(TimeSpan.FromSeconds(2));
                 return new BackupRestoreResult(
@@ -377,11 +388,12 @@ public sealed class RestoreViewModelTests
         _messageDialog.ShowConfirmAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         _backupService.RestoreSessionAsync(
                 session,
+                Arg.Any<string?>(),
                 Arg.Any<IProgress<BackupCopyProgress>?>(),
                 Arg.Any<CancellationToken>())
             .Returns(callInfo =>
             {
-                restoreStarted.SetResult(callInfo.ArgAt<CancellationToken>(2));
+                restoreStarted.SetResult(callInfo.ArgAt<CancellationToken>(3));
                 return allowRestoreToComplete.Task;
             });
 
@@ -395,6 +407,98 @@ public sealed class RestoreViewModelTests
         token.IsCancellationRequested.Should().BeTrue("disposing the ViewModel should clear the active restore cancellation source");
         allowRestoreToComplete.SetResult(new BackupRestoreResult(BackupOperationStatus.Canceled, []));
         await restoreTask;
+    }
+
+    /// <summary>
+    /// Verifies the configured game Data folder is retained as the trusted restore root for selected restores.
+    /// </summary>
+    [Fact]
+    public async Task RestorePluginCommand_PassesLoadedDataFolderAsTrustedRestoreRoot()
+    {
+        var dataFolderPath = @"C:\Games\Skyrim Special Edition\Data";
+        var backupRoot = @"C:\Games\Skyrim Special Edition\AutoQAC Backups";
+        var plugin = CreatePlugin("Update.esm");
+        var session = CreateSession(plugin);
+        _backupService.GetBackupRoot(dataFolderPath).Returns(backupRoot);
+        _backupService.GetBackupSessionsAsync(backupRoot, Arg.Any<CancellationToken>()).Returns([session]);
+        _messageDialog.ShowConfirmAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        _backupService.RestorePluginAsync(
+                plugin,
+                session.SessionDirectory,
+                dataFolderPath,
+                Arg.Any<IProgress<BackupCopyProgress>?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new BackupRestoreResult(
+                BackupOperationStatus.Complete,
+                [new BackupRestoreRowResult(plugin.FileName, BackupRestoreRowStatus.Restored, null, 1024, 1024)]));
+
+        var vm = CreateViewModel();
+        await vm.LoadSessionsAsync(dataFolderPath);
+        vm.SelectedSession = session;
+        vm.SelectedPlugin = plugin;
+
+        await vm.RestorePluginCommand.ExecuteAsync(null);
+
+        await _backupService.Received(1).RestorePluginAsync(
+            plugin,
+            session.SessionDirectory,
+            dataFolderPath,
+            Arg.Any<IProgress<BackupCopyProgress>?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// Verifies the configured game Data folder is retained as the trusted restore root for Restore All.
+    /// </summary>
+    [Fact]
+    public async Task RestoreAllCommand_PassesLoadedDataFolderAsTrustedRestoreRoot()
+    {
+        var dataFolderPath = @"C:\Games\Skyrim Special Edition\Data";
+        var backupRoot = @"C:\Games\Skyrim Special Edition\AutoQAC Backups";
+        var session = CreateSession(CreatePlugin("Update.esm"));
+        _backupService.GetBackupRoot(dataFolderPath).Returns(backupRoot);
+        _backupService.GetBackupSessionsAsync(backupRoot, Arg.Any<CancellationToken>()).Returns([session]);
+        _messageDialog.ShowConfirmAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        _backupService.RestoreSessionAsync(
+                session,
+                dataFolderPath,
+                Arg.Any<IProgress<BackupCopyProgress>?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new BackupRestoreResult(
+                BackupOperationStatus.Complete,
+                [new BackupRestoreRowResult("Update.esm", BackupRestoreRowStatus.Restored, null, 1024, 1024)]));
+
+        var vm = CreateViewModel();
+        await vm.LoadSessionsAsync(dataFolderPath);
+        vm.SelectedSession = session;
+
+        await vm.RestoreAllCommand.ExecuteAsync(null);
+
+        await _backupService.Received(1).RestoreSessionAsync(
+            session,
+            dataFolderPath,
+            Arg.Any<IProgress<BackupCopyProgress>?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// Verifies restore commands fail closed in the UI when no trusted restore root has been loaded.
+    /// </summary>
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public async Task RestoreCommands_DisabledWhenTrustedRestoreRootMissing(string? dataFolderPath)
+    {
+        var plugin = CreatePlugin("Update.esm");
+        var session = CreateSession(plugin);
+        var vm = CreateViewModel();
+        vm.SelectedSession = session;
+        vm.SelectedPlugin = plugin;
+
+        await vm.LoadSessionsAsync(dataFolderPath);
+
+        vm.RestorePluginCommand.CanExecute(null).Should().BeFalse();
+        vm.RestoreAllCommand.CanExecute(null).Should().BeFalse();
     }
 
     /// <summary>
