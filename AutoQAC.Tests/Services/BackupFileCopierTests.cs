@@ -39,6 +39,30 @@ public sealed class BackupFileCopierTests : IDisposable
         }
     }
 
+    /// <summary>
+    /// Verifies a failed create-new backup attempt cannot remove an older backup at the requested path.
+    /// </summary>
+    [Fact]
+    public async Task CopyAsync_CreateNewDestinationAlreadyExists_PreservesExistingDestination()
+    {
+        var sourcePath = Path.Combine(_testRoot, "new-source.esp");
+        var destinationPath = Path.Combine(_testRoot, "existing-backup.esp");
+        await File.WriteAllTextAsync(sourcePath, "new backup content");
+        await File.WriteAllTextAsync(destinationPath, "existing backup content");
+
+        var result = await _sut.CopyAsync(
+            sourcePath,
+            destinationPath,
+            BackupCopyOptions.CreateNewBackup,
+            progress: null,
+            CancellationToken.None);
+
+        result.Status.Should().Be(BackupOperationStatus.Failed);
+        result.FailureReason.Should().Be(BackupFailureReason.TargetWriteFailed);
+        File.Exists(destinationPath).Should().BeTrue("a create-new failure happens before this copy attempt owns the destination");
+        File.ReadAllText(destinationPath).Should().Be("existing backup content");
+    }
+
     [Fact]
     public async Task CopyAsync_CanceledCreateNewCopy_DeletesPartialDestination()
     {
@@ -83,6 +107,33 @@ public sealed class BackupFileCopierTests : IDisposable
         result.FailureReason.Should().Be(BackupFailureReason.Canceled);
         File.ReadAllText(destinationPath).Should().Be("original target content", "restore cancellation must not damage the existing plugin file");
         File.Exists(destinationPath + ".autoqac-tmp").Should().BeFalse("only the temporary restore file should be cleaned up");
+    }
+
+    /// <summary>
+    /// Verifies atomic restore cancellation still deletes the temp file that this copy attempt opened.
+    /// </summary>
+    [Fact]
+    public async Task CopyAsync_CanceledAtomicReplace_DeletesTempFile_RegardlessOfOwnershipFlag()
+    {
+        var sourcePath = Path.Combine(_testRoot, "large-restore-source-owned-temp.bin");
+        var destinationPath = Path.Combine(_testRoot, "existing-owned-temp-plugin.esp");
+        await WritePatternFileAsync(sourcePath, sizeBytes: 32 * 1024 * 1024);
+        await File.WriteAllTextAsync(destinationPath, "original target content");
+
+        using var cts = new CancellationTokenSource();
+        var progress = new ImmediateProgress(_ => cts.Cancel());
+
+        var result = await _sut.CopyAsync(
+            sourcePath,
+            destinationPath,
+            BackupCopyOptions.AtomicReplace,
+            progress,
+            cts.Token);
+
+        result.Status.Should().Be(BackupOperationStatus.Canceled);
+        result.FailureReason.Should().Be(BackupFailureReason.Canceled);
+        File.ReadAllText(destinationPath).Should().Be("original target content", "restore cancellation must preserve the original plugin file");
+        File.Exists(destinationPath + ".autoqac-tmp").Should().BeFalse("atomic restore owns the temp path once the destination stream opens");
     }
 
     [Fact]
