@@ -614,7 +614,7 @@ public sealed class ProgressViewModelTests
         vm.IsBackupOperationActive.Should().BeTrue();
         vm.IsBackupCancelVisible.Should().BeTrue();
         vm.IsCleanupCancelVisible.Should().BeFalse();
-        vm.BackupOperationProgressText.Should().Be("0 / 1 files — 40.0 MB / 100.0 MB");
+        vm.BackupOperationProgressText.Should().Be("0 / 1 files — 41.9 MB / 104.9 MB");
     }
 
     [Fact]

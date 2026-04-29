@@ -394,30 +394,10 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
 
         if (progress.TotalBytes is { } totalBytes)
         {
-            text += $" — {FormatBytes(progress.BytesCopied)} / {FormatBytes(totalBytes)}";
+            text += $" — {BackupProgressTextFormatter.FormatBytes(progress.BytesCopied)} / {BackupProgressTextFormatter.FormatBytes(totalBytes)}";
         }
 
         RestoreProgressText = text;
-    }
-
-    /// <summary>
-    /// Formats bytes as decimal units with one fractional digit for restore progress copy.
-    /// </summary>
-    /// <param name="bytes">Byte count to display.</param>
-    /// <returns>A concise decimal byte string such as <c>38.4 MB</c>.</returns>
-    private static string FormatBytes(long bytes)
-    {
-        const decimal kb = 1_000m;
-        const decimal mb = kb * 1_000m;
-        const decimal gb = mb * 1_000m;
-
-        return bytes switch
-        {
-            >= 1_000_000_000 => $"{bytes / gb:F1} GB",
-            >= 1_000_000 => $"{bytes / mb:F1} MB",
-            >= 1_000 => $"{bytes / kb:F1} KB",
-            _ => $"{bytes} B"
-        };
     }
 
     /// <summary>

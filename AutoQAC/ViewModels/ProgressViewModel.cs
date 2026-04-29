@@ -248,19 +248,8 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
             : $"{operation.FilesCompleted} files";
 
         return operation.TotalBytes is > 0
-            ? $"{countText} — {FormatBytes(operation.BytesCopied)} / {FormatBytes(operation.TotalBytes.Value)}"
+            ? $"{countText} — {BackupProgressTextFormatter.FormatBytes(operation.BytesCopied)} / {BackupProgressTextFormatter.FormatBytes(operation.TotalBytes.Value)}"
             : countText;
-    }
-
-    /// <summary>
-    /// Converts byte counts to the decimal display convention used by Phase 7 copy progress text.
-    /// </summary>
-    /// <param name="bytes">The byte count reported by the backup copy operation.</param>
-    /// <returns>A one-decimal megabyte string suitable for UI binding.</returns>
-    private static string FormatBytes(long bytes)
-    {
-        const double BytesPerMegabyte = 1024.0 * 1024.0;
-        return $"{bytes / BytesPerMegabyte:0.0} MB";
     }
 
     private void OnDetailedResult(PluginCleaningResult result)
