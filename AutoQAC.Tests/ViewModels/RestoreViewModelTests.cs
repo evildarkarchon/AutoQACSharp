@@ -1,7 +1,9 @@
+using System.Collections.Concurrent;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.Backup;
 using AutoQAC.Services.UI;
+using AutoQAC.Tests.TestInfrastructure;
 using AutoQAC.ViewModels;
 using FluentAssertions;
 using NSubstitute;
@@ -16,8 +18,11 @@ public sealed class RestoreViewModelTests
     private readonly IBackupService _backupService = Substitute.For<IBackupService>();
     private readonly IMessageDialogService _messageDialog = Substitute.For<IMessageDialogService>();
     private readonly ILoggingService _logger = Substitute.For<ILoggingService>();
+    private readonly IUiDispatcher _uiDispatcher = new SynchronousUiDispatcher();
 
-    private RestoreViewModel CreateViewModel() => new(_backupService, _messageDialog, _logger);
+    private RestoreViewModel CreateViewModel() => new(_backupService, _messageDialog, _logger, _uiDispatcher);
+
+    private RestoreViewModel CreateViewModel(IUiDispatcher uiDispatcher) => new(_backupService, _messageDialog, _logger, uiDispatcher);
 
     private static BackupSession CreateSession(params BackupPluginEntry[] plugins) => new()
     {
@@ -308,6 +313,37 @@ public sealed class RestoreViewModelTests
     }
 
     [Fact]
+    public async Task RestoreProgressReportedFromWorkerThread_ShouldPostBindableUpdatesToDispatcher()
+    {
+        var session = CreateSession(CreatePlugin("Large.esp", 120_000_000));
+        var dispatcher = new DeferredUiDispatcher();
+        _messageDialog.ShowConfirmAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        _backupService.RestoreSessionAsync(
+                session,
+                Arg.Any<IProgress<BackupCopyProgress>?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(async callInfo =>
+            {
+                var progress = callInfo.ArgAt<IProgress<BackupCopyProgress>?>(1);
+                await Task.Run(() => progress?.Report(new BackupCopyProgress("Large.esp", 38_400_000, 120_000_000)));
+                await dispatcher.Posted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+                return new BackupRestoreResult(
+                    BackupOperationStatus.Complete,
+                    [new BackupRestoreRowResult("Large.esp", BackupRestoreRowStatus.Restored, null, 120_000_000, 120_000_000)]);
+            });
+
+        var vm = CreateViewModel(dispatcher);
+        vm.SelectedSession = session;
+
+        await vm.RestoreAllCommand.ExecuteAsync(null);
+        vm.RestoreProgressText.Should().Be("Restoring 0 / 1 plugins", "worker-thread progress must not mutate UI-bound state before dispatcher execution");
+
+        dispatcher.Drain();
+
+        vm.RestoreProgressText.Should().Be("Restoring 1 / 1 plugins — 38.4 MB / 120.0 MB");
+    }
+
+    [Fact]
     public async Task DisposeClearsRestoreCancellationSource_ShouldCancelActiveRestoreToken()
     {
         var session = CreateSession(CreatePlugin("Large.esp", 120_000_000));
@@ -334,5 +370,36 @@ public sealed class RestoreViewModelTests
         token.IsCancellationRequested.Should().BeTrue("disposing the ViewModel should clear the active restore cancellation source");
         allowRestoreToComplete.SetResult(new BackupRestoreResult(BackupOperationStatus.Canceled, []));
         await restoreTask;
+    }
+
+    /// <summary>
+    /// Test dispatcher that records posted callbacks and runs them only when explicitly drained.
+    /// </summary>
+    private sealed class DeferredUiDispatcher : IUiDispatcher
+    {
+        private readonly ConcurrentQueue<Action> _actions = new();
+
+        public TaskCompletionSource Posted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        /// <inheritdoc />
+        public void Post(Action action)
+        {
+            _actions.Enqueue(action);
+            Posted.TrySetResult();
+        }
+
+        /// <inheritdoc />
+        public Task InvokeAsync(Func<Task> action) => action();
+
+        /// <summary>
+        /// Executes all queued UI callbacks in FIFO order to simulate the UI thread draining work.
+        /// </summary>
+        public void Drain()
+        {
+            while (_actions.TryDequeue(out var action))
+            {
+                action();
+            }
+        }
     }
 }

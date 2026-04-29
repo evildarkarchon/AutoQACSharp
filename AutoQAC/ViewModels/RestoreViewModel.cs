@@ -17,6 +17,7 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
     private readonly IBackupService _backupService;
     private readonly IMessageDialogService _messageDialog;
     private readonly ILoggingService _logger;
+    private readonly IUiDispatcher _uiDispatcher;
 
     private string? _backupRoot;
     private CancellationTokenSource? _restoreCts;
@@ -77,16 +78,18 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
     public event EventHandler? CloseRequested;
 
     /// <summary>Design-time constructor.</summary>
-    public RestoreViewModel() : this(null!, null!, null!) { }
+    public RestoreViewModel() : this(null!, null!, null!, new SynchronousFallbackDispatcher()) { }
 
     public RestoreViewModel(
         IBackupService backupService,
         IMessageDialogService messageDialog,
-        ILoggingService logger)
+        ILoggingService logger,
+        IUiDispatcher uiDispatcher)
     {
         _backupService = backupService;
         _messageDialog = messageDialog;
         _logger = logger;
+        _uiDispatcher = uiDispatcher;
     }
 
     partial void OnSelectedSessionChanged(BackupSession? value)
@@ -364,7 +367,8 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
     /// <param name="plugins">Plugins included in the current restore operation.</param>
     /// <returns>A progress reporter safe for the backup service to call during restore copies.</returns>
     private IProgress<BackupCopyProgress> CreateRestoreProgressReporter(IReadOnlyList<BackupPluginEntry> plugins) =>
-        new RestoreProgressReporter(progress => UpdateRestoreProgress(progress, plugins));
+        new RestoreProgressReporter(progress =>
+            _uiDispatcher.Post(() => UpdateRestoreProgress(progress, plugins)));
 
     /// <summary>
     /// Updates bindable progress fields with plugin position and decimal byte counts when available.
@@ -417,7 +421,7 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>
-    /// Synchronously applies service progress so command tests and UI-bound properties observe updates immediately.
+    /// Marshals service progress through the UI dispatcher before applying it to bindable state.
     /// </summary>
     private sealed class RestoreProgressReporter(Action<BackupCopyProgress> onProgress) : IProgress<BackupCopyProgress>
     {
@@ -426,6 +430,18 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
         /// </summary>
         /// <param name="value">Progress value reported by the backup service.</param>
         public void Report(BackupCopyProgress value) => onProgress(value);
+    }
+
+    /// <summary>
+    /// Design-time fallback dispatcher used only when the XAML designer invokes the parameterless constructor.
+    /// </summary>
+    private sealed class SynchronousFallbackDispatcher : IUiDispatcher
+    {
+        /// <inheritdoc />
+        public void Post(Action action) => action();
+
+        /// <inheritdoc />
+        public Task InvokeAsync(Func<Task> action) => action();
     }
 
     /// <summary>

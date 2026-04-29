@@ -169,7 +169,7 @@ public partial class MainWindow : Window
 
     private async Task<Unit> ShowRestoreAsync(Unit input)
     {
-        if (_backupService == null || _messageDialog == null || _logger == null)
+        if (_backupService == null || _messageDialog == null || _logger == null || _uiDispatcher == null)
         {
             return Unit.Default;
         }
@@ -177,7 +177,7 @@ public partial class MainWindow : Window
         var vm = DataContext as MainWindowViewModel;
         var dataFolderPath = vm?.Configuration.GameDataFolder;
 
-        var restoreViewModel = new RestoreViewModel(_backupService, _messageDialog, _logger);
+        var restoreViewModel = new RestoreViewModel(_backupService, _messageDialog, _logger, _uiDispatcher);
 
         await restoreViewModel.LoadSessionsAsync(dataFolderPath);
 
