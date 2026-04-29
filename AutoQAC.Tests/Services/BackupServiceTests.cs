@@ -153,6 +153,25 @@ public sealed class BackupServiceTests : IDisposable
         second.Error.Should().NotBeNullOrEmpty();
     }
 
+    [Fact]
+    public async Task BackupPluginAsync_SessionDirectoryCreationFailure_ReturnsStructuredFailure()
+    {
+        // Arrange
+        var sourceFile = Path.Combine(_testRoot, "AsyncPlugin.esp");
+        await File.WriteAllTextAsync(sourceFile, "fake plugin");
+        var plugin = new PluginInfo { FileName = "AsyncPlugin.esp", FullPath = sourceFile };
+        var copier = new CountingBackupFileCopier(BackupCopyResult.Complete(sourceFile, sourceFile, 0, 0));
+        var sut = new BackupService(copier, _mockLogger);
+
+        // Act
+        var result = await sut.BackupPluginAsync(plugin, Path.Combine(_testRoot, "bad\0session"));
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Failed);
+        result.FailureReason.Should().Be(BackupFailureReason.TargetFolderCreationFailed);
+        copier.CallCount.Should().Be(0, "copying should not start when the backup session directory cannot be created");
+    }
+
     #endregion
 
     #region WriteSessionMetadataAsync

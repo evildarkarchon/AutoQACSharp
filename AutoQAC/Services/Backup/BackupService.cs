@@ -108,7 +108,21 @@ public sealed class BackupService : IBackupService
                 BackupFailureReason.SourceMissing);
         }
 
-        Directory.CreateDirectory(sessionDir);
+        try
+        {
+            Directory.CreateDirectory(sessionDir);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            _logger.Warning("Failed to create backup session directory for {Plugin}: {Error}", plugin.FileName, ex.Message);
+            return new BackupCreateResult(
+                BackupOperationStatus.Failed,
+                plugin.FileName,
+                BytesCopied: 0,
+                TotalBytes: null,
+                ex is UnauthorizedAccessException ? BackupFailureReason.AccessDenied : BackupFailureReason.TargetFolderCreationFailed);
+        }
+
         var destinationPath = Path.Combine(sessionDir, plugin.FileName);
         var copyResult = await _fileCopier.CopyAsync(
             plugin.FullPath,
