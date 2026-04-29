@@ -1,36 +1,36 @@
-<!-- refreshed: 2026-04-28 -->
+<!-- refreshed: 2026-04-29 -->
 # Architecture
 
-**Analysis Date:** 2026-04-28
+**Analysis Date:** 2026-04-29
 
 ## System Overview
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
-│                  Avalonia Desktop UI Layer                   │
+│                  Avalonia Desktop UI Layer                  │
 ├──────────────────┬──────────────────┬───────────────────────┤
-│   Views/AXAML    │    ViewModels    │   UI Services          │
-│ `AutoQAC/Views`  │ `AutoQAC/ViewModels` │ `AutoQAC/Services/UI` │
+│ Main window shell│ Dialog windows   │ ViewModel composition  │
+│ `AutoQAC/Views` │ `AutoQAC/Views`  │ `AutoQAC/ViewModels`   │
 └────────┬─────────┴────────┬─────────┴──────────┬────────────┘
-         │                  │                     │
-         ▼                  ▼                     ▼
+         │ interactions      │ data binding        │ state events
+         ▼                   ▼                     ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                    Application Service Layer                 │
-│  `AutoQAC/Services/Cleaning`, `Plugin`, `Configuration`,     │
-│  `GameDetection`, `Process`, `Backup`, `Monitoring`, `MO2`  │
-└────────┬──────────────────────┬─────────────────────────────┘
-         │                      │
-         ▼                      ▼
-┌─────────────────────────────┐  ┌─────────────────────────────┐
-│ Shared Runtime State         │  │ Plugin Analysis Library      │
-│ `AutoQAC/Services/State`     │  │ `QueryPlugins/`              │
-│ `AutoQAC/Models/AppState.cs` │  │ Mutagen-backed detectors     │
-└────────┬────────────────────┘  └──────────────┬──────────────┘
-         │                                      │
-         ▼                                      ▼
+│             Application Services / Orchestration             │
+│ `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs`          │
+│ `AutoQAC/Services/*` via DI in `AutoQAC/Infrastructure`      │
+└────────┬──────────────────┬──────────────────────┬──────────┘
+         │                  │                      │
+         ▼                  ▼                      ▼
+┌─────────────────┐ ┌──────────────────┐ ┌────────────────────┐
+│ Shared AppState │ │ xEdit/MO2 process │ │ Plugin/config I/O  │
+│ `AutoQAC/Services/State` │ `AutoQAC/Services/Process` │ `AutoQAC Data/` │
+└─────────────────┘ └──────────────────┘ └────────────────────┘
+         │                                          │
+         ▼                                          ▼
 ┌─────────────────────────────────────────────────────────────┐
-│       Files, xEdit Processes, Logs, Backups, YAML Config     │
-│ `AutoQAC Data/`, xEdit executable, `AutoQAC Backups/`, logs  │
+│         External analysis and referenced libraries           │
+│ `QueryPlugins/` uses Mutagen packages; `Mutagen/` is a       │
+│ read-only referenced submodule and is not application code.  │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -38,214 +38,264 @@
 
 | Component | Responsibility | File |
 |-----------|----------------|------|
-| Avalonia host | Creates the Windows desktop app and enables DEBUG DevTools. | `AutoQAC/Program.cs` |
-| Application bootstrapper | Builds the DI container, creates `MainWindow`, starts config watching, migration, log retention, and shutdown cleanup. | `AutoQAC/App.axaml.cs` |
-| DI registration | Registers infrastructure, configuration, state, business logic, UI services, ViewModels, and Views. | `AutoQAC/Infrastructure/ServiceCollectionExtensions.cs` |
-| Main window code-behind | Owns window/dialog interactions and registers ViewModel `Interaction` handlers. | `AutoQAC/Views/MainWindow.axaml.cs` |
-| Main window ViewModel | Composes `ConfigurationViewModel`, `PluginListViewModel`, and `CleaningCommandsViewModel`; routes shared state changes. | `AutoQAC/ViewModels/MainWindowViewModel.cs` |
-| Configuration ViewModel | Manages path selection, game selection, plugin refresh, skip-list reaction, and autosave triggers. | `AutoQAC/ViewModels/MainWindow/ConfigurationViewModel.cs` |
-| Plugin list ViewModel | Maintains visible plugin rows and selection exclusions. | `AutoQAC/ViewModels/MainWindow/PluginListViewModel.cs` |
-| Cleaning commands ViewModel | Validates pre-clean state, starts preview/cleaning, handles stop escalation prompts, and triggers dialog interactions. | `AutoQAC/ViewModels/MainWindow/CleaningCommandsViewModel.cs` |
-| State service | Central mutable state hub with observable streams for app state, progress, detailed plugin results, and completion. | `AutoQAC/Services/State/StateService.cs` |
-| Cleaning orchestrator | End-to-end workflow for validation, game/variant detection, skip filtering, backup, sequential xEdit launches, log parsing, stop handling, and session finalization. | `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs` |
-| Cleaning service | Builds per-plugin commands and delegates process execution. | `AutoQAC/Services/Cleaning/CleaningService.cs` |
-| Process execution | Enforces one xEdit process slot, tracks PIDs, handles timeouts, cancellation, graceful termination, and force kill. | `AutoQAC/Services/Process/ProcessExecutionService.cs` |
-| Configuration service | Loads/saves YAML configuration, debounces user config writes, flushes pending saves, and serves skip lists. | `AutoQAC/Services/Configuration/ConfigurationService.cs` |
-| Plugin loading | Uses Mutagen for supported games and file-based loading for unsupported games. | `AutoQAC/Services/Plugin/PluginLoadingService.cs` |
-| Plugin issue approximation | Runs Mutagen-backed `QueryPlugins` analysis for supported games and merges approximate ITM/UDR/navmesh counts into state. | `AutoQAC/Services/Plugin/PluginIssueApproximationService.cs` |
-| QueryPlugins service | Coordinates ITM and game-specific detectors and returns consolidated issue counts. | `QueryPlugins/PluginQueryService.cs` |
+| Avalonia startup | Creates the desktop lifetime and configures platform, Inter font, debug DevTools, and trace logging. | `AutoQAC/Program.cs` |
+| Application bootstrap | Builds the DI container, resolves main window dependencies, starts config watching, runs legacy migration and log retention cleanup, and disposes services on shutdown. | `AutoQAC/App.axaml.cs` |
+| DI registration | Registers infrastructure, configuration, state, business services, UI services, ViewModels, and Views. | `AutoQAC/Infrastructure/ServiceCollectionExtensions.cs` |
+| Main shell ViewModel | Composes `ConfigurationViewModel`, `PluginListViewModel`, and `CleaningCommandsViewModel`; owns UI interactions and dispatches state changes to child ViewModels. | `AutoQAC/ViewModels/MainWindowViewModel.cs` |
+| Main window code-behind | Owns window/dialog creation and registers interaction handlers; ViewModels request dialogs through interaction abstractions rather than manipulating controls. | `AutoQAC/Views/MainWindow.axaml.cs` |
+| Configuration UI | Loads/saves settings, validates paths, responds to selected game changes, refreshes plugin lists, and handles file dialogs. | `AutoQAC/ViewModels/MainWindow/ConfigurationViewModel.cs` |
+| Plugin list UI | Maintains visible plugin rows, selection/exclusion state, and select/deselect commands. | `AutoQAC/ViewModels/MainWindow/PluginListViewModel.cs` |
+| Cleaning commands UI | Validates pre-clean conditions, starts dry-run or cleaning workflows, handles stop/force-stop prompts, and opens secondary workflows. | `AutoQAC/ViewModels/MainWindow/CleaningCommandsViewModel.cs` |
+| Runtime state hub | Stores immutable `AppState`, publishes Rx streams for state/progress/results, and serializes state mutation through a lock. | `AutoQAC/Services/State/StateService.cs` |
+| Cleaning workflow coordinator | Owns end-to-end session flow: config flush, validation, game detection, skip lists, optional backups, sequential xEdit launches, log parsing, result finalization, stopping, and hang monitoring. | `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs` |
+| Per-plugin cleaner | Builds commands and delegates process execution for a single plugin. | `AutoQAC/Services/Cleaning/CleaningService.cs` |
+| xEdit/MO2 command builder | Creates direct xEdit or MO2-wrapped `ProcessStartInfo` with argument-list based quoting. | `AutoQAC/Services/Cleaning/XEditCommandBuilder.cs` |
+| Process execution | Enforces a single xEdit process slot, tracks PIDs, waits with timeout/cancellation, and performs graceful/force termination. | `AutoQAC/Services/Process/ProcessExecutionService.cs` |
+| Configuration persistence | Reads YAML config, debounces user-config saves, flushes pending saves before cleaning, publishes config/skip-list changes, and caches main configuration. | `AutoQAC/Services/Configuration/ConfigurationService.cs` |
+| Plugin discovery | Uses Mutagen for supported games and file-based loading for unsupported games. | `AutoQAC/Services/Plugin/PluginLoadingService.cs` |
+| Game detection | Maps xEdit executable names and load-order master files to `GameType`; detects TTW and Enderal variants. | `AutoQAC/Services/GameDetection/GameDetectionService.cs` |
+| QueryPlugins library | Performs Mutagen-backed issue analysis through ITM and game-specific detectors. | `QueryPlugins/PluginQueryService.cs` |
 
 ## Pattern Overview
 
-**Overall:** Layered MVVM desktop application with DI-managed services, observable runtime state, and a separate Mutagen analysis library.
+**Overall:** Avalonia MVVM application with DI-managed services, Rx-style state notifications, and a service-oriented orchestration layer.
 
 **Key Characteristics:**
-- Use constructor injection through `AutoQAC/Infrastructure/ServiceCollectionExtensions.cs`; register app services as singletons unless per-window/per-dialog lifetime is needed.
-- Keep Views and window/dialog ownership in `AutoQAC/Views/*.axaml.cs`; ViewModels request UI through `Interaction<TInput,TOutput>` or UI services, not direct control manipulation.
-- Use `IStateService` (`AutoQAC/Services/State/IStateService.cs`) and immutable `AppState` updates (`AutoQAC/Models/AppState.cs`) for shared runtime state.
-- Keep xEdit process execution sequential; `AutoQAC/Services/Process/ProcessExecutionService.cs` uses a `SemaphoreSlim(1, 1)` and `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs` iterates plugins one at a time.
-- Keep `QueryPlugins/` independent of Avalonia and app state; it accepts Mutagen objects and returns analysis models.
+- Use strict MVVM boundaries: put view-specific dialog/window operations in `AutoQAC/Views/*.axaml.cs`, not in `AutoQAC/ViewModels/*`.
+- Use constructor injection through `AutoQAC/Infrastructure/ServiceCollectionExtensions.cs`; register new services by interface in the relevant `Add*` extension.
+- Treat `IStateService` plus immutable `AppState` as the shared runtime state hub; mutate state through `StateService.UpdateState` or focused state methods.
+- Keep cleaning sequential. `CleaningOrchestrator.StartCleaningAsync` loops plugins one at a time, and `ProcessExecutionService` hard-limits process execution with a single `SemaphoreSlim` slot.
+- Keep long-running I/O and process work async. UI-facing state changes from service streams are marshaled through `IUiDispatcher` before ViewModels update bound properties.
 
 ## Layers
 
-**Presentation:**
-- Purpose: Render the desktop UI, collect user input, and own window/dialog lifetime.
-- Location: `AutoQAC/Views`, `AutoQAC/App.axaml`, `AutoQAC/ViewLocator.cs`
-- Contains: AXAML views and code-behind for dialog creation, event subscription cleanup, and Avalonia host integration.
-- Depends on: ViewModels, Avalonia controls, UI services for file/message dialogs.
-- Used by: `AutoQAC/App.axaml.cs` and Avalonia runtime.
+**Presentation / Views:**
+- Purpose: Render Avalonia windows and own platform UI operations such as dialogs, child windows, and window lifetime events.
+- Location: `AutoQAC/Views/`
+- Contains: `.axaml` markup and `.axaml.cs` code-behind such as `AutoQAC/Views/MainWindow.axaml` and `AutoQAC/Views/MainWindow.axaml.cs`.
+- Depends on: ViewModels and UI/application services resolved by DI.
+- Used by: Avalonia desktop lifetime in `AutoQAC/App.axaml.cs`.
 
-**ViewModel:**
-- Purpose: Expose bindable state and commands, react to `IStateService`, and coordinate UI interactions through interaction objects.
-- Location: `AutoQAC/ViewModels`, especially `AutoQAC/ViewModels/MainWindow/`
-- Contains: CommunityToolkit.Mvvm source-generator properties and relay commands.
-- Depends on: Service interfaces under `AutoQAC/Services/**`, models under `AutoQAC/Models`, `IUiDispatcher` for UI-thread marshaling.
-- Used by: Views and `AutoQAC/App.axaml.cs`.
+**ViewModels:**
+- Purpose: Expose bindable state and commands using CommunityToolkit.Mvvm source generators.
+- Location: `AutoQAC/ViewModels/`
+- Contains: `ViewModelBase`, main-window sub-ViewModels, dialog ViewModels, and progress/result ViewModels.
+- Depends on: service interfaces in `AutoQAC/Services/*` and model records in `AutoQAC/Models/`.
+- Used by: Views through `DataContext` and the `AutoQAC/ViewLocator.cs` ViewModel-to-View convention.
 
-**Application Services:**
-- Purpose: Implement business workflows, I/O, process execution, configuration, backup, plugin discovery, validation, and game detection.
-- Location: `AutoQAC/Services`
-- Contains: Interface/implementation pairs such as `ICleaningOrchestrator`/`CleaningOrchestrator`, `IConfigurationService`/`ConfigurationService`, `IProcessExecutionService`/`ProcessExecutionService`.
-- Depends on: Models, logging, file system, Mutagen, YamlDotNet, Serilog, Windows registry APIs where needed.
-- Used by: ViewModels and other services via DI.
+**Application services:**
+- Purpose: Implement business workflows, process control, config persistence, plugin discovery, validation, backups, logging, monitoring, and UI abstraction.
+- Location: `AutoQAC/Services/`
+- Contains: grouped service families under `Backup`, `Cleaning`, `Configuration`, `GameDetection`, `MO2`, `Monitoring`, `Plugin`, `Process`, `State`, and `UI`.
+- Depends on: models, external packages, filesystem/process APIs, and other service interfaces.
+- Used by: ViewModels, `App.axaml.cs`, and other services through DI.
 
-**State:**
-- Purpose: Central source of truth for configuration paths, selected game, plugin list, exclusions, cleaning progress, and session results.
-- Location: `AutoQAC/Services/State`, `AutoQAC/Models/AppState.cs`
-- Contains: `BehaviorSubject<AppState>` and additional observable streams for progress/result notifications.
-- Depends on: `System.Reactive`, immutable record updates, frozen sets.
-- Used by: ViewModels, cleaning services, configuration/plugin workflows.
+**State model:**
+- Purpose: Centralize runtime state, progress, plugin selections, and session results.
+- Location: `AutoQAC/Models/AppState.cs` and `AutoQAC/Services/State/StateService.cs`
+- Contains: immutable `AppState`, backup-operation state, Rx subjects, result streams, and state mutation helpers.
+- Depends on: domain models in `AutoQAC/Models/`.
+- Used by: almost every UI and orchestration component.
 
-**Analysis Library:**
-- Purpose: Detect ITMs, deleted references, and deleted navmeshes from Mutagen plugin objects.
+**Domain models:**
+- Purpose: Provide records/enums for game types, plugin info, cleaning results, backup metadata, validation errors, configuration, and tracked processes.
+- Location: `AutoQAC/Models/`
+- Contains: `PluginInfo`, `CleaningSessionResult`, `PluginCleaningResult`, `TerminationResult`, `GameType`, `GameVariant`, and `Configuration/*`.
+- Depends on: only framework/library types where needed.
+- Used by: ViewModels, services, and tests.
+
+**QueryPlugins analysis library:**
+- Purpose: Standalone Mutagen-based detector library for ITM/deleted-reference/deleted-navmesh analysis.
 - Location: `QueryPlugins/`
-- Contains: `PluginQueryService`, `ItmDetector`, game-specific detectors under `QueryPlugins/Detectors/Games`, and result models.
-- Depends on: Mutagen only; no Avalonia or AutoQAC UI dependencies.
-- Used by: `AutoQAC/Services/Plugin/PluginIssueApproximationService.cs`.
+- Contains: `PluginQueryService`, detector interfaces, shared detector code, game-specific detectors, and analysis result models.
+- Depends on: Mutagen NuGet packages.
+- Used by: `AutoQAC` through project reference and by `QueryPlugins.Tests`.
 
 **Tests:**
-- Purpose: Validate models, services, ViewModels, integration flows, and library detectors.
+- Purpose: Validate application services, models, ViewModels, view lifecycle behavior, integration flows, and QueryPlugins detectors.
 - Location: `AutoQAC.Tests/`, `QueryPlugins.Tests/`
-- Contains: xUnit tests grouped by `Services`, `ViewModels`, `Models`, `Integration`, and detector areas.
-- Depends on: xUnit, FluentAssertions, NSubstitute, coverlet.
+- Contains: xUnit test projects, test infrastructure, and a test process helper project.
+- Depends on: app/library projects, xUnit, FluentAssertions, NSubstitute, coverlet.
 - Used by: `dotnet test AutoQACSharp.slnx`.
 
 ## Data Flow
 
 ### Primary Cleaning Request Path
 
-1. User clicks Start Cleaning in the main UI; the command is handled by `CleaningCommandsViewModel.StartCleaningAsync` (`AutoQAC/ViewModels/MainWindow/CleaningCommandsViewModel.cs:117`).
-2. Pre-clean validation reads `IStateService.CurrentState` and file system state in `ValidatePreClean` (`AutoQAC/ViewModels/MainWindow/CleaningCommandsViewModel.cs:325`).
-3. The ViewModel opens the progress UI through `ShowProgressInteraction` and calls `ICleaningOrchestrator.StartCleaningAsync` (`AutoQAC/ViewModels/MainWindow/CleaningCommandsViewModel.cs:134`).
-4. `CleaningOrchestrator` clears orphan processes, flushes pending config saves, validates environment, detects game and variant, applies skip/exclusion filters, and starts state tracking (`AutoQAC/Services/Cleaning/CleaningOrchestrator.cs:77`).
-5. For each plugin, `CleaningOrchestrator` optionally backs up the file, captures xEdit log offsets, then calls `ICleaningService.CleanPluginAsync` sequentially (`AutoQAC/Services/Cleaning/CleaningOrchestrator.cs:262`).
-6. `CleaningService` builds an xEdit or MO2-wrapped command via `IXEditCommandBuilder.BuildCommand` and delegates to `IProcessExecutionService.ExecuteAsync` (`AutoQAC/Services/Cleaning/CleaningService.cs:52`).
-7. `ProcessExecutionService` acquires the single process slot, launches xEdit, tracks the PID, waits with timeout/cancellation, and untracks the PID (`AutoQAC/Services/Process/ProcessExecutionService.cs:31`).
-8. The orchestrator reads only appended xEdit log content by offsets, parses statistics with `XEditOutputParser`, stores detailed per-plugin results in `StateService`, and builds a `CleaningSessionResult` (`AutoQAC/Services/Cleaning/CleaningOrchestrator.cs:405`).
-9. `StateService.FinishCleaningWithResults` emits `CleaningCompleted`, which subscribers such as progress/results ViewModels consume (`AutoQAC/Services/State/StateService.cs:218`).
+1. User invokes the Start Cleaning command through the bound command generated from `StartCleaningAsync` (`AutoQAC/ViewModels/MainWindow/CleaningCommandsViewModel.cs:116`).
+2. `CleaningCommandsViewModel` validates UI/config preconditions and opens the progress window through `ShowProgressInteraction` (`AutoQAC/ViewModels/MainWindow/CleaningCommandsViewModel.cs:122`, `AutoQAC/ViewModels/MainWindow/CleaningCommandsViewModel.cs:133`).
+3. `MainWindow` handles the interaction and creates `ProgressWindow` plus `ProgressViewModel` (`AutoQAC/Views/MainWindow.axaml.cs:129`).
+4. `CleaningCommandsViewModel` calls `ICleaningOrchestrator.StartCleaningAsync` with timeout/backup callbacks (`AutoQAC/ViewModels/MainWindow/CleaningCommandsViewModel.cs:136`).
+5. `CleaningOrchestrator` cleans orphaned processes, flushes pending config saves, validates environment, detects game and variant, loads skip lists, filters selections, and starts stateful cleaning (`AutoQAC/Services/Cleaning/CleaningOrchestrator.cs:80`, `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs:85`, `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs:88`, `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs:130`, `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs:174`, `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs:225`).
+6. For each plugin, optional backup runs first, then `CleaningService.CleanPluginAsync` launches one xEdit process (`AutoQAC/Services/Cleaning/CleaningOrchestrator.cs:265`, `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs:284`, `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs:409`).
+7. `CleaningService` builds an xEdit/MO2 command and delegates execution to `ProcessExecutionService.ExecuteAsync` (`AutoQAC/Services/Cleaning/CleaningService.cs:54`, `AutoQAC/Services/Cleaning/CleaningService.cs:84`).
+8. `ProcessExecutionService` acquires the single process slot, starts xEdit/MO2, tracks PID evidence, waits for exit or timeout/cancellation, and releases the slot (`AutoQAC/Services/Process/ProcessExecutionService.cs:20`, `AutoQAC/Services/Process/ProcessExecutionService.cs:46`, `AutoQAC/Services/Process/ProcessExecutionService.cs:64`, `AutoQAC/Services/Process/ProcessExecutionService.cs:76`, `AutoQAC/Services/Process/ProcessExecutionService.cs:101`, `AutoQAC/Services/Process/ProcessExecutionService.cs:153`).
+9. `CleaningOrchestrator` reads xEdit logs by captured offsets, parses statistics, produces `PluginCleaningResult`, and emits result/progress through `IStateService` (`AutoQAC/Services/Cleaning/CleaningOrchestrator.cs:404`, `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs:463`, `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs:475`, `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs:502`, `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs:517`).
+10. At session end, `CleaningOrchestrator` writes backup metadata/retention cleanup if needed, emits `CleaningSessionResult`, and logs the summary (`AutoQAC/Services/Cleaning/CleaningOrchestrator.cs:527`, `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs:549`, `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs:559`, `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs:560`).
 
-### Plugin Loading and Approximation Flow
+### Plugin Discovery / Configuration Path
 
-1. Game/path changes originate in `ConfigurationViewModel` commands and property-change handlers (`AutoQAC/ViewModels/MainWindow/ConfigurationViewModel.cs:151`).
-2. Mutagen-supported games are loaded by `PluginLoadingService.TryGetPluginsAsync`; Fallout 3, Fallout New Vegas, and Oblivion use `GetPluginsFromFileAsync` (`AutoQAC/Services/Plugin/PluginLoadingService.cs:85`).
-3. Skip list status is applied in the configuration ViewModel before the plugin list is pushed into `IStateService.SetPluginsToClean` (`AutoQAC/ViewModels/MainWindow/ConfigurationViewModel.cs:262`).
-4. Supported games can run `PluginIssueApproximationService.GetApproximationsAsync`, which creates a Mutagen load-order/link-cache context and calls `QueryPlugins.PluginQueryService.Analyse` (`AutoQAC/Services/Plugin/PluginIssueApproximationService.cs:43`).
-5. Approximation results are merged into `AppState.PluginsToClean` via `StateService.MergePluginApproximations` (`AutoQAC/Services/State/StateService.cs:106`).
+1. Startup creates `ConfigurationService`, resolves configuration directory, and starts `ConfigWatcherService` (`AutoQAC/App.axaml.cs:40`, `AutoQAC/App.axaml.cs:81`).
+2. `MainWindowViewModel` creates `ConfigurationViewModel` and calls `InitializeAsync` fire-and-forget (`AutoQAC/ViewModels/MainWindowViewModel.cs:51`, `AutoQAC/ViewModels/MainWindowViewModel.cs:69`).
+3. When a supported game is selected, `ConfigurationViewModel` saves selection and refreshes plugins (`AutoQAC/ViewModels/MainWindow/ConfigurationViewModel.cs:151`, `AutoQAC/ViewModels/MainWindow/ConfigurationViewModel.cs:162`, `AutoQAC/ViewModels/MainWindow/ConfigurationViewModel.cs:163`).
+4. `PluginLoadingService.TryGetPluginsAsync` uses Mutagen for `SkyrimLe`, `SkyrimSe`, `SkyrimVr`, `Fallout4`, and `Fallout4Vr`; unsupported games return `UnsupportedGame` and use file-based loading (`AutoQAC/Services/Plugin/PluginLoadingService.cs:33`, `AutoQAC/Services/Plugin/PluginLoadingService.cs:90`, `AutoQAC/Services/Plugin/PluginLoadingService.cs:162`).
+5. Loaded plugins are placed in shared state through `IStateService.SetPluginsToClean`; the parent `MainWindowViewModel` dispatches `OnStateChanged` to child ViewModels on the UI thread (`AutoQAC/Services/State/StateService.cs:82`, `AutoQAC/ViewModels/MainWindowViewModel.cs:64`, `AutoQAC/ViewModels/MainWindowViewModel.cs:72`).
 
-### Configuration Persistence Flow
+### Dry-Run Preview Path
 
-1. ViewModels call `IConfigurationService.SaveUserConfigAsync` or specific setters after user edits (`AutoQAC/ViewModels/MainWindow/ConfigurationViewModel.cs:217`).
-2. `ConfigurationService` clones the config into `_pendingConfig`, emits `UserConfigurationChanged`, and sends a save request to a throttled Rx pipeline (`AutoQAC/Services/Configuration/ConfigurationService.cs:219`).
-3. The debounce pipeline writes `AutoQAC Data/AutoQAC Settings.yaml` with retry and last-known-good fallback (`AutoQAC/Services/Configuration/ConfigurationService.cs:235`).
-4. Before xEdit launches, `CleaningOrchestrator` calls `FlushPendingSavesAsync` to force disk consistency (`AutoQAC/Services/Cleaning/CleaningOrchestrator.cs:80`).
+1. User invokes `PreviewAsync` from the command ViewModel (`AutoQAC/ViewModels/MainWindow/CleaningCommandsViewModel.cs:161`).
+2. The same pre-clean validation path runs, then `ICleaningOrchestrator.RunDryRunAsync` is called (`AutoQAC/ViewModels/MainWindow/CleaningCommandsViewModel.cs:167`, `AutoQAC/ViewModels/MainWindow/CleaningCommandsViewModel.cs:179`).
+3. Dry-run flushes config, detects game without mutating state, evaluates skip lists, selection exclusions, MO2 mode, and file validation (`AutoQAC/Services/Cleaning/CleaningOrchestrator.cs:972`, `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs:979`, `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs:1010`, `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs:1024`, `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs:1045`).
+4. Results are shown through `ShowPreviewInteraction` by reusing the progress surface in preview mode (`AutoQAC/ViewModels/MainWindow/CleaningCommandsViewModel.cs:181`, `AutoQAC/Views/MainWindow.axaml.cs:165`).
+
+### Stop / Termination Path
+
+1. User invokes `StopCleaningAsync` from `CleaningCommandsViewModel` (`AutoQAC/ViewModels/MainWindow/CleaningCommandsViewModel.cs:209`).
+2. `CleaningOrchestrator.StopCleaningAsync` marks termination state, cancels the session CTS, and asks `ProcessExecutionService` for graceful termination of the current process (`AutoQAC/Services/Cleaning/CleaningOrchestrator.cs:822`, `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs:823`, `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs:837`, `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs:866`).
+3. If the grace period expires, the ViewModel prompts the user before force termination; a second stop click escalates immediately (`AutoQAC/ViewModels/MainWindow/CleaningCommandsViewModel.cs:216`, `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs:815`).
+4. `ForceStopCleaningAsync` kills the process tree through `ProcessExecutionService.TerminateProcessAsync(forceKill: true)` (`AutoQAC/Services/Cleaning/CleaningOrchestrator.cs:891`, `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs:933`).
 
 **State Management:**
-- Use `AppState` as an immutable record and update it via `IStateService.UpdateState` (`AutoQAC/Services/State/StateService.cs:60`).
-- Emit `BehaviorSubject<AppState>.OnNext` outside the state lock to avoid subscriber deadlocks (`AutoQAC/Services/State/StateService.cs:68`).
-- Marshal state changes to the UI thread through `IUiDispatcher` before updating bindable ViewModel state (`AutoQAC/ViewModels/MainWindowViewModel.cs:64`).
+- Use `StateService.UpdateState` to produce new immutable `AppState` values. It updates `_currentState` inside a lock and calls `BehaviorSubject.OnNext` outside the lock to avoid subscriber deadlocks (`AutoQAC/Services/State/StateService.cs:60`).
+- UI state subscribers must be dispatched to the UI thread through `IUiDispatcher` before touching bindable collections or properties (`AutoQAC/ViewModels/MainWindowViewModel.cs:64`).
+- Store plugin deselection as exclusions in `AppState.ExcludedPluginPaths`; do not store a duplicate selected-list model (`AutoQAC/Models/AppState.cs:79`).
 
 ## Key Abstractions
 
-**`IStateService`:**
-- Purpose: Shared state and event stream hub.
-- Examples: `AutoQAC/Services/State/IStateService.cs`, `AutoQAC/Services/State/StateService.cs`, `AutoQAC/Models/AppState.cs`
-- Pattern: Immutable state snapshots plus Rx observables.
+**Service interfaces:**
+- Purpose: Decouple ViewModels and orchestrators from concrete implementations and enable tests/substitutes.
+- Examples: `AutoQAC/Services/Cleaning/ICleaningOrchestrator.cs`, `AutoQAC/Services/State/IStateService.cs`, `AutoQAC/Services/Process/IProcessExecutionService.cs`, `AutoQAC/Services/Configuration/IConfigurationService.cs`.
+- Pattern: Register interface-to-implementation pairs in `AutoQAC/Infrastructure/ServiceCollectionExtensions.cs` and inject interfaces into consumers.
 
-**`ICleaningOrchestrator`:**
-- Purpose: Owns the full session lifecycle and is the only place that sequences plugin cleaning.
-- Examples: `AutoQAC/Services/Cleaning/ICleaningOrchestrator.cs`, `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs`
-- Pattern: Application workflow coordinator over smaller service interfaces.
+**Interactions:**
+- Purpose: Allow ViewModels to request windows/dialogs without directly referencing controls.
+- Examples: `AutoQAC/Services/UI/Interactions/Interaction.cs`, `AutoQAC/Services/UI/Interactions/Unit.cs`, `AutoQAC/ViewModels/MainWindowViewModel.cs`, `AutoQAC/Views/MainWindow.axaml.cs`.
+- Pattern: Define an `Interaction<TInput, TOutput>` on the owning ViewModel, register a handler in the view code-behind, and return results asynchronously.
 
-**`IProcessExecutionService`:**
-- Purpose: Encapsulates xEdit process launch, timeout, PID tracking, and termination semantics.
-- Examples: `AutoQAC/Services/Process/IProcessExecutionService.cs`, `AutoQAC/Services/Process/ProcessExecutionService.cs`
-- Pattern: Single-slot async process executor.
+**AppState:**
+- Purpose: Immutable snapshot of runtime state, paths, selected game, progress, plugins, backup operation, and result sets.
+- Examples: `AutoQAC/Models/AppState.cs`, `AutoQAC/Services/State/StateService.cs`.
+- Pattern: Update by `with` expressions through `StateService`; publish derived streams for progress, configuration validity, processed plugins, detailed results, and completion.
 
-**`Interaction<TInput,TOutput>`:**
-- Purpose: Lets ViewModels request modal/non-modal UI without direct view references.
-- Examples: `AutoQAC/Services/UI/Interactions/Interaction.cs`, `AutoQAC/ViewModels/MainWindowViewModel.cs`, `AutoQAC/Views/MainWindow.axaml.cs`
-- Pattern: View-registered async handler abstraction.
+**Cleaning orchestrator:**
+- Purpose: Coordinate many services into one safe session flow while preserving sequential xEdit execution and cancellation/termination semantics.
+- Examples: `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs`, `AutoQAC/Services/Cleaning/ICleaningOrchestrator.cs`.
+- Pattern: Keep workflow policy here; keep single-plugin command/process details in `CleaningService`, `XEditCommandBuilder`, and `ProcessExecutionService`.
 
-**Mutagen detectors:**
-- Purpose: Keep plugin issue analysis composable by game and issue type.
-- Examples: `QueryPlugins/Detectors/IItmDetector.cs`, `QueryPlugins/Detectors/IGameSpecificDetector.cs`, `QueryPlugins/Detectors/Games/SkyrimDetector.cs`
-- Pattern: Detector strategy registry keyed by `GameRelease` in `QueryPlugins/PluginQueryService.cs`.
+**Process execution contract:**
+- Purpose: Isolate process launch, PID tracking, timeout, cancellation, graceful termination, and force kill behavior.
+- Examples: `AutoQAC/Services/Process/ProcessExecutionService.cs`, `AutoQAC/Models/TerminationResult.cs`, `AutoQAC/Models/TrackedProcess.cs`.
+- Pattern: Always go through `IProcessExecutionService.ExecuteAsync`; never start xEdit directly from ViewModels or other services.
+
+**Plugin loading strategy:**
+- Purpose: Support Mutagen-backed load orders for supported games and file-based fallbacks for Fallout 3, Fallout New Vegas, and Oblivion.
+- Examples: `AutoQAC/Services/Plugin/PluginLoadingService.cs`, `AutoQAC/Services/Plugin/PluginValidationService.cs`.
+- Pattern: Query `IPluginLoadingService.IsGameSupportedByMutagen` before deciding whether a load-order file is required.
+
+**QueryPlugins detector registry:**
+- Purpose: Consolidate generic ITM detection and game-specific deleted-reference/navmesh detectors.
+- Examples: `QueryPlugins/PluginQueryService.cs`, `QueryPlugins/Detectors/ItmDetector.cs`, `QueryPlugins/Detectors/Games/SkyrimDetector.cs`.
+- Pattern: Add a new detector implementing `IGameSpecificDetector`, then include it in the default `PluginQueryService` constructor.
 
 ## Entry Points
 
 **Desktop application:**
 - Location: `AutoQAC/Program.cs`
-- Triggers: Windows process start.
-- Responsibilities: Configure Avalonia, fonts, platform detection, developer tools, and classic desktop lifetime.
+- Triggers: Windows desktop process launch.
+- Responsibilities: Create Avalonia app builder and start classic desktop lifetime.
 
 **Application initialization:**
 - Location: `AutoQAC/App.axaml.cs`
 - Triggers: Avalonia framework initialization.
-- Responsibilities: Build DI, instantiate main window, start config watcher, run migration and log cleanup, dispose services on shutdown.
+- Responsibilities: Build DI container, enforce single instance, create `MainWindow`, start watchers, run startup maintenance, and dispose resources.
 
-**Main UI command entry:**
-- Location: `AutoQAC/ViewModels/MainWindow/CleaningCommandsViewModel.cs`
-- Triggers: Bound UI commands in `AutoQAC/Views/MainWindow.axaml`.
-- Responsibilities: Pre-clean validation, preview, start, stop, settings, skip-list, restore, and about commands.
+**Main cleaning workflow:**
+- Location: `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs`
+- Triggers: `CleaningCommandsViewModel.StartCleaningAsync`.
+- Responsibilities: Run complete safe cleaning session from validation through result completion.
 
-**QueryPlugins API:**
-- Location: `QueryPlugins/IPluginQueryService.cs`, `QueryPlugins/PluginQueryService.cs`
-- Triggers: `PluginIssueApproximationService` or library callers with Mutagen `IModGetter` and `ILinkCache` objects.
-- Responsibilities: Return consolidated `PluginAnalysisResult` issue counts.
+**Dry-run workflow:**
+- Location: `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs`
+- Triggers: `CleaningCommandsViewModel.PreviewAsync`.
+- Responsibilities: Evaluate which plugins will clean or skip without launching xEdit.
+
+**Configuration watcher:**
+- Location: `AutoQAC/Services/Configuration/ConfigWatcherService.cs`
+- Triggers: Started during app initialization.
+- Responsibilities: Watch YAML config for external edits and trigger reload/update behavior.
+
+**QueryPlugins library entry:**
+- Location: `QueryPlugins/PluginQueryService.cs`
+- Triggers: Consumers call `Analyse(IModGetter, ILinkCache, GameRelease)`.
+- Responsibilities: Run ITM and game-specific detectors and return `PluginAnalysisResult`.
 
 ## Architectural Constraints
 
-- **Threading:** The UI runs on Avalonia's STA thread from `AutoQAC/Program.cs`; service I/O and process work should remain async. ViewModel state updates from service observables must be marshaled through `IUiDispatcher` (`AutoQAC/Services/UI/IUiDispatcher.cs`).
-- **Sequential cleaning:** Do not parallelize plugin cleaning or xEdit launches. `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs` owns the per-plugin loop, and `AutoQAC/Services/Process/ProcessExecutionService.cs` hard-limits execution to one process slot.
-- **Global state:** Shared runtime state is centralized in the singleton `StateService` (`AutoQAC/Services/State/StateService.cs`). `PluginQueryService.Default` is a library-level default singleton in `QueryPlugins/PluginQueryService.cs`; prefer constructor injection in app code when substitutability matters.
-- **Circular imports:** No source-level circular project references are present in `AutoQACSharp.slnx`; `AutoQAC` references `QueryPlugins`, while `QueryPlugins` does not reference `AutoQAC`.
-- **Windows-specific behavior:** Registry probing and executable/process assumptions live in `AutoQAC/Services/Plugin/PluginLoadingService.cs`, `AutoQAC/Services/Process/ProcessExecutionService.cs`, and `AutoQAC/AutoQAC.csproj` (`net10.0-windows10.0.19041.0`).
-- **Mutagen submodule:** Treat `Mutagen/` as read-only reference source; use NuGet package references in `AutoQAC/AutoQAC.csproj` and `QueryPlugins/QueryPlugins.csproj` for builds.
+- **Threading:** Avalonia UI updates must occur on the UI thread; `MainWindowViewModel` marshals `IStateService.StateChanged` through `IUiDispatcher` before child ViewModels update bound state (`AutoQAC/ViewModels/MainWindowViewModel.cs:64`).
+- **Sequential cleaning:** Never parallelize plugin cleaning. The orchestrator loops sequentially (`AutoQAC/Services/Cleaning/CleaningOrchestrator.cs:265`) and process execution uses one slot (`AutoQAC/Services/Process/ProcessExecutionService.cs:20`).
+- **Process safety:** xEdit and MO2 launches must go through `XEditCommandBuilder`, `CleaningService`, and `ProcessExecutionService`; do not launch process APIs from UI code (`AutoQAC/Services/Cleaning/XEditCommandBuilder.cs`, `AutoQAC/Services/Cleaning/CleaningService.cs`, `AutoQAC/Services/Process/ProcessExecutionService.cs`).
+- **Global state:** Shared mutable state is centralized in singleton services: `StateService` (`AutoQAC/Services/State/StateService.cs`), `ConfigurationService` (`AutoQAC/Services/Configuration/ConfigurationService.cs`), and process/session tracking services under `AutoQAC/Services/Process/`.
+- **Configuration flush:** Always call `IConfigurationService.FlushPendingSavesAsync` before launching xEdit or evaluating dry-run state (`AutoQAC/Services/Cleaning/CleaningOrchestrator.cs:85`, `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs:973`).
+- **MO2 mode:** MO2 mode wraps xEdit with `ModOrganizer.exe run`, skips plugin file-existence validation and backup behavior, and relies on MO2 virtual filesystem resolution (`AutoQAC/Services/Cleaning/XEditCommandBuilder.cs:35`, `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs:190`, `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs:260`).
+- **Mutagen boundary:** Use Mutagen packages from NuGet and docs/reference as needed; do not modify or build files under the `Mutagen/` submodule. The application source references Mutagen from `AutoQAC/AutoQAC.csproj` and `QueryPlugins/QueryPlugins.csproj`.
+- **Windows assumptions:** The app targets `net10.0-windows10.0.19041.0`, uses Windows process behavior, registry probing, executable paths, and desktop lifetime (`AutoQAC/AutoQAC.csproj`, `AutoQAC/Services/Plugin/PluginLoadingService.cs`, `AutoQAC/Services/Process/ProcessExecutionService.cs`).
+- **Circular imports:** Not detected from inspected application structure. Keep dependency direction from Views → ViewModels → Services → Models, with service-to-service dependencies expressed through interfaces.
 
 ## Anti-Patterns
 
-### Parallel xEdit Execution
+### Dialog Logic in ViewModels
 
-**What happens:** Starting multiple xEdit processes or cleaning multiple plugins concurrently bypasses `CleaningOrchestrator` and the single-slot process executor.
-**Why it's wrong:** xEdit enforces single-instance/file-locking behavior, and AutoQAC's safety model records one current process and one current plugin at a time.
-**Do this instead:** Add workflow steps inside `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs` and keep process launches delegated to `AutoQAC/Services/Process/ProcessExecutionService.cs`.
+**What happens:** A ViewModel directly creates or manipulates Avalonia windows/controls.
+**Why it's wrong:** It breaks the MVVM boundary and bypasses the interaction pattern used by `MainWindowViewModel` and `MainWindow`.
+**Do this instead:** Add or reuse an `Interaction<TInput, TOutput>` in `AutoQAC/ViewModels/MainWindowViewModel.cs` or a UI service interface, then implement the window/dialog creation in `AutoQAC/Views/MainWindow.axaml.cs`.
 
-### ViewModels Creating Windows Directly
+### Parallel Plugin Cleaning
 
-**What happens:** A ViewModel instantiates `Window` classes or manipulates Avalonia controls.
-**Why it's wrong:** It breaks MVVM boundaries and bypasses the testable interaction pattern.
-**Do this instead:** Add an `Interaction<TInput,TOutput>` to `AutoQAC/ViewModels/MainWindowViewModel.cs` or use an existing UI service, then register the handler in `AutoQAC/Views/MainWindow.axaml.cs`.
+**What happens:** Plugins are processed concurrently or multiple xEdit processes are started at once.
+**Why it's wrong:** xEdit is treated as single-instance/file-lock sensitive, and `ProcessExecutionService` intentionally exposes only one process slot.
+**Do this instead:** Keep the sequential `foreach` policy in `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs` and call `IProcessExecutionService.ExecuteAsync` for one plugin at a time.
 
-### Bypassing Pending Config Flush Before xEdit
+### Bypassing AppState
 
-**What happens:** Cleaning starts while debounced YAML saves are still pending.
-**Why it's wrong:** xEdit launch behavior can diverge from the user's latest settings.
-**Do this instead:** Keep `await configService.FlushPendingSavesAsync(ct)` before validation/launch in `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs`.
+**What happens:** Components maintain independent plugin/progress/session state instead of using `IStateService`.
+**Why it's wrong:** UI surfaces subscribe to `IStateService` streams, so duplicate state creates stale selections, progress mismatches, or missed completion events.
+**Do this instead:** Store shared runtime state in `AutoQAC/Models/AppState.cs` and update it through `AutoQAC/Services/State/StateService.cs` methods.
 
-### Mutagen Assumptions for Every Game
+### Direct Process Launch from Workflow/UI Code
 
-**What happens:** New plugin-loading logic assumes every supported game uses Mutagen load order APIs.
-**Why it's wrong:** `Fallout3`, `FalloutNewVegas`, and `Oblivion` rely on file-based load-order loading.
-**Do this instead:** Check `PluginLoadingService.IsGameSupportedByMutagen` in `AutoQAC/Services/Plugin/PluginLoadingService.cs` and use `GetPluginsFromFileAsync` for unsupported games.
+**What happens:** New code calls `System.Diagnostics.Process.Start` outside the process service.
+**Why it's wrong:** It skips PID tracking, timeout, cancellation, single-slot enforcement, orphan cleanup, and termination safety.
+**Do this instead:** Build the `ProcessStartInfo` in `AutoQAC/Services/Cleaning/XEditCommandBuilder.cs` and launch through `AutoQAC/Services/Process/ProcessExecutionService.cs`.
+
+### Treating All Games as File-Based Load Orders
+
+**What happens:** New code requires a `plugins.txt` for every game.
+**Why it's wrong:** `PluginLoadingService` uses Mutagen-backed discovery for Skyrim LE/SE/VR and Fallout 4/VR.
+**Do this instead:** Check `IPluginLoadingService.IsGameSupportedByMutagen` in `AutoQAC/Services/Plugin/PluginLoadingService.cs` before requiring a load-order path.
 
 ## Error Handling
 
-**Strategy:** Convert expected user/config/process conditions into validation messages or result models; log unexpected failures with context; preserve partial session results during cancellation and failures.
+**Strategy:** Catch exceptions at workflow and UI command boundaries, log technical details through `ILoggingService`, return domain result objects where possible, and surface user-actionable messages through `IMessageDialogService` or validation collections.
 
 **Patterns:**
-- Catch `InvalidOperationException` at command boundaries and surface actionable validation errors in `AutoQAC/ViewModels/MainWindow/CleaningCommandsViewModel.cs`.
-- Catch `OperationCanceledException` separately in long-running workflows and treat cancellation as a controlled outcome in `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs`.
-- Use result models for recoverable service outcomes: `AutoQAC/Models/CleaningResult.cs`, `AutoQAC/Models/PluginLoadingResult.cs`, `AutoQAC/Models/BackupResult.cs`.
-- Log process/config/file failures through `ILoggingService` implementations under `AutoQAC/Infrastructure/Logging/`.
+- UI command boundaries catch `InvalidOperationException` separately for configuration validation and display `ValidationError` entries (`AutoQAC/ViewModels/MainWindow/CleaningCommandsViewModel.cs:139`).
+- Long-running workflow catches `OperationCanceledException` as a non-error and preserves partial results (`AutoQAC/Services/Cleaning/CleaningOrchestrator.cs:562`).
+- Services log and return safe failed result objects for recoverable per-plugin failures (`AutoQAC/Services/Cleaning/CleaningService.cs:132`).
+- Startup background work catches/logs exceptions and uses warning banners for migration issues (`AutoQAC/App.axaml.cs:140`, `AutoQAC/App.axaml.cs:154`).
+- Configuration persistence retries writes and falls back to last known good config on repeated failure (`AutoQAC/Services/Configuration/ConfigurationService.cs:235`).
 
 ## Cross-Cutting Concerns
 
-**Logging:** Serilog-backed `ILoggingService` in `AutoQAC/Infrastructure/Logging/LoggingService.cs`; startup, config, process, backup, hang detection, and cleaning workflows log structured messages.
-**Validation:** UI pre-clean validation lives in `AutoQAC/ViewModels/MainWindow/CleaningCommandsViewModel.cs`; service-level environment and plugin validation live in `AutoQAC/Services/Cleaning/CleaningService.cs` and `AutoQAC/Services/Plugin/PluginValidationService.cs`.
-**Authentication:** Not applicable; this is a local Windows desktop application with no detected identity provider.
-**Configuration:** YAML configuration is loaded from `AutoQAC Data/AutoQAC Main.yaml` and `AutoQAC Data/AutoQAC Settings.yaml` by `AutoQAC/Services/Configuration/ConfigurationService.cs`.
-**External processes:** xEdit and MO2 process wrapping are centralized in `AutoQAC/Services/Cleaning/XEditCommandBuilder.cs` and `AutoQAC/Services/Process/ProcessExecutionService.cs`.
+**Logging:** Use `ILoggingService` registered in `AutoQAC/Infrastructure/ServiceCollectionExtensions.cs`; concrete logging lives under `AutoQAC/Infrastructure/Logging/`. Startup logs session diagnostics in `AutoQAC/App.axaml.cs`.
+
+**Validation:** UI pre-clean validation belongs in `AutoQAC/ViewModels/MainWindow/CleaningCommandsViewModel.cs`; environment and plugin validation belongs in services such as `AutoQAC/Services/Cleaning/CleaningService.cs`, `AutoQAC/Services/Plugin/PluginValidationService.cs`, and `AutoQAC/Services/MO2/MO2ValidationService.cs`.
+
+**Authentication:** Not applicable; this is a local desktop application with filesystem/process integrations.
+
+**Configuration:** YAML config lives in `AutoQAC Data/AutoQAC Main.yaml` and `AutoQAC Data/AutoQAC Settings.yaml`; runtime config service resolves source config in debug and output config in production (`AutoQAC/Services/Configuration/ConfigurationService.cs:80`).
+
+**External process control:** `AutoQAC/Services/Process/ProcessExecutionService.cs` owns single-slot execution, PID tracking, orphan cleanup, timeout, graceful termination, and force kill.
 
 ---
 
-*Architecture analysis: 2026-04-28*
+*Architecture analysis: 2026-04-29*

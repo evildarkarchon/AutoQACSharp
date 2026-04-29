@@ -1,113 +1,128 @@
 # External Integrations
 
-**Analysis Date:** 2026-04-28
+**Analysis Date:** 2026-04-29
 
 ## APIs & External Services
 
-**GitHub:**
-- GitHub Releases API - update-check flow fetches the latest release from `https://api.github.com/repos/evildarkarchon/AutoQACSharp/releases/latest` in `AutoQAC/ViewModels/AboutViewModel.cs`.
-  - SDK/Client: built-in `System.Net.Http.HttpClient` and `System.Text.Json`.
-  - Auth: none; public unauthenticated request with `User-Agent: AutoQACSharp/1.0`.
-- GitHub project and issue URLs - About window links to `https://github.com/evildarkarchon/AutoQACSharp` and `https://github.com/evildarkarchon/AutoQACSharp/issues` in `AutoQAC/ViewModels/AboutViewModel.cs`.
-  - SDK/Client: `System.Diagnostics.Process.Start` with `UseShellExecute = true`.
+**Desktop process integrations:**
+- xEdit / TES5Edit / SSEEdit / FO4Edit / FNVEdit / FO3Edit / TES4Edit - authoritative Quick Auto Clean execution and cleaning statistics.
+  - SDK/Client: external executable launched through `System.Diagnostics.ProcessStartInfo` in `AutoQAC/Services/Cleaning/XEditCommandBuilder.cs` and `AutoQAC/Services/Process/ProcessExecutionService.cs`.
   - Auth: none.
+  - Configuration: user-selected xEdit path stored in `AutoQAC/AutoQAC Data/AutoQAC Settings.yaml` and modeled by `AutoQAC/Models/Configuration/UserConfiguration.cs`.
+  - Command mode: direct launch uses `-QAC`, `-autoexit`, `-autoload`, optional universal xEdit game flags, and optional partial-forms flags in `AutoQAC/Services/Cleaning/XEditCommandBuilder.cs`.
+  - Result channel: appended xEdit log files in the xEdit install directory are located/read by `AutoQAC/Services/Cleaning/XEditLogFileService.cs`; stdout/stderr are not the authoritative result source.
+- Mod Organizer 2 - optional wrapper for launching xEdit inside MO2's virtual filesystem.
+  - SDK/Client: `ModOrganizer.exe run` process invocation built by `AutoQAC/Services/Cleaning/XEditCommandBuilder.cs`.
+  - Auth: none.
+  - Configuration: optional MO2 path and mode flag in `AutoQAC/AutoQAC Data/AutoQAC Settings.yaml`, modeled by `AutoQAC/Models/Configuration/UserConfiguration.cs`.
+  - Validation: process-name and filename checks in `AutoQAC/Services/MO2/MO2ValidationService.cs`.
+- Windows process table - single-instance, orphan tracking, hang detection, graceful close, and force-kill behavior.
+  - SDK/Client: `System.Diagnostics.Process` in `AutoQAC/Services/Process/ProcessExecutionService.cs`, `AutoQAC/Services/Process/SingleInstanceGuard.cs`, `AutoQAC/Services/MO2/MO2ValidationService.cs`, and `AutoQAC/Services/Monitoring/HangDetectionService.cs`.
+  - Auth: current Windows user permissions.
 
-**xEdit / TES5Edit:**
-- xEdit executable - primary external process integration for Quick Auto Clean; command arguments include `-QAC`, `-autoexit`, `-autoload`, game flags for universal xEdit, and optional partial-form flags in `AutoQAC/Services/Cleaning/XEditCommandBuilder.cs`.
-  - SDK/Client: `System.Diagnostics.ProcessStartInfo` executed by `AutoQAC/Services/Process/ProcessExecutionService.cs`.
-  - Auth: none; user supplies local executable path in `AutoQAC/AutoQAC Data/AutoQAC Settings.yaml`.
-- xEdit logs - session statistics and exception details are read from xEdit log files by `AutoQAC/Services/Cleaning/XEditLogFileService.cs` and parsed by `AutoQAC/Services/Cleaning/XEditOutputParser.cs`.
-  - SDK/Client: local filesystem.
+**Bethesda plugin analysis:**
+- Mutagen NuGet packages - load-order discovery and approximate ITM/deleted-record analysis.
+  - SDK/Client: `Mutagen.Bethesda*` package references in `AutoQAC/AutoQAC.csproj`, `QueryPlugins/QueryPlugins.csproj`, and `QueryPlugins.Tests/QueryPlugins.Tests.csproj`.
   - Auth: none.
+  - Implementation: `AutoQAC/Services/Plugin/PluginLoadingService.cs` uses `GameLocations` and `LoadOrder.GetLoadOrderListings`; `AutoQAC/Services/Plugin/PluginIssueApproximationService.cs` imports typed load orders; `QueryPlugins/PluginQueryService.cs` delegates to detectors in `QueryPlugins/Detectors/`.
+  - Reference source: `Mutagen/` git submodule declared in `.gitmodules`; treat as read-only.
 
-**Mod Organizer 2:**
-- Mod Organizer 2 launch wrapper - MO2 mode runs `ModOrganizer.exe run "<xEdit>" -a "<args>"` from `AutoQAC/Services/Cleaning/XEditCommandBuilder.cs`.
-  - SDK/Client: local `ModOrganizer.exe` process via `System.Diagnostics.ProcessStartInfo`.
-  - Auth: none; user supplies local executable path in `AutoQAC/AutoQAC Data/AutoQAC Settings.yaml`.
-- MO2 running-state validation - detects running `ModOrganizer` processes in `AutoQAC/Services/MO2/MO2ValidationService.cs`.
-  - SDK/Client: `System.Diagnostics.Process.GetProcessesByName`.
+**External websites and update metadata:**
+- Nexus Mods URLs appear in bundled warning text in `AutoQAC/AutoQAC Data/AutoQAC Main.yaml`.
+  - SDK/Client: no HTTP client implementation detected.
   - Auth: none.
-
-**Bethesda game installations:**
-- Game data folder discovery - Mutagen `GameLocations.TryGetDataFolder` resolves supported games in `AutoQAC/Services/Plugin/PluginLoadingService.cs`.
-  - SDK/Client: `Mutagen.Bethesda.Installs.GameLocations`.
-  - Auth: none.
-- Windows registry fallback - probes Bethesda and Steam uninstall keys for install paths in `AutoQAC/Services/Plugin/PluginLoadingService.cs`.
-  - SDK/Client: `Microsoft.Win32.RegistryKey` over `RegistryHive.LocalMachine` and `RegistryHive.CurrentUser`, both 64-bit and 32-bit registry views.
-  - Auth: local user/Windows permissions only.
+  - Current behavior: `Update Check` is present in legacy/default YAML text, but no `HttpClient`, webhook, or live update-check service was detected in `AutoQAC/` or `QueryPlugins/`.
 
 ## Data Storage
 
 **Databases:**
-- Not detected for the active application projects. No `DbContext`, connection string, or database client is used in `AutoQAC/`, `AutoQAC.Tests/`, `QueryPlugins/`, or `QueryPlugins.Tests/`.
-- The read-only `Mutagen/` submodule contains SQLite-related code, but it is not part of the active `AutoQACSharp.slnx` projects and should not be treated as this app's database integration.
+- Not detected.
+  - Connection: not applicable.
+  - Client: not applicable.
 
 **File Storage:**
-- Local YAML configuration - `AutoQAC/AutoQAC Data/AutoQAC Main.yaml` and `AutoQAC/AutoQAC Data/AutoQAC Settings.yaml`, loaded/saved through `AutoQAC/Services/Configuration/ConfigurationService.cs`.
-- Local config file watching - `FileSystemWatcher` monitors `AutoQAC Settings.yaml` in `AutoQAC/Services/Configuration/ConfigWatcherService.cs`.
-- Local logs - Serilog rolling file sink writes daily log files under the log directory resolved by `AutoQAC/Infrastructure/Logging/LogFilePaths.cs` and configured in `AutoQAC/Infrastructure/Logging/LoggingService.cs`.
-- Local backups - plugin backup sessions and `session.json` metadata are stored under `AutoQAC Backups/` by `AutoQAC/Services/Backup/BackupService.cs`.
-- Local PID tracking - `autoqac-pids.json` is used for process tracking/orphan cleanup in `AutoQAC/Services/Process/ProcessExecutionService.cs`.
-- Local load order files - file-based games use user-provided `plugins.txt`/load-order paths loaded by `AutoQAC/Services/Plugin/PluginLoadingService.cs` and validated by `AutoQAC/Services/Plugin/PluginValidationService.cs`.
+- YAML configuration files in `AutoQAC/AutoQAC Data/AutoQAC Main.yaml` and `AutoQAC/AutoQAC Data/AutoQAC Settings.yaml`.
+  - Client: YamlDotNet serializers/deserializers in `AutoQAC/Services/Configuration/ConfigurationService.cs`, `AutoQAC/Services/Configuration/ConfigWatcherService.cs`, and `AutoQAC/Services/Configuration/LegacyMigrationService.cs`.
+  - Watch/reload: `FileSystemWatcher` pipeline in `AutoQAC/Services/Configuration/ConfigWatcherService.cs`.
+- xEdit log files in the selected xEdit install directory.
+  - Client: `AutoQAC/Services/Cleaning/XEditLogFileService.cs` resolves `{wbAppName}Edit_log.txt` and `{wbAppName}EditException.log`.
+  - Read model: offset capture before each launch and offset-based reads after process exit.
+- Application logs in local filesystem.
+  - Client: Serilog file sink configured by `AutoQAC/Infrastructure/Logging/LoggingService.cs`.
+  - Retention: `AutoQAC/Services/Configuration/LogRetentionService.cs` deletes old logs by age or count.
+- Plugin backup sessions in local filesystem.
+  - Client: `AutoQAC/Services/Backup/BackupService.cs` creates timestamped session directories, copies plugin files, writes `session.json`, restores files, and prunes retained sessions.
+  - Settings: `AutoQAC/Models/Configuration/BackupSettings.cs` controls enablement and retained session count.
+- PID/orphan tracking store in local JSON.
+  - Client: `AutoQAC/Services/Process/JsonPidStore.cs` and path provider `AutoQAC/Services/Process/DefaultPidStorePathProvider.cs`.
+- User-provided load-order files.
+  - Client: `AutoQAC/Services/GameDetection/GameDetectionService.cs` detects game type from `plugins.txt` / `loadorder.txt`; `AutoQAC/Services/Plugin/PluginValidationService.cs` creates plugin lists from file-based load orders.
 
 **Caching:**
-- In-memory main config cache - `_mainConfigCache` in `AutoQAC/Services/Configuration/ConfigurationService.cs`.
-- In-memory pending/last-known-good user config snapshots - `_pendingConfig` and `_lastKnownGoodConfig` in `AutoQAC/Services/Configuration/ConfigurationService.cs`.
-- In-memory app state stream - `IStateService` / `StateService` in `AutoQAC/Services/State/`.
-- No external cache service such as Redis or Memcached is detected.
+- No external cache service detected.
+- In-process cache: main configuration is cached in `AutoQAC/Services/Configuration/ConfigurationService.cs` as `_mainConfigCache`.
+- In-process state: `AutoQAC/Services/State/StateService.cs` exposes `AppState` through observables.
 
 ## Authentication & Identity
 
 **Auth Provider:**
-- Not detected. The application has no login, OAuth, OpenID Connect, JWT, API key, or user identity provider integration in `AutoQAC/`, `QueryPlugins/`, or tests.
-  - Implementation: local desktop app with user-selected filesystem paths and unauthenticated public GitHub release lookup.
+- None.
+  - Implementation: local desktop app with no login, OAuth, API keys, cloud identity provider, or network authentication detected.
+  - Windows identity: file, registry, and process access run under the current Windows user.
 
 ## Monitoring & Observability
 
 **Error Tracking:**
-- No external error-tracking provider is detected. Errors are logged locally through `AutoQAC/Infrastructure/Logging/ILoggingService.cs` and `AutoQAC/Infrastructure/Logging/LoggingService.cs`.
+- None external.
+- Local error logging uses Serilog through `AutoQAC/Infrastructure/Logging/ILoggingService.cs` and `AutoQAC/Infrastructure/Logging/LoggingService.cs`.
 
 **Logs:**
-- Serilog local logging with minimum level `Debug`, warnings to console, and rolling daily file logs configured in `AutoQAC/Infrastructure/Logging/LoggingService.cs`.
-- Startup diagnostics log version, .NET runtime, xEdit path, game type, MO2 mode, and plugin count in `AutoQAC/App.axaml.cs`.
-- Log retention cleanup runs on startup through `AutoQAC/Services/Configuration/LogRetentionService.cs`, invoked from `AutoQAC/App.axaml.cs`.
-- CPU-based hang detection emits state through `IHangDetectionService` in `AutoQAC/Services/Monitoring/HangDetectionService.cs`.
+- Serilog logs Debug+ to rolling files and Warning+ to console in `AutoQAC/Infrastructure/Logging/LoggingService.cs`.
+- Startup diagnostics are emitted by `AutoQAC/App.axaml.cs` and include app version, .NET runtime, configured xEdit path, game type, MO2 mode, and plugin count.
+- xEdit cleaning diagnostics are parsed from xEdit-owned log files by `AutoQAC/Services/Cleaning/XEditLogFileService.cs` and interpreted by `AutoQAC/Services/Cleaning/XEditOutputParser.cs`.
+- Hang detection is local CPU/process monitoring through `AutoQAC/Services/Monitoring/HangDetectionService.cs` and surfaced by the orchestrator/UI state.
 
 ## CI/CD & Deployment
 
 **Hosting:**
-- Windows desktop application. Build/run/test commands are documented in `README.md` and `AGENTS.md`.
-- No server hosting platform is detected for `AutoQAC/` or `QueryPlugins/`.
+- Local Windows desktop application.
+- No cloud hosting, server process, container, or database deployment target detected.
 
 **CI Pipeline:**
-- None detected at the repository root; `.github/workflows/*` is absent for the active repo.
-- The `Mutagen/` submodule contains its own `.github/workflows/` files, but `Mutagen/` is read-only reference material and not the active app pipeline.
+- None detected in `.github/workflows/`.
+- Local build/test commands are documented in `README.md` and `CLAUDE.md`.
 
 ## Environment Configuration
 
 **Required env vars:**
-- Not detected. No required environment variables are used by the active application code.
+- None detected.
+
+**Runtime configuration values:**
+- `Selected_Game` - selected game enum/string in `AutoQAC/AutoQAC Data/AutoQAC Settings.yaml`.
+- `Load_Order.File` - optional file-based load order path in `AutoQAC/AutoQAC Data/AutoQAC Settings.yaml`.
+- `Mod_Organizer.Binary` - optional MO2 executable path in `AutoQAC/AutoQAC Data/AutoQAC Settings.yaml`.
+- `xEdit.Binary` - required xEdit executable path for cleaning in `AutoQAC/AutoQAC Data/AutoQAC Settings.yaml`.
+- `AutoQAC_Settings.Cleaning_Timeout` - xEdit timeout in seconds consumed by `AutoQAC/Services/Cleaning/CleaningService.cs`.
+- `AutoQAC_Settings.CPU_Threshold` - CPU threshold used for hang detection state/configuration.
+- `AutoQAC_Settings.MO2Mode` - direct-vs-MO2 launch mode consumed by `AutoQAC/Services/Cleaning/XEditCommandBuilder.cs`.
+- `AutoQAC_Settings.Disable_Skip_Lists` - skip-list behavior setting modeled in `AutoQAC/Models/Configuration/UserConfiguration.cs`.
+- `Skip_Lists` - user skip-list overrides in `AutoQAC/AutoQAC Data/AutoQAC Settings.yaml`.
+- `Game_Data_Folders` - per-game data folder overrides modeled in `AutoQAC/Models/Configuration/UserConfiguration.cs`.
+- `Log_Retention` - log retention mode/count/age modeled in `AutoQAC/Models/Configuration/RetentionSettings.cs`.
+- `Backup` - backup enablement and max sessions modeled in `AutoQAC/Models/Configuration/BackupSettings.cs`.
 
 **Secrets location:**
-- Not applicable. No secret files or `.env` files were detected in the repo scan; `.gitignore` excludes `*.env`.
-- Runtime configuration values are non-secret local paths/settings in `AutoQAC/AutoQAC Data/AutoQAC Settings.yaml`.
-
-**Required user-provided paths/settings:**
-- xEdit executable path - stored under the `xEdit` section in `AutoQAC/AutoQAC Data/AutoQAC Settings.yaml`, consumed by `AutoQAC/Services/Cleaning/XEditCommandBuilder.cs` and validation flows in `AutoQAC/ViewModels/SettingsViewModel.cs`.
-- Load order path - stored under `Load_Order` in `AutoQAC/AutoQAC Data/AutoQAC Settings.yaml`, required for Fallout 3, Fallout: New Vegas, and Oblivion flows in `AutoQAC/Services/Cleaning/CleaningService.cs` and `AutoQAC/Services/Plugin/PluginLoadingService.cs`.
-- MO2 executable path - stored under `Mod_Organizer` in `AutoQAC/AutoQAC Data/AutoQAC Settings.yaml`, used when MO2 mode is enabled by `AutoQAC/Services/Cleaning/XEditCommandBuilder.cs`.
-- Per-game defaults and skip lists - bundled in `AutoQAC/AutoQAC Data/AutoQAC Main.yaml` and merged by configuration/plugin flows.
+- Not applicable; no secrets, `.env` files, package auth files, credentials, or cloud service keys detected.
 
 ## Webhooks & Callbacks
 
 **Incoming:**
-- None. No HTTP server, route handlers, webhook endpoints, sockets, or callback listeners are detected in the active application projects.
+- None. No HTTP server, route handlers, webhook endpoints, or listener services detected.
 
 **Outgoing:**
-- GitHub Releases API request from `AutoQAC/ViewModels/AboutViewModel.cs`.
-- Browser/shell URL opens for GitHub project, GitHub issues, latest release, and xEdit project URLs from `AutoQAC/ViewModels/AboutViewModel.cs`.
-- Local process launches for xEdit and optional MO2 wrapper from `AutoQAC/Services/Process/ProcessExecutionService.cs` and `AutoQAC/Services/Cleaning/XEditCommandBuilder.cs`.
+- None. No outbound HTTP API clients, webhook dispatchers, telemetry exporters, or cloud SDK calls detected.
+- Process-level outgoing integration is local executable launch only: xEdit direct mode and MO2-wrapped mode in `AutoQAC/Services/Cleaning/XEditCommandBuilder.cs`.
 
 ---
 
-*Integration audit: 2026-04-28*
+*Integration audit: 2026-04-29*
