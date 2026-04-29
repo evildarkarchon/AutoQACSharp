@@ -136,7 +136,7 @@ public sealed class CleaningService(
             {
                 Success = false,
                 Status = CleaningStatus.Failed,
-                Message = ex.Message,
+                Message = $"Cleaning failed for {plugin.FileName}. See logs for technical details.",
                 Duration = sw.Elapsed
             };
         }
