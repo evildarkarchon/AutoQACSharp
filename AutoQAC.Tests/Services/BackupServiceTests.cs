@@ -1303,6 +1303,24 @@ public sealed class BackupServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task DeleteSessionAsync_AlreadyCanceledToken_ThrowsBeforeValidation()
+    {
+        var backupRoot = Path.Combine(_testRoot, "Backups");
+        var outsideSession = Path.Combine(_testRoot, "OutsideSession");
+        var deleter = new RecordingBackupSessionDeleter();
+        var sut = new BackupService(new CountingBackupFileCopier(BackupCopyResult.Complete("", "", 0, 0)), _mockLogger, deleter);
+        var session = new BackupSession { SessionDirectory = outsideSession, Plugins = [] };
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        var act = () => sut.DeleteSessionAsync(session, backupRoot, cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        deleter.Attempts.Should().Be(0, "already-canceled deletes must stop before validation or logging");
+        _mockLogger.DidNotReceive().Warning(Arg.Any<string>(), Arg.Any<object[]>());
+    }
+
+    [Fact]
     public async Task DeleteSessionAsync_DeleterThrowsIOException_ReturnsFailedAndLogsTechnicalDetails()
     {
         var backupRoot = Path.Combine(_testRoot, "Backups");

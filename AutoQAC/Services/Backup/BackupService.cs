@@ -422,6 +422,8 @@ public sealed class BackupService : IBackupService
         string backupRoot,
         CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+
         // Fail closed without leaking path detail to callers when inputs are missing.
         // The dialog/status text in RestoreViewModel uses the canonical out-of-root sentence
         // for both this branch and the IsContained-rejection branch below.
