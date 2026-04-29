@@ -295,6 +295,78 @@ public sealed class BackupServiceTests : IDisposable
         act.Should().Throw<FileNotFoundException>();
     }
 
+    [Fact]
+    public async Task RestoreSessionAsync_ContinuesAfterPluginFailure()
+    {
+        // Arrange
+        var sessionDir = Path.Combine(_testRoot, "restore_partial_session");
+        Directory.CreateDirectory(sessionDir);
+        File.WriteAllText(Path.Combine(sessionDir, "Good.esp"), "restored good content");
+
+        var goodTarget = Path.Combine(_testRoot, "restore_partial_targets", "Good.esp");
+        var missingTarget = Path.Combine(_testRoot, "restore_partial_targets", "Missing.esp");
+        var session = new BackupSession
+        {
+            SessionDirectory = sessionDir,
+            Plugins = new List<BackupPluginEntry>
+            {
+                new() { FileName = "Missing.esp", OriginalPath = missingTarget, FileSizeBytes = 128 },
+                new() { FileName = "Good.esp", OriginalPath = goodTarget, FileSizeBytes = 21 }
+            }
+        };
+
+        // Act
+        var result = await _sut.RestoreSessionAsync(session);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Partial);
+        result.RestoredCount.Should().Be(1);
+        result.FailedCount.Should().Be(1);
+        result.Rows.Should().Contain(row =>
+            row.FileName == "Missing.esp" &&
+            row.Status == BackupRestoreRowStatus.Failed &&
+            row.DisplayReason == "Missing backup file");
+        File.ReadAllText(goodTarget).Should().Be("restored good content",
+            "Restore All must continue after an earlier plugin failure");
+    }
+
+    [Fact]
+    public async Task RestorePluginAsync_CanceledAtomicRestore_PreservesExistingTarget()
+    {
+        // Arrange
+        var sessionDir = Path.Combine(_testRoot, "restore_canceled_session");
+        Directory.CreateDirectory(sessionDir);
+        File.WriteAllText(Path.Combine(sessionDir, "Existing.esp"), "backup replacement content");
+
+        var targetPath = Path.Combine(_testRoot, "restore_canceled_target", "Existing.esp");
+        Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
+        File.WriteAllText(targetPath, "current plugin content");
+
+        var copier = new CapturingBackupFileCopier(BackupCopyResult.Canceled(
+            Path.Combine(sessionDir, "Existing.esp"),
+            targetPath,
+            bytesCopied: 5,
+            totalBytes: 26));
+        var sut = new BackupService(copier, _mockLogger);
+        var entry = new BackupPluginEntry
+        {
+            FileName = "Existing.esp",
+            OriginalPath = targetPath,
+            FileSizeBytes = 26
+        };
+
+        // Act
+        var result = await sut.RestorePluginAsync(entry, sessionDir);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Canceled);
+        result.CanceledCount.Should().Be(1);
+        copier.Options.Should().Be(BackupCopyOptions.AtomicReplace,
+            "restore must copy through the atomic replacement policy so existing plugins survive cancellation");
+        File.ReadAllText(targetPath).Should().Be("current plugin content",
+            "a canceled restore overwrite must not truncate or remove the existing plugin file");
+    }
+
     #endregion
 
     #region CleanupOldSessions
@@ -393,6 +465,23 @@ public sealed class BackupServiceTests : IDisposable
         var path = Path.Combine(dir, "session.json");
         var json = JsonSerializer.Serialize(session, new JsonSerializerOptions { WriteIndented = true });
         await File.WriteAllTextAsync(path, json);
+    }
+
+    private sealed class CapturingBackupFileCopier(BackupCopyResult result) : IBackupFileCopier
+    {
+        public BackupCopyOptions? Options { get; private set; }
+
+        /// <inheritdoc />
+        public Task<BackupCopyResult> CopyAsync(
+            string sourcePath,
+            string destinationPath,
+            BackupCopyOptions options,
+            IProgress<BackupCopyProgress>? progress,
+            CancellationToken cancellationToken)
+        {
+            Options = options;
+            return Task.FromResult(result);
+        }
     }
 
     #endregion
