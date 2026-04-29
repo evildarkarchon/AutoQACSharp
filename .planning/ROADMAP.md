@@ -20,7 +20,7 @@ Full details: [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP.md)
 </details>
 
 - [ ] **Phase 5: Process Stop & PID Safety** - Users get reliable two-stage termination behavior and maintainers can test real process cleanup.
-- [ ] **Phase 6: Command Launch Escaping** - Users can clean plugins with difficult paths and names through direct xEdit and MO2 launches.
+- [x] **Phase 6: Command Launch Escaping** - Users can clean plugins with difficult paths and names through direct xEdit and MO2 launches.
 - [ ] **Phase 7: Backup Restore & Retention Safety** - Users can recover from backup/restore problems with clear, cancellable outcomes.
 - [ ] **Phase 8: Cleaning Orchestrator Decomposition** - Maintainers can change cleaning flow pieces without broad orchestrator rewrites.
 - [ ] **Phase 9: Plugin Refresh & Approximation Performance** - Users can refresh approximations more efficiently while plugin-loading coordination moves out of the ViewModel.
@@ -64,7 +64,7 @@ Plans:
 - [x] 06-03-PLAN.md — Integrate safe command-build failure messaging and final phase verification.
 
 **Wave 3 (gap closure; blocked on Wave 2 completion)**
-- [ ] 06-04-PLAN.md — Close MO2 missing-path fallback and unexpected exception disclosure verification gaps.
+- [x] 06-04-PLAN.md — Close MO2 missing-path fallback and unexpected exception disclosure verification gaps.
 
 Cross-cutting constraints:
 - Difficult-character coverage spans quotes/parser cases, Unicode, spaces, shell-sensitive punctuation, and one combined worst-case input.
@@ -136,7 +136,7 @@ Cross-cutting constraints:
 | 3. Integration -- Log-First Parsing | v1.0 xEdit Log Parsing Fix | 2/2 | Complete | 2026-03-31 |
 | 4. Cleanup -- Remove Dead Code | v1.0 xEdit Log Parsing Fix | 2/2 | Complete | 2026-03-31 |
 | 5. Process Stop & PID Safety | v1.0 Cleanup | 0/0 | Not started | - |
-| 6. Command Launch Escaping | v1.0 Cleanup | 3/4 | In Progress | - |
+| 6. Command Launch Escaping | v1.0 Cleanup | 4/4 | Complete | 2026-04-29 |
 | 7. Backup Restore & Retention Safety | v1.0 Cleanup | 0/0 | Not started | - |
 | 8. Cleaning Orchestrator Decomposition | v1.0 Cleanup | 0/0 | Not started | - |
 | 9. Plugin Refresh & Approximation Performance | v1.0 Cleanup | 0/0 | Not started | - |
