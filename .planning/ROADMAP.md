@@ -79,7 +79,7 @@ Cross-cutting constraints:
   2. User can distinguish complete restore, partial restore, and cleanup-deletion failure outcomes for a session.
   3. User can cancel long backup or retention work and see visible progress without AutoQAC parallelizing xEdit launches.
   4. Maintainer can verify restore safety across missing targets, permission failures, partial failures, and cleanup deletion failures.
-**Plans**: 9 plans
+**Plans**: 11 plans
 Plans:
 **Wave 1**
 - [x] 07-01-PLAN.md — Create backup/restore/retention result contracts and cancellable copy foundation.
@@ -103,6 +103,10 @@ Plans:
 
 **Wave 7 (gap closure; blocked on Wave 6 completion)**
 - [x] 07-09-PLAN.md — Close remaining backup destination containment, restore target metadata, and mixed cancellation status gaps.
+
+**Wave 8 (gap closure; blocked on Wave 7 completion)**
+- [ ] 07-10-PLAN.md — Close create-new backup copy existing-destination preservation gap.
+- [ ] 07-11-PLAN.md — Close trusted restore-root containment gap for restore metadata overwrites.
 **UI hint**: yes
 
 ### Phase 8: Cleaning Orchestrator Decomposition
@@ -160,7 +164,7 @@ Plans:
 | 4. Cleanup -- Remove Dead Code | v1.0 xEdit Log Parsing Fix | 2/2 | Complete | 2026-03-31 |
 | 5. Process Stop & PID Safety | v1.0 Cleanup | 0/0 | Not started | - |
 | 6. Command Launch Escaping | v1.0 Cleanup | 4/4 | Complete | 2026-04-29 |
-| 7. Backup Restore & Retention Safety | v1.0 Cleanup | 8/8 | Complete | 2026-04-29 |
+| 7. Backup Restore & Retention Safety | v1.0 Cleanup | 9/11 | Gaps planned | - |
 | 8. Cleaning Orchestrator Decomposition | v1.0 Cleanup | 0/0 | Not started | - |
 | 9. Plugin Refresh & Approximation Performance | v1.0 Cleanup | 0/0 | Not started | - |
 | 10. Configuration Persistence Hardening | v1.0 Cleanup | 0/0 | Not started | - |
