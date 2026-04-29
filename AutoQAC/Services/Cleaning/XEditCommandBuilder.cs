@@ -32,8 +32,13 @@ public sealed class XEditCommandBuilder(IStateService stateService) : IXEditComm
 
         var args = BuildXEditArguments(plugin, gameType, config.PartialFormsEnabled, xEditPath);
 
-        if (config.Mo2ModeEnabled && !string.IsNullOrEmpty(config.Mo2ExecutablePath))
+        if (config.Mo2ModeEnabled)
         {
+            if (string.IsNullOrWhiteSpace(config.Mo2ExecutablePath))
+            {
+                return null;
+            }
+
             var startInfo = new ProcessStartInfo
             {
                 FileName = config.Mo2ExecutablePath,
