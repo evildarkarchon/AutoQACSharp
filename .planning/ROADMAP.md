@@ -85,7 +85,7 @@ Plans:
 - [x] 07-01-PLAN.md — Create backup/restore/retention result contracts and cancellable copy foundation.
 
 **Wave 2 (blocked on Wave 1 completion)**
-- [ ] 07-02-PLAN.md — Implement structured async restore and retention service outcomes.
+- [x] 07-02-PLAN.md — Implement structured async restore and retention service outcomes.
 
 **Wave 3 (blocked on Wave 2 completion)**
 - [ ] 07-03-PLAN.md — Wire backup/retention progress and outcomes into sequential cleaning orchestration.

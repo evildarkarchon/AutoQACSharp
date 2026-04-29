@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Cleanup
 status: executing
-stopped_at: Completed 07-01-PLAN.md
-last_updated: "2026-04-29T06:48:24.204Z"
+stopped_at: Completed 07-02-PLAN.md
+last_updated: "2026-04-29T06:56:24Z"
 last_activity: 2026-04-29
 progress:
   total_phases: 7
   completed_phases: 2
   total_plans: 13
-  completed_plans: 9
-  percent: 69
+  completed_plans: 10
+  percent: 77
 ---
 
 # Project State
@@ -26,20 +26,19 @@ See: .planning/PROJECT.md (updated 2026-04-28)
 ## Current Position
 
 Phase: 07 (backup-restore-retention-safety) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Ready to execute
 Last activity: 2026-04-29
 
-Progress: [███████░░░] 69%
+Progress: [████████░░] 77%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 8
-- Average duration: ~4 min
-- Total execution time: ~0.5 hours
-- Phase 5 plans completed: 4
+- Total plans completed: 10
+- Average duration: ~5 min
+- Total execution time: ~0.6 hours
 
 **By Phase:**
 
@@ -55,6 +54,7 @@ Progress: [███████░░░] 69%
 | Phase 06 P03 | 2 min | 2 tasks | 3 files |
 | Phase 06 P04 | 16 min | 2 tasks | 4 files |
 | Phase 07 P01 | 6 min | 2 tasks | 9 files |
+| Phase 07 P02 | 8 min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -78,6 +78,9 @@ Progress: [███████░░░] 69%
 - [Phase 07]: Use managed FileStream copy behind IBackupFileCopier so later plans can swap internals without changing service/UI contracts. — Matches research recommendation for testable copy implementation while keeping the service boundary swappable.
 - [Phase 07]: Use ReplaceAtomically restore semantics to preserve existing target files until the temporary copy fully succeeds. — Prevents canceled or failed restore copies from corrupting existing plugin files.
 - [Phase 07]: Keep SourceMissing as an operation-neutral reason and map it to Missing backup file only in restore contexts. — Allows backup and restore callers to produce context-appropriate concise user labels without exposing raw path details.
+- [Phase 07]: Keep legacy synchronous restore and cleanup APIs on direct synchronous filesystem paths while async callers use structured outcomes. — Avoids sync-over-async deadlock risk until Plan 07-03/07-04 migrate known callers.
+- [Phase 07]: Retention cleanup deletes only directories with readable backup session metadata and reports malformed directories as kept. — Prevents unrelated backup-root directories from being removed.
+- [Phase 07]: Current session protection is applied before retention counting, so maxSessionCount controls non-current sessions only. — Preserves D-14 even when the current session is outside the newest set.
 
 ### Pending Todos
 
@@ -96,6 +99,6 @@ Progress: [███████░░░] 69%
 
 ## Session Continuity
 
-Last session: 2026-04-29T06:48:24.199Z
-Stopped at: Completed 07-01-PLAN.md
+Last session: 2026-04-29T06:56:24Z
+Stopped at: Completed 07-02-PLAN.md
 Resume file: None
