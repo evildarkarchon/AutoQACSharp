@@ -30,18 +30,21 @@ public sealed class BackupFileCopier(ILoggingService logger) : IBackupFileCopier
             return BackupCopyResult.Failed(sourcePath, destinationPath, BackupFailureReason.SourceMissing);
         }
 
-        var actualOutputPath = GetOutputPath(destinationPath, options);
+        var actualOutputPath = destinationPath;
         var copiedBytes = 0L;
-        var totalBytes = new FileInfo(sourcePath).Length;
+        long? totalBytes = null;
 
         try
         {
+            actualOutputPath = GetOutputPath(destinationPath, options);
+            totalBytes = new FileInfo(sourcePath).Length;
+
             await CopyFileContentsAsync(
                 sourcePath,
                 actualOutputPath,
                 options,
                 progress,
-                totalBytes,
+                totalBytes.Value,
                 bytesCopied => copiedBytes = bytesCopied,
                 cancellationToken).ConfigureAwait(false);
 
@@ -52,6 +55,19 @@ public sealed class BackupFileCopier(ILoggingService logger) : IBackupFileCopier
 
             logger.Debug("Copied {SourcePath} to {DestinationPath} ({BytesCopied} bytes)", sourcePath, destinationPath, copiedBytes);
             return BackupCopyResult.Complete(sourcePath, destinationPath, copiedBytes, totalBytes);
+        }
+        catch (FileNotFoundException ex)
+        {
+            DeletePartialOutput(actualOutputPath, sourcePath, destinationPath);
+            logger.Warning("Backup copy source disappeared while copying {SourcePath} to {DestinationPath}: {Error}", sourcePath, destinationPath, ex.Message);
+            return BackupCopyResult.Failed(sourcePath, destinationPath, BackupFailureReason.SourceMissing, copiedBytes, totalBytes);
+        }
+        catch (DirectoryNotFoundException ex)
+        {
+            DeletePartialOutput(actualOutputPath, sourcePath, destinationPath);
+            var reason = totalBytes is null ? BackupFailureReason.SourceMissing : BackupFailureReason.TargetWriteFailed;
+            logger.Warning("Directory disappeared while copying {SourcePath} to {DestinationPath}: {Error}", sourcePath, destinationPath, ex.Message);
+            return BackupCopyResult.Failed(sourcePath, destinationPath, reason, copiedBytes, totalBytes);
         }
         catch (OperationCanceledException)
         {
