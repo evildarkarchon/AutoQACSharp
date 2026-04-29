@@ -106,7 +106,7 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
             {
                 SelectedSessionPlugins.Add(plugin);
             }
-            StatusText = $"Session: {value.Timestamp:MMM d, yyyy h:mm tt} - {value.Plugins.Count} plugin(s)";
+            StatusText = $"Session: {FormatSessionTimestamp(value.Timestamp)} - {value.Plugins.Count} plugin(s)";
         }
         else
         {
@@ -310,7 +310,7 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
             return;
 
         var session = SelectedSession;
-        var timestamp = session.Timestamp.ToString("MMM d, yyyy h:mm tt");
+        var timestamp = FormatSessionTimestamp(session.Timestamp);
         var confirmed = await _messageDialog.ShowConfirmAsync(
             "Delete Backup Session",
             $"Permanently delete backup session from {timestamp}?\n\n" +
