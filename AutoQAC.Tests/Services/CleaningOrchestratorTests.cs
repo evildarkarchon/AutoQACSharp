@@ -178,7 +178,7 @@ public sealed class CleaningOrchestratorTests
 
         // Assert
         stateService.CurrentState.BackupOperation.Should().BeNull();
-        observedStates.Should().Contain(state => state.BackupOperation is null);
+        observedStates.Should().Contain(state => state.BackupOperation == null);
     }
 
     private static Process StartSleeperProcess()

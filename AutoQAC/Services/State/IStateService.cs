@@ -23,6 +23,17 @@ public interface IStateService
     void StartCleaning(List<PluginInfo> plugins);
 
     /// <summary>
+    /// Sets visible non-xEdit backup or retention operation progress without changing xEdit stop state.
+    /// </summary>
+    /// <param name="state">The active operation state to publish.</param>
+    void SetBackupOperation(BackupOperationState state);
+
+    /// <summary>
+    /// Clears the visible non-xEdit backup or retention operation after completion or cancellation.
+    /// </summary>
+    void ClearBackupOperation();
+
+    /// <summary>
     /// Updates the set of plugin full paths the user has deselected from cleaning.
     /// The updater receives the current set and returns the new set. Replaces the entire
     /// set atomically so callers don't need to coordinate concurrent toggles. Path-based

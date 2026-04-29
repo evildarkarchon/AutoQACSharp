@@ -185,10 +185,23 @@ public sealed class StateService : IStateService, IDisposable
             PluginsToClean = new List<PluginInfo>(plugins).AsReadOnly(),
             Progress = 0,
             TotalPlugins = plugins.Count,
+            BackupOperation = null,
             CleanedPlugins = Array.Empty<string>().ToFrozenSet(StringComparer.Ordinal),
             FailedPlugins = Array.Empty<string>().ToFrozenSet(StringComparer.Ordinal),
             SkippedPlugins = Array.Empty<string>().ToFrozenSet(StringComparer.Ordinal)
         });
+    }
+
+    /// <inheritdoc />
+    public void SetBackupOperation(BackupOperationState state)
+    {
+        UpdateState(s => s with { BackupOperation = state });
+    }
+
+    /// <inheritdoc />
+    public void ClearBackupOperation()
+    {
+        UpdateState(s => s with { BackupOperation = null });
     }
 
     public void FinishCleaning()
@@ -197,7 +210,8 @@ public sealed class StateService : IStateService, IDisposable
         {
             IsCleaning = false,
             CurrentPlugin = null,
-            CurrentOperation = null
+            CurrentOperation = null,
+            BackupOperation = null
         });
     }
 
@@ -226,7 +240,8 @@ public sealed class StateService : IStateService, IDisposable
         {
             IsCleaning = false,
             CurrentPlugin = null,
-            CurrentOperation = null
+            CurrentOperation = null,
+            BackupOperation = null
         });
 
         _cleaningCompletedSubject.OnNext(sessionResult);
