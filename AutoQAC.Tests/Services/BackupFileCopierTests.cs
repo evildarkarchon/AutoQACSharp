@@ -47,7 +47,7 @@ public sealed class BackupFileCopierTests : IDisposable
         await WritePatternFileAsync(sourcePath, sizeBytes: 32 * 1024 * 1024);
 
         using var cts = new CancellationTokenSource();
-        var progress = new Progress<BackupCopyProgress>(_ => cts.Cancel());
+        var progress = new ImmediateProgress(_ => cts.Cancel());
 
         var result = await _sut.CopyAsync(
             sourcePath,
@@ -70,7 +70,7 @@ public sealed class BackupFileCopierTests : IDisposable
         await File.WriteAllTextAsync(destinationPath, "original target content");
 
         using var cts = new CancellationTokenSource();
-        var progress = new Progress<BackupCopyProgress>(_ => cts.Cancel());
+        var progress = new ImmediateProgress(_ => cts.Cancel());
 
         var result = await _sut.CopyAsync(
             sourcePath,
@@ -97,7 +97,7 @@ public sealed class BackupFileCopierTests : IDisposable
             sourcePath,
             destinationPath,
             BackupCopyOptions.CreateNewBackup,
-            new Progress<BackupCopyProgress>(updates.Add),
+            new ImmediateProgress(updates.Add),
             CancellationToken.None);
 
         result.Status.Should().Be(BackupOperationStatus.Complete);
@@ -162,5 +162,14 @@ public sealed class BackupFileCopierTests : IDisposable
             await stream.WriteAsync(pattern.AsMemory(0, bytesToWrite));
             remaining -= bytesToWrite;
         }
+    }
+
+    /// <summary>
+    /// Delivers copy progress inline so assertions do not depend on <see cref="Progress{T}" /> callback scheduling.
+    /// </summary>
+    private sealed class ImmediateProgress(Action<BackupCopyProgress> onProgress) : IProgress<BackupCopyProgress>
+    {
+        /// <inheritdoc />
+        public void Report(BackupCopyProgress value) => onProgress(value);
     }
 }
