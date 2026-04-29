@@ -5,7 +5,7 @@
   "search_gitignored": false,
   "brave_search": false,
   "firecrawl": false,
-  "exa_search": false,
+  "exa_search": "81a7c4de-78ba-4aef-a32c-6ae9ea97a7c7",
   "git": {
     "branching_strategy": "milestone",
     "phase_branch_template": "gsd/phase-{phase}-{slug}",
