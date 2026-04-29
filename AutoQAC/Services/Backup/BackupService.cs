@@ -47,8 +47,15 @@ public sealed class BackupService : IBackupService
 
     public string CreateSessionDirectory(string backupRoot)
     {
-        var sessionName = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
+        var baseSessionName = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
+        var sessionName = baseSessionName;
         var sessionDir = Path.Combine(backupRoot, sessionName);
+        for (var suffix = 1; Directory.Exists(sessionDir); suffix++)
+        {
+            sessionName = $"{baseSessionName}-{suffix:00}";
+            sessionDir = Path.Combine(backupRoot, sessionName);
+        }
+
         Directory.CreateDirectory(sessionDir);
         _logger.Information("Created backup session directory: {SessionDir}", sessionDir);
         return sessionDir;

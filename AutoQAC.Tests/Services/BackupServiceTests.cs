@@ -57,6 +57,23 @@ public sealed class BackupServiceTests : IDisposable
             "directory name should match timestamp format yyyy-MM-dd_HH-mm-ss");
     }
 
+    [Fact]
+    public void CreateSessionDirectory_WhenBaseNameExists_CreatesUniqueDirectory()
+    {
+        // Arrange
+        var backupRoot = Path.Combine(_testRoot, "backups_unique");
+
+        // Act
+        var firstSessionDir = _sut.CreateSessionDirectory(backupRoot);
+        var secondSessionDir = _sut.CreateSessionDirectory(backupRoot);
+
+        // Assert
+        secondSessionDir.Should().NotBe(firstSessionDir, "each backup session needs isolated files and metadata");
+        Directory.Exists(secondSessionDir).Should().BeTrue();
+        Path.GetFileName(secondSessionDir).Should().MatchRegex(@"^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}(-\d{2})?$",
+            "collisions should preserve the readable timestamp and add a numeric suffix only when needed");
+    }
+
     #endregion
 
     #region BackupPlugin
