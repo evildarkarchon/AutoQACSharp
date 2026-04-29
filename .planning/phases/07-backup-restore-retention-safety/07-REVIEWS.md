@@ -1,252 +1,324 @@
 ---
 phase: 07
 reviewers: [gemini, claude, codex]
-reviewed_at: 2026-04-29T02:43:41.9534919-07:00
-plans_reviewed: [07-01-PLAN.md, 07-02-PLAN.md, 07-03-PLAN.md, 07-04-PLAN.md, 07-05-PLAN.md, 07-06-PLAN.md, 07-07-PLAN.md, 07-08-PLAN.md, 07-09-PLAN.md, 07-10-PLAN.md, 07-11-PLAN.md]
+reviewed_at: 2026-04-29T03:26:00.6499608-07:00
+plans_reviewed: [07-01-PLAN.md, 07-02-PLAN.md, 07-03-PLAN.md, 07-04-PLAN.md, 07-05-PLAN.md, 07-06-PLAN.md, 07-07-PLAN.md, 07-08-PLAN.md, 07-09-PLAN.md, 07-10-PLAN.md, 07-11-PLAN.md, 07-12-PLAN.md, 07-13-PLAN.md]
 ---
 
 # Cross-AI Plan Review - Phase 7
 
 ## Gemini Review
 
-# Implementation Plan Review: Phase 7 (Backup Restore & Retention Safety)
+# implementation Plan Review: Phase 7 (Backup Restore & Retention Safety)
 
 ## Summary
-Phase 7 is a comprehensive hardening of the backup and recovery subsystem. It successfully transitions the application from basic file operations to a robust, failure-aware service layer with structured outcomes and cancellable async operations. The pending plans (07-10 and 07-11) are surgically targeted to close high-severity safety gaps identified during verification: the accidental deletion of existing backups and the potential for "out-of-bounds" file overwrites via tampered metadata. The use of a "trusted restore root" (the game Data folder) as a validation anchor is an excellent application of the Principle of Least Privilege.
+Phase 7 represents a critical hardening of the AutoQAC backup and recovery infrastructure. The plan set (07-01 through 07-13) successfully transitions the application from fragile, synchronous file operations to a robust, async-first service layer with structured outcomes, progress reporting, and meaningful cancellation. The final gap-closure plans (07-12 and 07-13) are well-targeted responses to verification findings, addressing UI lifecycle leaks and ensuring that the "Delete Session" feature respects the same security boundaries as the restore and backup creation features. The overall architecture remains strictly sequential, preserving the hard requirement of one xEdit process at a time.
 
 ## Strengths
-*   **Verification-Driven Closure:** Plans 07-10 and 07-11 directly address the "failed truths" from the `07-VERIFICATION.md` report, ensuring that the phase doesn't consider itself complete while safety blockers remain.
-*   **Ownership Tracking (07-10):** Introducing a `createdOutput` flag in the file copier is a low-overhead, effective way to prevent the "IOException cleanup" path from deleting files it didn't actually create.
-*   **Trusted Root Validation (07-11):** Explicitly passing the configured Data folder as a `trustedRestoreRoot` provides a hard security boundary that prevents `session.json` metadata from ever redirecting a restore to sensitive system directories.
-*   **TDD Discipline:** The continuation of RED/GREEN task cycles for these gap closures maintains high confidence in the fix and prevents regression of the prior 700+ passing tests.
-*   **Atomic Move Semantics:** The use of `ReplaceAtomically` (temp file then move) across the phase is a critical design choice that prevents plugin corruption during partial failures or cancellations.
+*   **Sequential Integrity:** The orchestration logic in 07-03 and 07-06 ensures backups are performed per-plugin immediately before xEdit launch, maintaining the established cleaning order.
+*   **Atomic Move Semantics:** The use of `ReplaceAtomically` (temporary file copy followed by an atomic move) is a high-confidence design choice that prevents plugin corruption during failed or canceled restores.
+*   **Defense-in-Depth Path Validation:** Plans 07-09, 07-10, 07-11, and 07-13 provide comprehensive path validation (traversal rejection, sibling-prefix protection, and trusted root containment) across backup creation, restore, and session deletion.
+*   **TDD Discipline:** Every plan utilizes RED/GREEN cycles with named behavioral tests, ensuring that 700+ existing tests are not regressed by the significant service-layer changes.
+*   **Clear UX Boundaries:** The separation of "Cancel Backup/Cleanup" from the xEdit "Stop" button prevents confusing process-termination states while still providing responsive file-operation control.
 
 ## Concerns
-*   **Fixed Temp Suffix Collision (MEDIUM):** Plan 07-10 and earlier plans use a fixed `.autoqac-tmp` suffix. While safe for sequential operations, a stale temp file from a crashed session could technically block a future restore if `FileMode.Create` isn't used for the temp file itself.
-    *   *Severity:* **Medium**. It could cause a "Target write failed" error for a user whose previous session was force-killed.
-*   **Sync/Async Validation Duplication (LOW):** Plan 07-11 correctly identifies the need to update both sync and async restore paths. There is a small risk that logic drift could occur between `RestorePlugin` and `RestorePluginAsync` if the `IsRestoreTargetInsideTrustedRoot` helper isn't strictly shared.
-    *   *Severity:* **Low**. The plan mentions sharing the helper, which mitigates this.
-*   **Path Normalization Edge Cases (LOW):** While `Path.GetFullPath` is used, Windows-specific paths (UNC, long paths, case-insensitivity differences in environment variables) can occasionally produce false negatives in "starts with" containment checks.
-    *   *Severity:* **Low**. For a desktop app cleaning local plugins, the current approach is standard and sufficient.
+
+### MEDIUM
+*   **Source-Inspection Test Brittleness (07-12):** The verification of the normal progress window lifecycle relies on `ViewSubscriptionLifecycleTests.cs` performing string matches on `MainWindow.axaml.cs`. While necessary due to the lack of a headless UI testing project, these tests are brittle to future refactoring or formatting changes.
+    *   *Severity:* **Medium**. It could lead to false negatives or missed coverage if the source code is reorganized without updating the regex patterns.
+
+### LOW
+*   **String-Level Containment Limitation (07-11/07-13):** As documented in the plans, the path containment checks are string-level (`Path.GetFullPath` + prefix matching) and do not resolve NTFS reparse points or symlinks. 
+    *   *Severity:* **Low**. For a desktop app managing local game files, this is standard and the risk of a "symlink escape" attack via malicious backup metadata is minimal in this context.
+*   **Fixed Temp Suffix (07-10):** The implementation retains the fixed `.autoqac-tmp` suffix rather than unique GUID-based temp names. 
+    *   *Severity:* **Low**. Collision risk is low due to the sequential nature of the app, but a stale file from a crashed session could technically block a subsequent restore.
 
 ## Suggestions
-*   **Unique Temp Names:** Consider using a GUID or timestamp in the temp restore file name (e.g., `filename.esp.autoqac-{guid}.tmp`) to avoid collisions with stale files from previous failed runs.
-*   **Centralized Metadata Policy:** Ensure that the `IsSafeRestoreTarget` and `IsRestoreTargetInsideTrustedRoot` helpers are the *only* paths through which a file write is authorized.
-*   **Explicit Exception Mapping:** For Plan 07-11, ensure that when a restore is rejected because it's outside the trusted root, the log explicitly states *why* (security policy) even if the UI only shows "Target folder creation failed."
+*   **Idempotent Progress Window Close (07-12):** Ensure the `DisposeProgressViewModel()` helper in `MainWindow.axaml.cs` is truly idempotent (using the planned `progressDisposed` guard) to survive the race between `CloseRequested` from the VM and the Window's own `Closed` event.
+*   **Consistent Normalization (07-13):** Ensure that `IsSessionDirectoryInsideBackupRoot` uses the same `EnsureTrailingDirectorySeparator` logic established in `BackupService.cs` to prevent sibling-prefix vulnerabilities (e.g., `Backups` matching `Backups 2`).
+*   **Log Context for Rejected Deletes (07-13):** When a session deletion is rejected for being "out of root," the log entry should include the `BackupRoot` and the `dirToDelete` to assist in debugging misconfigured data folders.
 
 ## Risk Assessment
 **Overall Risk: LOW**
 
-The phase is in its final "gap closure" stage. The architecture is already proven through Plans 01-09 with a high volume of passing tests. Plans 07-10 and 07-11 are safety-positive changes that reduce the risk profile of the application. By the end of these two plans, AutoQAC will have one of the most resilient and secure backup systems in the xEdit ecosystem. No xEdit parallelization risk is introduced, and sequential integrity is maintained.
+The phase is in its final "gap closure" stage. The foundational architecture (managed copy, structured results, and linked CTS) has already been verified through over 700 passing tests. Plans 07-12 and 07-13 are surgical fixes for specific UI and security gaps. By completing these, AutoQAC will have a fail-safe backup system that is both user-friendly and resilient to filesystem edge cases. No risk of parallel xEdit cleaning is introduced.
 
 ---
-*Phase 07 Review - 2026-04-29*
+*Phase 07 Plan Review - 2026-04-29*
 
 ---
 
 ## the agent Review
 
-# Phase 7 Plan Review: Backup Restore & Retention Safety
+# Cross-AI Plan Review: Phase 7 Backup Restore & Retention Safety
 
 ## Scope Note
 
-Plans 07-01 through 07-09 have already shipped (commits visible in git log; SUMMARY.md files present; `gaps_found: 16/18 truths verified`). 07-REVIEWS.md captures detailed pre-execution review of those plans. **This review focuses on the two pending Wave 8 plans (07-10 and 07-11)** that close the remaining verified blockers, with brief notes on plan-set cohesion.
+Plans 07-01 through 07-11 have shipped (commits in git log; SUMMARY.md files present; 752 AutoQAC tests + 59 QueryPlugins tests passing). The remaining work is **Wave 9**: plans 07-12 (normal progress window lifecycle) and 07-13 (RestoreWindow Delete Session containment). I'll focus this review on those two plans, with brief observations on plan-set cohesion.
 
 ---
 
 ## Summary
 
-Plans 07-10 and 07-11 are tightly scoped, TDD-gated gap closures targeting exactly the two FAILED truths in `07-VERIFICATION.md` (Truth #18 create-new ownership, Truth #11 trusted restore root). Both have correct technical direction, but **07-11 understates the blast radius** of adding `trustedRestoreRoot` to async and legacy sync `IBackupService` restore signatures — a wave of existing 07-09 tests and the legacy sync test row will silently regress unless explicitly enumerated and updated. **07-10's ownership-flag mechanism is underspecified** (how `CopyFileContentsAsync` reports stream-open success back to `CopyAsync` is left to the executor).
+Plans 07-12 and 07-13 are tightly scoped TDD-gated gap closures targeting the exact two FAILED truths in `07-VERIFICATION.md` (Truth #19 normal progress lifecycle; Truth #20 Delete Session containment). Both have correct technical direction, sound TDD discipline, and reuse established Phase 7 patterns (string-level containment, concise UI copy, logged technicals). Two material concerns warrant attention before execution: (1) **07-12's RED test is solely a source-string assertion** and may be fragile against equally valid implementations that don't match the exact substring; (2) **07-13's helper duplicates path-containment logic that already exists three times in `BackupService.cs`** (`IsRestoreTargetInsideTrustedRoot`, `EnsureTrailingDirectorySeparator`, `IsSafeSessionRelativeName`), so DRY/centralization is the bigger architectural risk than correctness.
 
 ---
 
-## Strengths
+## Plan 07-12: Normal Progress Window Lifecycle
 
-- **Surgical scope.** Each plan touches one verified gap; no scope creep beyond the failed truths.
-- **TDD discipline preserved.** Both plans split RED tests into a separate task before GREEN production changes, matching the pattern that drove 07-06 -> 07-09 to clean convergence.
-- **07-10 preserves prior cancellation invariants explicitly.** Acceptance criteria require `CopyAsync_CanceledCreateNewCopy_DeletesPartialDestination` and `CopyAsync_CanceledAtomicReplace_PreservesExistingTarget` to keep passing, which catches over-correction.
-- **07-11 grounds trusted-root validation in existing config flow.** `MainWindow.axaml.cs` already passes `Configuration.GameDataFolder` into `LoadSessionsAsync`; plumbing it through to the service is a small, well-scoped change.
-- **Both plans confirm the no-parallel-xEdit invariant** as a secondary source check rather than primary gate, matching 07-09 conventions.
-- **07-11 fails closed on null/empty/invalid trusted root** rather than silently allowing legacy behavior — correct security posture for a metadata-trust boundary.
+### Strengths
 
----
+- **Exactly mirrors the existing preview path** (lines 161-166 of `MainWindow.axaml.cs`) which already does `progressViewModel.CloseRequested += (_, _) => progressWindow.Close();` — the asymmetry is the verified bug.
+- **Local closure-based double-dispose guard** (`progressDisposed` + local function) is idiomatic and matches the same defensive pattern in `ProgressWindow.axaml.cs:9` (`_disposeHandled`).
+- **Preserves `ProgressWindow.axaml.cs` lifecycle helper unchanged** — Plan correctly recognizes the centralized cleanup must keep working.
+- **TDD gate enforces named lifecycle test** which integrates with the existing `ViewSubscriptionLifecycleTests.cs:46` pattern.
+- **Honors the no-Avalonia-headless constraint** documented in CLAUDE.md by using source-string assertions.
 
-## Concerns
+### Concerns
 
-### HIGH
+- **MEDIUM — Source-string RED is brittle.** The test asserts five exact substrings (`progressViewModel.CloseRequested +=`, `progressWindow.Close()`, `progressWindow.Closed +=`, `progressViewModel.Dispose()`, `progressDisposed`). An equally valid implementation using a method group (`progressWindow.Closed += OnProgressClosed;`) or a different guard variable name (`disposed`, `cleaned`, `done`) would fail the test even though the behavior is correct. Either:
+  - Loosen the assertion to regex like `progressWindow\.Closed\s*\+=` and `Dispose\s*\(`, or
+  - Document the exact-string contract in the test rationale so future readers know they must match the convention literally.
 
-- **C1 — 07-11 has unenumerated breaking-change blast radius.** Adding `string? trustedRestoreRoot` "before progress/cancellation parameters" changes async signatures and the legacy sync `RestorePlugin`/`RestoreSession` signatures. Plan 07-09 added these tests that all call the old signatures:
-  - `RestoreSessionAsync_ContinuesAfterPluginFailure`
-  - `RestoreSessionAsync_FailedThenCanceledRows_ReturnsCanceled`
-  - `RestorePluginAsync_MissingTargetDirectory_RecreatesDirectory`
-  - `RestorePluginAsync_CanceledAtomicRestore_PreservesExistingTarget`
-  - `RestorePluginAsync_TargetFolderCreationFailure_ReturnsFailedRow`
-  - `RestorePluginAsync_FileNameTraversal_ReturnsMissingBackupFileAndDoesNotCopy`
-  - `RestorePluginAsync_AbsoluteFileName_ReturnsMissingBackupFileAndDoesNotCopy`
-  - `RestorePluginAsync_UnrootedOriginalPath_ReturnsTargetFolderCreationFailed`
-  - `RestorePluginAsync_OriginalPathFileNameMismatch_ReturnsTargetFolderCreationFailedAndDoesNotCopy`
-  - `RestorePluginAsync_NonPluginOriginalPathExtension_ReturnsTargetFolderCreationFailedAndDoesNotCopy`
-  - `RestorePluginAsync_AccessDeniedCopyFailure_ReturnsAccessDenied`
-  - `RestorePluginAsync_NormalPluginPath_StillRestoresSuccessfully` (already noted in plan)
-  - `RestorePlugin_FileNameMismatch_ThrowsBeforeCopying`
-  - `RestorePlugin_MissingBackupFile_WithSafeMetadata_StillThrowsFileNotFoundException`
+- **MEDIUM — Double-subscription risk with `ProgressWindow.axaml.cs`.** The existing `ProgressWindow.OnDataContextChanged` (line 28) *already* subscribes to `viewModel.CloseRequested` and disposes the VM in `OnClosed`. Adding a *second* `CloseRequested` subscription in `ShowProgressAsync` means `progressWindow.Close()` may run twice on the same Close click (once from the new handler, once via the existing window subscription that calls `Close()` from `OnCloseRequested`). Avalonia's `Window.Close()` is idempotent so this likely works, but it's worth either:
+  - Confirming the double-close is harmless and adding a comment, or
+  - Recognizing that `ProgressWindow.axaml.cs` already provides the contract — and the actual gap is just that the **disposal** path in `ProgressWindow.axaml.cs` only runs when `DataContext` was set via `DataContextChanged` while `_disposeHandled` is still false. Re-reading: yes, the existing `ProgressWindow` *does* dispose the VM on `OnClosed`. So **this gap may already be partially closed**, and the verification report's Truth #19 may be over-flagging given that `ProgressWindow.OnClosed → DisposeViewModelIfNeeded → _subscribedViewModel.Dispose()` already handles disposal.
+  - **Recommend the executor verify the actual runtime behavior** before adding redundant wiring. The Phase 7 verifier's source inspection caught a missing inline pattern, but the lifecycle helper may already cover the runtime contract.
 
-  These either need a new trusted-root argument or will start returning `TargetFolderCreationFailed` when validation fails closed, masking what the test is actually exercising. The plan's RED task only mentions updating `RestorePluginAsync_NormalPluginPath_StillRestoresSuccessfully`. The execute step will hit a wall unless the GREEN task also updates every other test call site in the same commit. **Add an explicit "test call-site update" subtask listing every method that calls `RestorePluginAsync`/`RestoreSessionAsync`/`RestorePlugin`/`RestoreSession` in `BackupServiceTests` and what trusted root each passes.**
+- **LOW — Plan doesn't acknowledge the existing `ProgressWindow` cleanup helper.** Plan text says "primary ShowProgressAsync path lacks the CloseRequested handler" — but the window itself subscribes via `DataContextChanged`. The plan should explicitly state whether the new wiring is *additive* (defense in depth) or *redundant-but-required-for-test-pass*, so reviewers don't merge code that does the same work twice.
 
-- **C2 — 07-11 doesn't define behavior when `Configuration.GameDataFolder` is null/empty.** `RestoreViewModel.LoadSessionsAsync(string? dataFolderPath)` already accepts null (it shows `"No game data folder configured -- cannot locate backups"`). But once the field becomes the trusted root, *every* restore in that state fails closed with `TargetFolderCreationFailed`. The user-facing experience is that they'd see the session list (sessions can still load if they exist on disk) but every restore fails with the same opaque label. Plan should either: (a) gate restore commands on `_trustedRestoreRoot` being non-null/valid via `[NotifyCanExecuteChangedFor]`, or (b) extend the empty-state copy to explain why restores are disabled.
+### Suggestions
 
-### MEDIUM
+1. **Add one runtime-style assertion** alongside the source-grep test: instantiate a `ProgressWindow` with a real `ProgressViewModel` (or a stub), raise `CloseRequested`, and assert the window closed — even without Avalonia.Headless, this can be done by wrapping the test in a `Dispatcher.UIThread.InvokeAsync` block if the app target supports it. If that's infeasible per CLAUDE.md, then loosen the source assertion to regex.
 
-- **C3 — 07-10's `createdOutput` plumbing is underspecified.** The plan says "have `CopyFileContentsAsync` report when the destination stream has opened successfully" without specifying the mechanism. Choices: (a) `out bool createdOutput` parameter, (b) `Action<bool>` callback like `updateCopiedBytes`, (c) refactor to return a tuple, (d) lift the `FileStream` open out of `CopyFileContentsAsync` and back into `CopyAsync`. Each has implications:
-  - (a)/(b) require setting the flag inside `CopyFileContentsAsync` *immediately after* the destination `FileStream` constructor returns. If the flag is set on the wrong line (e.g., before `var destination = new FileStream(...)`), the bug returns inverted.
-  - (d) is cleanest but the bigger refactor.
-  
-  **Recommend specifying option (b) `Action<bool>` callback or option (d) lifted-open** explicitly so RED -> GREEN doesn't spawn ambiguity at execution time.
+2. **Consult `ProgressWindow.axaml.cs` lifecycle helper** before adding a parallel handler in `ShowProgressAsync`. If the runtime contract is already correct via DataContextChanged, the plan may only need to:
+   - Update the verifier's understanding (Truth #19 is satisfied by the View, not the Main).
+   - Or leave `ShowProgressAsync` alone and document the contract.
 
-- **C4 — 07-10 creates a subtle window where `FileMode.Create` (atomic restore) might mis-flag ownership.** `FileMode.Create` always creates/truncates, so `createdOutput` should always be true after open succeeds for `ReplaceAtomically` flow. The plan implicitly assumes the flag flips after open for both modes, but if the implementer reads the verification report literally ("delete only the partial file created by the active copy attempt") they might add a mode-specific branch and break atomic-restore temp-file cleanup. **Add an explicit invariant: "for `ReplaceAtomically`, the temp file is owned by this attempt as soon as the destination FileStream successfully opens; cleanup must still delete it."**
-
-- **C5 — 07-11's containment check uses prefix-match, which doesn't follow NTFS reparse points or symlinks.** The threat model row T-07-11-03 acknowledges this is mitigated only at the string level, but the plan inherits T-07-09-05's "accept" disposition for reparse-point escape. Worth restating that `IsRestoreTargetInsideTrustedRoot` is a string-level check, not a filesystem-identity check, in the helper's XML doc so future readers don't assume otherwise.
-
-- **C6 — 07-11 changes legacy sync method signatures without auditing UI/production callers.** 07-09 Task 2 audited remaining `RestorePlugin(` callers and concluded only `BackupService` and `BackupServiceTests` use them. That audit needs a refresh: Plan 07-11 inserts a new required parameter into `RestorePlugin`/`RestoreSession`. If any production code path still calls these (the audit was 24 hours ago), they'll break compilation. **Re-run the audit (`Select-String -Path AutoQAC/**/*.cs,AutoQAC.Tests/**/*.cs -Pattern 'RestorePlugin\(|RestoreSession\('`) before the GREEN task and document the result in the plan.**
-
-- **C7 — `BackupCopyOptions.CreateNewBackup` may not exist on `BackupCopyOptions` exactly as plan-10 describes.** The plan references `BackupCopyOptions.CreateNewBackup` as if it were a static instance, but `BackupCopyOptions` (07-01) was described as a struct/record with a `BackupCopyExistingTargetPolicy ExistingTargetPolicy` property. Verify whether `CreateNewBackup` is a static factory/preset on the type or shorthand for `new BackupCopyOptions(BackupCopyExistingTargetPolicy.FailIfExists)`. Existing tests use `BackupCopyOptions.CreateNewBackup` (per `BackupFileCopierTests.cs:55`), so the convention exists; just confirm during implementation.
-
-### LOW
-
-- **C8 — 07-10's RED test asserts `FailureReason == BackupFailureReason.TargetWriteFailed`** for the existing-destination case. Today's behavior throws `IOException` from `FileMode.CreateNew`, which the catch maps to `TargetWriteFailed` (line 84-88 of `BackupFileCopier.cs`). The fix doesn't change that mapping — it just stops the cleanup. So the assertion is correct, but the failure-reason name is slightly misleading: the destination wasn't *unwritable*, it was *occupied*. Consider whether the verified-truth requires a new reason like `DestinationAlreadyExists`. Not blocking, but worth a follow-up note.
-
-- **C9 — 07-11 doesn't address whether retention-cleanup also needs trusted-root scoping.** Backup retention deletes session directories under `backupRoot` (a sibling of Data, not Data itself). The trusted-root design here is restore-only. That's correct for this gap, but the plan should state it explicitly to avoid scope confusion later.
-
-- **C10 — Plan 07-11's positive regression test name is reused from 07-09** (`RestorePluginAsync_NormalPluginPath_StillRestoresSuccessfully`). The plan implies "update" — clarify whether it's a signature update or a new test to avoid a stale duplicate.
-
-- **C11 — `UI hint: yes` on the roadmap entry for Phase 7.** Plan 07-11 plumbs a trusted root through the ViewModel but doesn't surface the UX implication of C2 (disabled restore commands when no game configured). If the team wants a user-visible affordance, that's a follow-up task; if not, document the deliberate "fail-closed silently" choice in `07-11-SUMMARY.md`.
+3. **If keeping the additive wiring**, add a one-line comment in `ShowProgressAsync` like `// Defense in depth: ProgressWindow.OnDataContextChanged also subscribes; this guarantees close+dispose even if the View contract changes.`
 
 ---
 
-## Suggestions
+## Plan 07-13: RestoreWindow Delete Session Containment
 
-1. **For 07-11 RED task:** Before writing tests, run `Grep -n "RestorePluginAsync\|RestoreSessionAsync\|RestorePlugin(\|RestoreSession(" AutoQAC.Tests/Services/BackupServiceTests.cs` and append the resulting list of call sites to the plan as the explicit "tests-to-update" inventory. The GREEN task can then mechanically add `trustedRestoreRoot` to each.
+### Strengths
 
-2. **For 07-11 ViewModel behavior:** Add a fourth task or extend Task 2 to update `CanRestorePlugin`/`CanRestoreAll` predicates to include `!string.IsNullOrEmpty(_trustedRestoreRoot)`, and add a ViewModel test `RestoreCommands_DisabledWhenTrustedRestoreRootMissing`. This prevents the silent-failure UX from C2 and makes the intent auditable.
+- **Direct closure of verified Truth #20** with concrete file/line references in the verification report (lines 301-322 of `RestoreViewModel.cs`).
+- **Reuses existing concise-error pattern** from Phase 7 (`Technical details were written to the log.`) and matches D-04.
+- **Sibling-prefix and traversal coverage explicit** — addresses the same class of Windows path bug fixed in Plan 07-11 for trusted restore root.
+- **Replaces `ex.Message` exposure** in the catch block, closing a small information-disclosure leak that wasn't itself flagged but is consistent with SEC-01/SEC-02 direction (deferred to Phase 11 but freebie here).
+- **TDD discipline preserved** with three separate RED tests (out-of-root, sibling-prefix, traversal-normalization).
+- **Keeps NSubstitute optional-parameter matching explicit** — matches the project convention.
 
-3. **For 07-10 ownership plumbing:** Pick the mechanism explicitly. Recommended: add an `Action<bool>? onDestinationOpened` parameter to `CopyFileContentsAsync` (parallel to `updateCopiedBytes`), and have `CopyAsync` capture `var createdOutput = false; ...onDestinationOpened: opened => createdOutput = opened, ...`. Pass `createdOutput` to every `DeletePartialOutput(...)` call.
+### Concerns
 
-4. **For 07-10 atomic-restore symmetry:** Add a brief test `CopyAsync_CanceledAtomicReplace_DeletesTempFile_RegardlessOfOwnershipFlag` to lock in that the ownership refactor doesn't accidentally break `.autoqac-tmp` cleanup. Even though existing tests cover the canceled case, a refactor-aimed test makes the invariant explicit.
+- **HIGH — Helper duplication.** The plan creates `IsSessionDirectoryInsideBackupRoot` in `RestoreViewModel.cs`, which is **functionally identical** to `BackupService.IsRestoreTargetInsideTrustedRoot` (lines 654-671 of `BackupService.cs`). Both:
+  - Normalize a root with `EnsureTrailingDirectorySeparator(Path.GetFullPath(root))`
+  - Normalize a candidate path with `Path.GetFullPath`
+  - Check `StartsWith(root, StringComparison.OrdinalIgnoreCase)`
+  - Wrap in try/catch for `ArgumentException, IOException, NotSupportedException, UnauthorizedAccessException`
 
-5. **For 07-11 trusted-root helper:** In `IsRestoreTargetInsideTrustedRoot`, normalize the trusted root with `Path.GetFullPath` *and* `EnsureTrailingDirectorySeparator` (the helper already exists in `BackupService.cs:653`). Reuse the existing helper to avoid divergent normalization logic.
+  The difference is only the field being validated (`trustedRestoreRoot` vs `_backupRoot`). Codex's review of Plan 07-11 explicitly recommended a *shared helper* (`NormalizeDirectoryRootForContainment`). This plan repeats the smell instead of resolving it.
 
-6. **For 07-11 caller audit:** Add a one-line acceptance criterion: "Pre-execution audit confirms no production code path calls legacy `RestorePlugin(BackupPluginEntry, string)` or `RestoreSession(BackupSession)` outside `BackupService.cs` and `BackupServiceTests.cs`. Result documented in `07-11-SUMMARY.md`."
+  **Recommendation:** Either (a) extract a public/internal static helper into a new file like `AutoQAC/Services/Backup/PathContainment.cs` and call it from both `BackupService` and `RestoreViewModel`, or (b) put the deletion-safety check on `BackupService` itself by adding `Task<BackupRetentionRowResult> DeleteSessionAsync(string sessionDirectory, string backupRoot, ...)` and have `RestoreViewModel` delegate. Option (b) also keeps filesystem operations in the service layer per CLAUDE.md ("Service layer reads logs; ViewModels receive parsed results via state").
 
-7. **Both plans:** After GREEN, run `dotnet test AutoQACSharp.slnx` *before* declaring victory. Both plans include this in the verification block, but neither lists it as an `<acceptance_criteria>` item for the final task. Make it a hard acceptance criterion.
+- **MEDIUM — ViewModel performs filesystem I/O directly.** Currently `DeleteSessionAsync` calls `System.IO.Directory.Delete` from the ViewModel. The CLAUDE.md MVVM guidance is "All business logic lives in services, not ViewModels" and "Services in `AutoQAC/Services` ... keep their `System.Reactive` use; the Rx ban applies only to the ViewModel layer." Adding filesystem-validation logic to the VM compounds the existing layering violation. A `IBackupService.DeleteSessionAsync(BackupSession session)` method that owns containment + delete + retry would be cleaner architecturally and match the service patterns in `IBackupSessionDeleter` (which already exists from Plan 07-02, line 60 of `ServiceCollectionExtensions.cs`).
+
+  **`IBackupSessionDeleter` is already injectable** — the plan could route Delete Session through that instead of direct `Directory.Delete`. This would also let retention-cleanup-style tests reuse `RecordingBackupSessionDeleter`.
+
+- **MEDIUM — Plan doesn't enumerate behavior for legacy/null `_backupRoot`.** What happens if Delete Session is somehow invoked when `LoadSessionsAsync` was called with `null` or `""`? The `CanRestoreAll` predicate (which gates `DeleteSessionCommand`) requires `SelectedSession != null`, but does NOT require `HasTrustedRestoreRoot` (Plan 07-11 only added that to Restore Selected/All). So a session can theoretically be selected with `_backupRoot == null` (if `LoadSessionsAsync` was called with a valid root, then later changed). The new helper handles this (returns false on null backup root) but the *test plan* should explicitly cover it. The current `RED` task doesn't list a null-backup-root case.
+
+- **LOW — Status text inconsistency.** Plan specifies `StatusText = "Delete failed -- selected backup session is outside the configured backup folder";` but the dialog shows `"The selected backup session is outside the configured backup folder."` Two different copies for the same condition. Prefer one canonical sentence.
+
+- **LOW — `using System.IO;` directive.** Plan says "add `using System.IO;` if needed and replace fully qualified `System.IO.Directory` calls". `RestoreViewModel.cs` doesn't currently `using System.IO` (it uses fully qualified `System.IO.Directory.Exists` / `System.IO.Directory.Delete` per line 304-306). This is a minor style change that's fine but worth noting it slightly expands the diff.
+
+- **LOW — Verification command in Task 3.** The cluster filter list in the acceptance criterion is long and includes `ViewSubscriptionLifecycleTests` (which 07-12 owns). If 07-12 hasn't shipped first, this command will reference a non-existent test. Ensure 07-12 ships before or alongside 07-13, or remove `ViewSubscriptionLifecycleTests` from 07-13's filter.
+
+### Suggestions
+
+1. **Extract path-containment helper.** Add `internal static class BackupPathContainment` (or similar) with `IsContained(string? candidatePath, string? rootPath)` that handles normalization + try/catch. Refactor `BackupService.IsRestoreTargetInsideTrustedRoot` to call it. Then `RestoreViewModel` calls the same helper. This closes Codex's deferred suggestion from the 07-09/07-11 review.
+
+2. **Move Delete Session to the service.** Add `Task<BackupSessionDeleteResult> DeleteSessionAsync(BackupSession session, string backupRoot, CancellationToken ct)` to `IBackupService`. The ViewModel calls it, receives a structured result, and updates `Sessions` / `StatusText` from the outcome. This matches the Plan 07-02 retention pattern and lets you reuse `IBackupSessionDeleter` for the actual `Directory.Delete`.
+
+3. **Add null-backup-root coverage.** Either gate `DeleteSessionCommand` predicate on `!string.IsNullOrWhiteSpace(_backupRoot)` (mirroring the trusted-root gate from Plan 07-11), or add an explicit test `DeleteSessionCommand_NullBackupRoot_FailsClosed`.
+
+4. **Reconcile status text and dialog text** to one sentence used in both places.
+
+5. **Consider tightening `RestoreCommands_DisabledWhenTrustedRestoreRootMissing` to also disable `DeleteSessionCommand`.** Plan 07-11 explicitly didn't disable Delete Session. Now that Delete Session is part of restore safety, gating it on the same condition keeps the safety story consistent.
+
+---
+
+## Plan-Set Cohesion Notes
+
+- **Helper centralization is becoming a real debt.** Plans 07-09, 07-11, and 07-13 each add path-validation helpers (`IsSafeSessionRelativeName`, `IsRestoreTargetInsideTrustedRoot`, `IsSessionDirectoryInsideBackupRoot`). Codex flagged this in the consolidated review. Wave 9 is the last opportunity to consolidate before Phase 8 starts. Strongly recommend a 5-line refactor task in 07-13 (or a new 07-14) to extract a shared helper.
+
+- **Delete Session was outside Phase 7's original scope.** The phase boundary in `07-CONTEXT.md` lists "restore safety, backup/restore/retention progress and cancellation, retention cleanup failure reporting, and regression coverage." Backup-session deletion isn't mentioned. The verifier added it as a blocker because it's in the same code surface, which is reasonable, but the scope creep is real. Consider documenting in `07-13-SUMMARY.md` that this gap was discovered during verification and is closed defensively to maintain the phase's safety story.
+
+- **Sequential xEdit invariant remains protected.** Both plans' source scan for `Task.WhenAll | Parallel.ForEachAsync | Task.Run` under `AutoQAC/Services/Cleaning` correctly stays as a secondary verification gate.
+
+- **Verification cluster grows.** With these two plans, the Phase 7 targeted cluster reaches `BackupFileCopierTests | BackupServiceTests | RestoreViewModelTests | CleaningOrchestratorTests | ProgressViewModelTests | ViewSubscriptionLifecycleTests | BackupOperationResultTests`. That's ~150-160 tests. Worth confirming runtime budget; if it exceeds ~30 seconds locally, splitting the cluster into "fast" and "slow" filters in `07-VALIDATION.md` may help future iteration.
 
 ---
 
 ## Risk Assessment
 
-**Overall: MEDIUM** for 07-11; **LOW-MEDIUM** for 07-10.
+| Plan | Risk | Justification |
+|------|------|---------------|
+| **07-12** | **LOW-MEDIUM** | Source-string brittleness and possible redundant wiring with `ProgressWindow.axaml.cs`. Behavior outcome is sound; mechanism question is the open issue. |
+| **07-13** | **MEDIUM** | Helper duplication compounds existing debt; ViewModel filesystem I/O reinforces a layering smell. Functional correctness is fine; architectural cleanliness is the risk. |
+| **Plan set overall** | **LOW-MEDIUM** | Phase 7 has 11 shipped plans, 752+59 passing tests, validated TDD discipline, and the two remaining gaps are localized. The architecture is proven. The remaining risk is incremental debt accumulation, not user-visible regressions. |
 
-Justification:
-- **07-10** is small, well-targeted, and has clear failure modes. The ownership-plumbing ambiguity (C3) and atomic-restore invariant (C4) can be resolved during implementation without redesigning the plan. Risk is bounded by test-driven gates.
-- **07-11** is small in production code but has wide test-call-site impact (C1). If the executor implements GREEN by changing the interface and only updating the one positive test the plan names, 13+ existing tests will start failing in confusing ways and the executor may regress safety to make tests pass. Adding the C2 fail-closed UX behavior is a separate UX decision the plan doesn't resolve. The blast-radius enumeration *should* happen during the RED task naturally, but it's not codified in acceptance criteria.
-- The Phase 7 architecture (managed copy, atomic temp+move, structured outcomes, separate non-xEdit CTS, sequential xEdit guarantee) has been validated through nine prior plans and 742 + 59 passing tests. The remaining two gaps don't touch architectural decisions; they're localized hardening. Reverse-risk is low.
-- Verification report's "Required Artifacts" table marks `BackupService.cs` PARTIAL and `BackupFileCopier.cs` PARTIAL — exactly what these two plans target. After execution, both should flip to VERIFIED, closing Phase 7.
+---
 
-**Bottom line:** Both plans are technically sound and proceed-ready. Strengthen 07-11's test-call-site enumeration (C1) and resolve the null-trusted-root UX question (C2) before execution; specify 07-10's ownership-flag mechanism (C3) explicitly. With those tightened, risk drops to LOW for both.
+## Recommended Execution Order
+
+1. **Investigate first**: Verify whether `ProgressWindow.OnDataContextChanged + OnClosed` already satisfies Truth #19 at runtime. If yes, downgrade 07-12 to a documentation/verification-clarification task.
+2. **07-12 next** (regardless of #1 outcome): if defensive wiring is added, document it as such; if not, update the verifier's expectation.
+3. **Refactor pass before 07-13**: extract `BackupPathContainment` helper and refactor `BackupService.IsRestoreTargetInsideTrustedRoot` to call it (10-line change).
+4. **07-13**: implement Delete Session containment using the shared helper, ideally by routing through `IBackupSessionDeleter` from the service layer rather than direct ViewModel `Directory.Delete`.
+5. Re-run full Phase 7 verification cluster, archive the phase.
+
+---
+
+*Review completed: 2026-04-29*
 
 ---
 
 ## Codex Review
 
-## Summary
+**Overall Assessment**
 
-The Phase 7 plan set is strong overall: it is staged well, keeps xEdit cleaning sequential, moves risky filesystem operations toward structured async outcomes, and adds meaningful regression coverage for restore, backup copy, cancellation, retention, and UI reporting. The later gap-closure plans are especially valuable because they tighten unsafe path handling and address subtle cancellation/result aggregation bugs. Main risks are API churn across plans, restore-root contract timing, Windows filesystem edge cases, and some over-specific source/text assertions that could make implementation brittle.
+The Phase 7 plan set is strong: it is traceable to SAF-04, TEST-04, and PERF-04, keeps xEdit cleaning sequential, and uses iterative gap-closure well. The main weakness is plan sprawl: later plans repeatedly patch earlier safety assumptions, which is normal for verification-driven work but increases signature churn and regression risk. The biggest risks are path-containment edge cases, sync/async compatibility drift, cancellation semantics, and source-inspection tests becoming brittle.
 
-## Strengths
+**Plan Reviews**
 
-- Clear dependency flow: contracts/copier first, service behavior next, orchestrator/UI integration after.
-- Good preservation of core invariant: per-plugin backup before xEdit, no parallel xEdit launches.
-- Strong safety posture around partial file cleanup, restore target preservation, retention warning/cancel outcomes, and concise UI reasons.
-- Tests are behavior-focused in many critical places, especially backup cancellation, restore partial failure, retention current-session protection, and mixed canceled/failed restore outcomes.
-- Gap-closure plans are justified by concrete verification findings instead of speculative refactors.
-- Restore UI decisions align with phase goals: confirmation before overwrite, inline results, no success popups, visible cancellation.
+### 07-01
+**Summary:** Good foundation for structured outcomes and cancellable copy.
+**Strengths:** Clear result contracts; explicit overwrite policy; partial-file cleanup tested.
+**Concerns:** MEDIUM: fixed temp suffix may collide. MEDIUM: result model may grow too broad before callers prove needs.
+**Suggestions:** Define temp-name ownership now, or explicitly defer unique temp names with a test guard.
+**Risk:** MEDIUM, because copier mistakes can corrupt backup/restore targets.
 
-## Concerns
+### 07-02
+**Summary:** Correctly moves restore/retention from exceptions/logging into structured outcomes.
+**Strengths:** Continues restore after failures; retention protects current/newest sessions; deletion seam is testable.
+**Concerns:** HIGH: legacy sync wrappers can drift from async safety. MEDIUM: metadata validity and containment are still incomplete here.
+**Suggestions:** Require all restore validation helpers to be shared by sync and async paths from the start.
+**Risk:** MEDIUM-HIGH due to filesystem delete/overwrite behavior.
 
-- **HIGH:** 07-11 changes restore service signatures after 07-04/07-09 already migrated UI and tests. This is valid as a gap closure, but it creates broad churn and potential missed callers. The plan should require a compile-driven audit of all `RestorePluginAsync`, `RestoreSessionAsync`, `RestorePlugin`, and `RestoreSession` call sites.
+### 07-03
+**Summary:** Good orchestration integration while preserving per-plugin sequential backup-before-cleaning.
+**Strengths:** Separate non-xEdit cancellation path; explicit no-parallel guard; retention result included before finalization.
+**Concerns:** MEDIUM: “backup canceled then continue next plugin” may surprise users if they expected session cancel. MEDIUM: CTS ownership is subtle.
+**Suggestions:** Make UI copy distinguish “cancel current backup” from “cancel cleaning session.”
+**Risk:** MEDIUM.
 
-- **HIGH:** Trusted restore-root validation in 07-11 uses string prefix containment. It must normalize trailing separators carefully so `C:\Game\Data2` does not pass for `C:\Game\Data`. The plan mentions trailing separator, but this should be an explicit tested case.
+### 07-04
+**Summary:** Restore UI plan is well aligned with decisions D-17 through D-20.
+**Strengths:** Inline results; no success popup; progress/cancel state; command disabling.
+**Concerns:** MEDIUM: progress callback threading was missed until 07-08. LOW: exact string tests may be brittle.
+**Suggestions:** Add dispatcher marshalling in this plan rather than later.
+**Risk:** MEDIUM.
 
-- **HIGH:** Restore target policy may reject legitimate edge cases such as ghosted plugins, case/normalization oddities, or managed paths under virtualized setups. The plan acknowledges `.esp.ghost` as deferred, but the user-visible impact should be called out in summary/release notes.
+### 07-05
+**Summary:** Completes user-visible backup/retention progress in the cleaning progress surface.
+**Strengths:** Separate Cancel Backup/Cleanup from xEdit Stop; final full-suite validation.
+**Concerns:** LOW-MEDIUM: hard-coded color acceptance is design-brittle. MEDIUM: source-grep no-parallel checks should stay secondary.
+**Suggestions:** Prefer behavior tests for command routing and ordering; keep source scans as smoke checks.
+**Risk:** MEDIUM.
 
-- **MEDIUM:** `destinationPath + ".autoqac-tmp"` can collide with an existing temp file or another interrupted attempt. This is deferred in 07-09, but restore overwrite safety would be stronger with a unique temp name in the same directory.
+### 07-06
+**Summary:** Valuable gap closure for backup-failure accounting.
+**Strengths:** Fixes skipped-result publication and abort finalization; tightly scoped.
+**Concerns:** LOW: finalization inside branch can duplicate normal-finalization logic over time.
+**Suggestions:** Extract a small finalization helper if similar branches already exist.
+**Risk:** LOW-MEDIUM.
 
-- **MEDIUM:** Some acceptance criteria depend on source-string checks like exact method text, color values, or absence of `Task.Run`. These are useful secondary guards, but brittle as primary acceptance criteria.
+### 07-07
+**Summary:** Important security hardening for metadata and retention progress.
+**Strengths:** Blocks traversal/absolute backup filenames; adds deletion-warning coverage.
+**Concerns:** HIGH: “unrooted OriginalPath” rejection is not enough; arbitrary rooted targets remain until 07-11. MEDIUM: mapping unsafe metadata to “Missing backup file” may obscure tampering diagnostics in logs if not logged clearly.
+**Suggestions:** Add trusted-root containment earlier or make 07-07 explicitly incomplete.
+**Risk:** MEDIUM-HIGH.
 
-- **MEDIUM:** 07-01/07-02 keep legacy sync wrappers while introducing async APIs. The plans say not to block on async, which is good, but duplicated sync/async restore validation creates drift risk until 07-09/07-11 consolidate validation.
+### 07-08
+**Summary:** Good targeted closure for dispatcher, backup setup failures, and retention cancellation.
+**Strengths:** Addresses real async UI-thread risk; converts cancellation into structured outcomes.
+**Concerns:** MEDIUM: changing `RestoreViewModel` constructor can break manual/test construction. MEDIUM: cancellation rows/counts may be inconsistent if classification is only partially complete.
+**Suggestions:** Add a constructor/call-site audit and tests for partial classification counts.
+**Risk:** MEDIUM.
 
-- **MEDIUM:** Retention cleanup classification based only on “valid backup metadata” is safer than deleting unknown directories, but malformed session directories accumulating forever may surprise users. Reporting skipped rows helps, but there may need to be a later explicit cleanup path.
+### 07-09
+**Summary:** Strong filesystem-safety refinement for filenames and mixed cancellation.
+**Strengths:** Centralized validation; positive safe-restore regression; legacy sync audit.
+**Concerns:** HIGH: still allows same-name rooted target outside the game Data folder until 07-11. LOW: ghosted plugin exclusion is acceptable but should be documented as compatibility impact.
+**Suggestions:** Merge trusted-root policy into this plan if execution order allows.
+**Risk:** MEDIUM-HIGH.
 
-- **LOW:** The project context says Avalonia 11.3/ReactiveUI, while repo instructions say Avalonia 12/CommunityToolkit MVVM. Plans should follow the actual repo, but this mismatch is worth correcting in planning docs.
+### 07-10
+**Summary:** Excellent narrow TDD fix for copy-attempt ownership.
+**Strengths:** Addresses a concrete destructive bug; tests both non-owned destination and owned temp.
+**Concerns:** MEDIUM: fixed `.autoqac-tmp` remains a collision/race risk.
+**Suggestions:** Use same-directory unique temp names if implementation cost is small; otherwise document as residual.
+**Risk:** MEDIUM.
 
-- **LOW:** UI-specific requirements such as exact colors and 44px hit height are reasonable, but without a headless UI project they are mostly source assertions, not runtime UI verification.
+### 07-11
+**Summary:** Essential plan; this closes the biggest restore overwrite boundary.
+**Strengths:** Trusted restore root; sibling-prefix test; UI disables restore with missing root; call-site audit.
+**Concerns:** HIGH: signature churn across many tests/callers is risky. MEDIUM: string containment does not handle reparse points or TOCTOU. MEDIUM: sync restore signature changes may not be worth preserving.
+**Suggestions:** Consider deprecating/removing sync restore APIs after migration, or make them internal test-only.
+**Risk:** HIGH, but justified.
 
-## Suggestions
+### 07-12
+**Summary:** Useful lifecycle cleanup, but the test strategy is weaker than the behavior being protected.
+**Strengths:** Closes stale subscription risk; adds explicit normal-path disposal.
+**Concerns:** MEDIUM: source-inspection lifecycle tests can pass while runtime wiring is still wrong. MEDIUM: duplicate disposal with `ProgressWindow` lifecycle helper may create redundant ownership.
+**Suggestions:** Prefer a small testable factory/lifecycle helper over asserting strings in `MainWindow.axaml.cs`.
+**Risk:** MEDIUM.
 
-- Add explicit path-containment tests for sibling-prefix attacks, for example trusted root `C:\Game\Data` and target `C:\Game\Data2\Plugin.esp`.
+### 07-13
+**Summary:** Strong final safety patch for recursive Delete Session containment.
+**Strengths:** Covers traversal, sibling-prefix, normal delete, and concise error copy.
+**Concerns:** HIGH: direct `Directory.Delete` remains in ViewModel, which is harder to test safely than an injected deleter. MEDIUM: string-level containment still ignores reparse points.
+**Suggestions:** Add an `IBackupSessionDeleteService` or move deletion into `IBackupService` using the same root-containment rules.
+**Risk:** MEDIUM-HIGH because recursive delete bugs have high blast radius.
 
-- In 07-11, require `dotnet build` immediately after signature changes before targeted tests, because interface changes will surface missed call sites faster.
+**Top Recommendations**
 
-- Prefer a shared helper for containment checks, such as `NormalizeDirectoryRootForContainment`, used by both session backup source containment and trusted restore-root containment.
+- Collapse repeated path-validation logic into one shared, documented helper set for backup destination, restore source, restore target, and delete-session containment.
+- Treat source-inspection tests as secondary only. The plans already mostly do this, but 07-12 is too string-test-heavy.
+- After 07-11, remove or quarantine legacy sync restore APIs if no production caller remains.
+- Add one final verification checklist that explicitly covers: normal restore, partial restore, canceled restore, trusted-root rejection, delete-session rejection, retention warning, retention cancellation, backup cancellation, and full `dotnet test`.
+- Document residual risks in the final Phase 7 summary: reparse points/symlinks, fixed temp suffix if unchanged, ghosted plugin extensions, and any compatibility impact from rejecting UNC/device/out-of-root restore targets.
 
-- Replace `destination + ".autoqac-tmp"` with a unique same-directory temp file, for example `.{filename}.{Guid}.autoqac-tmp`, while still deleting only owned temp files.
+**Overall Risk Assessment: MEDIUM-HIGH**
 
-- Keep source scans as secondary verification only. Primary acceptance should be named behavioral tests and full solution test results.
-
-- Add a small compatibility note in 07-09/07-11 summaries explaining rejected restore metadata cases: UNC paths, device paths, ghosted plugin extensions, non-plugin extensions, filename mismatches, and targets outside current Data folder.
-
-- Make `BackupFailureReason.SourceMissing` explicitly non-displayable or mapped per caller so it cannot accidentally surface as UI text outside the approved labels.
-
-- Add one test proving null/empty `trustedRestoreRoot` fails closed for restore operations.
-
-## Risk Assessment
-
-**Overall risk: MEDIUM.**
-
-The plans address the phase goals well and cover many important edge cases, but they touch core backup/restore contracts, cleaning orchestration, app state, and UI surfaces. The highest risks are filesystem path validation correctness, legacy sync/async behavior drift, and late API changes in 07-11. With the suggested containment tests, compile-driven call-site audit, and unique restore temp names, the remaining risk becomes manageable.
+The phase goals are achievable with these plans, and coverage is unusually strong. The risk level stays medium-high because this phase touches destructive filesystem operations, cancellation, UI lifecycle, and broad service signatures. The later gap-closure plans reduce most serious risks, but they also prove that early plans under-specified path containment and lifecycle behavior. The set should work if executed in order with full-suite validation after each signature-heavy or filesystem-delete change.
 
 ---
 
 ## Consensus Summary
 
-All reviewers agree that Phase 7 is fundamentally well structured and that plans `07-10` and `07-11` are the right remaining gap closures. The strongest shared feedback is not to change the strategic direction, but to tighten execution details before implementation: enumerate the `07-11` restore-signature blast radius, make trusted-root containment tests more explicit, and remove ambiguity from `07-10` ownership tracking.
+All three reviewers consider Phase 7 coherent and substantially validated, with the remaining risk concentrated in the final gap-closure plans for progress-window lifecycle handling and RestoreWindow delete containment.
 
 ### Agreed Strengths
 
-- `07-10` and `07-11` are verification-driven and map directly to the remaining failed truths.
-- The phase preserves the hard sequential xEdit invariant while making backup/restore/retention file work cancellable and visible.
-- The structured result model, atomic restore semantics, and concise user-facing reason labels are strong architectural choices.
-- The trusted restore root in `07-11` is the correct boundary for preventing tampered backup metadata from overwriting arbitrary files.
-- The TDD flow and named regression tests make the remaining changes safer than ad-hoc patching.
+- The plans preserve AutoQAC's sequential xEdit invariant; no reviewer found evidence that backup, restore, retention, or UI work would parallelize cleaning.
+- The phase uses strong verification-driven planning with explicit RED/GREEN gates, targeted regression tests, and clear traceability to SAF-04, TEST-04, and PERF-04.
+- The backup/restore design is safety-oriented: structured outcomes, cancellable async file work, visible progress, atomic copy/move semantics, and fail-closed validation are consistently called out as good choices.
+- The later gap-closure plans address real verification findings rather than speculative scope, especially around restore target containment, cleanup ownership, progress-window lifecycle, and delete-session safety.
 
 ### Agreed Concerns
 
-- **HIGH: `07-11` restore-signature blast radius.** Claude and Codex both flagged broad churn across existing service, ViewModel, and test call sites. Before execution, inventory every `RestorePluginAsync`, `RestoreSessionAsync`, `RestorePlugin`, and `RestoreSession` caller and define the trusted root each one should pass.
-- **HIGH/MEDIUM: trusted-root containment edge cases.** Codex explicitly called out sibling-prefix attacks like `C:\Game\Data2`; Claude and Gemini both noted Windows path normalization limits. Add behavior tests for trailing-separator normalization and document that reparse-point/symlink handling is string-level only unless expanded later.
-- **MEDIUM: fixed `.autoqac-tmp` collision risk.** Gemini and Codex suggested unique same-directory temp names. This is not required to close the verified `07-10` ownership gap, but it is the main residual restore-copy robustness issue.
-- **MEDIUM: `07-10` ownership plumbing ambiguity.** Claude asked for a concrete mechanism for setting `createdOutput` exactly after destination stream open, plus an explicit invariant that atomic-restore temp files remain owned and deleted on cancel/failure.
-- **MEDIUM: sync/async validation drift.** Gemini, Claude, and Codex all called out the need for shared validation helpers and refreshed sync-caller audits so legacy restore paths do not diverge from async safety.
-- **MEDIUM: null or empty trusted restore root UX.** Claude and Codex both flagged fail-closed behavior when `Configuration.GameDataFolder` is missing. Decide whether restore commands should be disabled or whether inline failure copy is sufficient, then test that path.
+- 07-12's planned source-inspection tests are brittle. Gemini, the agent, and Codex all flagged that string-based assertions should be secondary to runtime behavior or at least loosened/documented so formatting or equivalent handler shapes do not cause false failures.
+- 07-12 may duplicate existing `ProgressWindow` lifecycle ownership. The agent and Codex specifically warned that `ProgressWindow.axaml.cs` may already subscribe/dispose through `DataContextChanged`/`OnClosed`, so the executor should verify actual behavior before adding redundant close/dispose wiring.
+- 07-13 risks duplicating path-containment logic. The agent and Codex strongly recommend extracting or reusing a shared containment helper, and Gemini also calls for consistent normalization using the same trailing-separator/sibling-prefix protection already established elsewhere.
+- Delete Session still sits close to destructive filesystem behavior. The agent and Codex recommend moving containment and recursive delete behind a service/injected deleter rather than adding more direct `Directory.Delete` logic to the ViewModel.
+- Residual filesystem edge cases remain. Reviewers called out string-level containment not resolving NTFS reparse points/symlinks, fixed `.autoqac-tmp` collision risk after crashes, and the need to document these as accepted residual risks if not fixed in Phase 7.
 
 ### Divergent Views
 
-- Gemini rates overall risk as **LOW**, while Claude and Codex rate `07-11`/the full set as **MEDIUM** because of interface churn and path-validation edge cases.
-- Unique temp file names are presented by Gemini and Codex as a concrete improvement; Claude treats ownership tracking plus atomic temp cleanup as the immediate requirement and does not require unique names to proceed.
-- Codex treats ghosted plugin rejection as a higher user-impact concern; Claude frames it as a summary/release-note obligation; Gemini does not emphasize it.
+- Overall risk rating differs: Gemini rates the remaining plan set LOW, the agent rates it LOW-MEDIUM overall with 07-13 at MEDIUM, and Codex rates the full phase MEDIUM-HIGH because destructive filesystem operations have high blast radius even with strong coverage.
+- Gemini accepts 07-13 as a surgical ViewModel containment patch if it reuses established normalization. The agent and Codex prefer a service-layer delete path or shared delete service to reduce MVVM and testability debt.
+- The agent suggests 07-12 may be partly or fully satisfied by the existing `ProgressWindow` lifecycle helper, while Gemini treats the planned idempotent close/dispose wiring as appropriate defense in depth. This should be resolved by checking the actual current lifecycle before implementation.
 
-### Recommended Planning Feedback
-
-- Add a `07-11` call-site audit task or acceptance criterion before the GREEN implementation task.
-- Add explicit tests for trusted-root sibling-prefix containment and null/empty trusted-root behavior.
-- Specify `07-10` ownership tracking mechanics, including when `createdOutput` flips and how `ReplaceAtomically` temp cleanup remains intact.
-- Keep source/text scans as secondary invariants; require `dotnet build` after signature changes and `dotnet test AutoQACSharp.slnx` before completion.
-- Document residual limitations in `07-10-SUMMARY.md` / `07-11-SUMMARY.md`: fixed temp suffix or unique-temp decision, ghosted plugin exclusion, string-level containment vs reparse points, and malformed retention-session cleanup as future work.
