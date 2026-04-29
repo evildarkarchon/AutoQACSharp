@@ -56,7 +56,13 @@ public sealed class ProcessExecutionService(
                 Arguments = arguments,
                 WorkingDirectory = workingDirectory,
                 UseShellExecute = false,
-                CreateNoWindow = false
+                CreateNoWindow = startInfo.CreateNoWindow,
+                RedirectStandardInput = startInfo.RedirectStandardInput,
+                RedirectStandardOutput = startInfo.RedirectStandardOutput,
+                RedirectStandardError = startInfo.RedirectStandardError,
+                StandardInputEncoding = startInfo.StandardInputEncoding,
+                StandardOutputEncoding = startInfo.StandardOutputEncoding,
+                StandardErrorEncoding = startInfo.StandardErrorEncoding
             };
 
             using var process = new System.Diagnostics.Process();

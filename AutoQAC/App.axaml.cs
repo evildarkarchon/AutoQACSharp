@@ -7,6 +7,7 @@ using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Services.Backup;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
+using AutoQAC.Services.Process;
 using AutoQAC.Services.State;
 using AutoQAC.Services.UI;
 using AutoQAC.ViewModels;
@@ -57,6 +58,17 @@ namespace AutoQAC
                 var backupService = Services.GetRequiredService<IBackupService>();
                 var messageDialog = Services.GetRequiredService<IMessageDialogService>();
                 var uiDispatcher = Services.GetRequiredService<IUiDispatcher>();
+                var singleInstanceGuard = Services.GetRequiredService<ISingleInstanceGuard>();
+
+                if (!singleInstanceGuard.HasInstanceLock)
+                {
+                    _ = messageDialog.ShowWarningAsync(
+                        "AutoQAC Is Already Running",
+                        "Another AutoQAC window is already running. Close the existing window before starting AutoQAC again.");
+                    desktop.Shutdown();
+                    // Shutdown is queued during Avalonia startup, so return immediately to avoid starting watchers/workflows.
+                    return;
+                }
 
                 var mainWindow = new MainWindow(viewModel, logger, fileDialog, configService, stateService,
                     orchestrator, backupService, messageDialog, uiDispatcher);
