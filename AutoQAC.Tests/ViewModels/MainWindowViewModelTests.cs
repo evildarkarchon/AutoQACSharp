@@ -468,7 +468,7 @@ public sealed class MainWindowViewModelTests
         _stateServiceMock.StateChanged.Returns(stateSubject);
         _stateServiceMock.CurrentState.Returns(new AppState { IsCleaning = true });
 
-        _orchestratorMock.StopCleaningAsync().Returns(Task.CompletedTask);
+        _orchestratorMock.StopCleaningAsync().Returns(new StopCleaningResult(null, false));
         _orchestratorMock.LastTerminationResult.Returns((TerminationResult?)null);
 
         var vm = new MainWindowViewModel(
@@ -501,9 +501,9 @@ public sealed class MainWindowViewModelTests
         _stateServiceMock.StateChanged.Returns(stateSubject);
         _stateServiceMock.CurrentState.Returns(new AppState { IsCleaning = true });
 
-        _orchestratorMock.StopCleaningAsync().Returns(Task.CompletedTask);
+        _orchestratorMock.StopCleaningAsync().Returns(new StopCleaningResult(TerminationResult.GracePeriodExpired, true));
         _orchestratorMock.LastTerminationResult.Returns(TerminationResult.GracePeriodExpired);
-        _orchestratorMock.ForceStopCleaningAsync().Returns(Task.CompletedTask);
+        _orchestratorMock.ForceStopCleaningAsync().Returns(new StopCleaningResult(TerminationResult.ForceKilled, false));
         _messageDialogMock.ShowConfirmAsync(
             Arg.Any<string>(), Arg.Any<string>()).Returns(true);
 
@@ -524,8 +524,8 @@ public sealed class MainWindowViewModelTests
         // Assert
         await _orchestratorMock.Received(1).ForceStopCleaningAsync();
         await _messageDialogMock.Received(1).ShowConfirmAsync(
-            "Force Terminate?",
-            "xEdit did not exit gracefully. Force terminate the process?");
+            "Force Terminate xEdit?",
+            "xEdit did not exit after the stop request. Force terminating can interrupt any remaining file or log writes. Do you want AutoQAC to force terminate xEdit now?");
     }
 
     /// <summary>
@@ -539,7 +539,7 @@ public sealed class MainWindowViewModelTests
         _stateServiceMock.StateChanged.Returns(stateSubject);
         _stateServiceMock.CurrentState.Returns(new AppState { IsCleaning = true });
 
-        _orchestratorMock.StopCleaningAsync().Returns(Task.CompletedTask);
+        _orchestratorMock.StopCleaningAsync().Returns(new StopCleaningResult(TerminationResult.GracePeriodExpired, true));
         _orchestratorMock.LastTerminationResult.Returns(TerminationResult.GracePeriodExpired);
         _messageDialogMock.ShowConfirmAsync(
             Arg.Any<string>(), Arg.Any<string>()).Returns(false);
@@ -560,9 +560,43 @@ public sealed class MainWindowViewModelTests
 
         // Assert
         await _orchestratorMock.DidNotReceive().ForceStopCleaningAsync();
+        _orchestratorMock.Received(1).MarkLeftRunningByUser();
         await _messageDialogMock.Received(1).ShowConfirmAsync(
-            "Force Terminate?",
-            "xEdit did not exit gracefully. Force terminate the process?");
+            "Force Terminate xEdit?",
+            "xEdit did not exit after the stop request. Force terminating can interrupt any remaining file or log writes. Do you want AutoQAC to force terminate xEdit now?");
+        await _messageDialogMock.Received(1).ShowWarningAsync(
+            "Cleaning Stopped",
+            "AutoQAC stopped the cleaning session. xEdit was left running by your choice; close it manually when it is safe.",
+            null);
+    }
+
+    [Fact]
+    public async Task StopCleaningCommand_ForceKillFailed_ShouldShowErrorCopy()
+    {
+        var stateSubject = new BehaviorSubject<AppState>(new AppState { IsCleaning = true });
+        _stateServiceMock.StateChanged.Returns(stateSubject);
+        _stateServiceMock.CurrentState.Returns(new AppState { IsCleaning = true });
+        _orchestratorMock.StopCleaningAsync().Returns(new StopCleaningResult(TerminationResult.GracePeriodExpired, true));
+        _orchestratorMock.ForceStopCleaningAsync().Returns(new StopCleaningResult(TerminationResult.ForceKillFailed, true));
+        _messageDialogMock.ShowConfirmAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+
+        var vm = new MainWindowViewModel(
+            _configServiceMock,
+            _stateServiceMock,
+            _orchestratorMock,
+            _loggerMock,
+            _fileDialogMock,
+            _messageDialogMock,
+            _pluginServiceMock,
+            _pluginLoadingServiceMock,
+            _uiDispatcher);
+
+        await vm.Commands.StopCleaningCommand.ExecuteAsync(null);
+
+        await _messageDialogMock.Received(1).ShowErrorAsync(
+            "Could Not Force Terminate xEdit",
+            "AutoQAC could not force terminate xEdit. xEdit may still be running; close it manually or check the log for details before starting another cleaning session.",
+            null);
     }
 
     #endregion

@@ -44,12 +44,17 @@ public interface ICleaningOrchestrator
     /// Graceful stop: cancels the CTS, attempts graceful process termination.
     /// If called a second time during the grace period, escalates to immediate force kill.
     /// </summary>
-    Task StopCleaningAsync();
+    Task<StopCleaningResult> StopCleaningAsync();
 
     /// <summary>
     /// Immediate force kill of the process tree. No grace period, no prompt.
     /// </summary>
-    Task ForceStopCleaningAsync();
+    Task<StopCleaningResult> ForceStopCleaningAsync();
+
+    /// <summary>
+    /// Marks that the user intentionally left xEdit running after declining force termination.
+    /// </summary>
+    StopCleaningResult MarkLeftRunningByUser();
 
     /// <summary>
     /// Result of the last termination attempt. When GracePeriodExpired, the ViewModel

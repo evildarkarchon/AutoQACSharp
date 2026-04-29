@@ -408,7 +408,7 @@ public sealed class CleaningOrchestrator(
                 var finalStatus = result.Status;
 
                 // Guard: only read logs if process was not killed/cancelled (per D-04)
-                if (!_isStopRequested && result.Status != CleaningStatus.Skipped)
+                if (!MayProcessStillBeRunning(_lastTerminationResult) && !_isStopRequested && result.Status != CleaningStatus.Skipped)
                 {
                     var logResult = await logFileService.ReadLogContentAsync(
                         xEditDir, gameType, mainLogOffset, exceptionLogOffset, cts.Token).ConfigureAwait(false);
@@ -443,7 +443,7 @@ public sealed class CleaningOrchestrator(
                             plugin.FileName, logResult.ExceptionContent);
                     }
                 }
-                else if (_isStopRequested)
+                else if (_isStopRequested || MayProcessStillBeRunning(_lastTerminationResult))
                 {
                     logParseWarning = "xEdit was terminated -- no log available";
                 }
@@ -587,14 +587,13 @@ public sealed class CleaningOrchestrator(
         }
     }
 
-    public async Task StopCleaningAsync()
+    public async Task<StopCleaningResult> StopCleaningAsync()
     {
         if (_isStopRequested)
         {
             // Path B: Second click during grace period -- immediate force kill, no prompt
             logger.Information("[Termination] Second stop requested -- escalating to force kill");
-            await ForceStopCleaningAsync().ConfigureAwait(false);
-            return;
+            return await ForceStopCleaningAsync().ConfigureAwait(false);
         }
 
         _isStopRequested = true;
@@ -619,7 +618,7 @@ public sealed class CleaningOrchestrator(
         {
             logger.Debug("[Termination] CTS already disposed -- cleaning likely already finished");
             stateService.SetTerminating(false);
-            return;
+            return new StopCleaningResult(null, MayStillBeRunning: false);
         }
 
         // Attempt graceful termination on the current process
@@ -636,13 +635,14 @@ public sealed class CleaningOrchestrator(
                 if (proc.Id == Environment.ProcessId)
                 {
                     logger.Error(null, "[Termination] Refusing to terminate the AutoQAC process during stop request");
-                    return;
+                    return new StopCleaningResult(null, MayStillBeRunning: false);
                 }
 
                 if (!proc.HasExited)
                 {
                     var result = await processService.TerminateProcessAsync(proc, forceKill: false, ct: CancellationToken.None)
                         .ConfigureAwait(false);
+                    _lastTerminationResult = result;
 
                     if (result == TerminationResult.GracePeriodExpired)
                     {
@@ -650,16 +650,22 @@ public sealed class CleaningOrchestrator(
                         // Store result so the ViewModel can react and prompt the user.
                         _lastTerminationResult = result;
                     }
+
+                    return ToStopCleaningResult(result);
                 }
             }
             catch (InvalidOperationException)
             {
                 logger.Debug("[Termination] Process already exited during graceful stop");
+                _lastTerminationResult = TerminationResult.AlreadyExited;
+                return ToStopCleaningResult(TerminationResult.AlreadyExited);
             }
         }
+
+        return new StopCleaningResult(_lastTerminationResult, MayProcessStillBeRunning(_lastTerminationResult));
     }
 
-    public async Task ForceStopCleaningAsync()
+    public async Task<StopCleaningResult> ForceStopCleaningAsync()
     {
         logger.Information("[Termination] Force stop requested -- killing process tree immediately");
 
@@ -678,9 +684,9 @@ public sealed class CleaningOrchestrator(
             }
         }
         catch (ObjectDisposedException)
-        {
-            // Already disposed -- fine
-        }
+            {
+                // Already disposed -- fine
+            }
 
         // Force kill the process tree
         System.Diagnostics.Process? proc;
@@ -696,21 +702,43 @@ public sealed class CleaningOrchestrator(
                 if (proc.Id == Environment.ProcessId)
                 {
                     logger.Error(null, "[Termination] Refusing to terminate the AutoQAC process during force stop request");
-                    return;
+                    return new StopCleaningResult(null, MayStillBeRunning: false);
                 }
 
                 if (!proc.HasExited)
                 {
-                    await processService.TerminateProcessAsync(proc, forceKill: true, ct: CancellationToken.None)
+                    var result = await processService.TerminateProcessAsync(proc, forceKill: true, ct: CancellationToken.None)
                         .ConfigureAwait(false);
+                    _lastTerminationResult = result;
+                    return ToStopCleaningResult(result);
                 }
+
+                _lastTerminationResult = TerminationResult.AlreadyExited;
+                return ToStopCleaningResult(TerminationResult.AlreadyExited);
             }
             catch (InvalidOperationException)
             {
                 logger.Debug("[Termination] Process already exited during force stop");
+                _lastTerminationResult = TerminationResult.AlreadyExited;
+                return ToStopCleaningResult(TerminationResult.AlreadyExited);
             }
         }
+
+        return new StopCleaningResult(_lastTerminationResult, MayProcessStillBeRunning(_lastTerminationResult));
     }
+
+    public StopCleaningResult MarkLeftRunningByUser()
+    {
+        _lastTerminationResult = TerminationResult.LeftRunningByUser;
+        logger.Information("[Termination] User left xEdit running after declining force termination");
+        return ToStopCleaningResult(TerminationResult.LeftRunningByUser);
+    }
+
+    private static StopCleaningResult ToStopCleaningResult(TerminationResult? result) =>
+        new(result, MayProcessStillBeRunning(result));
+
+    private static bool MayProcessStillBeRunning(TerminationResult? result) =>
+        result is TerminationResult.GracePeriodExpired or TerminationResult.LeftRunningByUser or TerminationResult.ForceKillFailed;
 
     public async Task<List<DryRunResult>> RunDryRunAsync(CancellationToken ct = default)
     {

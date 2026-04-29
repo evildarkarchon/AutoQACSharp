@@ -87,7 +87,7 @@ public sealed class ProgressViewModelTests
     public async Task StopCommand_ShouldCallOrchestratorStop()
     {
         // Arrange
-        _orchestratorMock.StopCleaningAsync().Returns(Task.CompletedTask);
+        _orchestratorMock.StopCleaningAsync().Returns(new StopCleaningResult(null, false));
         var vm = CreateViewModel();
         // Activate IsCleaning so the StopCommand CanExecute is true.
         _stateSubject.OnNext(new AppState { IsCleaning = true });
