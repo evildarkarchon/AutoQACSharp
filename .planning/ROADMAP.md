@@ -57,7 +57,7 @@ Plans:
 **Plans**: 3 plans
 Plans:
 **Wave 1**
-- [ ] 06-01-PLAN.md — Build direct xEdit and MO2 `ArgumentList` command contracts with difficult-character regression tests.
+- [x] 06-01-PLAN.md — Build direct xEdit and MO2 `ArgumentList` command contracts with difficult-character regression tests.
 - [ ] 06-02-PLAN.md — Preserve `ArgumentList` through the real process-start boundary using the existing helper process.
 
 **Wave 2 (blocked on Wave 1 completion)**

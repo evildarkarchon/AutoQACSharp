@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Cleanup
 status: executing
-stopped_at: Phase 6 context gathered
-last_updated: "2026-04-29T03:41:30.458Z"
-last_activity: 2026-04-29 -- Phase 06 planning complete
+stopped_at: Completed 06-01-PLAN.md
+last_updated: "2026-04-29T04:51:13.412Z"
+last_activity: 2026-04-29
 progress:
   total_phases: 7
   completed_phases: 1
   total_plans: 7
-  completed_plans: 4
-  percent: 57
+  completed_plans: 5
+  percent: 71
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-28)
 
 **Core value:** Accurate, automated xEdit Quick Auto Clean with reliable result reporting.
-**Current focus:** v1.0 Cleanup roadmap created; next phase is Phase 5: Process Stop & PID Safety.
+**Current focus:** Phase 06 — command-launch-escaping
 
 ## Current Position
 
-Phase: 6 — Command Launch Escaping
-Plan: 0/3 complete
+Phase: 06 (command-launch-escaping) — EXECUTING
+Plan: 2 of 3
 Status: Ready to execute
-Last activity: 2026-04-29 -- Phase 06 planning complete
+Last activity: 2026-04-29
 
-Progress: [██████░░░░] 57%
+Progress: [███████░░░] 71%
 
 ## Performance Metrics
 
@@ -50,6 +50,7 @@ Progress: [██████░░░░] 57%
 | 3 | 2 | ~8min | ~4min |
 | 4 | 2 | ~10min | ~5min |
 | 5 | 4 | full-session | n/a |
+| Phase 06 P01 | 23 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -62,6 +63,8 @@ Progress: [██████░░░░] 57%
 - Phase 5 keeps PID storage JSON-backed but moves access behind injected, locked store/path/session abstractions.
 - User Stop is distinct from timeout: user cancellation returns a confirmation outcome while timeout may auto-escalate.
 - Duplicate AutoQAC startup is guarded by the per-user `Local\AutoQAC` mutex before background startup work begins.
+- [Phase 06]: Direct xEdit launch now uses split parsed argv tokens for -autoload and exact plugin filenames in Phase 06 Plan 01. — Plan 06-01 locked the parsed argv contract for direct xEdit while documenting the xEdit compatibility assumption.
+- [Phase 06]: MO2 launches keep one nested -a payload while the outer MO2 process argv uses ArgumentList in Phase 06 Plan 01. — MO2 owns a second parser boundary, so only the nested payload uses the CRT-style formatter.
 
 ### Pending Todos
 
@@ -80,6 +83,6 @@ Progress: [██████░░░░] 57%
 
 ## Session Continuity
 
-Last session: 2026-04-29T03:26:06.873Z
-Stopped at: Phase 6 context gathered
-Resume file: .planning/phases/06-command-launch-escaping/06-CONTEXT.md
+Last session: 2026-04-29T04:51:13.406Z
+Stopped at: Completed 06-01-PLAN.md
+Resume file: None

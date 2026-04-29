@@ -11,7 +11,7 @@ Requirements for the cleanup milestone. Each maps to roadmap phases.
 
 - [x] **SAF-01**: User can stop cleaning without AutoQAC force-killing xEdit before the confirmation path is shown.
 - [x] **SAF-02**: User can see an accurate failure outcome when force-killing xEdit fails.
-- [ ] **SAF-03**: User can clean plugins whose paths or names contain quotes, Unicode, spaces, or shell-sensitive characters.
+- [x] **SAF-03**: User can clean plugins whose paths or names contain quotes, Unicode, spaces, or shell-sensitive characters.
 - [ ] **SAF-04**: User can restore backups with clear failure reporting when directories are missing, permissions fail, or a session partially restores.
 
 ### Refactoring
@@ -24,7 +24,7 @@ Requirements for the cleanup milestone. Each maps to roadmap phases.
 ### Tests
 
 - [x] **TEST-01**: Maintainer can verify real child-process timeout, graceful stop, force kill, and PID cleanup behavior through controlled integration tests.
-- [ ] **TEST-02**: Maintainer can verify xEdit and MO2 command argument escaping across quotes, Unicode, shell-sensitive characters, and nested arguments.
+- [x] **TEST-02**: Maintainer can verify xEdit and MO2 command argument escaping across quotes, Unicode, shell-sensitive characters, and nested arguments.
 - [ ] **TEST-03**: Maintainer can verify configuration watcher race cases deterministically.
 - [ ] **TEST-04**: Maintainer can verify backup restore safety across missing target directories, permission failures, partial failures, and cleanup deletion failures.
 
@@ -76,14 +76,14 @@ Which phases cover which requirements. Updated during roadmap creation.
 |-------------|-------|--------|
 | SAF-01 | Phase 5 | Complete |
 | SAF-02 | Phase 5 | Complete |
-| SAF-03 | Phase 6 | Pending |
+| SAF-03 | Phase 6 | Complete |
 | SAF-04 | Phase 7 | Pending |
 | REF-01 | Phase 8 | Pending |
 | REF-02 | Phase 9 | Pending |
 | REF-03 | Phase 10 | Pending |
 | REF-04 | Phase 5 | Complete |
 | TEST-01 | Phase 5 | Complete |
-| TEST-02 | Phase 6 | Pending |
+| TEST-02 | Phase 6 | Complete |
 | TEST-03 | Phase 10 | Pending |
 | TEST-04 | Phase 7 | Pending |
 | SEC-01 | Phase 11 | Pending |
