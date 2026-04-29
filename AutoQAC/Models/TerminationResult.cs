@@ -16,5 +16,11 @@ public enum TerminationResult
     GracePeriodExpired,
 
     /// <summary>Process tree was force-killed via Process.Kill(entireProcessTree: true).</summary>
-    ForceKilled
+    ForceKilled,
+
+    /// <summary>Force-kill was requested but Kill or post-kill wait failed, so the process may still be running.</summary>
+    ForceKillFailed,
+
+    /// <summary>User declined force termination after the graceful stop path left the process running.</summary>
+    LeftRunningByUser
 }

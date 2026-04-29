@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Reflection;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Models.Configuration;
@@ -33,6 +32,8 @@ namespace AutoQAC.Tests.Services;
 public sealed class ProcessExecutionServiceTests : IDisposable
 {
     private readonly ILoggingService _mockLogger;
+    private readonly InMemoryPidStore _pidStore;
+    private readonly IProcessSessionIdProvider _sessionProvider;
 
     private static async Task WaitForCancellationAndThrowAsync(CancellationToken ct)
     {
@@ -53,6 +54,9 @@ public sealed class ProcessExecutionServiceTests : IDisposable
     public ProcessExecutionServiceTests()
     {
         _mockLogger = Substitute.For<ILoggingService>();
+        _pidStore = new InMemoryPidStore();
+        _sessionProvider = Substitute.For<IProcessSessionIdProvider>();
+        _sessionProvider.CurrentSessionId.Returns("current-session");
     }
 
     public void Dispose()
@@ -73,7 +77,7 @@ public sealed class ProcessExecutionServiceTests : IDisposable
     public async Task ExecuteAsync_WhenProcessNotFound_ShouldReturnFailedResult()
     {
         // Arrange
-        using var service = new ProcessExecutionService(_mockLogger);
+        using var service = CreateService();
 
         var startInfo = new ProcessStartInfo
         {
@@ -107,7 +111,7 @@ public sealed class ProcessExecutionServiceTests : IDisposable
     public async Task Dispose_ShouldPreventFurtherExecution()
     {
         // Arrange
-        var service = new ProcessExecutionService(_mockLogger);
+        var service = CreateService();
 
         // Act
         service.Dispose();
@@ -132,30 +136,23 @@ public sealed class ProcessExecutionServiceTests : IDisposable
     public async Task CleanOrphanedProcessesAsync_ShouldNotLeakProcessHandlesAcrossRepeatedRuns()
     {
         // Arrange
-        using var service = new ProcessExecutionService(_mockLogger);
-        var getPidFilePathMethod = typeof(ProcessExecutionService)
-            .GetMethod("GetPidFilePath", BindingFlags.Instance | BindingFlags.NonPublic);
-        getPidFilePathMethod.Should().NotBeNull();
-
-        var pidFilePath = (string)getPidFilePathMethod.Invoke(service, null)!;
+        using var service = CreateService();
         var currentProcess = Process.GetCurrentProcess();
         var startHandles = currentProcess.HandleCount;
 
         // Act
         for (var i = 0; i < 25; i++)
         {
-            var tracked = new List<TrackedProcess>
-            {
-                new()
+            await _pidStore.UpdateAsync(_ =>
+            [
+                new TrackedProcess
                 {
                     Pid = currentProcess.Id,
                     StartTime = currentProcess.StartTime,
-                    PluginName = $"Test{i}.esp"
+                    PluginName = $"Test{i}.esp",
+                    SessionId = "prior-session"
                 }
-            };
-
-            var json = System.Text.Json.JsonSerializer.Serialize(tracked);
-            await File.WriteAllTextAsync(pidFilePath, json);
+            ]);
             await service.CleanOrphanedProcessesAsync();
         }
 
@@ -167,6 +164,65 @@ public sealed class ProcessExecutionServiceTests : IDisposable
     }
 
     #endregion
+
+    [Fact]
+    public async Task TrackProcessAsync_ShouldWriteThroughPidStoreWithCurrentSessionId()
+    {
+        using var service = CreateService();
+        using var current = Process.GetCurrentProcess();
+
+        await service.TrackProcessAsync(current, "Tracked.esp");
+
+        var tracked = await _pidStore.LoadAsync();
+        tracked.Should().ContainSingle(p =>
+            p.Pid == current.Id &&
+            p.PluginName == "Tracked.esp" &&
+            p.SessionId == "current-session");
+    }
+
+    [Fact]
+    public async Task UntrackProcessAsync_ShouldRemoveOnlyMatchingPidThroughPidStore()
+    {
+        using var service = CreateService();
+        await _pidStore.UpdateAsync(_ =>
+        [
+            new TrackedProcess { Pid = 1 },
+            new TrackedProcess { Pid = 2 }
+        ]);
+
+        await service.UntrackProcessAsync(1);
+
+        var tracked = await _pidStore.LoadAsync();
+        tracked.Should().ContainSingle(p => p.Pid == 2);
+    }
+
+    [Fact]
+    public async Task CleanOrphanedProcessesAsync_ShouldPreserveLiveCurrentSessionEntries()
+    {
+        using var service = CreateService();
+        using var current = Process.GetCurrentProcess();
+        await _pidStore.UpdateAsync(_ =>
+        [
+            new TrackedProcess
+            {
+                Pid = current.Id,
+                StartTime = current.StartTime,
+                PluginName = "Current.esp",
+                SessionId = "current-session"
+            },
+            new TrackedProcess
+            {
+                Pid = int.MaxValue,
+                PluginName = "Missing.esp",
+                SessionId = "current-session"
+            }
+        ]);
+
+        await service.CleanOrphanedProcessesAsync();
+
+        var tracked = await _pidStore.LoadAsync();
+        tracked.Should().ContainSingle(p => p.Pid == current.Id && p.SessionId == "current-session");
+    }
 
     #region Orchestrator-Level Termination Tests (via IProcessExecutionService substitute)
 
@@ -267,6 +323,24 @@ public sealed class ProcessExecutionServiceTests : IDisposable
             hangDetectionMock);
 
         return (orchestrator, processServiceMock);
+    }
+
+    private ProcessExecutionService CreateService() => new(_mockLogger, _pidStore, _sessionProvider);
+
+    private sealed class InMemoryPidStore : IPidStore
+    {
+        private IReadOnlyList<TrackedProcess> _entries = [];
+
+        public Task<IReadOnlyList<TrackedProcess>> LoadAsync(CancellationToken ct = default) =>
+            Task.FromResult(_entries);
+
+        public Task UpdateAsync(
+            Func<IReadOnlyList<TrackedProcess>, IReadOnlyList<TrackedProcess>> update,
+            CancellationToken ct = default)
+        {
+            _entries = update(_entries);
+            return Task.CompletedTask;
+        }
     }
 
     /// <summary>

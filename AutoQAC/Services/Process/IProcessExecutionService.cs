@@ -47,4 +47,7 @@ public sealed record ProcessResult
 {
     public int ExitCode { get; init; }
     public bool TimedOut { get; init; }
+
+    /// <summary>Gets the termination outcome when execution ended through timeout or cancellation handling.</summary>
+    public TerminationResult? TerminationResult { get; init; }
 }

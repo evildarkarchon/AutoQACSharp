@@ -2,9 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
-using System.IO;
 using System.Linq;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
@@ -12,7 +10,10 @@ using AutoQAC.Models;
 
 namespace AutoQAC.Services.Process;
 
-public sealed class ProcessExecutionService(ILoggingService logger)
+public sealed class ProcessExecutionService(
+    ILoggingService logger,
+    IPidStore pidStore,
+    IProcessSessionIdProvider sessionIdProvider)
     : IProcessExecutionService, IDisposable
 {
     private readonly SemaphoreSlim _processSlots = new(1, 1);
@@ -23,8 +24,12 @@ public sealed class ProcessExecutionService(ILoggingService logger)
     private static readonly string[] XEditProcessNames =
         ["sseedit", "fo4edit", "fo3edit", "fnvedit", "tes5vredit", "xedit", "fo76edit", "tes4edit"];
 
-    private const string PidFileName = "autoqac-pids.json";
     private const int GracePeriodMs = 2500;
+    private enum ProcessStopReason
+    {
+        Timeout,
+        UserRequestedStop
+    }
 
     // Hardcoded to 1: xEdit enforces single-instance via file locking
 
@@ -93,7 +98,8 @@ public sealed class ProcessExecutionService(ILoggingService logger)
                 : null;
             var linkedToken = linkedCts?.Token ?? ct;
 
-            bool timedOut = false;
+            var timedOut = false;
+            TerminationResult? terminationResult = null;
             try
             {
                 // Use WaitForExitAsync instead of TCS+Exited event (known .NET bug with Kill(true))
@@ -102,6 +108,9 @@ public sealed class ProcessExecutionService(ILoggingService logger)
             catch (OperationCanceledException)
             {
                 timedOut = timeoutCts?.IsCancellationRequested ?? false;
+                var stopReason = timeoutCts?.IsCancellationRequested == true
+                    ? ProcessStopReason.Timeout
+                    : ProcessStopReason.UserRequestedStop;
 
                 logger.Warning(timedOut
                     ? "Process execution timed out."
@@ -110,11 +119,12 @@ public sealed class ProcessExecutionService(ILoggingService logger)
                 // Attempt graceful termination first
                 var result = await TerminateProcessAsync(process, forceKill: false, CancellationToken.None)
                     .ConfigureAwait(false);
+                terminationResult = result;
 
-                if (result == TerminationResult.GracePeriodExpired)
+                if (stopReason == ProcessStopReason.Timeout && result == TerminationResult.GracePeriodExpired)
                 {
-                    // Grace period expired -- force kill
-                    await TerminateProcessAsync(process, forceKill: true, CancellationToken.None)
+                    // Timeout is an automated safety boundary, so it may escalate without a user prompt.
+                    terminationResult = await TerminateProcessAsync(process, forceKill: true, CancellationToken.None)
                         .ConfigureAwait(false);
                 }
             }
@@ -123,7 +133,10 @@ public sealed class ProcessExecutionService(ILoggingService logger)
                 // Untrack PID after process exits (or is killed)
                 try
                 {
-                    await UntrackProcessAsync(processId, CancellationToken.None).ConfigureAwait(false);
+                    if (!ShouldPreservePidEvidence(terminationResult))
+                    {
+                        await UntrackProcessAsync(processId, CancellationToken.None).ConfigureAwait(false);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -134,7 +147,8 @@ public sealed class ProcessExecutionService(ILoggingService logger)
             return new ProcessResult
             {
                 ExitCode = timedOut ? -1 : (process.HasExited ? process.ExitCode : -1),
-                TimedOut = timedOut
+                TimedOut = timedOut,
+                TerminationResult = terminationResult
             };
         }
         finally
@@ -180,7 +194,22 @@ public sealed class ProcessExecutionService(ILoggingService logger)
             catch (Win32Exception ex)
             {
                 logger.Error(ex, "[Termination] Failed to kill process tree (PID: {Pid})", process.Id);
-                return TerminationResult.ForceKilled; // Best effort -- it may have partially worked
+                return TerminationResult.ForceKillFailed;
+            }
+            catch (NotSupportedException ex)
+            {
+                logger.Error(ex, "[Termination] Force kill is not supported for process tree (PID: {Pid})", process.Id);
+                return TerminationResult.ForceKillFailed;
+            }
+            catch (AggregateException ex)
+            {
+                logger.Error(ex, "[Termination] Force kill failed while waiting for process tree exit (PID: {Pid})", process.Id);
+                return TerminationResult.ForceKillFailed;
+            }
+            catch (OperationCanceledException ex)
+            {
+                logger.Error(ex, "[Termination] Force kill wait was canceled for process tree (PID: {Pid})", process.Id);
+                return TerminationResult.ForceKillFailed;
             }
         }
 
@@ -226,9 +255,6 @@ public sealed class ProcessExecutionService(ILoggingService logger)
 
     public async Task TrackProcessAsync(System.Diagnostics.Process process, string pluginName, CancellationToken ct = default)
     {
-        var pidFilePath = GetPidFilePath();
-        var tracked = await LoadTrackedProcessesAsync(pidFilePath, ct).ConfigureAwait(false);
-
         DateTime startTime;
         try
         {
@@ -239,53 +265,46 @@ public sealed class ProcessExecutionService(ILoggingService logger)
             startTime = DateTime.Now;
         }
 
-        tracked.Add(new TrackedProcess
+        await pidStore.UpdateAsync(existing => existing.Append(new TrackedProcess
         {
             Pid = process.Id,
             StartTime = startTime,
-            PluginName = pluginName
-        });
-
-        await SaveTrackedProcessesAsync(pidFilePath, tracked, ct).ConfigureAwait(false);
+            PluginName = pluginName,
+            SessionId = sessionIdProvider.CurrentSessionId
+        }).ToList(), ct).ConfigureAwait(false);
         logger.Debug("[Orphan] Tracking process PID {Pid} for plugin {Plugin}", process.Id, pluginName);
     }
 
     public async Task UntrackProcessAsync(int pid, CancellationToken ct = default)
     {
-        var pidFilePath = GetPidFilePath();
-
-        if (!File.Exists(pidFilePath))
-            return;
-
-        var tracked = await LoadTrackedProcessesAsync(pidFilePath, ct).ConfigureAwait(false);
-        var updated = tracked.Where(t => t.Pid != pid).ToList();
-
-        if (updated.Count == tracked.Count)
-            return; // PID was not in the list
-
-        await SaveTrackedProcessesAsync(pidFilePath, updated, ct).ConfigureAwait(false);
+        await pidStore.UpdateAsync(tracked => tracked.Where(t => t.Pid != pid).ToList(), ct)
+            .ConfigureAwait(false);
         logger.Debug("[Orphan] Untracked process PID {Pid}", pid);
     }
 
     public async Task CleanOrphanedProcessesAsync(CancellationToken ct = default)
     {
-        var pidFilePath = GetPidFilePath();
-
-        if (!File.Exists(pidFilePath))
-            return;
-
-        var tracked = await LoadTrackedProcessesAsync(pidFilePath, ct).ConfigureAwait(false);
+        var tracked = await pidStore.LoadAsync(ct).ConfigureAwait(false);
 
         if (tracked.Count == 0)
             return;
 
         logger.Information("[Orphan] Checking {Count} tracked processes for orphans", tracked.Count);
 
+        var retained = new List<TrackedProcess>();
+
         foreach (var entry in tracked)
         {
+            var isCurrentSession = string.Equals(entry.SessionId, sessionIdProvider.CurrentSessionId, StringComparison.Ordinal);
             try
             {
                 using var process = System.Diagnostics.Process.GetProcessById(entry.Pid);
+
+                if (isCurrentSession)
+                {
+                    retained.Add(entry);
+                    continue;
+                }
 
                 if (IsXEditProcess(process, entry.StartTime))
                 {
@@ -320,10 +339,12 @@ public sealed class ProcessExecutionService(ILoggingService logger)
             }
         }
 
-        // Clear the PID file after processing all entries
-        await SaveTrackedProcessesAsync(pidFilePath, new List<TrackedProcess>(), ct).ConfigureAwait(false);
-        logger.Information("[Orphan] Cleared stale PID file entries: {Count}", tracked.Count);
+        await pidStore.UpdateAsync(_ => retained, ct).ConfigureAwait(false);
+        logger.Information("[Orphan] Cleared stale PID file entries: {Count}", tracked.Count - retained.Count);
     }
+
+    private static bool ShouldPreservePidEvidence(TerminationResult? result) =>
+        result is TerminationResult.GracePeriodExpired or TerminationResult.ForceKillFailed or TerminationResult.LeftRunningByUser;
 
     /// <summary>
     /// Verify a process is actually xEdit, not a recycled PID.
@@ -349,59 +370,6 @@ public sealed class ProcessExecutionService(ILoggingService logger)
             // Access denied or process already exited
             return false;
         }
-    }
-
-    private string GetPidFilePath()
-    {
-        // Use the same directory resolution as ConfigurationService
-        var baseDir = AppContext.BaseDirectory;
-
-#if DEBUG
-        var current = new DirectoryInfo(baseDir);
-        for (int i = 0; i < 6 && current != null; i++)
-        {
-            var candidate = Path.Combine(current.FullName, "AutoQAC Data");
-            if (Directory.Exists(candidate))
-            {
-                return Path.Combine(candidate, PidFileName);
-            }
-            current = current.Parent;
-        }
-#endif
-
-        var configDir = Path.Combine(baseDir, "AutoQAC Data");
-        if (!Directory.Exists(configDir))
-        {
-            Directory.CreateDirectory(configDir);
-        }
-
-        return Path.Combine(configDir, PidFileName);
-    }
-
-    private static async Task<List<TrackedProcess>> LoadTrackedProcessesAsync(string path, CancellationToken ct)
-    {
-        if (!File.Exists(path))
-            return new List<TrackedProcess>();
-
-        try
-        {
-            var json = await File.ReadAllTextAsync(path, ct).ConfigureAwait(false);
-            if (string.IsNullOrWhiteSpace(json))
-                return new List<TrackedProcess>();
-
-            return JsonSerializer.Deserialize<List<TrackedProcess>>(json) ?? new List<TrackedProcess>();
-        }
-        catch
-        {
-            // Corrupted file -- start fresh
-            return new List<TrackedProcess>();
-        }
-    }
-
-    private static async Task SaveTrackedProcessesAsync(string path, List<TrackedProcess> tracked, CancellationToken ct)
-    {
-        var json = JsonSerializer.Serialize(tracked, new JsonSerializerOptions { WriteIndented = true });
-        await File.WriteAllTextAsync(path, json, ct).ConfigureAwait(false);
     }
 
     #endregion
