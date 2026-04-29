@@ -1440,6 +1440,182 @@ public sealed class CleaningOrchestratorTests
     }
 
     /// <summary>
+    /// Verifies that canceling a backup copy skips only that plugin and does not launch xEdit for it.
+    /// </summary>
+    [Fact]
+    public async Task BackupCancellation_DoesNotLaunchXEdit_ForCanceledPlugin()
+    {
+        // Arrange
+        var plugins = new List<PluginInfo>
+        {
+            new() { FileName = "Canceled.esp", FullPath = @"C:\Games\Data\Canceled.esp" },
+            new() { FileName = "Next.esp", FullPath = @"C:\Games\Data\Next.esp" }
+        };
+
+        _stateServiceMock.CurrentState.Returns(new AppState
+        {
+            LoadOrderPath = "plugins.txt",
+            XEditExecutablePath = "xedit.exe",
+            CurrentGameType = GameType.SkyrimSe,
+            PluginsToClean = plugins
+        });
+        _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>()).Returns(true);
+        _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>())
+            .Returns(new UserConfiguration { Backup = new BackupSettings { Enabled = true, MaxSessions = 3 } });
+        _backupServiceMock.GetBackupRoot(Arg.Any<string>()).Returns(@"C:\Games\AutoQAC Backups");
+        _backupServiceMock.CreateSessionDirectory(Arg.Any<string>()).Returns(@"C:\Games\AutoQAC Backups\session");
+        _backupServiceMock.BackupPluginAsync(
+                Arg.Is<PluginInfo>(p => p.FileName == "Canceled.esp"),
+                Arg.Any<string>(),
+                Arg.Any<IProgress<BackupCopyProgress>?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new BackupCreateResult(BackupOperationStatus.Canceled, "Canceled.esp", 10, 100, BackupFailureReason.Canceled));
+        _backupServiceMock.BackupPluginAsync(
+                Arg.Is<PluginInfo>(p => p.FileName == "Next.esp"),
+                Arg.Any<string>(),
+                Arg.Any<IProgress<BackupCopyProgress>?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new BackupCreateResult(BackupOperationStatus.Complete, "Next.esp", 100, 100, null));
+        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<CancellationToken>(), Arg.Any<Action<Process>?>())
+            .Returns(new CleaningResult { Status = CleaningStatus.Cleaned, Success = true });
+        _backupServiceMock.CleanupOldSessionsAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<IProgress<BackupCopyProgress>?>(), Arg.Any<CancellationToken>())
+            .Returns(new BackupRetentionCleanupResult(BackupOperationStatus.Complete, Array.Empty<BackupRetentionRowResult>()));
+
+        // Act
+        await _orchestrator.StartCleaningAsync();
+
+        // Assert
+        await _cleaningServiceMock.DidNotReceive().CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Canceled.esp"), Arg.Any<CancellationToken>(), Arg.Any<Action<Process>?>());
+        await _cleaningServiceMock.Received(1).CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Next.esp"), Arg.Any<CancellationToken>(), Arg.Any<Action<Process>?>());
+        _stateServiceMock.Received(1).AddDetailedCleaningResult(Arg.Is<PluginCleaningResult>(r =>
+            r.PluginName == "Canceled.esp" &&
+            r.Status == CleaningStatus.Skipped &&
+            r.Message == "Backup canceled"));
+    }
+
+    /// <summary>
+    /// Verifies that canceling file work during xEdit execution does not call stop or force-kill paths.
+    /// </summary>
+    [Fact]
+    public async Task CancelBackupOperation_DuringXEdit_DoesNotStopOrKillXEdit()
+    {
+        // Arrange
+        var plugin = new PluginInfo { FileName = "Running.esp", FullPath = "Path/Running.esp" };
+        _stateServiceMock.CurrentState.Returns(new AppState
+        {
+            LoadOrderPath = "plugins.txt",
+            XEditExecutablePath = "xedit.exe",
+            CurrentGameType = GameType.SkyrimSe,
+            PluginsToClean = new List<PluginInfo> { plugin }
+        });
+        _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>()).Returns(true);
+
+        var processStarted = CreateSignal();
+        var releasePlugin = CreateSignal();
+        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<CancellationToken>(), Arg.Any<Action<Process>?>())
+            .Returns(async callInfo =>
+            {
+                callInfo.ArgAt<Action<Process>?>(2)?.Invoke(Process.GetCurrentProcess());
+                processStarted.TrySetResult(true);
+                await releasePlugin.Task;
+                return new CleaningResult { Status = CleaningStatus.Cleaned, Success = true };
+            });
+
+        // Act
+        var cleaningTask = _orchestrator.StartCleaningAsync();
+        await WaitForSignalAsync(processStarted);
+        await _orchestrator.CancelBackupOperationAsync();
+        releasePlugin.SetResult(true);
+        await cleaningTask;
+
+        // Assert
+        await _processServiceMock.DidNotReceive().TerminateProcessAsync(Arg.Any<Process>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// Verifies that non-canceled backup failures still use the callback rather than silently skipping xEdit.
+    /// </summary>
+    [Fact]
+    public async Task BackupFailure_StillUsesBackupFailureCallback_ForNonCanceledFailures()
+    {
+        // Arrange
+        var plugin = new PluginInfo { FileName = "Failure.esp", FullPath = @"C:\Games\Data\Failure.esp" };
+        _stateServiceMock.CurrentState.Returns(new AppState
+        {
+            LoadOrderPath = "plugins.txt",
+            XEditExecutablePath = "xedit.exe",
+            CurrentGameType = GameType.SkyrimSe,
+            PluginsToClean = new List<PluginInfo> { plugin }
+        });
+        _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>()).Returns(true);
+        _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>())
+            .Returns(new UserConfiguration { Backup = new BackupSettings { Enabled = true, MaxSessions = 3 } });
+        _backupServiceMock.GetBackupRoot(Arg.Any<string>()).Returns(@"C:\Games\AutoQAC Backups");
+        _backupServiceMock.CreateSessionDirectory(Arg.Any<string>()).Returns(@"C:\Games\AutoQAC Backups\session");
+        _backupServiceMock.BackupPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<string>(), Arg.Any<IProgress<BackupCopyProgress>?>(), Arg.Any<CancellationToken>())
+            .Returns(new BackupCreateResult(BackupOperationStatus.Failed, "Failure.esp", 0, 100, BackupFailureReason.AccessDenied));
+
+        var callbackErrors = new List<string>();
+        BackupFailureCallback callback = (_, error) =>
+        {
+            callbackErrors.Add(error);
+            return Task.FromResult(BackupFailureChoice.ContinueWithoutBackup);
+        };
+        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<CancellationToken>(), Arg.Any<Action<Process>?>())
+            .Returns(new CleaningResult { Status = CleaningStatus.Cleaned, Success = true });
+
+        // Act
+        await _orchestrator.StartCleaningAsync(null, callback);
+
+        // Assert
+        callbackErrors.Should().ContainSingle().Which.Should().Be("Access denied");
+        await _cleaningServiceMock.Received(1).CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Failure.esp"), Arg.Any<CancellationToken>(), Arg.Any<Action<Process>?>());
+    }
+
+    /// <summary>
+    /// Verifies that MO2 mode preserves the existing virtual-filesystem backup skip behavior.
+    /// </summary>
+    [Fact]
+    public async Task Mo2Mode_DoesNotCallBackupPluginAsync()
+    {
+        // Arrange
+        var tempMo2 = Path.GetTempFileName();
+        try
+        {
+            var plugin = new PluginInfo { FileName = "Mo2.esp", FullPath = "Path/Mo2.esp" };
+            _stateServiceMock.CurrentState.Returns(new AppState
+            {
+                LoadOrderPath = "plugins.txt",
+                XEditExecutablePath = "xedit.exe",
+                Mo2ExecutablePath = tempMo2,
+                CurrentGameType = GameType.SkyrimSe,
+                Mo2ModeEnabled = true,
+                PluginsToClean = new List<PluginInfo> { plugin }
+            });
+            _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>()).Returns(true);
+            _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>())
+                .Returns(new UserConfiguration
+                {
+                    ModOrganizer = new ModOrganizerConfig { Binary = tempMo2 },
+                    Backup = new BackupSettings { Enabled = true, MaxSessions = 3 },
+                    Settings = new AutoQacSettings { Mo2Mode = true }
+                });
+            _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<CancellationToken>(), Arg.Any<Action<Process>?>())
+                .Returns(new CleaningResult { Status = CleaningStatus.Cleaned, Success = true });
+
+            // Act
+            await _orchestrator.StartCleaningAsync();
+
+            // Assert
+            await _backupServiceMock.DidNotReceive().BackupPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<string>(), Arg.Any<IProgress<BackupCopyProgress>?>(), Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            File.Delete(tempMo2);
+        }
+    }
+
+    /// <summary>
     /// Verifies that MO2 mode with empty MO2 executable path throws with actionable guidance.
     /// </summary>
     [Fact]
