@@ -2,11 +2,11 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Cleanup
-status: planning
-last_updated: "2026-04-29T00:24:29.272Z"
-last_activity: 2026-04-29
+status: roadmap_created
+last_updated: "2026-04-28T00:00:00.000Z"
+last_activity: 2026-04-28
 progress:
-  total_phases: 0
+  total_phases: 7
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -17,17 +17,19 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-31)
+See: .planning/PROJECT.md (updated 2026-04-28)
 
 **Core value:** Accurate, automated xEdit Quick Auto Clean with reliable result reporting.
-**Current focus:** Planning next milestone
+**Current focus:** v1.0 Cleanup roadmap created; next phase is Phase 5: Process Stop & PID Safety.
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-04-29 — Milestone v1.0 started
+Phase: 5 — Process Stop & PID Safety
+Plan: TBD
+Status: Roadmap created; ready for phase planning
+Last activity: 2026-04-28 — Created v1.0 Cleanup roadmap covering 18/18 requirements.
+
+Progress: [--------------------] 0% (0/7 phases complete)
 
 ## Performance Metrics
 
@@ -50,15 +52,19 @@ Last activity: 2026-04-29 — Milestone v1.0 started
 
 ### Decisions
 
-All milestone decisions archived in PROJECT.md Key Decisions table.
+- v1.0 Cleanup continues numbering after shipped Phases 1-4, starting at Phase 5.
+- Cleanup scope is driven by `.planning/codebase/CONCERNS.md`, favoring risk-reducing refactors and tests over broad rewrites.
+- Sequential xEdit cleaning remains a hard constraint; performance work may improve surrounding backup, refresh, and analysis flows but must not parallelize xEdit launches.
+- `Mutagen/` remains read-only.
 
 ### Pending Todos
 
-None.
+- Plan Phase 5: Process Stop & PID Safety.
 
 ### Blockers/Concerns
 
-- Verify MO2 wrapping works correctly without stdout redirect (manual smoke test recommended)
+- Termination coordination is fragile across `ProcessExecutionService`, `CleaningOrchestrator`, and `CleaningCommandsViewModel`; Phase 5 should start with tests around the state machine.
+- Config watcher and debounced save behavior remains race-prone until Phase 10 hardening.
 
 ### Quick Tasks Completed
 
@@ -68,6 +74,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-31
-Stopped at: Milestone v1.0 complete
+Last session: 2026-04-28
+Stopped at: v1.0 Cleanup roadmap created
 Resume file: None

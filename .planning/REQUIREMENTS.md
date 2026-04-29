@@ -74,12 +74,30 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
+| SAF-01 | Phase 5 | Pending |
+| SAF-02 | Phase 5 | Pending |
+| SAF-03 | Phase 6 | Pending |
+| SAF-04 | Phase 7 | Pending |
+| REF-01 | Phase 8 | Pending |
+| REF-02 | Phase 9 | Pending |
+| REF-03 | Phase 10 | Pending |
+| REF-04 | Phase 5 | Pending |
+| TEST-01 | Phase 5 | Pending |
+| TEST-02 | Phase 6 | Pending |
+| TEST-03 | Phase 10 | Pending |
+| TEST-04 | Phase 7 | Pending |
+| SEC-01 | Phase 11 | Pending |
+| SEC-02 | Phase 11 | Pending |
+| PERF-01 | Phase 9 | Pending |
+| PERF-02 | Phase 9 | Pending |
+| PERF-03 | Phase 10 | Pending |
+| PERF-04 | Phase 7 | Pending |
 
 **Coverage:**
 - v1.0 Cleanup requirements: 18 total
-- Mapped to phases: 0
-- Unmapped: 18
+- Mapped to phases: 18
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-04-28*
-*Last updated: 2026-04-28 after initial definition*
+*Last updated: 2026-04-28 after roadmap creation*
