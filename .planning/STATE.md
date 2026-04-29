@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Cleanup
 status: executing
-stopped_at: Completed 07-11-PLAN.md
-last_updated: "2026-04-29T11:17:56.467Z"
+stopped_at: Completed 07-13-PLAN.md
+last_updated: "2026-04-29T11:32:12.388Z"
 last_activity: 2026-04-29
 progress:
   total_phases: 7
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 22
-  completed_plans: 21
-  percent: 95
+  completed_plans: 22
+  percent: 100
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-04-28)
 ## Current Position
 
 Phase: 07 (backup-restore-retention-safety) — EXECUTING
-Plan: 3 of 14
+Plan: 4 of 14
 Status: Ready to execute
 Last activity: 2026-04-29
 
-Progress: [██████████] 95%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -66,6 +66,7 @@ Progress: [██████████] 95%
 | Phase 07 P11 | 8 min | 3 tasks | 5 files |
 | Phase 07 P12 | 3 min | 2 tasks | 2 files |
 | Phase 07 P14 | 4 min | 3 tasks | 5 files |
+| Phase 07 P13 | 7 min | 3 tasks tasks | 6 files files |
 
 ## Accumulated Context
 
@@ -123,6 +124,9 @@ Progress: [██████████] 95%
 - [Phase ?]: [Phase 07]: BackupPathContainment.IsContained is the single shared owner of string-level containment policy for backup/restore/delete safety boundaries — Plan 07-14 collapsed the duplicated normalize+trailing-separator+StartsWith pattern flagged HIGH-priority by the cross-AI review.
 - [Phase ?]: [Phase 07]: BackupPathContainment helper is internal with explicit InternalsVisibleTo(AutoQAC.Tests) instead of public — both consumers live in the AutoQAC assembly so internal visibility is sufficient and keeps the policy off the public API surface.
 - [Phase ?]: [Phase 07]: Plan 07-13 will consume BackupPathContainment.IsContained from RestoreViewModel.DeleteSessionAsync rather than reintroducing duplicate containment logic in the ViewModel layer — Plan 07-14 made the helper available as the single source of truth before Plan 07-13 lands.
+- [Phase ?]: [Phase 07]: RestoreWindow Delete Session containment + recursive deletion live in IBackupService.DeleteSessionAsync, not in the ViewModel — ViewModel filesystem I/O moved out per CLAUDE.md MVVM. — Plan 07-13 closes Truth #20 and resolves the cross-AI reviewer consensus that an injectable service seam must own the recursive delete.
+- [Phase ?]: [Phase 07]: DeleteSessionCommand.CanExecute is gated on _backupRoot non-null/non-whitespace AND HasTrustedRestoreRoot AND !IsRestoreActive, with explicit DeleteSessionCommand.NotifyCanExecuteChanged() after _backupRoot transitions. — Plan 07-13 unifies Delete Session safety with Plan 07-11 Restore Selected/All gating; private fields gating predicates require manual notification because the source generator only re-evaluates on observable property changes.
+- [Phase ?]: [Phase 07]: One canonical sentence ('The selected backup session is outside the configured backup folder.') is shared between StatusText and dialog details for the out-of-root branch; generic 'Technical details were written to the log.' covers IO failures so exception text never reaches the user. — Plan 07-13 keeps D-04's concise reason pattern intact and prevents the reviewer-flagged status/dialog text divergence.
 
 ### Pending Todos
 
@@ -141,6 +145,6 @@ Progress: [██████████] 95%
 
 ## Session Continuity
 
-Last session: 2026-04-29T11:17:56.462Z
-Stopped at: Completed 07-11-PLAN.md
+Last session: 2026-04-29T11:32:12.382Z
+Stopped at: Completed 07-13-PLAN.md
 Resume file: None
