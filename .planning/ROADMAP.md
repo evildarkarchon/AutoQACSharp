@@ -54,7 +54,7 @@ Plans:
   1. User can clean a plugin whose path or file name contains embedded quotes, Unicode, spaces, or shell-sensitive characters.
   2. User can run MO2 mode with nested xEdit arguments without argument splitting or target-plugin corruption.
   3. Maintainer can verify direct xEdit and MO2 command escaping across difficult path, plugin-name, and nested-argument cases.
-**Plans**: 3 plans
+**Plans**: 4 plans
 Plans:
 **Wave 1**
 - [x] 06-01-PLAN.md — Build direct xEdit and MO2 `ArgumentList` command contracts with difficult-character regression tests.
@@ -62,6 +62,9 @@ Plans:
 
 **Wave 2 (blocked on Wave 1 completion)**
 - [x] 06-03-PLAN.md — Integrate safe command-build failure messaging and final phase verification.
+
+**Wave 3 (gap closure; blocked on Wave 2 completion)**
+- [ ] 06-04-PLAN.md — Close MO2 missing-path fallback and unexpected exception disclosure verification gaps.
 
 Cross-cutting constraints:
 - Difficult-character coverage spans quotes/parser cases, Unicode, spaces, shell-sensitive punctuation, and one combined worst-case input.
@@ -133,7 +136,7 @@ Cross-cutting constraints:
 | 3. Integration -- Log-First Parsing | v1.0 xEdit Log Parsing Fix | 2/2 | Complete | 2026-03-31 |
 | 4. Cleanup -- Remove Dead Code | v1.0 xEdit Log Parsing Fix | 2/2 | Complete | 2026-03-31 |
 | 5. Process Stop & PID Safety | v1.0 Cleanup | 0/0 | Not started | - |
-| 6. Command Launch Escaping | v1.0 Cleanup | 2/3 | In Progress | - |
+| 6. Command Launch Escaping | v1.0 Cleanup | 3/4 | In Progress | - |
 | 7. Backup Restore & Retention Safety | v1.0 Cleanup | 0/0 | Not started | - |
 | 8. Cleaning Orchestrator Decomposition | v1.0 Cleanup | 0/0 | Not started | - |
 | 9. Plugin Refresh & Approximation Performance | v1.0 Cleanup | 0/0 | Not started | - |
