@@ -510,6 +510,38 @@ public sealed class BackupServiceTests : IDisposable
         copier.CallCount.Should().Be(0, "unsafe target metadata must be rejected before copying");
     }
 
+    /// <summary>
+    /// Verifies restore maps copier access-denied failures to the approved concise row label.
+    /// </summary>
+    [Fact]
+    public async Task RestorePluginAsync_AccessDeniedCopyFailure_ReturnsAccessDenied()
+    {
+        // Arrange
+        var sessionDir = Path.Combine(_testRoot, "restore_access_denied_session");
+        Directory.CreateDirectory(sessionDir);
+        var backupPath = Path.Combine(sessionDir, "Denied.esp");
+        File.WriteAllText(backupPath, "backup content");
+        var targetPath = Path.Combine(_testRoot, "restore_access_denied_target", "Denied.esp");
+        var copier = new CapturingBackupFileCopier(BackupCopyResult.Failed(
+            backupPath,
+            targetPath,
+            BackupFailureReason.AccessDenied));
+        var sut = new BackupService(copier, _mockLogger);
+        var entry = new BackupPluginEntry
+        {
+            FileName = "Denied.esp",
+            OriginalPath = targetPath,
+            FileSizeBytes = 14
+        };
+
+        // Act
+        var result = await sut.RestorePluginAsync(entry, sessionDir);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Failed);
+        result.Rows.Single().DisplayReason.Should().Be("Access denied");
+    }
+
     #endregion
 
     #region CleanupOldSessions

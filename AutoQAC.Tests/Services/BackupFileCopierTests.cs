@@ -124,6 +124,28 @@ public sealed class BackupFileCopierTests : IDisposable
         result.DisplayReason.Should().BeNull("callers map source-missing to operation-specific user text");
     }
 
+    /// <summary>
+    /// Verifies copy reports a target write failure instead of creating an unexpected destination directory.
+    /// </summary>
+    [Fact]
+    public async Task CopyAsync_DestinationDirectoryMissing_ReturnsTargetWriteFailed()
+    {
+        var sourcePath = Path.Combine(_testRoot, "source.esp");
+        var destinationPath = Path.Combine(_testRoot, "missing", "destination.esp");
+        await File.WriteAllTextAsync(sourcePath, "plugin content");
+
+        var result = await _sut.CopyAsync(
+            sourcePath,
+            destinationPath,
+            BackupCopyOptions.CreateNewBackup,
+            progress: null,
+            CancellationToken.None);
+
+        result.Status.Should().Be(BackupOperationStatus.Failed);
+        result.FailureReason.Should().Be(BackupFailureReason.TargetWriteFailed);
+        File.Exists(destinationPath).Should().BeFalse("failed target writes must not leave a destination file behind");
+    }
+
     private static async Task WritePatternFileAsync(string path, int sizeBytes)
     {
         var pattern = new byte[81920];
