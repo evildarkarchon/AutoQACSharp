@@ -1304,7 +1304,8 @@ public sealed class BackupServiceTests : IDisposable
 
         result.Status.Should().Be(BackupSessionDeleteStatus.Failed);
         // Log call must reference the exception so on-call diagnostics can correlate the failure.
-        _mockLogger.Received().Error(Arg.Is<Exception>(e => ReferenceEquals(e, ioException)), Arg.Any<string>(), Arg.Any<object?[]>());
+        // Use object[] (non-nullable) to match the ILoggingService.Error params signature exactly.
+        _mockLogger.Received().Error(Arg.Is<Exception>(e => ReferenceEquals(e, ioException)), Arg.Any<string>(), Arg.Any<object[]>());
     }
 
     #endregion

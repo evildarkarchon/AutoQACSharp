@@ -126,12 +126,17 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
         if (!HasTrustedRestoreRoot)
         {
             _backupRoot = null;
+            // _backupRoot is a private field (not [ObservableProperty]), so the DeleteSession
+            // predicate must be re-evaluated manually after assignment.
+            DeleteSessionCommand.NotifyCanExecuteChanged();
             StatusText = "No game data folder configured -- cannot locate backups";
             return;
         }
 
         var trustedRestoreRoot = _trustedRestoreRoot!;
         _backupRoot = _backupService.GetBackupRoot(trustedRestoreRoot);
+        // Re-evaluate DeleteSession predicate after _backupRoot transitions to a non-null value.
+        DeleteSessionCommand.NotifyCanExecuteChanged();
         await LoadSessions();
     }
 
@@ -283,13 +288,29 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
         StatusText = "Cancel restore requested. The partial file will be deleted and completed/failed/canceled rows will remain visible.";
     }
 
-    [RelayCommand(CanExecute = nameof(CanRestoreAll))]
+    /// <summary>
+    /// Plan 07-13: gates DeleteSessionCommand on a non-null/non-whitespace _backupRoot AND a
+    /// loaded trusted restore root, unifying Delete Session safety with Restore Selected/All
+    /// gating from Plan 07-11. _backupRoot is a private field rather than an [ObservableProperty],
+    /// so callers must invoke <see cref="System.Windows.Input.ICommand"/> NotifyCanExecuteChanged
+    /// after mutating it (see <see cref="LoadSessionsAsync"/>).
+    /// </summary>
+    private bool CanDeleteSession() =>
+        SelectedSession != null &&
+        !string.IsNullOrWhiteSpace(_backupRoot) &&
+        HasTrustedRestoreRoot &&
+        !IsRestoreActive;
+
+    [RelayCommand(CanExecute = nameof(CanDeleteSession))]
     private async Task DeleteSessionAsync()
     {
-        if (SelectedSession == null)
+        // Defense-in-depth guard: even if a caller bypasses CanExecute, a missing _backupRoot
+        // or null SelectedSession must still short-circuit before invoking the backup service.
+        if (SelectedSession == null || string.IsNullOrWhiteSpace(_backupRoot))
             return;
 
-        var timestamp = SelectedSession.Timestamp.ToString("MMM d, yyyy h:mm tt");
+        var session = SelectedSession;
+        var timestamp = session.Timestamp.ToString("MMM d, yyyy h:mm tt");
         var confirmed = await _messageDialog.ShowConfirmAsync(
             "Delete Backup Session",
             $"Permanently delete backup session from {timestamp}?\n\n" +
@@ -298,27 +319,43 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
         if (!confirmed)
             return;
 
-        try
-        {
-            var dirToDelete = SelectedSession.SessionDirectory;
-            if (System.IO.Directory.Exists(dirToDelete))
-            {
-                System.IO.Directory.Delete(dirToDelete, recursive: true);
-            }
+        // Plan 07-13: filesystem work runs in IBackupService.DeleteSessionAsync (per CLAUDE.md
+        // "All business logic lives in services, not ViewModels"). The service validates
+        // session-directory containment via BackupPathContainment.IsContained (Plan 07-14)
+        // and routes the recursive delete through IBackupSessionDeleter (Plan 07-02).
+        var result = await _backupService.DeleteSessionAsync(session, _backupRoot!, CancellationToken.None);
 
-            Sessions.Remove(SelectedSession);
-            SelectedSession = null;
-            OnPropertyChanged(nameof(HasSessions));
-            StatusText = "Session deleted";
-            _logger.Information("Deleted backup session: {Timestamp}", timestamp);
-        }
-        catch (Exception ex)
+        switch (result.Status)
         {
-            _logger.Error(ex, "Failed to delete backup session");
-            await _messageDialog.ShowErrorAsync(
-                "Delete Failed",
-                "Failed to delete the backup session.",
-                ex.Message);
+            case BackupSessionDeleteStatus.Deleted:
+                Sessions.Remove(session);
+                SelectedSession = null;
+                OnPropertyChanged(nameof(HasSessions));
+                StatusText = "Session deleted";
+                _logger.Information("Deleted backup session: {Timestamp}", timestamp);
+                break;
+
+            case BackupSessionDeleteStatus.RejectedOutsideBackupRoot:
+                // One canonical user-facing sentence is shared between StatusText and dialog
+                // details so the safety message stays consistent across the restore-window
+                // surface (LOW finding from cross-AI review).
+                StatusText = "The selected backup session is outside the configured backup folder.";
+                await _messageDialog.ShowErrorAsync(
+                    "Delete Failed",
+                    "Failed to delete the backup session.",
+                    "The selected backup session is outside the configured backup folder.");
+                break;
+
+            case BackupSessionDeleteStatus.Failed:
+            default:
+                // Generic IO failure copy: the technical exception detail lives in the
+                // service log, not in the dialog (D-04 concise reason pattern).
+                StatusText = "Failed to delete the backup session. Technical details were written to the log.";
+                await _messageDialog.ShowErrorAsync(
+                    "Delete Failed",
+                    "Failed to delete the backup session.",
+                    "Technical details were written to the log.");
+                break;
         }
     }
 

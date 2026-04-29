@@ -86,6 +86,21 @@ public interface IBackupService
         CancellationToken ct = default);
 
     /// <summary>
+    /// Recursively deletes a backup session directory after validating it is contained under the
+    /// configured backup root. Filesystem work runs through the injected <c>IBackupSessionDeleter</c>;
+    /// containment validation uses the shared <c>BackupPathContainment.IsContained</c> helper.
+    /// Never throws on expected validation/IO failures — callers consume the structured result.
+    /// </summary>
+    /// <param name="session">Selected backup session whose directory should be removed.</param>
+    /// <param name="backupRoot">Configured backup root directory the session must reside under.</param>
+    /// <param name="ct">Cancellation token observed before deletion begins.</param>
+    /// <returns>Structured delete outcome describing whether the session was deleted, rejected, or failed.</returns>
+    Task<BackupSessionDeleteResult> DeleteSessionAsync(
+        BackupSession session,
+        string backupRoot,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// Resolves backup root path from game Data folder path.
     /// Returns the sibling "AutoQAC Backups" directory next to the Data folder.
     /// </summary>

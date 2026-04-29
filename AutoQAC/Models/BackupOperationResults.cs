@@ -256,3 +256,29 @@ public sealed record BackupRetentionCleanupResult(BackupOperationStatus Status, 
     /// <summary>Number of backup session directories still present after cleanup.</summary>
     public int RemainingCount => Rows.Count(row => row.Status is BackupRetentionRowStatus.Kept or BackupRetentionRowStatus.Failed);
 }
+
+/// <summary>
+/// Row-level outcome for deleting one backup session directory from RestoreWindow.
+/// Distinct from <see cref="BackupRetentionRowResult"/> because Delete Session is a manual user action,
+/// not part of automated retention cleanup.
+/// </summary>
+public enum BackupSessionDeleteStatus
+{
+    /// <summary>The session directory was deleted successfully.</summary>
+    Deleted,
+
+    /// <summary>The session directory was outside the configured backup root and was not deleted.</summary>
+    RejectedOutsideBackupRoot,
+
+    /// <summary>The recursive delete operation failed (locked file, missing directory, permission, etc.).</summary>
+    Failed
+}
+
+/// <summary>
+/// Structured result from a manual RestoreWindow "Delete Session" action.
+/// </summary>
+/// <param name="Status">Aggregate delete status.</param>
+/// <param name="SessionDirectory">The session directory considered for deletion (preserved for logging).</param>
+public sealed record BackupSessionDeleteResult(
+    BackupSessionDeleteStatus Status,
+    string SessionDirectory);

@@ -416,6 +416,57 @@ public sealed class BackupService : IBackupService
         }
     }
 
+    /// <inheritdoc />
+    public async Task<BackupSessionDeleteResult> DeleteSessionAsync(
+        BackupSession session,
+        string backupRoot,
+        CancellationToken ct = default)
+    {
+        // Fail closed without leaking path detail to callers when inputs are missing.
+        // The dialog/status text in RestoreViewModel uses the canonical out-of-root sentence
+        // for both this branch and the IsContained-rejection branch below.
+        if (string.IsNullOrWhiteSpace(backupRoot) || string.IsNullOrWhiteSpace(session.SessionDirectory))
+        {
+            return new BackupSessionDeleteResult(
+                BackupSessionDeleteStatus.RejectedOutsideBackupRoot,
+                session.SessionDirectory ?? string.Empty);
+        }
+
+        // Delegate to the shared containment helper (Plan 07-14) so backup, restore, and delete
+        // safety boundaries all use the same string-level normalization+trailing-separator policy.
+        if (!BackupPathContainment.IsContained(session.SessionDirectory, backupRoot))
+        {
+            _logger.Warning(
+                "Rejected backup session delete outside backup root. BackupRoot={BackupRoot}; SessionDirectory={SessionDirectory}",
+                backupRoot,
+                session.SessionDirectory);
+            return new BackupSessionDeleteResult(
+                BackupSessionDeleteStatus.RejectedOutsideBackupRoot,
+                session.SessionDirectory);
+        }
+
+        try
+        {
+            await _sessionDeleter.DeleteAsync(session.SessionDirectory, ct).ConfigureAwait(false);
+            _logger.Information("Deleted backup session: {SessionDirectory}", session.SessionDirectory);
+            return new BackupSessionDeleteResult(BackupSessionDeleteStatus.Deleted, session.SessionDirectory);
+        }
+        catch (OperationCanceledException)
+        {
+            // Cancellation is the caller's contract -- propagate so the UI cancellation surface
+            // can distinguish "user canceled" from "deletion failed".
+            throw;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or DirectoryNotFoundException)
+        {
+            // Expected filesystem failures (locked files, permission denied, missing directory)
+            // map to a structured Failed result; the user-facing copy stays generic and the
+            // technical detail lives in the log.
+            _logger.Error(ex, "Failed to delete backup session at {SessionDirectory}", session.SessionDirectory);
+            return new BackupSessionDeleteResult(BackupSessionDeleteStatus.Failed, session.SessionDirectory);
+        }
+    }
+
     public string GetBackupRoot(string dataFolderPath)
     {
         var parentDir = Path.GetDirectoryName(dataFolderPath);
