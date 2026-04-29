@@ -40,6 +40,11 @@ public sealed record CleaningSessionResult
     public IReadOnlyList<PluginCleaningResult> PluginResults { get; init; } = Array.Empty<PluginCleaningResult>();
 
     /// <summary>
+    /// Structured result for post-cleaning backup retention cleanup, if backup cleanup ran.
+    /// </summary>
+    public BackupRetentionCleanupResult? BackupCleanup { get; init; }
+
+    /// <summary>
     /// Gets plugins that were successfully cleaned (includes AlreadyClean).
     /// </summary>
     public IEnumerable<PluginCleaningResult> CleanedPlugins =>
@@ -112,6 +117,12 @@ public sealed record CleaningSessionResult
         {
             if (WasCancelled)
                 return $"Cancelled after {CleanedCount} of {TotalPlugins} plugins";
+
+            if (BackupCleanup?.Status == BackupOperationStatus.Canceled)
+                return $"Backup cleanup canceled: {BackupCleanup.DeletedCount} deleted, {BackupCleanup.SkippedCount} skipped, {BackupCleanup.RemainingCount} remaining";
+
+            if (BackupCleanup?.Status == BackupOperationStatus.Warning)
+                return $"Backup cleanup warning: {BackupCleanup.DeletedCount} deleted, {BackupCleanup.SkippedCount} skipped, {BackupCleanup.RemainingCount} remaining";
 
             if (FailedCount > 0)
                 return $"Completed with errors: {CleanedCount} cleaned, {FailedCount} failed, {SkippedCount} skipped";
@@ -206,6 +217,16 @@ public sealed record CleaningSessionResult
         if (WasCancelled)
         {
             sb.AppendLine("*** Session was cancelled by user ***");
+        }
+
+        if (BackupCleanup != null)
+        {
+            sb.AppendLine("--- Backup Cleanup ---");
+            sb.AppendLine($"Status: {BackupCleanup.Status}");
+            sb.AppendLine($"Deleted: {BackupCleanup.DeletedCount}");
+            sb.AppendLine($"Skipped: {BackupCleanup.SkippedCount}");
+            sb.AppendLine($"Remaining: {BackupCleanup.RemainingCount}");
+            sb.AppendLine();
         }
 
         return sb.ToString();

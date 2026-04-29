@@ -36,8 +36,10 @@ public sealed class CleaningOrchestrator(
     private readonly Subject<bool> _hangDetected = new();
     private readonly object _ctsLock = new();
     private readonly object _processLock = new();
+    private readonly object _backupOperationLock = new();
 
     private CancellationTokenSource? _cleaningCts;
+    private CancellationTokenSource? _backupOperationCts;
     private volatile bool _isStopRequested;
     private System.Diagnostics.Process? _currentProcess;
     private TerminationResult? _lastTerminationResult;
@@ -65,6 +67,7 @@ public sealed class CleaningOrchestrator(
         var gameType = GameType.Unknown;
         string? sessionDir = null;
         var backupEntries = new List<BackupPluginEntry>();
+        BackupRetentionCleanupResult? backupCleanup = null;
 
         // Reset stop flags at the start of each cleaning session
         _isStopRequested = false;
@@ -278,12 +281,35 @@ public sealed class CleaningOrchestrator(
                 // Backup this plugin before xEdit processes it
                 if (sessionDir != null)
                 {
-                    var backupResult = backupService.BackupPlugin(plugin, sessionDir);
-                    if (!backupResult.Success)
+                    var backupResult = await BackupPluginAsync(plugin, sessionDir, cts.Token).ConfigureAwait(false);
+                    if (backupResult.Status == BackupOperationStatus.Canceled)
+                    {
+                        logger.Information("Backup canceled for {Plugin}; skipping xEdit launch for this plugin", plugin.FileName);
+                        var skippedResult = new PluginCleaningResult
+                        {
+                            PluginName = plugin.FileName,
+                            Status = CleaningStatus.Skipped,
+                            Success = false,
+                            Message = "Backup canceled"
+                        };
+                        pluginResults.Add(skippedResult);
+                        stateService.AddDetailedCleaningResult(skippedResult);
+
+                        if (cts.Token.IsCancellationRequested)
+                        {
+                            wasCancelled = true;
+                            break;
+                        }
+
+                        continue;
+                    }
+
+                    if (backupResult.Status != BackupOperationStatus.Complete)
                     {
                         if (onBackupFailure != null)
                         {
-                            var choice = await onBackupFailure(plugin.FileName, backupResult.Error!).ConfigureAwait(false);
+                            var choice = await onBackupFailure(plugin.FileName, GetBackupFailureReasonText(backupResult))
+                                .ConfigureAwait(false);
                             switch (choice)
                             {
                                 case BackupFailureChoice.SkipPlugin:
@@ -317,8 +343,8 @@ public sealed class CleaningOrchestrator(
                         }
                         else
                         {
-                            logger.Warning("Backup failed for {Plugin}: {Error}. No callback, continuing without backup.",
-                                plugin.FileName, backupResult.Error ?? "Unknown error");
+                            logger.Warning("Backup failed for {Plugin}: {Reason}. No callback, continuing without backup.",
+                                plugin.FileName, GetBackupFailureReasonText(backupResult));
                         }
                     }
                     else
@@ -327,7 +353,7 @@ public sealed class CleaningOrchestrator(
                         {
                             FileName = plugin.FileName,
                             OriginalPath = plugin.FullPath,
-                            FileSizeBytes = backupResult.FileSizeBytes
+                            FileSizeBytes = backupResult.TotalBytes ?? backupResult.BytesCopied
                         });
                     }
                 }
@@ -486,7 +512,12 @@ public sealed class CleaningOrchestrator(
                 await backupService.WriteSessionMetadataAsync(sessionDir, backupSession, cts.Token).ConfigureAwait(false);
 
                 var backupRoot = System.IO.Path.GetDirectoryName(sessionDir)!;
-                backupService.CleanupOldSessions(backupRoot, userConfig.Backup.MaxSessions, sessionDir);
+                backupCleanup = await CleanupOldSessionsAsync(
+                        backupRoot,
+                        userConfig.Backup.MaxSessions,
+                        sessionDir,
+                        cts.Token)
+                    .ConfigureAwait(false);
                 logger.Information("Backup session complete: {Count} plugins backed up", backupEntries.Count);
             }
 
@@ -497,7 +528,8 @@ public sealed class CleaningOrchestrator(
                 EndTime = DateTime.Now,
                 GameType = gameType,
                 WasCancelled = wasCancelled,
-                PluginResults = pluginResults
+                PluginResults = pluginResults,
+                BackupCleanup = backupCleanup
             };
 
             stateService.FinishCleaningWithResults(sessionResult);
@@ -537,7 +569,8 @@ public sealed class CleaningOrchestrator(
                 EndTime = DateTime.Now,
                 GameType = gameType,
                 WasCancelled = true,
-                PluginResults = pluginResults
+                PluginResults = pluginResults,
+                BackupCleanup = backupCleanup
             };
 
             stateService.FinishCleaningWithResults(sessionResult);
@@ -554,7 +587,8 @@ public sealed class CleaningOrchestrator(
                 EndTime = DateTime.Now,
                 GameType = gameType,
                 WasCancelled = wasCancelled,
-                PluginResults = pluginResults
+                PluginResults = pluginResults,
+                BackupCleanup = backupCleanup
             };
 
             stateService.FinishCleaningWithResults(sessionResult);
@@ -584,8 +618,172 @@ public sealed class CleaningOrchestrator(
                 _cleaningCts?.Dispose();
                 _cleaningCts = null;
             }
+
+            ClearBackupOperationCts();
         }
     }
+
+    /// <inheritdoc />
+    public Task CancelBackupOperationAsync()
+    {
+        lock (_processLock)
+        {
+            if (_currentProcess is not null)
+            {
+                return Task.CompletedTask;
+            }
+        }
+
+        CancellationTokenSource? cts;
+        lock (_backupOperationLock)
+        {
+            cts = _backupOperationCts;
+        }
+
+        try
+        {
+            cts?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // The operation completed between reading the CTS and attempting cancellation.
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Runs a single-plugin backup with a file-operation CTS and publishes progress through state.
+    /// </summary>
+    private async Task<BackupCreateResult> BackupPluginAsync(
+        PluginInfo plugin,
+        string sessionDir,
+        CancellationToken sessionToken)
+    {
+        var operationCts = CreateBackupOperationCts(sessionToken);
+        var progress = new Progress<BackupCopyProgress>(copyProgress =>
+        {
+            stateService.SetBackupOperation(new BackupOperationState
+            {
+                Kind = BackupOperationKind.Backup,
+                Label = $"Backing up: {plugin.FileName}",
+                FileName = copyProgress.FileName,
+                FilesCompleted = 0,
+                TotalFiles = 1,
+                BytesCopied = copyProgress.BytesCopied,
+                TotalBytes = copyProgress.TotalBytes,
+                IsActive = true,
+                CanCancel = true
+            });
+        });
+
+        try
+        {
+            stateService.SetBackupOperation(new BackupOperationState
+            {
+                Kind = BackupOperationKind.Backup,
+                Label = $"Backing up: {plugin.FileName}",
+                FileName = plugin.FileName,
+                FilesCompleted = 0,
+                TotalFiles = 1,
+                IsActive = true,
+                CanCancel = true
+            });
+
+            return await backupService.BackupPluginAsync(plugin, sessionDir, progress, operationCts.Token)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            stateService.ClearBackupOperation();
+            ClearBackupOperationCts(operationCts);
+        }
+    }
+
+    /// <summary>
+    /// Runs retention cleanup before final session completion and publishes cleanup progress through state.
+    /// </summary>
+    private async Task<BackupRetentionCleanupResult> CleanupOldSessionsAsync(
+        string backupRoot,
+        int maxSessionCount,
+        string currentSessionDir,
+        CancellationToken sessionToken)
+    {
+        var operationCts = CreateBackupOperationCts(sessionToken);
+        var progress = new Progress<BackupCopyProgress>(copyProgress =>
+        {
+            stateService.SetBackupOperation(new BackupOperationState
+            {
+                Kind = BackupOperationKind.RetentionCleanup,
+                Label = "Cleaning up old backups",
+                FileName = copyProgress.FileName,
+                FilesCompleted = 0,
+                BytesCopied = copyProgress.BytesCopied,
+                TotalBytes = copyProgress.TotalBytes,
+                IsActive = true,
+                CanCancel = true
+            });
+        });
+
+        try
+        {
+            stateService.SetBackupOperation(new BackupOperationState
+            {
+                Kind = BackupOperationKind.RetentionCleanup,
+                Label = "Cleaning up old backups",
+                IsActive = true,
+                CanCancel = true
+            });
+
+            return await backupService.CleanupOldSessionsAsync(
+                    backupRoot,
+                    maxSessionCount,
+                    currentSessionDir,
+                    progress,
+                    operationCts.Token)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            stateService.ClearBackupOperation();
+            ClearBackupOperationCts(operationCts);
+        }
+    }
+
+    /// <summary>
+    /// Creates the current non-xEdit operation CTS linked to the overall cleaning session.
+    /// </summary>
+    private CancellationTokenSource CreateBackupOperationCts(CancellationToken sessionToken)
+    {
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(sessionToken);
+        lock (_backupOperationLock)
+        {
+            _backupOperationCts = cts;
+        }
+
+        return cts;
+    }
+
+    /// <summary>
+    /// Clears and disposes the active non-xEdit operation CTS when the owning operation exits.
+    /// </summary>
+    private void ClearBackupOperationCts(CancellationTokenSource? expected = null)
+    {
+        CancellationTokenSource? toDispose = null;
+        lock (_backupOperationLock)
+        {
+            if (expected == null || ReferenceEquals(_backupOperationCts, expected))
+            {
+                toDispose = _backupOperationCts;
+                _backupOperationCts = null;
+            }
+        }
+
+        toDispose?.Dispose();
+    }
+
+    private static string GetBackupFailureReasonText(BackupCreateResult result) =>
+        result.DisplayReason ?? result.FailureReason?.ToString() ?? "Backup failed";
 
     public async Task<StopCleaningResult> StopCleaningAsync()
     {

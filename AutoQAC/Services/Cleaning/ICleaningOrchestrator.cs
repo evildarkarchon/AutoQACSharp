@@ -52,6 +52,12 @@ public interface ICleaningOrchestrator
     Task<StopCleaningResult> ForceStopCleaningAsync();
 
     /// <summary>
+    /// Cancels the active non-xEdit backup or retention file operation, if one exists.
+    /// This does not stop or terminate an active xEdit process.
+    /// </summary>
+    Task CancelBackupOperationAsync();
+
+    /// <summary>
     /// Marks that the user intentionally left xEdit running after declining force termination.
     /// </summary>
     StopCleaningResult MarkLeftRunningByUser();
