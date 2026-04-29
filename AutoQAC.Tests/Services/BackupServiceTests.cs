@@ -454,6 +454,109 @@ public sealed class BackupServiceTests : IDisposable
         act.Should().NotThrow();
     }
 
+    [Fact]
+    public async Task CleanupOldSessionsAsync_ProtectsCurrentSession()
+    {
+        // Arrange
+        var backupRoot = Path.Combine(_testRoot, "cleanup_async_current");
+        var current = await CreateSessionDirectoryWithMetadata(backupRoot, "2026-01-01_10-00-00");
+        var newer = await CreateSessionDirectoryWithMetadata(backupRoot, "2026-01-03_10-00-00");
+        var deleter = new RecordingBackupSessionDeleter();
+        var sut = CreateBackupService(deleter);
+
+        // Act
+        var result = await sut.CleanupOldSessionsAsync(backupRoot, maxSessionCount: 0, currentSessionDir: current);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Complete);
+        deleter.DeletedDirectories.Should().NotContain(current, "the current session must never be deleted");
+        deleter.DeletedDirectories.Should().Contain(newer, "maxSessionCount 0 keeps no non-current valid sessions");
+        result.Rows.Should().Contain(row => row.SessionDirectory == current && row.Status == BackupRetentionRowStatus.Kept);
+    }
+
+    [Fact]
+    public async Task CleanupOldSessionsAsync_KeepsNewestMaxSessions()
+    {
+        // Arrange
+        var backupRoot = Path.Combine(_testRoot, "cleanup_async_newest");
+        var oldest = await CreateSessionDirectoryWithMetadata(backupRoot, "2026-01-01_10-00-00");
+        var middle = await CreateSessionDirectoryWithMetadata(backupRoot, "2026-01-02_10-00-00");
+        var newest = await CreateSessionDirectoryWithMetadata(backupRoot, "2026-01-03_10-00-00");
+        var deleter = new RecordingBackupSessionDeleter();
+        var sut = CreateBackupService(deleter);
+
+        // Act
+        var result = await sut.CleanupOldSessionsAsync(backupRoot, maxSessionCount: 2);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Complete);
+        deleter.DeletedDirectories.Should().Equal(oldest);
+        result.Rows.Should().Contain(row => row.SessionDirectory == newest && row.Status == BackupRetentionRowStatus.Kept);
+        result.Rows.Should().Contain(row => row.SessionDirectory == middle && row.Status == BackupRetentionRowStatus.Kept);
+    }
+
+    [Fact]
+    public async Task CleanupOldSessionsAsync_SkipsMalformedSessionDirectory()
+    {
+        // Arrange
+        var backupRoot = Path.Combine(_testRoot, "cleanup_async_malformed");
+        var malformed = Path.Combine(backupRoot, "not-a-session");
+        Directory.CreateDirectory(malformed);
+        var valid = await CreateSessionDirectoryWithMetadata(backupRoot, "2026-01-01_10-00-00");
+        var deleter = new RecordingBackupSessionDeleter();
+        var sut = CreateBackupService(deleter);
+
+        // Act
+        var result = await sut.CleanupOldSessionsAsync(backupRoot, maxSessionCount: 0);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Complete);
+        deleter.DeletedDirectories.Should().Contain(valid);
+        deleter.DeletedDirectories.Should().NotContain(malformed, "malformed directories are not valid cleanup candidates");
+        result.Rows.Should().Contain(row => row.SessionDirectory == malformed && row.Status == BackupRetentionRowStatus.Kept);
+    }
+
+    [Fact]
+    public async Task CleanupOldSessionsAsync_RetryDelayCancellation_ReturnsCanceled()
+    {
+        // Arrange
+        var backupRoot = Path.Combine(_testRoot, "cleanup_async_retry_cancel");
+        await CreateSessionDirectoryWithMetadata(backupRoot, "2026-01-01_10-00-00");
+        var deleter = new RecordingBackupSessionDeleter(_ => throw new IOException("locked"));
+        var sut = CreateBackupService(deleter);
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
+
+        // Act
+        var result = await sut.CleanupOldSessionsAsync(backupRoot, maxSessionCount: 0, ct: cts.Token);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Canceled);
+        deleter.Attempts.Should().Be(1, "cancellation during the retry delay should stop before retrying deletion");
+        result.RemainingCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task CleanupOldSessionsAsync_ReportsCanceled()
+    {
+        // Arrange
+        var backupRoot = Path.Combine(_testRoot, "cleanup_async_canceled");
+        await CreateSessionDirectoryWithMetadata(backupRoot, "2026-01-01_10-00-00");
+        await CreateSessionDirectoryWithMetadata(backupRoot, "2026-01-02_10-00-00");
+        var deleter = new RecordingBackupSessionDeleter();
+        var sut = CreateBackupService(deleter);
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        // Act
+        var result = await sut.CleanupOldSessionsAsync(backupRoot, maxSessionCount: 0, ct: cts.Token);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Canceled);
+        result.DeletedCount.Should().Be(0);
+        result.RemainingCount.Should().Be(2);
+        deleter.DeletedDirectories.Should().BeEmpty();
+    }
+
     #endregion
 
     #region GetBackupRoot
@@ -490,6 +593,17 @@ public sealed class BackupServiceTests : IDisposable
         await File.WriteAllTextAsync(path, json);
     }
 
+    private BackupService CreateBackupService(IBackupSessionDeleter deleter) =>
+        new(new BackupFileCopier(_mockLogger), _mockLogger, deleter);
+
+    private static async Task<string> CreateSessionDirectoryWithMetadata(string backupRoot, string directoryName)
+    {
+        var dir = Path.Combine(backupRoot, directoryName);
+        Directory.CreateDirectory(dir);
+        await WriteSessionJson(dir, new BackupSession { Timestamp = DateTime.Parse(directoryName.Replace('_', ' ')), GameType = "SSE" });
+        return dir;
+    }
+
     private sealed class CapturingBackupFileCopier(BackupCopyResult result) : IBackupFileCopier
     {
         public BackupCopyOptions? Options { get; private set; }
@@ -504,6 +618,25 @@ public sealed class BackupServiceTests : IDisposable
         {
             Options = options;
             return Task.FromResult(result);
+        }
+    }
+
+    private sealed class RecordingBackupSessionDeleter(Action<string>? onDelete = null) : IBackupSessionDeleter
+    {
+        private readonly Action<string>? _onDelete = onDelete;
+
+        public List<string> DeletedDirectories { get; } = [];
+
+        public int Attempts { get; private set; }
+
+        /// <inheritdoc />
+        public Task DeleteAsync(string sessionDirectory, CancellationToken ct)
+        {
+            Attempts++;
+            ct.ThrowIfCancellationRequested();
+            _onDelete?.Invoke(sessionDirectory);
+            DeletedDirectories.Add(sessionDirectory);
+            return Task.CompletedTask;
         }
     }
 
