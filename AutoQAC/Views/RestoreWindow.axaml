@@ -13,7 +13,7 @@
         MinWidth="550" MinHeight="350"
         WindowStartupLocation="CenterOwner">
 
-    <Grid Margin="10" RowDefinitions="*,Auto,Auto">
+    <Grid Margin="10" RowDefinitions="*,Auto,Auto,Auto">
 
         <!-- Two-panel layout -->
         <Grid Grid.Row="0" ColumnDefinitions="250,10,*">
@@ -91,8 +91,48 @@
             </Border>
         </Grid>
 
+        <!-- Inline restore progress/results area -->
+        <Border Grid.Row="1"
+                IsVisible="{Binding IsRestoreResultVisible}"
+                Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                BorderThickness="1"
+                CornerRadius="4"
+                Padding="16"
+                Margin="0,16,0,0">
+            <Grid RowDefinitions="Auto,Auto,Auto">
+                <TextBlock Grid.Row="0"
+                           Text="{Binding RestoreOutcomeTitle}"
+                           FontSize="20"
+                           FontWeight="SemiBold" />
+                <TextBlock Grid.Row="1"
+                           Text="{Binding RestoreSummaryText}"
+                           TextWrapping="Wrap"
+                           Margin="0,8,0,0" />
+                <ItemsControl Grid.Row="2"
+                              ItemsSource="{Binding RestoreResults}"
+                              Margin="0,8,0,0">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="m:BackupRestoreRowResult">
+                            <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,4,0,0">
+                                <TextBlock Grid.Column="0"
+                                           Text="{Binding Status}"
+                                           FontWeight="SemiBold"
+                                           Margin="0,0,8,0" />
+                                <TextBlock Grid.Column="1"
+                                           Text="{Binding FileName}" />
+                                <TextBlock Grid.Column="2"
+                                           Text="{Binding DisplayReason, TargetNullValue=''}"
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </Grid>
+        </Border>
+
         <!-- Button bar -->
-        <Grid Grid.Row="1"
+        <Grid Grid.Row="2"
               ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto"
               Margin="0,10,0,0">
             <Button Grid.Column="0"
@@ -123,7 +163,7 @@
         </Grid>
 
         <!-- Status bar -->
-        <Border Grid.Row="2"
+        <Border Grid.Row="3"
                 BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}"
                 BorderThickness="0,1,0,0"
                 Padding="5,5,5,0"

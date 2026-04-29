@@ -1,5 +1,7 @@
 using System;
 using System.Collections.ObjectModel;
+using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
@@ -39,6 +41,24 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
 
     [ObservableProperty]
     private string _statusText = "Select a backup session to view plugins";
+
+    [ObservableProperty]
+    private string _restoreOutcomeTitle = string.Empty;
+
+    [ObservableProperty]
+    private string _restoreSummaryText = string.Empty;
+
+    [ObservableProperty]
+    private ObservableCollection<BackupRestoreRowResult> _restoreResults = new();
+
+    [ObservableProperty]
+    private bool _isRestoreResultVisible;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(RestorePluginCommand))]
+    [NotifyCanExecuteChangedFor(nameof(RestoreAllCommand))]
+    [NotifyCanExecuteChangedFor(nameof(DeleteSessionCommand))]
+    private bool _isRestoreActive;
 
     public bool HasSessions => Sessions.Count > 0;
 
@@ -130,7 +150,7 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
         }
     }
 
-    private bool CanRestorePlugin() => SelectedPlugin != null;
+    private bool CanRestorePlugin() => SelectedPlugin != null && !IsRestoreActive;
 
     [RelayCommand(CanExecute = nameof(CanRestorePlugin))]
     private async Task RestorePluginAsync()
@@ -138,24 +158,42 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
         if (SelectedPlugin == null || SelectedSession == null)
             return;
 
+        var plugin = SelectedPlugin;
+        var session = SelectedSession;
+        var timestamp = FormatSessionTimestamp(session.Timestamp);
+        var confirmed = await _messageDialog.ShowConfirmAsync(
+            "Restore Selected",
+            $"Restore Selected: Restore {plugin.FileName} from {timestamp}? This overwrites the current plugin file with the backup copy.");
+
+        if (!confirmed)
+            return;
+
         try
         {
-            _backupService.RestorePlugin(SelectedPlugin, SelectedSession.SessionDirectory);
-            StatusText = $"Restored: {SelectedPlugin.FileName}";
-            _logger.Information("Restored plugin {Plugin} from backup", SelectedPlugin.FileName);
+            IsRestoreActive = true;
+            ClearRestoreResult();
+            StatusText = $"Restoring: {plugin.FileName}";
+
+            var result = await _backupService.RestorePluginAsync(plugin, session.SessionDirectory, progress: null, CancellationToken.None);
+            ApplyRestoreResult(result);
+            _logger.Information("Restore selected completed with status {Status} for plugin {Plugin}", result.Status, plugin.FileName);
         }
         catch (Exception ex)
         {
-            _logger.Error(ex, "Failed to restore plugin {Plugin}", SelectedPlugin.FileName);
+            _logger.Error(ex, "Failed to restore plugin {Plugin}", plugin.FileName);
             await _messageDialog.ShowErrorAsync(
                 "Restore Failed",
-                $"Failed to restore '{SelectedPlugin.FileName}'.",
-                ex.Message);
-            StatusText = $"Failed to restore: {SelectedPlugin.FileName}";
+                $"Failed to restore '{plugin.FileName}'.",
+                "Technical details were written to the log.");
+            StatusText = $"Failed to restore: {plugin.FileName}";
+        }
+        finally
+        {
+            IsRestoreActive = false;
         }
     }
 
-    private bool CanRestoreAll() => SelectedSession != null;
+    private bool CanRestoreAll() => SelectedSession != null && !IsRestoreActive;
 
     [RelayCommand(CanExecute = nameof(CanRestoreAll))]
     private async Task RestoreAllAsync()
@@ -164,22 +202,26 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
             return;
 
         var pluginCount = SelectedSession.Plugins.Count;
-        var timestamp = SelectedSession.Timestamp.ToString("MMM d, yyyy h:mm tt");
+        var session = SelectedSession;
+        var timestamp = FormatSessionTimestamp(session.Timestamp);
 
         var confirmed = await _messageDialog.ShowConfirmAsync(
-            "Restore All Plugins",
-            $"Restore all {pluginCount} plugin(s) from session {timestamp}?\n\n" +
-            "This will overwrite current files with the backed-up versions.");
+            "Restore All",
+            $"Restore All: Restore {pluginCount} plugin(s) from {timestamp}? Current plugin files will be overwritten by backup copies. AutoQAC will continue past individual failures and show a result list.");
 
         if (!confirmed)
             return;
 
         try
         {
-            _backupService.RestoreSession(SelectedSession);
-            StatusText = $"Restored all {pluginCount} plugin(s) from session";
-            _logger.Information("Restored all {Count} plugins from backup session {Timestamp}",
-                pluginCount, timestamp);
+            IsRestoreActive = true;
+            ClearRestoreResult();
+            StatusText = $"Restoring {pluginCount} plugin(s) from session";
+
+            var result = await _backupService.RestoreSessionAsync(session, progress: null, CancellationToken.None);
+            ApplyRestoreResult(result);
+            _logger.Information("Restore all completed with status {Status} for backup session {Timestamp}",
+                result.Status, timestamp);
         }
         catch (Exception ex)
         {
@@ -187,8 +229,12 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
             await _messageDialog.ShowErrorAsync(
                 "Restore Failed",
                 "Some plugins may have failed to restore.",
-                ex.Message);
+                "Technical details were written to the log.");
             StatusText = "Partial restore -- some plugins may have failed";
+        }
+        finally
+        {
+            IsRestoreActive = false;
         }
     }
 
@@ -233,6 +279,69 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
 
     [RelayCommand]
     private void Close() => CloseRequested?.Invoke(this, EventArgs.Empty);
+
+    /// <summary>
+    /// Clears the inline restore result state before a new restore operation starts.
+    /// </summary>
+    private void ClearRestoreResult()
+    {
+        RestoreOutcomeTitle = string.Empty;
+        RestoreSummaryText = string.Empty;
+        RestoreResults.Clear();
+        IsRestoreResultVisible = false;
+    }
+
+    /// <summary>
+    /// Copies a structured restore service result into bindable inline result properties without exposing raw exception details.
+    /// </summary>
+    /// <param name="result">Structured restore result returned by the backup service.</param>
+    private void ApplyRestoreResult(BackupRestoreResult result)
+    {
+        RestoreOutcomeTitle = result.Status switch
+        {
+            BackupOperationStatus.Complete => "Restore Complete",
+            BackupOperationStatus.Partial => "Restore Partial",
+            BackupOperationStatus.Failed => "Restore Failed",
+            BackupOperationStatus.Canceled => "Restore Canceled",
+            _ => "Restore Failed"
+        };
+
+        RestoreResults.Clear();
+        foreach (var row in result.Rows)
+        {
+            RestoreResults.Add(row);
+        }
+
+        RestoreSummaryText = BuildRestoreSummaryText(result);
+        StatusText = RestoreSummaryText;
+        IsRestoreResultVisible = true;
+    }
+
+    /// <summary>
+    /// Builds concise restore summary copy for the inline result panel.
+    /// </summary>
+    /// <param name="result">Structured restore result to summarize.</param>
+    /// <returns>User-facing summary text without raw file paths or exception details.</returns>
+    private static string BuildRestoreSummaryText(BackupRestoreResult result)
+    {
+        var counts = $"{result.RestoredCount} restored, {result.FailedCount} failed, {result.CanceledCount} canceled";
+
+        return result.Status switch
+        {
+            BackupOperationStatus.Complete => $"Restore completed: {result.RestoredCount} plugin(s) restored.",
+            BackupOperationStatus.Partial => $"Restore partially completed: {counts}. Review the rows below. Technical details were written to the log.",
+            BackupOperationStatus.Failed => $"Restore failed: {counts}. Review the failed rows, fix missing files or permissions, then try again. Technical details were written to the log.",
+            BackupOperationStatus.Canceled => $"Restore canceled: {counts}. Partial files were removed and completed/failed/canceled rows remain visible.",
+            _ => $"Restore completed with status {result.Status}: {counts}."
+        };
+    }
+
+    /// <summary>
+    /// Formats session timestamps for restore confirmation copy so tests and dialogs use one consistent value.
+    /// </summary>
+    /// <param name="timestamp">Backup session timestamp.</param>
+    /// <returns>Short local timestamp suitable for confirmation dialogs.</returns>
+    private static string FormatSessionTimestamp(DateTime timestamp) => timestamp.ToString("MMM d, yyyy h:mm tt");
 
     public void Dispose()
     {
