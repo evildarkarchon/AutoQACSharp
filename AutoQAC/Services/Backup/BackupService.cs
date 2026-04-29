@@ -334,55 +334,64 @@ public sealed class BackupService : IBackupService
             return new BackupRetentionCleanupResult(BackupOperationStatus.Canceled, rows);
         }
 
-        var currentSessionFullPath = GetComparableFullPath(currentSessionDir);
-        var validSessions = await ClassifyRetentionDirectoriesAsync(backupRoot, rows, ct).ConfigureAwait(false);
-        var retentionTotal = rows.Count + validSessions.Count;
-        ReportRetentionProgress(progress, backupRoot, rows.Count, retentionTotal);
-        if (ct.IsCancellationRequested)
+        try
         {
-            AddRemainingRetentionRows(validSessions, rows, currentSessionFullPath);
+            var currentSessionFullPath = GetComparableFullPath(currentSessionDir);
+            var validSessions = await ClassifyRetentionDirectoriesAsync(backupRoot, rows, ct).ConfigureAwait(false);
+            var retentionTotal = rows.Count + validSessions.Count;
+            ReportRetentionProgress(progress, backupRoot, rows.Count, retentionTotal);
+            if (ct.IsCancellationRequested)
+            {
+                AddRemainingRetentionRows(validSessions, rows, currentSessionFullPath);
+                ReportRetentionProgress(progress, backupRoot, rows.Count, rows.Count);
+                return new BackupRetentionCleanupResult(BackupOperationStatus.Canceled, rows);
+            }
+
+            var validNonCurrent = validSessions
+                .Where(session => !IsSamePath(session.Directory, currentSessionFullPath))
+                .OrderByDescending(session => session.Timestamp)
+                .ThenByDescending(session => Path.GetFileName(session.Directory), StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            var keepNonCurrent = Math.Max(0, maxSessionCount);
+            var kept = validNonCurrent.Take(keepNonCurrent).ToList();
+            foreach (var session in kept)
+            {
+                rows.Add(new BackupRetentionRowResult(session.Directory, BackupRetentionRowStatus.Kept, null));
+                ReportRetentionProgress(progress, session.Directory, rows.Count, retentionTotal);
+            }
+
+            var currentSession = validSessions.FirstOrDefault(session => IsSamePath(session.Directory, currentSessionFullPath));
+            if (currentSession is not null)
+            {
+                rows.Add(new BackupRetentionRowResult(currentSession.Directory, BackupRetentionRowStatus.Kept, null));
+                ReportRetentionProgress(progress, currentSession.Directory, rows.Count, retentionTotal);
+            }
+
+            foreach (var session in validNonCurrent.Skip(keepNonCurrent))
+            {
+                ct.ThrowIfCancellationRequested();
+                var deleteResult = await DeleteRetentionCandidateAsync(session.Directory, ct).ConfigureAwait(false);
+                rows.Add(deleteResult.Row);
+                ReportRetentionProgress(progress, session.Directory, rows.Count, retentionTotal);
+                if (deleteResult.Canceled)
+                {
+                    AddRemainingRetentionRows(validNonCurrent.Skip(keepNonCurrent).Where(candidate => candidate.Directory != session.Directory), rows, currentSessionFullPath);
+                    ReportRetentionProgress(progress, session.Directory, rows.Count, rows.Count);
+                    return new BackupRetentionCleanupResult(BackupOperationStatus.Canceled, rows);
+                }
+            }
+
+            var status = rows.Any(row => row.Status == BackupRetentionRowStatus.Failed)
+                ? BackupOperationStatus.Warning
+                : BackupOperationStatus.Complete;
+            return new BackupRetentionCleanupResult(status, rows);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            AddDirectoryRowsAsRemaining(Directory.GetDirectories(backupRoot), rows);
             ReportRetentionProgress(progress, backupRoot, rows.Count, rows.Count);
             return new BackupRetentionCleanupResult(BackupOperationStatus.Canceled, rows);
         }
-
-        var validNonCurrent = validSessions
-            .Where(session => !IsSamePath(session.Directory, currentSessionFullPath))
-            .OrderByDescending(session => session.Timestamp)
-            .ThenByDescending(session => Path.GetFileName(session.Directory), StringComparer.OrdinalIgnoreCase)
-            .ToList();
-        var keepNonCurrent = Math.Max(0, maxSessionCount);
-        var kept = validNonCurrent.Take(keepNonCurrent).ToList();
-        foreach (var session in kept)
-        {
-            rows.Add(new BackupRetentionRowResult(session.Directory, BackupRetentionRowStatus.Kept, null));
-            ReportRetentionProgress(progress, session.Directory, rows.Count, retentionTotal);
-        }
-
-        var currentSession = validSessions.FirstOrDefault(session => IsSamePath(session.Directory, currentSessionFullPath));
-        if (currentSession is not null)
-        {
-            rows.Add(new BackupRetentionRowResult(currentSession.Directory, BackupRetentionRowStatus.Kept, null));
-            ReportRetentionProgress(progress, currentSession.Directory, rows.Count, retentionTotal);
-        }
-
-        foreach (var session in validNonCurrent.Skip(keepNonCurrent))
-        {
-            ct.ThrowIfCancellationRequested();
-            var deleteResult = await DeleteRetentionCandidateAsync(session.Directory, ct).ConfigureAwait(false);
-            rows.Add(deleteResult.Row);
-            ReportRetentionProgress(progress, session.Directory, rows.Count, retentionTotal);
-            if (deleteResult.Canceled)
-            {
-                AddRemainingRetentionRows(validNonCurrent.Skip(keepNonCurrent).Where(candidate => candidate.Directory != session.Directory), rows, currentSessionFullPath);
-                ReportRetentionProgress(progress, session.Directory, rows.Count, rows.Count);
-                return new BackupRetentionCleanupResult(BackupOperationStatus.Canceled, rows);
-            }
-        }
-
-        var status = rows.Any(row => row.Status == BackupRetentionRowStatus.Failed)
-            ? BackupOperationStatus.Warning
-            : BackupOperationStatus.Complete;
-        return new BackupRetentionCleanupResult(status, rows);
     }
 
     public string GetBackupRoot(string dataFolderPath)
@@ -646,6 +655,11 @@ public sealed class BackupService : IBackupService
     {
         foreach (var directory in directories)
         {
+            if (rows.Any(row => IsSamePath(row.SessionDirectory, directory)))
+            {
+                continue;
+            }
+
             rows.Add(new BackupRetentionRowResult(directory, BackupRetentionRowStatus.Kept, BackupFailureReason.Canceled));
         }
     }
