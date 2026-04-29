@@ -79,7 +79,7 @@ Cross-cutting constraints:
   2. User can distinguish complete restore, partial restore, and cleanup-deletion failure outcomes for a session.
   3. User can cancel long backup or retention work and see visible progress without AutoQAC parallelizing xEdit launches.
   4. Maintainer can verify restore safety across missing targets, permission failures, partial failures, and cleanup deletion failures.
-**Plans**: 5 plans
+**Plans**: 7 plans
 Plans:
 **Wave 1**
 - [x] 07-01-PLAN.md — Create backup/restore/retention result contracts and cancellable copy foundation.
@@ -93,6 +93,10 @@ Plans:
 
 **Wave 4 (blocked on Wave 3 completion)**
 - [x] 07-05-PLAN.md — Complete cleaning progress UI cancel affordances and final Phase 7 verification.
+
+**Wave 5 (gap closure; blocked on Wave 4 completion)**
+- [ ] 07-06-PLAN.md — Close backup failure SkipPlugin/AbortSession session accounting and finalization gaps.
+- [ ] 07-07-PLAN.md — Close restore metadata validation, retention progress, and TEST-04 coverage gaps.
 **UI hint**: yes
 
 ### Phase 8: Cleaning Orchestrator Decomposition
