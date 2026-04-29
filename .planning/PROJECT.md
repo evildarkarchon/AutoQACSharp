@@ -62,9 +62,9 @@ Accurate, automated xEdit Quick Auto Clean with reliable result reporting.
 
 ## Context
 
-Shipped v1.0 with the xEdit log parsing fix. The app now correctly reads xEdit results from log files (`<game>Edit_log.txt`) using offset-based reading that isolates each plugin's output. All dead stdout parsing code has been removed. 680 tests passing across AutoQAC and QueryPlugins.
+Shipped v1.0 with the xEdit log parsing fix. The app now correctly reads xEdit results from log files (`<game>Edit_log.txt`) using offset-based reading that isolates each plugin's output. All dead stdout parsing code has been removed. 838 tests passing across AutoQAC and QueryPlugins after Phase 07 (779 + 59).
 
-Current cleanup scope is driven by `.planning/codebase/CONCERNS.md` from 2026-04-28, covering safety bugs, refactor debt, test gaps, security polish, and performance bottlenecks.
+Current cleanup scope is driven by `.planning/codebase/CONCERNS.md` from 2026-04-28, covering safety bugs, refactor debt, test gaps, security polish, and performance bottlenecks. Phase 07 (backup-restore-retention-safety) is complete — async cancellable backup/restore/retention APIs, structured per-file results, trusted-restore-root containment, and service-layer Delete Session are all live with row-level UI feedback.
 
 Tech stack: .NET 10, C# 13, Avalonia 11.3, ReactiveUI, Mutagen 0.53.1, Serilog, YamlDotNet.
 
@@ -87,6 +87,11 @@ Tech stack: .NET 10, C# 13, Avalonia 11.3, ReactiveUI, Mutagen 0.53.1, Serilog, 
 | GameType-based log naming (not executable stem) | Supports universal xEdit.exe with game flags; maps to xEdit wbAppName convention | ✓ Implemented in v1.0 |
 | Exponential backoff retry for file contention | Windows antivirus/indexer may briefly lock log files after xEdit exits | ✓ Implemented in v1.0 |
 | Remove dead code after log-first pipeline | Obsolete stdout parsing, timestamp detection, unused params all removed | ✓ Implemented in v1.0 |
+| Async cancellable backup/restore/retention with structured per-file results | Replace blocking sync APIs with row-level success/failure reporting; preserve sequential xEdit cleaning | ✓ Implemented in Phase 07 |
+| Trusted-restore-root containment for restore + Delete Session | Tampered metadata cannot redirect or recursively delete outside the loaded backup root | ✓ Implemented in Phase 07 (Plans 07-09, 07-11, 07-13) |
+| Shared `BackupPathContainment.IsContained` helper | Single canonical path-containment policy reused by `BackupService.IsRestoreTargetInsideTrustedRoot` and Delete Session, eliminating duplicated `Path.GetFullPath`+`StartsWith` logic | ✓ Implemented in Phase 07 (Plan 07-14) |
+| Filesystem deletion lives in IBackupService, not RestoreViewModel | Cross-AI architectural consensus + project rule "All business logic lives in services, not ViewModels" — recursive `Directory.Delete` moved into `BackupService.DeleteSessionAsync` via `IBackupSessionDeleter` | ✓ Implemented in Phase 07 (Plan 07-13) |
+| Defense-in-depth ProgressWindow close/disposal wiring | `MainWindow.ShowProgressAsync` adds `CloseRequested` + `Closed` handlers alongside the pre-existing `ProgressWindow.OnDataContextChanged`/`OnClosed` contract; both paths are idempotent | ✓ Implemented in Phase 07 (Plan 07-12) |
 
 ## Evolution
 
@@ -106,4 +111,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-28 after v1.0 Cleanup milestone start*
+*Last updated: 2026-04-29 after Phase 07 (backup-restore-retention-safety) completion*
