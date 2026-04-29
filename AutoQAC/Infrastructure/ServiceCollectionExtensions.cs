@@ -56,6 +56,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IXEditLogFileService, XEditLogFileService>();
         services.AddSingleton<ICleaningService, CleaningService>();
         services.AddSingleton<IBackupFileCopier, BackupFileCopier>();
+        services.AddSingleton<IBackupSessionDeleter, DirectoryBackupSessionDeleter>();
         services.AddSingleton<IBackupService, BackupService>();
         services.AddSingleton<IHangDetectionService, HangDetectionService>();
         services.AddSingleton<ICleaningOrchestrator, CleaningOrchestrator>();

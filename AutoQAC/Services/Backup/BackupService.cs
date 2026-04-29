@@ -21,6 +21,7 @@ public sealed class BackupService : IBackupService
     };
 
     private readonly IBackupFileCopier _fileCopier;
+    private readonly IBackupSessionDeleter _sessionDeleter;
     private readonly ILoggingService _logger;
 
     /// <summary>
@@ -28,9 +29,10 @@ public sealed class BackupService : IBackupService
     /// </summary>
     /// <param name="fileCopier">Copy service used for cancellable backup and atomic restore work.</param>
     /// <param name="logger">Logger for technical diagnostics that should not be exposed in user-facing result rows.</param>
-    public BackupService(IBackupFileCopier fileCopier, ILoggingService logger)
+    public BackupService(IBackupFileCopier fileCopier, ILoggingService logger, IBackupSessionDeleter? sessionDeleter = null)
     {
         _fileCopier = fileCopier;
+        _sessionDeleter = sessionDeleter ?? new DirectoryBackupSessionDeleter();
         _logger = logger;
     }
 
@@ -292,22 +294,67 @@ public sealed class BackupService : IBackupService
         }
     }
 
-    public Task<BackupRetentionCleanupResult> CleanupOldSessionsAsync(
+    public async Task<BackupRetentionCleanupResult> CleanupOldSessionsAsync(
         string backupRoot,
         int maxSessionCount,
         string? currentSessionDir = null,
         IProgress<BackupCopyProgress>? progress = null,
         CancellationToken ct = default)
     {
-        // Full retention warning/cancel behavior is implemented in the follow-up service plan; this contract keeps
-        // callers off UI-thread-blocking async shims while preserving today's cleanup semantics for compatibility.
-        if (ct.IsCancellationRequested)
+        var rows = new List<BackupRetentionRowResult>();
+        if (!Directory.Exists(backupRoot))
         {
-            return Task.FromResult(new BackupRetentionCleanupResult(BackupOperationStatus.Canceled, []));
+            return new BackupRetentionCleanupResult(BackupOperationStatus.Complete, rows);
         }
 
-        CleanupOldSessions(backupRoot, maxSessionCount, currentSessionDir);
-        return Task.FromResult(new BackupRetentionCleanupResult(BackupOperationStatus.Complete, []));
+        if (ct.IsCancellationRequested)
+        {
+            AddDirectoryRowsAsRemaining(Directory.GetDirectories(backupRoot), rows);
+            return new BackupRetentionCleanupResult(BackupOperationStatus.Canceled, rows);
+        }
+
+        var currentSessionFullPath = GetComparableFullPath(currentSessionDir);
+        var validSessions = await ClassifyRetentionDirectoriesAsync(backupRoot, rows, ct).ConfigureAwait(false);
+        if (ct.IsCancellationRequested)
+        {
+            AddRemainingRetentionRows(validSessions, rows, currentSessionFullPath);
+            return new BackupRetentionCleanupResult(BackupOperationStatus.Canceled, rows);
+        }
+
+        var validNonCurrent = validSessions
+            .Where(session => !IsSamePath(session.Directory, currentSessionFullPath))
+            .OrderByDescending(session => session.Timestamp)
+            .ThenByDescending(session => Path.GetFileName(session.Directory), StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var keepNonCurrent = Math.Max(0, maxSessionCount);
+        var kept = validNonCurrent.Take(keepNonCurrent).ToList();
+        foreach (var session in kept)
+        {
+            rows.Add(new BackupRetentionRowResult(session.Directory, BackupRetentionRowStatus.Kept, null));
+        }
+
+        var currentSession = validSessions.FirstOrDefault(session => IsSamePath(session.Directory, currentSessionFullPath));
+        if (currentSession is not null)
+        {
+            rows.Add(new BackupRetentionRowResult(currentSession.Directory, BackupRetentionRowStatus.Kept, null));
+        }
+
+        foreach (var session in validNonCurrent.Skip(keepNonCurrent))
+        {
+            ct.ThrowIfCancellationRequested();
+            var deleteResult = await DeleteRetentionCandidateAsync(session.Directory, ct).ConfigureAwait(false);
+            rows.Add(deleteResult.Row);
+            if (deleteResult.Canceled)
+            {
+                AddRemainingRetentionRows(validNonCurrent.Skip(keepNonCurrent).Where(candidate => candidate.Directory != session.Directory), rows, currentSessionFullPath);
+                return new BackupRetentionCleanupResult(BackupOperationStatus.Canceled, rows);
+            }
+        }
+
+        var status = rows.Any(row => row.Status == BackupRetentionRowStatus.Failed)
+            ? BackupOperationStatus.Warning
+            : BackupOperationStatus.Complete;
+        return new BackupRetentionCleanupResult(status, rows);
     }
 
     public string GetBackupRoot(string dataFolderPath)
@@ -388,4 +435,114 @@ public sealed class BackupService : IBackupService
             ? BackupOperationStatus.Partial
             : BackupOperationStatus.Failed;
     }
+
+    private async Task<IReadOnlyList<RetentionSessionCandidate>> ClassifyRetentionDirectoriesAsync(
+        string backupRoot,
+        ICollection<BackupRetentionRowResult> rows,
+        CancellationToken ct)
+    {
+        var candidates = new List<RetentionSessionCandidate>();
+        foreach (var dir in Directory.GetDirectories(backupRoot))
+        {
+            ct.ThrowIfCancellationRequested();
+            var metadataPath = Path.Combine(dir, "session.json");
+            if (!File.Exists(metadataPath))
+            {
+                _logger.Debug("Skipping malformed backup session directory without session.json: {Dir}", dir);
+                rows.Add(new BackupRetentionRowResult(dir, BackupRetentionRowStatus.Kept, null));
+                continue;
+            }
+
+            try
+            {
+                await using var stream = new FileStream(metadataPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+                var session = await JsonSerializer.DeserializeAsync<BackupSession>(stream, cancellationToken: ct).ConfigureAwait(false);
+                if (session is null)
+                {
+                    rows.Add(new BackupRetentionRowResult(dir, BackupRetentionRowStatus.Kept, null));
+                    continue;
+                }
+
+                candidates.Add(new RetentionSessionCandidate(dir, session.Timestamp));
+            }
+            catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
+            {
+                _logger.Warning("Skipping malformed backup session directory {Dir}: {Error}", dir, ex.Message);
+                rows.Add(new BackupRetentionRowResult(dir, BackupRetentionRowStatus.Kept, null));
+            }
+        }
+
+        return candidates;
+    }
+
+    private async Task<(BackupRetentionRowResult Row, bool Canceled)> DeleteRetentionCandidateAsync(string sessionDirectory, CancellationToken ct)
+    {
+        try
+        {
+            await _sessionDeleter.DeleteAsync(sessionDirectory, ct).ConfigureAwait(false);
+            _logger.Information("Deleted old backup session: {Dir}", sessionDirectory);
+            return (new BackupRetentionRowResult(sessionDirectory, BackupRetentionRowStatus.Deleted, null), Canceled: false);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.Warning("Retrying old backup session deletion after transient failure for {Dir}: {Error}", sessionDirectory, ex.Message);
+            try
+            {
+                // Windows antivirus or Explorer can briefly hold a directory handle; one short delay avoids false warnings.
+                await Task.Delay(TimeSpan.FromMilliseconds(250), ct).ConfigureAwait(false);
+                await _sessionDeleter.DeleteAsync(sessionDirectory, ct).ConfigureAwait(false);
+                _logger.Information("Deleted old backup session after retry: {Dir}", sessionDirectory);
+                return (new BackupRetentionRowResult(sessionDirectory, BackupRetentionRowStatus.Deleted, null), Canceled: false);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                _logger.Information("Backup retention cleanup canceled before retrying deletion of {Dir}", sessionDirectory);
+                return (new BackupRetentionRowResult(sessionDirectory, BackupRetentionRowStatus.Kept, BackupFailureReason.Canceled), Canceled: true);
+            }
+            catch (Exception retryEx) when (retryEx is IOException or UnauthorizedAccessException)
+            {
+                _logger.Warning("Failed to delete old backup session {Dir} after retry: {Error}", sessionDirectory, retryEx.Message);
+                return (new BackupRetentionRowResult(sessionDirectory, BackupRetentionRowStatus.Failed, BackupFailureReason.CleanupDeletionFailed), Canceled: false);
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            _logger.Information("Backup retention cleanup canceled while deleting {Dir}", sessionDirectory);
+            return (new BackupRetentionRowResult(sessionDirectory, BackupRetentionRowStatus.Kept, BackupFailureReason.Canceled), Canceled: true);
+        }
+    }
+
+    private static void AddRemainingRetentionRows(
+        IEnumerable<RetentionSessionCandidate> candidates,
+        ICollection<BackupRetentionRowResult> rows,
+        string? currentSessionFullPath)
+    {
+        foreach (var candidate in candidates)
+        {
+            if (rows.Any(row => IsSamePath(row.SessionDirectory, candidate.Directory)))
+            {
+                continue;
+            }
+
+            var reason = IsSamePath(candidate.Directory, currentSessionFullPath) ? (BackupFailureReason?)null : BackupFailureReason.Canceled;
+            rows.Add(new BackupRetentionRowResult(candidate.Directory, BackupRetentionRowStatus.Kept, reason));
+        }
+    }
+
+    private static void AddDirectoryRowsAsRemaining(IEnumerable<string> directories, ICollection<BackupRetentionRowResult> rows)
+    {
+        foreach (var directory in directories)
+        {
+            rows.Add(new BackupRetentionRowResult(directory, BackupRetentionRowStatus.Kept, BackupFailureReason.Canceled));
+        }
+    }
+
+    private static string? GetComparableFullPath(string? path) =>
+        string.IsNullOrWhiteSpace(path) ? null : Path.GetFullPath(path);
+
+    private static bool IsSamePath(string? left, string? right) =>
+        left is not null && right is not null &&
+        string.Equals(Path.GetFullPath(left), right, StringComparison.OrdinalIgnoreCase);
+
+    private sealed record RetentionSessionCandidate(string Directory, DateTime Timestamp);
 }

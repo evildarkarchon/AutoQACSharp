@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
@@ -600,7 +601,11 @@ public sealed class BackupServiceTests : IDisposable
     {
         var dir = Path.Combine(backupRoot, directoryName);
         Directory.CreateDirectory(dir);
-        await WriteSessionJson(dir, new BackupSession { Timestamp = DateTime.Parse(directoryName.Replace('_', ' ')), GameType = "SSE" });
+        await WriteSessionJson(dir, new BackupSession
+        {
+            Timestamp = DateTime.ParseExact(directoryName, "yyyy-MM-dd_HH-mm-ss", CultureInfo.InvariantCulture),
+            GameType = "SSE"
+        });
         return dir;
     }
 
