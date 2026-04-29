@@ -188,4 +188,151 @@ public sealed class RestoreViewModelTests
         await _messageDialog.DidNotReceive().ShowErrorAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>());
         await _messageDialog.DidNotReceive().ShowInfoAsync(Arg.Any<string>(), Arg.Any<string>());
     }
+
+    [Fact]
+    public async Task CancelRestoreCommand_ShouldCancelActiveRestoreToken()
+    {
+        var session = CreateSession(CreatePlugin("Large.esp", 120_000_000));
+        var restoreStarted = new TaskCompletionSource<CancellationToken>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var allowRestoreToComplete = new TaskCompletionSource<BackupRestoreResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _messageDialog.ShowConfirmAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        _backupService.RestoreSessionAsync(
+                session,
+                Arg.Any<IProgress<BackupCopyProgress>?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                restoreStarted.SetResult(callInfo.ArgAt<CancellationToken>(2));
+                return allowRestoreToComplete.Task;
+            });
+
+        var vm = CreateViewModel();
+        vm.SelectedSession = session;
+        var restoreTask = vm.RestoreAllCommand.ExecuteAsync(null);
+        var token = await restoreStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        vm.CancelRestoreCommand.Execute(null);
+
+        token.IsCancellationRequested.Should().BeTrue("Cancel Restore should cancel the active restore CTS");
+        vm.StatusText.Should().Contain("Cancel restore", "the UI should communicate cancel semantics");
+        allowRestoreToComplete.SetResult(new BackupRestoreResult(
+            BackupOperationStatus.Canceled,
+            [new BackupRestoreRowResult("Large.esp", BackupRestoreRowStatus.Canceled, BackupFailureReason.Canceled, 0, 120_000_000)]));
+        await restoreTask;
+    }
+
+    [Fact]
+    public async Task DisablesCommands_ShouldDisableRestoreAndDeleteCommandsWhileRestoreActive()
+    {
+        var plugin = CreatePlugin("Update.esm");
+        var session = CreateSession(plugin);
+        var restoreStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var allowRestoreToComplete = new TaskCompletionSource<BackupRestoreResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _messageDialog.ShowConfirmAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        _backupService.RestoreSessionAsync(
+                session,
+                Arg.Any<IProgress<BackupCopyProgress>?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                restoreStarted.SetResult();
+                return allowRestoreToComplete.Task;
+            });
+
+        var vm = CreateViewModel();
+        vm.SelectedSession = session;
+        vm.SelectedPlugin = plugin;
+        var restoreTask = vm.RestoreAllCommand.ExecuteAsync(null);
+        await restoreStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        vm.RestoreAllCommand.CanExecute(null).Should().BeFalse();
+        vm.RestorePluginCommand.CanExecute(null).Should().BeFalse();
+        vm.DeleteSessionCommand.CanExecute(null).Should().BeFalse();
+
+        allowRestoreToComplete.SetResult(new BackupRestoreResult(BackupOperationStatus.Complete, []));
+        await restoreTask;
+    }
+
+    [Fact]
+    public async Task LoadSessionsDisabledWhileRestoreActive_ShouldPreventRefreshRace()
+    {
+        var session = CreateSession(CreatePlugin("Update.esm"));
+        var restoreStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var allowRestoreToComplete = new TaskCompletionSource<BackupRestoreResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _messageDialog.ShowConfirmAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        _backupService.RestoreSessionAsync(
+                session,
+                Arg.Any<IProgress<BackupCopyProgress>?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                restoreStarted.SetResult();
+                return allowRestoreToComplete.Task;
+            });
+
+        var vm = CreateViewModel();
+        vm.SelectedSession = session;
+        var restoreTask = vm.RestoreAllCommand.ExecuteAsync(null);
+        await restoreStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        vm.LoadSessionsCommand.CanExecute(null).Should().BeFalse();
+
+        allowRestoreToComplete.SetResult(new BackupRestoreResult(BackupOperationStatus.Complete, []));
+        await restoreTask;
+    }
+
+    [Fact]
+    public async Task FormatBytes_ShouldUseDecimalMegabytesWithOneFractionalDigitInProgressText()
+    {
+        var session = CreateSession(CreatePlugin("Large.esp", 120_000_000));
+        _messageDialog.ShowConfirmAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        _backupService.RestoreSessionAsync(
+                session,
+                Arg.Any<IProgress<BackupCopyProgress>?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                var progress = callInfo.ArgAt<IProgress<BackupCopyProgress>?>(1);
+                progress?.Report(new BackupCopyProgress("Large.esp", 38_400_000, 120_000_000));
+                return Task.FromResult(new BackupRestoreResult(
+                    BackupOperationStatus.Complete,
+                    [new BackupRestoreRowResult("Large.esp", BackupRestoreRowStatus.Restored,  null, 120_000_000, 120_000_000)]));
+            });
+
+        var vm = CreateViewModel();
+        vm.SelectedSession = session;
+
+        await vm.RestoreAllCommand.ExecuteAsync(null);
+
+        vm.RestoreProgressText.Should().Be("Restoring 0 / 1 plugins — 38.4 MB / 120.0 MB");
+    }
+
+    [Fact]
+    public async Task DisposeClearsRestoreCancellationSource_ShouldCancelActiveRestoreToken()
+    {
+        var session = CreateSession(CreatePlugin("Large.esp", 120_000_000));
+        var restoreStarted = new TaskCompletionSource<CancellationToken>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var allowRestoreToComplete = new TaskCompletionSource<BackupRestoreResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _messageDialog.ShowConfirmAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        _backupService.RestoreSessionAsync(
+                session,
+                Arg.Any<IProgress<BackupCopyProgress>?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                restoreStarted.SetResult(callInfo.ArgAt<CancellationToken>(2));
+                return allowRestoreToComplete.Task;
+            });
+
+        var vm = CreateViewModel();
+        vm.SelectedSession = session;
+        var restoreTask = vm.RestoreAllCommand.ExecuteAsync(null);
+        var token = await restoreStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        vm.Dispose();
+
+        token.IsCancellationRequested.Should().BeTrue("disposing the ViewModel should clear the active restore cancellation source");
+        allowRestoreToComplete.SetResult(new BackupRestoreResult(BackupOperationStatus.Canceled, []));
+        await restoreTask;
+    }
 }
