@@ -88,7 +88,7 @@ Plans:
 - [x] 07-02-PLAN.md — Implement structured async restore and retention service outcomes.
 
 **Wave 3 (blocked on Wave 2 completion)**
-- [ ] 07-03-PLAN.md — Wire backup/retention progress and outcomes into sequential cleaning orchestration.
+- [x] 07-03-PLAN.md — Wire backup/retention progress and outcomes into sequential cleaning orchestration.
 - [ ] 07-04-PLAN.md — Add restore-window confirmations, progress, cancellation, and inline result reporting.
 
 **Wave 4 (blocked on Wave 3 completion)**
@@ -150,7 +150,7 @@ Plans:
 | 4. Cleanup -- Remove Dead Code | v1.0 xEdit Log Parsing Fix | 2/2 | Complete | 2026-03-31 |
 | 5. Process Stop & PID Safety | v1.0 Cleanup | 0/0 | Not started | - |
 | 6. Command Launch Escaping | v1.0 Cleanup | 4/4 | Complete | 2026-04-29 |
-| 7. Backup Restore & Retention Safety | v1.0 Cleanup | 0/0 | Not started | - |
+| 7. Backup Restore & Retention Safety | v1.0 Cleanup | 3/5 | In Progress | - |
 | 8. Cleaning Orchestrator Decomposition | v1.0 Cleanup | 0/0 | Not started | - |
 | 9. Plugin Refresh & Approximation Performance | v1.0 Cleanup | 0/0 | Not started | - |
 | 10. Configuration Persistence Hardening | v1.0 Cleanup | 0/0 | Not started | - |

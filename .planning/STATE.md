@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Cleanup
 status: executing
-stopped_at: Completed 07-02-PLAN.md
-last_updated: "2026-04-29T06:56:24Z"
+stopped_at: Completed 07-03-PLAN.md
+last_updated: "2026-04-29T07:11:33.531Z"
 last_activity: 2026-04-29
 progress:
   total_phases: 7
   completed_phases: 2
   total_plans: 13
-  completed_plans: 10
-  percent: 77
+  completed_plans: 11
+  percent: 85
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-04-28)
 ## Current Position
 
 Phase: 07 (backup-restore-retention-safety) — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 Status: Ready to execute
 Last activity: 2026-04-29
 
-Progress: [████████░░] 77%
+Progress: [█████████░] 85%
 
 ## Performance Metrics
 
@@ -55,6 +55,7 @@ Progress: [████████░░] 77%
 | Phase 06 P04 | 16 min | 2 tasks | 4 files |
 | Phase 07 P01 | 6 min | 2 tasks | 9 files |
 | Phase 07 P02 | 8 min | 2 tasks | 5 files |
+| Phase 07 P03 | 11 min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -81,6 +82,9 @@ Progress: [████████░░] 77%
 - [Phase 07]: Keep legacy synchronous restore and cleanup APIs on direct synchronous filesystem paths while async callers use structured outcomes. — Avoids sync-over-async deadlock risk until Plan 07-03/07-04 migrate known callers.
 - [Phase 07]: Retention cleanup deletes only directories with readable backup session metadata and reports malformed directories as kept. — Prevents unrelated backup-root directories from being removed.
 - [Phase 07]: Current session protection is applied before retention counting, so maxSessionCount controls non-current sessions only. — Preserves D-14 even when the current session is outside the newest set.
+- [Phase 07]: Represent backup and retention cleanup as separate AppState.BackupOperation state so the UI can add a non-xEdit cancel affordance without reusing xEdit Stop semantics. — Plan 07-03 established the state-service contract for cleaning progress UI integration.
+- [Phase 07]: Use a short-lived linked CancellationTokenSource only while backup or retention file work is active, guarded separately from the session CTS and process lock. — Keeps whole-session cancellation connected while allowing file-operation cancellation to remain distinct from xEdit termination.
+- [Phase 07]: Map canceled backup copies to a skipped plugin result with Backup canceled and skip xEdit launch for that plugin while allowing the session to continue. — Preserves per-plugin sequential cleaning and prevents canceled partial backups from being treated as successful metadata entries.
 
 ### Pending Todos
 
@@ -99,6 +103,6 @@ Progress: [████████░░] 77%
 
 ## Session Continuity
 
-Last session: 2026-04-29T06:56:24Z
-Stopped at: Completed 07-02-PLAN.md
+Last session: 2026-04-29T07:11:33.525Z
+Stopped at: Completed 07-03-PLAN.md
 Resume file: None
