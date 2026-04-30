@@ -123,7 +123,7 @@ Plans:
   2. Maintainer can change backup-session handling without editing plugin execution or termination coordination code.
   3. Maintainer can change per-plugin execution and result finalization without changing session-level sequential coordination.
   4. User-observable cleaning behavior remains sequential and unchanged across successful, skipped, failed, stopped, and already-clean plugin outcomes.
-**Plans**: 8 plans (6 original + 2 gap-closure)
+**Plans**: 10 plans (6 original + 4 gap-closure)
 Plans:
 **Wave 0**
 - [x] 08-01-PLAN.md — Add Wave 0 characterization tests (left-running, retention warning/canceled, dry-run/preflight equivalence, ContinueWithoutBackup, last-termination-result reset) and ICleaningOrchestrator public-surface snapshot test.
@@ -146,6 +146,10 @@ Plans:
 **Wave 6 (review-informed gap closure; blocked on Wave 5 completion)**
 - [x] 08-07-PLAN.md — Fix CR-01: publish session CTS before orphan cleanup/preflight so Stop during preflight cancels the session before any xEdit launch (TDD).
 - [x] 08-08-PLAN.md — Fix CR-02 + WR-01 in PluginResultFinalizer: gate AlreadyClean on success/cleaned; derive Success from finalStatus (TDD).
+
+**Wave 7 (verification gap closure; blocked on Wave 6 completion)**
+- [ ] 08-09-PLAN.md — Close concurrent StartCleaningAsync session-overlap gap with a fail-fast in-flight guard (TDD).
+- [ ] 08-10-PLAN.md — Close post-detection file-load-order validation gap in CleaningPreflight (TDD).
 
 ### Phase 9: Plugin Refresh & Approximation Performance
 **Goal**: Users can refresh plugin issue approximations with better cancellation and less redundant work while plugin loading and approximation refresh behavior moves out of the configuration ViewModel.

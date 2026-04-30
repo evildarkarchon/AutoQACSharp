@@ -40,5 +40,10 @@
   "granularity": "fine",
   "features": {
     "global_learnings": true
+  },
+  "review": {
+    "models": {
+      "opencode": "opencode run --model openrouter/moonshotai/kimi-k2.6"
+    }
   }
 }
