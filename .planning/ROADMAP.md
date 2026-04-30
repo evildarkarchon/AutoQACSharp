@@ -199,11 +199,18 @@ Plans:
   4. User configuration changes avoid YAML serialization round-trips for in-memory cloning.
 **Plans**: 5 plans
 Plans:
+**Wave 1**
 - [ ] 10-01-PLAN.md — Manual deep-copy on UserConfiguration graph (PERF-03)
+
+**Wave 2 (blocked on 10-01 completion)**
 - [ ] 10-02-PLAN.md — Persistence coordinator + file store seam + race-matrix tests (REF-03, TEST-03)
+
+**Wave 3 (blocked on 10-02 completion)**
 - [ ] 10-03-PLAN.md — Wire IConfigurationService + ConfigWatcherService through coordinator; remove YAML clone (REF-03, TEST-03, PERF-03)
+
+**Wave 4 (blocked on 10-03 completion)**
 - [ ] 10-04-PLAN.md — Pre-cleaning flush failure blocks xEdit launch (TEST-03)
-- [ ] 10-05-PLAN.md — Settings ViewModel typed-failure banner (REF-03)
+- [ ] 10-05-PLAN.md — Settings ViewModel + SettingsWindow typed-failure banner (REF-03)
 
 ### Phase 11: User-Facing Diagnostics Boundaries
 **Goal**: Users receive concise, actionable error messages while logs retain local troubleshooting value without unnecessary full path or command-line exposure.
