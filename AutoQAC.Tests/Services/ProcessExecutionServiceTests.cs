@@ -334,13 +334,13 @@ public sealed class ProcessExecutionServiceTests : IDisposable
 
         var orchestrator = new CleaningOrchestrator(
             preflight,
+            new BackupSessionCoordinator(backupServiceMock, stateServiceMock, loggerMock),
             cleaningServiceMock,
             stateServiceMock,
             loggerMock,
             processServiceMock,
             logFileServiceMock,
             outputParserMock,
-            backupServiceMock,
             hangDetectionMock);
 
         return (orchestrator, processServiceMock);
@@ -486,13 +486,13 @@ public sealed class ProcessExecutionServiceTests : IDisposable
 
         var orch = new CleaningOrchestrator(
             preflight,
+            new BackupSessionCoordinator(backupServiceMock, stateServiceMock, Substitute.For<ILoggingService>()),
             cleaningServiceMock,
             stateServiceMock,
             Substitute.For<ILoggingService>(),
             processServiceMock,
             logFileServiceMock,
             Substitute.For<IXEditOutputParser>(),
-            backupServiceMock,
             hangDetectionMock);
 
         // Act

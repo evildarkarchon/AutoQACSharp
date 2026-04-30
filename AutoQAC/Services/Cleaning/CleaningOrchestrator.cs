@@ -13,7 +13,6 @@ using AutoQAC.Services.Configuration;
 using AutoQAC.Services.GameDetection;
 using AutoQAC.Services.Monitoring;
 using AutoQAC.Services.Plugin;
-using AutoQAC.Services.Backup;
 using AutoQAC.Services.Process;
 using AutoQAC.Services.State;
 
@@ -21,23 +20,21 @@ namespace AutoQAC.Services.Cleaning;
 
 public sealed class CleaningOrchestrator(
     ICleaningPreflight preflight,
+    IBackupSessionCoordinator backupCoordinator,
     ICleaningService cleaningService,
     IStateService stateService,
     ILoggingService logger,
     IProcessExecutionService processService,
     IXEditLogFileService logFileService,
     IXEditOutputParser outputParser,
-    IBackupService backupService,
     IHangDetectionService hangDetection)
     : ICleaningOrchestrator, IDisposable
 {
     private readonly Subject<bool> _hangDetected = new();
     private readonly object _ctsLock = new();
     private readonly object _processLock = new();
-    private readonly object _backupOperationLock = new();
 
     private CancellationTokenSource? _cleaningCts;
-    private CancellationTokenSource? _backupOperationCts;
     private volatile bool _isStopRequested;
     private System.Diagnostics.Process? _currentProcess;
     private TerminationResult? _lastTerminationResult;
@@ -106,31 +103,7 @@ public sealed class CleaningOrchestrator(
             if (timeoutSeconds <= 0) timeoutSeconds = 300;
 
             // 6b. Initialize backup session if backup is enabled
-            var backupEnabled = preflightPlan.BackupEnabled;
-            var isMo2Mode = preflightPlan.IsMo2ModeActive;
-
-            if (backupEnabled && !isMo2Mode)
-            {
-                // Derive data folder from the first plugin with a rooted FullPath
-                var firstRootedPlugin = pluginsToClean.FirstOrDefault(
-                    p => !string.IsNullOrEmpty(p.FullPath) && System.IO.Path.IsPathRooted(p.FullPath));
-
-                if (firstRootedPlugin != null)
-                {
-                    var dataFolder = System.IO.Path.GetDirectoryName(firstRootedPlugin.FullPath)!;
-                    var backupRoot = backupService.GetBackupRoot(dataFolder);
-                    sessionDir = backupService.CreateSessionDirectory(backupRoot);
-                    logger.Information("Backup session directory created: {SessionDir}", sessionDir);
-                }
-                else
-                {
-                    logger.Warning("Backup enabled but no plugins have rooted paths -- skipping backup initialization");
-                }
-            }
-            else if (backupEnabled && isMo2Mode)
-            {
-                logger.Warning("Backup skipped in MO2 mode -- MO2 manages files through its virtual filesystem");
-            }
+            sessionDir = await backupCoordinator.BeginSessionAsync(preflightPlan, cts.Token).ConfigureAwait(false);
 
             // 7. Process plugins SEQUENTIALLY (CRITICAL!)
             foreach (var plugin in pluginsToClean)
@@ -149,106 +122,82 @@ public sealed class CleaningOrchestrator(
                 });
 
                 // Backup this plugin before xEdit processes it
-                if (sessionDir != null)
+                if (sessionDir is not null)
                 {
-                    var backupResult = await BackupPluginAsync(plugin, sessionDir, cts.Token).ConfigureAwait(false);
-                    if (backupResult.Status == BackupOperationStatus.Canceled)
+                    var outcome = await backupCoordinator.RunPluginBackupAsync(plugin, sessionDir, onBackupFailure, cts.Token).ConfigureAwait(false);
+                    var stopAfterBackupOutcome = false;
+                    switch (outcome.Kind)
                     {
-                        logger.Information("Backup canceled for {Plugin}; skipping xEdit launch for this plugin", plugin.FileName);
-                        var skippedResult = new PluginCleaningResult
-                        {
-                            PluginName = plugin.FileName,
-                            Status = CleaningStatus.Skipped,
-                            Success = false,
-                            Message = "Backup canceled"
-                        };
-                        pluginResults.Add(skippedResult);
-                        stateService.AddDetailedCleaningResult(skippedResult);
-
-                        if (cts.Token.IsCancellationRequested)
-                        {
-                            wasCancelled = true;
-                            break;
-                        }
-
-                        continue;
-                    }
-
-                    if (backupResult.Status != BackupOperationStatus.Complete)
-                    {
-                        if (onBackupFailure != null)
-                        {
-                            var choice = await onBackupFailure(plugin.FileName, GetBackupFailureReasonText(backupResult))
-                                .ConfigureAwait(false);
-                            switch (choice)
+                        case PluginBackupOutcomeKind.Canceled:
+                        case PluginBackupOutcomeKind.UserSkipped:
+                            if (outcome.SkippedResult is not null)
                             {
-                                case BackupFailureChoice.SkipPlugin:
-                                    logger.Information("User chose to skip plugin after backup failure: {Plugin}", plugin.FileName);
-                                    var skippedResult = new PluginCleaningResult
-                                    {
-                                        PluginName = plugin.FileName,
-                                        Status = CleaningStatus.Skipped,
-                                        Success = false,
-                                        Message = "Backup failed - skipped by user"
-                                    };
-                                    pluginResults.Add(skippedResult);
-                                    stateService.AddDetailedCleaningResult(skippedResult);
-                                    stateService.UpdateState(s => s with
-                                    {
-                                        SkippedPlugins = new HashSet<string>(s.SkippedPlugins)
-                                            { plugin.FileName }
-                                            .ToFrozenSet(StringComparer.Ordinal)
-                                    });
-                                    continue;
-                                case BackupFailureChoice.AbortSession:
-                                    logger.Information("User chose to abort session after backup failure for: {Plugin}", plugin.FileName);
-                                    // Write partial metadata before returning
-                                    if (backupEntries.Count > 0)
-                                    {
-                                        var partialSession = new BackupSession
-                                        {
-                                            Timestamp = DateTime.UtcNow,
-                                            GameType = gameType.ToString(),
-                                            SessionDirectory = sessionDir,
-                                            Plugins = backupEntries
-                                        };
-                                        await backupService.WriteSessionMetadataAsync(sessionDir, partialSession, cts.Token).ConfigureAwait(false);
-                                    }
-
-                                    wasCancelled = true;
-                                    var abortSessionResult = new CleaningSessionResult
-                                    {
-                                        StartTime = startTime,
-                                        EndTime = DateTime.Now,
-                                        GameType = gameType,
-                                        WasCancelled = true,
-                                        PluginResults = pluginResults,
-                                        BackupCleanup = backupCleanup
-                                    };
-
-                                    // Abort exits before the normal end-of-method finalization path, so emit completion state here.
-                                    stateService.FinishCleaningWithResults(abortSessionResult);
-                                    LogSessionSummary(abortSessionResult);
-                                    return;
-                                case BackupFailureChoice.ContinueWithoutBackup:
-                                    logger.Information("User chose to continue without backup for: {Plugin}", plugin.FileName);
-                                    break;
+                                pluginResults.Add(outcome.SkippedResult);
+                                stateService.AddDetailedCleaningResult(outcome.SkippedResult);
                             }
-                        }
-                        else
-                        {
-                            logger.Warning("Backup failed for {Plugin}: {Reason}. No callback, continuing without backup.",
-                                plugin.FileName, GetBackupFailureReasonText(backupResult));
-                        }
+
+                            if (outcome.Kind == PluginBackupOutcomeKind.UserSkipped)
+                            {
+                                stateService.UpdateState(s => s with
+                                {
+                                    SkippedPlugins = new HashSet<string>(s.SkippedPlugins)
+                                        { plugin.FileName }
+                                        .ToFrozenSet(StringComparer.Ordinal)
+                                });
+                            }
+
+                            if (cts.Token.IsCancellationRequested)
+                            {
+                                wasCancelled = true;
+                                stopAfterBackupOutcome = true;
+                                break;
+                            }
+
+                            continue;
+
+                        case PluginBackupOutcomeKind.AbortSession:
+                            // R-09: full AbortSession branch -- verbatim from CleaningOrchestrator.cs:333-362.
+                            // Step 1: best-effort partial metadata write so the abandoned session has a manifest.
+                            await backupCoordinator
+                                .WritePartialMetadataAsync(sessionDir, gameType, backupEntries, ct: CancellationToken.None)
+                                .ConfigureAwait(false);
+
+                            // Step 2: mark the session as cancelled so finalization classifies correctly.
+                            wasCancelled = true;
+
+                            // Step 3: build the session result -- preserve every field that the legacy code did
+                            // (StartTime, EndTime, GameType, PluginResults, BackupCleanup, WasCancelled).
+                            var abortedSessionResult = new CleaningSessionResult
+                            {
+                                StartTime = startTime,
+                                EndTime = DateTime.Now,
+                                GameType = gameType,
+                                PluginResults = pluginResults,
+                                BackupCleanup = backupCleanup,
+                                WasCancelled = wasCancelled
+                            };
+
+                            // Step 4: publish the session result to the state service (UI sees final state).
+                            stateService.FinishCleaningWithResults(abortedSessionResult);
+
+                            // Step 5: REQUIRED -- log the summary; legacy code does this and tests may pin it.
+                            LogSessionSummary(abortedSessionResult);
+
+                            // Step 6: exit the StartCleaningAsync method.
+                            return;
+
+                        case PluginBackupOutcomeKind.Succeeded:
+                            if (outcome.Entry is not null) backupEntries.Add(outcome.Entry);
+                            break;
+
+                        case PluginBackupOutcomeKind.ContinueWithoutBackup:
+                            // proceed to xEdit; no entry added
+                            break;
                     }
-                    else
+
+                    if (stopAfterBackupOutcome)
                     {
-                        backupEntries.Add(new BackupPluginEntry
-                        {
-                            FileName = plugin.FileName,
-                            OriginalPath = plugin.FullPath,
-                            FileSizeBytes = backupResult.TotalBytes ?? backupResult.BytesCopied
-                        });
+                        break;
                     }
                 }
 
@@ -396,23 +345,13 @@ public sealed class CleaningOrchestrator(
             // 7b. Write backup session metadata and run retention cleanup
             if (sessionDir != null && backupEntries.Count > 0)
             {
-                var backupSession = new BackupSession
-                {
-                    Timestamp = DateTime.UtcNow,
-                    GameType = gameType.ToString(),
-                    SessionDirectory = sessionDir,
-                    Plugins = backupEntries
-                };
-                await backupService.WriteSessionMetadataAsync(sessionDir, backupSession, cts.Token).ConfigureAwait(false);
-
-                var backupRoot = System.IO.Path.GetDirectoryName(sessionDir)!;
-                backupCleanup = await CleanupOldSessionsAsync(
-                        backupRoot,
-                        preflightPlan.BackupMaxSessions,
+                backupCleanup = await backupCoordinator.FinalizeSessionAsync(
                         sessionDir,
+                        gameType,
+                        backupEntries,
+                        preflightPlan.BackupMaxSessions,
                         cts.Token)
                     .ConfigureAwait(false);
-                logger.Information("Backup session complete: {Count} plugins backed up", backupEntries.Count);
             }
 
             // 8. Create and store session result
@@ -437,24 +376,12 @@ public sealed class CleaningOrchestrator(
             // Write partial backup metadata if any backups were made
             if (sessionDir != null && backupEntries.Count > 0)
             {
-                try
-                {
-                    var partialBackupSession = new BackupSession
-                    {
-                        Timestamp = DateTime.UtcNow,
-                        GameType = gameType.ToString(),
-                        SessionDirectory = sessionDir,
-                        Plugins = backupEntries
-                    };
-                    await backupService.WriteSessionMetadataAsync(
+                await backupCoordinator.WritePartialMetadataAsync(
                         sessionDir,
-                        partialBackupSession,
-                        CancellationToken.None).ConfigureAwait(false);
-                }
-                catch (Exception backupEx)
-                {
-                    logger.Warning("Failed to write partial backup metadata after cancellation: {Error}", backupEx.Message);
-                }
+                        gameType,
+                        backupEntries,
+                        CancellationToken.None)
+                    .ConfigureAwait(false);
             }
 
             var sessionResult = new CleaningSessionResult
@@ -512,8 +439,6 @@ public sealed class CleaningOrchestrator(
                 _cleaningCts?.Dispose();
                 _cleaningCts = null;
             }
-
-            ClearBackupOperationCts();
         }
     }
 
@@ -528,157 +453,8 @@ public sealed class CleaningOrchestrator(
             }
         }
 
-        CancellationTokenSource? cts;
-        lock (_backupOperationLock)
-        {
-            cts = _backupOperationCts;
-        }
-
-        try
-        {
-            cts?.Cancel();
-        }
-        catch (ObjectDisposedException)
-        {
-            // The operation completed between reading the CTS and attempting cancellation.
-        }
-
-        return Task.CompletedTask;
+        return backupCoordinator.CancelActiveOperationAsync();
     }
-
-    /// <summary>
-    /// Runs a single-plugin backup with a file-operation CTS and publishes progress through state.
-    /// </summary>
-    private async Task<BackupCreateResult> BackupPluginAsync(
-        PluginInfo plugin,
-        string sessionDir,
-        CancellationToken sessionToken)
-    {
-        var operationCts = CreateBackupOperationCts(sessionToken);
-        var progress = new Progress<BackupCopyProgress>(copyProgress =>
-        {
-            stateService.SetBackupOperation(new BackupOperationState
-            {
-                Kind = BackupOperationKind.Backup,
-                Label = $"Backing up: {plugin.FileName}",
-                FileName = copyProgress.FileName,
-                FilesCompleted = 0,
-                TotalFiles = 1,
-                BytesCopied = copyProgress.BytesCopied,
-                TotalBytes = copyProgress.TotalBytes,
-                IsActive = true,
-                CanCancel = true
-            });
-        });
-
-        try
-        {
-            stateService.SetBackupOperation(new BackupOperationState
-            {
-                Kind = BackupOperationKind.Backup,
-                Label = $"Backing up: {plugin.FileName}",
-                FileName = plugin.FileName,
-                FilesCompleted = 0,
-                TotalFiles = 1,
-                IsActive = true,
-                CanCancel = true
-            });
-
-            return await backupService.BackupPluginAsync(plugin, sessionDir, progress, operationCts.Token)
-                .ConfigureAwait(false);
-        }
-        finally
-        {
-            stateService.ClearBackupOperation();
-            ClearBackupOperationCts(operationCts);
-        }
-    }
-
-    /// <summary>
-    /// Runs retention cleanup before final session completion and publishes cleanup progress through state.
-    /// </summary>
-    private async Task<BackupRetentionCleanupResult> CleanupOldSessionsAsync(
-        string backupRoot,
-        int maxSessionCount,
-        string currentSessionDir,
-        CancellationToken sessionToken)
-    {
-        var operationCts = CreateBackupOperationCts(sessionToken);
-        var progress = new Progress<BackupCopyProgress>(copyProgress =>
-        {
-            stateService.SetBackupOperation(new BackupOperationState
-            {
-                Kind = BackupOperationKind.RetentionCleanup,
-                Label = "Cleaning up old backups",
-                FileName = copyProgress.FileName,
-                FilesCompleted = copyProgress.FilesCompleted,
-                TotalFiles = copyProgress.TotalFiles,
-                BytesCopied = copyProgress.BytesCopied,
-                TotalBytes = copyProgress.TotalBytes,
-                IsActive = true,
-                CanCancel = true
-            });
-        });
-
-        try
-        {
-            stateService.SetBackupOperation(new BackupOperationState
-            {
-                Kind = BackupOperationKind.RetentionCleanup,
-                Label = "Cleaning up old backups",
-                IsActive = true,
-                CanCancel = true
-            });
-
-            return await backupService.CleanupOldSessionsAsync(
-                    backupRoot,
-                    maxSessionCount,
-                    currentSessionDir,
-                    progress,
-                    operationCts.Token)
-                .ConfigureAwait(false);
-        }
-        finally
-        {
-            stateService.ClearBackupOperation();
-            ClearBackupOperationCts(operationCts);
-        }
-    }
-
-    /// <summary>
-    /// Creates the current non-xEdit operation CTS linked to the overall cleaning session.
-    /// </summary>
-    private CancellationTokenSource CreateBackupOperationCts(CancellationToken sessionToken)
-    {
-        var cts = CancellationTokenSource.CreateLinkedTokenSource(sessionToken);
-        lock (_backupOperationLock)
-        {
-            _backupOperationCts = cts;
-        }
-
-        return cts;
-    }
-
-    /// <summary>
-    /// Clears and disposes the active non-xEdit operation CTS when the owning operation exits.
-    /// </summary>
-    private void ClearBackupOperationCts(CancellationTokenSource? expected = null)
-    {
-        CancellationTokenSource? toDispose = null;
-        lock (_backupOperationLock)
-        {
-            if (expected == null || ReferenceEquals(_backupOperationCts, expected))
-            {
-                toDispose = _backupOperationCts;
-                _backupOperationCts = null;
-            }
-        }
-
-        toDispose?.Dispose();
-    }
-
-    private static string GetBackupFailureReasonText(BackupCreateResult result) =>
-        result.DisplayReason ?? result.FailureReason?.ToString() ?? "Backup failed";
 
     public async Task<StopCleaningResult> StopCleaningAsync()
     {

@@ -77,13 +77,13 @@ public sealed class CleaningOrchestratorTests
 
         _orchestrator = new CleaningOrchestrator(
             CreatePreflight(),
+            new BackupSessionCoordinator(_backupServiceMock, _stateServiceMock, _loggerMock),
             _cleaningServiceMock,
             _stateServiceMock,
             _loggerMock,
             _processServiceMock,
             _logFileServiceMock,
             _outputParserMock,
-            _backupServiceMock,
             _hangDetectionMock);
     }
 
@@ -2465,13 +2465,13 @@ public sealed class CleaningOrchestratorTests
         // Arrange - use a new orchestrator instance for this test
         var orchestrator = new CleaningOrchestrator(
             CreatePreflight(),
+            new BackupSessionCoordinator(_backupServiceMock, _stateServiceMock, _loggerMock),
             _cleaningServiceMock,
             _stateServiceMock,
             _loggerMock,
             _processServiceMock,
             _logFileServiceMock,
             _outputParserMock,
-            _backupServiceMock,
             _hangDetectionMock);
 
         // Act & Assert

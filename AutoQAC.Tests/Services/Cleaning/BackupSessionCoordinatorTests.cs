@@ -145,7 +145,7 @@ public sealed class BackupSessionCoordinatorTests : IDisposable
         // Arrange
         var entries = new[] { CreateEntry("Warn.esp") };
         var retentionResult = new BackupRetentionCleanupResult(BackupOperationStatus.Warning, Array.Empty<BackupRetentionRowResult>());
-        _backupMock.CleanupOldSessionsAsync(_testRoot, 3, _testRoot, Arg.Any<IProgress<BackupCopyProgress>?>(), Arg.Any<CancellationToken>())
+        _backupMock.CleanupOldSessionsAsync(Arg.Any<string>(), 3, _testRoot, Arg.Any<IProgress<BackupCopyProgress>?>(), Arg.Any<CancellationToken>())
             .Returns(retentionResult);
 
         // Act
