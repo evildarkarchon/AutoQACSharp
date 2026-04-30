@@ -95,6 +95,21 @@ public sealed class CleaningOrchestratorTests
         _stateServiceMock,
         _loggerMock);
 
+    private static CleaningPreflightPlan CreateEmptyPreflightPlan() => new()
+    {
+        DetectedGameType = GameType.SkyrimSe,
+        DetectedGameVariant = GameVariant.None,
+        PluginRows = [],
+        IsMo2ModeActive = false,
+        BackupSkippedByPolicy = true,
+        FileValidationSkippedByPolicy = false,
+        LaunchModeLabel = "direct xEdit",
+        CleaningTimeoutSeconds = 30,
+        BackupEnabled = false,
+        BackupMaxSessions = 0,
+        XEditDirectory = "xedit"
+    };
+
     private static TaskCompletionSource<bool> CreateSignal()
     {
         return new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -684,6 +699,122 @@ public sealed class CleaningOrchestratorTests
             "StopCleaning should stop processing");
 
         _stateServiceMock.Received(1).FinishCleaningWithResults(Arg.Any<CleaningSessionResult>());
+    }
+
+    [Fact]
+    public async Task StopCleaningAsync_DuringPreflight_CancelsSessionAndDoesNotInvokeCleaningService()
+    {
+        var preflightSub = Substitute.For<ICleaningPreflight>();
+        var preflightReached = CreateSignal();
+        var releaseTcs = new TaskCompletionSource<CleaningPreflightPlan>(TaskCreationOptions.RunContinuationsAsynchronously);
+        CancellationToken capturedToken = default;
+
+        _processServiceMock.CleanOrphanedProcessesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+
+        preflightSub.PrepareAsync(Arg.Do<CancellationToken>(t => capturedToken = t))
+            .Returns(async _ =>
+            {
+                // Signal once the orchestrator reaches preflight, then wait for cancellation/release.
+                preflightReached.TrySetResult(true);
+                using var reg = capturedToken.Register(() => releaseTcs.TrySetCanceled(capturedToken));
+                return await releaseTcs.Task.ConfigureAwait(false);
+            });
+
+        var orchestrator = new CleaningOrchestrator(
+            preflightSub,
+            new BackupSessionCoordinator(_backupServiceMock, _stateServiceMock, _loggerMock),
+            new CleaningTerminationCoordinator(_processServiceMock, _hangDetectionMock, _stateServiceMock, _loggerMock),
+            new PluginCleaningRunner(_cleaningServiceMock, _logFileServiceMock, _loggerMock),
+            new PluginResultFinalizer(_logFileServiceMock, _outputParserMock, _loggerMock),
+            _stateServiceMock,
+            _loggerMock,
+            _processServiceMock);
+
+        var startTask = orchestrator.StartCleaningAsync(CancellationToken.None);
+        try
+        {
+            await WaitForSignalAsync(preflightReached);
+            await orchestrator.StopCleaningAsync();
+            await WaitForCancellationAsync(capturedToken);
+
+            releaseTcs.TrySetCanceled(capturedToken);
+            try
+            {
+                await startTask;
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected if the blocked preflight observes cancellation directly.
+            }
+        }
+        finally
+        {
+            // Always release the blocked preflight so a failing assertion cannot hang the test runner.
+            releaseTcs.TrySetResult(CreateEmptyPreflightPlan());
+        }
+
+        await _cleaningServiceMock.DidNotReceive().CleanPluginAsync(
+            Arg.Any<PluginInfo>(),
+            Arg.Any<CancellationToken>(),
+            Arg.Any<Action<Process>?>());
+        capturedToken.IsCancellationRequested.Should().BeTrue("Stop must cancel the in-flight preflight token");
+        _stateServiceMock.Received().FinishCleaningWithResults(Arg.Is<CleaningSessionResult>(s => s.WasCancelled));
+    }
+
+    [Fact]
+    public async Task StopCleaningAsync_DuringOrphanCleanup_CancelsSessionBeforePreflightAndDoesNotInvokeCleaningService()
+    {
+        var orphanReached = CreateSignal();
+        var releaseOrphanCleanup = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        CancellationToken capturedToken = default;
+
+        _processServiceMock.CleanOrphanedProcessesAsync(Arg.Do<CancellationToken>(t => capturedToken = t))
+            .Returns(async _ =>
+            {
+                // Signal once the orchestrator reaches the first startup await, then wait for cancellation/release.
+                orphanReached.TrySetResult(true);
+                using var reg = capturedToken.Register(() => releaseOrphanCleanup.TrySetCanceled(capturedToken));
+                await releaseOrphanCleanup.Task.ConfigureAwait(false);
+            });
+
+        var orchestrator = new CleaningOrchestrator(
+            CreatePreflight(),
+            new BackupSessionCoordinator(_backupServiceMock, _stateServiceMock, _loggerMock),
+            new CleaningTerminationCoordinator(_processServiceMock, _hangDetectionMock, _stateServiceMock, _loggerMock),
+            new PluginCleaningRunner(_cleaningServiceMock, _logFileServiceMock, _loggerMock),
+            new PluginResultFinalizer(_logFileServiceMock, _outputParserMock, _loggerMock),
+            _stateServiceMock,
+            _loggerMock,
+            _processServiceMock);
+
+        var startTask = orchestrator.StartCleaningAsync(CancellationToken.None);
+        try
+        {
+            await WaitForSignalAsync(orphanReached);
+            await orchestrator.StopCleaningAsync();
+            await WaitForCancellationAsync(capturedToken);
+            try
+            {
+                await startTask;
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected if the blocked orphan cleanup observes cancellation directly.
+            }
+        }
+        finally
+        {
+            // Always release orphan cleanup so a failing assertion cannot hang the test runner.
+            releaseOrphanCleanup.TrySetResult(true);
+        }
+
+        await _cleaningServiceMock.DidNotReceive().CleanPluginAsync(
+            Arg.Any<PluginInfo>(),
+            Arg.Any<CancellationToken>(),
+            Arg.Any<Action<Process>?>());
+        capturedToken.IsCancellationRequested.Should().BeTrue("Stop must cancel the in-flight orphan-cleanup token");
+        _stateServiceMock.Received().FinishCleaningWithResults(Arg.Is<CleaningSessionResult>(s => s.WasCancelled));
     }
 
     [Fact]
