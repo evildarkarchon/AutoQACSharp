@@ -217,7 +217,7 @@ public sealed class PluginRefreshCoordinator : IPluginRefreshCoordinator, IDispo
     /// <inheritdoc />
     public void CancelActiveRefresh(PluginRefreshCancelReason reason)
     {
-        var cts = Interlocked.Exchange(ref _activeRefreshCts, null);
+        var cts = Volatile.Read(ref _activeRefreshCts);
         if (cts is null)
         {
             return;
@@ -231,10 +231,6 @@ public sealed class PluginRefreshCoordinator : IPluginRefreshCoordinator, IDispo
         {
             // The active generation may have completed between Exchange and Cancel; cancellation is best-effort.
         }
-        finally
-        {
-            cts.Dispose();
-        }
 
         if (reason == PluginRefreshCancelReason.Manual)
         {
@@ -247,7 +243,9 @@ public sealed class PluginRefreshCoordinator : IPluginRefreshCoordinator, IDispo
     /// </summary>
     public void Dispose()
     {
-        CancelActiveRefresh(PluginRefreshCancelReason.Disposed);
+        var cts = Interlocked.Exchange(ref _activeRefreshCts, null);
+        cts?.Cancel();
+        cts?.Dispose();
         _statusChanged.Dispose();
     }
 
@@ -255,7 +253,7 @@ public sealed class PluginRefreshCoordinator : IPluginRefreshCoordinator, IDispo
     {
         var cts = CancellationTokenSource.CreateLinkedTokenSource(externalToken);
         var previous = Interlocked.Exchange(ref _activeRefreshCts, cts);
-        CancelAndDispose(previous);
+        previous?.Cancel(); // do not dispose another generation's live CTS
         return cts;
     }
 
@@ -386,25 +384,4 @@ public sealed class PluginRefreshCoordinator : IPluginRefreshCoordinator, IDispo
     }
 
     private void Publish(PluginRefreshStatus status) => _statusChanged.OnNext(status);
-
-    private static void CancelAndDispose(CancellationTokenSource? cts)
-    {
-        if (cts is null)
-        {
-            return;
-        }
-
-        try
-        {
-            cts.Cancel();
-        }
-        catch (ObjectDisposedException)
-        {
-            // Safe to ignore; the losing refresh generation has already completed cleanup.
-        }
-        finally
-        {
-            cts.Dispose();
-        }
-    }
 }
