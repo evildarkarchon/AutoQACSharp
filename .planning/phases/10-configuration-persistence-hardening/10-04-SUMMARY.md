@@ -70,7 +70,7 @@ Each task was committed atomically:
 1. **Task 1: RED — failing CleaningPreflight flush-failure tests** - `fec3d64` (test)
 2. **Task 2: GREEN — add ConfigPersistenceFailureException; guard PrepareAsync on Failed** - `79a6420` (feat)
 
-**Plan metadata:** pending final docs commit
+**Plan metadata:** `1bf4491` (docs)
 
 _Note: This was a TDD plan and produced RED then GREEN commits._
 
