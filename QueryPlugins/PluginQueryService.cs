@@ -72,6 +72,8 @@ public sealed class PluginQueryService : IPluginQueryService
     /// <inheritdoc />
     public PluginAnalysisResult Analyse(IModGetter plugin, ILinkCache linkCache, GameRelease gameRelease, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+
         if (!_detectorsByRelease.TryGetValue(gameRelease, out var gameDetector))
             throw new NotSupportedException(
                 $"No game-specific detector is registered for {gameRelease}. " +
@@ -79,8 +81,10 @@ public sealed class PluginQueryService : IPluginQueryService
 
         var issues = new List<PluginIssue>();
 
-        issues.AddRange(_itmDetector.FindItmRecords(plugin, linkCache));
+        issues.AddRange(_itmDetector.FindItmRecords(plugin, linkCache, ct));
+        ct.ThrowIfCancellationRequested();
         issues.AddRange(gameDetector.FindDeletedReferences(plugin));
+        ct.ThrowIfCancellationRequested();
         issues.AddRange(gameDetector.FindDeletedNavmeshes(plugin));
 
         return new PluginAnalysisResult(issues);

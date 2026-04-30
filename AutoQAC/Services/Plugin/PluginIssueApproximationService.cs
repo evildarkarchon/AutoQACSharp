@@ -80,7 +80,7 @@ public sealed class PluginIssueApproximationService : IPluginIssueApproximationS
 
             try
             {
-                var analysis = _pluginQueryService.Analyse(target.Plugin, context.LinkCache, context.GameRelease);
+                var analysis = _pluginQueryService.Analyse(target.Plugin, context.LinkCache, context.GameRelease, ct);
                 var result = new PluginIssueApproximationResult
                 {
                     FileName = target.FileName,
