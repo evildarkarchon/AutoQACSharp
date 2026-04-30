@@ -300,6 +300,58 @@ public sealed class PluginRefreshCoordinatorTests
             "a non-running terminal status lets UI consumers clear cancel affordances");
     }
 
+    /// <summary>
+    /// Verifies Skyrim SE refresh uses Enderal-specific skip lists detected from loaded plugin names.
+    /// </summary>
+    [Fact]
+    public async Task RefreshForGameAsync_WhenEnderalVariantDetected_ShouldRequestEnderalSkipList()
+    {
+        var stateService = new StateService();
+        var gameDetectionService = Substitute.For<IGameDetectionService>();
+        gameDetectionService
+            .DetectVariant(GameType.SkyrimSe, Arg.Any<IReadOnlyList<string>>())
+            .Returns(GameVariant.Enderal);
+        var configurationService = CreateConfigurationServiceWithSkipList(
+            GameType.SkyrimSe,
+            GameVariant.Enderal,
+            ["Completed.esp"]);
+        var sut = CreateCoordinator(stateService, configurationService, gameDetectionService: gameDetectionService);
+
+        await sut.RefreshForGameAsync(new PluginRefreshRequest(GameType.SkyrimSe, @"C:\Game\Data"), CancellationToken.None);
+
+        await configurationService.Received(1)
+            .GetSkipListAsync(GameType.SkyrimSe, GameVariant.Enderal, Arg.Any<CancellationToken>());
+        stateService.CurrentState.PluginsToClean.Should().Contain(plugin =>
+            plugin.FileName == "Completed.esp" && plugin.IsInSkipList,
+            "Enderal skip-list entries should be reflected in refresh rows");
+    }
+
+    /// <summary>
+    /// Verifies Fallout New Vegas refresh uses TTW-specific skip lists detected from loaded plugin names.
+    /// </summary>
+    [Fact]
+    public async Task RefreshForGameAsync_WhenTtwVariantDetected_ShouldRequestTtwSkipList()
+    {
+        var stateService = new StateService();
+        var gameDetectionService = Substitute.For<IGameDetectionService>();
+        gameDetectionService
+            .DetectVariant(GameType.FalloutNewVegas, Arg.Any<IReadOnlyList<string>>())
+            .Returns(GameVariant.Ttw);
+        var configurationService = CreateConfigurationServiceWithSkipList(
+            GameType.FalloutNewVegas,
+            GameVariant.Ttw,
+            ["Completed.esp"]);
+        var sut = CreateCoordinator(stateService, configurationService, gameDetectionService: gameDetectionService);
+
+        await sut.RefreshForGameAsync(new PluginRefreshRequest(GameType.FalloutNewVegas, @"C:\Game\Data"), CancellationToken.None);
+
+        await configurationService.Received(1)
+            .GetSkipListAsync(GameType.FalloutNewVegas, GameVariant.Ttw, Arg.Any<CancellationToken>());
+        stateService.CurrentState.PluginsToClean.Should().Contain(plugin =>
+            plugin.FileName == "Completed.esp" && plugin.IsInSkipList,
+            "TTW skip-list entries should match cleaning preflight decisions during refresh");
+    }
+
     private static PluginRefreshCoordinator CreateCoordinator(
         IStateService stateService,
         IPluginLoadingService? pluginLoadingService = null,
@@ -330,13 +382,19 @@ public sealed class PluginRefreshCoordinatorTests
 
     private static IConfigurationService CreateConfigurationServiceWithSkipList(
         GameType gameType,
+        IReadOnlyList<string> skipList) =>
+        CreateConfigurationServiceWithSkipList(gameType, GameVariant.None, skipList);
+
+    private static IConfigurationService CreateConfigurationServiceWithSkipList(
+        GameType gameType,
+        GameVariant variant,
         IReadOnlyList<string> skipList)
     {
         var configurationService = Substitute.For<IConfigurationService>();
         // GetSkipListAsync has an optional GameVariant parameter; matching it explicitly keeps
         // NSubstitute bound to the same call shape used by the coordinator's named ct argument.
         configurationService
-            .GetSkipListAsync(gameType, GameVariant.None, Arg.Any<CancellationToken>())
+            .GetSkipListAsync(gameType, variant, Arg.Any<CancellationToken>())
             .Returns(skipList.ToList());
         configurationService
             .GetGameLoadOrderOverrideAsync(gameType, Arg.Any<CancellationToken>())
