@@ -132,7 +132,7 @@ Plans:
 - [x] 08-02-PLAN.md — Extract ICleaningPreflight collaborator (D-13–D-16); shared preflight/selection plan consumed by both StartCleaningAsync and RunDryRunAsync.
 
 **Wave 2 (blocked on Wave 1 completion)**
-- [ ] 08-03-PLAN.md — Extract IBackupSessionCoordinator (D-06); coordinator owns backup CTS lifecycle, BackupPluginAsync/CleanupOldSessionsAsync helpers, and PluginBackupOutcome dispatch model.
+- [x] 08-03-PLAN.md — Extract IBackupSessionCoordinator (D-06); coordinator owns backup CTS lifecycle, BackupPluginAsync/CleanupOldSessionsAsync helpers, and PluginBackupOutcome dispatch model.
 
 **Wave 3 (blocked on Wave 2 completion; HIGHEST RISK — Phase 5 lock surface)**
 - [ ] 08-04-PLAN.md — Extract ICleaningTerminationCoordinator (D-08); coordinator owns _currentProcess, _processLock, _isStopRequested, _lastTerminationResult, hang-monitor, and Phase 5 stop/force-stop semantics.

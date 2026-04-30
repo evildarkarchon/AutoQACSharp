@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: Cleanup
 status: executing
 stopped_at: Phase 8 context gathered
-last_updated: "2026-04-30T01:55:28.866Z"
+last_updated: "2026-04-30T02:03:05.312Z"
 last_activity: 2026-04-30
 progress:
   total_phases: 7
   completed_phases: 3
   total_plans: 28
-  completed_plans: 24
-  percent: 86
+  completed_plans: 25
+  percent: 89
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-04-28)
 ## Current Position
 
 Phase: 08 (cleaning-orchestrator-decomposition) — EXECUTING
-Plan: 3 of 6
+Plan: 4 of 6
 Status: Ready to execute
 Last activity: 2026-04-30
 
-Progress: [█████████░] 86%
+Progress: [█████████░] 89%
 
 ## Performance Metrics
 
@@ -70,6 +70,7 @@ Progress: [█████████░] 86%
 | 07 | 14 | - | - |
 | Phase 08 P01 | 20 min | 2 tasks | 4 files |
 | Phase 08 P02 | 7 min | 2 tasks | 8 files |
+| Phase 08 P03 | 5 min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -135,6 +136,9 @@ Progress: [█████████░] 86%
 - [Phase 08]: [Phase 08]: ICleaningPreflight.PrepareAsync is the single source for preflight selection rows used by real cleaning and dry-run projection. — Plan 08-02 extracted CleaningPreflight and wired both facade paths through the shared plan.
 - [Phase 08]: [Phase 08]: CleaningPreflightPlan carries XEditDirectory so downstream runner/finalizer work can avoid re-deriving the xEdit directory. — Plan 08-02 established R-08 single-source-of-truth in the preflight model.
 - [Phase 08]: [Phase 08]: MO2 executable validation preserves the legacy file-existence guard before consulting IMo2ValidationService. — Plan 08-02 keeps existing MO2 not-found behavior stable during preflight extraction.
+- [Phase 08]: BackupSessionCoordinator owns backup-operation CTS/lock state while CleaningOrchestrator retains the xEdit-active guard before delegating CancelBackupOperationAsync. — Plan 08-03 extracted backup lifecycle while preserving the current facade-owned xEdit active-process gate.
+- [Phase 08]: AbortSession remains facade-owned through PluginBackupOutcomeKind.AbortSession. — The coordinator returns the outcome and the facade writes partial metadata, publishes results, logs the session summary, and returns.
+- [Phase 08]: Backup entries are constructed in BackupSessionCoordinator from BackupCreateResult plus PluginInfo. — The current IBackupService contract returns backup status/bytes/reason rather than a BackupPluginEntry, so the coordinator preserves existing entry construction without changing IBackupService.
 
 ### Pending Todos
 
@@ -153,6 +157,6 @@ Progress: [█████████░] 86%
 
 ## Session Continuity
 
-Last session: 2026-04-30T01:55:08.203Z
+Last session: 2026-04-30T02:02:50.623Z
 Stopped at: Phase 8 context gathered
 Resume file: None
