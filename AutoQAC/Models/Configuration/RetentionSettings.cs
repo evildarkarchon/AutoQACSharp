@@ -31,4 +31,7 @@ public sealed class RetentionSettings
 
     [YamlMember(Alias = "max_file_count")]
     public int MaxFileCount { get; set; } = 50;
+
+    /// <summary>Deep copy of RetentionSettings (no YAML round-trip; see Phase 10 D-43).</summary>
+    public RetentionSettings Copy() => new() { Mode = Mode, MaxAgeDays = MaxAgeDays, MaxFileCount = MaxFileCount };
 }
