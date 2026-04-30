@@ -105,6 +105,130 @@ public sealed class PluginResultFinalizerTests
         result.LogParseWarning.Should().Contain("xEdit was terminated");
     }
 
+    [Fact]
+    public async Task FinalizeAsync_FailedRunnerResult_WithCompletionLineAndZeroStats_RemainsFailed_AndSuccessIsFalse()
+    {
+        // Arrange: runner reports a failed xEdit attempt, but the log slice happens to contain a completion
+        // line and zero parsed stats. The OLD finalizer would have wrongly promoted this to AlreadyClean.
+        var plugin = CreatePlugin("FailedButLogLooksClean.esp");
+        var failedRunnerOutput = new PluginRunnerOutput
+        {
+            LastAttemptResult = new CleaningResult
+            {
+                Success = false,
+                Status = CleaningStatus.Failed,
+                Message = "xEdit exited with non-zero status."
+            },
+            AttemptCount = 1,
+            MainLogOffset = 11,
+            ExceptionLogOffset = 22,
+            Duration = TimeSpan.FromSeconds(1),
+            ReachedMaxRetryAttempts = false
+        };
+
+        _logFileServiceMock.ReadLogContentAsync(
+                "xedit",
+                GameType.SkyrimSe,
+                failedRunnerOutput.MainLogOffset,
+                failedRunnerOutput.ExceptionLogOffset,
+                Arg.Any<CancellationToken>())
+            .Returns(new LogReadResult { LogLines = ["Done."] });
+        _outputParserMock.ParseOutput(Arg.Any<List<string>>())
+            .Returns(new CleaningStatistics());
+        _outputParserMock.IsCompletionLine("Done.").Returns(true);
+
+        // Act
+        var result = await _sut.FinalizeAsync(
+            plugin,
+            GameType.SkyrimSe,
+            "xedit",
+            failedRunnerOutput,
+            new TerminationFinalizeContext(ProcessMayStillBeRunning: false, StopWasRequested: false),
+            CancellationToken.None);
+
+        // Assert: failed runner outcomes MUST NOT be reclassified as AlreadyClean,
+        // and Success must reflect the failed final status.
+        result.Status.Should().Be(CleaningStatus.Failed);
+        result.Success.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task FinalizeAsync_ExceptionLogContent_ForcesStatusFailedAndSuccessFalse()
+    {
+        // Arrange: runner reports success, but xEdit dropped an exception log. Final result MUST be Failed
+        // AND the returned Success flag MUST be false (no Status=Failed/Success=true inconsistency).
+        var plugin = CreatePlugin("CleanedButException.esp");
+        var runnerOutput = CreateRunnerOutput(); // Success=true, Status=Cleaned
+
+        _logFileServiceMock.ReadLogContentAsync(
+                "xedit",
+                GameType.SkyrimSe,
+                runnerOutput.MainLogOffset,
+                runnerOutput.ExceptionLogOffset,
+                Arg.Any<CancellationToken>())
+            .Returns(new LogReadResult
+            {
+                LogLines = new List<string>(),
+                ExceptionContent = "EAccessViolation: invalid pointer operation at 0x00401234"
+            });
+
+        // Act
+        var result = await _sut.FinalizeAsync(
+            plugin,
+            GameType.SkyrimSe,
+            "xedit",
+            runnerOutput,
+            new TerminationFinalizeContext(ProcessMayStillBeRunning: false, StopWasRequested: false),
+            CancellationToken.None);
+
+        // Assert
+        result.Status.Should().Be(CleaningStatus.Failed);
+        result.Success.Should().BeFalse();
+        result.LogParseWarning.Should().Contain("EAccessViolation");
+    }
+
+    [Fact]
+    public async Task FinalizeAsync_SkippedRunnerResult_DoesNotReadLogs_AndSuccessStaysFalse()
+    {
+        // Arrange: skipped runner output is a short-circuit result. The finalizer must not read logs,
+        // and the final Success flag must stay false after the WR-01 finalStatus-based derivation.
+        var plugin = CreatePlugin("SkippedByBackup.esp");
+        var skippedRunnerOutput = new PluginRunnerOutput
+        {
+            LastAttemptResult = new CleaningResult
+            {
+                Success = false,
+                Status = CleaningStatus.Skipped,
+                Message = "Skipped by backup cancellation."
+            },
+            AttemptCount = 1,
+            MainLogOffset = 11,
+            ExceptionLogOffset = 22,
+            Duration = TimeSpan.FromMilliseconds(10),
+            ReachedMaxRetryAttempts = false
+        };
+
+        // Act
+        var result = await _sut.FinalizeAsync(
+            plugin,
+            GameType.SkyrimSe,
+            "xedit",
+            skippedRunnerOutput,
+            new TerminationFinalizeContext(ProcessMayStillBeRunning: false, StopWasRequested: false),
+            CancellationToken.None);
+
+        // Assert
+        await _logFileServiceMock.DidNotReceive().ReadLogContentAsync(
+            Arg.Any<string>(),
+            Arg.Any<GameType>(),
+            Arg.Any<long>(),
+            Arg.Any<long>(),
+            Arg.Any<CancellationToken>());
+        result.Status.Should().Be(CleaningStatus.Skipped);
+        result.Success.Should().BeFalse();
+        result.Message.Should().Be("Skipped by backup cancellation.");
+    }
+
     private static PluginInfo CreatePlugin(string fileName) => new()
     {
         FileName = fileName,
