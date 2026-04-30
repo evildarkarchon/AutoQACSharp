@@ -170,7 +170,7 @@ Plans:
 - [x] 09-03-PLAN.md — Implement the refresh coordinator/capability policy and move plugin refresh workflow out of ConfigurationViewModel.
 
 **Wave 3 (blocked on 09-03 completion)**
-- [ ] 09-04-PLAN.md — Add selected approximation refresh and cancel controls near the plugin list.
+- [x] 09-04-PLAN.md — Add selected approximation refresh and cancel controls near the plugin list.
 
 **Wave 4 (blocked on 09-01 and 09-04 completion)**
 - [ ] 09-05-PLAN.md — Wire cleaning-start/lifecycle refresh cancellation and complete full phase verification.

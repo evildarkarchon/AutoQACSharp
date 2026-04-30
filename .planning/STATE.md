@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Cleanup
 status: executing
-stopped_at: Completed 09-02-PLAN.md
-last_updated: "2026-04-30T07:48:53.911Z"
+stopped_at: Completed 09-04-PLAN.md
+last_updated: "2026-04-30T07:55:48.301Z"
 last_activity: 2026-04-30
 progress:
   total_phases: 7
   completed_phases: 4
   total_plans: 37
-  completed_plans: 35
-  percent: 95
+  completed_plans: 36
+  percent: 97
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-04-28)
 ## Current Position
 
 Phase: 09 (plugin-refresh-approximation-performance) — EXECUTING
-Plan: 4 of 5
+Plan: 5 of 5
 Status: Ready to execute
 Last activity: 2026-04-30
 
-Progress: [██████████] 95%
+Progress: [██████████] 97%
 
 ## Performance Metrics
 
@@ -56,6 +56,7 @@ Progress: [██████████] 95%
 | Phase 09 P01 | 4 min | 2 tasks | 7 files |
 | Phase 09 P02 | 2 min | 2 tasks | 6 files |
 | Phase 09 P03 | 6 min | 2 tasks | 7 files |
+| Phase 09 P04 | 3 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -85,6 +86,9 @@ Progress: [██████████] 95%
 - [Phase 09]: Plugin refresh workflow lives in PluginRefreshCoordinator — Moves generation, cancellation, plugin loading, skip-list application, and approximation publication out of ConfigurationViewModel.
 - [Phase 09]: Refresh capability policy is scoped to Phase 09 — Only Skyrim and Fallout 4 families enable issue approximation; broader registry cleanup remains deferred.
 - [Phase 09]: ConfigurationViewModel maps typed refresh statuses — The ViewModel remains responsible for UI text while services own workflow and cancellation.
+- [Phase 09]: PluginListViewModel owns only selected-row command intent and target snapshotting; approximation workflow remains in IPluginRefreshCoordinator. — Plan 09-04 keeps business workflow in the coordinator while adding plugin-list UI intent.
+- [Phase 09]: Refresh selected availability is gated by loaded rows, cleaning state, checked visible rows, current game, and refresh-scoped approximation capability. — This satisfies the UI-SPEC and prevents unsupported or unstable selected approximation refreshes.
+- [Phase 09]: Cancel refresh is a direct coordinator cancellation command with no confirmation dialog and visibility tied to active approximation refresh state. — Manual cancellation should be immediate and non-destructive for completed row results.
 
 ### Pending Todos
 
@@ -102,6 +106,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-30T07:48:42.047Z
-Stopped at: Completed 09-02-PLAN.md
+Last session: 2026-04-30T07:55:48.295Z
+Stopped at: Completed 09-04-PLAN.md
 Resume file: None
