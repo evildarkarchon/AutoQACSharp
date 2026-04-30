@@ -208,25 +208,100 @@ public sealed class PluginRefreshCoordinatorTests
             status.ToDisplayText() == "Approximation refresh canceled.");
     }
 
-    private static PluginRefreshCoordinator CreateCoordinator(IStateService stateService)
+    /// <summary>
+    /// Verifies manual cancellation is signal-only while the refresh method still owns its linked CTS.
+    /// </summary>
+    [Fact]
+    public async Task CancelActiveRefresh_ManualCancelDelayedRefresh_ShouldCompleteWithoutObjectDisposedException()
     {
-        return new PluginRefreshCoordinator(
-            new TestPluginLoadingService(),
-            new TestPluginIssueApproximationService(),
-            stateService,
-            new TestPluginRefreshCapabilityPolicy(),
-            Substitute.For<IGameDetectionService>());
+        var stateService = new StateService();
+        var loadingService = new DelayedPluginLoadingService();
+        var sut = CreateCoordinator(stateService, pluginLoadingService: loadingService);
+        var statuses = new List<PluginRefreshStatus>();
+        using var subscription = sut.StatusChanged.Subscribe(statuses.Add);
+
+        var refresh = sut.RefreshForGameAsync(new PluginRefreshRequest(GameType.SkyrimSe, @"C:\Game\Data"), CancellationToken.None);
+        await loadingService.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        sut.CancelActiveRefresh(PluginRefreshCancelReason.Manual);
+        var act = async () => await refresh.WaitAsync(TimeSpan.FromSeconds(5));
+
+        await act.Should().NotThrowAsync<ObjectDisposedException>(
+            "external cancellation must not dispose the CTS owned by the awaited refresh task");
+        statuses.Should().Contain(status => status.Kind == PluginRefreshStatusKind.Canceled);
+    }
+
+    /// <summary>
+    /// Verifies a newer refresh cancels the previous generation without disposing the previous generation's CTS.
+    /// </summary>
+    [Fact]
+    public async Task RefreshForGameAsync_WhenSupersededDuringDelayedWork_ShouldCompleteWithoutObjectDisposedException()
+    {
+        var stateService = new StateService();
+        var loadingService = new DelayedPluginLoadingService(delayOnlyFirstCall: true);
+        var sut = CreateCoordinator(stateService, pluginLoadingService: loadingService);
+
+        var firstRefresh = sut.RefreshForGameAsync(new PluginRefreshRequest(GameType.SkyrimSe, @"C:\OldGame\Data"), CancellationToken.None);
+        await loadingService.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        await sut.RefreshForGameAsync(new PluginRefreshRequest(GameType.Fallout4, @"C:\NewGame\Data"), CancellationToken.None);
+        var act = async () => await firstRefresh.WaitAsync(TimeSpan.FromSeconds(5));
+
+        await act.Should().NotThrowAsync<ObjectDisposedException>(
+            "superseding a refresh should be ordinary cooperative cancellation");
+        stateService.CurrentState.PluginsToClean.Should().OnlyContain(plugin =>
+            plugin.DetectedGameType == GameType.Fallout4,
+            "the canceled generation must not publish stale rows after the newer refresh completes");
+    }
+
+    /// <summary>
+    /// Verifies lifecycle cancellation used before cleaning stays silent while still signaling active work.
+    /// </summary>
+    [Fact]
+    public async Task CancelActiveRefresh_CleaningStartedDelayedRefresh_ShouldCompleteWithoutCanceledStatus()
+    {
+        var stateService = new StateService();
+        var loadingService = new DelayedPluginLoadingService();
+        var sut = CreateCoordinator(stateService, pluginLoadingService: loadingService);
+        var statuses = new List<PluginRefreshStatus>();
+        using var subscription = sut.StatusChanged.Subscribe(statuses.Add);
+
+        var refresh = sut.RefreshForGameAsync(new PluginRefreshRequest(GameType.SkyrimSe, @"C:\Game\Data"), CancellationToken.None);
+        await loadingService.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        sut.CancelActiveRefresh(PluginRefreshCancelReason.CleaningStarted);
+
+        await refresh.WaitAsync(TimeSpan.FromSeconds(5));
+        statuses.Should().NotContain(status => status.Kind == PluginRefreshStatusKind.Canceled,
+            "cleaning-start cancellation is a lifecycle signal, not a user-visible cancel outcome");
     }
 
     private static PluginRefreshCoordinator CreateCoordinator(
         IStateService stateService,
-        IConfigurationService configurationService) =>
-        new(
-            new TestPluginLoadingService(),
-            new TestPluginIssueApproximationService(),
+        IPluginLoadingService? pluginLoadingService = null,
+        IPluginIssueApproximationService? approximationService = null,
+        IGameDetectionService? gameDetectionService = null)
+    {
+        return new PluginRefreshCoordinator(
+            pluginLoadingService ?? new TestPluginLoadingService(),
+            approximationService ?? new TestPluginIssueApproximationService(),
             stateService,
             new TestPluginRefreshCapabilityPolicy(),
-            Substitute.For<IGameDetectionService>(),
+            gameDetectionService ?? CreateDefaultGameDetectionService());
+    }
+
+    private static PluginRefreshCoordinator CreateCoordinator(
+        IStateService stateService,
+        IConfigurationService configurationService,
+        IPluginLoadingService? pluginLoadingService = null,
+        IPluginIssueApproximationService? approximationService = null,
+        IGameDetectionService? gameDetectionService = null) =>
+        new(
+            pluginLoadingService ?? new TestPluginLoadingService(),
+            approximationService ?? new TestPluginIssueApproximationService(),
+            stateService,
+            new TestPluginRefreshCapabilityPolicy(),
+            gameDetectionService ?? CreateDefaultGameDetectionService(),
             configurationService);
 
     private static IConfigurationService CreateConfigurationServiceWithSkipList(
@@ -243,6 +318,15 @@ public sealed class PluginRefreshCoordinatorTests
             .GetGameLoadOrderOverrideAsync(gameType, Arg.Any<CancellationToken>())
             .Returns((string?)null);
         return configurationService;
+    }
+
+    private static IGameDetectionService CreateDefaultGameDetectionService()
+    {
+        var gameDetectionService = Substitute.For<IGameDetectionService>();
+        gameDetectionService
+            .DetectVariant(Arg.Any<GameType>(), Arg.Any<IReadOnlyList<string>>())
+            .Returns(GameVariant.None);
+        return gameDetectionService;
     }
 
     private sealed class TestPluginLoadingService : IPluginLoadingService
@@ -329,6 +413,71 @@ public sealed class PluginRefreshCoordinatorTests
                 FullPath = $@"{dataFolder}\{fileName}",
                 Approximation = PluginIssueApproximation.Available(1, 2, 3)
             };
+    }
+
+    private sealed class DelayedPluginLoadingService : IPluginLoadingService
+    {
+        private readonly bool _delayOnlyFirstCall;
+        private int _tryGetCallCount;
+
+        public DelayedPluginLoadingService(bool delayOnlyFirstCall = false)
+        {
+            _delayOnlyFirstCall = delayOnlyFirstCall;
+        }
+
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task<List<PluginInfo>> GetPluginsAsync(
+            GameType gameType,
+            string? customDataFolder = null,
+            CancellationToken ct = default) =>
+            Task.FromResult(CreatePlugins(gameType, customDataFolder).ToList());
+
+        public async Task<PluginLoadingResult> TryGetPluginsAsync(
+            GameType gameType,
+            string? customDataFolder = null,
+            CancellationToken ct = default)
+        {
+            var callNumber = Interlocked.Increment(ref _tryGetCallCount);
+            if (!_delayOnlyFirstCall || callNumber == 1)
+            {
+                Started.TrySetResult();
+                await Task.Delay(TimeSpan.FromMinutes(5), ct);
+            }
+
+            return new PluginLoadingResult
+            {
+                Status = PluginLoadingStatus.Success,
+                Plugins = CreatePlugins(gameType, customDataFolder),
+                DataFolder = customDataFolder
+            };
+        }
+
+        public Task<List<PluginInfo>> GetPluginsFromFileAsync(
+            string loadOrderPath,
+            string? dataFolderPath = null,
+            CancellationToken ct = default) =>
+            Task.FromResult(CreatePlugins(GameType.FalloutNewVegas, dataFolderPath).ToList());
+
+        public bool IsGameSupportedByMutagen(GameType gameType) => true;
+
+        public IReadOnlyList<GameType> GetAvailableGames() => [GameType.SkyrimSe, GameType.Fallout4];
+
+        public string? GetGameDataFolder(GameType gameType, string? customDataFolderOverride = null) =>
+            customDataFolderOverride ?? $@"C:\{gameType}\Data";
+
+        public string? GetDefaultLoadOrderPath(GameType gameType) =>
+            $@"C:\{gameType}\plugins.txt";
+
+        private static IReadOnlyList<PluginInfo> CreatePlugins(GameType gameType, string? dataFolder)
+        {
+            var root = dataFolder ?? $@"C:\{gameType}\Data";
+            return
+            [
+                new PluginInfo { FileName = "Completed.esp", FullPath = $@"{root}\Completed.esp", DetectedGameType = gameType },
+                new PluginInfo { FileName = "NotStarted.esp", FullPath = $@"{root}\NotStarted.esp", DetectedGameType = gameType }
+            ];
+        }
     }
 
     private sealed class TestPluginRefreshCapabilityPolicy : IPluginRefreshCapabilityPolicy
