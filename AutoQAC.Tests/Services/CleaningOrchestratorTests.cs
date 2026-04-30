@@ -818,6 +818,62 @@ public sealed class CleaningOrchestratorTests
     }
 
     [Fact]
+    public async Task StartCleaningAsync_WhenSessionAlreadyActive_ShouldRejectSecondStartAndKeepFirstSessionCancellable()
+    {
+        var plugins = new List<PluginInfo>
+        {
+            new() { FileName = "Plugin1.esp", FullPath = "Path/Plugin1.esp" }
+        };
+
+        var appState = new AppState
+        {
+            LoadOrderPath = "plugins.txt",
+            XEditExecutablePath = "xedit.exe",
+            CurrentGameType = GameType.SkyrimSe,
+            PluginsToClean = plugins
+        };
+        _stateServiceMock.CurrentState.Returns(appState);
+        _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>()).Returns(true);
+
+        var firstPluginStarted = CreateSignal();
+        CancellationToken firstSessionToken = default;
+        var cleanCalls = 0;
+        _cleaningServiceMock.CleanPluginAsync(
+                Arg.Any<PluginInfo>(),
+                Arg.Do<CancellationToken>(token => firstSessionToken = token),
+                Arg.Any<Action<Process>?>())
+            .Returns(async _ =>
+            {
+                cleanCalls++;
+                if (cleanCalls > 1)
+                {
+                    return new CleaningResult { Status = CleaningStatus.Cleaned, Success = true };
+                }
+
+                firstPluginStarted.TrySetResult(true);
+                await WaitForCancellationAsync(firstSessionToken);
+                return new CleaningResult { Status = CleaningStatus.Failed, Message = "Cancelled" };
+            });
+
+        var firstStartTask = _orchestrator.StartCleaningAsync();
+        await WaitForSignalAsync(firstPluginStarted);
+
+        var secondStart = () => _orchestrator.StartCleaningAsync();
+        await secondStart.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*already in progress*");
+
+        _stateServiceMock.Received(1).StartCleaning(Arg.Any<List<PluginInfo>>());
+        await _cleaningServiceMock.Received(1).CleanPluginAsync(
+            Arg.Any<PluginInfo>(),
+            Arg.Any<CancellationToken>(),
+            Arg.Any<Action<Process>?>());
+
+        await _orchestrator.StopCleaningAsync();
+        await WaitForCancellationAsync(firstSessionToken);
+        await firstStartTask;
+    }
+
+    [Fact]
     public async Task StopCleaningAsync_ShouldTerminateActiveProcess_Gracefully_AndStoreGracePeriodExpiredResult()
     {
         // Arrange
