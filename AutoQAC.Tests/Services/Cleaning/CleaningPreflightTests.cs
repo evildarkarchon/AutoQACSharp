@@ -154,15 +154,61 @@ public sealed class CleaningPreflightTests
         _stateMock.Received(0).UpdateState(Arg.Any<Func<AppState, AppState>>());
     }
 
+    [Theory]
+    [InlineData(GameType.Fallout3, null)]
+    [InlineData(GameType.FalloutNewVegas, "")]
+    [InlineData(GameType.Oblivion, @"C:\Games\Missing\plugins.txt")]
+    public async Task PrepareAsync_UnknownGameDetectedAsFileLoadOrderGame_WithMissingLoadOrderPath_Throws(
+        GameType detectedGameType,
+        string? loadOrderPath)
+    {
+        var state = CreateState(loadOrderPath: loadOrderPath) with
+        {
+            CurrentGameType = GameType.Unknown,
+            XEditExecutablePath = @"C:\Games\xEdit\xEdit.exe"
+        };
+        _stateMock.CurrentState.Returns(state);
+        _gameDetectionMock.DetectFromExecutable(Arg.Any<string>()).Returns(detectedGameType);
+        _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>()).Returns(true);
+
+        var act = () => _sut.PrepareAsync(CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        await _configMock.DidNotReceive().GetSkipListAsync(
+            Arg.Any<GameType>(),
+            Arg.Any<GameVariant>(),
+            Arg.Any<CancellationToken>());
+        _validationMock.DidNotReceive().ValidatePluginFile(Arg.Any<PluginInfo>());
+    }
+
+    [Fact]
+    public async Task PrepareAsync_UnknownGameDetectedAsMutagenSupportedGame_WithMissingLoadOrderPath_Succeeds()
+    {
+        var state = CreateState(loadOrderPath: null) with
+        {
+            CurrentGameType = GameType.Unknown,
+            XEditExecutablePath = @"C:\Games\xEdit\xEdit.exe"
+        };
+        _stateMock.CurrentState.Returns(state);
+        _gameDetectionMock.DetectFromExecutable(Arg.Any<string>()).Returns(GameType.Fallout4);
+        _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>()).Returns(true);
+
+        var plan = await _sut.PrepareAsync(CancellationToken.None);
+
+        plan.DetectedGameType.Should().Be(GameType.Fallout4);
+        plan.PluginRows.Should().ContainSingle();
+    }
+
     private static AppState CreateState(
         IReadOnlyList<PluginInfo>? plugins = null,
         bool mo2Mode = false,
-        string mo2ExecutablePath = @"C:\MO2\ModOrganizer.exe") =>
+        string mo2ExecutablePath = @"C:\MO2\ModOrganizer.exe",
+        string? loadOrderPath = @"C:\Games\Skyrim Special Edition\plugins.txt") =>
         new()
         {
             CurrentGameType = GameType.SkyrimSe,
             XEditExecutablePath = @"C:\Games\SSEEdit\SSEEdit.exe",
-            LoadOrderPath = @"C:\Games\Skyrim Special Edition\plugins.txt",
+            LoadOrderPath = loadOrderPath,
             Mo2ExecutablePath = mo2ExecutablePath,
             Mo2ModeEnabled = mo2Mode,
             CleaningTimeout = 300,
