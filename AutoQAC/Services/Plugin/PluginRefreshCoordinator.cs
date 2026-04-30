@@ -173,7 +173,22 @@ public sealed class PluginRefreshCoordinator : IPluginRefreshCoordinator, IDispo
             }).ToList();
             if (IsCurrent(generation, token))
             {
-                _stateService.SetPluginsToClean(pendingRows);
+                var targetPaths = snapshot.Select(target => target.FullPath).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var targetNames = snapshot.Select(target => target.FileName).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                _stateService.UpdateState(s =>
+                {
+                    if (s.PluginsToClean.Count == 0)
+                    {
+                        return s with { PluginsToClean = pendingRows.AsReadOnly() };
+                    }
+
+                    var rows = s.PluginsToClean.Select(plugin =>
+                        targetPaths.Contains(plugin.FullPath) || targetNames.Contains(plugin.FileName)
+                            ? plugin with { Approximation = PluginIssueApproximation.Pending }
+                            : plugin).ToList();
+
+                    return s with { PluginsToClean = rows.AsReadOnly() };
+                });
             }
 
             var dataFolder = ResolveDataFolder(request, pendingRows);

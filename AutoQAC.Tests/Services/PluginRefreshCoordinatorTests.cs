@@ -45,6 +45,44 @@ public sealed class PluginRefreshCoordinatorTests
     }
 
     [Fact]
+    public async Task RefreshSelectedApproximationsAsync_ShouldPreserveNonSelectedPluginRows()
+    {
+        var stateService = new StateService();
+        var sut = CreateCoordinator(stateService);
+        var request = new PluginRefreshRequest(GameType.SkyrimSe, @"C:\Game\Data");
+        var originalUnselectedApproximation = PluginIssueApproximation.Available(9, 8, 7);
+        stateService.SetPluginsToClean([
+            new PluginInfo
+            {
+                FileName = "Selected.esp",
+                FullPath = @"C:\Game\Data\Selected.esp",
+                DetectedGameType = GameType.SkyrimSe,
+                Approximation = PluginIssueApproximation.Available(1, 1, 1)
+            },
+            new PluginInfo
+            {
+                FileName = "Unselected.esp",
+                FullPath = @"C:\Game\Data\Unselected.esp",
+                DetectedGameType = GameType.SkyrimSe,
+                Approximation = originalUnselectedApproximation
+            }
+        ]);
+
+        await sut.RefreshSelectedApproximationsAsync(
+            request,
+            [new PluginRefreshTarget("Selected.esp", @"C:\Game\Data\Selected.esp")],
+            CancellationToken.None);
+
+        stateService.CurrentState.PluginsToClean.Should().HaveCount(2,
+            "targeted approximation refresh must update selected rows in place rather than replacing the visible list");
+        stateService.CurrentState.PluginsToClean.Should().Contain(plugin =>
+            plugin.FileName == "Selected.esp" && plugin.Approximation.Status == PluginIssueApproximationStatus.Available);
+        stateService.CurrentState.PluginsToClean.Should().Contain(plugin =>
+            plugin.FileName == "Unselected.esp" && plugin.Approximation == originalUnselectedApproximation,
+            "non-selected rows must remain visible with their previous approximation");
+    }
+
+    [Fact]
     public async Task RefreshSelectedApproximationsAsync_WhenNoTargets_PublishesSelectPluginsStatus()
     {
         var stateService = new StateService();
