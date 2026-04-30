@@ -176,7 +176,7 @@ Plans:
 - [x] 09-05-PLAN.md — Wire cleaning-start/lifecycle refresh cancellation and complete full phase verification.
 
 **Wave 5 (gap closure; blocked on Wave 4 completion)**
-- [ ] 09-06-PLAN.md — Close selected approximation refresh non-targeted row preservation verification gaps.
+- [x] 09-06-PLAN.md — Close selected approximation refresh non-targeted row preservation verification gaps.
 **UI hint**: yes
 
 ### Phase 10: Configuration Persistence Hardening
@@ -213,7 +213,7 @@ Plans:
 | 6. Command Launch Escaping | v1.0 Cleanup | 4/4 | Complete | 2026-04-29 |
 | 7. Backup Restore & Retention Safety | v1.0 Cleanup | 11/14 | Gaps planned | - |
 | 8. Cleaning Orchestrator Decomposition | v1.0 Cleanup | 10/10 | Complete | 2026-04-30 |
-| 9. Plugin Refresh & Approximation Performance | v1.0 Cleanup | 5/5 | Gaps found | - |
+| 9. Plugin Refresh & Approximation Performance | v1.0 Cleanup | 6/6 | Complete | 2026-04-30 |
 | 10. Configuration Persistence Hardening | v1.0 Cleanup | 0/0 | Not started | - |
 | 11. User-Facing Diagnostics Boundaries | v1.0 Cleanup | 0/0 | Not started | - |
 

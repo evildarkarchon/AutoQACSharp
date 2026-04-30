@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Cleanup
-status: gaps_planned
-stopped_at: Phase 09 verification gaps found
-last_updated: "2026-04-30T08:31:33.854Z"
-last_activity: 2026-04-30 -- Phase 09 planning complete
+status: phase_complete
+stopped_at: Completed 09-06-PLAN.md
+last_updated: "2026-04-30T08:39:25.458Z"
+last_activity: 2026-04-30
 progress:
   total_phases: 7
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 38
-  completed_plans: 37
-  percent: 57
+  completed_plans: 38
+  percent: 100
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-28)
 
 ## Current Position
 
-Phase: 09 (plugin-refresh-approximation-performance) — EXECUTING
+Phase: 09 (plugin-refresh-approximation-performance) — COMPLETE
 Plan: 6 of 6
-Status: Gap closure planned — ready to execute 09-06
-Last activity: 2026-04-30 -- Phase 09 planning complete
+Status: Phase 09 complete — ready for Phase 10 planning
+Last activity: 2026-04-30
 
-Progress: [█████████░] 5/6 plans executed, gap closure ready
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -58,6 +58,7 @@ Progress: [█████████░] 5/6 plans executed, gap closure ready
 | Phase 09 P03 | 6 min | 2 tasks | 7 files |
 | Phase 09 P04 | 3 min | 2 tasks | 4 files |
 | Phase 09 P05 | 9 min | 2 tasks | 11 files |
+| Phase 09 P06 | 3 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -92,6 +93,8 @@ Progress: [█████████░] 5/6 plans executed, gap closure ready
 - [Phase 09]: Cancel refresh is a direct coordinator cancellation command with no confirmation dialog and visibility tied to active approximation refresh state. — Manual cancellation should be immediate and non-destructive for completed row results.
 - [Phase 09]: Cleaning start cancels active approximation refresh before progress display and xEdit orchestration. — Plan 09-05 wires CleaningCommandsViewModel to the shared refresh coordinator after validation and before progress or xEdit start.
 - [Phase 09]: Manual load-order refresh remains coordinator-backed even when no game is selected. — Explicit load-order paths bypass game capability checks and use IPluginLoadingService.GetPluginsFromFileAsync.
+- [Phase 09]: Selected approximation refresh preserves the existing PluginsToClean row set and updates only selected target rows to Pending before analysis results merge back. — Plan 09-06 closes the destructive selected-refresh verification gap.
+- [Phase 09]: Empty-current-list selected refresh fallback remains for compatibility, but non-empty row sets use UpdateState instead of SetPluginsToClean(pendingRows). — This keeps selected refresh narrow without removing non-targeted visible rows.
 
 ### Pending Todos
 
@@ -109,6 +112,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-30T08:14:33Z
-Stopped at: Phase 09 verification gaps found
-Resume file: .planning/phases/09-plugin-refresh-approximation-performance/09-VERIFICATION.md
+Last session: 2026-04-30T08:39:25.452Z
+Stopped at: Completed 09-06-PLAN.md
+Resume file: None
