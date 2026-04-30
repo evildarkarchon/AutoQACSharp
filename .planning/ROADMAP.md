@@ -24,7 +24,7 @@ Full details: [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP.md)
 - [ ] **Phase 7: Backup Restore & Retention Safety** - Users can recover from backup/restore problems with clear, cancellable outcomes.
 - [ ] **Phase 8: Cleaning Orchestrator Decomposition** - Maintainers can change cleaning flow pieces without broad orchestrator rewrites.
 - [ ] **Phase 9: Plugin Refresh & Approximation Performance** - Users can refresh approximations more efficiently while plugin-loading coordination moves out of the ViewModel.
-- [x] **Phase 10: Configuration Persistence Hardening** - Users get deterministic configuration save/reload behavior with lower clone overhead. (completed 2026-04-30)
+- [ ] **Phase 10: Configuration Persistence Hardening** - Users get deterministic configuration save/reload behavior with lower clone overhead.
 - [ ] **Phase 11: User-Facing Diagnostics Boundaries** - Users see concise errors while logs avoid unnecessary path and command exposure.
 
 ## Phase Details
@@ -236,7 +236,7 @@ Plans:
 | 7. Backup Restore & Retention Safety | v1.0 Cleanup | 11/14 | Gaps planned | - |
 | 8. Cleaning Orchestrator Decomposition | v1.0 Cleanup | 10/10 | Complete | 2026-04-30 |
 | 9. Plugin Refresh & Approximation Performance | v1.0 Cleanup | 8/9 | Gaps planned | - |
-| 10. Configuration Persistence Hardening | v1.0 Cleanup | 5/5 | Complete   | 2026-04-30 |
+| 10. Configuration Persistence Hardening | v1.0 Cleanup | 5/5 | Gaps found | - |
 | 11. User-Facing Diagnostics Boundaries | v1.0 Cleanup | 0/0 | Not started | - |
 
 ## Coverage
