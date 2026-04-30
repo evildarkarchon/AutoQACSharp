@@ -4,6 +4,7 @@ using AutoQAC.Models.Configuration;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
 using AutoQAC.Services.GameDetection;
+using AutoQAC.Services.MO2;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Services.Backup;
 using AutoQAC.Services.Monitoring;
@@ -31,6 +32,7 @@ public sealed class CleaningOrchestratorTests
     private readonly IXEditOutputParser _outputParserMock;
     private readonly IBackupService _backupServiceMock;
     private readonly IHangDetectionService _hangDetectionMock;
+    private readonly IMo2ValidationService _mo2ValidationServiceMock;
     private readonly CleaningOrchestrator _orchestrator;
 
     public CleaningOrchestratorTests()
@@ -46,6 +48,7 @@ public sealed class CleaningOrchestratorTests
         _outputParserMock = Substitute.For<IXEditOutputParser>();
         _backupServiceMock = Substitute.For<IBackupService>();
         _hangDetectionMock = Substitute.For<IHangDetectionService>();
+        _mo2ValidationServiceMock = Substitute.For<IMo2ValidationService>();
 
         // Default mock setup for GetSkipListAsync to return empty list instead of null
         _configServiceMock.GetSkipListAsync(
@@ -70,13 +73,12 @@ public sealed class CleaningOrchestratorTests
                 Arg.Any<long>(), Arg.Any<long>(),
                 Arg.Any<CancellationToken>())
             .Returns(new LogReadResult { LogLines = new List<string>() });
+        _mo2ValidationServiceMock.ValidateMo2ExecutableAsync(Arg.Any<string>()).Returns(true);
 
         _orchestrator = new CleaningOrchestrator(
+            CreatePreflight(),
             _cleaningServiceMock,
-            _pluginServiceMock,
-            _gameDetectionServiceMock,
             _stateServiceMock,
-            _configServiceMock,
             _loggerMock,
             _processServiceMock,
             _logFileServiceMock,
@@ -84,6 +86,15 @@ public sealed class CleaningOrchestratorTests
             _backupServiceMock,
             _hangDetectionMock);
     }
+
+    private ICleaningPreflight CreatePreflight() => new CleaningPreflight(
+        _configServiceMock,
+        _gameDetectionServiceMock,
+        _pluginServiceMock,
+        _mo2ValidationServiceMock,
+        _cleaningServiceMock,
+        _stateServiceMock,
+        _loggerMock);
 
     private static TaskCompletionSource<bool> CreateSignal()
     {
@@ -2453,11 +2464,9 @@ public sealed class CleaningOrchestratorTests
     {
         // Arrange - use a new orchestrator instance for this test
         var orchestrator = new CleaningOrchestrator(
+            CreatePreflight(),
             _cleaningServiceMock,
-            _pluginServiceMock,
-            _gameDetectionServiceMock,
             _stateServiceMock,
-            _configServiceMock,
             _loggerMock,
             _processServiceMock,
             _logFileServiceMock,

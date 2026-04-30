@@ -59,6 +59,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IBackupSessionDeleter, DirectoryBackupSessionDeleter>();
         services.AddSingleton<IBackupService, BackupService>();
         services.AddSingleton<IHangDetectionService, HangDetectionService>();
+        services.AddSingleton<ICleaningPreflight, CleaningPreflight>();
         services.AddSingleton<ICleaningOrchestrator, CleaningOrchestrator>();
         return services;
     }

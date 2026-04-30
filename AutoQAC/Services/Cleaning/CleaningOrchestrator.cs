@@ -20,11 +20,9 @@ using AutoQAC.Services.State;
 namespace AutoQAC.Services.Cleaning;
 
 public sealed class CleaningOrchestrator(
+    ICleaningPreflight preflight,
     ICleaningService cleaningService,
-    IPluginValidationService pluginService,
-    IGameDetectionService gameDetectionService,
     IStateService stateService,
-    IConfigurationService configService,
     ILoggingService logger,
     IProcessExecutionService processService,
     IXEditLogFileService logFileService,
@@ -80,146 +78,17 @@ public sealed class CleaningOrchestrator(
             // Clean orphaned processes before starting
             await processService.CleanOrphanedProcessesAsync(ct).ConfigureAwait(false);
 
-            // Flush any pending config saves before launching xEdit
-            // (per user decision: "Always force-flush pending config saves before launching xEdit")
-            await configService.FlushPendingSavesAsync(ct).ConfigureAwait(false);
+            var preflightPlan = await preflight.PrepareAsync(ct).ConfigureAwait(false);
+            gameType = preflightPlan.DetectedGameType;
+            var pluginsToClean = preflightPlan.PluginRows
+                .Where(r => r.Decision == PreflightDecision.Clean)
+                .Select(r => r.Plugin)
+                .ToList();
 
-            // 1. Validate configuration
-            var isValid = await ValidateConfigurationAsync(ct).ConfigureAwait(false);
-            if (!isValid)
-            {
-                logger.Error(null, "Configuration is invalid, cannot start cleaning.");
-                throw new InvalidOperationException("Configuration is invalid");
-            }
+            ThrowIfNoValidPluginsAfterFileValidation(preflightPlan);
 
-            // 2. Get plugins from state (already loaded with skip list status)
-            var config = stateService.CurrentState;
-            var allPlugins = config.PluginsToClean;
-
-            // 3. Detect Game (if unknown) and Update State
-            if (config.CurrentGameType == GameType.Unknown)
-            {
-                var detectedGame =
-                    gameDetectionService.DetectFromExecutable(config.XEditExecutablePath ?? string.Empty);
-
-                if (detectedGame == GameType.Unknown && !string.IsNullOrEmpty(config.LoadOrderPath))
-                {
-                    detectedGame = await gameDetectionService.DetectFromLoadOrderAsync(config.LoadOrderPath, ct)
-                        .ConfigureAwait(false);
-                }
-
-                if (detectedGame != GameType.Unknown)
-                {
-                    logger.Information("Detected game type: {GameType}", detectedGame);
-                    stateService.UpdateState(s => s with { CurrentGameType = detectedGame });
-                    config = stateService.CurrentState; // Refresh local config
-                }
-                else
-                {
-                    logger.Error(null, "Cannot determine game type. Cleaning blocked for safety -- skip lists cannot be applied without a known game type.");
-                    throw new InvalidOperationException(
-                        "Cannot start cleaning: game type could not be determined. " +
-                        "Please select a game type in Settings, or ensure the xEdit executable name matches a supported game.");
-                }
-            }
-
-            gameType = config.CurrentGameType;
-
-            // 3b. Detect game variant for skip list handling
-            var pluginNames = allPlugins.Select(p => p.FileName).ToList();
-            var gameVariant = gameDetectionService.DetectVariant(gameType, pluginNames);
-            if (gameVariant != GameVariant.None)
-            {
-                logger.Information("Detected game variant: {Variant}", gameVariant);
-            }
-
-            // 4. Apply skip list filtering (respecting DisableSkipLists setting)
-            var userConfig = await configService.LoadUserConfigAsync(ct).ConfigureAwait(false);
-            var disableSkipLists = userConfig.Settings.DisableSkipLists;
-            var isMo2Mode = userConfig.Settings.Mo2Mode;
-
-            // 4a. MO2 configuration validation (early check with actionable error messages)
-            if (isMo2Mode)
-            {
-                var mo2Path = config.Mo2ExecutablePath;
-
-                if (string.IsNullOrEmpty(mo2Path))
-                {
-                    throw new InvalidOperationException(
-                        "MO2 mode is enabled but no MO2 executable path is configured. " +
-                        "Check MO2 executable path in Settings, or disable MO2 mode if not using Mod Organizer 2.");
-                }
-
-                if (!System.IO.File.Exists(mo2Path))
-                {
-                    throw new InvalidOperationException(
-                        $"MO2 mode is enabled but MO2 executable not found at '{mo2Path}'. " +
-                        "Check MO2 executable path in Settings, or disable MO2 mode if not using Mod Organizer 2.");
-                }
-            }
-
-            var excluded = config.ExcludedPluginPaths;
-
-            List<PluginInfo> pluginsToClean;
-            if (disableSkipLists)
-            {
-                logger.Debug("Skip lists disabled by user setting - cleaning all selected plugins");
-                pluginsToClean = allPlugins
-                    .Where(p => !excluded.Contains(p.FullPath))
-                    .Select(p => p with { DetectedGameType = gameType })
-                    .ToList();
-            }
-            else if (gameType != GameType.Unknown)
-            {
-                var skipList = await configService.GetSkipListAsync(gameType, gameVariant, ct)
-                    .ConfigureAwait(false);
-                var skipSet = new HashSet<string>(skipList, StringComparer.OrdinalIgnoreCase);
-
-                pluginsToClean = allPlugins
-                    .Select(p => p with { IsInSkipList = skipSet.Contains(p.FileName), DetectedGameType = gameType })
-                    .Where(p => !p.IsInSkipList && !excluded.Contains(p.FullPath))
-                    .ToList();
-            }
-            else
-            {
-                pluginsToClean = allPlugins
-                    .Where(p => !p.IsInSkipList && !excluded.Contains(p.FullPath))
-                    .ToList();
-            }
-
-            // 4b. File-existence validation (skipped in MO2 mode -- MO2 VFS resolves paths at runtime)
-            if (!isMo2Mode)
-            {
-                var pathFailures = new List<string>();
-                foreach (var plugin in pluginsToClean)
-                {
-                    var warning = pluginService.ValidatePluginFile(plugin);
-                    if (warning != PluginWarningKind.None)
-                    {
-                        pathFailures.Add($"{plugin.FileName} ({warning})");
-                    }
-                }
-
-                if (pathFailures.Count > 0)
-                {
-                    var summary = $"{pathFailures.Count} plugin(s) not found or unreadable: {string.Join(", ", pathFailures)}";
-                    logger.Warning(summary);
-
-                    pluginsToClean = pluginsToClean
-                        .Where(p => pluginService.ValidatePluginFile(p) == PluginWarningKind.None)
-                        .ToList();
-
-                    if (pluginsToClean.Count == 0)
-                    {
-                        throw new InvalidOperationException(
-                            $"No valid plugins to clean. {summary}");
-                    }
-                }
-            }
-            else
-            {
-                logger.Debug("MO2 mode active -- skipping file-existence validation (MO2 VFS resolves paths at xEdit runtime)");
-            }
+            // D-14: real cleaning mode applies detected game state; dry-run does not.
+            stateService.UpdateState(s => s with { CurrentGameType = gameType });
 
             // 5. Update state - cleaning started
             stateService.StartCleaning(pluginsToClean);
@@ -233,11 +102,12 @@ public sealed class CleaningOrchestrator(
             }
 
             // Get timeout for retry prompts
-            var timeoutSeconds = stateService.CurrentState.CleaningTimeout;
+            var timeoutSeconds = preflightPlan.CleaningTimeoutSeconds;
             if (timeoutSeconds <= 0) timeoutSeconds = 300;
 
             // 6b. Initialize backup session if backup is enabled
-            var backupEnabled = userConfig.Backup.Enabled;
+            var backupEnabled = preflightPlan.BackupEnabled;
+            var isMo2Mode = preflightPlan.IsMo2ModeActive;
 
             if (backupEnabled && !isMo2Mode)
             {
@@ -384,7 +254,7 @@ public sealed class CleaningOrchestrator(
 
                 // Clean plugin with retry logic for timeouts
                 var pluginStopwatch = Stopwatch.StartNew();
-                var xEditDir = System.IO.Path.GetDirectoryName(config.XEditExecutablePath ?? string.Empty) ?? string.Empty;
+                var xEditDir = preflightPlan.XEditDirectory;
                 CleaningResult result;
                 var attemptNumber = 0;
                 long mainLogOffset = 0;
@@ -538,7 +408,7 @@ public sealed class CleaningOrchestrator(
                 var backupRoot = System.IO.Path.GetDirectoryName(sessionDir)!;
                 backupCleanup = await CleanupOldSessionsAsync(
                         backupRoot,
-                        userConfig.Backup.MaxSessions,
+                        preflightPlan.BackupMaxSessions,
                         sessionDir,
                         cts.Token)
                     .ConfigureAwait(false);
@@ -969,102 +839,12 @@ public sealed class CleaningOrchestrator(
 
         logger.Information("Starting dry-run preview");
 
-        // Flush any pending config saves to ensure config is current
-        await configService.FlushPendingSavesAsync(ct).ConfigureAwait(false);
+        var preflightPlan = await preflight.PrepareAsync(ct).ConfigureAwait(false);
 
-        // Get plugins from state (same as StartCleaningAsync step 2)
-        var config = stateService.CurrentState;
-        var allPlugins = config.PluginsToClean;
-
-        // Detect game type locally (same as StartCleaningAsync step 3) -- do NOT update state
-        var gameType = config.CurrentGameType;
-        if (gameType == GameType.Unknown)
-        {
-            var detectedGame =
-                gameDetectionService.DetectFromExecutable(config.XEditExecutablePath ?? string.Empty);
-
-            if (detectedGame == GameType.Unknown && !string.IsNullOrEmpty(config.LoadOrderPath))
-            {
-                detectedGame = await gameDetectionService.DetectFromLoadOrderAsync(config.LoadOrderPath, ct)
-                    .ConfigureAwait(false);
-            }
-
-            if (detectedGame != GameType.Unknown)
-            {
-                gameType = detectedGame;
-            }
-            else
-            {
-                logger.Error(null,
-                    "Cannot determine game type for dry-run preview. Skip lists cannot be applied without a known game type.");
-                throw new InvalidOperationException(
-                    "Cannot start preview: game type could not be determined. " +
-                    "Please select a game type in Settings, or ensure the xEdit executable name matches a supported game.");
-            }
-        }
-
-        // Detect game variant (same as StartCleaningAsync step 3b)
-        var pluginNames = allPlugins.Select(p => p.FileName).ToList();
-        var gameVariant = gameDetectionService.DetectVariant(gameType, pluginNames);
-
-        // Load user config for skip list and MO2 settings (same as StartCleaningAsync step 4)
-        var userConfig = await configService.LoadUserConfigAsync(ct).ConfigureAwait(false);
-        var disableSkipLists = userConfig.Settings.DisableSkipLists;
-        var isMo2Mode = userConfig.Settings.Mo2Mode;
-
-        // Build skip set
-        HashSet<string>? skipSet = null;
-        if (!disableSkipLists)
-        {
-            var skipList = await configService.GetSkipListAsync(gameType, gameVariant, ct)
-                .ConfigureAwait(false);
-            skipSet = new HashSet<string>(skipList, StringComparer.OrdinalIgnoreCase);
-        }
-
-        var excluded = config.ExcludedPluginPaths;
-
-        // Evaluate each plugin
-        foreach (var plugin in allPlugins)
+        foreach (var row in preflightPlan.PluginRows)
         {
             ct.ThrowIfCancellationRequested();
-
-            // Not selected
-            if (excluded.Contains(plugin.FullPath))
-            {
-                results.Add(new DryRunResult(plugin.FileName, DryRunStatus.WillSkip, "Not selected"));
-                continue;
-            }
-
-            // Skip list filtering
-            if (skipSet != null && skipSet.Contains(plugin.FileName))
-            {
-                results.Add(new DryRunResult(plugin.FileName, DryRunStatus.WillSkip, "In skip list"));
-                continue;
-            }
-
-            // File-existence validation (skipped in MO2 mode)
-            if (!isMo2Mode)
-            {
-                var enrichedPlugin = plugin with { DetectedGameType = gameType };
-                var warning = pluginService.ValidatePluginFile(enrichedPlugin);
-                if (warning != PluginWarningKind.None)
-                {
-                    var reason = warning switch
-                    {
-                        PluginWarningKind.NotFound => "File not found",
-                        PluginWarningKind.Unreadable => "File is unreadable",
-                        PluginWarningKind.ZeroByte => "Zero-byte file",
-                        PluginWarningKind.MalformedEntry => "Malformed file name",
-                        PluginWarningKind.InvalidExtension => "Invalid file extension",
-                        _ => $"Validation failed ({warning})"
-                    };
-                    results.Add(new DryRunResult(plugin.FileName, DryRunStatus.WillSkip, reason));
-                    continue;
-                }
-            }
-
-            // Plugin is ready for cleaning
-            results.Add(new DryRunResult(plugin.FileName, DryRunStatus.WillClean, "Ready for cleaning"));
+            results.Add(ToDryRunResult(row));
         }
 
         logger.Information("Dry-run preview complete: {WillClean} will clean, {WillSkip} will skip",
@@ -1074,34 +854,79 @@ public sealed class CleaningOrchestrator(
         return results;
     }
 
-    private async Task<bool> ValidateConfigurationAsync(CancellationToken ct)
+    /// <summary>
+    /// Converts a shared preflight row to the existing dry-run preview row contract.
+    /// </summary>
+    private static DryRunResult ToDryRunResult(PreflightPluginRow row)
     {
-        var config = stateService.CurrentState;
-
-        if (string.IsNullOrEmpty(config.XEditExecutablePath))
+        if (row.Decision == PreflightDecision.Clean)
         {
-            return false;
+            return new DryRunResult(row.Plugin.FileName, DryRunStatus.WillClean, "Ready for cleaning");
         }
 
-        if (RequiresFileLoadOrder(config.CurrentGameType))
-        {
-            if (string.IsNullOrWhiteSpace(config.LoadOrderPath) ||
-                !System.IO.File.Exists(config.LoadOrderPath))
+        return new DryRunResult(
+            row.Plugin.FileName,
+            DryRunStatus.WillSkip,
+            row.SkipReason switch
             {
-                return false;
-            }
-        }
-
-        return await cleaningService.ValidateEnvironmentAsync(ct).ConfigureAwait(false);
+                PreflightSkipReason.NotSelected => "Not selected",
+                PreflightSkipReason.InSkipList => "In skip list",
+                PreflightSkipReason.FileNotFound => "File not found",
+                PreflightSkipReason.Unreadable => "File is unreadable",
+                PreflightSkipReason.ZeroByte => "Zero-byte file",
+                PreflightSkipReason.MalformedEntry => "Malformed file name",
+                PreflightSkipReason.InvalidExtension => "Invalid file extension",
+                _ => "Skipped"
+            });
     }
 
-    private static bool RequiresFileLoadOrder(GameType gameType) => gameType switch
+    /// <summary>
+    /// Preserves the legacy real-run failure when all selected plugins fail file validation.
+    /// </summary>
+    private static void ThrowIfNoValidPluginsAfterFileValidation(CleaningPreflightPlan plan)
     {
-        GameType.Fallout3 => true,
-        GameType.FalloutNewVegas => true,
-        GameType.Oblivion => true,
-        _ => false
-    };
+        if (plan.PluginRows.Any(r => r.Decision == PreflightDecision.Clean))
+        {
+            return;
+        }
+
+        var pathFailures = plan.PluginRows
+            .Where(r => IsFileValidationReason(r.SkipReason))
+            .Select(r => $"{r.Plugin.FileName} ({MapReasonToPluginWarningLabel(r.SkipReason!.Value)})")
+            .ToList();
+
+        if (pathFailures.Count == 0)
+        {
+            return;
+        }
+
+        var summary = $"{pathFailures.Count} plugin(s) not found or unreadable: {string.Join(", ", pathFailures)}";
+        throw new InvalidOperationException($"No valid plugins to clean. {summary}");
+    }
+
+    /// <summary>
+    /// True for skip reasons produced by on-disk plugin validation.
+    /// </summary>
+    private static bool IsFileValidationReason(PreflightSkipReason? reason) =>
+        reason is PreflightSkipReason.FileNotFound
+            or PreflightSkipReason.Unreadable
+            or PreflightSkipReason.ZeroByte
+            or PreflightSkipReason.MalformedEntry
+            or PreflightSkipReason.InvalidExtension;
+
+    /// <summary>
+    /// Converts a file-validation preflight reason to the legacy warning label used in exception summaries.
+    /// </summary>
+    private static string MapReasonToPluginWarningLabel(PreflightSkipReason reason) =>
+        reason switch
+        {
+            PreflightSkipReason.FileNotFound => nameof(PluginWarningKind.NotFound),
+            PreflightSkipReason.Unreadable => nameof(PluginWarningKind.Unreadable),
+            PreflightSkipReason.ZeroByte => nameof(PluginWarningKind.ZeroByte),
+            PreflightSkipReason.MalformedEntry => nameof(PluginWarningKind.MalformedEntry),
+            PreflightSkipReason.InvalidExtension => nameof(PluginWarningKind.InvalidExtension),
+            _ => reason.ToString()
+        };
 
     private void StartHangMonitoring(System.Diagnostics.Process process)
     {

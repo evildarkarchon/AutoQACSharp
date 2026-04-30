@@ -6,6 +6,7 @@ using AutoQAC.Services.Backup;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
 using AutoQAC.Services.GameDetection;
+using AutoQAC.Services.MO2;
 using AutoQAC.Services.Monitoring;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Services.Process;
@@ -243,6 +244,7 @@ public sealed class ProcessExecutionServiceTests : IDisposable
         var outputParserMock = Substitute.For<IXEditOutputParser>();
         var backupServiceMock = Substitute.For<IBackupService>();
         var hangDetectionMock = Substitute.For<IHangDetectionService>();
+        var mo2ValidationMock = Substitute.For<IMo2ValidationService>();
 
         // Default setup for GetSkipListAsync (with GameVariant parameter)
         configServiceMock.GetSkipListAsync(
@@ -303,6 +305,16 @@ public sealed class ProcessExecutionServiceTests : IDisposable
 
         pluginServiceMock.ValidatePluginFile(Arg.Any<PluginInfo>())
             .Returns(PluginWarningKind.None);
+        mo2ValidationMock.ValidateMo2ExecutableAsync(Arg.Any<string>()).Returns(true);
+
+        var preflight = new CleaningPreflight(
+            configServiceMock,
+            gameDetectionServiceMock,
+            pluginServiceMock,
+            mo2ValidationMock,
+            cleaningServiceMock,
+            stateServiceMock,
+            loggerMock);
 
         // Default: CleanPluginAsync succeeds and captures the onProcessStarted callback
         cleaningServiceMock.CleanPluginAsync(
@@ -321,11 +333,9 @@ public sealed class ProcessExecutionServiceTests : IDisposable
             .Returns(GameVariant.None);
 
         var orchestrator = new CleaningOrchestrator(
+            preflight,
             cleaningServiceMock,
-            pluginServiceMock,
-            gameDetectionServiceMock,
             stateServiceMock,
-            configServiceMock,
             loggerMock,
             processServiceMock,
             logFileServiceMock,
@@ -411,6 +421,7 @@ public sealed class ProcessExecutionServiceTests : IDisposable
         var backupServiceMock = Substitute.For<IBackupService>();
         var hangDetectionMock = Substitute.For<IHangDetectionService>();
         var processServiceMock = Substitute.For<IProcessExecutionService>();
+        var mo2ValidationMock = Substitute.For<IMo2ValidationService>();
 
         configServiceMock.GetSkipListAsync(
                 Arg.Any<GameType>(),
@@ -462,13 +473,21 @@ public sealed class ProcessExecutionServiceTests : IDisposable
         var pluginServiceMock = Substitute.For<IPluginValidationService>();
         pluginServiceMock.ValidatePluginFile(Arg.Any<PluginInfo>())
             .Returns(PluginWarningKind.None);
+        mo2ValidationMock.ValidateMo2ExecutableAsync(Arg.Any<string>()).Returns(true);
+
+        var preflight = new CleaningPreflight(
+            configServiceMock,
+            gameDetectionServiceMock,
+            pluginServiceMock,
+            mo2ValidationMock,
+            cleaningServiceMock,
+            stateServiceMock,
+            Substitute.For<ILoggingService>());
 
         var orch = new CleaningOrchestrator(
+            preflight,
             cleaningServiceMock,
-            pluginServiceMock,
-            gameDetectionServiceMock,
             stateServiceMock,
-            configServiceMock,
             Substitute.For<ILoggingService>(),
             processServiceMock,
             logFileServiceMock,

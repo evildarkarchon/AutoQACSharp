@@ -76,23 +76,34 @@ public sealed class CleaningPreflightTests
     public async Task PrepareAsync_Mo2Mode_ReportsBackupSkippedAndFileValidationSkippedPolicyFacts()
     {
         // Arrange
-        _stateMock.CurrentState.Returns(CreateState(mo2Mode: true));
-        _configMock.LoadUserConfigAsync(Arg.Any<CancellationToken>())
-            .Returns(new UserConfiguration
+        var tempMo2Path = Path.GetTempFileName();
+        try
+        {
+            _stateMock.CurrentState.Returns(CreateState(mo2Mode: true, mo2ExecutablePath: tempMo2Path));
+            _configMock.LoadUserConfigAsync(Arg.Any<CancellationToken>())
+                .Returns(new UserConfiguration
+                {
+                    Settings = new AutoQacSettings { Mo2Mode = true },
+                    Backup = new BackupSettings { Enabled = true }
+                });
+            _mo2ValidationMock.ValidateMo2ExecutableAsync(Arg.Any<string>()).Returns(true);
+
+            // Act
+            var plan = await _sut.PrepareAsync(CancellationToken.None);
+
+            // Assert
+            plan.IsMo2ModeActive.Should().BeTrue();
+            plan.BackupSkippedByPolicy.Should().BeTrue();
+            plan.FileValidationSkippedByPolicy.Should().BeTrue();
+            plan.LaunchModeLabel.Should().Be("MO2");
+        }
+        finally
+        {
+            if (File.Exists(tempMo2Path))
             {
-                Settings = new AutoQacSettings { Mo2Mode = true },
-                Backup = new BackupSettings { Enabled = true }
-            });
-        _mo2ValidationMock.ValidateMo2ExecutableAsync(Arg.Any<string>()).Returns(true);
-
-        // Act
-        var plan = await _sut.PrepareAsync(CancellationToken.None);
-
-        // Assert
-        plan.IsMo2ModeActive.Should().BeTrue();
-        plan.BackupSkippedByPolicy.Should().BeTrue();
-        plan.FileValidationSkippedByPolicy.Should().BeTrue();
-        plan.LaunchModeLabel.Should().Be("MO2");
+                File.Delete(tempMo2Path);
+            }
+        }
     }
 
     [Fact]
@@ -143,13 +154,16 @@ public sealed class CleaningPreflightTests
         _stateMock.Received(0).UpdateState(Arg.Any<Func<AppState, AppState>>());
     }
 
-    private static AppState CreateState(IReadOnlyList<PluginInfo>? plugins = null, bool mo2Mode = false) =>
+    private static AppState CreateState(
+        IReadOnlyList<PluginInfo>? plugins = null,
+        bool mo2Mode = false,
+        string mo2ExecutablePath = @"C:\MO2\ModOrganizer.exe") =>
         new()
         {
             CurrentGameType = GameType.SkyrimSe,
             XEditExecutablePath = @"C:\Games\SSEEdit\SSEEdit.exe",
             LoadOrderPath = @"C:\Games\Skyrim Special Edition\plugins.txt",
-            Mo2ExecutablePath = @"C:\MO2\ModOrganizer.exe",
+            Mo2ExecutablePath = mo2ExecutablePath,
             Mo2ModeEnabled = mo2Mode,
             CleaningTimeout = 300,
             PluginsToClean = plugins ?? [CreatePlugin("Update.esm")]
