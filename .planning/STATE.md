@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Cleanup
 status: executing
-stopped_at: Phase 10 context gathered
-last_updated: "2026-04-30T22:58:59.479Z"
+stopped_at: Completed 10-03-PLAN.md
+last_updated: "2026-04-30T23:08:04Z"
 last_activity: 2026-04-30
 progress:
   total_phases: 7
   completed_phases: 5
   total_plans: 46
-  completed_plans: 43
-  percent: 93
+  completed_plans: 44
+  percent: 96
 ---
 
 # Project State
@@ -26,37 +26,24 @@ See: .planning/PROJECT.md (updated 2026-04-28)
 ## Current Position
 
 Phase: 10 (configuration-persistence-hardening) — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 Status: Ready to execute
 Last activity: 2026-04-30
 
-Progress: [█████████░] 93%
+Progress: [██████████] 96%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 38
+- Total plans completed: 44
 - Average duration: ~5 min
-- Total execution time: ~0.7 hours
+- Total execution time: ~0.9 hours
 
 **Recent Plans:**
 
 | Phase | Plan | Duration | Tasks | Files |
 |-------|------|----------|-------|-------|
-| 08 | 01 | 20 min | 2 | 4 |
-| 08 | 02 | 7 min | 2 | 8 |
-| 08 | 03 | 5 min | 2 | 8 |
-| 08 | 04 | 6 min | 2 | 7 |
-| 08 | 06 | 8 min | 2 | 2 |
-| 08 | 07 | 4 min | 3 | 2 |
-| Phase 08 P08 | 2 min | 3 tasks | 2 files |
-| 08 | 09 | 8 min | 3 | 2 |
-| 08 | 10 | 7 min | 3 | 2 |
-| Phase 09 P01 | 4 min | 2 tasks | 7 files |
-| Phase 09 P02 | 2 min | 2 tasks | 6 files |
-| Phase 09 P03 | 6 min | 2 tasks | 7 files |
-| Phase 09 P04 | 3 min | 2 tasks | 4 files |
 | Phase 09 P05 | 9 min | 2 tasks | 11 files |
 | Phase 09 P06 | 3 min | 2 tasks | 2 files |
 | Phase 09 P07 | 3 min | 2 tasks | 4 files |
@@ -64,53 +51,24 @@ Progress: [█████████░] 93%
 | Phase 09 P09 | 35 min | 3 tasks | 2 files |
 | Phase 10 P01 | 3 min | 2 tasks | 4 files |
 | Phase 10 P02 | 7min | 2 tasks | 8 files |
+| Phase 10 P03 | 8 min | 2 tasks | 10 files |
 
 ## Accumulated Context
 
 ### Decisions
 
 - v1.0 Cleanup scope is driven by `.planning/codebase/CONCERNS.md`, favoring risk-reducing refactors and tests over broad rewrites.
-- Sequential xEdit cleaning remains a hard constraint; do not parallelize xEdit launches or per-plugin cleaning.
+- Sequential xEdit cleaning remains a hard constraint; do not parallelize xEdit launches.
 - `Mutagen/` remains read-only.
-- User Stop is distinct from timeout: user cancellation returns a confirmation outcome while timeout may auto-escalate.
-- Phase 06 locked direct xEdit and MO2 launch argv preservation with concise user-facing command-build failures.
-- Phase 07 made backup/restore/retention operations cancellable with structured outcomes and service-owned filesystem safety boundaries.
-- Phase 08 Wave 0 locked current CleaningOrchestrator behavior in tests before production extraction.
-- Phase 08 keeps `ICleaningOrchestrator` public surface stable while internal collaborators own preflight, backup, termination, runner, and finalizer responsibilities.
 - Phase 08 established `ICleaningPreflight.PrepareAsync` as the single source for real-cleaning and dry-run preflight selection rows.
-- Phase 08 keeps `CleaningOrchestrator` as the public sequential facade while collaborators own detailed preflight, backup, runner, finalizer, and termination policies.
-- Phase 08 cross-file source guard scans all six cleaning service files for `Parallel`, `Task.WhenAll`, and `Task.Run` constructs.
-- Phase 08 Plan 07 creates and publishes the session CTS before orphan cleanup/preflight so `StopCleaningAsync` cancels the startup window before any xEdit launch.
-- Phase 08 Plan 07 keeps Stop/ForceStop public behavior unchanged; only `StartCleaningAsync` ordering changed.
-- Phase 08 Plan 08 gates AlreadyClean promotion on a successful cleaned runner result and derives `PluginCleaningResult.Success` from finalStatus after log-parse overrides.
-- Phase 08 Plan 09 rejects concurrent `StartCleaningAsync` calls immediately so the first active session keeps `_cleaningCts` ownership.
-- Phase 08 Plan 10 revalidates `LoadOrderPath` after Unknown game detection resolves to FO3/FNV/Oblivion, before skip-list or plugin-row construction.
-- [Phase ?]: Phase 09 Plan 01 keeps QueryPlugins ITM counts exact by streaming only the analyzed plugin context and its immediate lower-priority context.
-- [Phase ?]: Phase 09 Plan 01 propagates OperationCanceledException instead of publishing unavailable or partial rows when exact analysis is canceled.
-- [Phase 09]: Phase 09 refresh status uses typed PluginRefreshStatus values with canonical display text helpers until ViewModels map them in later plans. — Plan 09-02 created the typed status contract used by downstream coordinator and ViewModel mapping.
-- [Phase 09]: Wave 0 coordinator tests intentionally reference the not-yet-implemented PluginRefreshCoordinator so Plan 09-03 receives executable RED behavior requirements. — Plan 09-02 is a contract/TDD RED plan; Plan 09-03 owns GREEN implementation.
-- [Phase 09]: Targeted approximation refresh is pinned to StateService.MergePluginApproximation, not MergePluginApproximations, to preserve non-targeted row values. — The new StateService regression test proves single-row merge preservation for selected refresh.
-- [Phase 09]: Plugin refresh workflow lives in PluginRefreshCoordinator — Moves generation, cancellation, plugin loading, skip-list application, and approximation publication out of ConfigurationViewModel.
-- [Phase 09]: Refresh capability policy is scoped to Phase 09 — Only Skyrim and Fallout 4 families enable issue approximation; broader registry cleanup remains deferred.
-- [Phase 09]: ConfigurationViewModel maps typed refresh statuses — The ViewModel remains responsible for UI text while services own workflow and cancellation.
-- [Phase 09]: PluginListViewModel owns only selected-row command intent and target snapshotting; approximation workflow remains in IPluginRefreshCoordinator. — Plan 09-04 keeps business workflow in the coordinator while adding plugin-list UI intent.
-- [Phase 09]: Refresh selected availability is gated by loaded rows, cleaning state, checked visible rows, current game, and refresh-scoped approximation capability. — This satisfies the UI-SPEC and prevents unsupported or unstable selected approximation refreshes.
-- [Phase 09]: Cancel refresh is a direct coordinator cancellation command with no confirmation dialog and visibility tied to active approximation refresh state. — Manual cancellation should be immediate and non-destructive for completed row results.
-- [Phase 09]: Cleaning start cancels active approximation refresh before progress display and xEdit orchestration. — Plan 09-05 wires CleaningCommandsViewModel to the shared refresh coordinator after validation and before progress or xEdit start.
-- [Phase 09]: Manual load-order refresh remains coordinator-backed even when no game is selected. — Explicit load-order paths bypass game capability checks and use IPluginLoadingService.GetPluginsFromFileAsync.
-- [Phase 09]: Selected approximation refresh preserves the existing PluginsToClean row set and updates only selected target rows to Pending before analysis results merge back. — Plan 09-06 closes the destructive selected-refresh verification gap.
-- [Phase 09]: Empty-current-list selected refresh fallback remains for compatibility, but non-empty row sets use UpdateState instead of SetPluginsToClean(pendingRows). — This keeps selected refresh narrow without removing non-targeted visible rows.
-- [Phase 09]: Disable Skip Lists remains user-driven by ConfigurationViewModel, but PluginRefreshCoordinator consumes it only through PluginRefreshRequest. — Plan 09-07 preserves service-owned refresh workflow while wiring the existing UI toggle into row publication.
-- [Phase 09]: PluginRefreshRequest.DisableSkipLists defaults to false. — Legacy callers keep restrictive skip-list behavior unless they explicitly opt into the user toggle.
-- [Phase 09]: Full-list approximation refresh now has its own FullRefreshCompleted terminal status instead of reusing selected-refresh completion text. — This keeps selected and full refresh lifecycle messages explicit and lets tests assert the exact UI cleanup signal.
-- [Phase 09]: The coordinator publishes FullRefreshCompleted only after successful AnalyzeTargetsAsync completion and only while the generation remains current. — Generation gating prevents superseded refreshes from publishing stale terminal statuses that could mislead the UI.
-- [Phase 09]: PluginListViewModel keeps the running set intentionally narrow: LoadingPlugins and AnalyzingSelected are running; terminal statuses clear the cancel affordance. — The cancel button should be active only while work is actually in progress, and completion/cancellation statuses must clear it.
-- [Phase 09]: Plan 09 closes remaining verifier blockers with regression tests because PluginRefreshCoordinator already contained signal-only CTS ownership, failure terminal status, and variant skip-list implementation. — The gap closure is test-only and pins the existing implementation.
-- [Phase 09]: Refresh cancellation tests use delayed plugin loading so manual, supersede, and cleaning-start cancellation exercise awaited in-flight work. — This prevents false-positive cancellation lifetime coverage.
-- [Phase 10]: Phase 10 Plan 01 implements model-owned manual Copy() methods and leaves ConfigurationService.CloneConfig unchanged for Plan 03. — Plan 01 ships the copy primitive only; Plan 03 owns the service caller swap.
-- [Phase 10]: Phase 10 Plan 01 proves Copy() behavior parity with the existing YAML round-trip clone through xUnit tests instead of source-regex clone guards. — Review feedback favored behavior tests over brittle source-regex assertions.
-- [Phase 10]: ConfigPersistenceCoordinator uses a single-reader Channel<ConfigPersistenceOperation> with barrier TCS completions for deterministic flush/reload results. — Plan 10-02 establishes the serialized persistence authority and result-bearing barriers required by REF-03.
-- [Phase 10]: Phase 10 Plan 02 covers atomic save sequencing on production UserConfigFileStore with injected Replace/Move delegates rather than fake-store simulation. — B16/B17 are production file-store behaviors, so direct temp-directory tests provide stronger evidence than fake call-log simulation.
+- Phase 09 PluginRefreshCoordinator owns generation, cancellation, plugin loading, skip-list application, and approximation publication.
+- Phase 10 Plan 01 implements model-owned manual `Copy()` methods and leaves ConfigurationService clone caller replacement for Plan 03.
+- Phase 10 Plan 01 proves Copy() behavior parity with the existing YAML round-trip clone through xUnit tests instead of source-regex clone guards.
+- Phase 10 Plan 02 uses a single-reader `Channel<ConfigPersistenceOperation>` with barrier TCS completions for deterministic flush/reload results.
+- Phase 10 Plan 02 covers atomic save sequencing on production `UserConfigFileStore` with injected Replace/Move delegates rather than fake-store simulation.
+- Phase 10 Plan 03 wires `IConfigurationService` and `ConfigWatcherService` through `ConfigPersistenceCoordinator`, exposing typed flush/failure/status streams while preserving skip-list/game helper behavior.
+- Phase 10 Plan 03 makes `ConfigWatcherService` signal-only; hash filtering, YAML validation, race policy, and cleaning deferral live in `ConfigPersistenceCoordinator`.
+- Phase 10 Plan 03 surfaces invalid user YAML through `LastFailure` instead of throwing from `LoadUserConfigAsync`.
 
 ### Pending Todos
 
@@ -118,7 +76,8 @@ None.
 
 ### Blockers/Concerns
 
-- Config watcher and debounced save behavior remains race-prone until Phase 10 hardening.
+- Plan 04 still needs to consume typed pre-cleaning flush failures to block xEdit launch on failed settings persistence.
+- Plan 05 still needs ViewModel mapping for `Failures`/`PersistenceResults` status text.
 
 ### Quick Tasks Completed
 
@@ -128,6 +87,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-30T22:58:46.542Z
-Stopped at: Phase 10 context gathered
+Last session: 2026-04-30T23:08:04Z
+Stopped at: Completed 10-03-PLAN.md
 Resume file: None
