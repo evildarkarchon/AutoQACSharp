@@ -145,7 +145,7 @@ Plans:
 
 **Wave 6 (review-informed gap closure; blocked on Wave 5 completion)**
 - [x] 08-07-PLAN.md — Fix CR-01: publish session CTS before orphan cleanup/preflight so Stop during preflight cancels the session before any xEdit launch (TDD).
-- [ ] 08-08-PLAN.md — Fix CR-02 + WR-01 in PluginResultFinalizer: gate AlreadyClean on success/cleaned; derive Success from finalStatus (TDD).
+- [x] 08-08-PLAN.md — Fix CR-02 + WR-01 in PluginResultFinalizer: gate AlreadyClean on success/cleaned; derive Success from finalStatus (TDD).
 
 ### Phase 9: Plugin Refresh & Approximation Performance
 **Goal**: Users can refresh plugin issue approximations with better cancellation and less redundant work while plugin loading and approximation refresh behavior moves out of the configuration ViewModel.
@@ -192,7 +192,7 @@ Plans:
 | 5. Process Stop & PID Safety | v1.0 Cleanup | 0/0 | Not started | - |
 | 6. Command Launch Escaping | v1.0 Cleanup | 4/4 | Complete | 2026-04-29 |
 | 7. Backup Restore & Retention Safety | v1.0 Cleanup | 11/14 | Gaps planned | - |
-| 8. Cleaning Orchestrator Decomposition | v1.0 Cleanup | 7/8 | In Progress | - |
+| 8. Cleaning Orchestrator Decomposition | v1.0 Cleanup | 8/8 | Complete | 2026-04-30 |
 | 9. Plugin Refresh & Approximation Performance | v1.0 Cleanup | 0/0 | Not started | - |
 | 10. Configuration Persistence Hardening | v1.0 Cleanup | 0/0 | Not started | - |
 | 11. User-Facing Diagnostics Boundaries | v1.0 Cleanup | 0/0 | Not started | - |
