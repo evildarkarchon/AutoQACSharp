@@ -78,13 +78,13 @@ public sealed class CleaningOrchestratorTests
         _orchestrator = new CleaningOrchestrator(
             CreatePreflight(),
             new BackupSessionCoordinator(_backupServiceMock, _stateServiceMock, _loggerMock),
+            new CleaningTerminationCoordinator(_processServiceMock, _hangDetectionMock, _stateServiceMock, _loggerMock),
             _cleaningServiceMock,
             _stateServiceMock,
             _loggerMock,
             _processServiceMock,
             _logFileServiceMock,
-            _outputParserMock,
-            _hangDetectionMock);
+            _outputParserMock);
     }
 
     private ICleaningPreflight CreatePreflight() => new CleaningPreflight(
@@ -2466,13 +2466,13 @@ public sealed class CleaningOrchestratorTests
         var orchestrator = new CleaningOrchestrator(
             CreatePreflight(),
             new BackupSessionCoordinator(_backupServiceMock, _stateServiceMock, _loggerMock),
+            new CleaningTerminationCoordinator(_processServiceMock, _hangDetectionMock, _stateServiceMock, _loggerMock),
             _cleaningServiceMock,
             _stateServiceMock,
             _loggerMock,
             _processServiceMock,
             _logFileServiceMock,
-            _outputParserMock,
-            _hangDetectionMock);
+            _outputParserMock);
 
         // Act & Assert
         // Should not throw

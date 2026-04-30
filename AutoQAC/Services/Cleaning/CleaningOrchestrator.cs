@@ -3,15 +3,12 @@ using System.Collections.Generic;
 using System.Collections.Frozen;
 using System.Diagnostics;
 using System.Linq;
-using System.Reactive.Linq;
-using System.Reactive.Subjects;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.Configuration;
 using AutoQAC.Services.GameDetection;
-using AutoQAC.Services.Monitoring;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Services.Process;
 using AutoQAC.Services.State;
@@ -21,27 +18,21 @@ namespace AutoQAC.Services.Cleaning;
 public sealed class CleaningOrchestrator(
     ICleaningPreflight preflight,
     IBackupSessionCoordinator backupCoordinator,
+    ICleaningTerminationCoordinator terminationCoordinator,
     ICleaningService cleaningService,
     IStateService stateService,
     ILoggingService logger,
     IProcessExecutionService processService,
     IXEditLogFileService logFileService,
-    IXEditOutputParser outputParser,
-    IHangDetectionService hangDetection)
+    IXEditOutputParser outputParser)
     : ICleaningOrchestrator, IDisposable
 {
-    private readonly Subject<bool> _hangDetected = new();
     private readonly object _ctsLock = new();
-    private readonly object _processLock = new();
 
     private CancellationTokenSource? _cleaningCts;
-    private volatile bool _isStopRequested;
-    private System.Diagnostics.Process? _currentProcess;
-    private TerminationResult? _lastTerminationResult;
-    private IDisposable? _hangMonitorSubscription;
 
-    public TerminationResult? LastTerminationResult => _lastTerminationResult;
-    public IObservable<bool> HangDetected => _hangDetected.AsObservable();
+    public TerminationResult? LastTerminationResult => terminationCoordinator.LastTerminationResult;
+    public IObservable<bool> HangDetected => terminationCoordinator.HangDetected;
 
     public Task StartCleaningAsync(CancellationToken ct = default)
     {
@@ -64,9 +55,8 @@ public sealed class CleaningOrchestrator(
         var backupEntries = new List<BackupPluginEntry>();
         BackupRetentionCleanupResult? backupCleanup = null;
 
-        // Reset stop flags at the start of each cleaning session
-        _isStopRequested = false;
-        _lastTerminationResult = null;
+        // Reset stop flags at the start of each cleaning session.
+        terminationCoordinator.ResetForNewSession();
 
         try
         {
@@ -230,12 +220,8 @@ public sealed class CleaningOrchestrator(
                         cts.Token,
                         onProcessStarted: proc =>
                         {
-                            lock (_processLock)
-                            {
-                                _currentProcess = proc;
-                            }
-
-                            StartHangMonitoring(proc);
+                            // Wave 3: keep the inline lambda; Wave 4 hoists it into the runner via delegate.
+                            terminationCoordinator.AttachProcess(proc);
                         }).ConfigureAwait(false);
 
                     // If timed out and callback provided, ask user if they want to retry
@@ -260,16 +246,7 @@ public sealed class CleaningOrchestrator(
 
                 pluginStopwatch.Stop();
 
-                // Stop hang monitoring and dismiss any visible warning
-                _hangMonitorSubscription?.Dispose();
-                _hangMonitorSubscription = null;
-                _hangDetected.OnNext(false);
-
-                // Clear the current process reference after plugin is done
-                lock (_processLock)
-                {
-                    _currentProcess = null;
-                }
+                terminationCoordinator.DetachProcess();
 
                 // Read log content using offset-based API (replaces legacy timestamp-based ReadLogFileAsync)
                 CleaningStatistics? logStats = null;
@@ -277,7 +254,7 @@ public sealed class CleaningOrchestrator(
                 var finalStatus = result.Status;
 
                 // Guard: only read logs if process was not killed/cancelled (per D-04)
-                if (!MayProcessStillBeRunning(_lastTerminationResult) && !_isStopRequested && result.Status != CleaningStatus.Skipped)
+                if (!terminationCoordinator.ProcessMayStillBeRunning && !terminationCoordinator.IsStopRequested && result.Status != CleaningStatus.Skipped)
                 {
                     var logResult = await logFileService.ReadLogContentAsync(
                         xEditDir, gameType, mainLogOffset, exceptionLogOffset, cts.Token).ConfigureAwait(false);
@@ -312,7 +289,7 @@ public sealed class CleaningOrchestrator(
                             plugin.FileName, logResult.ExceptionContent);
                     }
                 }
-                else if (_isStopRequested || MayProcessStillBeRunning(_lastTerminationResult))
+                else if (terminationCoordinator.IsStopRequested || terminationCoordinator.ProcessMayStillBeRunning)
                 {
                     logParseWarning = "xEdit was terminated -- no log available";
                 }
@@ -418,21 +395,7 @@ public sealed class CleaningOrchestrator(
         }
         finally
         {
-            // Reset stop flags
-            _isStopRequested = false;
-            stateService.SetTerminating(false);
-            _lastTerminationResult = null;
-
-            // Stop hang monitoring
-            _hangMonitorSubscription?.Dispose();
-            _hangMonitorSubscription = null;
-            _hangDetected.OnNext(false);
-
-            // Clear process reference
-            lock (_processLock)
-            {
-                _currentProcess = null;
-            }
+            terminationCoordinator.ResetForNewSession();
 
             lock (_ctsLock)
             {
@@ -443,33 +406,20 @@ public sealed class CleaningOrchestrator(
     }
 
     /// <inheritdoc />
-    public Task CancelBackupOperationAsync()
+    public async Task CancelBackupOperationAsync()
     {
-        lock (_processLock)
+        if (terminationCoordinator.HasActiveProcess)
         {
-            if (_currentProcess is not null)
-            {
-                return Task.CompletedTask;
-            }
+            logger.Information("CancelBackupOperationAsync ignored: xEdit is active");
+            return;
         }
 
-        return backupCoordinator.CancelActiveOperationAsync();
+        await backupCoordinator.CancelActiveOperationAsync().ConfigureAwait(false);
     }
 
     public async Task<StopCleaningResult> StopCleaningAsync()
     {
-        if (_isStopRequested)
-        {
-            // Path B: Second click during grace period -- immediate force kill, no prompt
-            logger.Information("[Termination] Second stop requested -- escalating to force kill");
-            return await ForceStopCleaningAsync().ConfigureAwait(false);
-        }
-
-        _isStopRequested = true;
-        stateService.SetTerminating(true);
-        logger.Information("[Termination] Graceful stop requested");
-
-        // Cancel the CTS (race-safe per PROC-04)
+        // Cancel session CTS first so the foreach loop exits.
         CancellationTokenSource? cts;
         lock (_ctsLock)
         {
@@ -485,60 +435,15 @@ public sealed class CleaningOrchestrator(
         }
         catch (ObjectDisposedException)
         {
-            logger.Debug("[Termination] CTS already disposed -- cleaning likely already finished");
-            stateService.SetTerminating(false);
-            return new StopCleaningResult(null, MayStillBeRunning: false);
+            // Already disposed -- fine
         }
 
-        // Attempt graceful termination on the current process
-        System.Diagnostics.Process? proc;
-        lock (_processLock)
-        {
-            proc = _currentProcess;
-        }
-
-        if (proc != null)
-        {
-            try
-            {
-                if (proc.Id == Environment.ProcessId)
-                {
-                    logger.Error(null, "[Termination] Refusing to terminate the AutoQAC process during stop request");
-                    return new StopCleaningResult(null, MayStillBeRunning: false);
-                }
-
-                if (!proc.HasExited)
-                {
-                    var result = await processService.TerminateProcessAsync(proc, forceKill: false, ct: CancellationToken.None)
-                        .ConfigureAwait(false);
-                    _lastTerminationResult = result;
-
-                    if (result == TerminationResult.GracePeriodExpired)
-                    {
-                        // Path A: Grace period expired naturally, user hasn't clicked again.
-                        // Store result so the ViewModel can react and prompt the user.
-                        _lastTerminationResult = result;
-                    }
-
-                    return ToStopCleaningResult(result);
-                }
-            }
-            catch (InvalidOperationException)
-            {
-                logger.Debug("[Termination] Process already exited during graceful stop");
-                _lastTerminationResult = TerminationResult.AlreadyExited;
-                return ToStopCleaningResult(TerminationResult.AlreadyExited);
-            }
-        }
-
-        return new StopCleaningResult(_lastTerminationResult, MayProcessStillBeRunning(_lastTerminationResult));
+        return await terminationCoordinator.StopAsync().ConfigureAwait(false);
     }
 
     public async Task<StopCleaningResult> ForceStopCleaningAsync()
     {
-        logger.Information("[Termination] Force stop requested -- killing process tree immediately");
-
-        // Cancel the CTS if not already
+        // Cancel session CTS first so the foreach loop exits.
         CancellationTokenSource? cts;
         lock (_ctsLock)
         {
@@ -553,61 +458,14 @@ public sealed class CleaningOrchestrator(
             }
         }
         catch (ObjectDisposedException)
-            {
-                // Already disposed -- fine
-            }
-
-        // Force kill the process tree
-        System.Diagnostics.Process? proc;
-        lock (_processLock)
         {
-            proc = _currentProcess;
+            // Already disposed -- fine
         }
 
-        if (proc != null)
-        {
-            try
-            {
-                if (proc.Id == Environment.ProcessId)
-                {
-                    logger.Error(null, "[Termination] Refusing to terminate the AutoQAC process during force stop request");
-                    return new StopCleaningResult(null, MayStillBeRunning: false);
-                }
-
-                if (!proc.HasExited)
-                {
-                    var result = await processService.TerminateProcessAsync(proc, forceKill: true, ct: CancellationToken.None)
-                        .ConfigureAwait(false);
-                    _lastTerminationResult = result;
-                    return ToStopCleaningResult(result);
-                }
-
-                _lastTerminationResult = TerminationResult.AlreadyExited;
-                return ToStopCleaningResult(TerminationResult.AlreadyExited);
-            }
-            catch (InvalidOperationException)
-            {
-                logger.Debug("[Termination] Process already exited during force stop");
-                _lastTerminationResult = TerminationResult.AlreadyExited;
-                return ToStopCleaningResult(TerminationResult.AlreadyExited);
-            }
-        }
-
-        return new StopCleaningResult(_lastTerminationResult, MayProcessStillBeRunning(_lastTerminationResult));
+        return await terminationCoordinator.ForceStopAsync().ConfigureAwait(false);
     }
 
-    public StopCleaningResult MarkLeftRunningByUser()
-    {
-        _lastTerminationResult = TerminationResult.LeftRunningByUser;
-        logger.Information("[Termination] User left xEdit running after declining force termination");
-        return ToStopCleaningResult(TerminationResult.LeftRunningByUser);
-    }
-
-    private static StopCleaningResult ToStopCleaningResult(TerminationResult? result) =>
-        new(result, MayProcessStillBeRunning(result));
-
-    private static bool MayProcessStillBeRunning(TerminationResult? result) =>
-        result is TerminationResult.GracePeriodExpired or TerminationResult.LeftRunningByUser or TerminationResult.ForceKillFailed;
+    public StopCleaningResult MarkLeftRunningByUser() => terminationCoordinator.MarkLeftRunningByUser();
 
     public async Task<List<DryRunResult>> RunDryRunAsync(CancellationToken ct = default)
     {
@@ -704,18 +562,6 @@ public sealed class CleaningOrchestrator(
             _ => reason.ToString()
         };
 
-    private void StartHangMonitoring(System.Diagnostics.Process process)
-    {
-        // Ensure only one active monitor subscription per xEdit process lifecycle.
-        _hangMonitorSubscription?.Dispose();
-        _hangMonitorSubscription = hangDetection.MonitorProcess(process)
-            .Subscribe(
-                isHung => _hangDetected.OnNext(isHung),
-                _ => { }, // Error: monitor completed unexpectedly
-                () => { } // Completed: process exited
-            );
-    }
-
     private void LogSessionSummary(CleaningSessionResult session)
     {
         logger.Information("=== AutoQAC Session Complete ===");
@@ -740,9 +586,6 @@ public sealed class CleaningOrchestrator(
 
     public void Dispose()
     {
-        _hangMonitorSubscription?.Dispose();
-        _hangDetected.Dispose();
-
         lock (_ctsLock)
         {
             _cleaningCts?.Dispose();
