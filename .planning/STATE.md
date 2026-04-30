@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Cleanup
-status: executing
-stopped_at: Completed 09-04-PLAN.md
-last_updated: "2026-04-30T07:55:48.301Z"
+status: verifying
+stopped_at: Completed 09-05-PLAN.md
+last_updated: "2026-04-30T08:06:24.283Z"
 last_activity: 2026-04-30
 progress:
   total_phases: 7
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 37
-  completed_plans: 36
-  percent: 97
+  completed_plans: 37
+  percent: 100
 ---
 
 # Project State
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-04-28)
 
 Phase: 09 (plugin-refresh-approximation-performance) — EXECUTING
 Plan: 5 of 5
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-04-30
 
-Progress: [██████████] 97%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -57,6 +57,7 @@ Progress: [██████████] 97%
 | Phase 09 P02 | 2 min | 2 tasks | 6 files |
 | Phase 09 P03 | 6 min | 2 tasks | 7 files |
 | Phase 09 P04 | 3 min | 2 tasks | 4 files |
+| Phase 09 P05 | 9 min | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -89,6 +90,8 @@ Progress: [██████████] 97%
 - [Phase 09]: PluginListViewModel owns only selected-row command intent and target snapshotting; approximation workflow remains in IPluginRefreshCoordinator. — Plan 09-04 keeps business workflow in the coordinator while adding plugin-list UI intent.
 - [Phase 09]: Refresh selected availability is gated by loaded rows, cleaning state, checked visible rows, current game, and refresh-scoped approximation capability. — This satisfies the UI-SPEC and prevents unsupported or unstable selected approximation refreshes.
 - [Phase 09]: Cancel refresh is a direct coordinator cancellation command with no confirmation dialog and visibility tied to active approximation refresh state. — Manual cancellation should be immediate and non-destructive for completed row results.
+- [Phase 09]: Cleaning start cancels active approximation refresh before progress display and xEdit orchestration. — Plan 09-05 wires CleaningCommandsViewModel to the shared refresh coordinator after validation and before progress or xEdit start.
+- [Phase 09]: Manual load-order refresh remains coordinator-backed even when no game is selected. — Explicit load-order paths bypass game capability checks and use IPluginLoadingService.GetPluginsFromFileAsync.
 
 ### Pending Todos
 
@@ -106,6 +109,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-30T07:55:48.295Z
-Stopped at: Completed 09-04-PLAN.md
+Last session: 2026-04-30T08:06:24.277Z
+Stopped at: Completed 09-05-PLAN.md
 Resume file: None

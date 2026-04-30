@@ -23,7 +23,7 @@ Full details: [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP.md)
 - [x] **Phase 6: Command Launch Escaping** - Users can clean plugins with difficult paths and names through direct xEdit and MO2 launches.
 - [ ] **Phase 7: Backup Restore & Retention Safety** - Users can recover from backup/restore problems with clear, cancellable outcomes.
 - [ ] **Phase 8: Cleaning Orchestrator Decomposition** - Maintainers can change cleaning flow pieces without broad orchestrator rewrites.
-- [ ] **Phase 9: Plugin Refresh & Approximation Performance** - Users can refresh approximations more efficiently while plugin-loading coordination moves out of the ViewModel.
+- [x] **Phase 9: Plugin Refresh & Approximation Performance** - Users can refresh approximations more efficiently while plugin-loading coordination moves out of the ViewModel.
 - [ ] **Phase 10: Configuration Persistence Hardening** - Users get deterministic configuration save/reload behavior with lower clone overhead.
 - [ ] **Phase 11: User-Facing Diagnostics Boundaries** - Users see concise errors while logs avoid unnecessary path and command exposure.
 
@@ -173,7 +173,7 @@ Plans:
 - [x] 09-04-PLAN.md — Add selected approximation refresh and cancel controls near the plugin list.
 
 **Wave 4 (blocked on 09-01 and 09-04 completion)**
-- [ ] 09-05-PLAN.md — Wire cleaning-start/lifecycle refresh cancellation and complete full phase verification.
+- [x] 09-05-PLAN.md — Wire cleaning-start/lifecycle refresh cancellation and complete full phase verification.
 **UI hint**: yes
 
 ### Phase 10: Configuration Persistence Hardening
@@ -210,7 +210,7 @@ Plans:
 | 6. Command Launch Escaping | v1.0 Cleanup | 4/4 | Complete | 2026-04-29 |
 | 7. Backup Restore & Retention Safety | v1.0 Cleanup | 11/14 | Gaps planned | - |
 | 8. Cleaning Orchestrator Decomposition | v1.0 Cleanup | 10/10 | Complete | 2026-04-30 |
-| 9. Plugin Refresh & Approximation Performance | v1.0 Cleanup | 0/0 | Not started | - |
+| 9. Plugin Refresh & Approximation Performance | v1.0 Cleanup | 5/5 | Complete | 2026-04-30 |
 | 10. Configuration Persistence Hardening | v1.0 Cleanup | 0/0 | Not started | - |
 | 11. User-Facing Diagnostics Boundaries | v1.0 Cleanup | 0/0 | Not started | - |
 
