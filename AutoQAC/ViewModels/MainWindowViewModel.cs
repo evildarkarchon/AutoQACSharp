@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.Cleaning;
@@ -58,6 +59,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
 
         Commands = new CleaningCommandsViewModel(
             stateService, orchestrator, configService, pluginLoadingService,
+            pluginRefreshCoordinator ?? NoOpPluginRefreshCoordinator.Instance,
             logger, messageDialog, uiDispatcher,
             ShowProgressInteraction, ShowPreviewInteraction,
             ShowSettingsInteraction, ShowSkipListInteraction,
@@ -90,5 +92,25 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
         Configuration.Dispose();
         PluginList.Dispose();
         Commands.Dispose();
+    }
+
+    private sealed class NoOpPluginRefreshCoordinator : IPluginRefreshCoordinator
+    {
+        public static NoOpPluginRefreshCoordinator Instance { get; } = new();
+
+        public IObservable<PluginRefreshStatus> StatusChanged => System.Reactive.Linq.Observable.Never<PluginRefreshStatus>();
+
+        public Task RefreshForGameAsync(PluginRefreshRequest request, System.Threading.CancellationToken ct = default) =>
+            Task.CompletedTask;
+
+        public Task RefreshSelectedApproximationsAsync(
+            PluginRefreshRequest request,
+            IReadOnlyList<PluginRefreshTarget> selectedTargets,
+            System.Threading.CancellationToken ct = default) =>
+            Task.CompletedTask;
+
+        public void CancelActiveRefresh(PluginRefreshCancelReason reason)
+        {
+        }
     }
 }

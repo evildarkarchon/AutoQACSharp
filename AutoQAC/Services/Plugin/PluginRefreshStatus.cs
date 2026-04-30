@@ -22,6 +22,7 @@ public enum PluginRefreshCancelReason
     Manual,
     Superseded,
     CleaningStarted,
+    Reset,
     Disposed
 }
 

@@ -406,6 +406,7 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         try
         {
             StatusText = "Resetting settings to defaults...";
+            _pluginRefreshCoordinator.CancelActiveRefresh(PluginRefreshCancelReason.Reset);
             await _configService.ResetToDefaultsAsync();
 
             var config = await _configService.LoadUserConfigAsync();

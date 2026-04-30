@@ -31,6 +31,7 @@ public sealed partial class CleaningCommandsViewModel : ViewModelBase, IDisposab
     private readonly IMessageDialogService _messageDialog;
     private readonly ICleaningOrchestrator _orchestrator;
     private readonly IPluginLoadingService _pluginLoadingService;
+    private readonly IPluginRefreshCoordinator _pluginRefreshCoordinator;
     private readonly IStateService _stateService;
     private readonly IUiDispatcher _uiDispatcher;
 
@@ -66,6 +67,7 @@ public sealed partial class CleaningCommandsViewModel : ViewModelBase, IDisposab
         ICleaningOrchestrator orchestrator,
         IConfigurationService configService,
         IPluginLoadingService pluginLoadingService,
+        IPluginRefreshCoordinator pluginRefreshCoordinator,
         ILoggingService logger,
         IMessageDialogService messageDialog,
         IUiDispatcher uiDispatcher,
@@ -80,6 +82,7 @@ public sealed partial class CleaningCommandsViewModel : ViewModelBase, IDisposab
         _orchestrator = orchestrator;
         _configService = configService;
         _pluginLoadingService = pluginLoadingService;
+        _pluginRefreshCoordinator = pluginRefreshCoordinator;
         _logger = logger;
         _messageDialog = messageDialog;
         _uiDispatcher = uiDispatcher;
@@ -130,6 +133,7 @@ public sealed partial class CleaningCommandsViewModel : ViewModelBase, IDisposab
 
         try
         {
+            _pluginRefreshCoordinator.CancelActiveRefresh(PluginRefreshCancelReason.CleaningStarted);
             _ = _showProgressInteraction.Handle(Unit.Default);
 
             StatusText = "Cleaning started...";

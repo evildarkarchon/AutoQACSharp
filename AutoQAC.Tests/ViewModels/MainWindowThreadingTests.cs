@@ -100,6 +100,7 @@ public sealed class MainWindowThreadingTests
             Substitute.For<ICleaningOrchestrator>(),
             Substitute.For<IConfigurationService>(),
             pluginLoadingService,
+            Substitute.For<IPluginRefreshCoordinator>(),
             Substitute.For<ILoggingService>(),
             Substitute.For<IMessageDialogService>(),
             dispatcher,
