@@ -64,7 +64,7 @@ Accurate, automated xEdit Quick Auto Clean with reliable result reporting.
 
 Shipped v1.0 with the xEdit log parsing fix. The app now correctly reads xEdit results from log files (`<game>Edit_log.txt`) using offset-based reading that isolates each plugin's output. All dead stdout parsing code has been removed. 838 tests passing across AutoQAC and QueryPlugins after Phase 07 (779 + 59).
 
-Current cleanup scope is driven by `.planning/codebase/CONCERNS.md` from 2026-04-28, covering safety bugs, refactor debt, test gaps, security polish, and performance bottlenecks. Phase 07 (backup-restore-retention-safety) is complete — async cancellable backup/restore/retention APIs, structured per-file results, trusted-restore-root containment, and service-layer Delete Session are all live with row-level UI feedback.
+Current cleanup scope is driven by `.planning/codebase/CONCERNS.md` from 2026-04-28, covering safety bugs, refactor debt, test gaps, security polish, and performance bottlenecks. Phase 09 (plugin-refresh-approximation-performance) is complete — plugin refresh workflow is coordinator-owned, selected/full approximation refresh has cancellation-safe lifecycle coverage, and TTW/Enderal skip-list refresh semantics match cleaning preflight.
 
 Tech stack: .NET 10, C# 13, Avalonia 11.3, ReactiveUI, Mutagen 0.53.1, Serilog, YamlDotNet.
 
@@ -111,4 +111,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-29 after Phase 07 (backup-restore-retention-safety) completion*
+*Last updated: 2026-04-30 after Phase 09 (plugin-refresh-approximation-performance) completion*
