@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: Cleanup
 status: executing
 stopped_at: Phase 8 context gathered
-last_updated: "2026-04-30T01:46:45.417Z"
+last_updated: "2026-04-30T01:55:28.866Z"
 last_activity: 2026-04-30
 progress:
   total_phases: 7
   completed_phases: 3
   total_plans: 28
-  completed_plans: 23
-  percent: 82
+  completed_plans: 24
+  percent: 86
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-04-28)
 ## Current Position
 
 Phase: 08 (cleaning-orchestrator-decomposition) — EXECUTING
-Plan: 2 of 6
+Plan: 3 of 6
 Status: Ready to execute
 Last activity: 2026-04-30
 
-Progress: [████████░░] 82%
+Progress: [█████████░] 86%
 
 ## Performance Metrics
 
@@ -69,6 +69,7 @@ Progress: [████████░░] 82%
 | Phase 07 P13 | 7 min | 3 tasks tasks | 6 files files |
 | 07 | 14 | - | - |
 | Phase 08 P01 | 20 min | 2 tasks | 4 files |
+| Phase 08 P02 | 7 min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -131,6 +132,9 @@ Progress: [████████░░] 82%
 - [Phase ?]: [Phase 07]: One canonical sentence ('The selected backup session is outside the configured backup folder.') is shared between StatusText and dialog details for the out-of-root branch; generic 'Technical details were written to the log.' covers IO failures so exception text never reaches the user. — Plan 07-13 keeps D-04's concise reason pattern intact and prevents the reviewer-flagged status/dialog text divergence.
 - [Phase 08]: Wave 0 locks current CleaningOrchestrator behavior in tests before any Phase 8 production extraction begins. — D-05 requires characterize-before-extract for REF-01.
 - [Phase 08]: Public-surface snapshot preserves nullable value-type output for LastTerminationResult as TerminationResult?. — The actual ICleaningOrchestrator signature is nullable, so the guard must lock the real public surface.
+- [Phase 08]: [Phase 08]: ICleaningPreflight.PrepareAsync is the single source for preflight selection rows used by real cleaning and dry-run projection. — Plan 08-02 extracted CleaningPreflight and wired both facade paths through the shared plan.
+- [Phase 08]: [Phase 08]: CleaningPreflightPlan carries XEditDirectory so downstream runner/finalizer work can avoid re-deriving the xEdit directory. — Plan 08-02 established R-08 single-source-of-truth in the preflight model.
+- [Phase 08]: [Phase 08]: MO2 executable validation preserves the legacy file-existence guard before consulting IMo2ValidationService. — Plan 08-02 keeps existing MO2 not-found behavior stable during preflight extraction.
 
 ### Pending Todos
 
@@ -149,6 +153,6 @@ Progress: [████████░░] 82%
 
 ## Session Continuity
 
-Last session: 2026-04-30T01:46:37.056Z
+Last session: 2026-04-30T01:55:08.203Z
 Stopped at: Phase 8 context gathered
 Resume file: None
