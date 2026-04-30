@@ -13,6 +13,7 @@ using FluentAssertions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using System.Diagnostics;
+using System.Reflection;
 using System.Reactive.Subjects;
 
 namespace AutoQAC.Tests.Services;
@@ -2010,6 +2011,317 @@ public sealed class CleaningOrchestratorTests
         _stateServiceMock.Received(1).AddDetailedCleaningResult(Arg.Is<PluginCleaningResult>(r =>
             r.PluginName == "Cancelled.esp" &&
             r.Status == CleaningStatus.Skipped));
+    }
+
+    #endregion
+
+    #region Phase 8 Characterization Tests
+
+    [Fact]
+    public async Task MarkLeftRunningByUser_AfterStopCleaning_ReportsLeftRunningTerminationResult()
+    {
+        // Arrange
+        Process? sleeper = null;
+        var plugin = new PluginInfo { FileName = "LeftRunning.esp", FullPath = "Path/LeftRunning.esp" };
+        _stateServiceMock.CurrentState.Returns(new AppState
+        {
+            LoadOrderPath = "plugins.txt",
+            XEditExecutablePath = "xedit.exe",
+            CurrentGameType = GameType.SkyrimSe,
+            PluginsToClean = new List<PluginInfo> { plugin }
+        });
+        _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>()).Returns(true);
+        _processServiceMock.TerminateProcessAsync(Arg.Any<Process>(), false, Arg.Any<CancellationToken>())
+            .Returns(TerminationResult.GracePeriodExpired);
+
+        var processStarted = CreateSignal();
+        var releasePlugin = CreateSignal();
+
+        try
+        {
+            sleeper = StartSleeperProcess();
+
+            _cleaningServiceMock.CleanPluginAsync(
+                    Arg.Any<PluginInfo>(),
+                    Arg.Any<CancellationToken>(),
+                    Arg.Any<Action<Process>?>())
+                .Returns(async callInfo =>
+                {
+                    callInfo.ArgAt<Action<Process>?>(2)?.Invoke(sleeper);
+                    processStarted.TrySetResult(true);
+                    await releasePlugin.Task;
+                    return new CleaningResult { Status = CleaningStatus.Cleaned, Success = true };
+                });
+
+            // Act
+            var cleaningTask = _orchestrator.StartCleaningAsync();
+            await WaitForSignalAsync(processStarted);
+            var stopResult = await _orchestrator.StopCleaningAsync();
+            var leftResult = _orchestrator.MarkLeftRunningByUser();
+
+            // Assert
+            stopResult.MayStillBeRunning.Should().BeTrue();
+            leftResult.MayStillBeRunning.Should().BeTrue();
+            _orchestrator.LastTerminationResult.Should().Be(TerminationResult.LeftRunningByUser);
+
+            releasePlugin.SetResult(true);
+            await cleaningTask;
+        }
+        finally
+        {
+            KillProcessIfRunning(sleeper);
+        }
+    }
+
+    [Fact]
+    public async Task Retention_WhenWarningResultReturned_SessionResultClassifiesAsSuccessfulWithBackupCleanup()
+    {
+        // Arrange
+        var plugin = new PluginInfo { FileName = "Retained.esp", FullPath = @"C:\Games\Data\Retained.esp" };
+        _stateServiceMock.CurrentState.Returns(new AppState
+        {
+            LoadOrderPath = "plugins.txt",
+            XEditExecutablePath = "xedit.exe",
+            CurrentGameType = GameType.SkyrimSe,
+            PluginsToClean = new List<PluginInfo> { plugin }
+        });
+        _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>()).Returns(true);
+        _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>())
+            .Returns(new UserConfiguration { Backup = new BackupSettings { Enabled = true, MaxSessions = 3 } });
+        _backupServiceMock.GetBackupRoot(Arg.Any<string>()).Returns(@"C:\Games\AutoQAC Backups");
+        _backupServiceMock.CreateSessionDirectory(Arg.Any<string>()).Returns(@"C:\Games\AutoQAC Backups\session");
+        _backupServiceMock.BackupPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<string>(), Arg.Any<IProgress<BackupCopyProgress>?>(), Arg.Any<CancellationToken>())
+            .Returns(new BackupCreateResult(BackupOperationStatus.Complete, "Retained.esp", 100, 100, null));
+        _backupServiceMock.CleanupOldSessionsAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<IProgress<BackupCopyProgress>?>(), Arg.Any<CancellationToken>())
+            .Returns(new BackupRetentionCleanupResult(
+                BackupOperationStatus.Warning,
+                new[] { new BackupRetentionRowResult(@"C:\Games\AutoQAC Backups\old", BackupRetentionRowStatus.Failed, BackupFailureReason.CleanupDeletionFailed) }));
+        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<CancellationToken>(), Arg.Any<Action<Process>?>())
+            .Returns(new CleaningResult { Status = CleaningStatus.Cleaned, Success = true });
+
+        // Act
+        await _orchestrator.StartCleaningAsync();
+
+        // Assert
+        _stateServiceMock.Received(1).FinishCleaningWithResults(Arg.Is<CleaningSessionResult>(session =>
+            session.IsSuccess &&
+            session.BackupCleanup != null &&
+            session.BackupCleanup.Status == BackupOperationStatus.Warning &&
+            session.SessionSummary.StartsWith("Backup cleanup warning", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public async Task Retention_WhenCanceledResultReturned_SessionResultIncludesCanceledBackupCleanup()
+    {
+        // Arrange
+        var plugin = new PluginInfo { FileName = "CanceledCleanup.esp", FullPath = @"C:\Games\Data\CanceledCleanup.esp" };
+        _stateServiceMock.CurrentState.Returns(new AppState
+        {
+            LoadOrderPath = "plugins.txt",
+            XEditExecutablePath = "xedit.exe",
+            CurrentGameType = GameType.SkyrimSe,
+            PluginsToClean = new List<PluginInfo> { plugin }
+        });
+        _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>()).Returns(true);
+        _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>())
+            .Returns(new UserConfiguration { Backup = new BackupSettings { Enabled = true, MaxSessions = 3 } });
+        _backupServiceMock.GetBackupRoot(Arg.Any<string>()).Returns(@"C:\Games\AutoQAC Backups");
+        _backupServiceMock.CreateSessionDirectory(Arg.Any<string>()).Returns(@"C:\Games\AutoQAC Backups\session");
+        _backupServiceMock.BackupPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<string>(), Arg.Any<IProgress<BackupCopyProgress>?>(), Arg.Any<CancellationToken>())
+            .Returns(new BackupCreateResult(BackupOperationStatus.Complete, "CanceledCleanup.esp", 100, 100, null));
+        _backupServiceMock.CleanupOldSessionsAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<IProgress<BackupCopyProgress>?>(), Arg.Any<CancellationToken>())
+            .Returns(new BackupRetentionCleanupResult(
+                BackupOperationStatus.Canceled,
+                new[] { new BackupRetentionRowResult(@"C:\Games\AutoQAC Backups\old", BackupRetentionRowStatus.Kept, BackupFailureReason.Canceled) }));
+        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<CancellationToken>(), Arg.Any<Action<Process>?>())
+            .Returns(new CleaningResult { Status = CleaningStatus.Cleaned, Success = true });
+
+        // Act
+        await _orchestrator.StartCleaningAsync();
+
+        // Assert
+        _stateServiceMock.Received(1).FinishCleaningWithResults(Arg.Is<CleaningSessionResult>(session =>
+            session.BackupCleanup != null &&
+            session.BackupCleanup.Status == BackupOperationStatus.Canceled &&
+            session.SessionSummary.StartsWith("Backup cleanup canceled", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public async Task RunDryRunAsync_AndStartCleaningAsyncPreflight_ProduceSameSkipDecisions_ForIdenticalState()
+    {
+        // Arrange
+        var plugins = new List<PluginInfo>
+        {
+            new() { FileName = "SkipMe.esp", FullPath = @"C:\Games\Data\SkipMe.esp" },
+            new() { FileName = "Excluded.esp", FullPath = @"C:\Games\Data\Excluded.esp" },
+            new() { FileName = "Valid.esp", FullPath = @"C:\Games\Data\Valid.esp" },
+            new() { FileName = "Zero.esp", FullPath = @"C:\Games\Data\Zero.esp" }
+        };
+        var excluded = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { @"C:\Games\Data\Excluded.esp" };
+        _stateServiceMock.CurrentState.Returns(new AppState
+        {
+            LoadOrderPath = "plugins.txt",
+            XEditExecutablePath = "xedit.exe",
+            CurrentGameType = GameType.SkyrimSe,
+            PluginsToClean = plugins,
+            ExcludedPluginPaths = excluded
+        });
+        _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>()).Returns(true);
+        _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>())
+            .Returns(new UserConfiguration { Backup = new BackupSettings { Enabled = false } });
+        _configServiceMock.GetSkipListAsync(GameType.SkyrimSe, Arg.Any<GameVariant>(), Arg.Any<CancellationToken>())
+            .Returns(new List<string> { "SkipMe.esp" });
+        _pluginServiceMock.ValidatePluginFile(Arg.Is<PluginInfo>(p => p.FileName == "Zero.esp"))
+            .Returns(PluginWarningKind.ZeroByte);
+        _pluginServiceMock.ValidatePluginFile(Arg.Is<PluginInfo>(p => p.FileName != "Zero.esp"))
+            .Returns(PluginWarningKind.None);
+        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<CancellationToken>(), Arg.Any<Action<Process>?>())
+            .Returns(new CleaningResult { Status = CleaningStatus.Cleaned, Success = true });
+
+        // Act
+        var dryRun = await _orchestrator.RunDryRunAsync();
+        await _orchestrator.StartCleaningAsync();
+
+        var dryRunCleanNames = dryRun
+            .Where(row => row.Status == DryRunStatus.WillClean)
+            .Select(row => row.PluginName)
+            .ToArray();
+
+        // Assert
+        _stateServiceMock.Received(1).StartCleaning(Arg.Is<List<PluginInfo>>(startList =>
+            startList.Select(p => p.FileName).SequenceEqual(dryRunCleanNames)));
+        dryRun.Should().ContainSingle(row => row.PluginName == "SkipMe.esp" && row.Reason == "In skip list");
+        dryRun.Should().ContainSingle(row => row.PluginName == "Excluded.esp" && row.Reason == "Not selected");
+        dryRun.Should().ContainSingle(row => row.PluginName == "Zero.esp" && row.Reason == "Zero-byte file");
+        dryRunCleanNames.Should().Equal("Valid.esp");
+    }
+
+    [Fact]
+    public async Task BackupFailure_ContinueWithoutBackup_ProceedsToXEdit_AndDoesNotAddBackupEntry()
+    {
+        // Arrange
+        var plugins = new List<PluginInfo>
+        {
+            new() { FileName = "Failure.esp", FullPath = @"C:\Games\Data\Failure.esp" },
+            new() { FileName = "BackedUp.esp", FullPath = @"C:\Games\Data\BackedUp.esp" }
+        };
+        _stateServiceMock.CurrentState.Returns(new AppState
+        {
+            LoadOrderPath = "plugins.txt",
+            XEditExecutablePath = "xedit.exe",
+            CurrentGameType = GameType.SkyrimSe,
+            PluginsToClean = plugins
+        });
+        _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>()).Returns(true);
+        _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>())
+            .Returns(new UserConfiguration { Backup = new BackupSettings { Enabled = true, MaxSessions = 3 } });
+        _backupServiceMock.GetBackupRoot(Arg.Any<string>()).Returns(@"C:\Games\AutoQAC Backups");
+        _backupServiceMock.CreateSessionDirectory(Arg.Any<string>()).Returns(@"C:\Games\AutoQAC Backups\session");
+        _backupServiceMock.BackupPluginAsync(
+                Arg.Is<PluginInfo>(p => p.FileName == "Failure.esp"),
+                Arg.Any<string>(),
+                Arg.Any<IProgress<BackupCopyProgress>?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new BackupCreateResult(BackupOperationStatus.Failed, "Failure.esp", 0, 100, BackupFailureReason.AccessDenied));
+        _backupServiceMock.BackupPluginAsync(
+                Arg.Is<PluginInfo>(p => p.FileName == "BackedUp.esp"),
+                Arg.Any<string>(),
+                Arg.Any<IProgress<BackupCopyProgress>?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new BackupCreateResult(BackupOperationStatus.Complete, "BackedUp.esp", 100, 100, null));
+        BackupFailureCallback callback = (_, _) => Task.FromResult(BackupFailureChoice.ContinueWithoutBackup);
+        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<CancellationToken>(), Arg.Any<Action<Process>?>())
+            .Returns(new CleaningResult { Status = CleaningStatus.Cleaned, Success = true });
+
+        // Act
+        await _orchestrator.StartCleaningAsync(null, callback);
+
+        // Assert
+        await _cleaningServiceMock.Received(1).CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Failure.esp"), Arg.Any<CancellationToken>(), Arg.Any<Action<Process>?>());
+        await _cleaningServiceMock.Received(1).CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "BackedUp.esp"), Arg.Any<CancellationToken>(), Arg.Any<Action<Process>?>());
+        await _backupServiceMock.Received(1).WriteSessionMetadataAsync(
+            Arg.Any<string>(),
+            Arg.Is<BackupSession>(session =>
+                session.Plugins.Count == 1 &&
+                session.Plugins[0].FileName == "BackedUp.esp" &&
+                session.Plugins.All(entry => entry.FileName != "Failure.esp")),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task LastTerminationResult_IsResetToNull_AtSessionStartAndEnd()
+    {
+        // Arrange
+        Process? sleeper = null;
+        var firstPlugin = new PluginInfo { FileName = "Stopped.esp", FullPath = "Path/Stopped.esp" };
+        _stateServiceMock.CurrentState.Returns(new AppState
+        {
+            LoadOrderPath = "plugins.txt",
+            XEditExecutablePath = "xedit.exe",
+            CurrentGameType = GameType.SkyrimSe,
+            PluginsToClean = new List<PluginInfo> { firstPlugin }
+        });
+        _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>()).Returns(true);
+        _processServiceMock.TerminateProcessAsync(Arg.Any<Process>(), false, Arg.Any<CancellationToken>())
+            .Returns(TerminationResult.GracePeriodExpired);
+
+        var processStarted = CreateSignal();
+        var releasePlugin = CreateSignal();
+
+        try
+        {
+            sleeper = StartSleeperProcess();
+
+            _cleaningServiceMock.CleanPluginAsync(
+                    Arg.Any<PluginInfo>(),
+                    Arg.Any<CancellationToken>(),
+                    Arg.Any<Action<Process>?>())
+                .Returns(async callInfo =>
+                {
+                    callInfo.ArgAt<Action<Process>?>(2)?.Invoke(sleeper);
+                    processStarted.TrySetResult(true);
+                    await releasePlugin.Task;
+                    return new CleaningResult { Status = CleaningStatus.Cleaned, Success = true };
+                });
+
+            var firstSession = _orchestrator.StartCleaningAsync();
+            await WaitForSignalAsync(processStarted);
+            await _orchestrator.StopCleaningAsync();
+            _orchestrator.LastTerminationResult.Should().Be(TerminationResult.GracePeriodExpired);
+            releasePlugin.SetResult(true);
+            await firstSession;
+
+            var secondPlugin = new PluginInfo { FileName = "Second.esp", FullPath = "Path/Second.esp" };
+            _stateServiceMock.CurrentState.Returns(new AppState
+            {
+                LoadOrderPath = "plugins.txt",
+                XEditExecutablePath = "xedit.exe",
+                CurrentGameType = GameType.SkyrimSe,
+                PluginsToClean = new List<PluginInfo> { secondPlugin }
+            });
+            TerminationResult? capturedAtStart = null;
+            _cleaningServiceMock.CleanPluginAsync(
+                    Arg.Any<PluginInfo>(),
+                    Arg.Any<CancellationToken>(),
+                    Arg.Any<Action<Process>?>())
+                .Returns(ci =>
+                {
+                    // Sample LastTerminationResult on the very first plugin of session 2.
+                    capturedAtStart ??= _orchestrator.LastTerminationResult;
+                    return Task.FromResult(new CleaningResult { Status = CleaningStatus.Cleaned, Success = true });
+                });
+
+            // Act
+            await _orchestrator.StartCleaningAsync();
+
+            // Assert
+            capturedAtStart.Should().BeNull();
+            _orchestrator.LastTerminationResult.Should().BeNull();
+        }
+        finally
+        {
+            KillProcessIfRunning(sleeper);
+        }
     }
 
     #endregion
