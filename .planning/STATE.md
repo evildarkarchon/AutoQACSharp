@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Cleanup
-status: executing
-stopped_at: Phase 8 context gathered
-last_updated: "2026-04-30T02:21:35.627Z"
+status: verifying
+stopped_at: Completed 08-06-PLAN.md
+last_updated: "2026-04-30T02:32:16.757Z"
 last_activity: 2026-04-30
 progress:
   total_phases: 7
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 28
-  completed_plans: 27
-  percent: 96
+  completed_plans: 28
+  percent: 100
 ---
 
 # Project State
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-04-28)
 
 Phase: 08 (cleaning-orchestrator-decomposition) — EXECUTING
 Plan: 6 of 6
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-04-30
 
-Progress: [██████████] 96%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -72,6 +72,7 @@ Progress: [██████████] 96%
 | Phase 08 P02 | 7 min | 2 tasks | 8 files |
 | Phase 08 P03 | 5 min | 2 tasks | 8 files |
 | Phase 08 P04 | 6 min | 2 tasks | 7 files |
+| Phase 08 P06 | 8 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -146,6 +147,8 @@ Progress: [██████████] 96%
 - [Phase 08]: PluginResultFinalizer consumes a TerminationFinalizeContext snapshot captured after runner detach. — Prevents async finalization from querying live coordinator state during log reads.
 - [Phase 08]: PluginCleaningRunner receives attach/detach delegates instead of depending on ICleaningTerminationCoordinator. — Preserves the planned no-back-edge dependency shape.
 - [Phase 08]: Sequential source guard now checks orchestrator plus runner/finalizer files. — The extraction moves direct CleanPluginAsync calls behind runner.RunAsync while preserving backup-before-launch ordering.
+- [Phase 08]: CleaningOrchestrator remains the public sequential facade while the five extracted collaborators own detailed preflight, backup, runner, finalizer, and termination policies. — Plan 08-06 completed the final facade cleanup and regression sweep.
+- [Phase 08]: Cross-file source guard scans all six Phase 8 cleaning service files for Parallel/Task.WhenAll/Task.Run constructs. — Plan 08-06 locks INV-8.2 across the facade and collaborators.
 
 ### Pending Todos
 
@@ -164,6 +167,6 @@ Progress: [██████████] 96%
 
 ## Session Continuity
 
-Last session: 2026-04-30T02:21:15.218Z
-Stopped at: Phase 8 context gathered
+Last session: 2026-04-30T02:32:16.751Z
+Stopped at: Completed 08-06-PLAN.md
 Resume file: None

@@ -141,7 +141,7 @@ Plans:
 - [x] 08-05-PLAN.md — Extract IPluginCleaningRunner + IPluginResultFinalizer (D-07); runner owns retry/launch/offset capture, finalizer owns log read + result construction.
 
 **Wave 5 (blocked on Wave 4 completion)**
-- [ ] 08-06-PLAN.md — Final facade integration + cross-file source-level parallelization guard; verify REF-01 satisfied.
+- [x] 08-06-PLAN.md — Final facade integration + cross-file source-level parallelization guard; verify REF-01 satisfied.
 
 ### Phase 9: Plugin Refresh & Approximation Performance
 **Goal**: Users can refresh plugin issue approximations with better cancellation and less redundant work while plugin loading and approximation refresh behavior moves out of the configuration ViewModel.
