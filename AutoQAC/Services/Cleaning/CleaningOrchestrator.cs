@@ -24,6 +24,7 @@ public sealed class CleaningOrchestrator(
 {
     private readonly object _ctsLock = new();
     private CancellationTokenSource? _cleaningCts;
+    private int _sessionActive;
 
     /// <inheritdoc />
     public TerminationResult? LastTerminationResult => terminationCoordinator.LastTerminationResult;
@@ -41,6 +42,7 @@ public sealed class CleaningOrchestrator(
     /// <inheritdoc />
     public async Task StartCleaningAsync(TimeoutRetryCallback? onTimeout, BackupFailureCallback? onBackupFailure, CancellationToken ct = default)
     {
+        EnterSessionOrThrow();
         const int maxRetryAttempts = 3;
         var context = new SessionContext(DateTime.Now, GameType.Unknown);
         string? sessionDir = null;
@@ -132,6 +134,7 @@ public sealed class CleaningOrchestrator(
         {
             terminationCoordinator.ResetForNewSession();
             DisposeSessionCts();
+            ExitSession();
         }
 
         async Task<bool> ProcessPluginAsync(PluginInfo plugin, CleaningPreflightPlan preflightPlan, string? sessionDir,
@@ -261,6 +264,27 @@ public sealed class CleaningOrchestrator(
     private CancellationTokenSource CreateSessionCts(CancellationToken ct)
     {
         lock (_ctsLock) { _cleaningCts = CancellationTokenSource.CreateLinkedTokenSource(ct); return _cleaningCts; }
+    }
+
+    /// <summary>
+    /// Enters the single active cleaning session slot without blocking competing callers.
+    /// This protects _cleaningCts ownership and preserves sequential orchestration before startup work mutates session state.
+    /// </summary>
+    private void EnterSessionOrThrow()
+    {
+        if (Interlocked.CompareExchange(ref _sessionActive, 1, 0) == 1)
+        {
+            throw new InvalidOperationException("A cleaning session is already in progress.");
+        }
+    }
+
+    /// <summary>
+    /// Releases the active cleaning session slot after CTS disposal and termination reset complete.
+    /// The volatile write makes subsequent StartCleaningAsync calls observe the facade as idle only after cleanup finishes.
+    /// </summary>
+    private void ExitSession()
+    {
+        Volatile.Write(ref _sessionActive, 0);
     }
 
     /// <summary>Cancels the current session CTS before delegating stop behavior to the termination coordinator.</summary>
