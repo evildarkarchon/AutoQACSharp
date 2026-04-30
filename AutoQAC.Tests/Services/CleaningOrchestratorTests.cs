@@ -2445,6 +2445,45 @@ public sealed class CleaningOrchestratorTests
             "backup invocation must remain before the sequential xEdit cleaning call");
     }
 
+    [Fact]
+    public void Cleaning_Source_NoFileParallelizesPluginLoop()
+    {
+        // INV-8.2: Sequential xEdit cleaning is a hard runtime requirement (AGENTS.md, ROADMAP.md
+        // out-of-scope, Phase 8 D-09/D-10 locks). Source-level guard prevents accidental parallelization
+        // anywhere in the cleaning service tier.
+        var filesToScan = new[]
+        {
+            "CleaningOrchestrator.cs",
+            "CleaningPreflight.cs",
+            "BackupSessionCoordinator.cs",
+            "PluginCleaningRunner.cs",
+            "PluginResultFinalizer.cs",
+            "CleaningTerminationCoordinator.cs"
+        };
+
+        var prohibitedTokens = new[]
+        {
+            "Parallel.ForEach",
+            "Parallel.ForEachAsync",
+            "Task.WhenAll(",
+            "Task.WhenAny(",
+            "Task.Run("
+        };
+
+        foreach (var file in filesToScan)
+        {
+            var path = GetSourcePath("AutoQAC", "Services", "Cleaning", file);
+            File.Exists(path).Should().BeTrue($"Phase 8 file {file} must exist under AutoQAC/Services/Cleaning/");
+            var content = File.ReadAllText(path);
+
+            foreach (var token in prohibitedTokens)
+            {
+                content.Should().NotContain(token,
+                    $"{file} must not parallelize cleaning work — sequential xEdit is a hard runtime invariant (Phase 8 D-10).");
+            }
+        }
+    }
+
     private static string GetSourcePath(params string[] segments)
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
