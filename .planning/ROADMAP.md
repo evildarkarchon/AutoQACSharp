@@ -160,7 +160,20 @@ Plans:
   2. User can run ITM approximation on large plugins without the detector materializing every override context for each record.
   3. Maintainer can change plugin loading or issue approximation refresh behavior outside `ConfigurationViewModel`.
   4. User-visible plugin lists and approximation results remain consistent with the selected game, data folder, skip lists, and current cancellation generation.
-**Plans**: TBD
+**Plans**: 5 plans
+Plans:
+**Wave 1**
+- [ ] 09-01-PLAN.md — Optimize QueryPlugins ITM analysis with streaming context traversal and cancellation propagation.
+- [ ] 09-02-PLAN.md — Define refresh coordinator contracts and Wave 0 behavior tests for row-first selected approximation refresh.
+
+**Wave 2 (blocked on 09-02 completion)**
+- [ ] 09-03-PLAN.md — Implement the refresh coordinator/capability policy and move plugin refresh workflow out of ConfigurationViewModel.
+
+**Wave 3 (blocked on 09-03 completion)**
+- [ ] 09-04-PLAN.md — Add selected approximation refresh and cancel controls near the plugin list.
+
+**Wave 4 (blocked on 09-01 and 09-04 completion)**
+- [ ] 09-05-PLAN.md — Wire cleaning-start/lifecycle refresh cancellation and complete full phase verification.
 **UI hint**: yes
 
 ### Phase 10: Configuration Persistence Hardening
