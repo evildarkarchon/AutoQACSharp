@@ -278,6 +278,19 @@ public sealed partial class PluginListViewModel : ViewModelBase, IDisposable
         HasSelectedVisiblePlugin = PluginsToClean.Any(plugin => plugin.IsSelected);
     }
 
+    /// <summary>
+    /// Maps coordinator refresh status updates to <see cref="IsApproximationRefreshRunning"/>
+    /// for status-driven transitions only. The active progress kinds
+    /// (<see cref="PluginRefreshStatusKind.LoadingPlugins"/> and
+    /// <see cref="PluginRefreshStatusKind.AnalyzingSelected"/>) hold the running flag true;
+    /// terminal kinds (<see cref="PluginRefreshStatusKind.FullRefreshCompleted"/>,
+    /// <see cref="PluginRefreshStatusKind.SelectedRefreshCompleted"/>,
+    /// <see cref="PluginRefreshStatusKind.Canceled"/>, etc.) clear it so the cancel-refresh
+    /// affordance disables.
+    /// Note: <c>RefreshSelectedApproximationsAsync</c> additionally manages this flag
+    /// directly via try/finally around its await — this handler is the status-stream
+    /// path, not the only writer of the flag.
+    /// </summary>
     private void OnPluginRefreshStatusChanged(PluginRefreshStatus status)
     {
         IsApproximationRefreshRunning = status.Kind is
