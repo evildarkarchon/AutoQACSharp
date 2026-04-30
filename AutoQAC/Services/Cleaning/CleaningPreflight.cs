@@ -73,6 +73,12 @@ public sealed class CleaningPreflight(
             }
         }
 
+        if (!ValidateDetectedLoadOrderPath(gameType, config.LoadOrderPath))
+        {
+            logger.Error(null, "Configuration is invalid, cannot start cleaning.");
+            throw new InvalidOperationException("Configuration is invalid");
+        }
+
         // 3b. Detect game variant for skip list handling
         var pluginNames = allPlugins.Select(p => p.FileName).ToList();
         var gameVariant = gameDetection.DetectVariant(gameType, pluginNames);
@@ -249,6 +255,20 @@ public sealed class CleaningPreflight(
         }
 
         return await cleaningService.ValidateEnvironmentAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Validates file-load-order requirements after executable/load-order detection finalizes the game type.
+    /// This second check is required because CurrentGameType can start as Unknown and resolve to FO3, FNV, or Oblivion only after initial validation has already run.
+    /// </summary>
+    private static bool ValidateDetectedLoadOrderPath(GameType gameType, string? loadOrderPath)
+    {
+        if (!RequiresFileLoadOrder(gameType))
+        {
+            return true;
+        }
+
+        return !string.IsNullOrWhiteSpace(loadOrderPath) && File.Exists(loadOrderPath);
     }
 
     /// <summary>
