@@ -146,6 +146,25 @@ public sealed class PluginRefreshCoordinatorTests
     }
 
     [Fact]
+    public async Task RefreshForGameAsync_WhenAnalysisCompletes_PublishesFullRefreshCompletedStatus()
+    {
+        var stateService = new StateService();
+        var sut = CreateCoordinator(stateService);
+        var statuses = new List<PluginRefreshStatus>();
+        using var subscription = sut.StatusChanged.Subscribe(statuses.Add);
+
+        await sut.RefreshForGameAsync(
+            new PluginRefreshRequest(GameType.SkyrimSe, @"C:\Game\Data"),
+            CancellationToken.None);
+
+        statuses.Should().Contain(status =>
+            status.Kind == PluginRefreshStatusKind.FullRefreshCompleted &&
+            status.UpdatedCount > 0 &&
+            status.ToDisplayText() == $"Refreshed {status.UpdatedCount} plugin approximations.",
+            "successful full-list refresh must publish a terminal completion status so the UI can clear the running/cancel state");
+    }
+
+    [Fact]
     public async Task RefreshForGameAsync_WhenSuperseded_DoesNotPublishStaleApproximation()
     {
         var stateService = new StateService();
