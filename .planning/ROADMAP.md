@@ -123,7 +123,25 @@ Plans:
   2. Maintainer can change backup-session handling without editing plugin execution or termination coordination code.
   3. Maintainer can change per-plugin execution and result finalization without changing session-level sequential coordination.
   4. User-observable cleaning behavior remains sequential and unchanged across successful, skipped, failed, stopped, and already-clean plugin outcomes.
-**Plans**: TBD
+**Plans**: 6 plans
+Plans:
+**Wave 0**
+- [ ] 08-01-PLAN.md — Add Wave 0 characterization tests (left-running, retention warning/canceled, dry-run/preflight equivalence, ContinueWithoutBackup, last-termination-result reset) and ICleaningOrchestrator public-surface snapshot test.
+
+**Wave 1 (blocked on Wave 0 completion)**
+- [ ] 08-02-PLAN.md — Extract ICleaningPreflight collaborator (D-13–D-16); shared preflight/selection plan consumed by both StartCleaningAsync and RunDryRunAsync.
+
+**Wave 2 (blocked on Wave 1 completion)**
+- [ ] 08-03-PLAN.md — Extract IBackupSessionCoordinator (D-06); coordinator owns backup CTS lifecycle, BackupPluginAsync/CleanupOldSessionsAsync helpers, and PluginBackupOutcome dispatch model.
+
+**Wave 3 (blocked on Wave 2 completion; HIGHEST RISK — Phase 5 lock surface)**
+- [ ] 08-04-PLAN.md — Extract ICleaningTerminationCoordinator (D-08); coordinator owns _currentProcess, _processLock, _isStopRequested, _lastTerminationResult, hang-monitor, and Phase 5 stop/force-stop semantics.
+
+**Wave 4 (blocked on Wave 3 completion)**
+- [ ] 08-05-PLAN.md — Extract IPluginCleaningRunner + IPluginResultFinalizer (D-07); runner owns retry/launch/offset capture, finalizer owns log read + result construction.
+
+**Wave 5 (blocked on Wave 4 completion)**
+- [ ] 08-06-PLAN.md — Final facade integration + cross-file source-level parallelization guard; verify REF-01 satisfied.
 
 ### Phase 9: Plugin Refresh & Approximation Performance
 **Goal**: Users can refresh plugin issue approximations with better cancellation and less redundant work while plugin loading and approximation refresh behavior moves out of the configuration ViewModel.
