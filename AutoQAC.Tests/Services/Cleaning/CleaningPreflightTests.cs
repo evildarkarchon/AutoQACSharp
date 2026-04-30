@@ -199,6 +199,121 @@ public sealed class CleaningPreflightTests
         plan.PluginRows.Should().ContainSingle();
     }
 
+    /// <summary>
+    /// Verifies that Phase 10 D-26 aborts preflight with a typed persistence exception when the required flush fails.
+    /// </summary>
+    [Fact]
+    public async Task PrepareAsync_FlushFailure_ThrowsConfigPersistenceFailureException()
+    {
+        // Arrange
+        var failure = CreateFlushFailure();
+        _configMock.FlushPendingSavesAsync(Arg.Any<CancellationToken>())
+            .Returns(CreateFlushResult(ConfigPersistenceStatusKind.Failed, failure));
+
+        // Act
+        var act = () => _sut.PrepareAsync(CancellationToken.None);
+
+        // Assert
+        var thrown = await act.Should()
+            .ThrowAsync<ConfigPersistenceFailureException>(
+                "D-26 forces pre-cleaning flush failure to abort preflight with a typed exception");
+        thrown.Which.Failure.Should().BeSameAs(failure);
+        thrown.Which.Message.Should().Be(failure.SafeSummary);
+    }
+
+    /// <summary>
+    /// Proves the flush-failure branch exits before any game detection, validation, or process-launch-adjacent collaborator runs.
+    /// </summary>
+    [Fact]
+    public async Task PrepareAsync_FlushFailure_DoesNotInvokeAnyDownstreamCollaborator()
+    {
+        // Arrange
+        var failure = CreateFlushFailure();
+        _configMock.FlushPendingSavesAsync(Arg.Any<CancellationToken>())
+            .Returns(CreateFlushResult(ConfigPersistenceStatusKind.Failed, failure));
+
+        // Act
+        var act = () => _sut.PrepareAsync(CancellationToken.None);
+
+        // Assert
+        await act.Should()
+            .ThrowAsync<ConfigPersistenceFailureException>(
+                "D-26 and success criterion #2 prevent any xEdit launch path on flush failure");
+        _gameDetectionMock.DidNotReceive().DetectFromExecutable(Arg.Any<string>());
+        await _gameDetectionMock.DidNotReceiveWithAnyArgs().DetectFromLoadOrderAsync(default!, default);
+        _gameDetectionMock.DidNotReceive().DetectVariant(Arg.Any<GameType>(), Arg.Any<IReadOnlyList<string>?>());
+        _validationMock.DidNotReceive().ValidatePluginFile(Arg.Any<PluginInfo>());
+        await _mo2ValidationMock.DidNotReceiveWithAnyArgs().ValidateMo2ExecutableAsync(default!);
+        await _cleaningServiceMock.DidNotReceive().ValidateEnvironmentAsync(Arg.Any<CancellationToken>());
+        await _cleaningServiceMock.DidNotReceiveWithAnyArgs().CleanPluginAsync(default!, default, default);
+        await _configMock.DidNotReceiveWithAnyArgs().LoadUserConfigAsync(default);
+        await _configMock.Received(1).FlushPendingSavesAsync(Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// Confirms an explicit successful flush preserves existing preflight behavior and downstream validation.
+    /// </summary>
+    [Fact]
+    public async Task PrepareAsync_FlushSuccess_ProceedsAsBefore()
+    {
+        // Arrange
+        _configMock.FlushPendingSavesAsync(Arg.Any<CancellationToken>())
+            .Returns(CreateFlushResult(ConfigPersistenceStatusKind.Success));
+
+        // Act
+        var plan = await _sut.PrepareAsync(CancellationToken.None);
+
+        // Assert
+        plan.Should().NotBeNull();
+        await _configMock.Received(1).FlushPendingSavesAsync(Arg.Any<CancellationToken>());
+        _gameDetectionMock.Received(1).DetectVariant(GameType.SkyrimSe, Arg.Any<IReadOnlyList<string>>());
+        _validationMock.Received(1).ValidatePluginFile(Arg.Any<PluginInfo>());
+    }
+
+    /// <summary>
+    /// Confirms a no-op flush, the common no-pending-save case, preserves existing preflight behavior.
+    /// </summary>
+    [Fact]
+    public async Task PrepareAsync_FlushNoOp_ProceedsAsBefore()
+    {
+        // Arrange
+        _configMock.FlushPendingSavesAsync(Arg.Any<CancellationToken>())
+            .Returns(CreateFlushResult(ConfigPersistenceStatusKind.NoOp));
+
+        // Act
+        var plan = await _sut.PrepareAsync(CancellationToken.None);
+
+        // Assert
+        plan.Should().NotBeNull();
+        await _configMock.Received(1).FlushPendingSavesAsync(Arg.Any<CancellationToken>());
+        _gameDetectionMock.Received(1).DetectVariant(GameType.SkyrimSe, Arg.Any<IReadOnlyList<string>>());
+        _validationMock.Received(1).ValidatePluginFile(Arg.Any<PluginInfo>());
+    }
+
+    /// <summary>
+    /// Ensures the preflight failure log uses the typed safe summary rather than a raw exception detail.
+    /// </summary>
+    [Fact]
+    public async Task PrepareAsync_FlushFailure_LogsErrorWithSafeSummary()
+    {
+        // Arrange
+        var failure = CreateFlushFailure();
+        _configMock.FlushPendingSavesAsync(Arg.Any<CancellationToken>())
+            .Returns(CreateFlushResult(ConfigPersistenceStatusKind.Failed, failure));
+
+        // Act
+        var act = () => _sut.PrepareAsync(CancellationToken.None);
+
+        // Assert
+        await act.Should()
+            .ThrowAsync<ConfigPersistenceFailureException>(
+                "D-28 requires the log path to carry a safe typed summary, not raw exception details");
+        _loggerMock.Received(1).Error(
+            null,
+            Arg.Any<string>(),
+            Arg.Is<object[]>(args => ContainsSafeSummary(args)));
+    }
+
     private static AppState CreateState(
         IReadOnlyList<PluginInfo>? plugins = null,
         bool mo2Mode = false,
@@ -222,4 +337,24 @@ public sealed class CleaningPreflightTests
             FullPath = $@"C:\Games\Skyrim Special Edition\Data\{fileName}",
             DetectedGameType = GameType.SkyrimSe
         };
+
+    private static ConfigPersistenceFailure CreateFlushFailure() =>
+        new(
+            ConfigPersistenceOperationKind.Flush,
+            ConfigPersistenceFailureKind.WriteFailed,
+            "Could not write settings file (write_failed)",
+            LogReference: null,
+            Generation: 1);
+
+    private static ConfigPersistenceResult CreateFlushResult(
+        ConfigPersistenceStatusKind status,
+        ConfigPersistenceFailure? failure = null) =>
+        new(
+            status,
+            ConfigPersistenceOperationKind.Flush,
+            Generation: 1,
+            failure);
+
+    private static bool ContainsSafeSummary(object[] args) =>
+        args.Length > 0 && args[0] is string summary && summary.Contains("write_failed", StringComparison.Ordinal);
 }
