@@ -1,0 +1,109 @@
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+using AutoQAC.Infrastructure.Logging;
+using AutoQAC.Models;
+using Stopwatch = System.Diagnostics.Stopwatch;
+
+namespace AutoQAC.Services.Cleaning;
+
+public sealed class PluginCleaningRunner(
+    ICleaningService cleaningService,
+    IXEditLogFileService logFileService,
+    ILoggingService logger)
+    : IPluginCleaningRunner
+{
+    /// <inheritdoc />
+    public async Task<PluginRunnerOutput> RunAsync(
+        PluginInfo plugin,
+        GameType gameType,
+        string xEditDir,
+        TimeoutRetryCallback? onTimeout,
+        int timeoutSeconds,
+        int maxRetryAttempts,
+        Action<System.Diagnostics.Process> attachProcess,
+        Action detachProcess,
+        CancellationToken ct)
+    {
+        var pluginStopwatch = Stopwatch.StartNew();
+        var result = new CleaningResult
+        {
+            Success = false,
+            Status = CleaningStatus.Failed,
+            Message = "Cleaning did not run."
+        };
+        var attemptNumber = 0;
+        long mainLogOffset = 0;
+        long exceptionLogOffset = 0;
+
+        try
+        {
+            do
+            {
+                attemptNumber++;
+
+                if (attemptNumber > 1)
+                {
+                    logger.Information("Retry attempt {Attempt} for plugin: {Plugin}",
+                        attemptNumber, plugin.FileName);
+                }
+
+                // Capture log offsets before each xEdit launch (per D-03: per-plugin, inside retry loop)
+                var mainLogPath = logFileService.GetLogFilePath(xEditDir, gameType);
+                var exceptionLogPath = logFileService.GetExceptionLogFilePath(xEditDir, gameType);
+                mainLogOffset = logFileService.CaptureOffset(mainLogPath);
+                exceptionLogOffset = logFileService.CaptureOffset(exceptionLogPath);
+
+                result = await cleaningService.CleanPluginAsync(
+                    plugin,
+                    ct,
+                    onProcessStarted: proc =>
+                    {
+                        // attachProcess is called per attempt by CleanPluginAsync (Research A3).
+                        // detachProcess is NOT called here — it is called once after the loop.
+                        attachProcess(proc);
+                    }).ConfigureAwait(false);
+
+                // If timed out and callback provided, ask user if they want to retry
+                if (result.TimedOut && onTimeout != null && attemptNumber < maxRetryAttempts)
+                {
+                    var shouldRetry = await onTimeout(plugin.FileName, timeoutSeconds, attemptNumber)
+                        .ConfigureAwait(false);
+
+                    if (!shouldRetry)
+                    {
+                        logger.Information("User chose not to retry plugin: {Plugin}", plugin.FileName);
+                        break;
+                    }
+
+                    logger.Information("User chose to retry plugin: {Plugin}", plugin.FileName);
+                }
+                else
+                {
+                    break; // No timeout or no callback or max attempts reached
+                }
+            } while (true);
+        }
+        finally
+        {
+            // R-02 contract: detach exactly once per plugin AFTER the retry loop (matches
+            // CleaningOrchestrator once-per-plugin behavior — outside the do-while). The Process
+            // object is refreshed per attempt by CleanPluginAsync; the previous attempt's Process
+            // has already exited by the time the loop iterates, so a single trailing detach
+            // correctly mirrors current behavior.
+            detachProcess();
+        }
+
+        pluginStopwatch.Stop();
+
+        return new PluginRunnerOutput
+        {
+            LastAttemptResult = result,
+            AttemptCount = attemptNumber,
+            MainLogOffset = mainLogOffset,
+            ExceptionLogOffset = exceptionLogOffset,
+            Duration = pluginStopwatch.Elapsed,
+            ReachedMaxRetryAttempts = result.TimedOut && attemptNumber >= maxRetryAttempts
+        };
+    }
+}

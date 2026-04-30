@@ -62,6 +62,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ICleaningPreflight, CleaningPreflight>();
         services.AddSingleton<IBackupSessionCoordinator, BackupSessionCoordinator>();
         services.AddSingleton<ICleaningTerminationCoordinator, CleaningTerminationCoordinator>();
+        services.AddSingleton<IPluginCleaningRunner, PluginCleaningRunner>();
+        services.AddSingleton<IPluginResultFinalizer, PluginResultFinalizer>();
         services.AddSingleton<ICleaningOrchestrator, CleaningOrchestrator>();
         return services;
     }

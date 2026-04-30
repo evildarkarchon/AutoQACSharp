@@ -79,12 +79,11 @@ public sealed class CleaningOrchestratorTests
             CreatePreflight(),
             new BackupSessionCoordinator(_backupServiceMock, _stateServiceMock, _loggerMock),
             new CleaningTerminationCoordinator(_processServiceMock, _hangDetectionMock, _stateServiceMock, _loggerMock),
-            _cleaningServiceMock,
+            new PluginCleaningRunner(_cleaningServiceMock, _logFileServiceMock, _loggerMock),
+            new PluginResultFinalizer(_logFileServiceMock, _outputParserMock, _loggerMock),
             _stateServiceMock,
             _loggerMock,
-            _processServiceMock,
-            _logFileServiceMock,
-            _outputParserMock);
+            _processServiceMock);
     }
 
     private ICleaningPreflight CreatePreflight() => new CleaningPreflight(
@@ -2430,13 +2429,19 @@ public sealed class CleaningOrchestratorTests
     {
         // Arrange
         var source = File.ReadAllText(GetSourcePath("AutoQAC", "Services", "Cleaning", "CleaningOrchestrator.cs"));
+        var runnerSource = File.ReadAllText(GetSourcePath("AutoQAC", "Services", "Cleaning", "PluginCleaningRunner.cs"));
+        var finalizerSource = File.ReadAllText(GetSourcePath("AutoQAC", "Services", "Cleaning", "PluginResultFinalizer.cs"));
 
         // Act & Assert
-        source.Should().NotContain("Task.WhenAll", "plugin cleaning must remain sequential");
-        source.Should().NotContain("Parallel.ForEachAsync", "plugin cleaning must remain sequential");
-        source.Should().NotContain("Task.Run", "plugin-loop work must not be parallelized through task scheduling");
-        source.IndexOf("BackupPluginAsync", StringComparison.Ordinal).Should().BeLessThan(
-            source.IndexOf("CleanPluginAsync", StringComparison.Ordinal),
+        foreach (var cleaningSource in new[] { source, runnerSource, finalizerSource })
+        {
+            cleaningSource.Should().NotContain("Task.WhenAll", "plugin cleaning must remain sequential");
+            cleaningSource.Should().NotContain("Parallel.ForEachAsync", "plugin cleaning must remain sequential");
+            cleaningSource.Should().NotContain("Task.Run", "plugin-loop work must not be parallelized through task scheduling");
+        }
+
+        source.IndexOf("RunPluginBackupAsync", StringComparison.Ordinal).Should().BeLessThan(
+            source.IndexOf("runner.RunAsync", StringComparison.Ordinal),
             "backup invocation must remain before the sequential xEdit cleaning call");
     }
 
@@ -2467,12 +2472,11 @@ public sealed class CleaningOrchestratorTests
             CreatePreflight(),
             new BackupSessionCoordinator(_backupServiceMock, _stateServiceMock, _loggerMock),
             new CleaningTerminationCoordinator(_processServiceMock, _hangDetectionMock, _stateServiceMock, _loggerMock),
-            _cleaningServiceMock,
+            new PluginCleaningRunner(_cleaningServiceMock, _logFileServiceMock, _loggerMock),
+            new PluginResultFinalizer(_logFileServiceMock, _outputParserMock, _loggerMock),
             _stateServiceMock,
             _loggerMock,
-            _processServiceMock,
-            _logFileServiceMock,
-            _outputParserMock);
+            _processServiceMock);
 
         // Act & Assert
         // Should not throw

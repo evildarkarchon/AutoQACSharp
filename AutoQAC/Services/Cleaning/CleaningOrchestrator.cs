@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Frozen;
-using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -19,12 +18,11 @@ public sealed class CleaningOrchestrator(
     ICleaningPreflight preflight,
     IBackupSessionCoordinator backupCoordinator,
     ICleaningTerminationCoordinator terminationCoordinator,
-    ICleaningService cleaningService,
+    IPluginCleaningRunner runner,
+    IPluginResultFinalizer finalizer,
     IStateService stateService,
     ILoggingService logger,
-    IProcessExecutionService processService,
-    IXEditLogFileService logFileService,
-    IXEditOutputParser outputParser)
+    IProcessExecutionService processService)
     : ICleaningOrchestrator, IDisposable
 {
     private readonly object _ctsLock = new();
@@ -191,122 +189,32 @@ public sealed class CleaningOrchestrator(
                     }
                 }
 
-                // Clean plugin with retry logic for timeouts
-                var pluginStopwatch = Stopwatch.StartNew();
-                var xEditDir = preflightPlan.XEditDirectory;
-                CleaningResult result;
-                var attemptNumber = 0;
-                long mainLogOffset = 0;
-                long exceptionLogOffset = 0;
+                // R-01: maxRetryAttempts = 3 matches the original retry ceiling defined for this method.
+                // Changing this value would silently alter user-visible retry behavior (D-09 violation).
+                var runnerOutput = await runner.RunAsync(
+                    plugin,
+                    preflightPlan.DetectedGameType,
+                    preflightPlan.XEditDirectory, // R-08: single source of truth from preflight plan
+                    onTimeout,
+                    preflightPlan.CleaningTimeoutSeconds,
+                    maxRetryAttempts,
+                    attachProcess: proc => terminationCoordinator.AttachProcess(proc),
+                    detachProcess: () => terminationCoordinator.DetachProcess(),
+                    cts.Token).ConfigureAwait(false);
 
-                do
-                {
-                    attemptNumber++;
+                // Snapshot termination context AFTER detach so ProcessMayStillBeRunning reflects final state (Research Open Question #3)
+                var terminationContext = new TerminationFinalizeContext(
+                    terminationCoordinator.ProcessMayStillBeRunning,
+                    terminationCoordinator.IsStopRequested);
 
-                    if (attemptNumber > 1)
-                    {
-                        logger.Information("Retry attempt {Attempt} for plugin: {Plugin}",
-                            attemptNumber, plugin.FileName);
-                    }
-
-                    // Capture log offsets before each xEdit launch (per D-03: per-plugin, inside retry loop)
-                    var mainLogPath = logFileService.GetLogFilePath(xEditDir, gameType);
-                    var exceptionLogPath = logFileService.GetExceptionLogFilePath(xEditDir, gameType);
-                    mainLogOffset = logFileService.CaptureOffset(mainLogPath);
-                    exceptionLogOffset = logFileService.CaptureOffset(exceptionLogPath);
-
-                    result = await cleaningService.CleanPluginAsync(
+                var pluginCleaningResult = await finalizer.FinalizeAsync(
                         plugin,
-                        cts.Token,
-                        onProcessStarted: proc =>
-                        {
-                            // Wave 3: keep the inline lambda; Wave 4 hoists it into the runner via delegate.
-                            terminationCoordinator.AttachProcess(proc);
-                        }).ConfigureAwait(false);
-
-                    // If timed out and callback provided, ask user if they want to retry
-                    if (result.TimedOut && onTimeout != null && attemptNumber < maxRetryAttempts)
-                    {
-                        var shouldRetry = await onTimeout(plugin.FileName, timeoutSeconds, attemptNumber)
-                            .ConfigureAwait(false);
-
-                        if (!shouldRetry)
-                        {
-                            logger.Information("User chose not to retry plugin: {Plugin}", plugin.FileName);
-                            break;
-                        }
-
-                        logger.Information("User chose to retry plugin: {Plugin}", plugin.FileName);
-                    }
-                    else
-                    {
-                        break; // No timeout or no callback or max attempts reached
-                    }
-                } while (true);
-
-                pluginStopwatch.Stop();
-
-                terminationCoordinator.DetachProcess();
-
-                // Read log content using offset-based API (replaces legacy timestamp-based ReadLogFileAsync)
-                CleaningStatistics? logStats = null;
-                string? logParseWarning = null;
-                var finalStatus = result.Status;
-
-                // Guard: only read logs if process was not killed/cancelled (per D-04)
-                if (!terminationCoordinator.ProcessMayStillBeRunning && !terminationCoordinator.IsStopRequested && result.Status != CleaningStatus.Skipped)
-                {
-                    var logResult = await logFileService.ReadLogContentAsync(
-                        xEditDir, gameType, mainLogOffset, exceptionLogOffset, cts.Token).ConfigureAwait(false);
-
-                    if (logResult.Warning != null)
-                    {
-                        logger.Warning("Log read warning for {Plugin}: {Warning}", plugin.FileName, logResult.Warning);
-                        logParseWarning = logResult.Warning;
-                    }
-
-                    // PAR-01: Apply existing regex patterns to log file content
-                    if (logResult.LogLines.Count > 0)
-                    {
-                        logStats = outputParser.ParseOutput(logResult.LogLines);
-                        logger.Debug("Parsed log file stats for {Plugin}: {Removed} ITM, {Undeleted} UDR",
-                            plugin.FileName, logStats.ItemsRemoved, logStats.ItemsUndeleted);
-
-                        // PAR-02: Nothing-to-clean detection (per D-05)
-                        var hasCompletionLine = logResult.LogLines.Any(outputParser.IsCompletionLine);
-                        if (hasCompletionLine && logStats is { ItemsRemoved: 0, ItemsUndeleted: 0, ItemsSkipped: 0, PartialFormsCreated: 0 })
-                        {
-                            finalStatus = CleaningStatus.AlreadyClean;
-                        }
-                    }
-
-                    // PAR-03: Exception log surfacing (per D-06)
-                    if (logResult.ExceptionContent != null)
-                    {
-                        logParseWarning = logResult.ExceptionContent;
-                        finalStatus = CleaningStatus.Failed;
-                        logger.Warning("xEdit exception log for {Plugin}: {Content}",
-                            plugin.FileName, logResult.ExceptionContent);
-                    }
-                }
-                else if (terminationCoordinator.IsStopRequested || terminationCoordinator.ProcessMayStillBeRunning)
-                {
-                    logParseWarning = "xEdit was terminated -- no log available";
-                }
-
-                // Create detailed result
-                var pluginCleaningResult = new PluginCleaningResult
-                {
-                    PluginName = plugin.FileName,
-                    Status = finalStatus,
-                    Success = result.Success,
-                    Message = result.TimedOut && attemptNumber >= maxRetryAttempts
-                        ? $"Cleaning timed out after {attemptNumber} attempts."
-                        : result.Message,
-                    Duration = pluginStopwatch.Elapsed,
-                    Statistics = logStats,
-                    LogParseWarning = logParseWarning
-                };
+                        preflightPlan.DetectedGameType,
+                        preflightPlan.XEditDirectory,
+                        runnerOutput,
+                        terminationContext,
+                        cts.Token)
+                    .ConfigureAwait(false);
                 pluginResults.Add(pluginCleaningResult);
 
                 // Update detailed results in state
@@ -315,8 +223,8 @@ public sealed class CleaningOrchestrator(
                 logger.Information(
                     "Plugin {Plugin} processed: {Status} - {Message}",
                     plugin.FileName,
-                    result.Status,
-                    result.Message);
+                    pluginCleaningResult.Status,
+                    pluginCleaningResult.Message);
             }
 
             // 7b. Write backup session metadata and run retention cleanup
