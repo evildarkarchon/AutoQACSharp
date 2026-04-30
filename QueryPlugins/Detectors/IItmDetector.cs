@@ -26,6 +26,10 @@ public interface IItmDetector
     /// its related overrides/masters. Each candidate record is compared to the immediately
     /// lower-priority context for that FormKey. The caller owns the cache lifetime.
     /// </param>
+    /// <param name="ct">
+    /// Cancellation token that should interrupt long record/context scans without returning
+    /// partial ITM results to the caller.
+    /// </param>
     /// <returns>One <see cref="PluginIssue"/> per ITM record found.</returns>
-    IEnumerable<PluginIssue> FindItmRecords(IModGetter plugin, ILinkCache linkCache);
+    IEnumerable<PluginIssue> FindItmRecords(IModGetter plugin, ILinkCache linkCache, CancellationToken ct = default);
 }

@@ -13,7 +13,7 @@ namespace QueryPlugins.Detectors;
 public sealed class ItmDetector : IItmDetector
 {
     /// <inheritdoc />
-    public IEnumerable<PluginIssue> FindItmRecords(IModGetter plugin, ILinkCache linkCache)
+    public IEnumerable<PluginIssue> FindItmRecords(IModGetter plugin, ILinkCache linkCache, CancellationToken ct = default)
     {
         var pluginModKey = plugin.ModKey;
 

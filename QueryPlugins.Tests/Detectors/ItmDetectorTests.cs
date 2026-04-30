@@ -89,6 +89,24 @@ public sealed class ItmDetectorTests
     }
 
     [Fact]
+    public void FindItmRecords_MiddleOverride_StreamingRewritePreservesImmediatePreviousComparison()
+    {
+        var (master, plugin, _, cache) = BuildThreeModLoadOrder(
+            pluginOverrideAction: null,
+            laterOverrideAction: npc =>
+            {
+                npc.ShortName = "Later Change";
+            });
+        var expectedFormKey = master.Npcs.First().FormKey;
+
+        var issues = _sut.FindItmRecords(plugin, cache).ToList();
+
+        issues.Should().ContainSingle(issue =>
+            issue.Type == IssueType.ItmRecord &&
+            issue.FormKey == expectedFormKey);
+    }
+
+    [Fact]
     public void MiddleOverride_ModifiedRelativeToPreviousVersion_IsNotFlagged()
     {
         var (_, plugin, _, cache) = BuildThreeModLoadOrder(
@@ -222,6 +240,18 @@ public sealed class ItmDetectorTests
         act.Should().Throw<ArgumentException>()
             .WithParameterName("linkCache")
             .WithMessage("*does not contain analyzed plugin*");
+    }
+
+    [Fact]
+    public void FindItmRecords_WithCanceledToken_ThrowsOperationCanceledException()
+    {
+        var (_, plugin, cache) = BuildLoadOrder(overrideAction: null);
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        var act = () => _sut.FindItmRecords(plugin, cache, cts.Token).ToList();
+
+        act.Should().Throw<OperationCanceledException>();
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

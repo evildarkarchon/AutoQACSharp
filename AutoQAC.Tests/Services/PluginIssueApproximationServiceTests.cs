@@ -24,7 +24,7 @@ public sealed class PluginIssueApproximationServiceTests
         var plugin = new SkyrimMod(ModKey.FromNameAndExtension("Plugin.esp"), SkyrimRelease.SkyrimSE);
         var cache = new ISkyrimModGetter[] { plugin }.ToImmutableLinkCache();
 
-        _queryService.Analyse(Arg.Any<IModGetter>(), Arg.Any<ILinkCache>(), GameRelease.SkyrimSE)
+        _queryService.Analyse(Arg.Any<IModGetter>(), Arg.Any<ILinkCache>(), GameRelease.SkyrimSE, Arg.Any<CancellationToken>())
             .Returns(new PluginAnalysisResult(
             [
                 new PluginIssue(FormKey.Null, null, IssueType.ItmRecord),
@@ -60,7 +60,7 @@ public sealed class PluginIssueApproximationServiceTests
         var results = await sut.GetApproximationsAsync(GameType.Fallout3, @"C:\Game\Data");
 
         results.Should().BeEmpty();
-        _queryService.DidNotReceiveWithAnyArgs().Analyse(default!, default!, default);
+        _queryService.DidNotReceiveWithAnyArgs().Analyse(default!, default!, default, default);
     }
 
     [Fact]
@@ -77,7 +77,7 @@ public sealed class PluginIssueApproximationServiceTests
         var act = () => sut.GetApproximationsAsync(GameType.SkyrimSe, @"C:\Game\Data", ct: cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
-        _queryService.DidNotReceiveWithAnyArgs().Analyse(default!, default!, default);
+        _queryService.DidNotReceiveWithAnyArgs().Analyse(default!, default!, default, default);
     }
 
     [Fact]
@@ -100,7 +100,7 @@ public sealed class PluginIssueApproximationServiceTests
         var act = () => sut.GetApproximationsAsync(GameType.SkyrimSe, @"C:\Game\Data", ct: cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
-        _queryService.DidNotReceiveWithAnyArgs().Analyse(default!, default!, default);
+        _queryService.DidNotReceiveWithAnyArgs().Analyse(default!, default!, default, default);
     }
 
     [Fact]
@@ -110,9 +110,9 @@ public sealed class PluginIssueApproximationServiceTests
         var plugin2 = new SkyrimMod(ModKey.FromNameAndExtension("Two.esp"), SkyrimRelease.SkyrimSE);
         var cache = new ISkyrimModGetter[] { plugin1, plugin2 }.ToImmutableLinkCache();
 
-        _queryService.Analyse(Arg.Is<IModGetter>(p => ReferenceEquals(p, plugin1)), Arg.Any<ILinkCache>(), GameRelease.SkyrimSE)
+        _queryService.Analyse(Arg.Is<IModGetter>(p => ReferenceEquals(p, plugin1)), Arg.Any<ILinkCache>(), GameRelease.SkyrimSE, Arg.Any<CancellationToken>())
             .Returns(new PluginAnalysisResult([new PluginIssue(FormKey.Null, null, IssueType.ItmRecord)]));
-        _queryService.Analyse(Arg.Is<IModGetter>(p => ReferenceEquals(p, plugin2)), Arg.Any<ILinkCache>(), GameRelease.SkyrimSE)
+        _queryService.Analyse(Arg.Is<IModGetter>(p => ReferenceEquals(p, plugin2)), Arg.Any<ILinkCache>(), GameRelease.SkyrimSE, Arg.Any<CancellationToken>())
             .Returns(_ => throw new InvalidOperationException("boom"));
 
         var sut = new PluginIssueApproximationService(
@@ -141,9 +141,9 @@ public sealed class PluginIssueApproximationServiceTests
         var cache = new ISkyrimModGetter[] { plugin1, plugin2 }.ToImmutableLinkCache();
         var reported = new List<PluginIssueApproximationResult>();
 
-        _queryService.Analyse(Arg.Is<IModGetter>(p => ReferenceEquals(p, plugin1)), Arg.Any<ILinkCache>(), GameRelease.SkyrimSE)
+        _queryService.Analyse(Arg.Is<IModGetter>(p => ReferenceEquals(p, plugin1)), Arg.Any<ILinkCache>(), GameRelease.SkyrimSE, Arg.Any<CancellationToken>())
             .Returns(new PluginAnalysisResult([new PluginIssue(FormKey.Null, null, IssueType.ItmRecord)]));
-        _queryService.Analyse(Arg.Is<IModGetter>(p => ReferenceEquals(p, plugin2)), Arg.Any<ILinkCache>(), GameRelease.SkyrimSE)
+        _queryService.Analyse(Arg.Is<IModGetter>(p => ReferenceEquals(p, plugin2)), Arg.Any<ILinkCache>(), GameRelease.SkyrimSE, Arg.Any<CancellationToken>())
             .Returns(new PluginAnalysisResult([new PluginIssue(FormKey.Null, null, IssueType.DeletedReference)]));
 
         var sut = new PluginIssueApproximationService(
@@ -176,7 +176,7 @@ public sealed class PluginIssueApproximationServiceTests
         var cache = new ISkyrimModGetter[] { plugin }.ToImmutableLinkCache();
         var reported = new List<PluginIssueApproximationResult>();
 
-        _queryService.Analyse(Arg.Any<IModGetter>(), Arg.Any<ILinkCache>(), GameRelease.SkyrimSE)
+        _queryService.Analyse(Arg.Any<IModGetter>(), Arg.Any<ILinkCache>(), GameRelease.SkyrimSE, Arg.Any<CancellationToken>())
             .Returns(_ => throw new InvalidOperationException("boom"));
 
         var sut = new PluginIssueApproximationService(
@@ -196,5 +196,39 @@ public sealed class PluginIssueApproximationServiceTests
         results.Should().ContainSingle();
         reported.Should().ContainSingle();
         reported[0].Approximation.Status.Should().Be(PluginIssueApproximationStatus.Unavailable);
+    }
+
+    [Fact]
+    public async Task GetApproximationsAsync_WhenQueryAnalysisCancels_DoesNotPublishPartialResult()
+    {
+        var plugin = new SkyrimMod(ModKey.FromNameAndExtension("Canceled.esp"), SkyrimRelease.SkyrimSE);
+        var cache = new ISkyrimModGetter[] { plugin }.ToImmutableLinkCache();
+        var reported = new List<PluginIssueApproximationResult>();
+        using var cts = new CancellationTokenSource();
+
+        _queryService
+            .Analyse(
+                Arg.Any<IModGetter>(),
+                Arg.Any<ILinkCache>(),
+                GameRelease.SkyrimSE,
+                Arg.Is<CancellationToken>(token => token == cts.Token))
+            .Returns(_ => throw new OperationCanceledException(cts.Token));
+
+        var sut = new PluginIssueApproximationService(
+            _logger,
+            _queryService,
+            (_, _, _) => new PluginIssueApproximationService.AnalysisContext(
+                GameRelease.SkyrimSE,
+                cache,
+                [new PluginIssueApproximationService.AnalysisTarget("Canceled.esp", @"C:\Game\Data\Canceled.esp", plugin)]));
+
+        var act = () => sut.GetApproximationsAsync(
+            GameType.SkyrimSe,
+            @"C:\Game\Data",
+            reported.Add,
+            cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        reported.Should().BeEmpty();
     }
 }

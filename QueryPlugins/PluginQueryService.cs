@@ -70,7 +70,7 @@ public sealed class PluginQueryService : IPluginQueryService
     }
 
     /// <inheritdoc />
-    public PluginAnalysisResult Analyse(IModGetter plugin, ILinkCache linkCache, GameRelease gameRelease)
+    public PluginAnalysisResult Analyse(IModGetter plugin, ILinkCache linkCache, GameRelease gameRelease, CancellationToken ct = default)
     {
         if (!_detectorsByRelease.TryGetValue(gameRelease, out var gameDetector))
             throw new NotSupportedException(
