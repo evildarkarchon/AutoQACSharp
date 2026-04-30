@@ -25,6 +25,10 @@ public static class ServiceCollectionExtensions
 
     public static IServiceCollection AddConfiguration(this IServiceCollection services)
     {
+        // Persistence coordinator + file store registered first; ConfigurationService and ConfigWatcherService both depend on the coordinator (Phase 10 D-08, D-15).
+        services.AddSingleton<IUserConfigFileStore, UserConfigFileStore>();
+        services.AddSingleton<ConfigPersistenceCoordinator>();
+        services.AddSingleton<IConfigPersistenceCoordinator>(sp => sp.GetRequiredService<ConfigPersistenceCoordinator>());
         services.AddSingleton<IConfigurationService, ConfigurationService>();
         services.AddSingleton<IConfigWatcherService, ConfigWatcherService>();
         services.AddSingleton<ILegacyMigrationService, LegacyMigrationService>();

@@ -12,7 +12,7 @@ using YamlDotNet.Serialization.NamingConventions;
 
 namespace AutoQAC.Services.Configuration;
 
-internal sealed class ConfigPersistenceCoordinator
+internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinator
 {
     private readonly IUserConfigFileStore _fileStore;
     private readonly IStateService _stateService;
@@ -164,7 +164,9 @@ internal sealed class ConfigPersistenceCoordinator
     {
         ThrowIfDisposed();
         var generation = Interlocked.Increment(ref _appGenerationProducer);
-        await _operations.Writer.WriteAsync(new SaveIntent(config.Copy(), generation), ct).ConfigureAwait(false);
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await _operations.Writer.WriteAsync(new SaveIntent(config.Copy(), generation, completion), ct).ConfigureAwait(false);
+        await completion.Task.WaitAsync(ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -237,6 +239,7 @@ internal sealed class ConfigPersistenceCoordinator
         SetActive(intent.Config);
         _configurationAccepted.OnNext(intent.Config.Copy());
         ScheduleAutoFlush();
+        intent.Completion.TrySetResult();
         return Task.CompletedTask;
     }
 
@@ -275,6 +278,7 @@ internal sealed class ConfigPersistenceCoordinator
             _logger.Error(ex, "[ConfigPersistence] Could not write settings file");
             _pendingApp = null;
             SetActive(_lastKnownGood);
+            _configurationAccepted.OnNext(_lastKnownGood.Copy());
             var failure = CreateFailure(ConfigPersistenceOperationKind.Flush, ConfigPersistenceFailureKind.WriteFailed, "Could not write settings file (write_failed)");
             PublishFailure(failure);
             return new ConfigPersistenceResult(ConfigPersistenceStatusKind.Failed, ConfigPersistenceOperationKind.Flush, _appGeneration, failure);

@@ -270,7 +270,7 @@ AutoQAC_Data:
     /// malformed/corrupted YAML content.
     /// </summary>
     [Fact]
-    public async Task LoadUserConfigAsync_ShouldThrow_WhenYamlIsCorrupted()
+    public async Task LoadUserConfigAsync_ShouldKeepDefaultAndExposeFailure_WhenYamlIsCorrupted()
     {
         // Arrange
         var corruptedYaml = @"
@@ -286,12 +286,12 @@ Settings: [not: properly: closed
         var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
 
         // Act
-        Func<Task> act = () => service.LoadUserConfigAsync();
+        var config = await service.LoadUserConfigAsync();
 
         // Assert
-        // YamlDotNet should throw a YamlException (or derived) for malformed YAML
-        await act.Should().ThrowAsync<Exception>(
-            "corrupted YAML should cause an exception");
+        config.Should().NotBeNull("Phase 10 keeps a usable in-memory configuration when external YAML is invalid");
+        service.LastFailure.Should().NotBeNull("invalid external YAML is now surfaced through the typed recoverable failure path");
+        service.LastFailure!.Kind.Should().Be(ConfigPersistenceFailureKind.InvalidExternalYaml);
     }
 
     /// <summary>
@@ -685,7 +685,7 @@ AutoQAC_Data:
         reloaded.Settings.CleaningTimeout.Should().Be(123);
         logger.Received().Error(
             Arg.Any<Exception>(),
-            Arg.Is<string>(msg => msg.Contains("Save failed after")),
+            Arg.Is<string>(msg => msg.Contains("Could not write settings file")),
             Arg.Any<object[]>());
     }
 

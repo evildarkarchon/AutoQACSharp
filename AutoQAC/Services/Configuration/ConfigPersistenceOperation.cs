@@ -5,7 +5,7 @@ namespace AutoQAC.Services.Configuration;
 
 internal abstract record ConfigPersistenceOperation;
 
-internal sealed record SaveIntent(UserConfiguration Config, long Generation) : ConfigPersistenceOperation;
+internal sealed record SaveIntent(UserConfiguration Config, long Generation, TaskCompletionSource Completion) : ConfigPersistenceOperation;
 
 internal sealed record FlushBarrier(TaskCompletionSource<ConfigPersistenceResult> Completion) : ConfigPersistenceOperation;
 

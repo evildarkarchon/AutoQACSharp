@@ -18,7 +18,6 @@ internal sealed class UserConfigFileStore : IUserConfigFileStore
     private readonly ILoggingService _logger;
     private readonly string _configDirectory;
     private readonly ISerializer _serializer;
-    private readonly IDeserializer _deserializer;
     private readonly Action<string, string, string?> _replace;
     private readonly Action<string, string> _move;
 
@@ -40,10 +39,6 @@ internal sealed class UserConfigFileStore : IUserConfigFileStore
         _serializer = new SerializerBuilder()
             .WithNamingConvention(NullNamingConvention.Instance)
             .Build();
-        _deserializer = new DeserializerBuilder()
-            .WithNamingConvention(NullNamingConvention.Instance)
-            .IgnoreUnmatchedProperties()
-            .Build();
     }
 
     public string SettingsFilePath => Path.Combine(_configDirectory, UserConfigFile);
@@ -60,7 +55,6 @@ internal sealed class UserConfigFileStore : IUserConfigFileStore
         }
 
         var content = await File.ReadAllTextAsync(path, ct).ConfigureAwait(false);
-        _ = _deserializer.Deserialize<UserConfiguration?>(content);
         return new UserConfigReadResult(true, content, ComputeContentHash(content));
     }
 
