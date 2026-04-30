@@ -71,7 +71,7 @@ Each task was committed atomically:
 1. **Task 1: Add cancellation and streaming regression tests** - `4eb5f22` (test)
 2. **Task 2: Implement cancellation-aware streaming analysis** - `7470ab8` (feat)
 
-**Plan metadata:** pending final metadata commit
+**Plan metadata:** `33207ad` (docs)
 
 _Note: This was a TDD plan and produced RED then GREEN commits._
 
