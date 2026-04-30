@@ -9,10 +9,12 @@ namespace AutoQAC.Services.Plugin;
 /// <param name="GameType">Game whose plugin rows or approximations should be refreshed.</param>
 /// <param name="DataFolderPath">Optional data folder override for Mutagen-backed loading and approximation analysis.</param>
 /// <param name="LoadOrderPath">Optional explicit load-order file path for file-based games or manual load-order refresh.</param>
+/// <param name="DisableSkipLists">User's Disable Skip Lists setting; when true, skip-list entries are not hidden from the refreshed row set or excluded from approximation targets.</param>
 public sealed record PluginRefreshRequest(
     GameType GameType,
     string? DataFolderPath = null,
-    string? LoadOrderPath = null);
+    string? LoadOrderPath = null,
+    bool DisableSkipLists = false);
 
 /// <summary>
 /// Immutable snapshot of a plugin row selected for targeted approximation refresh.

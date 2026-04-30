@@ -542,7 +542,11 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
 
         _stateService.UpdateConfigurationPaths(LoadOrderPath, Mo2Path, XEditPath);
         await _pluginRefreshCoordinator.RefreshForGameAsync(
-            new PluginRefreshRequest(gameType, GameDataFolder, LoadOrderPath));
+            new PluginRefreshRequest(
+                gameType,
+                GameDataFolder,
+                LoadOrderPath,
+                DisableSkipLists: DisableSkipListsEnabled));
     }
 
     private async Task<string?> ResolveLoadOrderPathAsync(GameType gameType)

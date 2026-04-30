@@ -87,7 +87,7 @@ public sealed class PluginRefreshCoordinator : IPluginRefreshCoordinator, IDispo
             var initialApproximation = _capabilityPolicy.SupportsIssueApproximation(request.GameType)
                 ? PluginIssueApproximation.Pending
                 : PluginIssueApproximation.Unavailable;
-            var rows = ApplySkipListStatus(loadedPlugins, skipList, request.GameType, disableSkipLists: false, initialApproximation);
+            var rows = ApplySkipListStatus(loadedPlugins, skipList, request.GameType, disableSkipLists: request.DisableSkipLists, initialApproximation);
             _stateService.SetPluginsToClean(rows);
 
             if (rows.Count == 0)
