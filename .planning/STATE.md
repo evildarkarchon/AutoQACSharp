@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Cleanup
 status: executing
-stopped_at: Completed 09-07-PLAN.md
-last_updated: "2026-04-30T09:19:55.520Z"
+stopped_at: Completed 09-08-PLAN.md
+last_updated: "2026-04-30T09:26:01.956Z"
 last_activity: 2026-04-30
 progress:
   total_phases: 7
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 40
-  completed_plans: 39
-  percent: 98
+  completed_plans: 40
+  percent: 100
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-04-28)
 ## Current Position
 
 Phase: 09 (plugin-refresh-approximation-performance) — EXECUTING
-Plan: 2 of 8
+Plan: 3 of 8
 Status: Ready to execute
 Last activity: 2026-04-30
 
-Progress: [██████████] 98%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -60,6 +60,7 @@ Progress: [██████████] 98%
 | Phase 09 P05 | 9 min | 2 tasks | 11 files |
 | Phase 09 P06 | 3 min | 2 tasks | 2 files |
 | Phase 09 P07 | 3 min | 2 tasks | 4 files |
+| Phase 09 P08 | 3 min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -98,6 +99,9 @@ Progress: [██████████] 98%
 - [Phase 09]: Empty-current-list selected refresh fallback remains for compatibility, but non-empty row sets use UpdateState instead of SetPluginsToClean(pendingRows). — This keeps selected refresh narrow without removing non-targeted visible rows.
 - [Phase 09]: Disable Skip Lists remains user-driven by ConfigurationViewModel, but PluginRefreshCoordinator consumes it only through PluginRefreshRequest. — Plan 09-07 preserves service-owned refresh workflow while wiring the existing UI toggle into row publication.
 - [Phase 09]: PluginRefreshRequest.DisableSkipLists defaults to false. — Legacy callers keep restrictive skip-list behavior unless they explicitly opt into the user toggle.
+- [Phase 09]: Full-list approximation refresh now has its own FullRefreshCompleted terminal status instead of reusing selected-refresh completion text. — This keeps selected and full refresh lifecycle messages explicit and lets tests assert the exact UI cleanup signal.
+- [Phase 09]: The coordinator publishes FullRefreshCompleted only after successful AnalyzeTargetsAsync completion and only while the generation remains current. — Generation gating prevents superseded refreshes from publishing stale terminal statuses that could mislead the UI.
+- [Phase 09]: PluginListViewModel keeps the running set intentionally narrow: LoadingPlugins and AnalyzingSelected are running; terminal statuses clear the cancel affordance. — The cancel button should be active only while work is actually in progress, and completion/cancellation statuses must clear it.
 
 ### Pending Todos
 
@@ -115,6 +119,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-30T09:19:55.514Z
-Stopped at: Completed 09-07-PLAN.md
+Last session: 2026-04-30T09:25:39.205Z
+Stopped at: Completed 09-08-PLAN.md
 Resume file: None

@@ -182,7 +182,7 @@ Plans:
 - [x] 09-07-PLAN.md — Plumb DisableSkipLists from ConfigurationViewModel through PluginRefreshRequest into the coordinator so refreshed rows respect the user's Disable Skip Lists setting.
 
 **Wave 7 (gap closure; blocked on 09-07 completion — same coordinator file)**
-- [ ] 09-08-PLAN.md — Publish a FullRefreshCompleted terminal status after successful full-list approximation analysis so the cancel-refresh UI clears.
+- [x] 09-08-PLAN.md — Publish a FullRefreshCompleted terminal status after successful full-list approximation analysis so the cancel-refresh UI clears.
 **UI hint**: yes
 
 ### Phase 10: Configuration Persistence Hardening
