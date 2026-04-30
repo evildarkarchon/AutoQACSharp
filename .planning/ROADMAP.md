@@ -143,7 +143,7 @@ Plans:
 **Wave 5 (blocked on Wave 4 completion)**
 - [x] 08-06-PLAN.md — Final facade integration + cross-file source-level parallelization guard; verify REF-01 satisfied.
 
-**Gap closure (post-verification, both Wave 1 — independent files)**
+**Wave 6 (review-informed gap closure; blocked on Wave 5 completion)**
 - [ ] 08-07-PLAN.md — Fix CR-01: publish session CTS before orphan cleanup/preflight so Stop during preflight cancels the session before any xEdit launch (TDD).
 - [ ] 08-08-PLAN.md — Fix CR-02 + WR-01 in PluginResultFinalizer: gate AlreadyClean on success/cleaned; derive Success from finalStatus (TDD).
 
