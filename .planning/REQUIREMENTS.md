@@ -35,8 +35,8 @@ Requirements for the cleanup milestone. Each maps to roadmap phases.
 
 ### Performance
 
-- [ ] **PERF-01**: User can refresh plugin issue approximations with better cancellation, reduced redundant load-order work, or narrower target scope.
-- [ ] **PERF-02**: User can run ITM approximation on large plugins without materializing every override context for each record.
+- [x] **PERF-01**: User can refresh plugin issue approximations with better cancellation, reduced redundant load-order work, or narrower target scope.
+- [x] **PERF-02**: User can run ITM approximation on large plugins without materializing every override context for each record.
 - [ ] **PERF-03**: User configuration changes avoid YAML serialization round-trips for in-memory cloning.
 - [x] **PERF-04**: User backup and retention operations remain cancellable and visible without parallelizing xEdit cleaning.
 
@@ -88,8 +88,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TEST-04 | Phase 7 | Complete |
 | SEC-01 | Phase 11 | Pending |
 | SEC-02 | Phase 11 | Pending |
-| PERF-01 | Phase 9 | Pending |
-| PERF-02 | Phase 9 | Pending |
+| PERF-01 | Phase 9 | Complete |
+| PERF-02 | Phase 9 | Complete |
 | PERF-03 | Phase 10 | Pending |
 | PERF-04 | Phase 7 | Complete |
 

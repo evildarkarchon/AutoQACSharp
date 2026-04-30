@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Cleanup
-status: verifying
-stopped_at: Phase 9 context gathered
-last_updated: "2026-04-30T06:41:47.588Z"
+status: executing
+stopped_at: Phase 9 UI-SPEC approved
+last_updated: "2026-04-30T07:35:11.391Z"
 last_activity: 2026-04-30
 progress:
   total_phases: 7
   completed_phases: 4
-  total_plans: 32
-  completed_plans: 32
-  percent: 100
+  total_plans: 37
+  completed_plans: 33
+  percent: 89
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-28)
 
 **Core value:** Accurate, automated xEdit Quick Auto Clean with reliable result reporting.
-**Current focus:** Phase 08 — cleaning-orchestrator-decomposition
+**Current focus:** Phase 09 — plugin-refresh-approximation-performance
 
 ## Current Position
 
-Phase: 08 (cleaning-orchestrator-decomposition) — EXECUTING
-Plan: 10 of 10
-Status: Phase complete — ready for verification
+Phase: 09 (plugin-refresh-approximation-performance) — EXECUTING
+Plan: 2 of 5
+Status: Ready to execute
 Last activity: 2026-04-30
 
-Progress: [██████████] 100%
+Progress: [█████████░] 89%
 
 ## Performance Metrics
 
@@ -53,6 +53,7 @@ Progress: [██████████] 100%
 | Phase 08 P08 | 2 min | 3 tasks | 2 files |
 | 08 | 09 | 8 min | 3 | 2 |
 | 08 | 10 | 7 min | 3 | 2 |
+| Phase 09 P01 | 4 min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -74,6 +75,8 @@ Progress: [██████████] 100%
 - Phase 08 Plan 08 gates AlreadyClean promotion on a successful cleaned runner result and derives `PluginCleaningResult.Success` from finalStatus after log-parse overrides.
 - Phase 08 Plan 09 rejects concurrent `StartCleaningAsync` calls immediately so the first active session keeps `_cleaningCts` ownership.
 - Phase 08 Plan 10 revalidates `LoadOrderPath` after Unknown game detection resolves to FO3/FNV/Oblivion, before skip-list or plugin-row construction.
+- [Phase ?]: Phase 09 Plan 01 keeps QueryPlugins ITM counts exact by streaming only the analyzed plugin context and its immediate lower-priority context.
+- [Phase ?]: Phase 09 Plan 01 propagates OperationCanceledException instead of publishing unavailable or partial rows when exact analysis is canceled.
 
 ### Pending Todos
 
@@ -91,6 +94,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-30T06:41:47.582Z
-Stopped at: Phase 9 context gathered
-Resume file: .planning/phases/09-plugin-refresh-approximation-performance/09-CONTEXT.md
+Last session: 2026-04-30T07:34:41.203Z
+Stopped at: Phase 9 UI-SPEC approved
+Resume file: None
