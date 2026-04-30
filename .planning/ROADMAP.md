@@ -160,7 +160,7 @@ Plans:
   2. User can run ITM approximation on large plugins without the detector materializing every override context for each record.
   3. Maintainer can change plugin loading or issue approximation refresh behavior outside `ConfigurationViewModel`.
   4. User-visible plugin lists and approximation results remain consistent with the selected game, data folder, skip lists, and current cancellation generation.
-**Plans**: 8 plans
+**Plans**: 9 plans
 Plans:
 **Wave 1**
 - [x] 09-01-PLAN.md — Optimize QueryPlugins ITM analysis with streaming context traversal and cancellation propagation.
@@ -183,6 +183,9 @@ Plans:
 
 **Wave 7 (gap closure; blocked on 09-07 completion — same coordinator file)**
 - [x] 09-08-PLAN.md — Publish a FullRefreshCompleted terminal status after successful full-list approximation analysis so the cancel-refresh UI clears.
+
+**Wave 8 (gap closure; blocked on 09-08 completion — same coordinator file)**
+- [ ] 09-09-PLAN.md — Close cancellation CTS lifetime, failure terminal status, and variant-specific skip-list refresh gaps.
 **UI hint**: yes
 
 ### Phase 10: Configuration Persistence Hardening
@@ -219,7 +222,7 @@ Plans:
 | 6. Command Launch Escaping | v1.0 Cleanup | 4/4 | Complete | 2026-04-29 |
 | 7. Backup Restore & Retention Safety | v1.0 Cleanup | 11/14 | Gaps planned | - |
 | 8. Cleaning Orchestrator Decomposition | v1.0 Cleanup | 10/10 | Complete | 2026-04-30 |
-| 9. Plugin Refresh & Approximation Performance | v1.0 Cleanup | 6/6 | Complete | 2026-04-30 |
+| 9. Plugin Refresh & Approximation Performance | v1.0 Cleanup | 8/9 | Gaps planned | - |
 | 10. Configuration Persistence Hardening | v1.0 Cleanup | 0/0 | Not started | - |
 | 11. User-Facing Diagnostics Boundaries | v1.0 Cleanup | 0/0 | Not started | - |
 
