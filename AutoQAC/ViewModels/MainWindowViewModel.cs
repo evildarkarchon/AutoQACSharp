@@ -45,7 +45,8 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
         IPluginLoadingService pluginLoadingService,
         IUiDispatcher uiDispatcher,
         IPluginIssueApproximationService? pluginIssueApproximationService = null,
-        IPluginRefreshCoordinator? pluginRefreshCoordinator = null)
+        IPluginRefreshCoordinator? pluginRefreshCoordinator = null,
+        IPluginRefreshCapabilityPolicy? pluginRefreshCapabilityPolicy = null)
     {
         _uiDispatcher = uiDispatcher;
 
@@ -53,7 +54,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
             configService, stateService, logger, fileDialog,
             messageDialog, pluginService, pluginLoadingService, pluginIssueApproximationService, pluginRefreshCoordinator);
 
-        PluginList = new PluginListViewModel(stateService);
+        PluginList = new PluginListViewModel(stateService, pluginRefreshCoordinator, pluginRefreshCapabilityPolicy);
 
         Commands = new CleaningCommandsViewModel(
             stateService, orchestrator, configService, pluginLoadingService,
