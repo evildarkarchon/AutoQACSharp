@@ -200,7 +200,7 @@ Plans:
 **Plans**: 5 plans
 Plans:
 **Wave 1**
-- [ ] 10-01-PLAN.md — Manual deep-copy on UserConfiguration graph (PERF-03)
+- [x] 10-01-PLAN.md — Manual deep-copy on UserConfiguration graph (PERF-03)
 
 **Wave 2 (blocked on 10-01 completion)**
 - [ ] 10-02-PLAN.md — Persistence coordinator + file store seam + race-matrix tests (REF-03, TEST-03)
@@ -236,7 +236,7 @@ Plans:
 | 7. Backup Restore & Retention Safety | v1.0 Cleanup | 11/14 | Gaps planned | - |
 | 8. Cleaning Orchestrator Decomposition | v1.0 Cleanup | 10/10 | Complete | 2026-04-30 |
 | 9. Plugin Refresh & Approximation Performance | v1.0 Cleanup | 8/9 | Gaps planned | - |
-| 10. Configuration Persistence Hardening | v1.0 Cleanup | 0/0 | Not started | - |
+| 10. Configuration Persistence Hardening | v1.0 Cleanup | 1/5 | In Progress|  |
 | 11. User-Facing Diagnostics Boundaries | v1.0 Cleanup | 0/0 | Not started | - |
 
 ## Coverage
