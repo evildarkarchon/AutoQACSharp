@@ -1,7 +1,9 @@
 using AutoQAC.Models;
+using AutoQAC.Services.Configuration;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Services.State;
 using FluentAssertions;
+using NSubstitute;
 
 namespace AutoQAC.Tests.Services;
 
@@ -83,6 +85,48 @@ public sealed class PluginRefreshCoordinatorTests
     }
 
     [Fact]
+    public async Task RefreshForGameAsync_WhenDisableSkipListsTrue_ShouldNotMarkSkipListedPluginsAsInSkipList()
+    {
+        var stateService = new StateService();
+        var configurationService = CreateConfigurationServiceWithSkipList(
+            GameType.SkyrimSe,
+            ["Completed.esp"]);
+        var sut = CreateCoordinator(stateService, configurationService);
+        var request = new PluginRefreshRequest(
+            GameType.SkyrimSe,
+            @"C:\Game\Data",
+            DisableSkipLists: true);
+
+        await sut.RefreshForGameAsync(request, CancellationToken.None);
+
+        stateService.CurrentState.PluginsToClean
+            .Should().Contain(plugin =>
+                plugin.FileName == "Completed.esp" && !plugin.IsInSkipList,
+                "Disable Skip Lists must override the configured skip list during refresh");
+    }
+
+    [Fact]
+    public async Task RefreshForGameAsync_WhenDisableSkipListsFalse_ShouldMarkConfiguredSkipListPluginsAsInSkipList()
+    {
+        var stateService = new StateService();
+        var configurationService = CreateConfigurationServiceWithSkipList(
+            GameType.SkyrimSe,
+            ["Completed.esp"]);
+        var sut = CreateCoordinator(stateService, configurationService);
+        var request = new PluginRefreshRequest(
+            GameType.SkyrimSe,
+            @"C:\Game\Data",
+            DisableSkipLists: false);
+
+        await sut.RefreshForGameAsync(request, CancellationToken.None);
+
+        stateService.CurrentState.PluginsToClean
+            .Should().Contain(plugin =>
+                plugin.FileName == "Completed.esp" && plugin.IsInSkipList,
+                "default behavior must continue to honor the configured skip list");
+    }
+
+    [Fact]
     public async Task RefreshSelectedApproximationsAsync_WhenNoTargets_PublishesSelectPluginsStatus()
     {
         var stateService = new StateService();
@@ -151,6 +195,32 @@ public sealed class PluginRefreshCoordinatorTests
             new TestPluginIssueApproximationService(),
             stateService,
             new TestPluginRefreshCapabilityPolicy());
+    }
+
+    private static PluginRefreshCoordinator CreateCoordinator(
+        IStateService stateService,
+        IConfigurationService configurationService) =>
+        new(
+            new TestPluginLoadingService(),
+            new TestPluginIssueApproximationService(),
+            stateService,
+            new TestPluginRefreshCapabilityPolicy(),
+            configurationService);
+
+    private static IConfigurationService CreateConfigurationServiceWithSkipList(
+        GameType gameType,
+        IReadOnlyList<string> skipList)
+    {
+        var configurationService = Substitute.For<IConfigurationService>();
+        // GetSkipListAsync has an optional GameVariant parameter; matching it explicitly keeps
+        // NSubstitute bound to the same call shape used by the coordinator's named ct argument.
+        configurationService
+            .GetSkipListAsync(gameType, GameVariant.None, Arg.Any<CancellationToken>())
+            .Returns(skipList.ToList());
+        configurationService
+            .GetGameLoadOrderOverrideAsync(gameType, Arg.Any<CancellationToken>())
+            .Returns((string?)null);
+        return configurationService;
     }
 
     private sealed class TestPluginLoadingService : IPluginLoadingService
