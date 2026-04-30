@@ -48,7 +48,7 @@
   },
   "review": {
     "models": {
-      "opencode": "opencode run --model openrouter/moonshotai/kimi-k2.6"
+      "opencode": "opencode run --model opencode/claude-sonnet-4-6"
     }
   },
   "context_window": 400000
