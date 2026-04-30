@@ -53,7 +53,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
         Configuration = new ConfigurationViewModel(
             configService, stateService, logger, fileDialog,
             messageDialog, pluginService, pluginLoadingService, pluginIssueApproximationService, pluginRefreshCoordinator,
-            uiDispatcher);
+            null, uiDispatcher);
 
         PluginList = new PluginListViewModel(stateService, pluginRefreshCoordinator, pluginRefreshCapabilityPolicy, uiDispatcher);
 

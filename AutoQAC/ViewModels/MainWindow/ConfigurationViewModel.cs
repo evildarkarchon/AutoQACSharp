@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.Configuration;
+using AutoQAC.Services.GameDetection;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Services.State;
 using AutoQAC.Services.UI;
@@ -107,6 +108,7 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         IPluginLoadingService pluginLoadingService,
         IPluginIssueApproximationService? pluginIssueApproximationService = null,
         IPluginRefreshCoordinator? pluginRefreshCoordinator = null,
+        IGameDetectionService? gameDetectionService = null,
         IUiDispatcher? uiDispatcher = null)
     {
         _configService = configService;
@@ -121,6 +123,7 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
             pluginIssueApproximationService ?? NoOpPluginIssueApproximationService.Instance,
             stateService,
             new PluginRefreshCapabilityPolicy(pluginLoadingService),
+            gameDetectionService ?? new GameDetectionService(logger),
             configService,
             logger);
         _uiDispatcher = uiDispatcher ?? new SynchronousFallbackDispatcher();

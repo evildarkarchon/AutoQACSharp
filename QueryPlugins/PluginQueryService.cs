@@ -83,9 +83,9 @@ public sealed class PluginQueryService : IPluginQueryService
 
         issues.AddRange(_itmDetector.FindItmRecords(plugin, linkCache, ct));
         ct.ThrowIfCancellationRequested();
-        issues.AddRange(gameDetector.FindDeletedReferences(plugin));
+        issues.AddRange(gameDetector.FindDeletedReferences(plugin, ct));
         ct.ThrowIfCancellationRequested();
-        issues.AddRange(gameDetector.FindDeletedNavmeshes(plugin));
+        issues.AddRange(gameDetector.FindDeletedNavmeshes(plugin, ct));
 
         return new PluginAnalysisResult(issues);
     }
