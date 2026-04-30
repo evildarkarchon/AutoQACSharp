@@ -199,9 +199,15 @@ public sealed class PluginRefreshCoordinator : IPluginRefreshCoordinator, IDispo
                     }
 
                     var rows = s.PluginsToClean.Select(plugin =>
-                        targetPaths.Contains(plugin.FullPath) || targetNames.Contains(plugin.FileName)
+                    {
+                        // Prefer path matching; fall back to name only when the row has no path
+                        var isTarget = !string.IsNullOrWhiteSpace(plugin.FullPath)
+                            ? targetPaths.Contains(plugin.FullPath)
+                            : targetNames.Contains(plugin.FileName);
+                        return isTarget
                             ? plugin with { Approximation = PluginIssueApproximation.Pending }
-                            : plugin).ToList();
+                            : plugin;
+                    }).ToList();
 
                     return s with { PluginsToClean = rows.AsReadOnly() };
                 });
@@ -363,8 +369,15 @@ public sealed class PluginRefreshCoordinator : IPluginRefreshCoordinator, IDispo
     private static bool IsTarget(
         PluginIssueApproximationResult approximation,
         IReadOnlySet<string> targetPaths,
-        IReadOnlySet<string> targetNames) =>
-        targetPaths.Contains(approximation.FullPath) || targetNames.Contains(approximation.FileName);
+        IReadOnlySet<string> targetNames)
+    {
+        // Prefer full path when the approximation has one
+        if (!string.IsNullOrWhiteSpace(approximation.FullPath) && targetPaths.Contains(approximation.FullPath))
+            return true;
+
+        // Fall back to file name only when the approximation has no usable path
+        return string.IsNullOrWhiteSpace(approximation.FullPath) && targetNames.Contains(approximation.FileName);
+    }
 
     private static string? ResolveDataFolder(PluginRefreshRequest request, IReadOnlyList<PluginInfo> rows)
     {

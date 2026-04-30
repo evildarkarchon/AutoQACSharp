@@ -311,7 +311,9 @@ public sealed class StateService : IStateService, IDisposable
             return true;
         }
 
-        if (byFileName.TryGetValue(plugin.FileName, out var fileNameMatch))
+        // Only fall back to file name when the plugin has no usable path
+        if (string.IsNullOrWhiteSpace(plugin.FullPath) &&
+            byFileName.TryGetValue(plugin.FileName, out var fileNameMatch))
         {
             approximation = fileNameMatch;
             return true;
@@ -323,7 +325,11 @@ public sealed class StateService : IStateService, IDisposable
 
     private static bool IsApproximationMatch(PluginInfo plugin, PluginIssueApproximationResult approximation)
     {
-        return string.Equals(plugin.FullPath, approximation.FullPath, StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(plugin.FileName, approximation.FileName, StringComparison.OrdinalIgnoreCase);
+        // Prefer full path when both sides have one
+        if (!string.IsNullOrWhiteSpace(plugin.FullPath) && !string.IsNullOrWhiteSpace(approximation.FullPath))
+            return string.Equals(plugin.FullPath, approximation.FullPath, StringComparison.OrdinalIgnoreCase);
+
+        // Fall back to file name only when one side has no usable path
+        return string.Equals(plugin.FileName, approximation.FileName, StringComparison.OrdinalIgnoreCase);
     }
 }
