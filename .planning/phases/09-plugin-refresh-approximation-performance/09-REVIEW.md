@@ -24,18 +24,18 @@ files_reviewed_list:
   - AutoQAC/ViewModels/MainWindowViewModel.cs
   - AutoQAC.Tests/Integration/DependencyInjectionTests.cs
   - AutoQAC/ViewModels/MainWindow/PluginListViewModel.cs
-  - AutoQAC/ViewModels/MainWindow/CleaningCommandsViewModel.cs
   - AutoQAC/Views/MainWindow.axaml
   - AutoQAC.Tests/ViewModels/PluginListViewModelTests.cs
   - AutoQAC.Tests/ViewModels/CleaningCommandsViewModelTests.cs
+  - AutoQAC/ViewModels/MainWindow/CleaningCommandsViewModel.cs
   - AutoQAC.Tests/ViewModels/MainWindowThreadingTests.cs
   - AutoQAC.Tests/ViewModels/MainWindowViewModelTests.cs
   - AutoQAC.Tests/ViewModels/ErrorDialogTests.cs
 findings:
-  critical: 3
-  warning: 0
-  info: 2
-  total: 5
+  critical: 2
+  warning: 2
+  info: 0
+  total: 4
 status: issues_found
 ---
 
@@ -48,88 +48,99 @@ status: issues_found
 
 ## Summary
 
-Deep review found multiple correctness defects in the new refresh/approximation flow. The most serious issues are UI-thread violations from service status callbacks and targeted refresh logic that discards non-selected plugins from the state list. These are behavioral regressions that can break the Avalonia UI and lose visible plugin rows during ordinary use.
+Deep review covered the QueryPlugins detector changes, approximation service, refresh coordinator, DI wiring, main-window ViewModels/XAML, and related tests. The implementation has two behavioral blockers: the existing “Disable Skip Lists” setting is ignored by the new coordinator path, and full-list approximation refreshes leave the UI in a perpetual running state. I also found cancellation/thread-safety robustness gaps in refresh status publication and detector cancellation propagation.
 
 ## Critical Issues
 
-### CR-01: BLOCKER - Refresh status callbacks mutate UI-bound ViewModel properties from worker threads
+### CR-01: BLOCKER - Disable Skip Lists setting is ignored during coordinator refresh
 
-**File:** `AutoQAC/ViewModels/MainWindow/ConfigurationViewModel.cs:127-145`, `AutoQAC/ViewModels/MainWindow/PluginListViewModel.cs:70-82`, `AutoQAC/ViewModels/MainWindow/PluginListViewModel.cs:277-282`, `AutoQAC/Services/Plugin/PluginRefreshCoordinator.cs:315-329`
+**File:** `AutoQAC/Services/Plugin/PluginRefreshCoordinator.cs:87-91`  
+**Issue:** `ApplySkipListStatus` is always called with `disableSkipLists: false`, so the UI setting saved by `ConfigurationViewModel.HandleDisableSkipListsChangedAsync` never reaches the refresh coordinator. Toggling “Disable Skip Lists” still marks skip-list plugins as `IsInSkipList`, hides them from `PluginListViewModel`, and prevents them from being selected/cleaned. This is a behavioral regression for an existing cleaning control.
 
-**Issue:** `ConfigurationViewModel` and `PluginListViewModel` subscribe directly to `IPluginRefreshCoordinator.StatusChanged` and mutate `StatusText` / `IsApproximationRefreshRunning` inside the observer. Those statuses are published from `PluginRefreshCoordinator.AnalyzeTargetsAsync` callbacks while `PluginIssueApproximationService.GetApproximationsAsync` runs analysis on `Task.Run`, so the observer can execute on a thread-pool thread. This violates the repository rule that service `IObservable<T>` streams must be marshaled through `IUiDispatcher` before touching ViewModel/UI state, and can cause Avalonia cross-thread access failures or nondeterministic UI corruption.
-
-**Fix:** Inject `IUiDispatcher` into the ViewModels that subscribe to refresh status and marshal property updates onto the UI thread, or centralize status-to-state mapping through `IStateService` so the existing parent dispatcher path handles it.
+**Fix:** Carry the setting into the refresh request (or read it from configuration inside the coordinator) and pass it through to `ApplySkipListStatus`; add a regression test that toggling the setting publishes skip-list plugins as visible/selectable.
 
 ```csharp
-_pluginRefreshStatusSubscription = _pluginRefreshCoordinator.StatusChanged.Subscribe(
-    new CallbackObserver<PluginRefreshStatus>(status =>
-        _uiDispatcher.Post(() => OnPluginRefreshStatusChanged(status))));
+public sealed record PluginRefreshRequest(
+    GameType GameType,
+    string? DataFolderPath = null,
+    string? LoadOrderPath = null,
+    bool DisableSkipLists = false);
+
+// ConfigurationViewModel.RefreshPluginsForGameAsync
+await _pluginRefreshCoordinator.RefreshForGameAsync(
+    new PluginRefreshRequest(gameType, GameDataFolder, LoadOrderPath, DisableSkipListsEnabled));
+
+// PluginRefreshCoordinator.RefreshForGameAsync
+var rows = ApplySkipListStatus(
+    loadedPlugins,
+    skipList,
+    request.GameType,
+    request.DisableSkipLists,
+    initialApproximation);
 ```
 
-Add a regression test that publishes `PluginRefreshStatus.AnalyzingSelected(...)` from a background task and asserts the ViewModel update goes through the injected dispatcher.
+### CR-02: BLOCKER - Full approximation refresh never publishes a terminal status
 
-### CR-02: BLOCKER - Selected approximation refresh drops every non-selected plugin row
+**File:** `AutoQAC/Services/Plugin/PluginRefreshCoordinator.cs:113-130`, `AutoQAC/ViewModels/MainWindow/PluginListViewModel.cs:281-285`  
+**Issue:** `PluginListViewModel` sets `IsApproximationRefreshRunning` to true for `LoadingPlugins` and `AnalyzingSelected`, but `RefreshForGameAsync` emits no completion/idle status after a successful full-list approximation run. After selecting a game or refreshing the full plugin list, the cancel-refresh button can remain visible forever even though no refresh is active.
 
-**File:** `AutoQAC/Services/Plugin/PluginRefreshCoordinator.cs:167-177`
-
-**Issue:** `RefreshSelectedApproximationsAsync` builds `pendingRows` from only the selected target snapshot and then calls `_stateService.SetPluginsToClean(pendingRows)`. In the real UI, the user can have a full plugin list loaded and refresh only one checked row; this code replaces the entire application plugin list with that selected subset. Deselected rows, already-analyzed rows, and skip-list context disappear from state/UI even though the command is supposed to refresh approximations only for selected rows.
-
-**Fix:** Do not replace `PluginsToClean` for targeted refresh. Mark only matching existing rows as pending (add a targeted state method if necessary), then merge streaming results into the existing list.
+**Fix:** Emit a terminal status after full-refresh analysis completes, or add a dedicated `FullRefreshCompleted` status kind and clear the running flag for all terminal statuses.
 
 ```csharp
-// Instead of SetPluginsToClean(pendingRows), update only matching rows.
-_stateService.UpdateState(s => s with
+var updated = await AnalyzeTargetsAsync(request.GameType, dataFolder, targets, generation, token)
+    .ConfigureAwait(false);
+if (IsCurrent(generation, token))
 {
-    PluginsToClean = s.PluginsToClean.Select(plugin =>
-        snapshot.Any(t => string.Equals(t.FullPath, plugin.FullPath, StringComparison.OrdinalIgnoreCase))
-            ? plugin with { Approximation = PluginIssueApproximation.Pending }
-            : plugin).ToList().AsReadOnly()
-});
-```
-
-Add a coordinator/ViewModel test with two visible plugins, select one, refresh, and assert the unselected row remains in `PluginsToClean` with its previous approximation.
-
-### CR-03: BLOCKER - Command continuation updates observable properties off the UI thread
-
-**File:** `AutoQAC/ViewModels/MainWindow/PluginListViewModel.cs:149-156`
-
-**Issue:** `RefreshSelectedApproximationsAsync` awaits the coordinator with `.ConfigureAwait(false)` and then sets `IsApproximationRefreshRunning = false` in `finally`. Because this command is invoked from the UI and the continuation is explicitly allowed to resume on a thread-pool thread, it can raise `PropertyChanged` for an Avalonia-bound property off the UI thread. This is a second, independent UI-thread violation even if status callbacks are fixed.
-
-**Fix:** Do not use `ConfigureAwait(false)` in UI command handlers when the continuation mutates ViewModel state. If background work is needed, keep it inside services and resume the command on the UI context before changing properties.
-
-```csharp
-try
-{
-    await _pluginRefreshCoordinator.RefreshSelectedApproximationsAsync(
-        new PluginRefreshRequest(CurrentGameType),
-        targets);
+    Publish(new PluginRefreshStatus(
+        PluginRefreshStatusKind.Idle,
+        Message: $"Updated {updated} plugin approximations."));
 }
-finally
+
+// PluginListViewModel: any non-running status should clear this flag.
+IsApproximationRefreshRunning = status.Kind is
+    PluginRefreshStatusKind.LoadingPlugins or
+    PluginRefreshStatusKind.AnalyzingSelected;
+```
+
+## Warnings
+
+### WR-01: WARNING - Refresh status Subject can receive concurrent OnNext calls
+
+**File:** `AutoQAC/Services/Plugin/PluginRefreshCoordinator.cs:27`, `AutoQAC/Services/Plugin/PluginRefreshCoordinator.cs:233-235`, `AutoQAC/Services/Plugin/PluginRefreshCoordinator.cs:340-342`, `AutoQAC/Services/Plugin/PluginRefreshCoordinator.cs:382`  
+**Issue:** `_statusChanged` is a raw `Subject<PluginRefreshStatus>`. Approximation callbacks publish from the background analysis path while `CancelActiveRefresh` can publish from the UI thread. Rx `Subject<T>` is not safe for concurrent `OnNext` calls; overlapping progress/cancel emissions can corrupt observer state or throw, even though subscribers marshal their mutations to `IUiDispatcher` after receipt.
+
+**Fix:** Serialize publication with a lock or a synchronized subject.
+
+```csharp
+private readonly object _statusGate = new();
+
+private void Publish(PluginRefreshStatus status)
 {
-    IsApproximationRefreshRunning = false;
+    lock (_statusGate)
+    {
+        _statusChanged.OnNext(status);
+    }
 }
 ```
 
-## Info
+### WR-02: WARNING - Cancellation is not propagated into deleted-reference/navmesh detectors
 
-### IN-01: Missing regression coverage for preserving non-selected rows during targeted refresh
+**File:** `QueryPlugins/PluginQueryService.cs:84-88`, `QueryPlugins/Detectors/IGameSpecificDetector.cs:25-33`  
+**Issue:** ITM detection receives the cancellation token, but deleted reference and navmesh scans do not. For large plugins, a canceled refresh can remain stuck inside `FindDeletedReferences` or `FindDeletedNavmeshes` until the entire traversal finishes, delaying manual cancel, superseded refreshes, and cleaning-start cancellation.
 
-**File:** `AutoQAC.Tests/Services/PluginRefreshCoordinatorTests.cs:26-45`
+**Fix:** Add `CancellationToken` parameters to `IGameSpecificDetector` methods and check the token during traversal in each game-specific detector.
 
-**Issue:** Existing selected-refresh tests start from an empty state or only assert that late additions are not analyzed. They do not cover the ordinary UI path where a full plugin list exists and only selected rows should be refreshed in place. That gap allowed CR-02 to ship.
+```csharp
+IEnumerable<PluginIssue> FindDeletedReferences(IModGetter plugin, CancellationToken ct = default);
+IEnumerable<PluginIssue> FindDeletedNavmeshes(IModGetter plugin, CancellationToken ct = default);
 
-**Fix:** Add a test that seeds `StateService` with multiple plugins and an existing approximation, calls `RefreshSelectedApproximationsAsync` for one target, then asserts all original rows remain and only the target row changes.
-
-### IN-02: Missing regression coverage for refresh status UI dispatch
-
-**File:** `AutoQAC.Tests/ViewModels/MainWindowThreadingTests.cs:21-87`, `AutoQAC.Tests/ViewModels/PluginListViewModelTests.cs:161-187`
-
-**Issue:** Threading tests cover `StateChanged` dispatch through `IUiDispatcher`, but refresh-status subscriptions are a separate observable path and are not tested for dispatcher use. The direct subscriptions in CR-01 therefore look correct in tests while violating the project threading convention in production.
-
-**Fix:** Add tests that publish coordinator status from a background task and verify `ConfigurationViewModel` / `PluginListViewModel` property mutation is scheduled through `IUiDispatcher` rather than executing inline on the publisher thread.
+issues.AddRange(gameDetector.FindDeletedReferences(plugin, ct));
+ct.ThrowIfCancellationRequested();
+issues.AddRange(gameDetector.FindDeletedNavmeshes(plugin, ct));
+```
 
 ---
 
-_Reviewed: 2026-04-30T00:00:00Z_
-_Reviewer: the agent (gsd-code-reviewer)_
+_Reviewed: 2026-04-30T00:00:00Z_  
+_Reviewer: the agent (gsd-code-reviewer)_  
 _Depth: deep_
