@@ -167,7 +167,7 @@ Plans:
 - [x] 09-02-PLAN.md — Define refresh coordinator contracts and Wave 0 behavior tests for row-first selected approximation refresh.
 
 **Wave 2 (blocked on 09-02 completion)**
-- [ ] 09-03-PLAN.md — Implement the refresh coordinator/capability policy and move plugin refresh workflow out of ConfigurationViewModel.
+- [x] 09-03-PLAN.md — Implement the refresh coordinator/capability policy and move plugin refresh workflow out of ConfigurationViewModel.
 
 **Wave 3 (blocked on 09-03 completion)**
 - [ ] 09-04-PLAN.md — Add selected approximation refresh and cancel controls near the plugin list.
