@@ -34,7 +34,8 @@
     "auto_prune_state": true,
     "pattern_mapper": true,
     "use_worktrees": false,
-    "security_enforcement": false
+    "security_enforcement": false,
+    "cross_ai_execution": false
   },
   "hooks": {
     "context_warnings": true
