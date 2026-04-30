@@ -2,7 +2,6 @@ using AutoQAC.Models;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Services.State;
 using FluentAssertions;
-using NSubstitute;
 
 namespace AutoQAC.Tests.Services;
 
@@ -20,7 +19,8 @@ public sealed class PluginRefreshCoordinatorTests
         stateService.CurrentState.PluginsToClean.Should().NotBeEmpty(
             "rows must be published before the coordinator starts approximation analysis");
         stateService.CurrentState.PluginsToClean.Should().OnlyContain(plugin =>
-            plugin.Approximation.Status is PluginIssueApproximationStatus.Pending or PluginIssueApproximationStatus.Available);
+            plugin.Approximation.Status == PluginIssueApproximationStatus.Pending ||
+            plugin.Approximation.Status == PluginIssueApproximationStatus.Available);
     }
 
     [Fact]
@@ -108,17 +108,106 @@ public sealed class PluginRefreshCoordinatorTests
 
     private static PluginRefreshCoordinator CreateCoordinator(IStateService stateService)
     {
-        var loadingService = Substitute.For<IPluginLoadingService>();
-        var approximationService = Substitute.For<IPluginIssueApproximationService>();
-        var capabilityPolicy = Substitute.For<IPluginRefreshCapabilityPolicy>();
-
-        capabilityPolicy.SupportsPluginLoading(Arg.Any<GameType>()).Returns(true);
-        capabilityPolicy.SupportsIssueApproximation(Arg.Any<GameType>()).Returns(true);
-
         return new PluginRefreshCoordinator(
-            loadingService,
-            approximationService,
+            new TestPluginLoadingService(),
+            new TestPluginIssueApproximationService(),
             stateService,
-            capabilityPolicy);
+            new TestPluginRefreshCapabilityPolicy());
+    }
+
+    private sealed class TestPluginLoadingService : IPluginLoadingService
+    {
+        public Task<List<PluginInfo>> GetPluginsAsync(
+            GameType gameType,
+            string? customDataFolder = null,
+            CancellationToken ct = default) =>
+            Task.FromResult(CreatePlugins(gameType, customDataFolder).ToList());
+
+        public Task<PluginLoadingResult> TryGetPluginsAsync(
+            GameType gameType,
+            string? customDataFolder = null,
+            CancellationToken ct = default) =>
+            Task.FromResult(new PluginLoadingResult
+            {
+                Status = PluginLoadingStatus.Success,
+                Plugins = CreatePlugins(gameType, customDataFolder),
+                DataFolder = customDataFolder
+            });
+
+        public Task<List<PluginInfo>> GetPluginsFromFileAsync(
+            string loadOrderPath,
+            string? dataFolderPath = null,
+            CancellationToken ct = default) =>
+            Task.FromResult(CreatePlugins(GameType.FalloutNewVegas, dataFolderPath).ToList());
+
+        public bool IsGameSupportedByMutagen(GameType gameType) =>
+            gameType is GameType.SkyrimSe or GameType.Fallout4;
+
+        public IReadOnlyList<GameType> GetAvailableGames() =>
+            [GameType.SkyrimSe, GameType.Fallout4, GameType.FalloutNewVegas];
+
+        public string? GetGameDataFolder(GameType gameType, string? customDataFolderOverride = null) =>
+            customDataFolderOverride ?? $@"C:\{gameType}\Data";
+
+        public string? GetDefaultLoadOrderPath(GameType gameType) =>
+            $@"C:\{gameType}\plugins.txt";
+
+        private static IReadOnlyList<PluginInfo> CreatePlugins(GameType gameType, string? dataFolder)
+        {
+            var root = dataFolder ?? $@"C:\{gameType}\Data";
+            return
+            [
+                new PluginInfo { FileName = "Selected.esp", FullPath = $@"{root}\Selected.esp", DetectedGameType = gameType },
+                new PluginInfo { FileName = "Completed.esp", FullPath = $@"{root}\Completed.esp", DetectedGameType = gameType },
+                new PluginInfo { FileName = "NotStarted.esp", FullPath = $@"{root}\NotStarted.esp", DetectedGameType = gameType }
+            ];
+        }
+    }
+
+    private sealed class TestPluginIssueApproximationService : IPluginIssueApproximationService
+    {
+        public async Task<IReadOnlyList<PluginIssueApproximationResult>> GetApproximationsAsync(
+            GameType gameType,
+            string dataFolder,
+            Action<PluginIssueApproximationResult>? onApproximationReady = null,
+            CancellationToken ct = default)
+        {
+            var results = new List<PluginIssueApproximationResult>
+            {
+                CreateResult(dataFolder, "Completed.esp"),
+                CreateResult(dataFolder, "Selected.esp")
+            };
+
+            foreach (var result in results)
+            {
+                ct.ThrowIfCancellationRequested();
+                onApproximationReady?.Invoke(result);
+                await Task.Delay(25, ct);
+            }
+
+            ct.ThrowIfCancellationRequested();
+            var notStarted = CreateResult(dataFolder, "NotStarted.esp");
+            results.Add(notStarted);
+            onApproximationReady?.Invoke(notStarted);
+            return results;
+        }
+
+        private static PluginIssueApproximationResult CreateResult(string dataFolder, string fileName) =>
+            new()
+            {
+                FileName = fileName,
+                FullPath = $@"{dataFolder}\{fileName}",
+                Approximation = PluginIssueApproximation.Available(1, 2, 3)
+            };
+    }
+
+    private sealed class TestPluginRefreshCapabilityPolicy : IPluginRefreshCapabilityPolicy
+    {
+        public bool SupportsPluginLoading(GameType gameType) => gameType != GameType.Unknown;
+
+        public bool SupportsIssueApproximation(GameType gameType) =>
+            gameType is GameType.SkyrimSe or GameType.Fallout4;
+
+        public bool RequiresLoadOrderFile(GameType gameType) => gameType == GameType.FalloutNewVegas;
     }
 }
