@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Cleanup
-status: executing
-stopped_at: Completed 10-03-PLAN.md
-last_updated: "2026-04-30T23:21:13.289Z"
+status: verifying
+stopped_at: Completed 10-05-PLAN.md
+last_updated: "2026-04-30T23:40:15.725Z"
 last_activity: 2026-04-30
 progress:
   total_phases: 7
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 46
-  completed_plans: 45
-  percent: 98
+  completed_plans: 46
+  percent: 100
 ---
 
 # Project State
@@ -25,18 +25,18 @@ See: .planning/PROJECT.md (updated 2026-04-28)
 
 ## Current Position
 
-Phase: 10 (configuration-persistence-hardening) — EXECUTING
+Phase: 10 (configuration-persistence-hardening) — COMPLETE
 Plan: 5 of 5
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-04-30
 
-Progress: [██████████] 98%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 44
+- Total plans completed: 46
 - Average duration: ~5 min
 - Total execution time: ~0.9 hours
 
@@ -53,6 +53,7 @@ Progress: [██████████] 98%
 | Phase 10 P02 | 7min | 2 tasks | 8 files |
 | Phase 10 P03 | 8 min | 2 tasks | 10 files |
 | Phase 10 P04 | 9 min | 2 tasks | 5 files |
+| Phase 10 P05 | 15 min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -73,6 +74,9 @@ Progress: [██████████] 98%
 - [Phase 10]: ConfigPersistenceFailureException derives from InvalidOperationException so existing cleaning catch sites remain compatible while preserving typed failure payloads. — Plan 04 keeps current cleaning failure handling compatible while enabling Plan 05 typed ViewModel mapping.
 - [Phase 10]: CleaningPreflight treats Failed and defensive Rejected flush results as hard blockers before validation, game detection, skip-list loading, MO2 validation, or cleaning service calls. — Required pre-cleaning persistence failures must prevent stale/unpersisted settings from reaching xEdit launch paths.
 - [Phase 10]: Legacy orchestrator/process test substitutes default FlushPendingSavesAsync to NoOp so tests model the production no-pending-save happy path explicitly. — Existing tests that construct real preflight instances need explicit typed flush defaults after the public contract changed.
+- [Phase 10]: Settings persistence failures surface as a concise SettingsWindow text banner instead of modal dialogs or retry controls. — Plan 05 completes the public UI surface for recoverable configuration persistence failures.
+- [Phase 10]: Explicit Settings saves close only after FlushPendingSavesAsync reports Success or NoOp. — Prevents late async save failures from appearing after the Settings dialog already closed.
+- [Phase 10]: ConfigWatcherService depends on IConfigPersistenceCoordinator so DI resolves the watcher against the registered coordinator abstraction. — Fixes the launch-time resolution blocker discovered during Plan 05 UAT.
 
 ### Pending Todos
 
@@ -80,8 +84,7 @@ None.
 
 ### Blockers/Concerns
 
-- Plan 04 still needs to consume typed pre-cleaning flush failures to block xEdit launch on failed settings persistence.
-- Plan 05 still needs ViewModel mapping for `Failures`/`PersistenceResults` status text.
+None.
 
 ### Quick Tasks Completed
 
@@ -91,6 +94,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-30T23:20:54.132Z
-Stopped at: Completed 10-03-PLAN.md
+Last session: 2026-04-30T23:40:15.720Z
+Stopped at: Completed 10-05-PLAN.md
 Resume file: None
