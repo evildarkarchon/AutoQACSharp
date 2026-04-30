@@ -25,16 +25,14 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
     private readonly IFileDialogService _fileDialog;
     private readonly ILoggingService _logger;
     private readonly IMessageDialogService _messageDialog;
-    private readonly IPluginIssueApproximationService _pluginIssueApproximationService;
     private readonly IPluginLoadingService _pluginLoadingService;
+    private readonly IPluginRefreshCoordinator _pluginRefreshCoordinator;
     private readonly IPluginValidationService _pluginService;
     private readonly IStateService _stateService;
     private readonly IDisposable _skipListChangedSubscription;
+    private readonly IDisposable _pluginRefreshStatusSubscription;
 
     private bool _initialized;
-    private CancellationTokenSource? _pluginApproximationCts;
-    private CancellationTokenSource? _pluginRefreshCts;
-    private int _pluginRefreshGeneration;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsLoadOrderConfigured))]
@@ -106,7 +104,8 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         IMessageDialogService messageDialog,
         IPluginValidationService pluginService,
         IPluginLoadingService pluginLoadingService,
-        IPluginIssueApproximationService? pluginIssueApproximationService = null)
+        IPluginIssueApproximationService? pluginIssueApproximationService = null,
+        IPluginRefreshCoordinator? pluginRefreshCoordinator = null)
     {
         _configService = configService;
         _stateService = stateService;
@@ -115,13 +114,35 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         _messageDialog = messageDialog;
         _pluginService = pluginService;
         _pluginLoadingService = pluginLoadingService;
-        _pluginIssueApproximationService =
-            pluginIssueApproximationService ?? NoOpPluginIssueApproximationService.Instance;
+        _pluginRefreshCoordinator = pluginRefreshCoordinator ?? new PluginRefreshCoordinator(
+            pluginLoadingService,
+            pluginIssueApproximationService ?? NoOpPluginIssueApproximationService.Instance,
+            stateService,
+            new PluginRefreshCapabilityPolicy(pluginLoadingService),
+            configService,
+            logger);
 
         AvailableGames = _pluginLoadingService.GetAvailableGames();
 
         _skipListChangedSubscription = _configService.SkipListChanged.Subscribe(
             new CallbackObserver<GameType>(OnSkipListChanged));
+        _pluginRefreshStatusSubscription = _pluginRefreshCoordinator.StatusChanged.Subscribe(
+            new CallbackObserver<PluginRefreshStatus>(OnPluginRefreshStatusChanged));
+    }
+
+    private void OnPluginRefreshStatusChanged(PluginRefreshStatus status)
+    {
+        StatusText = status.Kind switch
+        {
+            PluginRefreshStatusKind.SelectPlugins => "Select plugins to refresh.",
+            PluginRefreshStatusKind.Canceled => "Approximation refresh canceled.",
+            PluginRefreshStatusKind.AnalyzingSelected => $"Analyzing {status.Current} of {status.Total} selected plugins.",
+            PluginRefreshStatusKind.SelectedRefreshCompleted =>
+                $"Updated {status.UpdatedCount} selected plugin approximations.",
+            PluginRefreshStatusKind.ApproximationUnavailable => "Approximation refresh is not available for this game.",
+            PluginRefreshStatusKind.LoadingPlugins => $"Loading plugins for {SelectedGame}...",
+            _ => status.Message ?? StatusText
+        };
     }
 
     private void OnSkipListChanged(GameType changedGame)
@@ -249,26 +270,9 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
 
         try
         {
-            var plugins = await _pluginService.GetPluginsFromLoadOrderAsync(path, GameDataFolder);
-
-            if (plugins.Count == 0)
-            {
-                await _messageDialog.ShowWarningAsync(
-                    "No Plugins Found",
-                    "The load order file was parsed successfully but no plugins were found.",
-                    $"File: {path}\n\nEnsure the file contains a valid list of plugin names (one per line).");
-            }
-
-            var skipList = await _configService.GetSkipListAsync(SelectedGame, ct: CancellationToken.None);
-            var pluginsWithSkipStatus =
-                ApplySkipListStatus(
-                    plugins,
-                    skipList,
-                    SelectedGame,
-                    DisableSkipListsEnabled,
-                    PluginIssueApproximation.Unavailable);
-            _stateService.SetPluginsToClean(pluginsWithSkipStatus);
-            StatusText = $"Loaded {plugins.Count} plugins from load order";
+            LoadOrderPath = path;
+            await _pluginRefreshCoordinator.RefreshForGameAsync(
+                new PluginRefreshRequest(SelectedGame, GameDataFolder, path));
         }
         catch (FileNotFoundException ex)
         {
@@ -519,332 +523,47 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
 
     private async Task RefreshPluginsForGameAsync(GameType gameType)
     {
-        var refreshGeneration = Interlocked.Increment(ref _pluginRefreshGeneration);
-        CancelPendingApproximation();
+        var customDataFolder = gameType == GameType.Unknown
+            ? null
+            : await _configService.GetGameDataFolderOverrideAsync(gameType);
+        HasGameDataFolderOverride = !string.IsNullOrWhiteSpace(customDataFolder);
+        GameDataFolder = gameType == GameType.Unknown
+            ? null
+            : _pluginLoadingService.GetGameDataFolder(gameType, customDataFolder);
 
-        var cts = new CancellationTokenSource();
-        var previousCts = Interlocked.Exchange(ref _pluginRefreshCts, cts);
-        CancelAndDispose(previousCts);
-        var ct = cts.Token;
+        LoadOrderPath = _pluginLoadingService.IsGameSupportedByMutagen(gameType)
+            ? null
+            : await ResolveLoadOrderPathAsync(gameType);
 
-        bool IsCurrent() =>
-            !ct.IsCancellationRequested
-            && refreshGeneration == Volatile.Read(ref _pluginRefreshGeneration);
-
-        try
-        {
-            if (gameType == GameType.Unknown)
-            {
-                if (!IsCurrent()) return;
-                _stateService.SetPluginsToClean(new List<PluginInfo>());
-                GameDataFolder = null;
-                HasGameDataFolderOverride = false;
-                StatusText = "No game selected";
-                return;
-            }
-
-            if (!IsCurrent()) return;
-            _stateService.UpdateState(s => s with { CurrentGameType = gameType });
-
-            var customDataFolder = await _configService.GetGameDataFolderOverrideAsync(gameType, ct);
-            if (!IsCurrent()) return;
-            HasGameDataFolderOverride = !string.IsNullOrWhiteSpace(customDataFolder);
-            GameDataFolder = _pluginLoadingService.GetGameDataFolder(gameType, customDataFolder);
-
-            if (_pluginLoadingService.IsGameSupportedByMutagen(gameType))
-            {
-                if (!IsCurrent()) return;
-                LoadOrderPath = null;
-                _stateService.UpdateConfigurationPaths(null, Mo2Path, XEditPath);
-            }
-            else
-            {
-                var configuredPath = await _configService.GetGameLoadOrderOverrideAsync(gameType, ct);
-                if (!IsCurrent()) return;
-                if (string.IsNullOrWhiteSpace(configuredPath))
-                {
-                    configuredPath = _pluginLoadingService.GetDefaultLoadOrderPath(gameType);
-                    if (!string.IsNullOrEmpty(configuredPath))
-                    {
-                        await _configService.SetGameLoadOrderOverrideAsync(gameType, configuredPath, ct);
-                        if (!IsCurrent()) return;
-                        _logger.Information(
-                            "Auto-detected load order path for {GameType}: {ConfiguredPath}",
-                            gameType,
-                            configuredPath);
-                    }
-                }
-
-                LoadOrderPath = configuredPath;
-                _stateService.UpdateConfigurationPaths(configuredPath, Mo2Path, XEditPath);
-            }
-
-            var skipList = await _configService.GetSkipListAsync(gameType, ct: ct);
-            if (!IsCurrent()) return;
-            var hasMutagenStatusMessage = false;
-
-            if (_pluginLoadingService.IsGameSupportedByMutagen(gameType))
-            {
-                StatusText = $"Loading plugins via Mutagen for {gameType}...";
-                var loadResult = await _pluginLoadingService.TryGetPluginsAsync(gameType, customDataFolder, ct);
-
-                if (!IsCurrent()) return;
-
-                if (!string.IsNullOrWhiteSpace(loadResult.DataFolder))
-                {
-                    GameDataFolder = loadResult.DataFolder;
-                }
-
-                switch (loadResult.Status)
-                {
-                    case PluginLoadingStatus.Success:
-                    {
-                        var pluginsWithSkipStatus =
-                            ApplySkipListStatus(
-                                loadResult.Plugins,
-                                skipList,
-                                gameType,
-                                DisableSkipListsEnabled,
-                                PluginIssueApproximation.Pending);
-                        _stateService.SetPluginsToClean(pluginsWithSkipStatus);
-                        StatusText = $"Loaded {loadResult.Plugins.Count} plugins for {gameType}";
-                        StartApproximationRefresh(
-                            gameType,
-                            loadResult.DataFolder ?? GameDataFolder,
-                            pluginsWithSkipStatus,
-                            refreshGeneration);
-                        return;
-                    }
-                    case PluginLoadingStatus.NoPluginsDiscovered:
-                        _logger.Information(
-                            "Mutagen returned no plugins for {GameType}; file-based loading can be used if configured",
-                            gameType);
-                        StatusText =
-                            $"No plugins discovered via Mutagen for {gameType}. Verify the game has a valid load order and/or set a Data Folder override.";
-                        hasMutagenStatusMessage = true;
-                        break;
-                    case PluginLoadingStatus.DataFolderNotFound:
-                        _logger.Information(
-                            "Mutagen could not resolve data folder for {GameType}; file-based loading can be used if configured",
-                            gameType);
-                        StatusText =
-                            $"Could not resolve {gameType} data folder via Mutagen. Set a game data folder override.";
-                        hasMutagenStatusMessage = true;
-                        break;
-                    case PluginLoadingStatus.Failed:
-                        _logger.Warning(
-                            "Mutagen failed for {GameType}: {Message}",
-                            gameType,
-                            loadResult.FailureReason ?? "Unknown error");
-                        StatusText =
-                            $"Failed to load plugins via Mutagen for {gameType}. Verify Data Folder settings and check logs for details.";
-                        hasMutagenStatusMessage = true;
-                        break;
-                    case PluginLoadingStatus.UnsupportedGame:
-                        StatusText =
-                            $"{gameType} is not supported by Mutagen in this flow. Use file-based loading if configured.";
-                        hasMutagenStatusMessage = true;
-                        break;
-                    default:
-                        _logger.Warning("Unexpected plugin loading status from Mutagen path: {Status}", loadResult.Status);
-                        StatusText =
-                            $"Unexpected plugin loading result for {gameType}. Verify Data Folder settings and check logs for details.";
-                        hasMutagenStatusMessage = true;
-                        break;
-                }
-            }
-
-            if (!string.IsNullOrEmpty(LoadOrderPath) && File.Exists(LoadOrderPath))
-            {
-                try
-                {
-                    StatusText = $"Loading plugins from file for {gameType}...";
-                    var plugins = await _pluginLoadingService.GetPluginsFromFileAsync(LoadOrderPath, GameDataFolder, ct);
-                    if (!IsCurrent()) return;
-                    var pluginsWithSkipStatus = ApplySkipListStatus(
-                        plugins,
-                        skipList,
-                        gameType,
-                        DisableSkipListsEnabled,
-                        PluginIssueApproximation.Unavailable);
-                    _stateService.SetPluginsToClean(pluginsWithSkipStatus);
-                    StatusText = $"Loaded {plugins.Count} plugins from file";
-                }
-                catch (OperationCanceledException) when (ct.IsCancellationRequested)
-                {
-                    // Refresh superseded by a newer game selection; safe to ignore.
-                }
-                catch (Exception ex)
-                {
-                    _logger.Error(ex, "Failed to load plugins from file");
-                    if (IsCurrent()) StatusText = "Error loading plugins";
-                }
-            }
-            else
-            {
-                if (!IsCurrent()) return;
-                _stateService.SetPluginsToClean(new List<PluginInfo>());
-                if (!hasMutagenStatusMessage)
-                {
-                    StatusText = _pluginLoadingService.IsGameSupportedByMutagen(gameType)
-                        ? $"Could not detect {gameType} installation"
-                        : $"{gameType} requires a load order file";
-                }
-            }
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            // Refresh superseded by a newer game selection; safe to ignore.
-        }
-        finally
-        {
-            // A newer refresh may have already swapped this CTS out and disposed it
-            // (see Interlocked.Exchange + CancelAndDispose at the top of this method);
-            // only dispose here if we're still the active refresh.
-            if (Interlocked.CompareExchange(ref _pluginRefreshCts, null, cts) == cts)
-            {
-                cts.Dispose();
-            }
-        }
+        _stateService.UpdateConfigurationPaths(LoadOrderPath, Mo2Path, XEditPath);
+        await _pluginRefreshCoordinator.RefreshForGameAsync(
+            new PluginRefreshRequest(gameType, GameDataFolder, LoadOrderPath));
     }
 
-    /// <summary>
-    /// Applies skip list status to plugins, marking IsInSkipList for each plugin.
-    /// If <paramref name="disableSkipLists"/> is true, all plugins will have IsInSkipList = false.
-    /// </summary>
-    internal static List<PluginInfo> ApplySkipListStatus(IReadOnlyList<PluginInfo> plugins, List<string> skipList,
-        GameType gameType, bool disableSkipLists, PluginIssueApproximation? approximation = null)
+    private async Task<string?> ResolveLoadOrderPathAsync(GameType gameType)
     {
-        var skipSet = new HashSet<string>(skipList, StringComparer.OrdinalIgnoreCase);
-        return plugins.Select(p => p with
+        if (gameType == GameType.Unknown)
         {
-            IsInSkipList = !disableSkipLists && skipSet.Contains(p.FileName),
-            DetectedGameType = gameType,
-            Approximation = approximation ?? p.Approximation
-        }).ToList();
-    }
-
-    private void StartApproximationRefresh(
-        GameType gameType,
-        string? dataFolder,
-        IReadOnlyList<PluginInfo> plugins,
-        int refreshGeneration)
-    {
-        if (string.IsNullOrWhiteSpace(dataFolder))
-        {
-            _stateService.MergePluginApproximations(CreateUnavailableApproximations(plugins));
-            return;
+            return null;
         }
 
-        if (refreshGeneration != Volatile.Read(ref _pluginRefreshGeneration))
+        var configuredPath = await _configService.GetGameLoadOrderOverrideAsync(gameType);
+        if (!string.IsNullOrWhiteSpace(configuredPath))
         {
-            return;
+            return configuredPath;
         }
 
-        var cts = new CancellationTokenSource();
-
-        var previous = Interlocked.Exchange(ref _pluginApproximationCts, cts);
-        if (refreshGeneration != Volatile.Read(ref _pluginRefreshGeneration))
+        configuredPath = _pluginLoadingService.GetDefaultLoadOrderPath(gameType);
+        if (!string.IsNullOrWhiteSpace(configuredPath))
         {
-            Interlocked.CompareExchange(ref _pluginApproximationCts, null, cts);
-            CancelAndDispose(previous);
-            cts.Dispose();
-            return;
+            await _configService.SetGameLoadOrderOverrideAsync(gameType, configuredPath);
+            _logger.Information(
+                "Auto-detected load order path for {GameType}: {ConfiguredPath}",
+                gameType,
+                configuredPath);
         }
 
-        CancelAndDispose(previous);
-        _ = RunApproximationRefreshAsync(gameType, dataFolder, plugins, refreshGeneration, cts);
-    }
-
-    private async Task RunApproximationRefreshAsync(
-        GameType gameType,
-        string dataFolder,
-        IReadOnlyList<PluginInfo> plugins,
-        int refreshGeneration,
-        CancellationTokenSource cts)
-    {
-        var cancellationToken = cts.Token;
-
-        try
-        {
-            var results = await _pluginIssueApproximationService
-                .GetApproximationsAsync(
-                    gameType,
-                    dataFolder,
-                    approximation =>
-                    {
-                        if (cancellationToken.IsCancellationRequested ||
-                            refreshGeneration != Volatile.Read(ref _pluginRefreshGeneration))
-                        {
-                            return;
-                        }
-
-                        _stateService.MergePluginApproximation(approximation);
-                    },
-                    cancellationToken)
-                .ConfigureAwait(false);
-
-            if (cancellationToken.IsCancellationRequested ||
-                refreshGeneration != Volatile.Read(ref _pluginRefreshGeneration))
-            {
-                return;
-            }
-
-            _stateService.MergePluginApproximations(
-                results.Count == 0 ? CreateUnavailableApproximations(plugins) : results);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-        }
-        catch (Exception ex)
-        {
-            _logger.Warning("Plugin issue approximation refresh failed for {GameType}: {Message}", gameType,
-                ex.Message);
-
-            if (!cancellationToken.IsCancellationRequested &&
-                refreshGeneration == Volatile.Read(ref _pluginRefreshGeneration))
-            {
-                _stateService.MergePluginApproximations(CreateUnavailableApproximations(plugins));
-            }
-        }
-        finally
-        {
-            Interlocked.CompareExchange(ref _pluginApproximationCts, null, cts);
-            cts.Dispose();
-        }
-    }
-
-    private static List<PluginIssueApproximationResult> CreateUnavailableApproximations(
-        IReadOnlyList<PluginInfo> plugins) =>
-        plugins.Select(plugin => new PluginIssueApproximationResult
-        {
-            FileName = plugin.FileName,
-            FullPath = plugin.FullPath,
-            Approximation = PluginIssueApproximation.Unavailable
-        }).ToList();
-
-    private void CancelPendingApproximation()
-    {
-        var cts = Interlocked.Exchange(ref _pluginApproximationCts, null);
-        CancelAndDispose(cts);
-    }
-
-    private static void CancelAndDispose(CancellationTokenSource? cts)
-    {
-        if (cts is null)
-        {
-            return;
-        }
-
-        try
-        {
-            cts.Cancel();
-        }
-        catch (ObjectDisposedException)
-        {
-        }
-
-        cts.Dispose();
+        return configuredPath;
     }
 
     /// <summary>
@@ -859,8 +578,8 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
-        CancelPendingApproximation();
-        CancelAndDispose(Interlocked.Exchange(ref _pluginRefreshCts, null));
+        _pluginRefreshCoordinator.CancelActiveRefresh(PluginRefreshCancelReason.Disposed);
+        _pluginRefreshStatusSubscription.Dispose();
         _skipListChangedSubscription.Dispose();
     }
 

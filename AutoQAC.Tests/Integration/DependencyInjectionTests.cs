@@ -40,6 +40,8 @@ public sealed class DependencyInjectionTests
         provider.GetService<IGameDetectionService>().Should().NotBeNull();
         provider.GetService<IPluginValidationService>().Should().NotBeNull();
         provider.GetService<IPluginLoadingService>().Should().NotBeNull();
+        provider.GetService<IPluginRefreshCoordinator>().Should().NotBeNull();
+        provider.GetService<IPluginRefreshCapabilityPolicy>().Should().NotBeNull();
         provider.GetService<IProcessExecutionService>().Should().NotBeNull();
         provider.GetService<IXEditCommandBuilder>().Should().NotBeNull();
         provider.GetService<IXEditOutputParser>().Should().NotBeNull();

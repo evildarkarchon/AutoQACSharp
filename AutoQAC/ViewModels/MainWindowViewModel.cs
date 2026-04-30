@@ -44,13 +44,14 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
         IPluginValidationService pluginService,
         IPluginLoadingService pluginLoadingService,
         IUiDispatcher uiDispatcher,
-        IPluginIssueApproximationService? pluginIssueApproximationService = null)
+        IPluginIssueApproximationService? pluginIssueApproximationService = null,
+        IPluginRefreshCoordinator? pluginRefreshCoordinator = null)
     {
         _uiDispatcher = uiDispatcher;
 
         Configuration = new ConfigurationViewModel(
             configService, stateService, logger, fileDialog,
-            messageDialog, pluginService, pluginLoadingService, pluginIssueApproximationService);
+            messageDialog, pluginService, pluginLoadingService, pluginIssueApproximationService, pluginRefreshCoordinator);
 
         PluginList = new PluginListViewModel(stateService);
 
