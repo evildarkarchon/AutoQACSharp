@@ -46,8 +46,14 @@ public sealed class PluginResultFinalizer(
                     plugin.FileName, logStats.ItemsRemoved, logStats.ItemsUndeleted);
 
                 // PAR-02: Nothing-to-clean detection (per D-05)
-                var hasCompletionLine = logResult.LogLines.Any(outputParser.IsCompletionLine);
-                if (hasCompletionLine && logStats is { ItemsRemoved: 0, ItemsUndeleted: 0, ItemsSkipped: 0, PartialFormsCreated: 0 })
+                // Gap CR-02 fix: only a SUCCESSFUL cleaned runner result is eligible for AlreadyClean
+                // promotion. A failed xEdit attempt whose log slice happens to contain a completion line
+                // and zero parsed stats must remain Failed -- otherwise a real failure is hidden as
+                // AlreadyClean and CleaningSessionResult miscounts the session as successful.
+                if (result.Success
+                    && result.Status == CleaningStatus.Cleaned
+                    && logResult.LogLines.Any(outputParser.IsCompletionLine)
+                    && logStats is { ItemsRemoved: 0, ItemsUndeleted: 0, ItemsSkipped: 0, PartialFormsCreated: 0 })
                 {
                     finalStatus = CleaningStatus.AlreadyClean;
                 }
@@ -67,11 +73,18 @@ public sealed class PluginResultFinalizer(
             logParseWarning = "xEdit was terminated -- no log available";
         }
 
+        // Gap WR-01 fix: derive Success from the final status after log-parse overrides so that
+        // exception-log failures (finalStatus = Failed) cannot be returned with Success = true.
+        // This keeps Status and Success internally consistent regardless of how a downstream
+        // consumer chooses to read the row. AlreadyClean is treated as success-equivalent because
+        // it represents "no work needed, finished cleanly".
+        var finalSuccess = finalStatus is CleaningStatus.Cleaned or CleaningStatus.AlreadyClean;
+
         return new PluginCleaningResult
         {
             PluginName = plugin.FileName,
             Status = finalStatus,
-            Success = result.Success,
+            Success = finalSuccess,
             Message = result.TimedOut && runnerOutput.ReachedMaxRetryAttempts
                 ? $"Cleaning timed out after {runnerOutput.AttemptCount} attempts."
                 : result.Message,
