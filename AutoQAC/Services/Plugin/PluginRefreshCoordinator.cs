@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.Configuration;
+using AutoQAC.Services.GameDetection;
 using AutoQAC.Services.State;
 
 namespace AutoQAC.Services.Plugin;
@@ -22,6 +23,7 @@ public sealed class PluginRefreshCoordinator : IPluginRefreshCoordinator, IDispo
     private readonly IPluginIssueApproximationService _pluginIssueApproximationService;
     private readonly IStateService _stateService;
     private readonly IPluginRefreshCapabilityPolicy _capabilityPolicy;
+    private readonly IGameDetectionService _gameDetectionService;
     private readonly IConfigurationService? _configurationService;
     private readonly ILoggingService? _logger;
     private readonly Subject<PluginRefreshStatus> _statusChanged = new();
@@ -35,6 +37,7 @@ public sealed class PluginRefreshCoordinator : IPluginRefreshCoordinator, IDispo
     /// <param name="pluginIssueApproximationService">Service used to analyze plugin issue approximations.</param>
     /// <param name="stateService">Shared state hub that receives row and approximation updates.</param>
     /// <param name="capabilityPolicy">Refresh-scoped game capability policy.</param>
+    /// <param name="gameDetectionService">Service used to detect game variants (TTW, Enderal) from plugin names.</param>
     /// <param name="configurationService">Optional configuration service used for skip-list and fallback load-order lookup.</param>
     /// <param name="logger">Optional logger for per-plugin and workflow failures.</param>
     public PluginRefreshCoordinator(
@@ -42,6 +45,7 @@ public sealed class PluginRefreshCoordinator : IPluginRefreshCoordinator, IDispo
         IPluginIssueApproximationService pluginIssueApproximationService,
         IStateService stateService,
         IPluginRefreshCapabilityPolicy capabilityPolicy,
+        IGameDetectionService gameDetectionService,
         IConfigurationService? configurationService = null,
         ILoggingService? logger = null)
     {
@@ -49,6 +53,7 @@ public sealed class PluginRefreshCoordinator : IPluginRefreshCoordinator, IDispo
         _pluginIssueApproximationService = pluginIssueApproximationService;
         _stateService = stateService;
         _capabilityPolicy = capabilityPolicy;
+        _gameDetectionService = gameDetectionService;
         _configurationService = configurationService;
         _logger = logger;
     }
@@ -81,7 +86,9 @@ public sealed class PluginRefreshCoordinator : IPluginRefreshCoordinator, IDispo
             var loadedPlugins = await LoadPluginsAsync(request, token).ConfigureAwait(false);
             if (!IsCurrent(generation, token)) return;
 
-            var skipList = await GetSkipListAsync(request.GameType, token).ConfigureAwait(false);
+            var pluginNames = loadedPlugins.Select(p => p.FileName).ToList();
+            var variant = _gameDetectionService.DetectVariant(request.GameType, pluginNames);
+            var skipList = await GetSkipListAsync(request.GameType, variant, token).ConfigureAwait(false);
             if (!IsCurrent(generation, token)) return;
 
             var initialApproximation = _capabilityPolicy.SupportsIssueApproximation(request.GameType)
@@ -307,14 +314,14 @@ public sealed class PluginRefreshCoordinator : IPluginRefreshCoordinator, IDispo
             : Array.Empty<PluginInfo>();
     }
 
-    private async Task<List<string>> GetSkipListAsync(GameType gameType, CancellationToken ct)
+    private async Task<List<string>> GetSkipListAsync(GameType gameType, GameVariant variant, CancellationToken ct)
     {
         if (_configurationService is null)
         {
             return [];
         }
 
-        return await _configurationService.GetSkipListAsync(gameType, ct: ct).ConfigureAwait(false) ?? [];
+        return await _configurationService.GetSkipListAsync(gameType, variant, ct).ConfigureAwait(false) ?? [];
     }
 
     private async Task<int> AnalyzeTargetsAsync(

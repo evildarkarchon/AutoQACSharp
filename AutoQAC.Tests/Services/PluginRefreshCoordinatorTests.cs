@@ -1,5 +1,6 @@
 using AutoQAC.Models;
 using AutoQAC.Services.Configuration;
+using AutoQAC.Services.GameDetection;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Services.State;
 using FluentAssertions;
@@ -213,7 +214,8 @@ public sealed class PluginRefreshCoordinatorTests
             new TestPluginLoadingService(),
             new TestPluginIssueApproximationService(),
             stateService,
-            new TestPluginRefreshCapabilityPolicy());
+            new TestPluginRefreshCapabilityPolicy(),
+            Substitute.For<IGameDetectionService>());
     }
 
     private static PluginRefreshCoordinator CreateCoordinator(
@@ -224,6 +226,7 @@ public sealed class PluginRefreshCoordinatorTests
             new TestPluginIssueApproximationService(),
             stateService,
             new TestPluginRefreshCapabilityPolicy(),
+            Substitute.For<IGameDetectionService>(),
             configurationService);
 
     private static IConfigurationService CreateConfigurationServiceWithSkipList(
