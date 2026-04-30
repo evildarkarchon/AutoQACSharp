@@ -276,6 +276,30 @@ public sealed class PluginRefreshCoordinatorTests
             "cleaning-start cancellation is a lifecycle signal, not a user-visible cancel outcome");
     }
 
+    /// <summary>
+    /// Verifies recoverable approximation failures publish a non-running terminal status after row recovery.
+    /// </summary>
+    [Fact]
+    public async Task RefreshForGameAsync_WhenApproximationFails_PublishesTerminalFailureStatus()
+    {
+        var stateService = new StateService();
+        var sut = CreateCoordinator(
+            stateService,
+            approximationService: new ThrowingPluginIssueApproximationService());
+        var statuses = new List<PluginRefreshStatus>();
+        using var subscription = sut.StatusChanged.Subscribe(statuses.Add);
+
+        await sut.RefreshForGameAsync(new PluginRefreshRequest(GameType.SkyrimSe, @"C:\Game\Data"), CancellationToken.None);
+
+        stateService.CurrentState.PluginsToClean.Should().OnlyContain(plugin =>
+            plugin.Approximation.Status == PluginIssueApproximationStatus.Unavailable,
+            "recoverable approximation failure should keep rows visible with unavailable approximations");
+        statuses.Should().Contain(status =>
+            status.Kind == PluginRefreshStatusKind.Idle &&
+            status.Message == "Approximation refresh failed.",
+            "a non-running terminal status lets UI consumers clear cancel affordances");
+    }
+
     private static PluginRefreshCoordinator CreateCoordinator(
         IStateService stateService,
         IPluginLoadingService? pluginLoadingService = null,
@@ -478,6 +502,16 @@ public sealed class PluginRefreshCoordinatorTests
                 new PluginInfo { FileName = "NotStarted.esp", FullPath = $@"{root}\NotStarted.esp", DetectedGameType = gameType }
             ];
         }
+    }
+
+    private sealed class ThrowingPluginIssueApproximationService : IPluginIssueApproximationService
+    {
+        public Task<IReadOnlyList<PluginIssueApproximationResult>> GetApproximationsAsync(
+            GameType gameType,
+            string dataFolder,
+            Action<PluginIssueApproximationResult>? onApproximationReady = null,
+            CancellationToken ct = default) =>
+            throw new InvalidOperationException("Synthetic approximation failure");
     }
 
     private sealed class TestPluginRefreshCapabilityPolicy : IPluginRefreshCapabilityPolicy

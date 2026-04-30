@@ -219,6 +219,39 @@ public sealed class PluginListViewModelTests
     }
 
     [Fact]
+    public void OnPluginRefreshStatusChanged_WhenFailureTerminalStatusPublished_ClearsRunningFlag()
+    {
+        var stateService = new StateService();
+        var coordinator = new RecordingPluginRefreshCoordinator();
+        var vm = new PluginListViewModel(
+            stateService,
+            coordinator,
+            new FixedPluginRefreshCapabilityPolicy(supportsApproximation: true));
+        try
+        {
+            // Simulate a full-list refresh in progress before a recoverable coordinator failure.
+            coordinator.PublishStatus(new PluginRefreshStatus(PluginRefreshStatusKind.LoadingPlugins));
+            vm.IsApproximationRefreshRunning.Should().BeTrue(
+                "LoadingPlugins is part of the running set");
+
+            coordinator.PublishStatus(new PluginRefreshStatus(
+                PluginRefreshStatusKind.Idle,
+                Message: "Approximation refresh failed."));
+
+            vm.IsApproximationRefreshRunning.Should().BeFalse(
+                "the failure status is terminal and must clear the running flag");
+            vm.CancelApproximationRefreshCommand.CanExecute(null).Should().BeFalse(
+                "the cancel-refresh affordance must disable once the terminal failure status arrives");
+        }
+        finally
+        {
+            vm.Dispose();
+            stateService.Dispose();
+            coordinator.Dispose();
+        }
+    }
+
+    [Fact]
     public void DeselectAllCommand_ShouldExcludeEveryVisiblePluginInState()
     {
         var stateService = new StateService();
