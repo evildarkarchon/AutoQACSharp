@@ -67,7 +67,7 @@ Each task was committed atomically:
 1. **Task 1: Add 6 characterization tests for D-18 gaps** - `d6c704e` (test)
 2. **Task 2: Add ICleaningOrchestrator public-surface snapshot test** - `32f73bb` (test)
 
-**Plan metadata:** pending final docs commit (created after this self-check)
+**Plan metadata:** `75a9be9` (docs)
 
 ## Files Created/Modified
 
