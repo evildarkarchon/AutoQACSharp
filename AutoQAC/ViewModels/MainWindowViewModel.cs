@@ -52,9 +52,10 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
 
         Configuration = new ConfigurationViewModel(
             configService, stateService, logger, fileDialog,
-            messageDialog, pluginService, pluginLoadingService, pluginIssueApproximationService, pluginRefreshCoordinator);
+            messageDialog, pluginService, pluginLoadingService, pluginIssueApproximationService, pluginRefreshCoordinator,
+            uiDispatcher);
 
-        PluginList = new PluginListViewModel(stateService, pluginRefreshCoordinator, pluginRefreshCapabilityPolicy);
+        PluginList = new PluginListViewModel(stateService, pluginRefreshCoordinator, pluginRefreshCapabilityPolicy, uiDispatcher);
 
         Commands = new CleaningCommandsViewModel(
             stateService, orchestrator, configService, pluginLoadingService,

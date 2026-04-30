@@ -29,6 +29,7 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
     private readonly IPluginRefreshCoordinator _pluginRefreshCoordinator;
     private readonly IPluginValidationService _pluginService;
     private readonly IStateService _stateService;
+    private readonly IUiDispatcher _uiDispatcher;
     private readonly IDisposable _skipListChangedSubscription;
     private readonly IDisposable _pluginRefreshStatusSubscription;
 
@@ -105,7 +106,8 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         IPluginValidationService pluginService,
         IPluginLoadingService pluginLoadingService,
         IPluginIssueApproximationService? pluginIssueApproximationService = null,
-        IPluginRefreshCoordinator? pluginRefreshCoordinator = null)
+        IPluginRefreshCoordinator? pluginRefreshCoordinator = null,
+        IUiDispatcher? uiDispatcher = null)
     {
         _configService = configService;
         _stateService = stateService;
@@ -121,13 +123,15 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
             new PluginRefreshCapabilityPolicy(pluginLoadingService),
             configService,
             logger);
+        _uiDispatcher = uiDispatcher ?? new SynchronousFallbackDispatcher();
 
         AvailableGames = _pluginLoadingService.GetAvailableGames();
 
         _skipListChangedSubscription = _configService.SkipListChanged.Subscribe(
             new CallbackObserver<GameType>(OnSkipListChanged));
         _pluginRefreshStatusSubscription = _pluginRefreshCoordinator.StatusChanged.Subscribe(
-            new CallbackObserver<PluginRefreshStatus>(OnPluginRefreshStatusChanged));
+            new CallbackObserver<PluginRefreshStatus>(status =>
+                _uiDispatcher.Post(() => OnPluginRefreshStatusChanged(status))));
     }
 
     private void OnPluginRefreshStatusChanged(PluginRefreshStatus status)
@@ -582,6 +586,13 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         _pluginRefreshCoordinator.CancelActiveRefresh(PluginRefreshCancelReason.Disposed);
         _pluginRefreshStatusSubscription.Dispose();
         _skipListChangedSubscription.Dispose();
+    }
+
+    private sealed class SynchronousFallbackDispatcher : IUiDispatcher
+    {
+        public void Post(Action action) => action();
+
+        public Task InvokeAsync(Func<Task> action) => action();
     }
 
     private sealed class NoOpPluginIssueApproximationService : IPluginIssueApproximationService

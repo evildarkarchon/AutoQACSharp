@@ -181,6 +181,66 @@ public sealed class MainWindowThreadingTests
     }
 
     [Fact]
+    public async Task MainWindowViewModel_ShouldPostRefreshStatusChangesThroughIUiDispatcher()
+    {
+        using var captureDispatcher = new ThreadCapturingUiDispatcher();
+        var currentState = new AppState();
+        var stateSubject = new BehaviorSubject<AppState>(currentState);
+        var refreshStatusSubject = new Subject<PluginRefreshStatus>();
+        var configService = Substitute.For<IConfigurationService>();
+        var stateService = Substitute.For<IStateService>();
+        var pluginLoadingService = Substitute.For<IPluginLoadingService>();
+        var refreshCoordinator = Substitute.For<IPluginRefreshCoordinator>();
+        stateService.StateChanged.Returns(stateSubject);
+        stateService.CurrentState.Returns(_ => currentState);
+        stateService.CleaningCompleted.Returns(Observable.Never<CleaningSessionResult>());
+        configService.SkipListChanged.Returns(Observable.Never<GameType>());
+        configService.LoadUserConfigAsync(Arg.Any<CancellationToken>())
+            .Returns(new global::AutoQAC.Models.Configuration.UserConfiguration
+            {
+                LoadOrder = new(),
+                XEdit = new(),
+                ModOrganizer = new(),
+                Settings = new()
+            });
+        configService.GetSelectedGameAsync(Arg.Any<CancellationToken>())
+            .Returns(GameType.Unknown);
+        pluginLoadingService.GetAvailableGames()
+            .Returns(new List<GameType> { GameType.Fallout4 });
+        refreshCoordinator.StatusChanged.Returns(refreshStatusSubject);
+
+        var viewModel = new MainWindowViewModel(
+            configService,
+            stateService,
+            Substitute.For<ICleaningOrchestrator>(),
+            Substitute.For<ILoggingService>(),
+            Substitute.For<IFileDialogService>(),
+            Substitute.For<IMessageDialogService>(),
+            Substitute.For<IPluginValidationService>(),
+            pluginLoadingService,
+            captureDispatcher,
+            pluginRefreshCoordinator: refreshCoordinator);
+
+        try
+        {
+            captureDispatcher.Reset();
+
+            await Task.Run(() => refreshStatusSubject.OnNext(PluginRefreshStatus.AnalyzingSelected(1, 2)));
+            await captureDispatcher.WaitForPostCountAsync(2);
+
+            captureDispatcher.PostCount.Should().BeGreaterThanOrEqualTo(2,
+                "both refresh-status subscribers must marshal UI-bound mutations through IUiDispatcher");
+            viewModel.Configuration.StatusText.Should().Be("Analyzing 1 of 2 selected plugins.");
+            viewModel.PluginList.IsApproximationRefreshRunning.Should().BeTrue();
+        }
+        finally
+        {
+            viewModel.Dispose();
+            refreshStatusSubject.Dispose();
+        }
+    }
+
+    [Fact]
     public void PluginListViewModel_OnStateChanged_ShouldKeepUnchangedRows_WhenOneApproximationUpdates()
     {
         var stateService = Substitute.For<IStateService>();
@@ -245,16 +305,39 @@ public sealed class MainWindowThreadingTests
     private sealed class ThreadCapturingUiDispatcher : IUiDispatcher, IDisposable
     {
         private TaskCompletionSource<int> _nextPost = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private TaskCompletionSource<int> _postTargetReached = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _targetPostCount = 1;
 
         public int LastPostThreadId { get; private set; }
+
+        public int PostCount { get; private set; }
 
         public void Reset()
         {
             LastPostThreadId = 0;
+            PostCount = 0;
+            _targetPostCount = 1;
             _nextPost = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _postTargetReached = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
         }
 
         public Task WaitForNextPostAsync() => _nextPost.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        public Task WaitForPostCountAsync(int postCount)
+        {
+            if (PostCount >= postCount)
+            {
+                return Task.CompletedTask;
+            }
+
+            _targetPostCount = postCount;
+            if (_postTargetReached.Task.IsCompleted)
+            {
+                _postTargetReached = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+            }
+
+            return _postTargetReached.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        }
 
         public void Post(Action action)
         {
@@ -265,7 +348,12 @@ public sealed class MainWindowThreadingTests
             finally
             {
                 LastPostThreadId = Environment.CurrentManagedThreadId;
+                PostCount++;
                 _nextPost.TrySetResult(LastPostThreadId);
+                if (PostCount >= _targetPostCount)
+                {
+                    _postTargetReached.TrySetResult(PostCount);
+                }
             }
         }
 

@@ -24,6 +24,7 @@ public sealed partial class PluginListViewModel : ViewModelBase, IDisposable
     private readonly IStateService _stateService;
     private readonly IPluginRefreshCoordinator _pluginRefreshCoordinator;
     private readonly IPluginRefreshCapabilityPolicy _refreshCapabilityPolicy;
+    private readonly IUiDispatcher _uiDispatcher;
     private readonly IDisposable _pluginRefreshStatusSubscription;
 
     public ObservableCollection<PluginListItem> PluginsToClean { get; } = new();
@@ -62,13 +63,16 @@ public sealed partial class PluginListViewModel : ViewModelBase, IDisposable
     public PluginListViewModel(
         IStateService stateService,
         IPluginRefreshCoordinator? pluginRefreshCoordinator = null,
-        IPluginRefreshCapabilityPolicy? refreshCapabilityPolicy = null)
+        IPluginRefreshCapabilityPolicy? refreshCapabilityPolicy = null,
+        IUiDispatcher? uiDispatcher = null)
     {
         _stateService = stateService;
         _pluginRefreshCoordinator = pluginRefreshCoordinator ?? NoOpPluginRefreshCoordinator.Instance;
         _refreshCapabilityPolicy = refreshCapabilityPolicy ?? NoApproximationRefreshCapabilityPolicy.Instance;
+        _uiDispatcher = uiDispatcher ?? new SynchronousFallbackDispatcher();
         _pluginRefreshStatusSubscription = _pluginRefreshCoordinator.StatusChanged.Subscribe(
-            new CallbackObserver<PluginRefreshStatus>(OnPluginRefreshStatusChanged));
+            new CallbackObserver<PluginRefreshStatus>(status =>
+                _uiDispatcher.Post(() => OnPluginRefreshStatusChanged(status))));
         // No subscription here — the parent VM dispatches OnStateChanged on the UI thread.
         // Initial pull from current state so commands reflect reality before first change event.
         var initial = stateService.CurrentState;
@@ -139,7 +143,7 @@ public sealed partial class PluginListViewModel : ViewModelBase, IDisposable
         {
             await _pluginRefreshCoordinator.RefreshSelectedApproximationsAsync(
                 new PluginRefreshRequest(CurrentGameType),
-                targets).ConfigureAwait(false);
+                targets);
             return;
         }
 
@@ -148,7 +152,7 @@ public sealed partial class PluginListViewModel : ViewModelBase, IDisposable
         {
             await _pluginRefreshCoordinator.RefreshSelectedApproximationsAsync(
                 new PluginRefreshRequest(CurrentGameType),
-                targets).ConfigureAwait(false);
+                targets);
         }
         finally
         {
@@ -292,6 +296,13 @@ public sealed partial class PluginListViewModel : ViewModelBase, IDisposable
         {
             DetachItem(item);
         }
+    }
+
+    private sealed class SynchronousFallbackDispatcher : IUiDispatcher
+    {
+        public void Post(Action action) => action();
+
+        public Task InvokeAsync(Func<Task> action) => action();
     }
 
     private sealed class NoOpPluginRefreshCoordinator : IPluginRefreshCoordinator
