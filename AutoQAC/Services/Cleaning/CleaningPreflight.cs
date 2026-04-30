@@ -31,9 +31,29 @@ public sealed class CleaningPreflight(
     /// <inheritdoc />
     public async Task<CleaningPreflightPlan> PrepareAsync(CancellationToken ct = default)
     {
-        // Flush any pending config saves before launching xEdit
-        // (per user decision: "Always force-flush pending config saves before launching xEdit")
-        await configService.FlushPendingSavesAsync(ct).ConfigureAwait(false);
+        // Flush any pending config saves before launching xEdit. Phase 10 D-26: a flush
+        // failure must block cleaning; the typed result lets us decide deterministically.
+        var flushResult = await configService.FlushPendingSavesAsync(ct).ConfigureAwait(false);
+        if (flushResult.Status is ConfigPersistenceStatusKind.Failed
+                               or ConfigPersistenceStatusKind.Rejected)
+        {
+            // Defensive: Rejected is not currently emitted by FlushPendingSavesAsync (Plan 02
+            // contract emits Success/NoOp/Failed only) but treating it as a hard block is safe
+            // and avoids a silent xEdit launch if upstream contracts ever broaden.
+            var safeSummary = flushResult.Failure?.SafeSummary
+                              ?? "Pre-cleaning configuration save failed.";
+            logger.Error(null,
+                "[Preflight] Pre-cleaning configuration save failed: {Summary}",
+                safeSummary);
+            throw new ConfigPersistenceFailureException(
+                flushResult.Failure ?? new ConfigPersistenceFailure(
+                    ConfigPersistenceOperationKind.Flush,
+                    ConfigPersistenceFailureKind.Unknown,
+                    safeSummary,
+                    LogReference: null,
+                    Generation: flushResult.Generation),
+                safeSummary);
+        }
 
         // 1. Validate configuration
         var isValid = await ValidateConfigurationAsync(ct).ConfigureAwait(false);

@@ -246,6 +246,13 @@ public sealed class ProcessExecutionServiceTests : IDisposable
         var hangDetectionMock = Substitute.For<IHangDetectionService>();
         var mo2ValidationMock = Substitute.For<IMo2ValidationService>();
 
+        configServiceMock.FlushPendingSavesAsync(Arg.Any<CancellationToken>())
+            .Returns(new ConfigPersistenceResult(
+                ConfigPersistenceStatusKind.NoOp,
+                ConfigPersistenceOperationKind.Flush,
+                Generation: 0,
+                Failure: null));
+
         // Default setup for GetSkipListAsync (with GameVariant parameter)
         configServiceMock.GetSkipListAsync(
                 Arg.Any<GameType>(),
@@ -422,6 +429,12 @@ public sealed class ProcessExecutionServiceTests : IDisposable
         var processServiceMock = Substitute.For<IProcessExecutionService>();
         var mo2ValidationMock = Substitute.For<IMo2ValidationService>();
 
+        configServiceMock.FlushPendingSavesAsync(Arg.Any<CancellationToken>())
+            .Returns(new ConfigPersistenceResult(
+                ConfigPersistenceStatusKind.NoOp,
+                ConfigPersistenceOperationKind.Flush,
+                Generation: 0,
+                Failure: null));
         configServiceMock.GetSkipListAsync(
                 Arg.Any<GameType>(),
                 Arg.Any<GameVariant>(),

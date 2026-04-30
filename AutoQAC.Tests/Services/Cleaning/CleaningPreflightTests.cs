@@ -33,6 +33,8 @@ public sealed class CleaningPreflightTests
         _stateMock = Substitute.For<IStateService>();
         _loggerMock = Substitute.For<ILoggingService>();
 
+        _configMock.FlushPendingSavesAsync(Arg.Any<CancellationToken>())
+            .Returns(CreateFlushResult(ConfigPersistenceStatusKind.NoOp));
         _validationMock.ValidatePluginFile(Arg.Any<PluginInfo>()).Returns(PluginWarningKind.None);
         _configMock.GetSkipListAsync(
                 Arg.Any<GameType>(),

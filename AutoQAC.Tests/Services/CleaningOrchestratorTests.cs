@@ -51,6 +51,12 @@ public sealed class CleaningOrchestratorTests
         _mo2ValidationServiceMock = Substitute.For<IMo2ValidationService>();
 
         // Default mock setup for GetSkipListAsync to return empty list instead of null
+        _configServiceMock.FlushPendingSavesAsync(Arg.Any<CancellationToken>())
+            .Returns(new ConfigPersistenceResult(
+                ConfigPersistenceStatusKind.NoOp,
+                ConfigPersistenceOperationKind.Flush,
+                Generation: 0,
+                Failure: null));
         _configServiceMock.GetSkipListAsync(
                 Arg.Any<GameType>(),
                 Arg.Any<GameVariant>(),

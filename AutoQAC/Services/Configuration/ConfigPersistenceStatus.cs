@@ -1,3 +1,5 @@
+using System;
+
 namespace AutoQAC.Services.Configuration;
 
 /// <summary>
@@ -68,3 +70,32 @@ public sealed record ConfigPersistenceResult(
     ConfigPersistenceOperationKind Operation,
     long Generation,
     ConfigPersistenceFailure? Failure);
+
+/// <summary>
+/// Thrown when a required persistence operation fails in a context that must abort
+/// the calling workflow. Phase 10 D-26: pre-cleaning flush failures must block xEdit
+/// launch and surface the typed payload to ViewModel mapping (D-28).
+/// </summary>
+/// <remarks>
+/// Derives from <see cref="InvalidOperationException" /> so existing cleaning callers'
+/// catch sites continue to handle it as an actionable configuration failure without
+/// requiring additional catch clauses (Phase 10 backwards-compatibility).
+/// </remarks>
+public sealed class ConfigPersistenceFailureException : InvalidOperationException
+{
+    /// <summary>
+    /// Gets the typed safe failure payload that callers such as ViewModels may map.
+    /// </summary>
+    public ConfigPersistenceFailure Failure { get; }
+
+    /// <summary>
+    /// Creates an exception carrying the safe persistence failure payload and user-safe summary.
+    /// </summary>
+    /// <param name="failure">The typed failure payload produced by the persistence coordinator.</param>
+    /// <param name="safeSummary">The safe exception message; must not contain raw exception details or stack traces.</param>
+    public ConfigPersistenceFailureException(ConfigPersistenceFailure failure, string safeSummary)
+        : base(safeSummary)
+    {
+        Failure = failure;
+    }
+}
