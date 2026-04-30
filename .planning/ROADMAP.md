@@ -185,7 +185,7 @@ Plans:
 - [x] 09-08-PLAN.md — Publish a FullRefreshCompleted terminal status after successful full-list approximation analysis so the cancel-refresh UI clears.
 
 **Wave 8 (gap closure; blocked on 09-08 completion — same coordinator file)**
-- [ ] 09-09-PLAN.md — Close cancellation CTS lifetime, failure terminal status, and variant-specific skip-list refresh gaps.
+- [x] 09-09-PLAN.md — Close cancellation CTS lifetime, failure terminal status, and variant-specific skip-list refresh gaps.
 **UI hint**: yes
 
 ### Phase 10: Configuration Persistence Hardening

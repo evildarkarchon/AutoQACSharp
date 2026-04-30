@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Cleanup
-status: executing
-stopped_at: Completed 09-08-PLAN.md
-last_updated: "2026-04-30T09:26:01.956Z"
+status: phase-complete
+stopped_at: Completed 09-09-PLAN.md
+last_updated: "2026-04-30T10:47:11.663Z"
 last_activity: 2026-04-30
 progress:
   total_phases: 7
   completed_phases: 5
-  total_plans: 40
-  completed_plans: 40
+  total_plans: 41
+  completed_plans: 41
   percent: 100
 ---
 
@@ -25,9 +25,9 @@ See: .planning/PROJECT.md (updated 2026-04-28)
 
 ## Current Position
 
-Phase: 09 (plugin-refresh-approximation-performance) — EXECUTING
-Plan: 3 of 8
-Status: Ready to execute
+Phase: 09 (plugin-refresh-approximation-performance) — COMPLETE
+Plan: 9 of 9
+Status: Phase complete
 Last activity: 2026-04-30
 
 Progress: [██████████] 100%
@@ -61,6 +61,7 @@ Progress: [██████████] 100%
 | Phase 09 P06 | 3 min | 2 tasks | 2 files |
 | Phase 09 P07 | 3 min | 2 tasks | 4 files |
 | Phase 09 P08 | 3 min | 2 tasks | 5 files |
+| Phase 09 P09 | 35 min | 3 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -102,6 +103,8 @@ Progress: [██████████] 100%
 - [Phase 09]: Full-list approximation refresh now has its own FullRefreshCompleted terminal status instead of reusing selected-refresh completion text. — This keeps selected and full refresh lifecycle messages explicit and lets tests assert the exact UI cleanup signal.
 - [Phase 09]: The coordinator publishes FullRefreshCompleted only after successful AnalyzeTargetsAsync completion and only while the generation remains current. — Generation gating prevents superseded refreshes from publishing stale terminal statuses that could mislead the UI.
 - [Phase 09]: PluginListViewModel keeps the running set intentionally narrow: LoadingPlugins and AnalyzingSelected are running; terminal statuses clear the cancel affordance. — The cancel button should be active only while work is actually in progress, and completion/cancellation statuses must clear it.
+- [Phase 09]: Plan 09 closes remaining verifier blockers with regression tests because PluginRefreshCoordinator already contained signal-only CTS ownership, failure terminal status, and variant skip-list implementation. — The gap closure is test-only and pins the existing implementation.
+- [Phase 09]: Refresh cancellation tests use delayed plugin loading so manual, supersede, and cleaning-start cancellation exercise awaited in-flight work. — This prevents false-positive cancellation lifetime coverage.
 
 ### Pending Todos
 
@@ -119,6 +122,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-30T09:25:39.205Z
-Stopped at: Completed 09-08-PLAN.md
+Last session: 2026-04-30T10:47:11.658Z
+Stopped at: Completed 09-09-PLAN.md
 Resume file: None
