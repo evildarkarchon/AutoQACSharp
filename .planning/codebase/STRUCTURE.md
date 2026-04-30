@@ -93,9 +93,9 @@ AutoQACSharp/
 - Key files: `AutoQAC/Services/Monitoring/HangDetectionService.cs`.
 
 **`AutoQAC/Services/Plugin/`:**
-- Purpose: Plugin validation, load-order loading, Mutagen-backed discovery, and issue approximation.
-- Contains: `PluginLoadingService`, `PluginValidationService`, `PluginIssueApproximationService`, and interfaces.
-- Key files: `AutoQAC/Services/Plugin/PluginLoadingService.cs`, `AutoQAC/Services/Plugin/PluginValidationService.cs`.
+- Purpose: Plugin validation, load-order loading, Mutagen-backed discovery, refresh coordination, and issue approximation.
+- Contains: `PluginLoadingService`, `PluginValidationService`, `PluginIssueApproximationService`, `PluginRefreshCoordinator`, refresh capability policy, and interfaces.
+- Key files: `AutoQAC/Services/Plugin/PluginLoadingService.cs`, `AutoQAC/Services/Plugin/PluginValidationService.cs`, `AutoQAC/Services/Plugin/PluginRefreshCoordinator.cs`.
 
 **`AutoQAC/Services/Process/`:**
 - Purpose: xEdit/MO2 process execution, PID persistence, process-session IDs, single-instance guard, orphan cleanup, and termination.

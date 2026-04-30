@@ -43,7 +43,7 @@
 | DI registration | Registers infrastructure, configuration, state, business services, UI services, ViewModels, and Views. | `AutoQAC/Infrastructure/ServiceCollectionExtensions.cs` |
 | Main shell ViewModel | Composes `ConfigurationViewModel`, `PluginListViewModel`, and `CleaningCommandsViewModel`; owns UI interactions and dispatches state changes to child ViewModels. | `AutoQAC/ViewModels/MainWindowViewModel.cs` |
 | Main window code-behind | Owns window/dialog creation and registers interaction handlers; ViewModels request dialogs through interaction abstractions rather than manipulating controls. | `AutoQAC/Views/MainWindow.axaml.cs` |
-| Configuration UI | Loads/saves settings, validates paths, responds to selected game changes, refreshes plugin lists, and handles file dialogs. | `AutoQAC/ViewModels/MainWindow/ConfigurationViewModel.cs` |
+| Configuration UI | Loads/saves settings, validates paths, responds to selected game changes, delegates plugin refresh requests, maps refresh statuses, and handles file dialogs. | `AutoQAC/ViewModels/MainWindow/ConfigurationViewModel.cs` |
 | Plugin list UI | Maintains visible plugin rows, selection/exclusion state, and select/deselect commands. | `AutoQAC/ViewModels/MainWindow/PluginListViewModel.cs` |
 | Cleaning commands UI | Validates pre-clean conditions, starts dry-run or cleaning workflows, handles stop/force-stop prompts, and opens secondary workflows. | `AutoQAC/ViewModels/MainWindow/CleaningCommandsViewModel.cs` |
 | Runtime state hub | Stores immutable `AppState`, publishes Rx streams for state/progress/results, and serializes state mutation through a lock. | `AutoQAC/Services/State/StateService.cs` |
@@ -53,6 +53,7 @@
 | Process execution | Enforces a single xEdit process slot, tracks PIDs, waits with timeout/cancellation, and performs graceful/force termination. | `AutoQAC/Services/Process/ProcessExecutionService.cs` |
 | Configuration persistence | Reads YAML config, debounces user-config saves, flushes pending saves before cleaning, publishes config/skip-list changes, and caches main configuration. | `AutoQAC/Services/Configuration/ConfigurationService.cs` |
 | Plugin discovery | Uses Mutagen for supported games and file-based loading for unsupported games. | `AutoQAC/Services/Plugin/PluginLoadingService.cs` |
+| Plugin refresh coordination | Owns plugin refresh generation/cancellation, row-first publication, skip-list application, and targeted approximation merges. | `AutoQAC/Services/Plugin/PluginRefreshCoordinator.cs` |
 | Game detection | Maps xEdit executable names and load-order master files to `GameType`; detects TTW and Enderal variants. | `AutoQAC/Services/GameDetection/GameDetectionService.cs` |
 | QueryPlugins library | Performs Mutagen-backed issue analysis through ITM and game-specific detectors. | `QueryPlugins/PluginQueryService.cs` |
 
@@ -137,9 +138,10 @@
 
 1. Startup creates `ConfigurationService`, resolves configuration directory, and starts `ConfigWatcherService` (`AutoQAC/App.axaml.cs:40`, `AutoQAC/App.axaml.cs:81`).
 2. `MainWindowViewModel` creates `ConfigurationViewModel` and calls `InitializeAsync` fire-and-forget (`AutoQAC/ViewModels/MainWindowViewModel.cs:51`, `AutoQAC/ViewModels/MainWindowViewModel.cs:69`).
-3. When a supported game is selected, `ConfigurationViewModel` saves selection and refreshes plugins (`AutoQAC/ViewModels/MainWindow/ConfigurationViewModel.cs:151`, `AutoQAC/ViewModels/MainWindow/ConfigurationViewModel.cs:162`, `AutoQAC/ViewModels/MainWindow/ConfigurationViewModel.cs:163`).
-4. `PluginLoadingService.TryGetPluginsAsync` uses Mutagen for `SkyrimLe`, `SkyrimSe`, `SkyrimVr`, `Fallout4`, and `Fallout4Vr`; unsupported games return `UnsupportedGame` and use file-based loading (`AutoQAC/Services/Plugin/PluginLoadingService.cs:33`, `AutoQAC/Services/Plugin/PluginLoadingService.cs:90`, `AutoQAC/Services/Plugin/PluginLoadingService.cs:162`).
-5. Loaded plugins are placed in shared state through `IStateService.SetPluginsToClean`; the parent `MainWindowViewModel` dispatches `OnStateChanged` to child ViewModels on the UI thread (`AutoQAC/Services/State/StateService.cs:82`, `AutoQAC/ViewModels/MainWindowViewModel.cs:64`, `AutoQAC/ViewModels/MainWindowViewModel.cs:72`).
+3. When a supported game is selected, `ConfigurationViewModel` saves selection, resolves UI path fields, and requests plugin refresh from `IPluginRefreshCoordinator` (`AutoQAC/ViewModels/MainWindow/ConfigurationViewModel.cs`, `AutoQAC/Services/Plugin/IPluginRefreshCoordinator.cs`).
+4. `PluginRefreshCoordinator` owns active refresh generation/cancellation, loads rows via `PluginLoadingService`, applies skip-list state, publishes rows first through `IStateService.SetPluginsToClean`, and then runs approximation callbacks guarded against stale generations (`AutoQAC/Services/Plugin/PluginRefreshCoordinator.cs`).
+5. `PluginLoadingService.TryGetPluginsAsync` uses Mutagen for `SkyrimLe`, `SkyrimSe`, `SkyrimVr`, `Fallout4`, and `Fallout4Vr`; unsupported games use file-based loading (`AutoQAC/Services/Plugin/PluginLoadingService.cs:33`, `AutoQAC/Services/Plugin/PluginLoadingService.cs:90`, `AutoQAC/Services/Plugin/PluginLoadingService.cs:162`).
+6. Loaded plugins and per-row approximation results are placed in shared state through `IStateService.SetPluginsToClean` and `IStateService.MergePluginApproximation`; the parent `MainWindowViewModel` dispatches `OnStateChanged` to child ViewModels on the UI thread (`AutoQAC/Services/State/StateService.cs:82`, `AutoQAC/Services/State/StateService.cs:147`, `AutoQAC/ViewModels/MainWindowViewModel.cs:64`, `AutoQAC/ViewModels/MainWindowViewModel.cs:72`).
 
 ### Dry-Run Preview Path
 
