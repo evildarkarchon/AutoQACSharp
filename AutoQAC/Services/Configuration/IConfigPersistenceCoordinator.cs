@@ -5,7 +5,7 @@ using AutoQAC.Models.Configuration;
 
 namespace AutoQAC.Services.Configuration;
 
-internal interface IConfigPersistenceCoordinator
+public interface IConfigPersistenceCoordinator
 {
     Task StartAsync(CancellationToken ct = default);
 

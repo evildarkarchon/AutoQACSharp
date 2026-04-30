@@ -19,7 +19,10 @@ public sealed class ConfigWatcherService : IConfigWatcherService
 
     private const string UserConfigFile = "AutoQAC Settings.yaml";
 
-    internal ConfigWatcherService(
+    /// <summary>
+    /// Creates a watcher service that forwards user settings file notifications to the shared persistence coordinator.
+    /// </summary>
+    public ConfigWatcherService(
         IConfigPersistenceCoordinator coordinator,
         ILoggingService logger,
         string? configDirectory = null)

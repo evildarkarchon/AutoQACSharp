@@ -35,6 +35,7 @@ public sealed class DependencyInjectionTests
         
         // Infrastructure
         provider.GetService<IConfigurationService>().Should().NotBeNull();
+        provider.GetService<IConfigWatcherService>().Should().NotBeNull();
         provider.GetService<IStateService>().Should().NotBeNull();
         
         // Business Logic
