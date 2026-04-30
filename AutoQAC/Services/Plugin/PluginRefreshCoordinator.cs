@@ -133,6 +133,9 @@ public sealed class PluginRefreshCoordinator : IPluginRefreshCoordinator, IDispo
                         Approximation = PluginIssueApproximation.Unavailable
                     });
                 }
+
+                if (IsCurrent(generation, token))
+                    Publish(new PluginRefreshStatus(PluginRefreshStatusKind.Idle, Message: "Approximation refresh failed."));
             }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
