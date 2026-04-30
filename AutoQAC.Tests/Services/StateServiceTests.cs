@@ -557,6 +557,45 @@ public class StateServiceTests
         state.PluginsToClean[1].Approximation.Status.Should().Be(PluginIssueApproximationStatus.Pending);
     }
 
+    [Fact]
+    public void MergePluginApproximation_ShouldPreserveNonTargetedApproximationValues()
+    {
+        _sut.SetPluginsToClean(
+        [
+            new PluginInfo
+            {
+                FileName = "target.esp",
+                FullPath = @"C:\Data\target.esp",
+                Approximation = PluginIssueApproximation.Pending
+            },
+            new PluginInfo
+            {
+                FileName = "already-analyzed.esp",
+                FullPath = @"C:\Data\already-analyzed.esp",
+                Approximation = PluginIssueApproximation.Available(9, 8, 7)
+            }
+        ]);
+
+        _sut.MergePluginApproximation(new PluginIssueApproximationResult
+        {
+            FileName = "target.esp",
+            FullPath = @"C:\Data\target.esp",
+            Approximation = PluginIssueApproximation.Available(1, 2, 3)
+        });
+
+        var state = _sut.CurrentState;
+        var targeted = state.PluginsToClean.Single(plugin => plugin.FileName == "target.esp");
+        var nonTargeted = state.PluginsToClean.Single(plugin => plugin.FileName == "already-analyzed.esp");
+
+        targeted.Approximation.ItmCount.Should().Be(1);
+        targeted.Approximation.DeletedReferenceCount.Should().Be(2);
+        targeted.Approximation.DeletedNavmeshCount.Should().Be(3);
+        nonTargeted.Approximation.Status.Should().Be(PluginIssueApproximationStatus.Available);
+        nonTargeted.Approximation.ItmCount.Should().Be(9);
+        nonTargeted.Approximation.DeletedReferenceCount.Should().Be(8);
+        nonTargeted.Approximation.DeletedNavmeshCount.Should().Be(7);
+    }
+
     /// <summary>
     /// Regression: deselecting Update.esp under one game/load-order must not silently
     /// skip a different Update.esp after the user switches games or picks a new load
