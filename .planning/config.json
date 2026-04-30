@@ -1,7 +1,7 @@
 {
   "model_profile": "inherit",
   "commit_docs": true,
-  "parallelization": true,
+  "parallelization": false,
   "search_gitignored": false,
   "brave_search": false,
   "firecrawl": false,
@@ -30,7 +30,9 @@
     "code_review": true,
     "tdd_mode": true,
     "code_review_depth": "deep",
-    "drift_action": "auto-remap"
+    "drift_action": "auto-remap",
+    "auto_prune_state": true,
+    "pattern_mapper": true
   },
   "hooks": {
     "context_warnings": true
@@ -45,5 +47,6 @@
     "models": {
       "opencode": "opencode run --model openrouter/moonshotai/kimi-k2.6"
     }
-  }
+  },
+  "context_window": 400000
 }
