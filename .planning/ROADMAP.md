@@ -164,7 +164,7 @@ Plans:
 Plans:
 **Wave 1**
 - [x] 09-01-PLAN.md — Optimize QueryPlugins ITM analysis with streaming context traversal and cancellation propagation.
-- [ ] 09-02-PLAN.md — Define refresh coordinator contracts and Wave 0 behavior tests for row-first selected approximation refresh.
+- [x] 09-02-PLAN.md — Define refresh coordinator contracts and Wave 0 behavior tests for row-first selected approximation refresh.
 
 **Wave 2 (blocked on 09-02 completion)**
 - [ ] 09-03-PLAN.md — Implement the refresh coordinator/capability policy and move plugin refresh workflow out of ConfigurationViewModel.

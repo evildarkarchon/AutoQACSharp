@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Cleanup
 status: executing
-stopped_at: Phase 9 UI-SPEC approved
-last_updated: "2026-04-30T07:35:11.391Z"
+stopped_at: Completed 09-02-PLAN.md
+last_updated: "2026-04-30T07:40:32.107Z"
 last_activity: 2026-04-30
 progress:
   total_phases: 7
   completed_phases: 4
   total_plans: 37
-  completed_plans: 33
-  percent: 89
+  completed_plans: 34
+  percent: 92
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-04-28)
 ## Current Position
 
 Phase: 09 (plugin-refresh-approximation-performance) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Ready to execute
 Last activity: 2026-04-30
 
-Progress: [█████████░] 89%
+Progress: [█████████░] 92%
 
 ## Performance Metrics
 
@@ -54,6 +54,7 @@ Progress: [█████████░] 89%
 | 08 | 09 | 8 min | 3 | 2 |
 | 08 | 10 | 7 min | 3 | 2 |
 | Phase 09 P01 | 4 min | 2 tasks | 7 files |
+| Phase 09 P02 | 2 min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -77,6 +78,9 @@ Progress: [█████████░] 89%
 - Phase 08 Plan 10 revalidates `LoadOrderPath` after Unknown game detection resolves to FO3/FNV/Oblivion, before skip-list or plugin-row construction.
 - [Phase ?]: Phase 09 Plan 01 keeps QueryPlugins ITM counts exact by streaming only the analyzed plugin context and its immediate lower-priority context.
 - [Phase ?]: Phase 09 Plan 01 propagates OperationCanceledException instead of publishing unavailable or partial rows when exact analysis is canceled.
+- [Phase 09]: Phase 09 refresh status uses typed PluginRefreshStatus values with canonical display text helpers until ViewModels map them in later plans. — Plan 09-02 created the typed status contract used by downstream coordinator and ViewModel mapping.
+- [Phase 09]: Wave 0 coordinator tests intentionally reference the not-yet-implemented PluginRefreshCoordinator so Plan 09-03 receives executable RED behavior requirements. — Plan 09-02 is a contract/TDD RED plan; Plan 09-03 owns GREEN implementation.
+- [Phase 09]: Targeted approximation refresh is pinned to StateService.MergePluginApproximation, not MergePluginApproximations, to preserve non-targeted row values. — The new StateService regression test proves single-row merge preservation for selected refresh.
 
 ### Pending Todos
 
@@ -94,6 +98,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-30T07:34:41.203Z
-Stopped at: Phase 9 UI-SPEC approved
+Last session: 2026-04-30T07:40:32.100Z
+Stopped at: Completed 09-02-PLAN.md
 Resume file: None
