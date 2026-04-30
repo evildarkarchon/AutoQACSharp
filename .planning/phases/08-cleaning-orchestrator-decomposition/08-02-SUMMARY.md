@@ -72,7 +72,7 @@ Each task was committed atomically:
 1. **Task 1: RED — define ICleaningPreflight contract + models, write failing tests** - `824a198` (test)
 2. **Task 2: GREEN — implement CleaningPreflight, wire into facade + DI, REFACTOR for clarity** - `ffd74d0` (feat)
 
-**Plan metadata:** pending final docs commit.
+**Plan metadata:** `b895409` (docs)
 
 ## Files Created/Modified
 
