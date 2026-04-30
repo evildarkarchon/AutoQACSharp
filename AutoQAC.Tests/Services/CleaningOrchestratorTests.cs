@@ -2324,6 +2324,89 @@ public sealed class CleaningOrchestratorTests
         }
     }
 
+    [Fact]
+    public void ICleaningOrchestrator_PublicSurface_MatchesLockedSnapshot()
+    {
+        // Arrange — D-03 locks the public ViewModel-facing surface for Phase 8.
+        // This snapshot prevents accidental member additions/removals during decomposition.
+        var expected = new[]
+        {
+            "Task StartCleaningAsync(CancellationToken)",
+            "Task StartCleaningAsync(TimeoutRetryCallback, CancellationToken)",
+            "Task StartCleaningAsync(TimeoutRetryCallback, BackupFailureCallback, CancellationToken)",
+            "Task<StopCleaningResult> StopCleaningAsync()",
+            "Task<StopCleaningResult> ForceStopCleaningAsync()",
+            "Task CancelBackupOperationAsync()",
+            "StopCleaningResult MarkLeftRunningByUser()",
+            "TerminationResult? LastTerminationResult { get; }",
+            "IObservable<Boolean> HangDetected { get; }",
+            "Task<List<DryRunResult>> RunDryRunAsync(CancellationToken)"
+        };
+
+        // Act
+        var actual = typeof(ICleaningOrchestrator)
+            .GetMembers(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .Select(FormatMemberSignature)
+            .Where(signature => !string.IsNullOrEmpty(signature))
+            .OrderBy(signature => signature)
+            .ToArray();
+
+        // Assert
+        actual.Should().BeEquivalentTo(expected.OrderBy(signature => signature).ToArray(),
+            "ICleaningOrchestrator public surface is locked by D-03; any change must be approved.");
+    }
+
+    /// <summary>
+    /// Renders a <see cref="MemberInfo"/> to a short, deterministic signature string for snapshot comparison.
+    /// Per R-06: handles generic Task&lt;T&gt; and Task&lt;List&lt;T&gt;&gt; return types via recursive type formatting,
+    /// method overloads via parameter-type concatenation, and async signatures. Output is stable across Debug/Release.
+    /// </summary>
+    /// <param name="member">The public interface member to format.</param>
+    /// <returns>A deterministic signature string, or an empty string for compiler-generated accessor methods.</returns>
+    private static string FormatMemberSignature(MemberInfo member)
+    {
+        return member switch
+        {
+            MethodInfo m when !m.IsSpecialName =>
+                $"{FormatTypeName(m.ReturnType)} {m.Name}({string.Join(", ", m.GetParameters().Select(p => FormatTypeName(p.ParameterType)))})",
+            PropertyInfo p =>
+                // Properties on interfaces are always abstract; reflect only the declared accessors.
+                $"{FormatTypeName(p.PropertyType)} {p.Name} {{ {(p.CanRead ? "get; " : string.Empty)}{(p.CanWrite ? "set; " : string.Empty)}}}".TrimEnd(),
+            _ => string.Empty
+        };
+    }
+
+    /// <summary>
+    /// Recursively formats a <see cref="Type"/> using simple names such as <c>Task&lt;List&lt;DryRunResult&gt;&gt;</c>.
+    /// Reflection does not carry nullable reference-type annotations on member return types, so reference-type
+    /// nullability is intentionally omitted while value-type nullability is preserved.
+    /// </summary>
+    /// <param name="t">The type to format.</param>
+    /// <returns>A stable, unqualified type name suitable for snapshot assertions.</returns>
+    private static string FormatTypeName(Type t)
+    {
+        var underlying = Nullable.GetUnderlyingType(t);
+        if (underlying != null)
+        {
+            return $"{FormatTypeName(underlying)}?";
+        }
+
+        if (!t.IsGenericType)
+        {
+            return t.Name;
+        }
+
+        var def = t.Name;
+        var tickIndex = def.IndexOf('`', StringComparison.Ordinal);
+        if (tickIndex > 0)
+        {
+            def = def[..tickIndex];
+        }
+
+        var args = string.Join(", ", t.GetGenericArguments().Select(FormatTypeName));
+        return $"{def}<{args}>";
+    }
+
     #endregion
 
     #region Sequential Source Guard Tests
