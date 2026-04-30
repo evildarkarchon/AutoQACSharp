@@ -119,6 +119,73 @@ public sealed class PluginListViewModelTests
         }
     }
 
+    /// <summary>
+    /// Verifies that ListBox focus selection never defines the approximation refresh target set.
+    /// </summary>
+    [Fact]
+    public async Task RefreshSelectedApproximationsCommand_ShouldIgnoreFocusedSelectedPluginAndUseCheckedRows()
+    {
+        var stateService = new StateService();
+        stateService.UpdateState(s => s with { CurrentGameType = GameType.SkyrimSe });
+        stateService.SetPluginsToClean([
+            new PluginInfo { FileName = "Checked.esp", FullPath = @"C:\Game\Data\Checked.esp" },
+            new PluginInfo { FileName = "FocusedOnly.esp", FullPath = @"C:\Game\Data\FocusedOnly.esp" }
+        ]);
+        stateService.UpdateExcludedPlugins(_ =>
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { @"C:\Game\Data\FocusedOnly.esp" });
+
+        var coordinator = new RecordingPluginRefreshCoordinator();
+        var vm = new PluginListViewModel(
+            stateService,
+            coordinator,
+            new FixedPluginRefreshCapabilityPolicy(supportsApproximation: true));
+        try
+        {
+            vm.OnStateChanged(stateService.CurrentState);
+            vm.SelectedPlugin = vm.PluginsToClean.Single(plugin => plugin.FileName == "FocusedOnly.esp");
+
+            await vm.RefreshSelectedApproximationsCommand.ExecuteAsync(null);
+
+            coordinator.CapturedTargets.Should().BeEquivalentTo([
+                new PluginRefreshTarget("Checked.esp", @"C:\Game\Data\Checked.esp")
+            ], options => options.WithStrictOrdering());
+        }
+        finally
+        {
+            vm.Dispose();
+            stateService.Dispose();
+            coordinator.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Ensures the cancel button maps directly to the coordinator's manual cancellation reason.
+    /// </summary>
+    [Fact]
+    public void CancelApproximationRefreshCommand_ShouldRequestManualCoordinatorCancellation()
+    {
+        var stateService = new StateService();
+        var coordinator = new RecordingPluginRefreshCoordinator();
+        var vm = new PluginListViewModel(
+            stateService,
+            coordinator,
+            new FixedPluginRefreshCapabilityPolicy(supportsApproximation: true));
+        try
+        {
+            coordinator.PublishStatus(PluginRefreshStatus.AnalyzingSelected(1, 2));
+
+            vm.CancelApproximationRefreshCommand.Execute(null);
+
+            coordinator.CancelReasons.Should().Equal(PluginRefreshCancelReason.Manual);
+        }
+        finally
+        {
+            vm.Dispose();
+            stateService.Dispose();
+            coordinator.Dispose();
+        }
+    }
+
     [Fact]
     public void DeselectAllCommand_ShouldExcludeEveryVisiblePluginInState()
     {
@@ -354,6 +421,10 @@ public sealed class PluginListViewModelTests
 
         public IReadOnlyList<PluginRefreshTarget> CapturedTargets { get; private set; } = [];
 
+        public IReadOnlyList<PluginRefreshCancelReason> CancelReasons => _cancelReasons;
+
+        private readonly List<PluginRefreshCancelReason> _cancelReasons = [];
+
         public IObservable<PluginRefreshStatus> StatusChanged => _statusChanged;
 
         public Task RefreshForGameAsync(PluginRefreshRequest request, CancellationToken ct = default) => Task.CompletedTask;
@@ -373,8 +444,11 @@ public sealed class PluginListViewModelTests
 
         public void CancelActiveRefresh(PluginRefreshCancelReason reason)
         {
+            _cancelReasons.Add(reason);
             _statusChanged.OnNext(new PluginRefreshStatus(PluginRefreshStatusKind.Canceled));
         }
+
+        public void PublishStatus(PluginRefreshStatus status) => _statusChanged.OnNext(status);
 
         public void Release() => _release.TrySetResult();
 
