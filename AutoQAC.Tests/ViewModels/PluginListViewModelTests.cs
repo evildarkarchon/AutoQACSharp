@@ -1,4 +1,6 @@
 using System.Reactive.Linq;
+using System.Reactive.Subjects;
+using AutoQAC.Services.Plugin;
 using AutoQAC.Models;
 using AutoQAC.Services.State;
 using AutoQAC.ViewModels.MainWindow;
@@ -19,6 +21,104 @@ namespace AutoQAC.Tests.ViewModels;
 /// </summary>
 public sealed class PluginListViewModelTests
 {
+    [Fact]
+    public void RefreshSelectedApproximationsCommand_WhenNoRowsSelected_ShouldBeDisabled()
+    {
+        var stateService = new StateService();
+        stateService.UpdateState(s => s with { CurrentGameType = GameType.SkyrimSe });
+        stateService.SetPluginsToClean([
+            new PluginInfo { FileName = "A.esp", FullPath = @"C:\Game\Data\A.esp" }
+        ]);
+        stateService.UpdateExcludedPlugins(_ =>
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { @"C:\Game\Data\A.esp" });
+
+        var coordinator = new RecordingPluginRefreshCoordinator();
+        var vm = new PluginListViewModel(
+            stateService,
+            coordinator,
+            new FixedPluginRefreshCapabilityPolicy(supportsApproximation: true));
+        try
+        {
+            vm.OnStateChanged(stateService.CurrentState);
+
+            vm.RefreshSelectedApproximationsCommand.CanExecute(null).Should().BeFalse();
+        }
+        finally
+        {
+            vm.Dispose();
+            stateService.Dispose();
+            coordinator.Dispose();
+        }
+    }
+
+    [Fact]
+    public void RefreshSelectedApproximationsCommand_WhenUnsupportedGame_ShouldBeDisabled()
+    {
+        var stateService = new StateService();
+        stateService.UpdateState(s => s with { CurrentGameType = GameType.Oblivion });
+        stateService.SetPluginsToClean([
+            new PluginInfo { FileName = "A.esp", FullPath = @"C:\Game\Data\A.esp" }
+        ]);
+
+        var coordinator = new RecordingPluginRefreshCoordinator();
+        var vm = new PluginListViewModel(
+            stateService,
+            coordinator,
+            new FixedPluginRefreshCapabilityPolicy(supportsApproximation: false));
+        try
+        {
+            vm.OnStateChanged(stateService.CurrentState);
+
+            vm.RefreshSelectedApproximationsCommand.CanExecute(null).Should().BeFalse();
+        }
+        finally
+        {
+            vm.Dispose();
+            stateService.Dispose();
+            coordinator.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task RefreshSelectedApproximationsCommand_ShouldSnapshotCheckedVisibleRows()
+    {
+        var stateService = new StateService();
+        stateService.UpdateState(s => s with { CurrentGameType = GameType.SkyrimSe });
+        stateService.SetPluginsToClean([
+            new PluginInfo { FileName = "A.esp", FullPath = @"C:\Game\Data\A.esp" },
+            new PluginInfo { FileName = "B.esp", FullPath = @"C:\Game\Data\B.esp" }
+        ]);
+
+        var coordinator = new RecordingPluginRefreshCoordinator(delayUntilReleased: true);
+        var vm = new PluginListViewModel(
+            stateService,
+            coordinator,
+            new FixedPluginRefreshCapabilityPolicy(supportsApproximation: true));
+        try
+        {
+            vm.OnStateChanged(stateService.CurrentState);
+
+            var refreshTask = vm.RefreshSelectedApproximationsCommand.ExecuteAsync(null);
+            await coordinator.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+            vm.PluginsToClean.Single(p => p.FileName == "B.esp").IsSelected = false;
+
+            coordinator.CapturedTargets.Should().BeEquivalentTo([
+                new PluginRefreshTarget("A.esp", @"C:\Game\Data\A.esp"),
+                new PluginRefreshTarget("B.esp", @"C:\Game\Data\B.esp")
+            ], options => options.WithStrictOrdering());
+
+            coordinator.Release();
+            await refreshTask;
+        }
+        finally
+        {
+            vm.Dispose();
+            stateService.Dispose();
+            coordinator.Dispose();
+        }
+    }
+
     [Fact]
     public void DeselectAllCommand_ShouldExcludeEveryVisiblePluginInState()
     {
@@ -237,5 +337,63 @@ public sealed class PluginListViewModelTests
             vm.Dispose();
             stateService.Dispose();
         }
+    }
+
+    private sealed class RecordingPluginRefreshCoordinator : IPluginRefreshCoordinator, IDisposable
+    {
+        private readonly Subject<PluginRefreshStatus> _statusChanged = new();
+        private readonly bool _delayUntilReleased;
+        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public RecordingPluginRefreshCoordinator(bool delayUntilReleased = false)
+        {
+            _delayUntilReleased = delayUntilReleased;
+        }
+
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public IReadOnlyList<PluginRefreshTarget> CapturedTargets { get; private set; } = [];
+
+        public IObservable<PluginRefreshStatus> StatusChanged => _statusChanged;
+
+        public Task RefreshForGameAsync(PluginRefreshRequest request, CancellationToken ct = default) => Task.CompletedTask;
+
+        public async Task RefreshSelectedApproximationsAsync(
+            PluginRefreshRequest request,
+            IReadOnlyList<PluginRefreshTarget> selectedTargets,
+            CancellationToken ct = default)
+        {
+            CapturedTargets = selectedTargets.ToList();
+            Started.TrySetResult();
+            if (_delayUntilReleased)
+            {
+                await _release.Task.WaitAsync(ct);
+            }
+        }
+
+        public void CancelActiveRefresh(PluginRefreshCancelReason reason)
+        {
+            _statusChanged.OnNext(new PluginRefreshStatus(PluginRefreshStatusKind.Canceled));
+        }
+
+        public void Release() => _release.TrySetResult();
+
+        public void Dispose() => _statusChanged.Dispose();
+    }
+
+    private sealed class FixedPluginRefreshCapabilityPolicy : IPluginRefreshCapabilityPolicy
+    {
+        private readonly bool _supportsApproximation;
+
+        public FixedPluginRefreshCapabilityPolicy(bool supportsApproximation)
+        {
+            _supportsApproximation = supportsApproximation;
+        }
+
+        public bool SupportsPluginLoading(GameType gameType) => true;
+
+        public bool SupportsIssueApproximation(GameType gameType) => _supportsApproximation;
+
+        public bool RequiresLoadOrderFile(GameType gameType) => false;
     }
 }
