@@ -126,7 +126,7 @@ Plans:
 **Plans**: 6 plans
 Plans:
 **Wave 0**
-- [ ] 08-01-PLAN.md — Add Wave 0 characterization tests (left-running, retention warning/canceled, dry-run/preflight equivalence, ContinueWithoutBackup, last-termination-result reset) and ICleaningOrchestrator public-surface snapshot test.
+- [x] 08-01-PLAN.md — Add Wave 0 characterization tests (left-running, retention warning/canceled, dry-run/preflight equivalence, ContinueWithoutBackup, last-termination-result reset) and ICleaningOrchestrator public-surface snapshot test.
 
 **Wave 1 (blocked on Wave 0 completion)**
 - [ ] 08-02-PLAN.md — Extract ICleaningPreflight collaborator (D-13–D-16); shared preflight/selection plan consumed by both StartCleaningAsync and RunDryRunAsync.

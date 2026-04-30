@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: Cleanup
 status: executing
 stopped_at: Phase 8 context gathered
-last_updated: "2026-04-30T00:02:22.560Z"
-last_activity: 2026-04-30 -- Phase 08 planning complete
+last_updated: "2026-04-30T01:46:45.417Z"
+last_activity: 2026-04-30
 progress:
   total_phases: 7
   completed_phases: 3
   total_plans: 28
-  completed_plans: 22
-  percent: 79
+  completed_plans: 23
+  percent: 82
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-28)
 
 **Core value:** Accurate, automated xEdit Quick Auto Clean with reliable result reporting.
-**Current focus:** Phase 07 — backup-restore-retention-safety
+**Current focus:** Phase 08 — cleaning-orchestrator-decomposition
 
 ## Current Position
 
-Phase: 8
-Plan: Not started
+Phase: 08 (cleaning-orchestrator-decomposition) — EXECUTING
+Plan: 2 of 6
 Status: Ready to execute
-Last activity: 2026-04-30 -- Phase 08 planning complete
+Last activity: 2026-04-30
 
-Progress: [██████████] 100%
+Progress: [████████░░] 82%
 
 ## Performance Metrics
 
@@ -68,6 +68,7 @@ Progress: [██████████] 100%
 | Phase 07 P14 | 4 min | 3 tasks | 5 files |
 | Phase 07 P13 | 7 min | 3 tasks tasks | 6 files files |
 | 07 | 14 | - | - |
+| Phase 08 P01 | 20 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -128,6 +129,8 @@ Progress: [██████████] 100%
 - [Phase ?]: [Phase 07]: RestoreWindow Delete Session containment + recursive deletion live in IBackupService.DeleteSessionAsync, not in the ViewModel — ViewModel filesystem I/O moved out per CLAUDE.md MVVM. — Plan 07-13 closes Truth #20 and resolves the cross-AI reviewer consensus that an injectable service seam must own the recursive delete.
 - [Phase ?]: [Phase 07]: DeleteSessionCommand.CanExecute is gated on _backupRoot non-null/non-whitespace AND HasTrustedRestoreRoot AND !IsRestoreActive, with explicit DeleteSessionCommand.NotifyCanExecuteChanged() after _backupRoot transitions. — Plan 07-13 unifies Delete Session safety with Plan 07-11 Restore Selected/All gating; private fields gating predicates require manual notification because the source generator only re-evaluates on observable property changes.
 - [Phase ?]: [Phase 07]: One canonical sentence ('The selected backup session is outside the configured backup folder.') is shared between StatusText and dialog details for the out-of-root branch; generic 'Technical details were written to the log.' covers IO failures so exception text never reaches the user. — Plan 07-13 keeps D-04's concise reason pattern intact and prevents the reviewer-flagged status/dialog text divergence.
+- [Phase 08]: Wave 0 locks current CleaningOrchestrator behavior in tests before any Phase 8 production extraction begins. — D-05 requires characterize-before-extract for REF-01.
+- [Phase 08]: Public-surface snapshot preserves nullable value-type output for LastTerminationResult as TerminationResult?. — The actual ICleaningOrchestrator signature is nullable, so the guard must lock the real public surface.
 
 ### Pending Todos
 
@@ -146,6 +149,6 @@ Progress: [██████████] 100%
 
 ## Session Continuity
 
-Last session: 2026-04-29T23:24:45.161Z
+Last session: 2026-04-30T01:46:37.056Z
 Stopped at: Phase 8 context gathered
-Resume file: .planning/phases/08-cleaning-orchestrator-decomposition/08-CONTEXT.md
+Resume file: None
