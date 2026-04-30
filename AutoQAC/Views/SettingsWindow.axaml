@@ -25,6 +25,18 @@
         <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
             <StackPanel Spacing="16">
 
+                <!-- Phase 10 persistence failures are recoverable and text-only; no retry UI or modal dialog. -->
+                <Border Background="#332400"
+                        BorderBrush="#E6A817"
+                        BorderThickness="1"
+                        CornerRadius="4"
+                        Padding="10"
+                        IsVisible="{Binding HasPersistenceBanner}">
+                    <TextBlock Text="{Binding PersistenceBannerText}"
+                               Foreground="#E6A817"
+                               TextWrapping="Wrap" />
+                </Border>
+
                 <!-- File Paths Section -->
                 <StackPanel Spacing="8">
                     <TextBlock Text="File Paths"

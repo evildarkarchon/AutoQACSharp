@@ -165,7 +165,7 @@ public sealed class SettingsViewModelTests
     [Fact]
     public void SettingsWindow_BindsPersistenceBannerText_StaticGuard()
     {
-        var source = File.ReadAllText(Path.Combine("AutoQAC", "Views", "SettingsWindow.axaml"));
+        var source = File.ReadAllText(ProjectPath("AutoQAC", "Views", "SettingsWindow.axaml"));
 
         source.Should().Contain("PersistenceBannerText");
         source.Should().Contain("HasPersistenceBanner");
@@ -174,7 +174,7 @@ public sealed class SettingsViewModelTests
     [Fact]
     public void BannerText_NoModalDialog_StaysAsTextOnly_StaticGuard()
     {
-        var source = File.ReadAllText(Path.Combine("AutoQAC", "ViewModels", "SettingsViewModel.cs"));
+        var source = File.ReadAllText(ProjectPath("AutoQAC", "ViewModels", "SettingsViewModel.cs"));
 
         source.Should().NotContain("MessageBox");
         source.Should().NotContain("IDialogService.ShowError");
@@ -184,7 +184,7 @@ public sealed class SettingsViewModelTests
     [Fact]
     public void Failure_Save_WriteFailed_DoesNotInvokeRetryUi_StaticGuard()
     {
-        var source = File.ReadAllText(Path.Combine("AutoQAC", "ViewModels", "SettingsViewModel.cs"));
+        var source = File.ReadAllText(ProjectPath("AutoQAC", "ViewModels", "SettingsViewModel.cs"));
 
         source.Should().NotContain("RetryCommand");
         source.Should().NotContain("RetryButton");
@@ -261,6 +261,29 @@ public sealed class SettingsViewModelTests
         vm.MaxAgeDays = 14;
         vm.MaxFileCount = 100;
         vm.BackupMaxSessions = 10;
+    }
+
+    private static string ProjectPath(params string[] segments)
+    {
+        var directory = AppContext.BaseDirectory;
+        while (!string.IsNullOrEmpty(directory))
+        {
+            var candidate = Path.Combine(new[] { directory }.Concat(segments).ToArray());
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            var parent = Directory.GetParent(directory);
+            if (parent is null)
+            {
+                break;
+            }
+
+            directory = parent.FullName;
+        }
+
+        return Path.Combine(segments);
     }
 
     private sealed record Fixture(

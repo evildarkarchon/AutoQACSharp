@@ -13,10 +13,13 @@ namespace AutoQAC.ViewModels;
 
 public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
 {
-    private readonly IConfigurationService _configService;
-    private readonly ILoggingService _logger;
-    private readonly IUiDispatcher _uiDispatcher;
+    private readonly IConfigurationService _configService = null!;
+    private readonly ILoggingService _logger = null!;
+    private readonly IUiDispatcher _uiDispatcher = null!;
     private readonly IFileDialogService? _fileDialog;
+    private IDisposable? _failuresSubscription;
+    private IDisposable? _resultsSubscription;
+    private IDisposable? _configChangedClearSubscription;
 
     // Loading flag to suppress validation during initial property population
     private bool _isLoading;
@@ -118,6 +121,12 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
     [ObservableProperty]
     private string? _backupMaxSessionsError;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasPersistenceBanner))]
+    private string? _persistenceBannerText;
+
+    public bool HasPersistenceBanner => !string.IsNullOrWhiteSpace(PersistenceBannerText);
+
     public bool HasValidationErrors =>
         !ValidateCleaningTimeout(CleaningTimeout)
         || !ValidateJournalExpiration(JournalExpiration)
@@ -151,14 +160,87 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
         IUiDispatcher uiDispatcher,
         IFileDialogService? fileDialog = null)
     {
-        _configService = configService;
-        _logger = logger;
-        _uiDispatcher = uiDispatcher;
+        _configService = configService!;
+        _logger = logger!;
+        _uiDispatcher = uiDispatcher!;
         _fileDialog = fileDialog;
 
         _xEditValidate = new DebouncedAction(uiDispatcher, TimeSpan.FromMilliseconds(400));
         _mo2Validate = new DebouncedAction(uiDispatcher, TimeSpan.FromMilliseconds(400));
         _loadOrderValidate = new DebouncedAction(uiDispatcher, TimeSpan.FromMilliseconds(400));
+
+        // Phase 10 D-24/D-27: typed failure stream feeds a concise banner; clears on next success.
+        // Per AGENTS.md, ViewModels must not import System.Reactive — use CallbackObserver + IUiDispatcher.
+        if (_configService is not null && _uiDispatcher is not null)
+        {
+            _failuresSubscription = _configService.Failures.Subscribe(
+                new CallbackObserver<ConfigPersistenceFailure>(failure =>
+                    _uiDispatcher.Post(() => OnPersistenceFailureReceived(failure))));
+            _resultsSubscription = _configService.PersistenceResults.Subscribe(
+                new CallbackObserver<ConfigPersistenceResult>(result =>
+                    _uiDispatcher.Post(() => OnPersistenceResultReceived(result))));
+            _configChangedClearSubscription = _configService.UserConfigurationChanged.Subscribe(
+                new CallbackObserver<UserConfiguration>(_ =>
+                    _uiDispatcher.Post(ClearPersistenceBanner)));
+        }
+    }
+
+    /// <summary>
+    /// Maps safe configuration persistence failures to a text-only Settings banner.
+    /// Watcher echo skips are filtered before the failure stream, so every value here is actionable.
+    /// </summary>
+    /// <param name="failure">The typed, safe failure payload from the configuration service.</param>
+    private void OnPersistenceFailureReceived(ConfigPersistenceFailure failure)
+    {
+        // D-25: Watcher silent skips never reach Failures; only actionable failures arrive here.
+        // D-29: text-only banner, no modal dialog.
+        PersistenceBannerText = MapFailureToBanner(failure);
+    }
+
+    /// <summary>
+    /// Clears stale persistence failure text when the persistence coordinator reports a successful barrier.
+    /// </summary>
+    /// <param name="result">The typed persistence result emitted by the configuration service.</param>
+    private void OnPersistenceResultReceived(ConfigPersistenceResult result)
+    {
+        if (result.Status is ConfigPersistenceStatusKind.Success or ConfigPersistenceStatusKind.NoOp)
+        {
+            ClearPersistenceBanner();
+        }
+    }
+
+    /// <summary>
+    /// Converts safe failure categories into concise user-facing Settings banner text.
+    /// </summary>
+    /// <param name="failure">The typed safe failure payload to present.</param>
+    /// <returns>A text-only banner message shorter than the Settings dialog copy budget.</returns>
+    private static string MapFailureToBanner(ConfigPersistenceFailure failure) => failure switch
+    {
+        // D-30: failed optimistic save explicitly tells user settings were restored.
+        { Operation: ConfigPersistenceOperationKind.Save, Kind: ConfigPersistenceFailureKind.WriteFailed }
+            => "Could not save settings. Settings were restored to last saved values.",
+        { Operation: ConfigPersistenceOperationKind.Flush, Kind: ConfigPersistenceFailureKind.WriteFailed }
+            => "Could not save settings before cleaning. Cleaning was blocked. Settings were restored to last saved values.",
+        { Operation: ConfigPersistenceOperationKind.Flush }
+            => "Could not save settings (flush). Cleaning was blocked.",
+        { Kind: ConfigPersistenceFailureKind.InvalidExternalYaml }
+            => "External settings file has invalid YAML. Active settings were not changed.",
+        { Kind: ConfigPersistenceFailureKind.MissingFile }
+            => "Settings file is missing or unreadable. Active settings were not changed.",
+        { Kind: ConfigPersistenceFailureKind.ReadFailed }
+            => "Could not read settings file. Active settings were not changed.",
+        _ => $"Could not persist settings: {failure.SafeSummary}",
+    };
+
+    /// <summary>
+    /// Clears the visible persistence banner if one is currently displayed.
+    /// </summary>
+    private void ClearPersistenceBanner()
+    {
+        if (PersistenceBannerText != null)
+        {
+            PersistenceBannerText = null;
+        }
     }
 
     partial void OnCleaningTimeoutChanged(int value) =>
@@ -262,6 +344,8 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
     [RelayCommand(CanExecute = nameof(CanSave))]
     private async Task SaveAsync()
     {
+        if (HasValidationErrors) return;
+
         try
         {
             var config = await _configService.LoadUserConfigAsync();
@@ -283,13 +367,33 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
             config.Backup.MaxSessions = BackupMaxSessions;
 
             await _configService.SaveUserConfigAsync(config);
+            var flushResult = await _configService.FlushPendingSavesAsync();
+            if (flushResult.Status is ConfigPersistenceStatusKind.Failed or ConfigPersistenceStatusKind.Rejected)
+            {
+                PersistenceBannerText = flushResult.Failure is not null
+                    ? MapFailureToBanner(flushResult.Failure)
+                    : "Could not save settings. Settings were restored to last saved values.";
+                CloseRequested?.Invoke(false);
+                return;
+            }
+
             _logger.Information("Settings saved successfully");
+
+            // D-27: explicit Settings Save only closes after the flush barrier proves disk persistence
+            // succeeded (Success/NoOp). Otherwise a later async failure could surface after close.
+            ClearPersistenceBanner();
 
             CloseRequested?.Invoke(true);
         }
         catch (Exception ex)
         {
             _logger.Error(ex, "Failed to save settings");
+            // Synchronous save failures may occur before the coordinator publishes Failures.
+            if (string.IsNullOrEmpty(PersistenceBannerText))
+            {
+                PersistenceBannerText =
+                    "Could not save settings. Settings were restored to last saved values.";
+            }
             CloseRequested?.Invoke(false);
         }
     }
@@ -383,6 +487,9 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
+        _failuresSubscription?.Dispose();
+        _resultsSubscription?.Dispose();
+        _configChangedClearSubscription?.Dispose();
         _xEditValidate.Dispose();
         _mo2Validate.Dispose();
         _loadOrderValidate.Dispose();
