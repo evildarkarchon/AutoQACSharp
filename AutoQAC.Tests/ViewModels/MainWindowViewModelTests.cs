@@ -177,7 +177,7 @@ public sealed class MainWindowViewModelTests
                 new PluginInfo { FileName = "Dawnguard.esm", FullPath = "Dawnguard.esm", DetectedGameType = GameType.Unknown }
             };
 
-            _pluginServiceMock.GetPluginsFromLoadOrderAsync(tempFile, Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            _pluginLoadingServiceMock.GetPluginsFromFileAsync(tempFile, Arg.Any<string?>(), Arg.Any<CancellationToken>())
                 .Returns(expectedPlugins);
 
             // Setup skip list (required for ApplySkipListStatus)
@@ -360,7 +360,7 @@ public sealed class MainWindowViewModelTests
                 .Returns(tempFile);
 
             // Plugin service throws exception for the corrupted file path
-            _pluginServiceMock.GetPluginsFromLoadOrderAsync(tempFile, Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            _pluginLoadingServiceMock.GetPluginsFromFileAsync(tempFile, Arg.Any<string?>(), Arg.Any<CancellationToken>())
                 .ThrowsAsync(new InvalidOperationException("Failed to parse load order"));
 
             // Act
@@ -943,10 +943,9 @@ public sealed class MainWindowViewModelTests
         _stateServiceMock.Received(1).MergePluginApproximation(Arg.Is<PluginIssueApproximationResult>(result =>
             result.Approximation.Status == PluginIssueApproximationStatus.Available &&
             result.Approximation.ItmCount == 3));
-        _stateServiceMock.Received(1).MergePluginApproximations(Arg.Is<IReadOnlyList<PluginIssueApproximationResult>>(results =>
-            results.Count == 1 &&
-            results[0].Approximation.Status == PluginIssueApproximationStatus.Available &&
-            results[0].Approximation.ItmCount == 3));
+        _stateServiceMock.Received(1).MergePluginApproximation(Arg.Is<PluginIssueApproximationResult>(result =>
+            result.Approximation.Status == PluginIssueApproximationStatus.Available &&
+            result.Approximation.ItmCount == 3));
     }
 
     [Fact]
@@ -971,7 +970,11 @@ public sealed class MainWindowViewModelTests
             });
 
         approximationServiceMock
-            .GetApproximationsAsync(GameType.SkyrimSe, @"C:\Games\SkyrimSE\Data", ct: Arg.Any<CancellationToken>())
+            .GetApproximationsAsync(
+                GameType.SkyrimSe,
+                @"C:\Games\SkyrimSE\Data",
+                Arg.Any<Action<PluginIssueApproximationResult>>(),
+                Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("Approximation failed"));
 
         _configServiceMock.GetSkipListAsync(
@@ -992,12 +995,11 @@ public sealed class MainWindowViewModelTests
                     pluginsLoaded.TrySetResult(true);
                 }
             });
-        _stateServiceMock.When(x => x.MergePluginApproximations(Arg.Any<IReadOnlyList<PluginIssueApproximationResult>>()))
+        _stateServiceMock.When(x => x.MergePluginApproximation(Arg.Any<PluginIssueApproximationResult>()))
             .Do(callInfo =>
             {
-                var results = callInfo.Arg<IReadOnlyList<PluginIssueApproximationResult>>();
-                if (results.Count == 1 &&
-                    results[0].Approximation.Status == PluginIssueApproximationStatus.Unavailable)
+                var result = callInfo.Arg<PluginIssueApproximationResult>();
+                if (result.Approximation.Status == PluginIssueApproximationStatus.Unavailable)
                 {
                     unavailableMerged.TrySetResult(true);
                 }
@@ -1020,9 +1022,8 @@ public sealed class MainWindowViewModelTests
         await WaitForSignalAsync(unavailableMerged);
 
         _stateServiceMock.Received(1).SetPluginsToClean(Arg.Any<List<PluginInfo>>());
-        _stateServiceMock.Received(1).MergePluginApproximations(Arg.Is<IReadOnlyList<PluginIssueApproximationResult>>(results =>
-            results.Count == 1 &&
-            results[0].Approximation.Status == PluginIssueApproximationStatus.Unavailable));
+        _stateServiceMock.Received(1).MergePluginApproximation(Arg.Is<PluginIssueApproximationResult>(result =>
+            result.Approximation.Status == PluginIssueApproximationStatus.Unavailable));
     }
 
     [Fact]

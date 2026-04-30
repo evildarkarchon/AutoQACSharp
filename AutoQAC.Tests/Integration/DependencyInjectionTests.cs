@@ -9,6 +9,7 @@ using AutoQAC.Services.UI;
 using AutoQAC.ViewModels;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using System.Reflection;
 
 namespace AutoQAC.Tests.Integration;
 
@@ -63,5 +64,23 @@ public sealed class DependencyInjectionTests
         var vm1 = provider.GetRequiredService<MainWindowViewModel>();
         var vm2 = provider.GetRequiredService<MainWindowViewModel>();
         vm1.Should().BeSameAs(vm2); // Singleton
+
+        var sharedCoordinator = provider.GetRequiredService<IPluginRefreshCoordinator>();
+        GetPrivateField<IPluginRefreshCoordinator>(vm1.Configuration, "_pluginRefreshCoordinator")
+            .Should().BeSameAs(sharedCoordinator);
+        GetPrivateField<IPluginRefreshCoordinator>(vm1.PluginList, "_pluginRefreshCoordinator")
+            .Should().BeSameAs(sharedCoordinator);
+        GetPrivateField<IPluginRefreshCoordinator>(vm1.Commands, "_pluginRefreshCoordinator")
+            .Should().BeSameAs(sharedCoordinator);
+    }
+
+    /// <summary>
+    /// Reads a private constructor-injected collaborator so DI integration tests can verify shared service wiring.
+    /// </summary>
+    private static T GetPrivateField<T>(object instance, string fieldName)
+    {
+        var field = instance.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic);
+        field.Should().NotBeNull($"{instance.GetType().Name} should store {fieldName} from DI");
+        return field!.GetValue(instance).Should().BeAssignableTo<T>().Subject;
     }
 }

@@ -65,7 +65,7 @@ public sealed class PluginRefreshCoordinator : IPluginRefreshCoordinator, IDispo
 
         try
         {
-            if (request.GameType == GameType.Unknown)
+            if (request.GameType == GameType.Unknown && string.IsNullOrWhiteSpace(request.LoadOrderPath))
             {
                 if (!IsCurrent(generation, token)) return;
                 _stateService.UpdateState(s => s with { CurrentGameType = GameType.Unknown });
@@ -90,6 +90,15 @@ public sealed class PluginRefreshCoordinator : IPluginRefreshCoordinator, IDispo
             var rows = ApplySkipListStatus(loadedPlugins, skipList, request.GameType, disableSkipLists: false, initialApproximation);
             _stateService.SetPluginsToClean(rows);
 
+            if (rows.Count == 0)
+            {
+                var message = _pluginLoadingService.IsGameSupportedByMutagen(request.GameType)
+                    ? $"No plugins discovered via Mutagen for {request.GameType}."
+                    : "No plugins found in the selected load order.";
+                Publish(new PluginRefreshStatus(PluginRefreshStatusKind.Idle, Message: message));
+                return;
+            }
+
             if (!_capabilityPolicy.SupportsIssueApproximation(request.GameType))
             {
                 Publish(new PluginRefreshStatus(PluginRefreshStatusKind.ApproximationUnavailable));
@@ -101,7 +110,24 @@ public sealed class PluginRefreshCoordinator : IPluginRefreshCoordinator, IDispo
                 .Where(plugin => !plugin.IsInSkipList)
                 .Select(plugin => new PluginRefreshTarget(plugin.FileName, plugin.FullPath))
                 .ToList();
-            await AnalyzeTargetsAsync(request.GameType, dataFolder, targets, generation, token).ConfigureAwait(false);
+            try
+            {
+                await AnalyzeTargetsAsync(request.GameType, dataFolder, targets, generation, token).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger?.Error(ex, "Failed to refresh plugin issue approximations");
+                foreach (var target in targets)
+                {
+                    if (!IsCurrent(generation, token)) return;
+                    _stateService.MergePluginApproximation(new PluginIssueApproximationResult
+                    {
+                        FileName = target.FileName,
+                        FullPath = target.FullPath,
+                        Approximation = PluginIssueApproximation.Unavailable
+                    });
+                }
+            }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
@@ -227,6 +253,12 @@ public sealed class PluginRefreshCoordinator : IPluginRefreshCoordinator, IDispo
 
     private async Task<IReadOnlyList<PluginInfo>> LoadPluginsAsync(PluginRefreshRequest request, CancellationToken ct)
     {
+        if (!string.IsNullOrWhiteSpace(request.LoadOrderPath))
+        {
+            return await _pluginLoadingService.GetPluginsFromFileAsync(request.LoadOrderPath, request.DataFolderPath, ct)
+                .ConfigureAwait(false);
+        }
+
         if (!_capabilityPolicy.SupportsPluginLoading(request.GameType))
         {
             return Array.Empty<PluginInfo>();
@@ -255,9 +287,12 @@ public sealed class PluginRefreshCoordinator : IPluginRefreshCoordinator, IDispo
 
     private async Task<List<string>> GetSkipListAsync(GameType gameType, CancellationToken ct)
     {
-        return _configurationService is null
-            ? []
-            : await _configurationService.GetSkipListAsync(gameType, ct: ct).ConfigureAwait(false);
+        if (_configurationService is null)
+        {
+            return [];
+        }
+
+        return await _configurationService.GetSkipListAsync(gameType, ct: ct).ConfigureAwait(false) ?? [];
     }
 
     private async Task<int> AnalyzeTargetsAsync(

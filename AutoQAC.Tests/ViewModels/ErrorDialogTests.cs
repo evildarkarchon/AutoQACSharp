@@ -282,18 +282,15 @@ public sealed class ErrorDialogTests
             _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>())
                 .Returns(new UserConfiguration { LoadOrder = new(), XEdit = new(), ModOrganizer = new(), Settings = new() });
 
-            // Return empty list
-            _pluginServiceMock.GetPluginsFromLoadOrderAsync(tempFile, Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            // Return empty list from the coordinator-backed load-order path.
+            _pluginLoadingServiceMock.GetPluginsFromFileAsync(tempFile, Arg.Any<string?>(), Arg.Any<CancellationToken>())
                 .Returns(new List<PluginInfo>());
 
             // Act
             await vm.Configuration.ConfigureLoadOrderCommand.ExecuteAsync(null);
 
             // Assert
-            await _messageDialogMock.Received(1).ShowWarningAsync(
-                    "No Plugins Found",
-                    Arg.Any<string>(),
-                    Arg.Any<string?>());
+            vm.Configuration.StatusText.Should().Contain("No plugins found");
         }
         finally
         {
@@ -317,8 +314,8 @@ public sealed class ErrorDialogTests
                     Arg.Any<string?>())
                 .Returns(tempFile);
 
-            // Throw IOException
-            _pluginServiceMock.GetPluginsFromLoadOrderAsync(tempFile, Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            // Throw IOException from the coordinator-backed load-order path.
+            _pluginLoadingServiceMock.GetPluginsFromFileAsync(tempFile, Arg.Any<string?>(), Arg.Any<CancellationToken>())
                 .ThrowsAsync(new IOException("File in use"));
 
             // Act

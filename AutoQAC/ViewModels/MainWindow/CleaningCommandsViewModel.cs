@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
@@ -67,7 +68,7 @@ public sealed partial class CleaningCommandsViewModel : ViewModelBase, IDisposab
         ICleaningOrchestrator orchestrator,
         IConfigurationService configService,
         IPluginLoadingService pluginLoadingService,
-        IPluginRefreshCoordinator pluginRefreshCoordinator,
+        IPluginRefreshCoordinator? pluginRefreshCoordinator,
         ILoggingService logger,
         IMessageDialogService messageDialog,
         IUiDispatcher uiDispatcher,
@@ -82,7 +83,7 @@ public sealed partial class CleaningCommandsViewModel : ViewModelBase, IDisposab
         _orchestrator = orchestrator;
         _configService = configService;
         _pluginLoadingService = pluginLoadingService;
-        _pluginRefreshCoordinator = pluginRefreshCoordinator;
+        _pluginRefreshCoordinator = pluginRefreshCoordinator ?? NoOpPluginRefreshCoordinator.Instance;
         _logger = logger;
         _messageDialog = messageDialog;
         _uiDispatcher = uiDispatcher;
@@ -448,5 +449,23 @@ public sealed partial class CleaningCommandsViewModel : ViewModelBase, IDisposab
 
     public void Dispose()
     {
+    }
+
+    private sealed class NoOpPluginRefreshCoordinator : IPluginRefreshCoordinator
+    {
+        public static NoOpPluginRefreshCoordinator Instance { get; } = new();
+
+        public IObservable<PluginRefreshStatus> StatusChanged => System.Reactive.Linq.Observable.Never<PluginRefreshStatus>();
+
+        public Task RefreshForGameAsync(PluginRefreshRequest request, CancellationToken ct = default) => Task.CompletedTask;
+
+        public Task RefreshSelectedApproximationsAsync(
+            PluginRefreshRequest request,
+            IReadOnlyList<PluginRefreshTarget> selectedTargets,
+            CancellationToken ct = default) => Task.CompletedTask;
+
+        public void CancelActiveRefresh(PluginRefreshCancelReason reason)
+        {
+        }
     }
 }
