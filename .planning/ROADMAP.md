@@ -197,7 +197,13 @@ Plans:
   2. User sees or receives a recoverable failure path when configuration persistence fails instead of silent logging-only fallback.
   3. Maintainer can verify watcher race cases deterministically for debounce, deferred reload, invalid YAML, and app-save interactions.
   4. User configuration changes avoid YAML serialization round-trips for in-memory cloning.
-**Plans**: TBD
+**Plans**: 5 plans
+Plans:
+- [ ] 10-01-PLAN.md — Manual deep-copy on UserConfiguration graph (PERF-03)
+- [ ] 10-02-PLAN.md — Persistence coordinator + file store seam + race-matrix tests (REF-03, TEST-03)
+- [ ] 10-03-PLAN.md — Wire IConfigurationService + ConfigWatcherService through coordinator; remove YAML clone (REF-03, TEST-03, PERF-03)
+- [ ] 10-04-PLAN.md — Pre-cleaning flush failure blocks xEdit launch (TEST-03)
+- [ ] 10-05-PLAN.md — Settings ViewModel typed-failure banner (REF-03)
 
 ### Phase 11: User-Facing Diagnostics Boundaries
 **Goal**: Users receive concise, actionable error messages while logs retain local troubleshooting value without unnecessary full path or command-line exposure.
