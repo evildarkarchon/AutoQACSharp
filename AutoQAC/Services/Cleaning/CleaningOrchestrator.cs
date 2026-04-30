@@ -53,10 +53,16 @@ public sealed class CleaningOrchestrator(
         {
             logger.Information("Starting cleaning workflow");
 
-            // Clean orphaned processes before starting.
-            await processService.CleanOrphanedProcessesAsync(ct).ConfigureAwait(false);
+            // Gap CR-01 fix: create the session CTS BEFORE any cancellable startup work so that
+            // StopCleaningAsync (which calls CancelSessionCts) can cancel orphan cleanup / preflight.
+            // Previously the CTS was created only after preflight returned, so a stop click during
+            // preflight was a no-op and xEdit could still launch.
+            var cts = CreateSessionCts(ct);
 
-            var preflightPlan = await preflight.PrepareAsync(ct).ConfigureAwait(false);
+            // Clean orphaned processes before starting.
+            await processService.CleanOrphanedProcessesAsync(cts.Token).ConfigureAwait(false);
+
+            var preflightPlan = await preflight.PrepareAsync(cts.Token).ConfigureAwait(false);
             context = context with { GameType = preflightPlan.DetectedGameType };
             var pluginsToClean = preflightPlan.PluginRows.Where(r => r.Decision == PreflightDecision.Clean).Select(r => r.Plugin).ToList();
             ThrowIfNoValidPluginsAfterFileValidation(preflightPlan);
@@ -65,8 +71,11 @@ public sealed class CleaningOrchestrator(
             stateService.UpdateState(s => s with { CurrentGameType = context.GameType });
             stateService.StartCleaning(pluginsToClean);
 
-            var cts = CreateSessionCts(ct);
             sessionDir = await backupCoordinator.BeginSessionAsync(preflightPlan, cts.Token).ConfigureAwait(false);
+
+            // Gap CR-01 fix: if the user requested Stop during orphan cleanup, preflight, state
+            // initialization, or backup session begin, bail out cleanly before launching xEdit.
+            cts.Token.ThrowIfCancellationRequested();
 
             // Process plugins SEQUENTIALLY (CRITICAL!) -- xEdit must never run in parallel.
             foreach (var plugin in pluginsToClean)
