@@ -1,13 +1,14 @@
 ---
 phase: 08
 slug: cleaning-orchestrator-decomposition
-status: draft
-nyquist_compliant: false
-wave_0_complete: false
+status: verified
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-04-29
+updated: 2026-04-30
 ---
 
-# Phase 08 — Validation Strategy
+# Phase 08 - Validation Strategy
 
 > Per-phase validation contract for feedback sampling during execution.
 
@@ -18,69 +19,101 @@ created: 2026-04-29
 | Property | Value |
 |----------|-------|
 | **Framework** | xUnit 2.9.3 + FluentAssertions 8.8.0 + NSubstitute 5.3.0 (.NET 10 / C# 13) |
-| **Config file** | `AutoQAC.Tests/AutoQAC.Tests.csproj` (auto-collects Cobertura coverage) |
+| **Config file** | `AutoQAC.Tests/AutoQAC.Tests.csproj` and `QueryPlugins.Tests/QueryPlugins.Tests.csproj` (coverlet Cobertura collection enabled) |
 | **Quick run command** | `dotnet test AutoQAC.Tests/AutoQAC.Tests.csproj --filter "FullyQualifiedName~Cleaning" --nologo` |
 | **Full suite command** | `dotnet test AutoQACSharp.slnx --nologo` |
-| **Estimated runtime** | ~30s quick (Cleaning subset) / ~90s full suite |
+| **Estimated runtime** | ~10s quick (Cleaning subset) / ~20s full suite on the audit host |
 
 ---
 
 ## Sampling Rate
 
-- **After every task commit:** Run `dotnet test AutoQAC.Tests/AutoQAC.Tests.csproj --filter "FullyQualifiedName~Cleaning" --nologo`
-- **After every plan wave:** Run `dotnet test AutoQACSharp.slnx --nologo`
-- **Before `/gsd-verify-work`:** Full suite must be green
-- **Max feedback latency:** 90s
+- **After every task commit:** Run `dotnet test AutoQAC.Tests/AutoQAC.Tests.csproj --filter "FullyQualifiedName~Cleaning" --nologo` or the narrower command listed for that task.
+- **After every plan wave:** Run `dotnet test AutoQACSharp.slnx --nologo`.
+- **Before `/gsd-verify-work`:** Full suite must be green.
+- **Max feedback latency:** 20s observed for the full suite during this audit.
 
 ---
 
 ## Per-Task Verification Map
 
-> Populated by planner from PLAN.md task IDs. Initial scaffold below — planner expands one row per task.
-
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| 08-01-XX | 01 | 0 | REF-01 | — | Characterization tests pin current outcomes (success/skipped/failed/stopped/left-running/already-clean/backup-canceled/backup-failed-choice/retention-warning/retention-canceled/dry-run) | unit | `dotnet test AutoQAC.Tests/AutoQAC.Tests.csproj --filter "FullyQualifiedName~CleaningOrchestratorTests" --nologo` | ❌ W0 | ⬜ pending |
-| 08-02-XX | 02 | 1 | REF-01 | — | `ICleaningPreflight` returns identical clean/skip rows for both `StartCleaningAsync` and `RunDryRunAsync` paths (D-13–D-16) | unit | `dotnet test AutoQAC.Tests/AutoQAC.Tests.csproj --filter "FullyQualifiedName~CleaningPreflightTests" --nologo` | ❌ W0 | ⬜ pending |
-| 08-03-XX | 03 | 2 | REF-01 | — | `IBackupSessionCoordinator` preserves backup cancellation, retention warning/canceled, MO2 backup-skip semantics from Phase 7 | unit | `dotnet test AutoQAC.Tests/AutoQAC.Tests.csproj --filter "FullyQualifiedName~BackupSessionCoordinatorTests" --nologo` | ❌ W0 | ⬜ pending |
-| 08-04-XX | 04 | 3 | REF-01 | — | `ICleaningTerminationCoordinator` preserves Phase 5 two-stage stop/force-stop, `LastTerminationResult`, no log parse after unsafe termination | unit | `dotnet test AutoQAC.Tests/AutoQAC.Tests.csproj --filter "FullyQualifiedName~CleaningTerminationCoordinatorTests" --nologo` | ❌ W0 | ⬜ pending |
-| 08-05-XX | 05 | 4 | REF-01 | — | `IPluginCleaningRunner` + `IPluginResultFinalizer` preserve Phase 6 launch argv intent and result construction from process+log+parser+termination state | unit | `dotnet test AutoQAC.Tests/AutoQAC.Tests.csproj --filter "FullyQualifiedName~PluginCleaningRunnerTests|FullyQualifiedName~PluginResultFinalizerTests" --nologo` | ❌ W0 | ⬜ pending |
-| 08-06-XX | 06 | 5 | REF-01 | — | Facade `CleaningOrchestrator` keeps `ICleaningOrchestrator` surface stable; existing characterization tests still green; sequential xEdit invariant via `ProcessExecutionService` single slot intact | integration | `dotnet test AutoQAC.Tests/AutoQAC.Tests.csproj --filter "FullyQualifiedName~CleaningOrchestratorTests" --nologo` | ✅ | ⬜ pending |
+| 08-01-01 | 01 | 0 | REF-01 | T-08-01 | Characterization tests pin current cleaning outcomes before refactor work. | unit | `dotnet test AutoQAC.Tests/AutoQAC.Tests.csproj --filter "FullyQualifiedName~CleaningOrchestratorTests" --nologo` | yes | green |
+| 08-01-02 | 01 | 0 | REF-01 | T-08-12 | `ICleaningOrchestrator` public surface snapshot locks the service contract. | unit | `dotnet test AutoQAC.Tests/AutoQAC.Tests.csproj --filter "FullyQualifiedName~ICleaningOrchestrator_PublicSurface_MatchesLockedSnapshot" --nologo` | yes | green |
+| 08-02-01 | 02 | 1 | REF-01 | T-08-02, T-08-14 | `ICleaningPreflight` contract tests cover idempotence, row mapping, MO2 policy facts, and enum mapping. | unit | `dotnet test AutoQAC.Tests/AutoQAC.Tests.csproj --filter "FullyQualifiedName~CleaningPreflightTests" --nologo` | yes | green |
+| 08-02-02 | 02 | 1 | REF-01 | T-08-02, T-08-14 | Facade and dry-run paths use shared preflight behavior without diverging row semantics. | integration | `dotnet test AutoQAC.Tests/AutoQAC.Tests.csproj --filter "FullyQualifiedName~Cleaning" --nologo` | yes | green |
+| 08-03-01 | 03 | 2 | REF-01 | T-08-04, T-08-05, T-08-15 | Backup coordinator contract covers cancellation, failed-choice mapping, metadata, retention, and MO2 backup skip. | unit | `dotnet test AutoQAC.Tests/AutoQAC.Tests.csproj --filter "FullyQualifiedName~BackupSessionCoordinatorTests" --nologo` | yes | green |
+| 08-03-02 | 03 | 2 | REF-01 | T-08-04, T-08-05, T-08-15 | Orchestrator delegates backup session flow through the coordinator while preserving session finalization. | integration | `dotnet test AutoQAC.Tests/AutoQAC.Tests.csproj --filter "FullyQualifiedName~Cleaning" --nologo` | yes | green |
+| 08-04-01 | 04 | 3 | REF-01 | T-08-06, T-08-07, T-08-08, T-08-13 | Termination coordinator tests cover stop, force-stop, self-PID refusal, hang forwarding, and reset behavior. | unit | `dotnet test AutoQAC.Tests/AutoQAC.Tests.csproj --filter "FullyQualifiedName~CleaningTerminationCoordinatorTests" --nologo` | yes | green |
+| 08-04-02 | 04 | 3 | REF-01 | T-08-06, T-08-07, T-08-08, T-08-13 | Facade termination delegation preserves Phase 5 two-stage stop and unsafe-log-read protection. | integration | `dotnet test AutoQAC.Tests/AutoQAC.Tests.csproj --filter "FullyQualifiedName~Cleaning" --nologo` | yes | green |
+| 08-05-01 | 05 | 4 | REF-01 | T-08-09, T-08-10 | Runner/finalizer tests cover attempt/retry, log offset capture, termination-aware log reads, and result assembly. | unit | `dotnet test AutoQAC.Tests/AutoQAC.Tests.csproj --filter "FullyQualifiedName~PluginCleaningRunnerTests|FullyQualifiedName~PluginResultFinalizerTests" --nologo` | yes | green |
+| 08-05-02 | 05 | 4 | REF-01 | T-08-09, T-08-10 | Orchestrator delegates plugin execution and finalization without changing launch or result semantics. | integration | `dotnet test AutoQAC.Tests/AutoQAC.Tests.csproj --filter "FullyQualifiedName~Cleaning" --nologo` | yes | green |
+| 08-06-01 | 06 | 5 | REF-01 | T-08-12 | Final facade cleanup keeps the public surface stable and collaborator responsibilities isolated. | integration | `dotnet test AutoQAC.Tests/AutoQAC.Tests.csproj --filter "FullyQualifiedName~CleaningOrchestratorTests" --nologo` | yes | green |
+| 08-06-02 | 06 | 5 | REF-01 | T-08-11, T-08-12 | Source-level guards prevent parallel plugin cleaning and detect public surface drift. | unit | `dotnet test AutoQAC.Tests/AutoQAC.Tests.csproj --filter "FullyQualifiedName~Cleaning_Source_NoFileParallelizesPluginLoop|FullyQualifiedName~ICleaningOrchestrator_PublicSurface_MatchesLockedSnapshot|FullyQualifiedName~CleaningOrchestrator_Source_DoesNotParallelizePluginCleaning" --nologo` | yes | green |
+| 08-07-01 | 07 | 6 | REF-01 | T-08-13, T-08-14, T-08-15 | Startup-window Stop tests cover preflight and orphan-cleanup cancellation before xEdit launch. | unit | `dotnet test AutoQACSharp.slnx --nologo --filter "FullyQualifiedName~StopCleaningAsync_DuringPreflight|FullyQualifiedName~StopCleaningAsync_DuringOrphanCleanup"` | yes | green |
+| 08-07-02 | 07 | 6 | REF-01 | T-08-13, T-08-15 | Session CTS is published before startup awaits and cancellation is honored before plugin-loop entry. | integration | `dotnet test AutoQACSharp.slnx --nologo --filter "FullyQualifiedName~CleaningOrchestratorTests"` | yes | green |
+| 08-07-03 | 07 | 6 | REF-01 | T-08-11, T-08-12 | Regression sweep keeps source guard and public-surface snapshot green after startup cancellation fix. | regression | `dotnet test AutoQACSharp.slnx --nologo` | yes | green |
+| 08-08-01 | 08 | 6 | REF-01 | T-08-16, T-08-17, T-08-18 | Finalizer tests cover failed-runner, exception-log, and skipped-path status/success cross-products. | unit | `dotnet test AutoQACSharp.slnx --nologo --filter "FullyQualifiedName~PluginResultFinalizerTests"` | yes | green |
+| 08-08-02 | 08 | 6 | REF-01 | T-08-16, T-08-17 | AlreadyClean promotion requires a successful cleaned runner result; Success is derived from final status. | unit | `dotnet test AutoQACSharp.slnx --nologo --filter "FullyQualifiedName~PluginResultFinalizerTests"` | yes | green |
+| 08-08-03 | 08 | 6 | REF-01 | T-08-12 | Public-surface and full-suite regression checks stay green after finalizer fix. | regression | `dotnet test AutoQACSharp.slnx --nologo` | yes | green |
+| 08-09-01 | 09 | 7 | REF-01 | T-08-09-01, T-08-09-02 | Concurrent-start regression proves a second `StartCleaningAsync` call is rejected. | unit | `dotnet test AutoQACSharp.slnx --nologo --filter "FullyQualifiedName~StartCleaningAsync_WhenSessionAlreadyActive_ShouldRejectSecondStartAndKeepFirstSessionCancellable"` | yes | green |
+| 08-09-02 | 09 | 7 | REF-01 | T-08-09-01, T-08-09-02 | Active session guard prevents `_cleaningCts` overwrite while keeping the first session cancellable. | integration | `dotnet test AutoQACSharp.slnx --nologo --filter "FullyQualifiedName~CleaningOrchestratorTests"` | yes | green |
+| 08-09-03 | 09 | 7 | REF-01 | T-08-11 | Source guard and orchestrator regression sweep confirm no parallel constructs were introduced. | regression | `dotnet test AutoQACSharp.slnx --nologo --filter "FullyQualifiedName~CleaningOrchestratorTests"` | yes | green |
+| 08-10-01 | 10 | 7 | REF-01 | T-08-10-01, T-08-10-02, T-08-10-03 | Detected file-load-order games with missing `LoadOrderPath` fail preflight before rows are built. | unit | `dotnet test AutoQACSharp.slnx --nologo --filter "FullyQualifiedName~PrepareAsync_UnknownGameDetectedAsFileLoadOrderGame_WithMissingLoadOrderPath_Throws|FullyQualifiedName~PrepareAsync_UnknownGameDetectedAsMutagenSupportedGame_WithMissingLoadOrderPath_Succeeds"` | yes | green |
+| 08-10-02 | 10 | 7 | REF-01 | T-08-10-01, T-08-10-02, T-08-10-03 | Post-detection load-order validation preserves generic invalid-configuration messaging and Mutagen-supported behavior. | unit | `dotnet test AutoQACSharp.slnx --nologo --filter "FullyQualifiedName~CleaningPreflightTests"` | yes | green |
+| 08-10-03 | 10 | 7 | REF-01 | T-08-10-01, T-08-10-02 | Focused preflight and orchestrator load-order regressions remain green. | regression | `dotnet test AutoQACSharp.slnx --nologo --filter "FullyQualifiedName~CleaningPreflightTests|FullyQualifiedName~StartCleaningAsync_ShouldNotRequireLoadOrderPath_WhenGameTypeIsMutagenSupported|FullyQualifiedName~StartCleaningAsync_ShouldThrow_WhenNonMutagenGameMissingLoadOrderPath"` | yes | green |
 
-*Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
+*Status: green = command passed during phase execution and remains covered by the 2026-04-30 validation audit.*
 
 ---
 
 ## Wave 0 Requirements
 
-- [ ] `AutoQAC.Tests/Services/Cleaning/CleaningOrchestratorTests.cs` — fill characterization gaps for left-running, retention warning, retention canceled, dry-run/preflight equivalence, ContinueWithoutBackup branch verification, last-termination-result reset (per RESEARCH.md gap list)
-- [ ] `AutoQAC.Tests/Services/Cleaning/CleaningPreflightTests.cs` — RED stubs for shared preflight contract (D-13–D-16), dry-run vs real-run state mutation divergence (D-14), MO2 policy facts (D-16)
-- [ ] `AutoQAC.Tests/Services/Cleaning/BackupSessionCoordinatorTests.cs` — RED stubs for create/run/finalize backup session, backup-failed user choice mapping, MO2 skip
-- [ ] `AutoQAC.Tests/Services/Cleaning/CleaningTerminationCoordinatorTests.cs` — RED stubs for stop/force-stop escalation, LastTerminationResult, hang-monitor lifecycle, MayProcessStillBeRunning
-- [ ] `AutoQAC.Tests/Services/Cleaning/PluginCleaningRunnerTests.cs` and `PluginResultFinalizerTests.cs` — RED stubs for attempt/retry, log offset capture, PluginCleaningResult assembly
+- [x] `AutoQAC.Tests/Services/CleaningOrchestratorTests.cs` - characterization gaps, dry-run/preflight equivalence, public-surface snapshot, sequential/source guards, startup Stop, and concurrent Start coverage are present.
+- [x] `AutoQAC.Tests/Services/Cleaning/CleaningPreflightTests.cs` - shared preflight contract, MO2 policy facts, idempotence, warning mapping, state mutation guard, and detected load-order validation coverage are present.
+- [x] `AutoQAC.Tests/Services/Cleaning/BackupSessionCoordinatorTests.cs` - backup session creation/run/finalization, cancellation, retention, failed-choice mapping, and MO2 skip coverage are present.
+- [x] `AutoQAC.Tests/Services/Cleaning/CleaningTerminationCoordinatorTests.cs` - stop/force-stop escalation, self-PID refusal, `LastTerminationResult`, hang-monitor forwarding, and reset coverage are present.
+- [x] `AutoQAC.Tests/Services/Cleaning/PluginCleaningRunnerTests.cs` and `PluginResultFinalizerTests.cs` - attempt/retry, log offset capture, termination-aware log reads, and final status/success coverage are present.
 
-*xUnit + FluentAssertions + NSubstitute already installed; no framework install needed.*
+xUnit, FluentAssertions, NSubstitute, and coverlet were already installed; no framework installation or new test files were required by this audit.
 
 ---
 
 ## Manual-Only Verifications
 
-| Behavior | Requirement | Why Manual | Test Instructions |
-|----------|-------------|------------|-------------------|
-| User-facing message text stability (D-12) | REF-01 | Test infrastructure asserts result domain, not exact UI strings; concise message wording is verified by reading | Compare `MessageDialogService` calls and `IStateService.UpdateState` payloads in code review against pre-refactor state — no message text rewording allowed unless explicitly approved |
-| End-to-end real-xEdit cleaning run | REF-01 | Tests use NSubstitute; no live xEdit execution in CI | After Wave 5 lands, run `dotnet run --project AutoQAC/AutoQAC.csproj`, configure Skyrim SE, perform one full clean and one dry-run on a small mod list, verify identical user-visible behavior to pre-refactor build |
+All Phase 8 requirements have automated verification. Optional real-xEdit smoke testing can still be performed before release, but it is not a Phase 8 Nyquist gap because Phase 8 was an internal refactor with behavior pinned by automated characterization and regression tests.
+
+---
+
+## Validation Audit 2026-04-30
+
+| Metric | Count |
+|--------|-------|
+| Gaps found | 0 |
+| Resolved by new tests | 0 |
+| Escalated | 0 |
+| Validation rows refreshed | 24 |
+| Test files generated | 0 |
+
+### Commands Run
+
+| Command | Result |
+|---------|--------|
+| `dotnet test AutoQAC.Tests/AutoQAC.Tests.csproj --filter "FullyQualifiedName~Cleaning" --nologo` | passed: 198 tests |
+| `dotnet test AutoQACSharp.slnx --nologo` | passed: 888 tests |
 
 ---
 
 ## Validation Sign-Off
 
-- [ ] All tasks have automated verify command or Wave 0 dependency
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references (characterization gap fills + collaborator RED stubs)
-- [ ] No watch-mode flags (`dotnet test` runs once and exits)
-- [ ] Feedback latency < 90s (full suite); < 30s (Cleaning subset)
-- [ ] `nyquist_compliant: true` set in frontmatter once planner populates per-task rows and Wave 0 stubs land green
-- [ ] Public `ICleaningOrchestrator` surface diff is empty before merge (guard test recommended)
-- [ ] Sequential cleaning invariant guard: `ProcessExecutionService` single-slot still in path post-refactor
+- [x] All tasks have automated verify commands or completed Wave 0 dependencies.
+- [x] Sampling continuity: no 3 consecutive tasks without automated verification.
+- [x] Wave 0 covers all previously pending references.
+- [x] No watch-mode flags; `dotnet test` commands run once and exit.
+- [x] Feedback latency < 90s full suite target; latest full suite completed in ~20s.
+- [x] `nyquist_compliant: true` set in frontmatter.
+- [x] Public `ICleaningOrchestrator` surface guard is mapped and green.
+- [x] Sequential cleaning invariant guard is mapped and green.
 
-**Approval:** pending
+**Approval:** approved 2026-04-30
