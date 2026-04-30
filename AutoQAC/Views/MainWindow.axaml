@@ -269,27 +269,42 @@
                     CornerRadius="4"
                     Margin="0,10,0,10">
                 <Grid RowDefinitions="Auto,*">
-                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto">
+                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto">
                         <TextBlock Grid.Column="0"
                                    Text="Plugins to Clean"
                                    FontSize="14" FontWeight="SemiBold"
                                    Margin="10,5"
                                    VerticalAlignment="Center" />
                         <Button Grid.Column="1"
+                                Content="Refresh selected approximations"
+                                Command="{Binding PluginList.RefreshSelectedApproximationsCommand}"
+                                Margin="5,5,2,5"
+                                Padding="8,3"
+                                FontSize="11"
+                                ToolTip.Tip="Refresh issue approximations for checked visible plugins" />
+                        <Button Grid.Column="2"
+                                Content="Cancel refresh"
+                                Command="{Binding PluginList.CancelApproximationRefreshCommand}"
+                                IsVisible="{Binding PluginList.IsApproximationRefreshRunning}"
+                                Margin="2,5,5,5"
+                                Padding="8,3"
+                                FontSize="11"
+                                ToolTip.Tip="Cancel the active approximation refresh" />
+                        <Button Grid.Column="3"
                                 Content="All"
                                 Command="{Binding PluginList.SelectAllCommand}"
                                 Margin="5,5,2,5"
                                 Padding="8,3"
                                 FontSize="11"
                                 ToolTip.Tip="Select all plugins" />
-                        <Button Grid.Column="2"
+                        <Button Grid.Column="4"
                                 Content="None"
                                 Command="{Binding PluginList.DeselectAllCommand}"
                                 Margin="2,5,5,5"
                                 Padding="8,3"
                                 FontSize="11"
                                 ToolTip.Tip="Deselect all plugins" />
-                        <Button Grid.Column="3"
+                        <Button Grid.Column="5"
                                 Content="Manage Skip List"
                                 Command="{Binding Commands.ShowSkipListCommand}"
                                 Margin="5"
