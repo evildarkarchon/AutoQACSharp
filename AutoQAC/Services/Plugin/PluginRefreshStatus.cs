@@ -9,6 +9,7 @@ public enum PluginRefreshStatusKind
     LoadingPlugins,
     AnalyzingSelected,
     SelectedRefreshCompleted,
+    FullRefreshCompleted,
     SelectPlugins,
     Canceled,
     ApproximationUnavailable
@@ -60,6 +61,14 @@ public sealed record PluginRefreshStatus(
         new(PluginRefreshStatusKind.SelectedRefreshCompleted, UpdatedCount: count);
 
     /// <summary>
+    /// Creates a full-list refresh completion status carrying the count of plugin approximations updated.
+    /// </summary>
+    /// <param name="count">Number of plugin approximations updated during the full refresh.</param>
+    /// <returns>A completed status for full-list approximation refresh.</returns>
+    public static PluginRefreshStatus FullRefreshCompleted(int count) =>
+        new(PluginRefreshStatusKind.FullRefreshCompleted, UpdatedCount: count);
+
+    /// <summary>
     /// Converts the typed status to the current canonical user-facing text.
     /// This keeps status wording stable until ViewModels take over localized or richer mapping.
     /// </summary>
@@ -68,6 +77,7 @@ public sealed record PluginRefreshStatus(
     {
         PluginRefreshStatusKind.AnalyzingSelected => $"Analyzing {Current} of {Total} selected plugins.",
         PluginRefreshStatusKind.SelectedRefreshCompleted => $"Updated {UpdatedCount} selected plugin approximations.",
+        PluginRefreshStatusKind.FullRefreshCompleted => $"Refreshed {UpdatedCount} plugin approximations.",
         PluginRefreshStatusKind.SelectPlugins => "Select plugins to refresh.",
         PluginRefreshStatusKind.Canceled => "Approximation refresh canceled.",
         PluginRefreshStatusKind.ApproximationUnavailable => "Approximation refresh is not available for this game.",

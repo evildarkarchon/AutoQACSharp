@@ -112,7 +112,13 @@ public sealed class PluginRefreshCoordinator : IPluginRefreshCoordinator, IDispo
                 .ToList();
             try
             {
-                await AnalyzeTargetsAsync(request.GameType, dataFolder, targets, generation, token).ConfigureAwait(false);
+                var updated = await AnalyzeTargetsAsync(request.GameType, dataFolder, targets, generation, token).ConfigureAwait(false);
+                if (IsCurrent(generation, token))
+                {
+                    // Publish terminal status so PluginListViewModel can clear IsApproximationRefreshRunning
+                    // and the cancel-refresh affordance disables. Superseded generations stay silent (per D-10).
+                    Publish(PluginRefreshStatus.FullRefreshCompleted(updated));
+                }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
