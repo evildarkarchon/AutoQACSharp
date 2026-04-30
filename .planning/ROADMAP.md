@@ -135,7 +135,7 @@ Plans:
 - [x] 08-03-PLAN.md — Extract IBackupSessionCoordinator (D-06); coordinator owns backup CTS lifecycle, BackupPluginAsync/CleanupOldSessionsAsync helpers, and PluginBackupOutcome dispatch model.
 
 **Wave 3 (blocked on Wave 2 completion; HIGHEST RISK — Phase 5 lock surface)**
-- [ ] 08-04-PLAN.md — Extract ICleaningTerminationCoordinator (D-08); coordinator owns _currentProcess, _processLock, _isStopRequested, _lastTerminationResult, hang-monitor, and Phase 5 stop/force-stop semantics.
+- [x] 08-04-PLAN.md — Extract ICleaningTerminationCoordinator (D-08); coordinator owns _currentProcess, _processLock, _isStopRequested, _lastTerminationResult, hang-monitor, and Phase 5 stop/force-stop semantics.
 
 **Wave 4 (blocked on Wave 3 completion)**
 - [ ] 08-05-PLAN.md — Extract IPluginCleaningRunner + IPluginResultFinalizer (D-07); runner owns retry/launch/offset capture, finalizer owns log read + result construction.

@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: Cleanup
 status: executing
 stopped_at: Phase 8 context gathered
-last_updated: "2026-04-30T02:03:05.312Z"
+last_updated: "2026-04-30T02:11:43.434Z"
 last_activity: 2026-04-30
 progress:
   total_phases: 7
   completed_phases: 3
   total_plans: 28
-  completed_plans: 25
-  percent: 89
+  completed_plans: 26
+  percent: 93
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-04-28)
 ## Current Position
 
 Phase: 08 (cleaning-orchestrator-decomposition) — EXECUTING
-Plan: 4 of 6
+Plan: 5 of 6
 Status: Ready to execute
 Last activity: 2026-04-30
 
-Progress: [█████████░] 89%
+Progress: [█████████░] 93%
 
 ## Performance Metrics
 
@@ -71,6 +71,7 @@ Progress: [█████████░] 89%
 | Phase 08 P01 | 20 min | 2 tasks | 4 files |
 | Phase 08 P02 | 7 min | 2 tasks | 8 files |
 | Phase 08 P03 | 5 min | 2 tasks | 8 files |
+| Phase 08 P04 | 6 min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -139,6 +140,9 @@ Progress: [█████████░] 89%
 - [Phase 08]: BackupSessionCoordinator owns backup-operation CTS/lock state while CleaningOrchestrator retains the xEdit-active guard before delegating CancelBackupOperationAsync. — Plan 08-03 extracted backup lifecycle while preserving the current facade-owned xEdit active-process gate.
 - [Phase 08]: AbortSession remains facade-owned through PluginBackupOutcomeKind.AbortSession. — The coordinator returns the outcome and the facade writes partial metadata, publishes results, logs the session summary, and returns.
 - [Phase 08]: Backup entries are constructed in BackupSessionCoordinator from BackupCreateResult plus PluginInfo. — The current IBackupService contract returns backup status/bytes/reason rather than a BackupPluginEntry, so the coordinator preserves existing entry construction without changing IBackupService.
+- [Phase 08]: CleaningTerminationCoordinator owns all active process, stop escalation, termination result, and hang observable state while CleaningOrchestrator retains only session CTS lifetime. — Plan 08-04 extracted termination state into the coordinator while preserving session CTS lifetime in the facade.
+- [Phase 08]: CleaningOrchestrator remains the Stop/ForceStop facade that cancels the session CTS first, then delegates process termination to the coordinator. — This preserves the Phase 5 cancellation ordering while avoiding coordinator ownership of session CTS.
+- [Phase 08]: Wave 3 keeps the per-plugin onProcessStarted lambda inline and changes only its body to call terminationCoordinator.AttachProcess; delegate hoisting remains deferred to 08-05. — This honors R-04 by avoiding duplicate lambda extraction across waves.
 
 ### Pending Todos
 
@@ -157,6 +161,6 @@ Progress: [█████████░] 89%
 
 ## Session Continuity
 
-Last session: 2026-04-30T02:02:50.623Z
+Last session: 2026-04-30T02:11:22.599Z
 Stopped at: Phase 8 context gathered
 Resume file: None
