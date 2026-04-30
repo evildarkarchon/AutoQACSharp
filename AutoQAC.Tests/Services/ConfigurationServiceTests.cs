@@ -5,6 +5,7 @@ using AutoQAC.Services.Configuration;
 using FluentAssertions;
 using NSubstitute;
 using System.Collections.Concurrent;
+using System.Reactive.Subjects;
 
 namespace AutoQAC.Tests.Services;
 
@@ -48,11 +49,86 @@ public sealed class ConfigurationServiceTests : IDisposable
         // Act
         var config = await service.LoadUserConfigAsync();
         // Flush debounced save to disk so file exists for assertion
-        await service.FlushPendingSavesAsync();
+        var flushResult = await service.FlushPendingSavesAsync();
 
         // Assert
         config.Should().NotBeNull();
+        flushResult.Status.Should().Be(
+            ConfigPersistenceStatusKind.Success,
+            because: "D-05 forced flush returns typed success result");
         File.Exists(expectedPath).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task FlushPendingSavesAsync_NoPending_ReturnsNoOp()
+    {
+        // Arrange
+        var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
+
+        // Act
+        var result = await service.FlushPendingSavesAsync();
+
+        // Assert
+        result.Status.Should().Be(
+            ConfigPersistenceStatusKind.NoOp,
+            because: "D-05 typed flush results let callers distinguish no-op barriers from persisted writes");
+    }
+
+    [Fact]
+    public void Failures_ExposesCoordinatorFailureStream()
+    {
+        // Arrange
+        var coordinator = Substitute.For<IConfigPersistenceCoordinator>();
+        var failures = new Subject<ConfigPersistenceFailure>();
+        var persistenceResults = new Subject<ConfigPersistenceResult>();
+        var acceptedConfigs = new Subject<UserConfiguration>();
+        var failure = new ConfigPersistenceFailure(
+            ConfigPersistenceOperationKind.Flush,
+            ConfigPersistenceFailureKind.WriteFailed,
+            "Could not write settings file (write_failed)",
+            null,
+            42);
+        coordinator.Failures.Returns(failures);
+        coordinator.PersistenceResults.Returns(persistenceResults);
+        coordinator.ConfigurationAccepted.Returns(acceptedConfigs);
+        coordinator.StartAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+
+        using var service = new ConfigurationService(coordinator, Substitute.For<ILoggingService>(), _testDirectory);
+        ConfigPersistenceFailure? observed = null;
+        using var subscription = service.Failures.Subscribe(value => observed = value);
+
+        // Act
+        failures.OnNext(failure);
+
+        // Assert
+        observed.Should().BeSameAs(
+            failure,
+            because: "D-24 exposes the coordinator's safe recoverable failure stream without transformation");
+    }
+
+    [Fact]
+    public void LastFailure_ReturnsCoordinatorSnapshot()
+    {
+        // Arrange
+        var coordinator = Substitute.For<IConfigPersistenceCoordinator>();
+        var failure = new ConfigPersistenceFailure(
+            ConfigPersistenceOperationKind.Reload,
+            ConfigPersistenceFailureKind.InvalidExternalYaml,
+            "Invalid settings YAML was rejected (invalid_external_yaml)",
+            null,
+            7);
+        coordinator.Failures.Returns(new Subject<ConfigPersistenceFailure>());
+        coordinator.PersistenceResults.Returns(new Subject<ConfigPersistenceResult>());
+        coordinator.ConfigurationAccepted.Returns(new Subject<UserConfiguration>());
+        coordinator.LastFailure.Returns(failure);
+        coordinator.StartAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+
+        using var service = new ConfigurationService(coordinator, Substitute.For<ILoggingService>(), _testDirectory);
+
+        // Act / Assert
+        service.LastFailure.Should().BeSameAs(
+            failure,
+            because: "D-27 requires the public configuration facade to expose the coordinator's current failure snapshot");
     }
 
     [Fact]
