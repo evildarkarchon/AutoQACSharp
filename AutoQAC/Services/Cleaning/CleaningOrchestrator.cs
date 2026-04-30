@@ -125,16 +125,9 @@ public sealed class CleaningOrchestrator(
             DisposeSessionCts();
         }
 
-        async Task<bool> ProcessPluginAsync(
-            PluginInfo plugin,
-            CleaningPreflightPlan preflightPlan,
-            string? sessionDir,
-            List<BackupPluginEntry> backupEntries,
-            TimeoutRetryCallback? onTimeout,
-            BackupFailureCallback? onBackupFailure,
-            int maxRetryAttempts,
-            SessionContext contextSnapshot,
-            CancellationToken ct)
+        async Task<bool> ProcessPluginAsync(PluginInfo plugin, CleaningPreflightPlan preflightPlan, string? sessionDir,
+            List<BackupPluginEntry> backupEntries, TimeoutRetryCallback? onTimeout, BackupFailureCallback? onBackupFailure,
+            int maxRetryAttempts, SessionContext contextSnapshot, CancellationToken ct)
         {
             logger.Information("Processing plugin: {Plugin}", plugin.FileName);
             stateService.UpdateState(s => s with { CurrentPlugin = plugin.FileName });
@@ -167,12 +160,8 @@ public sealed class CleaningOrchestrator(
             return true;
         }
 
-        async Task<PluginLoopDecision> HandleBackupOutcomeAsync(
-            PluginInfo plugin,
-            string sessionDir,
-            List<BackupPluginEntry> backupEntries,
-            BackupFailureCallback? onBackupFailure,
-            SessionContext contextSnapshot,
+        async Task<PluginLoopDecision> HandleBackupOutcomeAsync(PluginInfo plugin, string sessionDir,
+            List<BackupPluginEntry> backupEntries, BackupFailureCallback? onBackupFailure, SessionContext contextSnapshot,
             CancellationToken ct)
         {
             var outcome = await backupCoordinator.RunPluginBackupAsync(plugin, sessionDir, onBackupFailure, ct).ConfigureAwait(false);
@@ -262,11 +251,7 @@ public sealed class CleaningOrchestrator(
     /// <summary>Creates the session CTS linked to the caller token and publishes it under the facade lock.</summary>
     private CancellationTokenSource CreateSessionCts(CancellationToken ct)
     {
-        lock (_ctsLock)
-        {
-            _cleaningCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            return _cleaningCts;
-        }
+        lock (_ctsLock) { _cleaningCts = CancellationTokenSource.CreateLinkedTokenSource(ct); return _cleaningCts; }
     }
 
     /// <summary>Cancels the current session CTS before delegating stop behavior to the termination coordinator.</summary>
@@ -287,11 +272,7 @@ public sealed class CleaningOrchestrator(
     /// <summary>Disposes and clears the session CTS owned by the facade.</summary>
     private void DisposeSessionCts()
     {
-        lock (_ctsLock)
-        {
-            _cleaningCts?.Dispose();
-            _cleaningCts = null;
-        }
+        lock (_ctsLock) { _cleaningCts?.Dispose(); _cleaningCts = null; }
     }
 
     /// <summary>Builds the final session result, publishes it, and logs the legacy session summary.</summary>
@@ -299,12 +280,8 @@ public sealed class CleaningOrchestrator(
     {
         var session = new CleaningSessionResult
         {
-            StartTime = context.StartTime,
-            EndTime = DateTime.Now,
-            GameType = context.GameType,
-            WasCancelled = context.WasCancelled,
-            PluginResults = context.Results,
-            BackupCleanup = context.BackupCleanup
+            StartTime = context.StartTime, EndTime = DateTime.Now, GameType = context.GameType,
+            WasCancelled = context.WasCancelled, PluginResults = context.Results, BackupCleanup = context.BackupCleanup
         };
         stateService.FinishCleaningWithResults(session);
         LogSessionSummary(session);
@@ -315,14 +292,10 @@ public sealed class CleaningOrchestrator(
         ? new DryRunResult(row.Plugin.FileName, DryRunStatus.WillClean, "Ready for cleaning")
         : new DryRunResult(row.Plugin.FileName, DryRunStatus.WillSkip, row.SkipReason switch
         {
-            PreflightSkipReason.NotSelected => "Not selected",
-            PreflightSkipReason.InSkipList => "In skip list",
-            PreflightSkipReason.FileNotFound => "File not found",
-            PreflightSkipReason.Unreadable => "File is unreadable",
-            PreflightSkipReason.ZeroByte => "Zero-byte file",
-            PreflightSkipReason.MalformedEntry => "Malformed file name",
-            PreflightSkipReason.InvalidExtension => "Invalid file extension",
-            _ => "Skipped"
+            PreflightSkipReason.NotSelected => "Not selected", PreflightSkipReason.InSkipList => "In skip list",
+            PreflightSkipReason.FileNotFound => "File not found", PreflightSkipReason.Unreadable => "File is unreadable",
+            PreflightSkipReason.ZeroByte => "Zero-byte file", PreflightSkipReason.MalformedEntry => "Malformed file name",
+            PreflightSkipReason.InvalidExtension => "Invalid file extension", _ => "Skipped"
         });
 
     /// <summary>Preserves the legacy real-run failure when all selected plugins fail file validation.</summary>
@@ -343,12 +316,9 @@ public sealed class CleaningOrchestrator(
     /// <summary>Converts a file-validation preflight reason to the legacy warning label used in exception summaries.</summary>
     private static string MapReasonToPluginWarningLabel(PreflightSkipReason reason) => reason switch
     {
-        PreflightSkipReason.FileNotFound => nameof(PluginWarningKind.NotFound),
-        PreflightSkipReason.Unreadable => nameof(PluginWarningKind.Unreadable),
-        PreflightSkipReason.ZeroByte => nameof(PluginWarningKind.ZeroByte),
-        PreflightSkipReason.MalformedEntry => nameof(PluginWarningKind.MalformedEntry),
-        PreflightSkipReason.InvalidExtension => nameof(PluginWarningKind.InvalidExtension),
-        _ => reason.ToString()
+        PreflightSkipReason.FileNotFound => nameof(PluginWarningKind.NotFound), PreflightSkipReason.Unreadable => nameof(PluginWarningKind.Unreadable),
+        PreflightSkipReason.ZeroByte => nameof(PluginWarningKind.ZeroByte), PreflightSkipReason.MalformedEntry => nameof(PluginWarningKind.MalformedEntry),
+        PreflightSkipReason.InvalidExtension => nameof(PluginWarningKind.InvalidExtension), _ => reason.ToString()
     };
 
     private void LogSessionSummary(CleaningSessionResult session)
