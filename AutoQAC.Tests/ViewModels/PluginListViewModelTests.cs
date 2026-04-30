@@ -187,6 +187,38 @@ public sealed class PluginListViewModelTests
     }
 
     [Fact]
+    public void OnPluginRefreshStatusChanged_WhenFullRefreshCompletedPublished_ClearsRunningFlag()
+    {
+        var stateService = new StateService();
+        var coordinator = new RecordingPluginRefreshCoordinator();
+        var vm = new PluginListViewModel(
+            stateService,
+            coordinator,
+            new FixedPluginRefreshCapabilityPolicy(supportsApproximation: true));
+        try
+        {
+            // Simulate a full-list refresh in progress.
+            coordinator.PublishStatus(new PluginRefreshStatus(PluginRefreshStatusKind.LoadingPlugins));
+            vm.IsApproximationRefreshRunning.Should().BeTrue(
+                "LoadingPlugins is part of the running set");
+
+            // Coordinator now publishes the new terminal status.
+            coordinator.PublishStatus(PluginRefreshStatus.FullRefreshCompleted(count: 5));
+
+            vm.IsApproximationRefreshRunning.Should().BeFalse(
+                "FullRefreshCompleted is a terminal status and must clear the running flag");
+            vm.CancelApproximationRefreshCommand.CanExecute(null).Should().BeFalse(
+                "the cancel-refresh affordance must disable once the terminal status arrives");
+        }
+        finally
+        {
+            vm.Dispose();
+            stateService.Dispose();
+            coordinator.Dispose();
+        }
+    }
+
+    [Fact]
     public void DeselectAllCommand_ShouldExcludeEveryVisiblePluginInState()
     {
         var stateService = new StateService();
