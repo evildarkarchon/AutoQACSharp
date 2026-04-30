@@ -148,7 +148,7 @@ Plans:
 - [x] 08-08-PLAN.md — Fix CR-02 + WR-01 in PluginResultFinalizer: gate AlreadyClean on success/cleaned; derive Success from finalStatus (TDD).
 
 **Wave 7 (verification gap closure; blocked on Wave 6 completion)**
-- [ ] 08-09-PLAN.md — Close concurrent StartCleaningAsync session-overlap gap with a fail-fast in-flight guard (TDD).
+- [x] 08-09-PLAN.md — Close concurrent StartCleaningAsync session-overlap gap with a fail-fast in-flight guard (TDD).
 - [ ] 08-10-PLAN.md — Close post-detection file-load-order validation gap in CleaningPreflight (TDD).
 
 ### Phase 9: Plugin Refresh & Approximation Performance
