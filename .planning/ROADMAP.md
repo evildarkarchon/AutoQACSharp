@@ -197,7 +197,7 @@ Plans:
   2. User sees or receives a recoverable failure path when configuration persistence fails instead of silent logging-only fallback.
   3. Maintainer can verify watcher race cases deterministically for debounce, deferred reload, invalid YAML, and app-save interactions.
   4. User configuration changes avoid YAML serialization round-trips for in-memory cloning.
-**Plans**: 7 plans (5 original + 2 gap-closure)
+**Plans**: 8 plans (5 original + 3 gap-closure)
 Plans:
 **Wave 1**
 - [x] 10-01-PLAN.md — Manual deep-copy on UserConfiguration graph (PERF-03)
@@ -217,6 +217,9 @@ Plans:
 
 **Wave 7 (gap closure; blocked on 10-06 completion)**
 - [x] 10-07-PLAN.md — Facade state synchronization and conditional reload flag clearing (REF-03, TEST-03)
+
+**Wave 8 (gap closure; blocked on 10-07 completion)**
+- [ ] 10-08-PLAN.md — Close explicit reload pending-save write-failure masking gap (REF-03, TEST-03)
 
 ### Phase 11: User-Facing Diagnostics Boundaries
 **Goal**: Users receive concise, actionable error messages while logs retain local troubleshooting value without unnecessary full path or command-line exposure.
