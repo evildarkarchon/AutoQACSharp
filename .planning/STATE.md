@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Cleanup
-status: executing
-stopped_at: Completed 11-08-PLAN.md
-last_updated: "2026-05-01T06:36:53.294Z"
-last_activity: 2026-05-01 -- Completed 11-08 gap closure
+status: verifying
+stopped_at: Completed 11-09-PLAN.md
+last_updated: "2026-05-01T06:42:16.697Z"
+last_activity: 2026-05-01
 progress:
   total_phases: 7
-  completed_phases: 6
+  completed_phases: 7
   total_plans: 61
-  completed_plans: 60
-  percent: 98
+  completed_plans: 61
+  percent: 100
 ---
 
 # Project State
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-04-28)
 
 Phase: 11 (user-facing-diagnostics-boundaries) — EXECUTING
 Plan: 9 of 9
-Status: Ready to execute remaining gap closure plan
-Last activity: 2026-05-01 -- Completed 11-08 gap closure
+Status: Phase complete — ready for verification
+Last activity: 2026-05-01
 
-Progress: [██████████] 98%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -68,6 +68,7 @@ Progress: [██████████] 98%
 | Phase 11 P06 | 9 min | 2 tasks | 5 files |
 | Phase 11 P07 | 2m 7s | 2 tasks | 4 files |
 | Phase 11 P08 | 2m | 2 tasks | 3 files |
+| Phase 11 P09 | 4 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -120,6 +121,8 @@ Progress: [██████████] 98%
 - [Phase 11]: Startup migration warning display defensively applies DiagnosticTextFormatter.SafeFailureSummary before calling ShowMigrationWarning.
 - [Phase 11]: Successful process-start PID tracking uses sanitized plugin filenames or ExternalProcess, never legacy Arguments. — Plan 11-08 closes SEC-02 gap #2 while preserving process launch values and normal untrack-on-exit semantics.
 - [Phase 11]: Successful-start PID tracking tests inspect entries at onProcessStarted. — Normal process completion intentionally untracks entries, so the regression guard asserts the transient tracking boundary.
+- [Phase 11]: Generated reports use sanitized plugin basenames for cleaned, already-clean, skipped, and failed row prefixes. — Raw PluginName remains internal model data while report/export copy uses DiagnosticTextFormatter.SafePluginName.
+- [Phase 11]: SafePluginName removes known command-flag suffixes such as -QAC and -autoload at display boundaries. — Plan 11-09 closes SEC-01 report display gaps without broadly removing useful filename dashes.
 
 ### Pending Todos
 
@@ -137,6 +140,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-05-01T06:36:35.427Z
-Stopped at: Completed 11-08-PLAN.md
+Last session: 2026-05-01T06:42:16.690Z
+Stopped at: Completed 11-09-PLAN.md
 Resume file: None
