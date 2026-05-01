@@ -7,6 +7,7 @@ using AutoQAC.Tests.TestInfrastructure;
 using AutoQAC.ViewModels;
 using FluentAssertions;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 
 namespace AutoQAC.Tests.ViewModels;
 
@@ -38,6 +39,24 @@ public sealed class RestoreViewModelTests
         OriginalPath = $@"C:\Games\Skyrim Special Edition\Data\{fileName}",
         FileSizeBytes = fileSizeBytes
     };
+
+    [Fact]
+    public async Task LoadSessionsAsync_WhenBackupSessionsThrow_ShouldShowSafeLatestLogStatus()
+    {
+        const string dataFolderPath = @"C:\Games\Skyrim Special Edition\Data";
+        const string backupRoot = @"C:\Games\Skyrim Special Edition\AutoQAC Backups";
+        _backupService.GetBackupRoot(dataFolderPath).Returns(backupRoot);
+        _backupService.GetBackupSessionsAsync(backupRoot, Arg.Any<CancellationToken>())
+            .ThrowsAsync(new UnauthorizedAccessException(@"Access denied reading C:\Users\Alice\Backups\session.json"));
+
+        var vm = CreateViewModel();
+
+        await vm.LoadSessionsAsync(dataFolderPath);
+
+        vm.StatusText.Should().Be("Backup sessions could not be loaded. See the latest AutoQAC log for technical details.");
+        vm.StatusText.Should().NotContain(@"C:\Users\Alice");
+        vm.StatusText.Should().NotContain("Access denied reading");
+    }
 
     [Fact]
     public async Task RestorePluginCommand_ShouldShowRestoreSelectedConfirmationCopy()
