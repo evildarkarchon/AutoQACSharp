@@ -423,7 +423,7 @@ public sealed class CleaningServiceTests
         result.Message.Should().Contain(plugin.FileName);
         result.Message.Should().Contain("direct xEdit");
         result.Message.Should().Contain("No process was started");
-        result.Message.Should().Contain("See logs for technical details");
+        result.Message.Should().Contain("See the latest AutoQAC log");
         result.Message.Should().NotContain(xEditPath);
         result.Message.Should().NotContain(mo2Path);
         result.Message.Should().NotContain("run ");
@@ -487,7 +487,7 @@ public sealed class CleaningServiceTests
         result.Message.Should().Contain(plugin.FileName);
         result.Message.Should().Contain("MO2");
         result.Message.Should().Contain("No process was started");
-        result.Message.Should().Contain("See logs for technical details");
+        result.Message.Should().Contain("See the latest AutoQAC log");
         result.Message.Should().NotContain(xEditPath);
         result.Message.Should().NotContain(mo2Path);
         result.Message.Should().NotContain("run ");
@@ -829,7 +829,7 @@ public sealed class CleaningServiceTests
         result.Success.Should().BeFalse("unexpected exception should result in failure");
         result.Status.Should().Be(CleaningStatus.Failed);
         result.Message.Should().Contain(plugin.FileName);
-        result.Message.Should().Contain("See logs for technical details");
+        result.Message.Should().Contain("See the latest AutoQAC log");
         result.Message.Should().NotContain(xEditPath);
         result.Message.Should().NotContain(mo2Path);
         result.Message.Should().NotContain("run ");

@@ -52,6 +52,7 @@ public sealed class CleaningService(
                 gameType = plugin.DetectedGameType;
             }
 
+            var safePluginName = DiagnosticTextFormatter.SafePluginName(plugin.FileName);
             var command = commandBuilder.BuildCommand(plugin, gameType);
             if (command == null)
             {
@@ -59,13 +60,13 @@ public sealed class CleaningService(
                 logger.Warning(
                     "Failed to build {LaunchMode} launch command for {Plugin}; no process was started.",
                     buildFailureLaunchMode,
-                    plugin.FileName);
+                    safePluginName);
 
                 return new CleaningResult
                 {
                     Success = false,
                     Status = CleaningStatus.Failed,
-                    Message = $"Could not build {buildFailureLaunchMode} launch command for {plugin.FileName}. No process was started. See logs for technical details.",
+                    Message = $"Could not build {buildFailureLaunchMode} launch command for {safePluginName}. No process was started. See the latest AutoQAC log.",
                     Duration = sw.Elapsed
                 };
             }
@@ -76,7 +77,6 @@ public sealed class CleaningService(
             var timeout = TimeSpan.FromSeconds(timeoutSeconds > 0 ? timeoutSeconds : 300);
             var gameDisplayName = gameDetection.GetGameDisplayName(gameType);
             var launchMode = state.Mo2ModeEnabled ? "MO2" : "direct xEdit";
-            var safePluginName = DiagnosticTextFormatter.SafePluginName(plugin.FileName);
             var argumentCount = GetArgumentCount(command);
 
             logger.Information(
@@ -168,12 +168,13 @@ public sealed class CleaningService(
         }
         catch (Exception ex)
         {
-            logger.Error(ex, "Error cleaning {Plugin}", plugin.FileName);
+            var safePluginName = DiagnosticTextFormatter.SafePluginName(plugin.FileName);
+            logger.Error(ex, "Error cleaning {Plugin}", safePluginName);
             return new CleaningResult
             {
                 Success = false,
                 Status = CleaningStatus.Failed,
-                Message = $"Cleaning failed for {plugin.FileName}. See logs for technical details.",
+                Message = DiagnosticTextFormatter.CleaningFailedForPlugin(plugin.FileName),
                 Duration = sw.Elapsed
             };
         }
