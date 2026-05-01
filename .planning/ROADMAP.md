@@ -247,7 +247,7 @@ Plans:
 - [x] 11-02-PLAN.md — Harden cleaning/preview dialogs, status text, and pre-clean validation identifiers (SEC-01)
 - [x] 11-03-PLAN.md — Harden configuration browse and restore session diagnostics (SEC-01)
 - [x] 11-04-PLAN.md — Sanitize cleaning result rows and exported reports (SEC-01)
-- [ ] 11-05-PLAN.md — Redact process/startup log boundaries and migration warning copy (SEC-01, SEC-02)
+- [x] 11-05-PLAN.md — Redact process/startup log boundaries and migration warning copy (SEC-01, SEC-02)
 
 **Wave 3 (blocked on Wave 2 completion)**
 - [ ] 11-06-PLAN.md — Add phase-level disclosure sentinels and final verification sweep (SEC-01, SEC-02)
@@ -272,7 +272,7 @@ Cross-cutting constraints:
 | 8. Cleaning Orchestrator Decomposition | v1.0 Cleanup | 10/10 | Complete | 2026-04-30 |
 | 9. Plugin Refresh & Approximation Performance | v1.0 Cleanup | 8/9 | Gaps planned | - |
 | 10. Configuration Persistence Hardening | v1.0 Cleanup | 11/11 | Complete    | 2026-05-01 |
-| 11. User-Facing Diagnostics Boundaries | v1.0 Cleanup | 4/6 | In Progress|  |
+| 11. User-Facing Diagnostics Boundaries | v1.0 Cleanup | 5/6 | In Progress|  |
 
 ## Coverage
 
