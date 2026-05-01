@@ -24,7 +24,7 @@ Full details: [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP.md)
 - [ ] **Phase 7: Backup Restore & Retention Safety** - Users can recover from backup/restore problems with clear, cancellable outcomes.
 - [ ] **Phase 8: Cleaning Orchestrator Decomposition** - Maintainers can change cleaning flow pieces without broad orchestrator rewrites.
 - [ ] **Phase 9: Plugin Refresh & Approximation Performance** - Users can refresh approximations more efficiently while plugin-loading coordination moves out of the ViewModel.
-- [ ] **Phase 10: Configuration Persistence Hardening** - Users get deterministic configuration save/reload behavior with lower clone overhead.
+- [x] **Phase 10: Configuration Persistence Hardening** - Users get deterministic configuration save/reload behavior with lower clone overhead. (completed 2026-05-01)
 - [ ] **Phase 11: User-Facing Diagnostics Boundaries** - Users see concise errors while logs avoid unnecessary path and command exposure.
 
 ## Phase Details
@@ -219,7 +219,7 @@ Plans:
 - [x] 10-07-PLAN.md — Facade state synchronization and conditional reload flag clearing (REF-03, TEST-03)
 
 **Wave 8 (gap closure; blocked on 10-07 completion)**
-- [ ] 10-08-PLAN.md — Close explicit reload pending-save write-failure masking gap (REF-03, TEST-03)
+- [x] 10-08-PLAN.md — Close explicit reload pending-save write-failure masking gap (REF-03, TEST-03)
 
 ### Phase 11: User-Facing Diagnostics Boundaries
 **Goal**: Users receive concise, actionable error messages while logs retain local troubleshooting value without unnecessary full path or command-line exposure.
@@ -245,7 +245,7 @@ Plans:
 | 7. Backup Restore & Retention Safety | v1.0 Cleanup | 11/14 | Gaps planned | - |
 | 8. Cleaning Orchestrator Decomposition | v1.0 Cleanup | 10/10 | Complete | 2026-04-30 |
 | 9. Plugin Refresh & Approximation Performance | v1.0 Cleanup | 8/9 | Gaps planned | - |
-| 10. Configuration Persistence Hardening | v1.0 Cleanup | 7/8 | Gaps planned | - |
+| 10. Configuration Persistence Hardening | v1.0 Cleanup | 8/8 | Complete   | 2026-05-01 |
 | 11. User-Facing Diagnostics Boundaries | v1.0 Cleanup | 0/0 | Not started | - |
 
 ## Coverage
