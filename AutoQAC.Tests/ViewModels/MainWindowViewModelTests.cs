@@ -494,6 +494,30 @@ public sealed class MainWindowViewModelTests
     /// When grace period expires and user confirms, ForceStopCleaningAsync should be called.
     /// </summary>
     [Fact]
+    public void StopTerminationDialogContent_ShouldExposeSharedStopCopyContract()
+    {
+        StopTerminationDialogContent.ConfirmationTitle.Should().Be("Force Terminate xEdit?");
+        StopTerminationDialogContent.ConfirmationMessage.Should().Be("xEdit did not exit after the stop request. AutoQAC can leave xEdit running, or force terminate it now. Force terminating can interrupt remaining file or log writes.");
+        StopTerminationDialogContent.ForceTerminateButton.Should().Be("Force Terminate");
+        StopTerminationDialogContent.LeaveRunningButton.Should().Be("Leave Running");
+        StopTerminationDialogContent.ForceFailureTitle.Should().Be("Could Not Force Terminate xEdit");
+        StopTerminationDialogContent.ForceFailureMessage.Should().Be("AutoQAC could not force terminate xEdit. xEdit may still be running; close it manually before starting another cleaning session. Technical details are in the latest AutoQAC log.");
+        StopTerminationDialogContent.LeftRunningTitle.Should().Be("Cleaning Stopped");
+        StopTerminationDialogContent.LeftRunningMessage.Should().Be("AutoQAC stopped the cleaning session. xEdit was left running by your choice; close it manually when it is safe.");
+    }
+
+    [Fact]
+    public void MessageDialogViewModel_ShouldDefaultChoiceButtonTextToYesAndNo()
+    {
+        // Arrange
+        var dialog = new MessageDialogViewModel();
+
+        // Assert
+        dialog.YesButtonText.Should().Be("Yes");
+        dialog.NoButtonText.Should().Be("No");
+    }
+
+    [Fact]
     public async Task StopCleaningCommand_GracePeriodExpired_UserConfirms_ShouldForceStop()
     {
         // Arrange
