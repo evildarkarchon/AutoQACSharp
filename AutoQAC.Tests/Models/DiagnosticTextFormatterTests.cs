@@ -155,7 +155,7 @@ public sealed class DiagnosticTextFormatterTests
         var message = DiagnosticTextFormatter.SafeFailureSummary($"Failure detail: {unsafeDetail}", CleaningFallback);
 
         message.Should().Be(CleaningFallback);
-        message.Should().NotContain(unsafeDetail, StringComparison.OrdinalIgnoreCase);
+        message.IndexOf(unsafeDetail, StringComparison.OrdinalIgnoreCase).Should().Be(-1);
     }
 
     [Theory]
