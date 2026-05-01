@@ -1,44 +1,38 @@
 ---
 phase: 12-process-stop-verification-progress-flow-closure
-fixed_at: 2026-05-01T10:02:50Z
+fixed_at: 2026-05-01T10:13:05Z
 review_path: .planning/phases/12-process-stop-verification-progress-flow-closure/12-REVIEW.md
-iteration: 1
-findings_in_scope: 3
-fixed: 3
+iteration: 2
+findings_in_scope: 2
+fixed: 2
 skipped: 0
 status: all_fixed
 ---
 
 # Phase 12: Code Review Fix Report
 
-**Fixed at:** 2026-05-01T10:02:50Z
+**Fixed at:** 2026-05-01T10:13:05Z
 **Source review:** `.planning/phases/12-process-stop-verification-progress-flow-closure/12-REVIEW.md`
-**Iteration:** 1
+**Iteration:** 2
 
 **Summary:**
-- Findings in scope: 3
-- Fixed: 3
+- Findings in scope: 2
+- Fixed: 2
 - Skipped: 0
 
 ## Fixed Issues
 
-### WR-01: Progress and preview window interactions are fire-and-forget, hiding failures
+### WR-01: Left-running warning dialog failures are misreported as force-termination failures
 
 **Files modified:** `AutoQAC/ViewModels/MainWindow/CleaningCommandsViewModel.cs`, `AutoQAC.Tests/ViewModels/MainWindowViewModelTests.cs`
-**Commit:** 752ef5d
-**Applied fix:** Awaited progress and preview interactions inside the existing command `try` blocks, and added regressions proving interaction failures are logged/surfaced instead of allowing cleaning or preview to proceed silently.
+**Commit:** ee2a75c
+**Applied fix:** Wrapped the left-running acknowledgement dialog in a dedicated safe helper so a dialog failure is logged accurately and does not re-enter the shared force-termination failure path after `MarkLeftRunningByUser`.
 
-### WR-02: Stop and kill command failures are not handled
+### WR-02: Progress-window stop failures promise log details without logging the exception
 
-**Files modified:** `AutoQAC/ViewModels/MainWindow/CleaningCommandsViewModel.cs`, `AutoQAC/ViewModels/ProgressViewModel.cs`, `AutoQAC.Tests/ViewModels/MainWindowViewModelTests.cs`, `AutoQAC.Tests/ViewModels/ProgressViewModelTests.cs`
-**Commit:** b00c5f9
-**Applied fix:** Added stop/force-stop error boundaries that use shared `StopTerminationDialogContent` failure copy, log main-window failures, persist Progress-window failure warnings, and tolerate dialog-service failures without escaping async commands.
-
-### WR-03: Results summary panel is visible during active cleaning
-
-**Files modified:** `AutoQAC/ViewModels/ProgressViewModel.cs`, `AutoQAC/Views/ProgressWindow.axaml`, `AutoQAC.Tests/ViewModels/ProgressViewModelTests.cs`
-**Commit:** 75ca5eb
-**Applied fix:** Added `IsResultsSummaryVisible => IsShowingResults && !IsPreviewMode`, wired dependency notifications for both source properties, bound the summary panel to the explicit property, and covered active/results/preview visibility transitions in tests.
+**Files modified:** `AutoQAC/ViewModels/ProgressViewModel.cs`, `AutoQAC/Views/MainWindow.axaml.cs`, `AutoQAC.Tests/ViewModels/ProgressViewModelTests.cs`
+**Commit:** e184381
+**Applied fix:** Injected `ILoggingService` into `ProgressViewModel`, passed it from `MainWindow`, logged Stop/Hang Kill command exceptions before showing shared safe failure copy, and logged failure-dialog exceptions while keeping the persistent warning visible.
 
 ## Skipped Issues
 
@@ -46,13 +40,11 @@ None.
 
 ## Verification
 
-- `dotnet test "AutoQAC.Tests/AutoQAC.Tests.csproj" --filter "FullyQualifiedName~MainWindowViewModelTests"` — Passed, 35/35 tests.
-- `dotnet test "AutoQAC.Tests/AutoQAC.Tests.csproj" --filter "FullyQualifiedName~MainWindowViewModelTests|FullyQualifiedName~ProgressViewModelTests"` — Passed, 72/72 tests after WR-02 and 74/74 tests after all fixes.
-- `dotnet test "AutoQAC.Tests/AutoQAC.Tests.csproj" --filter "FullyQualifiedName~ProgressViewModelTests"` — Passed, 37/37 tests.
-- `dotnet test "AutoQACSharp.slnx"` — Passed, 61/61 `QueryPlugins.Tests` and 1014/1014 `AutoQAC.Tests`.
+- `dotnet test "AutoQAC.Tests/AutoQAC.Tests.csproj" --filter "FullyQualifiedName~MainWindowViewModelTests|FullyQualifiedName~ProgressViewModelTests"` — Passed, 76/76 tests.
+- `dotnet test "AutoQACSharp.slnx"` — Passed, 61/61 `QueryPlugins.Tests` and 1016/1016 `AutoQAC.Tests`.
 
 ---
 
-_Fixed: 2026-05-01T10:02:50Z_
+_Fixed: 2026-05-01T10:13:05Z_
 _Fixer: the agent (gsd-code-fixer)_
-_Iteration: 1_
+_Iteration: 2_

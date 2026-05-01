@@ -1,6 +1,6 @@
 ---
 phase: 12-process-stop-verification-progress-flow-closure
-reviewed: 2026-05-01T09:43:28Z
+reviewed: 2026-05-01T10:16:32Z
 depth: deep
 files_reviewed: 11
 files_reviewed_list:
@@ -17,79 +17,37 @@ files_reviewed_list:
   - AutoQAC.Tests/ViewModels/ProgressViewModelTests.cs
 findings:
   critical: 0
-  warning: 3
+  warning: 0
   info: 0
-  total: 3
-status: issues_found
+  total: 0
+status: clean
 ---
 
 # Phase 12: Code Review Report
 
-**Reviewed:** 2026-05-01T09:43:28Z
+**Reviewed:** 2026-05-01T10:16:32Z
 **Depth:** deep
 **Files Reviewed:** 11
-**Status:** issues_found
+**Status:** clean
 
 ## Summary
 
-Reviewed the stop-confirmation dialog flow, progress-window stop/hang handling, message-dialog plumbing, and related tests. No critical security or data-loss findings were found, but there are robustness and UI-state defects that can leave users without the expected progress/stop surface or produce incorrect active-progress layout behavior.
+Re-reviewed the Phase 12 stop-verification/progress-flow closure after both review-fix passes. The review covered the shared stop termination dialog content, message dialog custom-choice API and view model, main-window stop command boundaries, progress-window stop/kill command paths, progress/preview window wiring, result-summary visibility gating, and the related regression tests.
 
-## Warnings
+All previously reported warnings are resolved:
 
-### WR-01: Progress and preview window interactions are fire-and-forget, hiding failures
+- Original WR-01: progress and preview interactions are awaited inside command error boundaries.
+- Original WR-02: stop/force-stop command failures are contained and surface safe shared failure copy.
+- Original WR-03: results summary visibility is gated so active cleaning and dry-run preview states do not show the completed-cleaning summary.
+- Re-review WR-01: left-running warning dialog failures are now logged without reclassifying the outcome as force-termination failure.
+- Re-review WR-02: progress-window stop and hang-kill failures now log exceptions before showing the safe failure dialog, and dialog-display failures are logged while preserving the persistent warning.
 
-**File:** `AutoQAC/ViewModels/MainWindow/CleaningCommandsViewModel.cs:139,189`
-**Issue:** `StartCleaningAsync` and `PreviewAsync` discard the task returned by the UI interaction handlers. If the progress or preview window handler throws (for example, window construction, DataContext setup, or Avalonia show failure), the exception is unobserved and cleaning/preview continues as though the UI opened successfully. For cleaning, that can leave the user without the intended progress window and stop controls during a live xEdit run.
-**Fix:** Await the interactions inside the existing `try` blocks so failures are logged and surfaced by the existing error handling.
+Focused verification run: `dotnet test "AutoQAC.Tests/AutoQAC.Tests.csproj" --filter "FullyQualifiedName~MainWindowViewModelTests|FullyQualifiedName~ProgressViewModelTests"` passed 76/76 tests.
 
-```csharp
-await _showProgressInteraction.Handle(Unit.Default);
-
-// ...
-
-await _showPreviewInteraction.Handle(results);
-```
-
-### WR-02: Stop and kill command failures are not handled
-
-**File:** `AutoQAC/ViewModels/MainWindow/CleaningCommandsViewModel.cs:220-253`; `AutoQAC/ViewModels/ProgressViewModel.cs:198-222,235-240`
-**Issue:** The stop paths await orchestrator termination and dialog calls without any error boundary. If `StopCleaningAsync`, `ForceStopCleaningAsync`, or a dialog call throws, the async command propagates the exception instead of showing safe failure copy or updating the persistent stop warning. This is especially risky in the force-termination path because the UI may fail before telling the user that xEdit might still be running.
-**Fix:** Wrap stop/force-stop command bodies in `try/catch`. In `CleaningCommandsViewModel`, log via `_logger` and show the shared safe failure dialog. In `ProgressViewModel`, set `StopOutcomeWarningText` and show the shared safe failure dialog.
-
-```csharp
-try
-{
-    var stopResult = await _orchestrator.StopCleaningAsync();
-    // existing stop escalation flow
-}
-catch (Exception ex)
-{
-    _logger.Error(ex, "StopCleaningAsync failed");
-    await _messageDialog.ShowErrorAsync(
-        StopTerminationDialogContent.ForceFailureTitle,
-        StopTerminationDialogContent.ForceFailureMessage);
-}
-```
-
-### WR-03: Results summary panel is visible during active cleaning
-
-**File:** `AutoQAC/Views/ProgressWindow.axaml:236-237`
-**Issue:** The results-summary grid is visible whenever `IsPreviewMode` is false, even when `IsShowingResults` is false and the active-cleaning panel is visible. Because the summary grid is declared after the active grid in the same `Panel`, it is layered above the active progress UI during cleaning. Even with most child controls hidden, the extra visible overlay can interfere with hit-testing/focus behavior and makes the window state model incorrect.
-**Fix:** Gate the summary panel on both “showing results” and “not preview mode”, preferably through an explicit ViewModel property so the XAML does not need a multi-binding.
-
-```csharp
-public bool IsResultsSummaryVisible => IsShowingResults && !IsPreviewMode;
-```
-
-```xml
-<Grid Margin="20" RowDefinitions="Auto,Auto,Auto,Auto,*,Auto"
-      IsVisible="{Binding IsResultsSummaryVisible}">
-```
-
-Ensure `IsResultsSummaryVisible` raises change notifications when either `IsShowingResults` or `IsPreviewMode` changes.
+All reviewed files meet quality standards. No issues found.
 
 ---
 
-_Reviewed: 2026-05-01T09:43:28Z_
+_Reviewed: 2026-05-01T10:16:32Z_
 _Reviewer: the agent (gsd-code-reviewer)_
 _Depth: deep_
