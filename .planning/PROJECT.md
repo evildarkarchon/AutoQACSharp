@@ -44,6 +44,7 @@ Accurate, automated xEdit Quick Auto Clean with reliable result reporting.
 - ✓ Dead stdout parsing code paths fully removed — v1.0
 - ✓ Timestamp-based log staleness replaced by offset-based reading — v1.0
 - ✓ Stale test mocks and unused parameters cleaned up — v1.0
+- ✓ Cleaning orchestrator decomposition preserves session guarding, detected-game preflight validation, sequential behavior, and focused collaborator boundaries — Phase 14 (REF-01)
 
 ### Active
 
@@ -64,7 +65,7 @@ Accurate, automated xEdit Quick Auto Clean with reliable result reporting.
 
 Shipped v1.0 with the xEdit log parsing fix. The app now correctly reads xEdit results from log files (`<game>Edit_log.txt`) using offset-based reading that isolates each plugin's output. All dead stdout parsing code has been removed. 838 tests passing across AutoQAC and QueryPlugins after Phase 07 (779 + 59).
 
-Current cleanup scope is driven by `.planning/codebase/CONCERNS.md` from 2026-04-28, covering safety bugs, refactor debt, test gaps, security polish, and performance bottlenecks. Phase 12 (process-stop-verification-progress-flow-closure) is complete — Progress-window Stop now shares the confirmed two-stage termination contract with main Stop, Hang Kill preserves its immediate action while sharing force-failure reporting, and current stop/PID evidence is captured for SAF-01, SAF-02, REF-04, and TEST-01.
+Current cleanup scope is driven by `.planning/codebase/CONCERNS.md` from 2026-04-28, covering safety bugs, refactor debt, test gaps, security polish, and performance bottlenecks. Phase 14 (orchestrator-decomposition-reverification) is complete: current evidence shows the decomposed cleaning orchestrator preserves session guarding, detected-game preflight validation, sequential cleaning, and focused collaborator boundaries for REF-01.
 
 Tech stack: .NET 10, C# 13, Avalonia 11.3, ReactiveUI, Mutagen 0.53.1, Serilog, YamlDotNet.
 
@@ -114,4 +115,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-01 after Phase 12 (process-stop-verification-progress-flow-closure) completion*
+*Last updated: 2026-05-01 after Phase 14 (orchestrator-decomposition-reverification) completion*
