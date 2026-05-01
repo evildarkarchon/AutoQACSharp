@@ -9,7 +9,11 @@ using AutoQAC.Services.UI;
 using AutoQAC.ViewModels;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
+using System.Reactive.Linq;
+using System.Threading;
 
 namespace AutoQAC.Tests.Integration;
 
@@ -73,6 +77,47 @@ public sealed class DependencyInjectionTests
             .Should().BeSameAs(sharedCoordinator);
         GetPrivateField<IPluginRefreshCoordinator>(vm1.Commands, "_pluginRefreshCoordinator")
             .Should().BeSameAs(sharedCoordinator);
+    }
+
+    /// <summary>
+    /// Verifies production DI keeps the configuration facade and watcher on the same persistence coordinator.
+    /// </summary>
+    [Fact]
+    public async Task AddConfiguration_ShouldWireConfigurationFacadeAndWatcherThroughSharedCoordinator()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+
+        services.AddInfrastructure();
+        services.AddConfiguration();
+        services.AddState();
+        services.AddBusinessLogic();
+        services.AddUiServices();
+        services.AddViewModels();
+        services.AddViews();
+
+        using var provider = services.BuildServiceProvider();
+        var configuration = provider.GetRequiredService<IConfigurationService>();
+        var watcher = provider.GetRequiredService<IConfigWatcherService>();
+        var sharedCoordinator = provider.GetRequiredService<IConfigPersistenceCoordinator>();
+        var results = new List<ConfigPersistenceResult>();
+
+        using var resultSubscription = configuration.PersistenceResults.Subscribe(results.Add);
+
+        // Act
+        var configurationCoordinator = GetPrivateField<IConfigPersistenceCoordinator>(configuration, "_coordinator");
+        var watcherCoordinator = GetPrivateField<IConfigPersistenceCoordinator>(watcher, "_coordinator");
+        sharedCoordinator.NotifySettingsFileChanged(ConfigFileSignalKind.Error);
+        await configuration.FlushPendingSavesAsync(CancellationToken.None);
+
+        // Assert
+        configurationCoordinator.Should().BeSameAs(sharedCoordinator);
+        watcherCoordinator.Should().BeSameAs(sharedCoordinator);
+        results.Any(r =>
+            r.Operation == ConfigPersistenceOperationKind.Watcher &&
+            r.Status == ConfigPersistenceStatusKind.Failed &&
+            r.Failure is { Kind: ConfigPersistenceFailureKind.ReadFailed })
+            .Should().BeTrue("watcher errors must flow through the configuration facade result stream");
     }
 
     /// <summary>
