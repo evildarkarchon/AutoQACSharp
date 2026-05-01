@@ -98,6 +98,19 @@ public sealed class UserConfigFileStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task WriteAsync_CanceledWrite_DoesNotLeaveTempFile()
+    {
+        var store = new UserConfigFileStore(Substitute.For<ILoggingService>(), _testDirectory);
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        await FluentActions.Awaiting(() => store.WriteAsync(NewConfig(321), cts.Token))
+            .Should().ThrowAsync<OperationCanceledException>();
+
+        Directory.EnumerateFiles(_testDirectory, "*.tmp").Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task ReadAsync_FileMissing_ReturnsExistsFalse()
     {
         var store = new UserConfigFileStore(Substitute.For<ILoggingService>(), _testDirectory);

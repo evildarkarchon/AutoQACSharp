@@ -69,9 +69,9 @@ internal sealed class UserConfigFileStore : IUserConfigFileStore
         var tempPath = Path.Combine(directory, Path.GetRandomFileName() + ".tmp");
         var yaml = _serializer.Serialize(config);
 
-        await File.WriteAllTextAsync(tempPath, yaml, ct).ConfigureAwait(false);
         try
         {
+            await File.WriteAllTextAsync(tempPath, yaml, ct).ConfigureAwait(false);
             if (File.Exists(settingsPath))
             {
                 _replace(tempPath, settingsPath, null);
