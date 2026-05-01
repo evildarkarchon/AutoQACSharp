@@ -64,7 +64,7 @@ Accurate, automated xEdit Quick Auto Clean with reliable result reporting.
 
 Shipped v1.0 with the xEdit log parsing fix. The app now correctly reads xEdit results from log files (`<game>Edit_log.txt`) using offset-based reading that isolates each plugin's output. All dead stdout parsing code has been removed. 838 tests passing across AutoQAC and QueryPlugins after Phase 07 (779 + 59).
 
-Current cleanup scope is driven by `.planning/codebase/CONCERNS.md` from 2026-04-28, covering safety bugs, refactor debt, test gaps, security polish, and performance bottlenecks. Phase 09 (plugin-refresh-approximation-performance) is complete — plugin refresh workflow is coordinator-owned, selected/full approximation refresh has cancellation-safe lifecycle coverage, and TTW/Enderal skip-list refresh semantics match cleaning preflight.
+Current cleanup scope is driven by `.planning/codebase/CONCERNS.md` from 2026-04-28, covering safety bugs, refactor debt, test gaps, security polish, and performance bottlenecks. Phase 10 (configuration-persistence-hardening) is complete — user-config persistence now flows through one serialized coordinator, watcher-originated failures reach facade streams, and in-memory user-config cloning avoids YAML round-trips.
 
 Tech stack: .NET 10, C# 13, Avalonia 11.3, ReactiveUI, Mutagen 0.53.1, Serilog, YamlDotNet.
 
@@ -92,6 +92,8 @@ Tech stack: .NET 10, C# 13, Avalonia 11.3, ReactiveUI, Mutagen 0.53.1, Serilog, 
 | Shared `BackupPathContainment.IsContained` helper | Single canonical path-containment policy reused by `BackupService.IsRestoreTargetInsideTrustedRoot` and Delete Session, eliminating duplicated `Path.GetFullPath`+`StartsWith` logic | ✓ Implemented in Phase 07 (Plan 07-14) |
 | Filesystem deletion lives in IBackupService, not RestoreViewModel | Cross-AI architectural consensus + project rule "All business logic lives in services, not ViewModels" — recursive `Directory.Delete` moved into `BackupService.DeleteSessionAsync` via `IBackupSessionDeleter` | ✓ Implemented in Phase 07 (Plan 07-13) |
 | Defense-in-depth ProgressWindow close/disposal wiring | `MainWindow.ShowProgressAsync` adds `CloseRequested` + `Closed` handlers alongside the pre-existing `ProgressWindow.OnDataContextChanged`/`OnClosed` contract; both paths are idempotent | ✓ Implemented in Phase 07 (Plan 07-12) |
+| Serialized user-config persistence authority | One `ConfigPersistenceCoordinator` owns save, flush, reload, watcher, deferral, and failure publication ordering; production DI explicitly shares it between the configuration facade and watcher service | ✓ Implemented in Phase 10 |
+| Manual user-config copy graph | User-configuration cloning uses model-owned `Copy()` methods instead of YAML serialization round-trips for in-memory copies | ✓ Implemented in Phase 10 |
 
 ## Evolution
 
@@ -111,4 +113,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-30 after Phase 09 (plugin-refresh-approximation-performance) completion*
+*Last updated: 2026-05-01 after Phase 10 (configuration-persistence-hardening) completion*
