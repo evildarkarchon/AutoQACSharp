@@ -218,7 +218,7 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
     {
         // D-30: failed optimistic save explicitly tells user settings were restored.
         { Operation: ConfigPersistenceOperationKind.Save, Kind: ConfigPersistenceFailureKind.WriteFailed }
-            => "Could not save settings. Settings were restored to last saved values.",
+            => failure.SafeSummary,
         { Operation: ConfigPersistenceOperationKind.Flush, Kind: ConfigPersistenceFailureKind.WriteFailed }
             => "Could not save settings before cleaning. Cleaning was blocked. Settings were restored to last saved values.",
         { Operation: ConfigPersistenceOperationKind.Flush }
@@ -228,7 +228,7 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
         { Kind: ConfigPersistenceFailureKind.MissingFile }
             => "Settings file is missing or unreadable. Active settings were not changed.",
         { Kind: ConfigPersistenceFailureKind.ReadFailed }
-            => "Could not read settings file. Active settings were not changed.",
+            => failure.SafeSummary,
         _ => $"Could not persist settings: {failure.SafeSummary}",
     };
 

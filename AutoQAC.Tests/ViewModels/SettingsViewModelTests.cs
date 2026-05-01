@@ -16,7 +16,7 @@ namespace AutoQAC.Tests.ViewModels;
 public sealed class SettingsViewModelTests
 {
     [Fact]
-    public void Failure_Save_WriteFailed_PopulatesBannerWithRestoredText()
+    public void Failure_Save_WriteFailed_PopulatesBannerWithSafeSummary()
     {
         var fixture = CreateFixture();
         using var vm = fixture.CreateViewModel();
@@ -28,8 +28,7 @@ public sealed class SettingsViewModelTests
             null,
             1));
 
-        vm.PersistenceBannerText.Should().Be(
-            "Could not save settings. Settings were restored to last saved values.");
+        vm.PersistenceBannerText.Should().Be("Could not write settings file (write_failed)");
         vm.HasPersistenceBanner.Should().BeTrue();
     }
 
