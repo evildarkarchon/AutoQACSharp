@@ -267,8 +267,8 @@ Plans:
 - [x] 11-11-PLAN.md — Close xEdit main-log path LogParseWarning tooltip disclosure gap (SEC-01)
 
 **Wave 7 (gap closure; blocked on 11-11 completion)**
-- [ ] 11-12-PLAN.md — Close backup failure and timeout retry callback dialog disclosure gaps (SEC-01)
-- [ ] 11-13-PLAN.md — Close Restore Selected backup metadata display disclosure gap (SEC-01)
+- [x] 11-12-PLAN.md — Close backup failure and timeout retry callback dialog disclosure gaps (SEC-01)
+- [x] 11-13-PLAN.md — Close Restore Selected backup metadata display disclosure gap (SEC-01)
 
 Cross-cutting constraints:
 - User-facing diagnostics must preserve concise safe copy and latest-log guidance while excluding raw exception text, stack traces, full local paths, and command fragments.
@@ -286,7 +286,21 @@ Cross-cutting constraints:
   2. User sees an accurate force-kill failure outcome from the Progress-window Stop path.
   3. Maintainer can verify Progress-window Stop, force-failure reporting, PID evidence, and process cleanup behavior through automated tests.
   4. Current verification artifacts prove SAF-01, SAF-02, REF-04, and TEST-01 are satisfied.
-**Plans**: 0 plans (gap closure planning pending)
+**Plans**: 3 plans
+Plans:
+**Wave 1**
+- [ ] 12-01-PLAN.md — Create shared stop outcome text and explicit dialog-label contract for main/Progress Stop parity.
+
+**Wave 2 (blocked on 12-01 completion)**
+- [ ] 12-02-PLAN.md — Wire Progress Stop and Hang Kill through shared two-stage outcome handling and persistent summary warnings.
+
+**Wave 3 (blocked on 12-02 completion)**
+- [ ] 12-03-PLAN.md — Run current stop/process/PID evidence and write Phase 12 requirement verification artifact.
+
+Cross-cutting constraints:
+- Stop outcome copy must be exact, shared, and Phase 11-safe across main Stop, Progress Stop, and Hang Kill force-failure reporting.
+- User-initiated Stop must never force-kill xEdit until `GracePeriodExpired` has been surfaced through the explicit `Force Terminate` confirmation.
+- Phase 12 verification must close `INT-01` and `FLOW-01` without updating Phase 5 artifacts, `REQUIREMENTS.md`, or milestone completion markers.
 **UI hint**: yes
 
 ### Phase 13: Command Launch Escaping Reverification & Safe MO2 Failures
@@ -327,7 +341,7 @@ Cross-cutting constraints:
 | 8. Cleaning Orchestrator Decomposition | v1.0 Cleanup | 10/10 | Complete | 2026-04-30 |
 | 9. Plugin Refresh & Approximation Performance | v1.0 Cleanup | 8/9 | Gaps planned | - |
 | 10. Configuration Persistence Hardening | v1.0 Cleanup | 11/11 | Complete    | 2026-05-01 |
-| 11. User-Facing Diagnostics Boundaries | v1.0 Cleanup | 11/13 | Gaps planned   | - |
+| 11. User-Facing Diagnostics Boundaries | v1.0 Cleanup | 13/13 | Complete   | 2026-05-01 |
 | 12. Process Stop Verification & Progress Flow Closure | v1.0 Cleanup | 0/0 | Not started | - |
 | 13. Command Launch Escaping Reverification & Safe MO2 Failures | v1.0 Cleanup | 0/0 | Not started | - |
 | 14. Orchestrator Decomposition Reverification | v1.0 Cleanup | 0/0 | Not started | - |

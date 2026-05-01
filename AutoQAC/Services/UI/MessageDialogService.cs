@@ -1,5 +1,6 @@
 using System.Threading.Tasks;
 using AutoQAC.Models;
+using AutoQAC.Models.Diagnostics;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -91,6 +92,12 @@ public sealed class MessageDialogService : IMessageDialogService
                 ShowBackupFailureDialogAsync(pluginName, errorMessage));
         }
 
+        // Defensive boundary: callers should pass safe text, but this dialog renders directly to TextBlocks.
+        var safePluginName = DiagnosticTextFormatter.SafePluginName(pluginName);
+        var safeErrorMessage = DiagnosticTextFormatter.SafeFailureSummary(
+            errorMessage,
+            DiagnosticTextFormatter.CleaningFailedForPlugin(pluginName));
+
         var tcs = new TaskCompletionSource<BackupFailureChoice>();
 
         var window = new Window
@@ -110,7 +117,7 @@ public sealed class MessageDialogService : IMessageDialogService
 
         panel.Children.Add(new TextBlock
         {
-            Text = $"Failed to back up '{pluginName}'",
+            Text = $"Failed to back up '{safePluginName}'",
             FontWeight = Avalonia.Media.FontWeight.Bold,
             FontSize = 14,
             TextWrapping = Avalonia.Media.TextWrapping.Wrap
@@ -118,7 +125,7 @@ public sealed class MessageDialogService : IMessageDialogService
 
         panel.Children.Add(new TextBlock
         {
-            Text = errorMessage,
+            Text = safeErrorMessage,
             TextWrapping = Avalonia.Media.TextWrapping.Wrap,
             FontSize = 12
         });

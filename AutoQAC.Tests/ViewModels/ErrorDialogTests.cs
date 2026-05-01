@@ -8,6 +8,7 @@ using AutoQAC.Services.Configuration;
 using AutoQAC.Services.State;
 using AutoQAC.Services.UI;
 using AutoQAC.Services.Plugin;
+using AutoQAC.Tests.Helpers;
 using AutoQAC.Tests.TestInfrastructure;
 using AutoQAC.ViewModels;
 using FluentAssertions;
@@ -764,6 +765,59 @@ public sealed class ErrorDialogTests
                     Arg.Any<string?>());
 
             result.Should().BeTrue("ShowRetryAsync returned true");
+        }
+        finally
+        {
+            if (File.Exists(tempFile))
+                File.Delete(tempFile);
+        }
+    }
+
+    /// <summary>
+    /// Verifies timeout retry callback data is projected to safe dialog copy before it crosses the user-facing D-07 boundary.
+    /// </summary>
+    [Fact]
+    public async Task TimeoutCallback_WhenPluginNameContainsUnsafeDetails_ShouldShowSanitizedPluginName()
+    {
+        // Arrange - use valid state so ValidatePreClean passes
+        var tempFile = Path.GetTempFileName();
+        try
+        {
+            var vm = CreateViewModelWithValidState(tempFile);
+            using var _ = vm.ShowProgressInteraction.RegisterHandler(_ => Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
+            vm.Configuration.XEditPath = tempFile;
+
+            TimeoutRetryCallback? capturedCallback = null;
+            _orchestratorMock.StartCleaningAsync(
+                    Arg.Do<TimeoutRetryCallback?>(cb => capturedCallback = cb),
+                    Arg.Any<BackupFailureCallback?>(),
+                    Arg.Any<CancellationToken>())
+                .Returns(Task.CompletedTask);
+
+            _messageDialogMock.ShowRetryAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>())
+                .Returns(true);
+
+            await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
+
+            // Act - simulate a callback payload with path, command, quote, and backtick detail.
+            capturedCallback.Should().NotBeNull();
+            var result = await capturedCallback!("C:\\Users\\Alice\\Mods\\Bad\"Plugin` -QAC.esp", 300, 1);
+
+            // Assert
+            result.Should().BeTrue("ShowRetryAsync returned true");
+            var dialogCall = _messageDialogMock.ReceivedCalls()
+                .Single(call => call.GetMethodInfo().Name == nameof(IMessageDialogService.ShowRetryAsync));
+            var message = (string)dialogCall.GetArguments()[1]!;
+
+            message.Should().Contain("BadPlugin.esp", "D-07 requires safe plugin display copy in timeout dialogs");
+            message.Should().NotContain(@"C:\Users\Alice");
+            message.Should().NotContain("-QAC");
+            message.Should().NotContain("\"");
+            message.Should().NotContain("`");
+            foreach (var sentinel in DiagnosticSentinels.UnsafeDiagnosticSentinels)
+            {
+                message.Should().NotContain(sentinel);
+            }
         }
         finally
         {

@@ -1,66 +1,31 @@
 ---
 phase: 11-user-facing-diagnostics-boundaries
-verified: 2026-05-01T07:39:51Z
-status: gaps_found
-score: 28/31 must-haves verified
+verified: 2026-05-01T07:54:26Z
+status: verified
+score: 31/31 must-haves verified
 overrides_applied: 0
 re_verification:
-  previous_status: verified
-  previous_score: 31/31
-  gaps_closed: []
-  gaps_remaining:
-    - "Backup failure dialog still receives and renders raw pluginName/errorMessage values."
-    - "Timeout retry dialog interpolates the callback pluginName without DiagnosticTextFormatter.SafePluginName."
-    - "Restore Selected dialog/status/error text renders backup metadata FileName verbatim."
-  regressions:
-    - "Advisory 11-REVIEW.md critical findings CR-01 and CR-02 are confirmed in code and invalidate the previous verified status."
-gaps:
-  - truth: "User-facing cleaning-session dialogs avoid exposing avoidable plugin path/detail values."
-    status: failed
-    reason: "The backup failure callback forwards pluginName and errorMessage directly into a concrete dialog that renders both verbatim."
-    artifacts:
-      - path: "AutoQAC/ViewModels/MainWindow/CleaningCommandsViewModel.cs"
-        issue: "HandleBackupFailureAsync at lines 467-468 calls ShowBackupFailureDialogAsync(pluginName, errorMessage) without sanitizing either value."
-      - path: "AutoQAC/Services/UI/MessageDialogService.cs"
-        issue: "ShowBackupFailureDialogAsync renders pluginName in a TextBlock at line 113 and errorMessage at line 121."
-    missing:
-      - "Sanitize pluginName with DiagnosticTextFormatter.SafePluginName before it reaches the dialog."
-      - "Pass errorMessage through DiagnosticTextFormatter.SafeFailureSummary with latest-log fallback, or enforce that dialog service sanitizes it."
-      - "Add a regression test where backup callback inputs contain a path/command/exception sentinel and assert the dialog strings exclude it."
-  - truth: "Timeout retry dialogs display sanitized plugin names only."
-    status: failed
-    reason: "The timeout retry callback interpolates the callback-provided pluginName directly into user-facing dialog copy."
-    artifacts:
-      - path: "AutoQAC/ViewModels/MainWindow/CleaningCommandsViewModel.cs"
-        issue: "HandleTimeoutRetryAsync at lines 452-464 builds `Cleaning of '{pluginName}'...` without safe display-name normalization."
-      - path: "AutoQAC/Services/Cleaning/PluginCleaningRunner.cs"
-        issue: "The callback is invoked with plugin.FileName at line 70; no caller-side contract guarantees this value is sanitized."
-    missing:
-      - "Normalize pluginName through DiagnosticTextFormatter.SafePluginName before composing the timeout dialog message."
-      - "Add a timeout callback test using an unsafe path/control/command plugin name and assert ShowRetryAsync receives safe copy."
-  - truth: "Restore dialogs/status text avoid exposing avoidable plugin path/control detail from backup metadata."
-    status: partial
-    reason: "Restore Selected uses BackupPluginEntry.FileName directly in confirmation, status, log, failure dialog, and failure status text. Backup metadata is loaded from session.json and can be corrupted or hand-edited."
-    artifacts:
-      - path: "AutoQAC/ViewModels/RestoreViewModel.cs"
-        issue: "Lines 195-223 interpolate plugin.FileName directly into confirmation, StatusText, logger properties, error message, and failed status."
-      - path: "AutoQAC.Tests/ViewModels/RestoreViewModelTests.cs"
-        issue: "Existing restore confirmation test asserts the literal safe sample `Dawnguard.esm`; no negative-disclosure test covers path-like/control-character metadata filenames."
-    missing:
-      - "Use DiagnosticTextFormatter.SafePluginName(plugin.FileName) for user-facing restore selected confirmation/status/error copy while preserving the original BackupPluginEntry for service calls."
-      - "Add restore ViewModel regression coverage with a path-like/control-character FileName from backup metadata."
+  previous_status: gaps_found
+  previous_score: 28/31
+  gaps_closed:
+    - "Backup failure dialog now sanitizes callback pluginName/errorMessage values before display."
+    - "Timeout retry dialog now interpolates DiagnosticTextFormatter.SafePluginName output."
+    - "Restore Selected dialog/status/error text now uses sanitized backup metadata display names."
+  gaps_remaining: []
+  regressions: []
+gaps: []
 ---
 
 # Phase 11: User-Facing Diagnostics Boundaries Verification Report
 
 **Phase Goal:** Users receive concise, actionable error messages while logs retain local troubleshooting value without unnecessary full path or command-line exposure.  
-**Verified:** 2026-05-01T07:39:51Z  
-**Status:** gaps_found  
-**Re-verification:** Yes — prior verification existed, but the new advisory review findings were independently checked against production code.
+**Verified:** 2026-05-01T07:54:26Z  
+**Status:** verified  
+**Re-verification:** Yes - Plans 11-12 and 11-13 closed the callback/dialog gaps found by advisory review.
 
 ## Goal Achievement
 
-Phase 11 is **not fully achieved**. The formatter, report, process-log, migration-warning, result-finalizer, and xEdit log warning boundaries are substantive and wired. However, goal-backward verification confirms the latest advisory review's two critical UI-disclosure findings: backup failure and timeout retry dialogs still render unsanitized plugin/error values. A restore selected metadata display gap is also confirmed.
+Phase 11 is **fully achieved** after gap closure. The formatter, report, process-log, migration-warning, result-finalizer, xEdit log warning, backup failure, timeout retry, and restore-selected boundaries are wired with safe user-facing copy while preserving local troubleshooting detail in logs and service inputs where required.
 
 ## Observable Truths
 
@@ -74,35 +39,35 @@ Phase 11 is **not fully achieved**. The formatter, report, process-log, migratio
 | 6 | xEdit exception-log and log-read warning text does not flow raw into result/report/tooltip-bound properties. | ✓ VERIFIED | `PluginResultFinalizer.cs:39-43,67-73,92-100` logs raw log-read warning locally but exposes `SafeLogReadWarning` or `XEditReportedError`. |
 | 7 | Process/startup logs avoid raw executable paths and command-line payloads while preserving useful structured fields. | ✓ VERIFIED | `ProcessExecutionService.cs:61-93,212-228` logs operation/status/PID/argument count and uses `ExternalProcess`/safe plugin labels; `CleaningService.cs:82-148` logs QuickAutoClean mode/game/plugin/count/status/reason. |
 | 8 | Legacy migration warnings shown to users use safe latest-log guidance. | ✓ VERIFIED | `LegacyMigrationService` returns fixed safe warning strings; `App.axaml.cs` defensively applies `SafeFailureSummary` before `ShowMigrationWarning` per Plan 11-07. |
-| 9 | Backup failure dialog avoids raw plugin/path/error details. | ✗ FAILED | `CleaningCommandsViewModel.cs:467-468` forwards raw values; `MessageDialogService.cs:111-124` renders both verbatim. |
-| 10 | Timeout retry dialog avoids raw plugin/path/control/command details. | ✗ FAILED | `CleaningCommandsViewModel.cs:452-464` interpolates `pluginName` directly into dialog text. |
-| 11 | Restore selected dialog/status text avoids raw plugin metadata display values. | ✗ PARTIAL | `RestoreViewModel.cs:195-223` renders `plugin.FileName` from backup metadata directly in confirmation/status/error copy. |
-| 12 | Phase-level sentinel tests exercise real ViewModel, model, and logger paths. | ⚠️ PARTIAL | Focused Phase 11 tests pass, but grep/read shows no sentinel tests for backup failure callback, timeout retry unsafe plugin names, or restore selected unsafe metadata filenames. |
+| 9 | Backup failure dialog avoids raw plugin/path/error details. | ✓ VERIFIED | `CleaningCommandsViewModel.HandleBackupFailureAsync` sanitizes callback plugin/error text; `MessageDialogService.ShowBackupFailureDialogAsync` defensively re-sanitizes before TextBlock rendering. |
+| 10 | Timeout retry dialog avoids raw plugin/path/control/command details. | ✓ VERIFIED | `CleaningCommandsViewModel.HandleTimeoutRetryAsync` uses `DiagnosticTextFormatter.SafePluginName(pluginName)` before composing retry dialog copy. |
+| 11 | Restore selected dialog/status text avoids raw plugin metadata display values. | ✓ VERIFIED | `RestoreViewModel.RestorePluginAsync` uses `DiagnosticTextFormatter.SafePluginName(plugin.FileName)` for confirmation, status, and error copy while preserving the original `BackupPluginEntry` service input. |
+| 12 | Phase-level sentinel tests exercise real ViewModel, model, and logger paths. | ✓ VERIFIED | Focused Phase 11 tests now cover backup failure callback, timeout retry unsafe plugin names, restore selected unsafe metadata filenames, result/report, process/log, startup, and finalizer boundaries. |
 
-**Score:** 28/31 must-haves verified
+**Score:** 31/31 must-haves verified
 
 ## Required Artifacts
 
 | Artifact | Expected | Status | Details |
 |---|---|---|---|
 | `AutoQAC/Models/Diagnostics/DiagnosticTextFormatter.cs` | Shared safe diagnostics formatter | ✓ VERIFIED | Substantive and used by many surfaces. |
-| `AutoQAC/ViewModels/MainWindow/CleaningCommandsViewModel.cs` | Safe cleaning dialogs/status/validation/callbacks | ✗ FAILED | Main unexpected errors and validation are safe, but backup failure and timeout retry callbacks are unsanitized. |
-| `AutoQAC/Services/UI/MessageDialogService.cs` | Dialog renderer that does not reintroduce unsafe detail | ✗ FAILED | Backup failure dialog renders caller-provided pluginName/errorMessage verbatim. |
-| `AutoQAC/ViewModels/RestoreViewModel.cs` | Safe restore/session-loading diagnostics | ⚠️ PARTIAL | Session loading/delete failure copy is safe; Restore Selected metadata display uses raw `plugin.FileName`. |
+| `AutoQAC/ViewModels/MainWindow/CleaningCommandsViewModel.cs` | Safe cleaning dialogs/status/validation/callbacks | ✓ VERIFIED | Main unexpected errors, validation, timeout retry, and backup failure callbacks use safe formatter output. |
+| `AutoQAC/Services/UI/MessageDialogService.cs` | Dialog renderer that does not reintroduce unsafe detail | ✓ VERIFIED | Backup failure dialog defensively applies `SafePluginName` and `SafeFailureSummary` before TextBlock rendering. |
+| `AutoQAC/ViewModels/RestoreViewModel.cs` | Safe restore/session-loading diagnostics | ✓ VERIFIED | Session loading/delete copy is safe; Restore Selected metadata display uses sanitized filenames. |
 | `AutoQAC/Services/Process/ProcessExecutionService.cs` | Safe process-start logging and PID labels | ✓ VERIFIED | Structured fields; safe tracking label helper. |
 | `AutoQAC/Services/Cleaning/CleaningService.cs` | Safe caller-side launch diagnostics/result messages | ✓ VERIFIED | Safe plugin display used in launch logs and failure messages. |
 | `AutoQAC/Services/Cleaning/PluginResultFinalizer.cs` | Source sanitization for result rows and warnings | ✓ VERIFIED | Safe message/log-parse boundaries present. |
-| Phase 11 tests | Regression guards | ⚠️ PARTIAL | Existing focused tests pass, but critical callback/dialog gaps are untested. |
+| Phase 11 tests | Regression guards | ✓ VERIFIED | New focused tests cover timeout retry, backup failure, and restore selected metadata negative-disclosure regressions. |
 
 ## Key Link Verification
 
 | From | To | Via | Status | Details |
 |---|---|---|---|---|
 | `CleaningCommandsViewModel` | `IMessageDialogService.ShowErrorAsync` | safe title/message/details | ✓ WIRED | Unexpected cleaning/preview catches use safe copy. |
-| `CleaningCommandsViewModel.HandleTimeoutRetryAsync` | `IMessageDialogService.ShowRetryAsync` | interpolated pluginName | ✗ NOT SAFE | Callback value is used raw in dialog message. |
-| `CleaningCommandsViewModel.HandleBackupFailureAsync` | `IMessageDialogService.ShowBackupFailureDialogAsync` | raw pluginName/errorMessage | ✗ NOT SAFE | No formatter call before concrete dialog renders values. |
-| `MessageDialogService.ShowBackupFailureDialogAsync` | Avalonia `TextBlock` content | direct text assignment | ✗ NOT SAFE | Lines 113 and 121 render raw caller values. |
-| `RestoreViewModel.RestorePluginAsync` | `IMessageDialogService.ShowConfirmAsync/ShowErrorAsync` | raw backup metadata FileName | ⚠️ PARTIAL | Service calls should keep raw entry, but UI copy should use safe display value. |
+| `CleaningCommandsViewModel.HandleTimeoutRetryAsync` | `IMessageDialogService.ShowRetryAsync` | sanitized pluginName | ✓ WIRED SAFELY | Callback value is normalized through `SafePluginName` before dialog message composition. |
+| `CleaningCommandsViewModel.HandleBackupFailureAsync` | `IMessageDialogService.ShowBackupFailureDialogAsync` | sanitized pluginName/errorMessage | ✓ WIRED SAFELY | Callback plugin and failure text are normalized through `SafePluginName` and `SafeFailureSummary`. |
+| `MessageDialogService.ShowBackupFailureDialogAsync` | Avalonia `TextBlock` content | defensive safe variables | ✓ WIRED SAFELY | Dialog service re-applies `SafePluginName` and `SafeFailureSummary` before assigning TextBlock text. |
+| `RestoreViewModel.RestorePluginAsync` | `IMessageDialogService.ShowConfirmAsync/ShowErrorAsync` | sanitized backup metadata FileName | ✓ WIRED SAFELY | UI copy uses safe display text while the restore service still receives the original `BackupPluginEntry`. |
 | `ProcessExecutionService.ExecuteAsync` | `ILoggingService` / `IPidStore` | structured fields + safe labels | ✓ WIRED | No raw FileName/Arguments logging in start templates; tracking uses `GetSafeTrackingLabel`. |
 | `XEditLogFileService` | `ProgressWindow` | warning -> finalizer -> LogParseWarning binding | ✓ WIRED SAFELY | Raw warning is logged locally only; `LogParseWarning` receives safe copy. |
 
@@ -110,9 +75,9 @@ Phase 11 is **not fully achieved**. The formatter, report, process-log, migratio
 
 | Artifact | Data Variable | Source | Produces Real Data | Status |
 |---|---|---|---|---|
-| Backup failure dialog | `pluginName`, `errorMessage` | `BackupSessionCoordinator` callback to `CleaningCommandsViewModel` | Yes | ✗ HOLLOW SAFETY — real dynamic data flows to user without safe boundary. |
-| Timeout retry dialog | `pluginName` | `PluginCleaningRunner` callback using `plugin.FileName` | Yes | ✗ HOLLOW SAFETY — dynamic plugin display value flows raw into dialog message. |
-| Restore selected copy | `plugin.FileName` | `BackupPluginEntry` loaded from backup session metadata | Yes | ⚠️ PARTIAL — restore service receives real entry; UI display lacks safe projection. |
+| Backup failure dialog | `pluginName`, `errorMessage` | `BackupSessionCoordinator` callback to `CleaningCommandsViewModel` | Yes | ✓ FLOWING safely through `SafePluginName`/`SafeFailureSummary`, with dialog-service defense-in-depth. |
+| Timeout retry dialog | `pluginName` | `PluginCleaningRunner` callback using `plugin.FileName` | Yes | ✓ FLOWING safely through `SafePluginName` before retry copy is composed. |
+| Restore selected copy | `plugin.FileName` | `BackupPluginEntry` loaded from backup session metadata | Yes | ✓ FLOWING safely for UI copy; original entry still flows to `IBackupService.RestorePluginAsync`. |
 | Report rows | `result.PluginName`, `result.Message` | `PluginResults` | Yes | ✓ FLOWING safely through `SafePluginName`/`SafeFailureSummary`. |
 | Process logs/PID labels | `startInfo`, `pluginName` | caller ProcessStartInfo / optional plugin context | Yes | ✓ FLOWING safely through counts and safe labels. |
 
@@ -120,16 +85,17 @@ Phase 11 is **not fully achieved**. The formatter, report, process-log, migratio
 
 | Behavior | Command | Result | Status |
 |---|---|---|---|
-| Existing Phase 11/finalizer tests | `dotnet test "AutoQAC.Tests/AutoQAC.Tests.csproj" --filter "FullyQualifiedName~Phase11\|FullyQualifiedName~PluginResultFinalizerTests" --nologo` | Passed 16/16 | ✓ PASS |
-| Backup failure source check | Read `CleaningCommandsViewModel.cs` and `MessageDialogService.cs` | Raw callback values are rendered verbatim | ✗ FAIL |
-| Timeout retry source check | Read `CleaningCommandsViewModel.cs` and `PluginCleaningRunner.cs` | Raw callback pluginName is interpolated | ✗ FAIL |
-| Restore metadata source check | Read `RestoreViewModel.cs` | `BackupPluginEntry.FileName` is displayed verbatim | ⚠️ PARTIAL |
+| Focused gap-closure tests | `dotnet test "AutoQAC.Tests/AutoQAC.Tests.csproj" --filter "FullyQualifiedName~ErrorDialogTests\|FullyQualifiedName~Phase11DiagnosticsBoundaryTests\|FullyQualifiedName~RestoreViewModelTests\|FullyQualifiedName~DiagnosticTextFormatterTests" --nologo` | Passed 84/84 | ✓ PASS |
+| Full solution tests | `dotnet test "AutoQACSharp.slnx" --nologo` | Passed QueryPlugins.Tests 61/61 and AutoQAC.Tests 997/997 | ✓ PASS |
+| Backup failure source check | Read `CleaningCommandsViewModel.cs` and `MessageDialogService.cs` | Callback values and concrete TextBlock copy are sanitized. | ✓ PASS |
+| Timeout retry source check | Read `CleaningCommandsViewModel.cs` and `PluginCleaningRunner.cs` | Callback pluginName is sanitized in the ViewModel boundary before display. | ✓ PASS |
+| Restore metadata source check | Read `RestoreViewModel.cs` | `BackupPluginEntry.FileName` is sanitized for UI copy and preserved for service calls. | ✓ PASS |
 
 ## Requirements Coverage
 
 | Requirement | Source Plan | Description | Status | Evidence |
 |---|---|---|---|---|
-| SEC-01 | 11-01, 11-02, 11-03, 11-04, 11-07, 11-09, 11-10, 11-11 | User sees concise error dialogs with log-file references instead of stack traces or excessive internal path detail. | ✗ BLOCKED | Major surfaces are safe, but backup failure and timeout retry dialogs still render unsanitized plugin/error values; restore selected metadata copy is also raw. |
+| SEC-01 | 11-01, 11-02, 11-03, 11-04, 11-07, 11-09, 11-10, 11-11, 11-12, 11-13 | User sees concise error dialogs with log-file references instead of stack traces or excessive internal path detail. | ✓ SATISFIED | Backup failure, timeout retry, restore selected, formatter, result/report, migration warning, result-finalizer, and xEdit log warning surfaces all use safe display boundaries. |
 | SEC-02 | 11-01, 11-05, 11-06, 11-08 | User diagnostic logs avoid unnecessary full command-line/path exposure while preserving local troubleshooting value. | ✓ SATISFIED | Process and cleaning launch logs use safe structured fields; PID labels use sanitized plugin names or `ExternalProcess`; raw xEdit log-read path is local-log-only as direct failing resource. |
 
 No orphaned Phase 11 requirement IDs were found. `.planning/REQUIREMENTS.md` maps `SEC-01` and `SEC-02` to Phase 11, and both IDs appear in Phase 11 plan frontmatter.
@@ -138,29 +104,28 @@ No orphaned Phase 11 requirement IDs were found. `.planning/REQUIREMENTS.md` map
 
 | Review Finding | Verdict | Verification Evidence |
 |---|---|---|
-| CR-01: Backup failure dialog receives raw plugin/error text | 🛑 TRUE GAP | `HandleBackupFailureAsync` passes raw values; concrete dialog renders both verbatim. Even though current `BackupSessionCoordinator` usually supplies a typed `DisplayReason`, neither the callback nor dialog enforces this boundary and pluginName remains raw. |
-| CR-02: Timeout retry dialog can expose unsanitized plugin names | 🛑 TRUE GAP | `HandleTimeoutRetryAsync` interpolates `pluginName` without `SafePluginName`. |
+| CR-01: Backup failure dialog receives raw plugin/error text | ✓ CLOSED | Plan 11-12 sanitizes the callback boundary and adds defensive dialog-service sanitization before TextBlock rendering. |
+| CR-02: Timeout retry dialog can expose unsanitized plugin names | ✓ CLOSED | Plan 11-12 sanitizes `pluginName` with `SafePluginName` before composing retry dialog text. |
 | WR-01: Already-clean plugins are listed twice in reports | ⚠️ Advisory / not Phase 11 blocker | Report accounting issue confirmed by code shape (`CleanedPlugins` includes `AlreadyClean`), but it is not a diagnostics disclosure boundary. |
-| WR-02: Restore confirmation/status text renders backup metadata filenames verbatim | ⚠️ TRUE GAP | Confirmed in `RestoreViewModel.cs:195-223`; classified partial because it requires bad backup metadata but still violates the user-facing display boundary. |
+| WR-02: Restore confirmation/status text renders backup metadata filenames verbatim | ✓ CLOSED | Plan 11-13 sanitizes Restore Selected confirmation/status/error copy while preserving original `BackupPluginEntry` service input. |
 
 ## Anti-Patterns Found
 
 | File | Line | Pattern | Severity | Impact |
 |---|---:|---|---|---|
-| `AutoQAC/ViewModels/MainWindow/CleaningCommandsViewModel.cs` | 454 | `$"Cleaning of '{pluginName}'...` | 🛑 Blocker | Unsanitized callback plugin display value reaches retry dialog. |
-| `AutoQAC/ViewModels/MainWindow/CleaningCommandsViewModel.cs` | 467-468 | `ShowBackupFailureDialogAsync(pluginName, errorMessage)` | 🛑 Blocker | Unsanitized backup failure data crosses into dialog. |
-| `AutoQAC/Services/UI/MessageDialogService.cs` | 113, 121 | TextBlocks render caller strings verbatim | 🛑 Blocker | Concrete UI surface has no defensive sanitization. |
-| `AutoQAC/ViewModels/RestoreViewModel.cs` | 195-223 | Raw `plugin.FileName` in confirmation/status/error | ⚠️ Warning | Corrupt backup metadata can display path/control detail. |
+| `AutoQAC/ViewModels/MainWindow/CleaningCommandsViewModel.cs` | 452-471 | Timeout and backup failure callbacks | ✓ Closed | Callback values are sanitized before dialog service calls. |
+| `AutoQAC/Services/UI/MessageDialogService.cs` | 94-128 | Backup failure TextBlocks | ✓ Closed | Concrete UI surface defensively sanitizes plugin and failure text. |
+| `AutoQAC/ViewModels/RestoreViewModel.cs` | 192-223 | Restore Selected confirmation/status/error | ✓ Closed | User-facing restore copy uses `safePluginName`; service/log inputs remain original. |
 
 ## Human Verification Required
 
-None. The blocking gaps are source-verifiable. No visual/manual UI judgement is needed to determine that raw values are interpolated into dialog text.
+None. The gap closures are source- and test-verifiable. No visual/manual UI judgement is needed.
 
 ## Gaps Summary
 
-The previous `status: verified` report was too soft. It trusted the then-current Phase 11 surfaces but missed callback-driven dialog paths. The phase goal explicitly covers user-facing dialogs and avoidable plugin/path detail; backup failure and timeout retry dialogs are part of the cleaning user flow and currently bypass the shared formatter. These are BLOCKER gaps for SEC-01. Restore selected metadata display is a lower-likelihood but real user-facing boundary gap that should be fixed in the same closure pass or explicitly deferred/overridden.
+The previous `status: gaps_found` report identified three user-facing disclosure gaps. Plans 11-12 and 11-13 closed all three with RED/GREEN regression tests, ViewModel boundary sanitization, and defensive dialog-service sanitization for backup failure rendering. No Phase 11 gaps remain.
 
 ---
 
-_Verified: 2026-05-01T07:39:51Z_  
+_Verified: 2026-05-01T07:54:26Z_  
 _Verifier: the agent (gsd-verifier)_

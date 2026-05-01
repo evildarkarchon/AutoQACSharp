@@ -102,6 +102,90 @@ public sealed class Phase11DiagnosticsBoundaryTests
     }
 
     /// <summary>
+    /// Verifies backup-failure callback inputs are sanitized before reaching user-facing D-09/D-10 dialog copy.
+    /// </summary>
+    [Fact]
+    public async Task BackupFailureCallback_WhenInputsContainUnsafeDetails_ShouldExcludeSharedSentinelsFromDialogText()
+    {
+        // Arrange
+        var configService = Substitute.For<IConfigurationService>();
+        var stateService = Substitute.For<IStateService>();
+        var orchestrator = Substitute.For<ICleaningOrchestrator>();
+        var logger = Substitute.For<ILoggingService>();
+        var fileDialog = Substitute.For<IFileDialogService>();
+        var messageDialog = Substitute.For<IMessageDialogService>();
+        var pluginValidation = Substitute.For<IPluginValidationService>();
+        var pluginLoading = Substitute.For<IPluginLoadingService>();
+        var uiDispatcher = new SynchronousUiDispatcher();
+        var xEditPath = Path.GetTempFileName();
+
+        try
+        {
+            var appState = new AppState
+            {
+                XEditExecutablePath = xEditPath,
+                PluginsToClean =
+                [
+                    new PluginInfo
+                    {
+                        FileName = "Unsafe.esp",
+                        FullPath = @"C:\Games\Skyrim Special Edition\Data\Unsafe.esp"
+                    }
+                ]
+            };
+            stateService.StateChanged.Returns(new BehaviorSubject<AppState>(appState));
+            stateService.CurrentState.Returns(appState);
+            stateService.CleaningCompleted.Returns(Observable.Never<CleaningSessionResult>());
+            configService.SkipListChanged.Returns(Observable.Never<GameType>());
+            pluginLoading.GetAvailableGames().Returns([GameType.SkyrimSe]);
+            pluginLoading.IsGameSupportedByMutagen(Arg.Any<GameType>()).Returns(true);
+
+            BackupFailureCallback? capturedCallback = null;
+            orchestrator.StartCleaningAsync(
+                    Arg.Any<TimeoutRetryCallback>(),
+                    Arg.Do<BackupFailureCallback?>(cb => capturedCallback = cb),
+                    Arg.Any<CancellationToken>())
+                .Returns(Task.CompletedTask);
+            messageDialog.ShowBackupFailureDialogAsync(Arg.Any<string>(), Arg.Any<string>())
+                .Returns(Task.FromResult(BackupFailureChoice.SkipPlugin));
+
+            var viewModel = new MainWindowViewModel(
+                configService,
+                stateService,
+                orchestrator,
+                logger,
+                fileDialog,
+                messageDialog,
+                pluginValidation,
+                pluginLoading,
+                uiDispatcher);
+            using var _ = viewModel.ShowProgressInteraction.RegisterHandler(_ => Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
+
+            await viewModel.Commands.StartCleaningCommand.ExecuteAsync(null);
+
+            // Act - simulate a callback payload with path, command, exception, and stack detail.
+            capturedCallback.Should().NotBeNull();
+            var choice = await capturedCallback!(
+                @"C:\Games\Skyrim Special Edition\Data\Unsafe` -autoload.esp",
+                DiagnosticSentinels.CreateUnsafePayload());
+
+            // Assert
+            choice.Should().Be(BackupFailureChoice.SkipPlugin);
+            var dialogCall = messageDialog.ReceivedCalls()
+                .Single(call => call.GetMethodInfo().Name == nameof(IMessageDialogService.ShowBackupFailureDialogAsync));
+            var dialogText = dialogCall.GetArguments().OfType<string>().ToArray();
+
+            dialogText.Should().Contain("Unsafe.esp", "D-09/D-10 require safe plugin and failure summary copy");
+            dialogText.Should().Contain(text => text.Contains("See the latest AutoQAC log", StringComparison.Ordinal));
+            AssertNoUnsafeSentinels(dialogText);
+        }
+        finally
+        {
+            File.Delete(xEditPath);
+        }
+    }
+
+    /// <summary>
     /// Asserts every covered user-facing string excludes the shared Phase 11 unsafe sentinel set.
     /// </summary>
     private static void AssertNoUnsafeSentinels(IEnumerable<string?> values)

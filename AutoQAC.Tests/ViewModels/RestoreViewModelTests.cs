@@ -3,6 +3,7 @@ using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.Backup;
 using AutoQAC.Services.UI;
+using AutoQAC.Tests.Helpers;
 using AutoQAC.Tests.TestInfrastructure;
 using AutoQAC.ViewModels;
 using FluentAssertions;
@@ -83,6 +84,66 @@ public sealed class RestoreViewModelTests
         await _messageDialog.Received(1).ShowConfirmAsync(
             "Restore Selected",
             "Restore Selected: Restore Dawnguard.esm from Apr 29, 2026 7:30 AM? This overwrites the current plugin file with the backup copy.");
+    }
+
+    /// <summary>
+    /// Verifies Restore Selected projects untrusted backup metadata through safe D-07/D-09 display copy without altering service input.
+    /// </summary>
+    [Fact]
+    public async Task RestorePluginCommand_WhenBackupMetadataFileNameContainsUnsafeDetails_ShouldShowSanitizedDisplayCopy()
+    {
+        var plugin = CreatePlugin("C:\\Users\\Alice\\Backups\\Bad\t\"` -autoload.esp");
+        var session = CreateSession(plugin);
+        _messageDialog.ShowConfirmAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        _backupService.RestorePluginAsync(
+                plugin,
+                session.SessionDirectory,
+                Arg.Any<string?>(),
+                Arg.Any<IProgress<BackupCopyProgress>?>(),
+                Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException(DiagnosticSentinels.CreateUnsafePayload()));
+
+        var vm = CreateViewModel();
+        vm.SelectedSession = session;
+        vm.SelectedPlugin = plugin;
+
+        await vm.RestorePluginCommand.ExecuteAsync(null);
+
+        await _backupService.Received(1).RestorePluginAsync(
+            Arg.Is<BackupPluginEntry>(entry => ReferenceEquals(entry, plugin)),
+            session.SessionDirectory,
+            Arg.Any<string?>(),
+            Arg.Any<IProgress<BackupCopyProgress>?>(),
+            Arg.Any<CancellationToken>());
+
+        var confirmCall = _messageDialog.ReceivedCalls()
+            .Single(call => call.GetMethodInfo().Name == nameof(IMessageDialogService.ShowConfirmAsync));
+        var errorCall = _messageDialog.ReceivedCalls()
+            .Single(call => call.GetMethodInfo().Name == nameof(IMessageDialogService.ShowErrorAsync));
+
+        var confirmationMessage = (string)confirmCall.GetArguments()[1]!;
+        var errorMessage = (string)errorCall.GetArguments()[1]!;
+        var userFacingRestoreCopy = new[] { confirmationMessage, errorMessage, vm.StatusText };
+
+        userFacingRestoreCopy.Should().AllSatisfy(text =>
+            text.Should().Contain("Bad.esp", "D-07/D-09 require safe backup metadata display names"));
+
+        var allDialogAndStatusText = userFacingRestoreCopy
+            .Concat(errorCall.GetArguments().OfType<string>())
+            .ToArray();
+        foreach (var text in allDialogAndStatusText)
+        {
+            text.Should().NotContain(@"C:\Users\Alice");
+            text.Should().NotContain("-autoload");
+            text.Should().NotContain("\"");
+            text.Should().NotContain("`");
+            text.Should().NotContain("\t");
+        }
+
+        foreach (var sentinel in DiagnosticSentinels.UnsafeDiagnosticSentinels)
+        {
+            allDialogAndStatusText.Should().NotContain(text => text.Contains(sentinel, StringComparison.Ordinal));
+        }
     }
 
     [Fact]

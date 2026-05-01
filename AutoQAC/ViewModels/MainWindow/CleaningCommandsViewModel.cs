@@ -451,7 +451,8 @@ public sealed partial class CleaningCommandsViewModel : ViewModelBase, IDisposab
 
     private async Task<bool> HandleTimeoutRetryAsync(string pluginName, int timeoutSeconds, int attemptNumber)
     {
-        var message = $"Cleaning of '{pluginName}' timed out after {timeoutSeconds} seconds.\n\n" +
+        var safePluginName = DiagnosticTextFormatter.SafePluginName(pluginName);
+        var message = $"Cleaning of '{safePluginName}' timed out after {timeoutSeconds} seconds.\n\n" +
                       $"Attempt {attemptNumber} of 3 failed.\n\n" +
                       "Would you like to retry cleaning this plugin?";
 
@@ -464,8 +465,15 @@ public sealed partial class CleaningCommandsViewModel : ViewModelBase, IDisposab
         return await _messageDialog.ShowRetryAsync("Plugin Timeout", message, details);
     }
 
-    private async Task<BackupFailureChoice> HandleBackupFailureAsync(string pluginName, string errorMessage) =>
-        await _messageDialog.ShowBackupFailureDialogAsync(pluginName, errorMessage);
+    private async Task<BackupFailureChoice> HandleBackupFailureAsync(string pluginName, string errorMessage)
+    {
+        var safePluginName = DiagnosticTextFormatter.SafePluginName(pluginName);
+        var safeErrorMessage = DiagnosticTextFormatter.SafeFailureSummary(
+            errorMessage,
+            DiagnosticTextFormatter.CleaningFailedForPlugin(pluginName));
+
+        return await _messageDialog.ShowBackupFailureDialogAsync(safePluginName, safeErrorMessage);
+    }
 
     public void Dispose()
     {

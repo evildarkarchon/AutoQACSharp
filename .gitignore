@@ -481,3 +481,4 @@ test_output.txt
 .opencode-out
 # CocoIndex Code (ccc)
 /.cocoindex_code/
+tmp/

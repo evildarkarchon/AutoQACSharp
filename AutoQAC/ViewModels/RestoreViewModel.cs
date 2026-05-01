@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
+using AutoQAC.Models.Diagnostics;
 using AutoQAC.Services.Backup;
 using AutoQAC.Services.UI;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -191,10 +192,11 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
 
         var plugin = SelectedPlugin;
         var session = SelectedSession;
+        var safePluginName = DiagnosticTextFormatter.SafePluginName(plugin.FileName);
         var timestamp = FormatSessionTimestamp(session.Timestamp);
         var confirmed = await _messageDialog.ShowConfirmAsync(
             "Restore Selected",
-            $"Restore Selected: Restore {plugin.FileName} from {timestamp}? This overwrites the current plugin file with the backup copy.");
+            $"Restore Selected: Restore {safePluginName} from {timestamp}? This overwrites the current plugin file with the backup copy.");
 
         if (!confirmed)
             return;
@@ -203,7 +205,7 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
         {
             IsRestoreActive = true;
             ClearRestoreResult();
-            StatusText = $"Restoring: {plugin.FileName}";
+            StatusText = $"Restoring: {safePluginName}";
             RestoreProgressText = $"Restoring 1 / 1 plugins";
 
             var cts = CreateRestoreCancellationSource();
@@ -218,9 +220,9 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
             _logger.Error(ex, "Failed to restore plugin {Plugin}", plugin.FileName);
             await _messageDialog.ShowErrorAsync(
                 "Restore Failed",
-                $"Failed to restore '{plugin.FileName}'.",
+                $"Failed to restore '{safePluginName}'.",
                 "Technical details were written to the log.");
-            StatusText = $"Failed to restore: {plugin.FileName}";
+            StatusText = $"Failed to restore: {safePluginName}";
         }
         finally
         {
