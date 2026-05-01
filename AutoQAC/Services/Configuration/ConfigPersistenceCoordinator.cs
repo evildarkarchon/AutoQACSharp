@@ -237,7 +237,7 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
         _appGeneration = Math.Max(_appGeneration, intent.Generation);
         _pendingApp = intent.Config.Copy();
         SetActive(intent.Config);
-        _configurationAccepted.OnNext(intent.Config.Copy());
+        SafePublishAccepted(intent.Config.Copy());
         ScheduleAutoFlush();
         intent.Completion.TrySetResult();
         return Task.CompletedTask;
@@ -246,7 +246,7 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
     private async Task ApplyFlushAsync(FlushBarrier op, CancellationToken ct)
     {
         var result = await FlushPendingInsideConsumerAsync(ct).ConfigureAwait(false);
-        _persistenceResults.OnNext(result);
+        SafePublishResult(result);
         op.Completion.TrySetResult(result);
     }
 
@@ -278,7 +278,7 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
             _logger.Error(ex, "[ConfigPersistence] Could not write settings file");
             _pendingApp = null;
             SetActive(_lastKnownGood);
-            _configurationAccepted.OnNext(_lastKnownGood.Copy());
+            SafePublishAccepted(_lastKnownGood.Copy());
             var failure = CreateFailure(ConfigPersistenceOperationKind.Flush, ConfigPersistenceFailureKind.WriteFailed, "Could not write settings file (write_failed)");
             PublishFailure(failure);
             return new ConfigPersistenceResult(ConfigPersistenceStatusKind.Failed, ConfigPersistenceOperationKind.Flush, _appGeneration, failure);
@@ -316,7 +316,7 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
         var read = await ReadForReloadAsync(ConfigPersistenceOperationKind.Watcher, ct).ConfigureAwait(false);
         if (read.Result != null)
         {
-            _persistenceResults.OnNext(read.Result);
+            SafePublishResult(read.Result);
             return;
         }
 
@@ -341,15 +341,24 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
         var candidate = _deferredCandidate;
         _deferredCandidate = null;
         var result = ValidateAndApply(candidate, ConfigPersistenceOperationKind.DeferredReload);
-        _persistenceResults.OnNext(result);
+        SafePublishResult(result);
         await Task.CompletedTask.ConfigureAwait(false);
     }
 
     private async Task ApplyReloadRequestAsync(ReloadRequest reload, CancellationToken ct)
     {
+        if (_pendingApp != null)
+        {
+            // Explicit reloads must not silently overwrite a queued app save; flush first
+            // so the reload reads the latest user edits back from disk.
+            _logger.Information("[ConfigPersistence] Flushing pending app save before explicit reload");
+            var flushResult = await FlushPendingInsideConsumerAsync(ct).ConfigureAwait(false);
+            SafePublishResult(flushResult);
+        }
+
         var read = await ReadForReloadAsync(ConfigPersistenceOperationKind.Reload, ct).ConfigureAwait(false);
         var result = read.Result ?? ValidateAndApply(read.ReadResult, ConfigPersistenceOperationKind.Reload);
-        _persistenceResults.OnNext(result);
+        SafePublishResult(result);
         reload.Completion.TrySetResult(result);
     }
 
@@ -403,7 +412,7 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
     private void ApplyCandidate(UserConfigReadResult readResult, ConfigPersistenceOperationKind operation)
     {
         var result = ValidateAndApply(readResult, operation);
-        _persistenceResults.OnNext(result);
+        SafePublishResult(result);
     }
 
     private ConfigPersistenceResult ValidateAndApply(UserConfigReadResult readResult, ConfigPersistenceOperationKind operation)
@@ -428,7 +437,7 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
             _lastKnownGood = copy.Copy();
             _lastKnownExternalHash = readResult.Hash;
             _lastFailure = null;
-            _configurationAccepted.OnNext(copy.Copy());
+            SafePublishAccepted(copy.Copy());
             return new ConfigPersistenceResult(ConfigPersistenceStatusKind.Success, operation, _appGeneration, null);
         }
         catch (Exception ex)
@@ -450,8 +459,56 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
 
     private void PublishFailure(ConfigPersistenceFailure failure)
     {
+        SafePublishFailure(failure);
+    }
+
+    /// <summary>
+    /// Publishes to the configuration-accepted subject without letting observer exceptions escape into the single-reader operation loop.
+    /// </summary>
+    /// <param name="config">The accepted configuration snapshot to publish to observers.</param>
+    private void SafePublishAccepted(UserConfiguration config)
+    {
+        try
+        {
+            _configurationAccepted.OnNext(config); // SafePublishAccepted owns the subject boundary.
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning("[ConfigPersistence] Observer exception on ConfigurationAccepted: {Message}", ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Publishes to the persistence-results subject without letting observer exceptions escape into the single-reader operation loop.
+    /// </summary>
+    /// <param name="result">The typed persistence result to publish to observers.</param>
+    private void SafePublishResult(ConfigPersistenceResult result)
+    {
+        try
+        {
+            _persistenceResults.OnNext(result); // SafePublishResult owns the subject boundary.
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning("[ConfigPersistence] Observer exception on PersistenceResults: {Message}", ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Records and publishes a failure without letting observer exceptions escape into the single-reader operation loop.
+    /// </summary>
+    /// <param name="failure">The safe typed persistence failure to record and publish.</param>
+    private void SafePublishFailure(ConfigPersistenceFailure failure)
+    {
         _lastFailure = failure;
-        _failures.OnNext(failure);
+        try
+        {
+            _failures.OnNext(failure); // SafePublishFailure owns the subject boundary.
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning("[ConfigPersistence] Observer exception on Failures: {Message}", ex.Message);
+        }
     }
 
     private ConfigPersistenceFailure CreateFailure(
