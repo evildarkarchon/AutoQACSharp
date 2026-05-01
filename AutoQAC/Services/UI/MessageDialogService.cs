@@ -77,6 +77,49 @@ public sealed class MessageDialogService : IMessageDialogService
         return result == MessageDialogResult.Yes;
     }
 
+    public async Task<MessageDialogResult> ShowChoiceAsync(
+        string title,
+        string message,
+        string primaryButtonText,
+        string secondaryButtonText,
+        MessageDialogIcon icon = MessageDialogIcon.Question,
+        string? details = null)
+    {
+        // Preserve the dialog result contract: the primary button maps to Yes and the secondary button maps to No.
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            return await Dispatcher.UIThread.InvokeAsync(() =>
+                ShowChoiceAsync(title, message, primaryButtonText, secondaryButtonText, icon, details));
+        }
+
+        var viewModel = new MessageDialogViewModel
+        {
+            Title = title,
+            Message = message,
+            Details = details,
+            YesButtonText = primaryButtonText,
+            NoButtonText = secondaryButtonText
+        };
+
+        viewModel.ConfigureButtons(MessageDialogButtons.YesNo);
+        viewModel.ConfigureIcon(icon);
+
+        var dialog = new MessageDialog
+        {
+            DataContext = viewModel
+        };
+
+        var mainWindow = GetMainWindow();
+        if (mainWindow != null)
+        {
+            var result = await dialog.ShowDialog<MessageDialogResult?>(mainWindow);
+            return result ?? MessageDialogResult.None;
+        }
+
+        dialog.Show();
+        return MessageDialogResult.None;
+    }
+
     public async Task<bool> ShowRetryAsync(string title, string message, string? details = null)
     {
         var result = await ShowAsync(title, message, MessageDialogButtons.RetryCancel, MessageDialogIcon.Warning, details);

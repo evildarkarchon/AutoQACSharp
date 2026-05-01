@@ -39,6 +39,12 @@ public sealed partial class MessageDialogViewModel : ViewModelBase
     private bool _showNoButton;
 
     [ObservableProperty]
+    private string _yesButtonText = "Yes";
+
+    [ObservableProperty]
+    private string _noButtonText = "No";
+
+    [ObservableProperty]
     private bool _showRetryButton;
 
     public bool HasDetails => !string.IsNullOrEmpty(Details);
