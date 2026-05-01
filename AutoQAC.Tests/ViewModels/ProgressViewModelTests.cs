@@ -866,6 +866,72 @@ public sealed class ProgressViewModelTests
         vm.IsHangWarningVisible.Should().BeTrue("warning should reappear after non-hung reset event");
     }
 
+    [Fact]
+    public async Task KillHungProcessCommand_ShouldForceStopDirectlyWithoutConfirmation()
+    {
+        // Arrange
+        _orchestratorMock.ForceStopCleaningAsync()
+            .Returns(new StopCleaningResult(TerminationResult.ForceKilled, false));
+        var vm = CreateViewModel();
+        vm.IsHangWarningVisible = true;
+
+        // Act
+        await vm.KillHungProcessCommand.ExecuteAsync(null);
+
+        // Assert
+        await _orchestratorMock.Received(1).ForceStopCleaningAsync();
+        await _messageDialogMock.DidNotReceive().ShowChoiceAsync(
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Any<MessageDialogIcon>(),
+            Arg.Any<string?>());
+        vm.IsHangWarningVisible.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task KillHungProcessCommand_WhenForceKillFails_ShouldShowSharedFailureAndPersistWarning()
+    {
+        // Arrange
+        _orchestratorMock.ForceStopCleaningAsync()
+            .Returns(new StopCleaningResult(TerminationResult.ForceKillFailed, true));
+        var vm = CreateViewModel();
+        vm.IsHangWarningVisible = true;
+
+        // Act
+        await vm.KillHungProcessCommand.ExecuteAsync(null);
+
+        // Assert
+        await _messageDialogMock.Received(1).ShowErrorAsync(
+            StopTerminationDialogContent.ForceFailureTitle,
+            StopTerminationDialogContent.ForceFailureMessage,
+            Arg.Any<string?>());
+        vm.StopOutcomeWarningText.Should().Be(StopTerminationDialogContent.ForceFailureMessage);
+        vm.HasStopOutcomeWarning.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task KillHungProcessCommand_WhenForceKillSucceeds_ShouldNotSetSuccessWarningCopy()
+    {
+        // Arrange
+        _orchestratorMock.ForceStopCleaningAsync()
+            .Returns(new StopCleaningResult(TerminationResult.ForceKilled, false));
+        var vm = CreateViewModel();
+        vm.IsHangWarningVisible = true;
+
+        // Act
+        await vm.KillHungProcessCommand.ExecuteAsync(null);
+
+        // Assert
+        await _messageDialogMock.DidNotReceive().ShowErrorAsync(
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Any<string?>());
+        vm.StopOutcomeWarningText.Should().BeNull();
+        vm.HasStopOutcomeWarning.Should().BeFalse();
+    }
+
     #endregion
 
     #region State Synchronization Tests
