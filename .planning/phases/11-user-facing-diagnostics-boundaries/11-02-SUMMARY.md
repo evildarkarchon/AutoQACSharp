@@ -69,7 +69,7 @@ Each task was committed atomically, with additional RED/GREEN commits where the 
 2. **Task 2: GREEN — replace raw exception dialog/status copy** - `431b218` (feat)
 3. **Task 3: Safe pre-clean validation identifiers for configured paths** - `2377a42` (test RED), `d3364d1` (feat GREEN)
 
-**Plan metadata:** pending final docs commit.
+**Plan metadata:** `e1cee8b` (docs)
 
 _Note: This TDD plan produced RED and GREEN commits for command failure copy and validation identifier behavior._
 
