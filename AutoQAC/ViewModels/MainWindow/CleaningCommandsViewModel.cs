@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
+using AutoQAC.Models.Diagnostics;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
 using AutoQAC.Services.Plugin;
@@ -144,22 +145,24 @@ public sealed partial class CleaningCommandsViewModel : ViewModelBase, IDisposab
         catch (InvalidOperationException ex)
         {
             _logger.Error(ex, "Configuration validation failed before cleaning");
+            var message = DiagnosticTextFormatter.OperationFailed("Configuration validation");
             ValidationErrors.Clear();
             ValidationErrors.Add(new ValidationError(
                 "Configuration error",
-                ex.Message,
+                message,
                 "Check your configuration in Edit > Settings."));
             HasValidationErrors = true;
             StatusText = "Configuration error";
         }
         catch (Exception ex)
         {
-            StatusText = $"Error: {ex.Message}";
             _logger.Error(ex, "StartCleaningAsync failed");
+            var message = DiagnosticTextFormatter.OperationFailed("Cleaning");
+            StatusText = message;
             await _messageDialog.ShowErrorAsync(
                 "Cleaning Failed",
-                "An error occurred during the cleaning process.",
-                $"Error: {ex.Message}\n\nStack Trace:\n{ex.StackTrace}");
+                message,
+                DiagnosticTextFormatter.LatestLogDetails);
         }
     }
 
@@ -190,22 +193,24 @@ public sealed partial class CleaningCommandsViewModel : ViewModelBase, IDisposab
         catch (InvalidOperationException ex)
         {
             _logger.Error(ex, "Configuration validation failed before preview");
+            var message = DiagnosticTextFormatter.OperationFailed("Configuration validation");
             ValidationErrors.Clear();
             ValidationErrors.Add(new ValidationError(
                 "Configuration error",
-                ex.Message,
+                message,
                 "Check your configuration in Edit > Settings."));
             HasValidationErrors = true;
             StatusText = "Configuration error";
         }
         catch (Exception ex)
         {
-            StatusText = $"Error: {ex.Message}";
             _logger.Error(ex, "RunPreviewAsync failed");
+            var message = DiagnosticTextFormatter.OperationFailed("Preview");
+            StatusText = message;
             await _messageDialog.ShowErrorAsync(
                 "Preview Failed",
-                "An error occurred while running the preview.",
-                $"Error: {ex.Message}\n\nStack Trace:\n{ex.StackTrace}");
+                message,
+                DiagnosticTextFormatter.LatestLogDetails);
         }
     }
 
