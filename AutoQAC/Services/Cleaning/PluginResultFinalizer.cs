@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
+using AutoQAC.Models.Diagnostics;
 
 namespace AutoQAC.Services.Cleaning;
 
@@ -24,6 +25,7 @@ public sealed class PluginResultFinalizer(
         var result = runnerOutput.LastAttemptResult;
         CleaningStatistics? logStats = null;
         string? logParseWarning = null;
+        var hasXEditExceptionLog = false;
         var finalStatus = result.Status;
 
         // Guard: only read logs if process was not killed/cancelled (per D-04)
@@ -62,10 +64,11 @@ public sealed class PluginResultFinalizer(
             // PAR-03: Exception log surfacing (per D-06)
             if (logResult.ExceptionContent != null)
             {
-                logParseWarning = logResult.ExceptionContent;
+                hasXEditExceptionLog = true;
+                logParseWarning = DiagnosticTextFormatter.XEditReportedError(plugin.FileName);
                 finalStatus = CleaningStatus.Failed;
-                logger.Warning("xEdit exception log for {Plugin}: {Content}",
-                    plugin.FileName, logResult.ExceptionContent);
+                logger.Warning("xEdit reported an exception log for {Plugin}; user-facing details were suppressed.",
+                    plugin.FileName);
             }
         }
         else if (terminationContext.StopWasRequested || terminationContext.ProcessMayStillBeRunning)
@@ -80,14 +83,26 @@ public sealed class PluginResultFinalizer(
         // it represents "no work needed, finished cleanly".
         var finalSuccess = finalStatus is CleaningStatus.Cleaned or CleaningStatus.AlreadyClean;
 
+        var resultMessage = result.TimedOut && runnerOutput.ReachedMaxRetryAttempts
+            ? $"Cleaning timed out after {runnerOutput.AttemptCount} attempts."
+            : result.Message;
+
+        if (finalStatus == CleaningStatus.Failed)
+        {
+            var fallback = hasXEditExceptionLog && logParseWarning is not null
+                ? logParseWarning
+                : DiagnosticTextFormatter.CleaningFailedForPlugin(plugin.FileName);
+            resultMessage = hasXEditExceptionLog
+                ? fallback
+                : DiagnosticTextFormatter.SafeFailureSummary(resultMessage, fallback);
+        }
+
         return new PluginCleaningResult
         {
             PluginName = plugin.FileName,
             Status = finalStatus,
             Success = finalSuccess,
-            Message = result.TimedOut && runnerOutput.ReachedMaxRetryAttempts
-                ? $"Cleaning timed out after {runnerOutput.AttemptCount} attempts."
-                : result.Message,
+            Message = resultMessage,
             Duration = runnerOutput.Duration,
             Statistics = logStats,
             LogParseWarning = logParseWarning

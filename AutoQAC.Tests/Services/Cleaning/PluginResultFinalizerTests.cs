@@ -185,7 +185,10 @@ public sealed class PluginResultFinalizerTests
         // Assert
         result.Status.Should().Be(CleaningStatus.Failed);
         result.Success.Should().BeFalse();
-        result.LogParseWarning.Should().Contain("EAccessViolation");
+        result.Message.Should().Be(DiagnosticTextFormatter.XEditReportedError("CleanedButException.esp"));
+        result.LogParseWarning.Should().Be(DiagnosticTextFormatter.XEditReportedError("CleanedButException.esp"));
+        AssertSafeResultBoundary(result.Message);
+        AssertSafeResultBoundary(result.LogParseWarning);
     }
 
     [Fact]
