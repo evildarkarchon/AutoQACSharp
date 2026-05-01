@@ -140,6 +140,104 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
+    public async Task StartCleaningCommand_WhenProgressInteractionFails_ShouldHandleErrorBeforeStartingCleaning()
+    {
+        var tempFile = Path.GetTempFileName();
+        try
+        {
+            var stateWithPlugins = new AppState
+            {
+                XEditExecutablePath = tempFile,
+                PluginsToClean = new List<PluginInfo>
+                {
+                    new() { FileName = "Test.esp", FullPath = "Test.esp" }
+                }
+            };
+            var stateSubject = new BehaviorSubject<AppState>(stateWithPlugins);
+            _stateServiceMock.StateChanged.Returns(stateSubject);
+            _stateServiceMock.CurrentState.Returns(stateWithPlugins);
+            _messageDialogMock.ShowErrorAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>())
+                .Returns(Task.CompletedTask);
+
+            var vm = new MainWindowViewModel(
+                _configServiceMock,
+                _stateServiceMock,
+                _orchestratorMock,
+                _loggerMock,
+                _fileDialogMock,
+                _messageDialogMock,
+                _pluginServiceMock,
+                _pluginLoadingServiceMock,
+                _uiDispatcher);
+            using var _ = vm.ShowProgressInteraction.RegisterHandler(_ => throw new ApplicationException("Progress window failed"));
+
+            await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
+
+            await _orchestratorMock.DidNotReceive()
+                .StartCleaningAsync(Arg.Any<TimeoutRetryCallback>(), Arg.Any<BackupFailureCallback>(), Arg.Any<CancellationToken>());
+            await _messageDialogMock.Received(1).ShowErrorAsync(
+                "Cleaning Failed",
+                Arg.Any<string>(),
+                Arg.Any<string?>());
+            _loggerMock.Received().Error(Arg.Any<ApplicationException>(), "StartCleaningAsync failed");
+        }
+        finally
+        {
+            if (File.Exists(tempFile))
+                File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public async Task PreviewCommand_WhenPreviewInteractionFails_ShouldHandleError()
+    {
+        var tempFile = Path.GetTempFileName();
+        try
+        {
+            var stateWithPlugins = new AppState
+            {
+                XEditExecutablePath = tempFile,
+                PluginsToClean = new List<PluginInfo>
+                {
+                    new() { FileName = "Test.esp", FullPath = "Test.esp" }
+                }
+            };
+            var stateSubject = new BehaviorSubject<AppState>(stateWithPlugins);
+            _stateServiceMock.StateChanged.Returns(stateSubject);
+            _stateServiceMock.CurrentState.Returns(stateWithPlugins);
+            _orchestratorMock.RunDryRunAsync(Arg.Any<CancellationToken>())
+                .Returns(new List<DryRunResult>());
+            _messageDialogMock.ShowErrorAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>())
+                .Returns(Task.CompletedTask);
+
+            var vm = new MainWindowViewModel(
+                _configServiceMock,
+                _stateServiceMock,
+                _orchestratorMock,
+                _loggerMock,
+                _fileDialogMock,
+                _messageDialogMock,
+                _pluginServiceMock,
+                _pluginLoadingServiceMock,
+                _uiDispatcher);
+            using var _ = vm.ShowPreviewInteraction.RegisterHandler(_ => throw new ApplicationException("Preview window failed"));
+
+            await vm.Commands.PreviewCommand.ExecuteAsync(null);
+
+            await _messageDialogMock.Received(1).ShowErrorAsync(
+                "Preview Failed",
+                Arg.Any<string>(),
+                Arg.Any<string?>());
+            _loggerMock.Received().Error(Arg.Any<ApplicationException>(), "RunPreviewAsync failed");
+        }
+        finally
+        {
+            if (File.Exists(tempFile))
+                File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
     public async Task ConfigureLoadOrderCommand_ShouldUpdatePluginsList_WhenFileSelected()
     {
         // Arrange

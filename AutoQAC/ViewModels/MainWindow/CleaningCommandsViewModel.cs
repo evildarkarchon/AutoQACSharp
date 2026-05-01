@@ -136,7 +136,7 @@ public sealed partial class CleaningCommandsViewModel : ViewModelBase, IDisposab
         try
         {
             _pluginRefreshCoordinator.CancelActiveRefresh(PluginRefreshCancelReason.CleaningStarted);
-            _ = _showProgressInteraction.Handle(Unit.Default);
+            await _showProgressInteraction.Handle(Unit.Default);
 
             StatusText = "Cleaning started...";
             await _orchestrator.StartCleaningAsync(HandleTimeoutRetryAsync, HandleBackupFailureAsync);
@@ -186,7 +186,7 @@ public sealed partial class CleaningCommandsViewModel : ViewModelBase, IDisposab
             StatusText = "Running preview...";
             var results = await _orchestrator.RunDryRunAsync();
 
-            _ = _showPreviewInteraction.Handle(results);
+            await _showPreviewInteraction.Handle(results);
 
             StatusText = "Preview complete";
         }
