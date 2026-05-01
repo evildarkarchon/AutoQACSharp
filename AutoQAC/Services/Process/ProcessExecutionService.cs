@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
+using AutoQAC.Models.Diagnostics;
 
 namespace AutoQAC.Services.Process;
 
@@ -49,7 +50,6 @@ public sealed class ProcessExecutionService(
         try
         {
             var fileName = startInfo.FileName;
-            var arguments = GetArgumentSummary(startInfo);
             var argumentCount = GetArgumentCount(startInfo);
             var workingDirectory = startInfo.WorkingDirectory;
 
@@ -90,7 +90,7 @@ public sealed class ProcessExecutionService(
                 argumentCount);
             try
             {
-                await TrackProcessAsync(process, pluginName ?? arguments, ct).ConfigureAwait(false);
+                await TrackProcessAsync(process, GetSafeTrackingLabel(pluginName), ct).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -210,20 +210,22 @@ public sealed class ProcessExecutionService(
     }
 
     /// <summary>
-    /// Returns debug-safe argument context without treating legacy Arguments as the only launch source.
-    /// </summary>
-    private static string GetArgumentSummary(ProcessStartInfo startInfo) =>
-        startInfo.ArgumentList.Count > 0
-            ? $"{startInfo.ArgumentList.Count} argument-list entries"
-            : startInfo.Arguments;
-
-    /// <summary>
     /// Counts launch arguments without exposing their raw values in process-start diagnostics.
     /// </summary>
     private static int GetArgumentCount(ProcessStartInfo startInfo) =>
         startInfo.ArgumentList.Count > 0
             ? startInfo.ArgumentList.Count
             : string.IsNullOrWhiteSpace(startInfo.Arguments) ? 0 : 1;
+
+    /// <summary>
+    /// Selects a PID tracking label that cannot expose raw launch arguments or local paths.
+    /// </summary>
+    /// <param name="pluginName">Optional caller-supplied plugin name or path candidate.</param>
+    /// <returns>A sanitized plugin filename when available; otherwise the generic <c>ExternalProcess</c> label.</returns>
+    private static string GetSafeTrackingLabel(string? pluginName) =>
+        string.IsNullOrWhiteSpace(pluginName)
+            ? "ExternalProcess"
+            : DiagnosticTextFormatter.SafePluginName(pluginName);
 
     public async Task<TerminationResult> TerminateProcessAsync(
         System.Diagnostics.Process process,
