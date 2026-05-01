@@ -1,4 +1,5 @@
 using AutoQAC.Models;
+using AutoQAC.Models.Diagnostics;
 using FluentAssertions;
 
 namespace AutoQAC.Tests.Models;
@@ -470,6 +471,82 @@ public sealed class CleaningSessionResultTests
     }
 
     [Fact]
+    public void GenerateReport_ShouldIncludeReportDisclaimerExactlyOnce()
+    {
+        // Arrange
+        var result = new CleaningSessionResult
+        {
+            PluginResults = new List<PluginCleaningResult>
+            {
+                new()
+                {
+                    PluginName = "Clean.esp",
+                    Status = CleaningStatus.Cleaned,
+                    Duration = TimeSpan.FromSeconds(5),
+                    Statistics = new CleaningStatistics { ItemsRemoved = 1 }
+                },
+                new()
+                {
+                    PluginName = "Fail.esp",
+                    Status = CleaningStatus.Failed,
+                    Message = DiagnosticTextFormatter.CleaningFailedForPlugin("Fail.esp")
+                }
+            }
+        };
+
+        // Act
+        var report = result.GenerateReport();
+
+        // Assert
+        CountOccurrences(report, DiagnosticTextFormatter.ReportDisclaimer).Should().Be(1);
+    }
+
+    [Fact]
+    public void GenerateReport_FailedPluginWithUnsafeMessage_ShouldUseSafeFallbackWithoutDuplicatingPluginName()
+    {
+        // Arrange
+        var result = new CleaningSessionResult
+        {
+            PluginResults = new List<PluginCleaningResult>
+            {
+                new()
+                {
+                    PluginName = "Fail.esp",
+                    Status = CleaningStatus.Failed,
+                    Message = @"System.InvalidOperationException at C:\Users\Alice\Tools\SSEEdit.exe -QAC at AutoQAC.Services.Cleaning"
+                }
+            }
+        };
+
+        // Act
+        var report = result.GenerateReport();
+
+        // Assert
+        report.Should().Contain("Fail.esp: Cleaning failed. See the latest AutoQAC log.");
+        report.Should().NotContain("Fail.esp: Fail.esp:");
+        AssertSafeReportBoundary(report);
+    }
+
+    [Fact]
+    public void PluginCleaningResultSummary_FailedPluginWithUnsafeMessage_ShouldUseSafeFallback()
+    {
+        // Arrange
+        var result = new PluginCleaningResult
+        {
+            PluginName = "Fail.esp",
+            Status = CleaningStatus.Failed,
+            Message = @"System.InvalidOperationException at C:\Users\Alice\Tools\SSEEdit.exe -QAC at AutoQAC.Services.Cleaning"
+        };
+
+        // Act
+        var summary = result.Summary;
+
+        // Assert
+        summary.Should().Contain("Fail.esp: Cleaning failed. See the latest AutoQAC log.");
+        AssertSafeReportBoundary(summary);
+    }
+
+    [Fact]
     public void GenerateReport_WhenCancelled_ShouldIncludeCancellationNote()
     {
         // Arrange
@@ -513,4 +590,15 @@ public sealed class CleaningSessionResultTests
     }
 
     #endregion
+
+    private static int CountOccurrences(string text, string value) =>
+        text.Split(value, StringSplitOptions.None).Length - 1;
+
+    private static void AssertSafeReportBoundary(string text)
+    {
+        text.Should().NotContain("System.InvalidOperationException");
+        text.Should().NotContain(@"C:\Users\Alice");
+        text.Should().NotContain("-QAC");
+        text.Should().NotContain(" at AutoQAC.");
+    }
 }
