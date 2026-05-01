@@ -571,6 +571,113 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
+    public async Task ConfigureLoadOrderCommand_ShouldUseSafeLoadOrderIdentifier_WhenParsingFails()
+    {
+        // Arrange
+        var stateSubject = new BehaviorSubject<AppState>(new AppState());
+        _stateServiceMock.StateChanged.Returns(stateSubject);
+        _stateServiceMock.CurrentState.Returns(new AppState());
+
+        var selectedDirectory = Path.Combine(Path.GetTempPath(), "AutoQAC_AliceLoadOrder_" + Guid.NewGuid());
+        Directory.CreateDirectory(selectedDirectory);
+        var selectedPath = Path.Combine(selectedDirectory, "plugins.txt");
+        await File.WriteAllTextAsync(selectedPath, "Skyrim.esm");
+        string? dialogMessage = null;
+        string? dialogDetails = null;
+        _fileDialogMock.OpenFileDialogAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<string?>())
+            .Returns(selectedPath);
+        _pluginLoadingServiceMock.GetPluginsFromFileAsync(selectedPath, Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("Access denied reading C:\\Users\\Alice\\AppData\\Local\\Skyrim Special Edition\\plugins.txt"));
+        _messageDialogMock.ShowErrorAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<string?>())
+            .Returns(Task.CompletedTask)
+            .AndDoes(callInfo =>
+            {
+                dialogMessage = callInfo.ArgAt<string>(1);
+                dialogDetails = callInfo.ArgAt<string?>(2);
+            });
+
+        try
+        {
+            var vm = new MainWindowViewModel(
+                _configServiceMock,
+                _stateServiceMock,
+                _orchestratorMock,
+                _loggerMock,
+                _fileDialogMock,
+                _messageDialogMock,
+                _pluginServiceMock,
+                _pluginLoadingServiceMock,
+                _uiDispatcher);
+
+            // Act
+            await vm.Configuration.ConfigureLoadOrderCommand.ExecuteAsync(null);
+
+            // Assert
+            var userText = string.Join("\n", vm.Configuration.StatusText, dialogMessage, dialogDetails);
+            userText.Should().Contain("Load Order File (plugins.txt)");
+            userText.Should().Contain("See the latest AutoQAC log for technical details.");
+            userText.Should().NotContain(@"C:\Users\Alice");
+            userText.Should().NotContain("Access denied reading");
+        }
+        finally
+        {
+            Directory.Delete(selectedDirectory, true);
+        }
+    }
+
+    [Fact]
+    public async Task ConfigureGameDataFolderCommand_ShouldUseSafeGameFolderLabel_WhenFolderIsMissing()
+    {
+        // Arrange
+        var stateSubject = new BehaviorSubject<AppState>(new AppState());
+        _stateServiceMock.StateChanged.Returns(stateSubject);
+        _stateServiceMock.CurrentState.Returns(new AppState());
+
+        const string selectedFolder = @"C:\Games\Skyrim Special Edition\Data";
+        string? dialogMessage = null;
+        string? dialogDetails = null;
+        _fileDialogMock.OpenFolderDialogAsync("Select Game Data Folder", Arg.Any<string?>())
+            .Returns(selectedFolder);
+        _messageDialogMock.ShowErrorAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<string?>())
+            .Returns(Task.CompletedTask)
+            .AndDoes(callInfo =>
+            {
+                dialogMessage = callInfo.ArgAt<string>(1);
+                dialogDetails = callInfo.ArgAt<string?>(2);
+            });
+
+        var vm = new MainWindowViewModel(
+            _configServiceMock,
+            _stateServiceMock,
+            _orchestratorMock,
+            _loggerMock,
+            _fileDialogMock,
+            _messageDialogMock,
+            _pluginServiceMock,
+            _pluginLoadingServiceMock,
+            _uiDispatcher);
+        vm.Configuration.SelectedGame = GameType.SkyrimSe;
+
+        // Act
+        await vm.Configuration.ConfigureGameDataFolderCommand.ExecuteAsync(null);
+
+        // Assert
+        var userText = string.Join("\n", vm.Configuration.StatusText, dialogMessage, dialogDetails);
+        dialogMessage.Should().Be("Skyrim Special Edition data folder is unavailable. Choose a valid Data folder or reset the override.");
+        userText.Should().NotContain(selectedFolder);
+        userText.Should().NotContain("latest AutoQAC log");
+    }
+
+    [Fact]
     public async Task StopCleaningCommand_ForceKillFailed_ShouldShowErrorCopy()
     {
         var stateSubject = new BehaviorSubject<AppState>(new AppState { IsCleaning = true });
