@@ -149,7 +149,7 @@ public sealed class ErrorDialogTests
     public async Task StartCleaningCommand_ShouldShowInlineValidation_WhenXEditFileNotFound()
     {
         // Arrange - CurrentState has xEdit path that doesn't exist on disk
-        var nonExistentPath = @"C:\NonExistent\xedit.exe";
+        var nonExistentPath = @"C:\Users\Alice\Tools\SSEEdit.exe";
         var stateWithBadXEdit = new AppState
         {
             XEditExecutablePath = nonExistentPath,
@@ -182,6 +182,46 @@ public sealed class ErrorDialogTests
         vm.Commands.HasValidationErrors.Should().BeTrue();
         vm.Commands.ValidationErrors.Should().Contain(e => e.Title == "xEdit not found",
             "should show xEdit not found error");
+        var error = vm.Commands.ValidationErrors.Single(e => e.Title == "xEdit not found");
+        error.Message.Should().Be("xEdit Path (SSEEdit.exe) is missing. Choose the correct xEdit executable in Settings.");
+        AssertValidationErrorDoesNotContainFullPath(error, @"C:\Users\Alice");
+    }
+
+    [Fact]
+    public async Task StartCleaningCommand_ShouldUseFallbackIdentifier_WhenXEditBasenameIsUnsafe()
+    {
+        // Arrange - all basename characters are unsafe for display, so the fallback name should be used.
+        var unsafeBasenamePath = "C:\\Users\\Alice\\Tools\\\"`|&;";
+        var stateWithBadXEdit = new AppState
+        {
+            XEditExecutablePath = unsafeBasenamePath,
+            PluginsToClean = new List<PluginInfo>
+            {
+                new() { FileName = "Test.esp", FullPath = "Test.esp" }
+            }
+        };
+        var stateSubject = new BehaviorSubject<AppState>(stateWithBadXEdit);
+        _stateServiceMock.StateChanged.Returns(stateSubject);
+        _stateServiceMock.CurrentState.Returns(stateWithBadXEdit);
+
+        var vm = new MainWindowViewModel(
+            _configServiceMock,
+            _stateServiceMock,
+            _orchestratorMock,
+            _loggerMock,
+            _fileDialogMock,
+            _messageDialogMock,
+            _pluginServiceMock,
+            _pluginLoadingServiceMock,
+            _uiDispatcher);
+
+        // Act
+        await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
+
+        // Assert
+        var error = vm.Commands.ValidationErrors.Single(e => e.Title == "xEdit not found");
+        error.Message.Should().Be("xEdit Path (xEdit executable) is missing. Choose the correct xEdit executable in Settings.");
+        AssertValidationErrorDoesNotContainFullPath(error, @"C:\Users\Alice");
     }
 
     #endregion
@@ -402,6 +442,149 @@ public sealed class ErrorDialogTests
     }
 
     [Fact]
+    public async Task StartCleaningCommand_ShouldShowSafeLoadOrderIdentifier_WhenNonMutagenGameLoadOrderFileMissing()
+    {
+        // Arrange - Fallout 3 uses the file-load-order branch, so this covers non-Mutagen load-order validation.
+        var tempXEdit = Path.GetTempFileName();
+        try
+        {
+            var missingLoadOrder = @"C:\Users\Alice\AppData\Local\plugins.txt";
+            var state = new AppState
+            {
+                CurrentGameType = GameType.Fallout3,
+                LoadOrderPath = missingLoadOrder,
+                XEditExecutablePath = tempXEdit,
+                PluginsToClean = new List<PluginInfo>
+                {
+                    new() { FileName = "Test.esp", FullPath = "Test.esp" }
+                }
+            };
+
+            var stateSubject = new BehaviorSubject<AppState>(state);
+            _stateServiceMock.StateChanged.Returns(stateSubject);
+            _stateServiceMock.CurrentState.Returns(state);
+
+            var vm = new MainWindowViewModel(
+                _configServiceMock,
+                _stateServiceMock,
+                _orchestratorMock,
+                _loggerMock,
+                _fileDialogMock,
+                _messageDialogMock,
+                _pluginServiceMock,
+                _pluginLoadingServiceMock,
+                _uiDispatcher);
+
+            // Act
+            await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
+
+            // Assert
+            var error = vm.Commands.ValidationErrors.Single(e => e.Title == "Load order not found");
+            error.Message.Should().Be("Load Order File (plugins.txt) is missing. Choose the current plugins.txt or loadorder.txt file.");
+            AssertValidationErrorDoesNotContainFullPath(error, @"C:\Users\Alice");
+        }
+        finally
+        {
+            if (File.Exists(tempXEdit))
+                File.Delete(tempXEdit);
+        }
+    }
+
+    [Fact]
+    public async Task StartCleaningCommand_ShouldNotValidateLoadOrder_WhenMutagenGameHasMissingLoadOrderFile()
+    {
+        // Arrange - Skyrim SE is Mutagen-supported, so the load-order file branch must not produce a false positive.
+        var tempXEdit = Path.GetTempFileName();
+        try
+        {
+            _pluginLoadingServiceMock.IsGameSupportedByMutagen(GameType.SkyrimSe).Returns(true);
+            var state = new AppState
+            {
+                CurrentGameType = GameType.SkyrimSe,
+                LoadOrderPath = @"C:\Users\Alice\AppData\Local\plugins.txt",
+                XEditExecutablePath = tempXEdit,
+                PluginsToClean = new List<PluginInfo>
+                {
+                    new() { FileName = "Test.esp", FullPath = "Test.esp" }
+                }
+            };
+
+            var stateSubject = new BehaviorSubject<AppState>(state);
+            _stateServiceMock.StateChanged.Returns(stateSubject);
+            _stateServiceMock.CurrentState.Returns(state);
+
+            var vm = new MainWindowViewModel(
+                _configServiceMock,
+                _stateServiceMock,
+                _orchestratorMock,
+                _loggerMock,
+                _fileDialogMock,
+                _messageDialogMock,
+                _pluginServiceMock,
+                _pluginLoadingServiceMock,
+                _uiDispatcher);
+
+            // Act
+            await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
+
+            // Assert
+            vm.Commands.ValidationErrors.Should().NotContain(e => e.Title.StartsWith("Load order", StringComparison.Ordinal));
+        }
+        finally
+        {
+            if (File.Exists(tempXEdit))
+                File.Delete(tempXEdit);
+        }
+    }
+
+    [Fact]
+    public async Task StartCleaningCommand_ShouldShowSafeMo2Identifier_WhenMo2PathMissing()
+    {
+        // Arrange
+        var tempXEdit = Path.GetTempFileName();
+        try
+        {
+            var state = new AppState
+            {
+                XEditExecutablePath = tempXEdit,
+                Mo2ModeEnabled = true,
+                Mo2ExecutablePath = @"C:\Users\Alice\MO2\ModOrganizer.exe",
+                PluginsToClean = new List<PluginInfo>
+                {
+                    new() { FileName = "Test.esp", FullPath = "Test.esp" }
+                }
+            };
+            var stateSubject = new BehaviorSubject<AppState>(state);
+            _stateServiceMock.StateChanged.Returns(stateSubject);
+            _stateServiceMock.CurrentState.Returns(state);
+
+            var vm = new MainWindowViewModel(
+                _configServiceMock,
+                _stateServiceMock,
+                _orchestratorMock,
+                _loggerMock,
+                _fileDialogMock,
+                _messageDialogMock,
+                _pluginServiceMock,
+                _pluginLoadingServiceMock,
+                _uiDispatcher);
+
+            // Act
+            await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
+
+            // Assert
+            var error = vm.Commands.ValidationErrors.Single(e => e.Title == "MO2 not found");
+            error.Message.Should().Be("MO2 Path (ModOrganizer.exe) is missing. Choose ModOrganizer.exe or disable MO2 Mode.");
+            AssertValidationErrorDoesNotContainFullPath(error, @"C:\Users\Alice");
+        }
+        finally
+        {
+            if (File.Exists(tempXEdit))
+                File.Delete(tempXEdit);
+        }
+    }
+
+    [Fact]
     public async Task StartCleaningAsync_WhenUnexpectedError_ShouldShowSafeDiagnosticCopy()
     {
         // Arrange - the exception contains representative path, command, exception, and stack-like sentinels.
@@ -499,6 +682,16 @@ public sealed class ErrorDialogTests
             {
                 text.Should().NotContain(fragment);
             }
+        }
+    }
+
+    private static void AssertValidationErrorDoesNotContainFullPath(ValidationError error, string forbiddenPathPrefix)
+    {
+        var userVisibleTexts = new[] { error.Title, error.Message, error.FixStep };
+        foreach (var text in userVisibleTexts)
+        {
+            text.Should().NotContain(forbiddenPathPrefix);
+            text.Should().NotContain("latest AutoQAC log", "simple missing-path validation should give direct fix guidance only");
         }
     }
 
