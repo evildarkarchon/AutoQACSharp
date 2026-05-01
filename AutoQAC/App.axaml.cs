@@ -167,7 +167,9 @@ namespace AutoQAC
                 var result = await migrationService.MigrateIfNeededAsync();
                 if (result is { Attempted: true, Success: false, WarningMessage: not null })
                 {
-                    viewModel.ShowMigrationWarning(result.WarningMessage);
+                    var warningMessage = DiagnosticTextFormatter.SafeFailureSummary(result.WarningMessage,
+                        "Some legacy settings could not be migrated. See the latest AutoQAC log for technical details.");
+                    viewModel.ShowMigrationWarning(warningMessage);
                 }
             }
             catch (Exception ex)

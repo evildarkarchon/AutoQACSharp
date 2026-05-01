@@ -236,7 +236,7 @@ Load_Order:
         result.Attempted.Should().BeTrue("legacy file was found and migration was attempted");
         result.Success.Should().BeFalse("empty file produces null deserialization result");
         result.FailedFiles.Should().Contain("AutoQAC Config.yaml");
-        result.WarningMessage.Should().Contain("empty", "warning should mention the file was empty or unparseable");
+        AssertSafeMigrationWarning(result.WarningMessage, "Legacy config could not be migrated");
 
         // Legacy file should NOT be deleted
         File.Exists(LegacyConfigPath).Should().BeTrue("legacy file should be preserved on failure");
