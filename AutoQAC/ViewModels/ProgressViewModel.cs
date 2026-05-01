@@ -15,6 +15,7 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
 {
     private readonly IStateService _stateService;
     private readonly ICleaningOrchestrator _orchestrator;
+    private readonly IMessageDialogService _messageDialog;
     private readonly IUiDispatcher _uiDispatcher;
     private readonly List<IDisposable> _subscriptions = new();
 
@@ -70,6 +71,10 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
 
     [ObservableProperty]
     private string _sessionSummaryText = string.Empty;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasStopOutcomeWarning))]
+    private string? _stopOutcomeWarningText;
 
     [ObservableProperty]
     private int _totalItmCount;
@@ -137,13 +142,19 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
 
     public string BackupOperationProgressText => FormatBackupOperationProgress(BackupOperation);
 
+    /// <summary>
+    /// Gets whether a persistent stop outcome warning should remain visible in the results summary.
+    /// </summary>
+    public bool HasStopOutcomeWarning => !string.IsNullOrWhiteSpace(StopOutcomeWarningText);
+
     /// <summary>Event raised when the window should close.</summary>
     public event EventHandler? CloseRequested;
 
-    public ProgressViewModel(IStateService stateService, ICleaningOrchestrator orchestrator, IUiDispatcher uiDispatcher)
+    public ProgressViewModel(IStateService stateService, ICleaningOrchestrator orchestrator, IMessageDialogService messageDialog, IUiDispatcher uiDispatcher)
     {
         _stateService = stateService;
         _orchestrator = orchestrator;
+        _messageDialog = messageDialog;
         _uiDispatcher = uiDispatcher;
 
         _subscriptions.Add(_stateService.StateChanged.Subscribe(
@@ -184,7 +195,31 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
     private bool CanStop() => IsCleaning && !IsTerminating;
 
     [RelayCommand(CanExecute = nameof(CanStop))]
-    private async System.Threading.Tasks.Task StopAsync() => await _orchestrator.StopCleaningAsync();
+    private async System.Threading.Tasks.Task StopAsync()
+    {
+        var stopResult = await _orchestrator.StopCleaningAsync();
+        var terminationResult = stopResult.TerminationResult ?? _orchestrator.LastTerminationResult;
+
+        if (terminationResult != TerminationResult.GracePeriodExpired)
+        {
+            return;
+        }
+
+        var choice = await _messageDialog.ShowChoiceAsync(StopTerminationDialogContent.ConfirmationTitle,
+            StopTerminationDialogContent.ConfirmationMessage,
+            StopTerminationDialogContent.ForceTerminateButton,
+            StopTerminationDialogContent.LeaveRunningButton);
+
+        if (choice == MessageDialogResult.Yes)
+        {
+            var forceResult = await _orchestrator.ForceStopCleaningAsync();
+            await ReportForceStopFailureIfNeededAsync(forceResult.TerminationResult ?? _orchestrator.LastTerminationResult);
+            return;
+        }
+
+        _orchestrator.MarkLeftRunningByUser();
+        StopOutcomeWarningText = StopTerminationDialogContent.LeftRunningMessage;
+    }
 
     [RelayCommand]
     private void Close() => CloseRequested?.Invoke(this, EventArgs.Empty);
@@ -201,6 +236,23 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
     {
         IsHangWarningVisible = false;
         await _orchestrator.ForceStopCleaningAsync();
+    }
+
+    /// <summary>
+    /// Reports force-stop failures through the shared safe dialog copy and persistent Progress summary warning.
+    /// </summary>
+    /// <param name="terminationResult">The latest termination result returned by the orchestrator or cached by it.</param>
+    private async System.Threading.Tasks.Task ReportForceStopFailureIfNeededAsync(TerminationResult? terminationResult)
+    {
+        if (terminationResult != TerminationResult.ForceKillFailed)
+        {
+            return;
+        }
+
+        StopOutcomeWarningText = StopTerminationDialogContent.ForceFailureMessage;
+        await _messageDialog.ShowErrorAsync(
+            StopTerminationDialogContent.ForceFailureTitle,
+            StopTerminationDialogContent.ForceFailureMessage);
     }
 
     /// <summary>
@@ -310,6 +362,7 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
         SessionResult = null;
         WasCancelled = false;
         SessionSummaryText = string.Empty;
+        StopOutcomeWarningText = null;
         IsPreviewMode = false;
         DryRunResults.Clear();
         WillCleanCount = 0;

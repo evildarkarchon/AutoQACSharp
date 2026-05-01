@@ -128,12 +128,12 @@ public partial class MainWindow : Window
 
     private Task<Unit> ShowProgressAsync(Unit input)
     {
-        if (_stateService == null || _orchestrator == null || _uiDispatcher == null)
+        if (_stateService == null || _orchestrator == null || _messageDialog == null || _uiDispatcher == null)
         {
             return Task.FromResult(Unit.Default);
         }
 
-        var progressViewModel = new ProgressViewModel(_stateService, _orchestrator, _uiDispatcher);
+        var progressViewModel = new ProgressViewModel(_stateService, _orchestrator, _messageDialog, _uiDispatcher);
         var progressWindow = new ProgressWindow
         {
             DataContext = progressViewModel
@@ -164,12 +164,12 @@ public partial class MainWindow : Window
 
     private Task<Unit> ShowPreviewAsync(List<DryRunResult> input)
     {
-        if (_stateService == null || _orchestrator == null || _uiDispatcher == null)
+        if (_stateService == null || _orchestrator == null || _messageDialog == null || _uiDispatcher == null)
         {
             return Task.FromResult(Unit.Default);
         }
 
-        var progressViewModel = new ProgressViewModel(_stateService, _orchestrator, _uiDispatcher);
+        var progressViewModel = new ProgressViewModel(_stateService, _orchestrator, _messageDialog, _uiDispatcher);
         progressViewModel.LoadDryRunResults(input);
 
         var progressWindow = new ProgressWindow

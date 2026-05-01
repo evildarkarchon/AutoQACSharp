@@ -109,6 +109,8 @@ public sealed class ProgressViewModelTests
         var choiceCompletion = new TaskCompletionSource<MessageDialogResult>();
         _orchestratorMock.StopCleaningAsync()
             .Returns(new StopCleaningResult(TerminationResult.GracePeriodExpired, true));
+        _orchestratorMock.ForceStopCleaningAsync()
+            .Returns(new StopCleaningResult(TerminationResult.ForceKilled, false));
         _messageDialogMock.ShowChoiceAsync(
                 StopTerminationDialogContent.ConfirmationTitle,
                 StopTerminationDialogContent.ConfirmationMessage,
@@ -891,7 +893,7 @@ public sealed class ProgressViewModelTests
         _stateServiceMock.StateChanged.Returns(stateSubject);
 
         // Act
-        var vm = new ProgressViewModel(_stateServiceMock, _orchestratorMock, _uiDispatcher);
+        var vm = new ProgressViewModel(_stateServiceMock, _orchestratorMock, _messageDialogMock, _uiDispatcher);
 
         // Assert
         vm.Progress.Should().Be(3);
