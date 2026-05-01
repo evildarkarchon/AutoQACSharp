@@ -358,17 +358,19 @@ public sealed partial class CleaningCommandsViewModel : ViewModelBase, IDisposab
 
         if (string.IsNullOrEmpty(state.XEditExecutablePath))
         {
+            var message = MissingXEditMessage(state.XEditExecutablePath);
             errors.Add(new ValidationError(
                 "xEdit not configured",
-                "xEdit executable path is not set.",
-                "Go to Edit > Settings and set the xEdit Path to your xEdit executable (SSEEdit.exe, FO4Edit.exe, etc.)."));
+                message,
+                "Choose the correct xEdit executable in Settings."));
         }
         else if (!File.Exists(state.XEditExecutablePath))
         {
+            var message = MissingXEditMessage(state.XEditExecutablePath);
             errors.Add(new ValidationError(
                 "xEdit not found",
-                $"xEdit not found at: {state.XEditExecutablePath}",
-                "Go to Edit > Settings and update the xEdit Path to the correct location."));
+                message,
+                "Choose the correct xEdit executable in Settings."));
         }
 
         var requiresLoadOrder = state.CurrentGameType != GameType.Unknown &&
@@ -378,17 +380,19 @@ public sealed partial class CleaningCommandsViewModel : ViewModelBase, IDisposab
         {
             if (string.IsNullOrWhiteSpace(state.LoadOrderPath))
             {
+                var message = MissingLoadOrderMessage(state.LoadOrderPath);
                 errors.Add(new ValidationError(
                     "Load order not configured",
-                    $"{state.CurrentGameType} requires a load order file (plugins.txt/loadorder.txt).",
-                    "Set the load order path in the main window under Configuration > Load Order File."));
+                    message,
+                    "Choose the current plugins.txt or loadorder.txt file."));
             }
             else if (!File.Exists(state.LoadOrderPath))
             {
+                var message = MissingLoadOrderMessage(state.LoadOrderPath);
                 errors.Add(new ValidationError(
                     "Load order not found",
-                    $"Load order file not found at: {state.LoadOrderPath}",
-                    "Set a valid per-game load order path in the main window under Configuration > Load Order File."));
+                    message,
+                    "Choose the current plugins.txt or loadorder.txt file."));
             }
         }
 
@@ -418,21 +422,32 @@ public sealed partial class CleaningCommandsViewModel : ViewModelBase, IDisposab
         if (!state.Mo2ModeEnabled) return errors;
         if (string.IsNullOrEmpty(state.Mo2ExecutablePath))
         {
+            var message = MissingMo2Message(state.Mo2ExecutablePath);
             errors.Add(new ValidationError(
                 "MO2 not configured",
-                "MO2 mode is enabled but no MO2 executable path is set.",
-                "Go to Edit > Settings and set the MO2 Path, or disable MO2 mode if not using Mod Organizer 2."));
+                message,
+                "Choose ModOrganizer.exe or disable MO2 Mode."));
         }
         else if (!File.Exists(state.Mo2ExecutablePath))
         {
+            var message = MissingMo2Message(state.Mo2ExecutablePath);
             errors.Add(new ValidationError(
                 "MO2 not found",
-                $"MO2 executable not found at: {state.Mo2ExecutablePath}",
-                "Check the MO2 executable path in Edit > Settings, or disable MO2 mode."));
+                message,
+                "Choose ModOrganizer.exe or disable MO2 Mode."));
         }
 
         return errors;
     }
+
+    private static string MissingXEditMessage(string? path) =>
+        $"{DiagnosticTextFormatter.SafeFileIdentifier("xEdit Path", path, "xEdit executable")} is missing. Choose the correct xEdit executable in Settings.";
+
+    private static string MissingMo2Message(string? path) =>
+        $"{DiagnosticTextFormatter.SafeFileIdentifier("MO2 Path", path, "ModOrganizer.exe")} is missing. Choose ModOrganizer.exe or disable MO2 Mode.";
+
+    private static string MissingLoadOrderMessage(string? path) =>
+        $"{DiagnosticTextFormatter.SafeFileIdentifier("Load Order File", path, "load order file")} is missing. Choose the current plugins.txt or loadorder.txt file.";
 
     private async Task<bool> HandleTimeoutRetryAsync(string pluginName, int timeoutSeconds, int attemptNumber)
     {
