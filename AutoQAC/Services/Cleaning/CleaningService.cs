@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
+using AutoQAC.Models.Diagnostics;
 using AutoQAC.Services.GameDetection;
 using AutoQAC.Services.Process;
 using AutoQAC.Services.State;
@@ -54,17 +55,17 @@ public sealed class CleaningService(
             var command = commandBuilder.BuildCommand(plugin, gameType);
             if (command == null)
             {
-                var launchMode = state.Mo2ModeEnabled ? "MO2" : "direct xEdit";
+                var buildFailureLaunchMode = state.Mo2ModeEnabled ? "MO2" : "direct xEdit";
                 logger.Warning(
                     "Failed to build {LaunchMode} launch command for {Plugin}; no process was started.",
-                    launchMode,
+                    buildFailureLaunchMode,
                     plugin.FileName);
 
                 return new CleaningResult
                 {
                     Success = false,
                     Status = CleaningStatus.Failed,
-                    Message = $"Could not build {launchMode} launch command for {plugin.FileName}. No process was started. See logs for technical details.",
+                    Message = $"Could not build {buildFailureLaunchMode} launch command for {plugin.FileName}. No process was started. See logs for technical details.",
                     Duration = sw.Elapsed
                 };
             }
@@ -74,12 +75,18 @@ public sealed class CleaningService(
             var timeoutSeconds = state.CleaningTimeout;
             var timeout = TimeSpan.FromSeconds(timeoutSeconds > 0 ? timeoutSeconds : 300);
             var gameDisplayName = gameDetection.GetGameDisplayName(gameType);
+            var launchMode = state.Mo2ModeEnabled ? "MO2" : "direct xEdit";
+            var safePluginName = DiagnosticTextFormatter.SafePluginName(plugin.FileName);
+            var argumentCount = GetArgumentCount(command);
 
             logger.Information(
-                "Cleaning {Plugin} for {Game} with timeout {TimeoutSeconds}s...",
-                plugin.FileName,
+                "Starting {Operation} launch: mode={LaunchMode}, game={Game}, plugin={Plugin}, argumentCount={ArgumentCount}, status={Status}",
+                "QuickAutoClean",
+                launchMode,
                 gameDisplayName,
-                timeout.TotalSeconds);
+                safePluginName,
+                argumentCount,
+                "Starting");
 
             var result = await processService.ExecuteAsync(command, timeout, ct, onProcessStarted).ConfigureAwait(false);
 
@@ -87,6 +94,16 @@ public sealed class CleaningService(
 
             if (result.TimedOut)
             {
+                logger.Warning(
+                    "Completed {Operation} launch: mode={LaunchMode}, game={Game}, plugin={Plugin}, argumentCount={ArgumentCount}, status={Status}, reason={Reason}",
+                    "QuickAutoClean",
+                    launchMode,
+                    gameDisplayName,
+                    safePluginName,
+                    argumentCount,
+                    "Failed",
+                    "TimedOut");
+
                 return new CleaningResult
                 {
                     Success = false,
@@ -99,6 +116,16 @@ public sealed class CleaningService(
 
             if (result.ExitCode != 0)
             {
+                logger.Warning(
+                    "Completed {Operation} launch: mode={LaunchMode}, game={Game}, plugin={Plugin}, argumentCount={ArgumentCount}, status={Status}, reason={Reason}",
+                    "QuickAutoClean",
+                    launchMode,
+                    gameDisplayName,
+                    safePluginName,
+                    argumentCount,
+                    "Failed",
+                    "ExitCode");
+
                 // xEdit might exit with non-zero on error, check output
                 return new CleaningResult
                 {
@@ -110,6 +137,16 @@ public sealed class CleaningService(
             }
 
             // Statistics intentionally omitted -- orchestrator parses from log file (per D-02)
+            logger.Information(
+                "Completed {Operation} launch: mode={LaunchMode}, game={Game}, plugin={Plugin}, argumentCount={ArgumentCount}, status={Status}, reason={Reason}",
+                "QuickAutoClean",
+                launchMode,
+                gameDisplayName,
+                safePluginName,
+                argumentCount,
+                "Succeeded",
+                "ProcessExited");
+
             return new CleaningResult
             {
                 Success = true,
@@ -168,4 +205,12 @@ public sealed class CleaningService(
         GameType.Oblivion => true,
         _ => false
     };
+
+    /// <summary>
+    /// Counts the launch arguments without reconstructing or logging the command payload.
+    /// </summary>
+    private static int GetArgumentCount(ProcessStartInfo startInfo) =>
+        startInfo.ArgumentList.Count > 0
+            ? startInfo.ArgumentList.Count
+            : string.IsNullOrWhiteSpace(startInfo.Arguments) ? 0 : 1;
 }
