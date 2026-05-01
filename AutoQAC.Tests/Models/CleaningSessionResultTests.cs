@@ -528,6 +528,68 @@ public sealed class CleaningSessionResultTests
     }
 
     [Fact]
+    public void GenerateReport_WhenPluginNamesContainUnsafeDisplayCharacters_ShouldUseSafePluginNames()
+    {
+        // Arrange
+        var cleanedPluginName = "C:\\Users\\Alice\\Unsafe\"Plugin\there.esp";
+        var alreadyCleanPluginName = "C:\\Users\\Alice\\Already`Clean|-autoload.esp";
+        var skippedPluginName = "C:\\Users\\Alice\\Skipped&Plugin<QAC>.esp";
+        var failedPluginName = "C:\\Users\\Alice\\Failed>Plugin`-QAC.esp";
+        var result = new CleaningSessionResult
+        {
+            PluginResults = new List<PluginCleaningResult>
+            {
+                CreateResult(cleanedPluginName, CleaningStatus.Cleaned, itms: 1),
+                CreateResult(alreadyCleanPluginName, CleaningStatus.AlreadyClean),
+                CreateResult(skippedPluginName, CleaningStatus.Skipped),
+                new()
+                {
+                    PluginName = failedPluginName,
+                    Status = CleaningStatus.Failed,
+                    Message = string.Empty
+                }
+            }
+        };
+
+        // Act
+        var report = result.GenerateReport();
+
+        // Assert
+        report.Should().Contain("UnsafePluginhere.esp");
+        report.Should().Contain("AlreadyClean.esp");
+        report.Should().Contain("SkippedPluginQAC.esp");
+        report.Should().Contain("FailedPlugin.esp: Cleaning failed. See the latest AutoQAC log.");
+        report.Should().Contain(DiagnosticTextFormatter.ReportDisclaimer);
+        AssertUnsafePluginNameFragmentsExcluded(report);
+    }
+
+    [Fact]
+    public void GenerateReport_FailedPluginWithUnsafePluginNameAndEmptyMessage_ShouldUseSafePrefixAndFallback()
+    {
+        // Arrange
+        var result = new CleaningSessionResult
+        {
+            PluginResults = new List<PluginCleaningResult>
+            {
+                new()
+                {
+                    PluginName = "C:\\Users\\Alice\\Failed\"Plugin`|-QAC.esp",
+                    Status = CleaningStatus.Failed,
+                    Message = string.Empty
+                }
+            }
+        };
+
+        // Act
+        var report = result.GenerateReport();
+
+        // Assert
+        report.Should().Contain("FailedPlugin.esp: Cleaning failed. See the latest AutoQAC log.");
+        report.Should().NotContain("FailedPlugin.esp: FailedPlugin.esp:");
+        AssertUnsafePluginNameFragmentsExcluded(report);
+    }
+
+    [Fact]
     public void PluginCleaningResultSummary_FailedPluginWithUnsafeMessage_ShouldUseSafeFallback()
     {
         // Arrange
@@ -600,5 +662,19 @@ public sealed class CleaningSessionResultTests
         text.Should().NotContain(@"C:\Users\Alice");
         text.Should().NotContain("-QAC");
         text.Should().NotContain(" at AutoQAC.");
+    }
+
+    private static void AssertUnsafePluginNameFragmentsExcluded(string text)
+    {
+        text.Should().NotContain(@"C:\Users\Alice");
+        text.Should().NotContain("\"");
+        text.Should().NotContain("`");
+        text.Should().NotContain("|");
+        text.Should().NotContain("&");
+        text.Should().NotContain("<");
+        text.Should().NotContain(">");
+        text.Should().NotContain("\t");
+        text.Should().NotContain("-QAC");
+        text.Should().NotContain("-autoload");
     }
 }

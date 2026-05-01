@@ -46,4 +46,43 @@ public sealed class Phase11ReportBoundaryTests
             report.Should().NotContain(sentinel);
         }
     }
+
+    /// <summary>
+    /// Verifies generated reports sanitize path-like plugin names separately from failed-message text.
+    /// </summary>
+    [Fact]
+    public void GenerateReport_WithUnsafePluginName_ShouldIncludeDisclaimerOnceAndExcludeSharedSentinels()
+    {
+        // Arrange
+        var result = new CleaningSessionResult
+        {
+            StartTime = new DateTime(2026, 5, 1, 4, 0, 0),
+            EndTime = new DateTime(2026, 5, 1, 4, 1, 0),
+            GameType = GameType.SkyrimSe,
+            PluginResults =
+            [
+                new PluginCleaningResult
+                {
+                    PluginName = "C:\\Users\\Alice\\Unsafe`Plugin\t-QAC-autoload.esp",
+                    Status = CleaningStatus.Failed,
+                    Success = false,
+                    Message = string.Empty
+                }
+            ]
+        };
+
+        // Act
+        var report = result.GenerateReport();
+
+        // Assert
+        CountOccurrences(report, DiagnosticTextFormatter.ReportDisclaimer).Should().Be(1);
+        report.Should().Contain("UnsafePlugin.esp: Cleaning failed. See the latest AutoQAC log.");
+        foreach (var sentinel in DiagnosticSentinels.UnsafeDiagnosticSentinels)
+        {
+            report.Should().NotContain(sentinel);
+        }
+    }
+
+    private static int CountOccurrences(string text, string value) =>
+        text.Split(value, StringSplitOptions.None).Length - 1;
 }
