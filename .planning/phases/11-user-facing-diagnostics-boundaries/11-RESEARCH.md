@@ -341,17 +341,17 @@ logger.Debug(
 
 **If this table is empty:** All claims in this research were verified or cited — no user confirmation needed.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Should Phase 11 add a reusable `DiagnosticTextFormatter` service or static helper?**
-   - What we know: Helper/service naming is explicitly planner discretion. [VERIFIED: `11-CONTEXT.md`]
-   - What's unclear: Whether the planner prefers DI-testable service shape or narrow static helpers near call sites.
-   - Recommendation: Use a small internal/static formatter unless multiple services need injected policy; avoid broad infrastructure churn. [VERIFIED: codebase architecture]
+    - What we know: Helper/service naming is explicitly planner discretion. [VERIFIED: `11-CONTEXT.md`]
+   - RESOLVED: Use a small public static `DiagnosticTextFormatter` in `AutoQAC.Models.Diagnostics`, as locked into `11-01-PLAN.md`, so Models, Services, ViewModels, and startup code can share one safe text boundary without DI churn or service-layer dependencies. [VERIFIED: `11-01-PLAN.md`; VERIFIED: codebase architecture]
+   - Rationale: The phase needs deterministic safe copy and sanitization primitives across model/report, ViewModel, process, and startup call sites; a static formatter is enough because no runtime policy or external dependency is needed. [VERIFIED: `11-CONTEXT.md`; VERIFIED: `11-PATTERNS.md`]
 
 2. **How much source-level assertion is acceptable for startup/process logs?**
-   - What we know: D-16 allows captured logger tests or equivalent behavior/source assertions. [VERIFIED: `11-CONTEXT.md`]
-   - What's unclear: `LogStartupInfo` is private static, so pure behavior tests may require minor seam extraction.
-   - Recommendation: Prefer behavior tests by extracting a small startup diagnostics formatter; use source-level guards only for legacy/private seams where behavior capture is expensive. [VERIFIED: `11-CONTEXT.md`]
+    - What we know: D-16 allows captured logger tests or equivalent behavior/source assertions. [VERIFIED: `11-CONTEXT.md`]
+   - RESOLVED: Use captured logger behavior tests for `ProcessExecutionService` because that service already has injectable logging and test seams; use source/behavior guard assertions for `App.axaml.cs` startup and legacy migration warnings where the startup helper is private and broader seam extraction would expand scope. [VERIFIED: `11-05-PLAN.md`; VERIFIED: `11-06-PLAN.md`; VERIFIED: `11-CONTEXT.md`]
+   - Rationale: This satisfies D-16 without adding new diagnostics infrastructure, while still making the tests fail if forbidden templates or raw executable/argv payloads return. [VERIFIED: `11-SPEC.md`; VERIFIED: `11-05-PLAN.md`; VERIFIED: `11-06-PLAN.md`]
 
 ## Environment Availability
 

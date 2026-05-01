@@ -238,7 +238,24 @@ Plans:
   1. User sees concise error dialogs with a log-file reference rather than stack traces or excessive internal path detail.
   2. User diagnostic logs avoid unnecessary full command-line exposure while preserving enough context for local troubleshooting.
   3. User-facing exports and dialogs avoid exposing avoidable profile-root, game-install, xEdit, MO2, and plugin path detail unless needed for diagnosis.
-**Plans**: TBD
+**Plans**: 6 plans
+Plans:
+**Wave 1**
+- [ ] 11-01-PLAN.md — Create the shared safe diagnostics formatter and sentinel tests (SEC-01, SEC-02)
+
+**Wave 2 (blocked on 11-01 completion)**
+- [ ] 11-02-PLAN.md — Harden cleaning/preview dialogs, status text, and pre-clean validation identifiers (SEC-01)
+- [ ] 11-03-PLAN.md — Harden configuration browse and restore session diagnostics (SEC-01)
+- [ ] 11-04-PLAN.md — Sanitize cleaning result rows and exported reports (SEC-01)
+- [ ] 11-05-PLAN.md — Redact process/startup log boundaries and migration warning copy (SEC-01, SEC-02)
+
+**Wave 3 (blocked on Wave 2 completion)**
+- [ ] 11-06-PLAN.md — Add phase-level disclosure sentinels and final verification sweep (SEC-01, SEC-02)
+
+Cross-cutting constraints:
+- User-facing diagnostics must preserve concise safe copy and latest-log guidance while excluding raw exception text, stack traces, full local paths, and command fragments.
+- Diagnostic identifiers should use sanitized basenames, game/folder labels, plugin filenames, and safe typed summaries instead of avoidable profile-root, game-install, xEdit, MO2, or plugin path detail.
+- Logs must preserve local troubleshooting value through safe structured fields such as operation, launch mode, game/mode, plugin filename, PID when available, argument count, counts/status, and safe reason/category.
 **UI hint**: yes
 
 ## Progress
@@ -255,7 +272,7 @@ Plans:
 | 8. Cleaning Orchestrator Decomposition | v1.0 Cleanup | 10/10 | Complete | 2026-04-30 |
 | 9. Plugin Refresh & Approximation Performance | v1.0 Cleanup | 8/9 | Gaps planned | - |
 | 10. Configuration Persistence Hardening | v1.0 Cleanup | 11/11 | Complete    | 2026-05-01 |
-| 11. User-Facing Diagnostics Boundaries | v1.0 Cleanup | 0/0 | Not started | - |
+| 11. User-Facing Diagnostics Boundaries | v1.0 Cleanup | 0/6 | Ready to execute | - |
 
 ## Coverage
 
