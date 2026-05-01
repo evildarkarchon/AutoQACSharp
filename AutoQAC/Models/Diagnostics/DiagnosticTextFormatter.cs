@@ -28,6 +28,7 @@ public static class DiagnosticTextFormatter
     private static readonly Regex DriveRootedPathPattern = new(@"[A-Za-z]:[\\/]", RegexOptions.Compiled);
     private static readonly Regex NamespaceStackFramePattern = new(@"\bat\s+[A-Za-z_][\w]*(\.[A-Za-z_][\w]*)+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex ExeCommandMarkerPattern = new(@"\.exe(?=$|[\s""'`])", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex PluginCommandFlagPattern = new(@"(?:[\s_-]*(?:-QAC|-autoload))+(?=\.[^./\\]+$|$)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     /// <summary>
     /// Builds operation-specific unexpected-failure copy with latest-log guidance and no raw technical detail.
@@ -77,7 +78,8 @@ public static class DiagnosticTextFormatter
     public static string SafePluginName(string? pluginNameOrPath, string fallbackName = "selected plugin")
     {
         var fileName = Path.GetFileName(pluginNameOrPath);
-        return SanitizeDisplayName(fileName, fallbackName);
+        var withoutCommandFlags = string.IsNullOrWhiteSpace(fileName) ? fileName : PluginCommandFlagPattern.Replace(fileName, string.Empty);
+        return SanitizeDisplayName(withoutCommandFlags, fallbackName);
     }
 
     /// <summary>

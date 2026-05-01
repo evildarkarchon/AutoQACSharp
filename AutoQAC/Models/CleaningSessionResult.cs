@@ -181,7 +181,8 @@ public sealed record CleaningSessionResult
             sb.AppendLine("--- Cleaned Plugins ---");
             foreach (var result in CleanedPlugins)
             {
-                sb.AppendLine($"  {result.PluginName}: {result.Summary} ({result.Duration:mm\\:ss})");
+                var safePluginName = DiagnosticTextFormatter.SafePluginName(result.PluginName);
+                sb.AppendLine($"  {safePluginName}: {result.Summary} ({result.Duration:mm\\:ss})");
             }
             sb.AppendLine();
         }
@@ -191,7 +192,7 @@ public sealed record CleaningSessionResult
             sb.AppendLine("--- Already Clean Plugins ---");
             foreach (var result in AlreadyCleanPlugins)
             {
-                sb.AppendLine($"  {result.PluginName}");
+                sb.AppendLine($"  {DiagnosticTextFormatter.SafePluginName(result.PluginName)}");
             }
             sb.AppendLine();
         }
@@ -201,7 +202,7 @@ public sealed record CleaningSessionResult
             sb.AppendLine("--- Skipped Plugins ---");
             foreach (var result in SkippedPlugins)
             {
-                sb.AppendLine($"  {result.PluginName}");
+                sb.AppendLine($"  {DiagnosticTextFormatter.SafePluginName(result.PluginName)}");
             }
             sb.AppendLine();
         }
@@ -241,11 +242,12 @@ public sealed record CleaningSessionResult
     /// <returns>A safe failed-plugin report row without raw diagnostic detail.</returns>
     private static string FormatFailedPluginReportLine(PluginCleaningResult result)
     {
-        var fallback = DiagnosticTextFormatter.CleaningFailedForPlugin(result.PluginName);
+        var safePluginName = DiagnosticTextFormatter.SafePluginName(result.PluginName);
+        var fallback = DiagnosticTextFormatter.CleaningFailedForPlugin(safePluginName);
         var summary = DiagnosticTextFormatter.SafeFailureSummary(result.Message, fallback);
-        var prefix = $"{result.PluginName}:";
+        var prefix = $"{safePluginName}:";
         return summary.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
             ? summary
-            : $"{result.PluginName}: {summary}";
+            : $"{safePluginName}: {summary}";
     }
 }
