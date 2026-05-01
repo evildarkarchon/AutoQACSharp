@@ -13,6 +13,8 @@ public sealed class PluginResultFinalizer(
     ILoggingService logger)
     : IPluginResultFinalizer
 {
+    private const string SafeLogReadWarning = "xEdit log could not be read. See the latest AutoQAC log.";
+
     /// <inheritdoc />
     public async Task<PluginCleaningResult> FinalizeAsync(
         PluginInfo plugin,
@@ -37,7 +39,7 @@ public sealed class PluginResultFinalizer(
             if (logResult.Warning != null)
             {
                 logger.Warning("Log read warning for {Plugin}: {Warning}", plugin.FileName, logResult.Warning);
-                logParseWarning = logResult.Warning;
+                logParseWarning = SafeLogReadWarning;
             }
 
             // PAR-01: Apply existing regex patterns to log file content
