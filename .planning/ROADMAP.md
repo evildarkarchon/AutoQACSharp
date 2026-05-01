@@ -26,7 +26,7 @@ Full details: [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP.md)
 - [ ] **Phase 9: Plugin Refresh & Approximation Performance** - Users can refresh approximations more efficiently while plugin-loading coordination moves out of the ViewModel.
 - [x] **Phase 10: Configuration Persistence Hardening** - Users get deterministic configuration save/reload behavior with lower clone overhead. (gaps planned 2026-05-01) (completed 2026-05-01) (additional gap planned 2026-05-01)
 - [x] **Phase 11: User-Facing Diagnostics Boundaries** - Users see concise errors while logs avoid unnecessary path and command exposure. (gaps planned 2026-05-01) (completed 2026-05-01) (additional gap planned 2026-05-01) (completed 2026-05-01) (additional gap planned 2026-05-01) (completed 2026-05-01) (additional gap planned 2026-05-01)
-- [ ] **Phase 12: Process Stop Verification & Progress Flow Closure** - Users can stop cleaning from the Progress window through the confirmed two-stage termination and force-failure reporting path.
+- [x] **Phase 12: Process Stop Verification & Progress Flow Closure** - Users can stop cleaning from the Progress window through the confirmed two-stage termination and force-failure reporting path. (completed 2026-05-01)
 - [ ] **Phase 13: Command Launch Escaping Reverification & Safe MO2 Failures** - Users cannot accidentally launch direct xEdit when MO2 mode is enabled but MO2 configuration is missing, and command escaping safety is re-verified.
 - [ ] **Phase 14: Orchestrator Decomposition Reverification** - Maintainers have current verification evidence that orchestrator gap closures preserve session guarding and detected-game preflight validation.
 
@@ -295,7 +295,7 @@ Plans:
 - [x] 12-02-PLAN.md — Wire Progress Stop and Hang Kill through shared two-stage outcome handling and persistent summary warnings.
 
 **Wave 3 (blocked on 12-02 completion)**
-- [ ] 12-03-PLAN.md — Run current stop/process/PID evidence and write Phase 12 requirement verification artifact.
+- [x] 12-03-PLAN.md — Run current stop/process/PID evidence and write Phase 12 requirement verification artifact.
 
 Cross-cutting constraints:
 - Stop outcome copy must be exact, shared, and Phase 11-safe across main Stop, Progress Stop, and Hang Kill force-failure reporting.
@@ -342,7 +342,7 @@ Cross-cutting constraints:
 | 9. Plugin Refresh & Approximation Performance | v1.0 Cleanup | 8/9 | Gaps planned | - |
 | 10. Configuration Persistence Hardening | v1.0 Cleanup | 11/11 | Complete    | 2026-05-01 |
 | 11. User-Facing Diagnostics Boundaries | v1.0 Cleanup | 13/13 | Complete   | 2026-05-01 |
-| 12. Process Stop Verification & Progress Flow Closure | v1.0 Cleanup | 2/3 | In Progress|  |
+| 12. Process Stop Verification & Progress Flow Closure | v1.0 Cleanup | 3/3 | Complete   | 2026-05-01 |
 | 13. Command Launch Escaping Reverification & Safe MO2 Failures | v1.0 Cleanup | 0/0 | Not started | - |
 | 14. Orchestrator Decomposition Reverification | v1.0 Cleanup | 0/0 | Not started | - |
 
