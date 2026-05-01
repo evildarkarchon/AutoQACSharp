@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.State;
@@ -16,6 +17,7 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
     private readonly IStateService _stateService;
     private readonly ICleaningOrchestrator _orchestrator;
     private readonly IMessageDialogService _messageDialog;
+    private readonly ILoggingService _logger;
     private readonly IUiDispatcher _uiDispatcher;
     private readonly List<IDisposable> _subscriptions = new();
 
@@ -157,11 +159,12 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
     /// <summary>Event raised when the window should close.</summary>
     public event EventHandler? CloseRequested;
 
-    public ProgressViewModel(IStateService stateService, ICleaningOrchestrator orchestrator, IMessageDialogService messageDialog, IUiDispatcher uiDispatcher)
+    public ProgressViewModel(IStateService stateService, ICleaningOrchestrator orchestrator, IMessageDialogService messageDialog, ILoggingService logger, IUiDispatcher uiDispatcher)
     {
         _stateService = stateService;
         _orchestrator = orchestrator;
         _messageDialog = messageDialog;
+        _logger = logger;
         _uiDispatcher = uiDispatcher;
 
         _subscriptions.Add(_stateService.StateChanged.Subscribe(
@@ -229,8 +232,9 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
             _orchestrator.MarkLeftRunningByUser();
             StopOutcomeWarningText = StopTerminationDialogContent.LeftRunningMessage;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            _logger.Error(ex, "Progress stop command failed");
             await ShowForceFailureDialogSafelyAsync();
         }
     }
@@ -254,8 +258,9 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
             var forceResult = await _orchestrator.ForceStopCleaningAsync();
             await ReportForceStopFailureIfNeededAsync(forceResult.TerminationResult ?? _orchestrator.LastTerminationResult);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            _logger.Error(ex, "Progress hang force-stop command failed");
             IsHangWarningVisible = false;
             await ShowForceFailureDialogSafelyAsync();
         }
@@ -287,8 +292,9 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
                 StopTerminationDialogContent.ForceFailureTitle,
                 StopTerminationDialogContent.ForceFailureMessage);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            _logger.Error(ex, "Failed to show Progress stop failure dialog");
             // The persistent warning remains visible when the modal dialog itself cannot be shown.
         }
     }

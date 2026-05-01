@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
+using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.State;
@@ -28,6 +29,7 @@ public sealed class ProgressViewModelTests
     private readonly BehaviorSubject<bool> _isTerminatingSubject;
     private readonly Subject<bool> _hangDetectedSubject;
     private readonly IMessageDialogService _messageDialogMock;
+    private readonly ILoggingService _loggerMock;
     private readonly IUiDispatcher _uiDispatcher;
 
     /// <summary>
@@ -55,6 +57,7 @@ public sealed class ProgressViewModelTests
         _orchestratorMock.HangDetected.Returns(_hangDetectedSubject);
 
         _messageDialogMock = Substitute.For<IMessageDialogService>();
+        _loggerMock = Substitute.For<ILoggingService>();
     }
 
     /// <summary>
@@ -62,7 +65,7 @@ public sealed class ProgressViewModelTests
     /// </summary>
     private ProgressViewModel CreateViewModel()
     {
-        return new ProgressViewModel(_stateServiceMock, _orchestratorMock, _messageDialogMock, _uiDispatcher);
+        return new ProgressViewModel(_stateServiceMock, _orchestratorMock, _messageDialogMock, _loggerMock, _uiDispatcher);
     }
 
     [Fact]
@@ -225,6 +228,7 @@ public sealed class ProgressViewModelTests
             StopTerminationDialogContent.ForceFailureTitle,
             StopTerminationDialogContent.ForceFailureMessage,
             Arg.Any<string?>());
+        _loggerMock.Received(1).Error(Arg.Any<InvalidOperationException>(), "Progress stop command failed");
     }
 
     [Fact]
@@ -258,6 +262,7 @@ public sealed class ProgressViewModelTests
         // Assert
         vm.StopOutcomeWarningText.Should().Be(StopTerminationDialogContent.ForceFailureMessage);
         vm.HasStopOutcomeWarning.Should().BeTrue();
+        _loggerMock.Received(1).Error(Arg.Any<ApplicationException>(), "Failed to show Progress stop failure dialog");
     }
 
     #region Edge Case Tests
@@ -1034,6 +1039,31 @@ public sealed class ProgressViewModelTests
             StopTerminationDialogContent.ForceFailureTitle,
             StopTerminationDialogContent.ForceFailureMessage,
             Arg.Any<string?>());
+        _loggerMock.Received(1).Error(Arg.Any<InvalidOperationException>(), "Progress hang force-stop command failed");
+    }
+
+    [Fact]
+    public async Task KillHungProcessCommand_WhenFailureDialogThrows_ShouldLogAndPersistWarning()
+    {
+        // Arrange
+        _orchestratorMock.ForceStopCleaningAsync()
+            .Returns(new StopCleaningResult(TerminationResult.ForceKillFailed, true));
+        _messageDialogMock.ShowErrorAsync(
+                StopTerminationDialogContent.ForceFailureTitle,
+                StopTerminationDialogContent.ForceFailureMessage,
+                Arg.Any<string?>())
+            .ThrowsAsync(new ApplicationException("dialog failed"));
+        var vm = CreateViewModel();
+        vm.IsHangWarningVisible = true;
+
+        // Act
+        await vm.KillHungProcessCommand.ExecuteAsync(null);
+
+        // Assert
+        vm.IsHangWarningVisible.Should().BeFalse();
+        vm.StopOutcomeWarningText.Should().Be(StopTerminationDialogContent.ForceFailureMessage);
+        vm.HasStopOutcomeWarning.Should().BeTrue();
+        _loggerMock.Received(1).Error(Arg.Any<ApplicationException>(), "Failed to show Progress stop failure dialog");
     }
 
     [Fact]
@@ -1084,7 +1114,7 @@ public sealed class ProgressViewModelTests
         _stateServiceMock.StateChanged.Returns(stateSubject);
 
         // Act
-        var vm = new ProgressViewModel(_stateServiceMock, _orchestratorMock, _messageDialogMock, _uiDispatcher);
+        var vm = new ProgressViewModel(_stateServiceMock, _orchestratorMock, _messageDialogMock, _loggerMock, _uiDispatcher);
 
         // Assert
         vm.Progress.Should().Be(3);
