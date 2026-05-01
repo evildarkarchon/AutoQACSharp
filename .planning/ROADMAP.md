@@ -25,7 +25,7 @@ Full details: [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP.md)
 - [ ] **Phase 8: Cleaning Orchestrator Decomposition** - Maintainers can change cleaning flow pieces without broad orchestrator rewrites.
 - [ ] **Phase 9: Plugin Refresh & Approximation Performance** - Users can refresh approximations more efficiently while plugin-loading coordination moves out of the ViewModel.
 - [x] **Phase 10: Configuration Persistence Hardening** - Users get deterministic configuration save/reload behavior with lower clone overhead. (gaps planned 2026-05-01) (completed 2026-05-01) (additional gap planned 2026-05-01)
-- [ ] **Phase 11: User-Facing Diagnostics Boundaries** - Users see concise errors while logs avoid unnecessary path and command exposure. (gaps planned 2026-05-01) (completed 2026-05-01) (additional gap planned 2026-05-01)
+- [x] **Phase 11: User-Facing Diagnostics Boundaries** - Users see concise errors while logs avoid unnecessary path and command exposure. (gaps planned 2026-05-01) (completed 2026-05-01) (additional gap planned 2026-05-01) (completed 2026-05-01)
 
 ## Phase Details
 
@@ -258,7 +258,7 @@ Plans:
 - [x] 11-09-PLAN.md — Close report plugin-name display sanitization gap (SEC-01)
 
 **Wave 5 (gap closure; blocked on 11-09 completion)**
-- [ ] 11-10-PLAN.md — Close CleaningService raw plugin-filename failed-message source boundary gap (SEC-01)
+- [x] 11-10-PLAN.md — Close CleaningService raw plugin-filename failed-message source boundary gap (SEC-01)
 
 Cross-cutting constraints:
 - User-facing diagnostics must preserve concise safe copy and latest-log guidance while excluding raw exception text, stack traces, full local paths, and command fragments.
@@ -280,7 +280,7 @@ Cross-cutting constraints:
 | 8. Cleaning Orchestrator Decomposition | v1.0 Cleanup | 10/10 | Complete | 2026-04-30 |
 | 9. Plugin Refresh & Approximation Performance | v1.0 Cleanup | 8/9 | Gaps planned | - |
 | 10. Configuration Persistence Hardening | v1.0 Cleanup | 11/11 | Complete    | 2026-05-01 |
-| 11. User-Facing Diagnostics Boundaries | v1.0 Cleanup | 9/10 | Gaps planned | - |
+| 11. User-Facing Diagnostics Boundaries | v1.0 Cleanup | 10/10 | Complete   | 2026-05-01 |
 
 ## Coverage
 

@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Cleanup
-status: executing
-stopped_at: Planned 11-10-PLAN.md
-last_updated: "2026-05-01T06:56:23.065Z"
-last_activity: 2026-05-01 -- Phase 11 planning complete
+status: complete
+stopped_at: Completed 11-10-PLAN.md
+last_updated: "2026-05-01T07:07:17.788Z"
+last_activity: 2026-05-01
 progress:
   total_phases: 7
-  completed_phases: 6
+  completed_phases: 7
   total_plans: 62
-  completed_plans: 61
-  percent: 98
+  completed_plans: 62
+  percent: 100
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-28)
 
 ## Current Position
 
-Phase: 11 (user-facing-diagnostics-boundaries) — EXECUTING
+Phase: 11 (user-facing-diagnostics-boundaries) — COMPLETE
 Plan: 10 of 10
-Status: Ready to execute
-Last activity: 2026-05-01 -- Phase 11 planning complete
+Status: Phase 11 complete
+Last activity: 2026-05-01
 
-Progress: [█████████░] 98%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -69,6 +69,7 @@ Progress: [█████████░] 98%
 | Phase 11 P07 | 2m 7s | 2 tasks | 4 files |
 | Phase 11 P08 | 2m | 2 tasks | 3 files |
 | Phase 11 P09 | 4 min | 2 tasks | 4 files |
+| Phase 11 P10 | 5 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -123,6 +124,7 @@ Progress: [█████████░] 98%
 - [Phase 11]: Successful-start PID tracking tests inspect entries at onProcessStarted. — Normal process completion intentionally untracks entries, so the regression guard asserts the transient tracking boundary.
 - [Phase 11]: Generated reports use sanitized plugin basenames for cleaned, already-clean, skipped, and failed row prefixes. — Raw PluginName remains internal model data while report/export copy uses DiagnosticTextFormatter.SafePluginName.
 - [Phase 11]: SafePluginName removes known command-flag suffixes such as -QAC and -autoload at display boundaries. — Plan 11-09 closes SEC-01 report display gaps without broadly removing useful filename dashes.
+- [Phase 11]: CleaningService failed-result messages sanitize unsafe plugin basenames at source before finalizer, summary, or report boundaries consume them. — Plan 11-10 closes SEC-01/CR-01 by using SafePluginName for command-build failures and CleaningFailedForPlugin for unexpected exceptions.
 
 ### Pending Todos
 
@@ -140,6 +142,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-05-01T06:42:16.690Z
-Stopped at: Completed 11-09-PLAN.md
+Last session: 2026-05-01T07:07:09.696Z
+Stopped at: Completed 11-10-PLAN.md
 Resume file: None
