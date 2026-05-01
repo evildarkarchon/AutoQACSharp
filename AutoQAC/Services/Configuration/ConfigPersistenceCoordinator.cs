@@ -354,6 +354,13 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
             _logger.Information("[ConfigPersistence] Flushing pending app save before explicit reload");
             var flushResult = await FlushPendingInsideConsumerAsync(ct).ConfigureAwait(false);
             SafePublishResult(flushResult);
+            // Explicit reload depends on the pending app save reaching disk; otherwise
+            // reading older disk content would mask the failure and drop queued edits.
+            if (flushResult.Status is ConfigPersistenceStatusKind.Failed or ConfigPersistenceStatusKind.Rejected)
+            {
+                reload.Completion.TrySetResult(flushResult);
+                return;
+            }
         }
 
         var read = await ReadForReloadAsync(ConfigPersistenceOperationKind.Reload, ct).ConfigureAwait(false);
