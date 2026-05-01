@@ -25,7 +25,7 @@ Full details: [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP.md)
 - [ ] **Phase 8: Cleaning Orchestrator Decomposition** - Maintainers can change cleaning flow pieces without broad orchestrator rewrites.
 - [ ] **Phase 9: Plugin Refresh & Approximation Performance** - Users can refresh approximations more efficiently while plugin-loading coordination moves out of the ViewModel.
 - [x] **Phase 10: Configuration Persistence Hardening** - Users get deterministic configuration save/reload behavior with lower clone overhead. (gaps planned 2026-05-01) (completed 2026-05-01) (additional gap planned 2026-05-01)
-- [x] **Phase 11: User-Facing Diagnostics Boundaries** - Users see concise errors while logs avoid unnecessary path and command exposure. (gaps planned 2026-05-01) (completed 2026-05-01) (additional gap planned 2026-05-01) (completed 2026-05-01)
+- [ ] **Phase 11: User-Facing Diagnostics Boundaries** - Users see concise errors while logs avoid unnecessary path and command exposure. (gaps planned 2026-05-01) (completed 2026-05-01) (additional gap planned 2026-05-01) (completed 2026-05-01) (additional gap planned 2026-05-01)
 
 ## Phase Details
 
@@ -238,7 +238,7 @@ Plans:
   1. User sees concise error dialogs with a log-file reference rather than stack traces or excessive internal path detail.
   2. User diagnostic logs avoid unnecessary full command-line exposure while preserving enough context for local troubleshooting.
   3. User-facing exports and dialogs avoid exposing avoidable profile-root, game-install, xEdit, MO2, and plugin path detail unless needed for diagnosis.
-**Plans**: 10 plans (6 original + 4 gap-closure)
+**Plans**: 11 plans (6 original + 5 gap-closure)
 Plans:
 **Wave 1**
 - [x] 11-01-PLAN.md — Create the shared safe diagnostics formatter and sentinel tests (SEC-01, SEC-02)
@@ -260,6 +260,9 @@ Plans:
 **Wave 5 (gap closure; blocked on 11-09 completion)**
 - [x] 11-10-PLAN.md — Close CleaningService raw plugin-filename failed-message source boundary gap (SEC-01)
 
+**Wave 6 (gap closure; blocked on 11-10 completion)**
+- [ ] 11-11-PLAN.md — Close xEdit main-log path LogParseWarning tooltip disclosure gap (SEC-01)
+
 Cross-cutting constraints:
 - User-facing diagnostics must preserve concise safe copy and latest-log guidance while excluding raw exception text, stack traces, full local paths, and command fragments.
 - Diagnostic identifiers should use sanitized basenames, game/folder labels, plugin filenames, and safe typed summaries instead of avoidable profile-root, game-install, xEdit, MO2, or plugin path detail.
@@ -280,7 +283,7 @@ Cross-cutting constraints:
 | 8. Cleaning Orchestrator Decomposition | v1.0 Cleanup | 10/10 | Complete | 2026-04-30 |
 | 9. Plugin Refresh & Approximation Performance | v1.0 Cleanup | 8/9 | Gaps planned | - |
 | 10. Configuration Persistence Hardening | v1.0 Cleanup | 11/11 | Complete    | 2026-05-01 |
-| 11. User-Facing Diagnostics Boundaries | v1.0 Cleanup | 10/10 | Complete   | 2026-05-01 |
+| 11. User-Facing Diagnostics Boundaries | v1.0 Cleanup | 10/11 | Gaps planned | - |
 
 ## Coverage
 
