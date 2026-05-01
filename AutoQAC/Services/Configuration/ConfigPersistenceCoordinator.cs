@@ -287,7 +287,22 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
 
     private async Task ApplyWatcherAsync(WatcherObserved op, CancellationToken ct)
     {
-        var currentHash = op.CurrentHash ?? await _fileStore.ComputeHashAsync(ct).ConfigureAwait(false);
+        string? currentHash;
+        try
+        {
+            currentHash = op.CurrentHash ?? await _fileStore.ComputeHashAsync(ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Hashing reads the live settings file, so file-lock races must surface
+            // through the typed watcher failure path instead of dropping the signal.
+            _logger.Error(ex, "[ConfigPersistence] Could not hash settings file for watcher reload");
+            var failure = CreateFailure(ConfigPersistenceOperationKind.Watcher, ConfigPersistenceFailureKind.ReadFailed, "Could not read settings file (read_failed)");
+            PublishFailure(failure);
+            SafePublishResult(new ConfigPersistenceResult(ConfigPersistenceStatusKind.Failed, ConfigPersistenceOperationKind.Watcher, _appGeneration, failure));
+            return;
+        }
+
         if (_lastWrittenHash != null && string.Equals(currentHash, _lastWrittenHash, StringComparison.OrdinalIgnoreCase))
         {
             _logger.Debug("[ConfigPersistence] Watcher echo matched last app-written hash; skipping reload");

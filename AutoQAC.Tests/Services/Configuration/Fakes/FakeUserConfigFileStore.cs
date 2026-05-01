@@ -17,6 +17,8 @@ internal sealed class FakeUserConfigFileStore : IUserConfigFileStore
 
     public Exception? ReadFailure { get; set; }
 
+    public Exception? HashFailure { get; set; }
+
     public bool FileMissing { get; set; }
 
     public string? CurrentContent { get; set; }
@@ -66,6 +68,11 @@ internal sealed class FakeUserConfigFileStore : IUserConfigFileStore
     {
         ct.ThrowIfCancellationRequested();
         CallLog.Add("Hash");
+        if (HashFailure != null)
+        {
+            throw HashFailure;
+        }
+
         return Task.FromResult(FileMissing ? null : CurrentHash ?? (CurrentContent == null ? null : ComputeHash(CurrentContent)));
     }
 

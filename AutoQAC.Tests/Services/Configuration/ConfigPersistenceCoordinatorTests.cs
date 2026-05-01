@@ -224,6 +224,43 @@ public sealed class ConfigPersistenceCoordinatorTests
         failures.Should().Contain(f => f.Kind == ConfigPersistenceFailureKind.MissingFile && !f.SafeSummary.Contains("Exception"));
     }
 
+    /// <summary>
+    /// Verifies that watcher hash read races are reported without stopping later watcher reloads.
+    /// </summary>
+    [Fact]
+    public async Task Watcher_HashFailure_EmitsReadFailedAndProcessesLaterReload()
+    {
+        var store = new FakeUserConfigFileStore
+        {
+            CurrentContent = Serializer.Serialize(NewConfig(33)),
+            HashFailure = new IOException("locked")
+        };
+        var failures = new List<ConfigPersistenceFailure>();
+        var results = new List<ConfigPersistenceResult>();
+        var coordinator = CreateCoordinator(store);
+        using var failureSub = coordinator.Failures.Subscribe(failures.Add);
+        using var resultSub = coordinator.PersistenceResults.Subscribe(results.Add);
+        await coordinator.StartAsync();
+
+        coordinator.NotifySettingsFileChanged(ConfigFileSignalKind.Changed);
+        await PumpUntilQuiescentAsync(coordinator);
+
+        failures.Should().Contain(f => f.Operation == ConfigPersistenceOperationKind.Watcher && f.Kind == ConfigPersistenceFailureKind.ReadFailed);
+        results.Should().Contain(r =>
+            r.Operation == ConfigPersistenceOperationKind.Watcher
+            && r.Status == ConfigPersistenceStatusKind.Failed
+            && r.Failure != null
+            && r.Failure.Kind == ConfigPersistenceFailureKind.ReadFailed);
+
+        store.HashFailure = null;
+        store.CurrentContent = Serializer.Serialize(NewConfig(44));
+        store.CurrentHash = FakeUserConfigFileStore.ComputeHash(store.CurrentContent);
+        coordinator.NotifySettingsFileChanged(ConfigFileSignalKind.Changed);
+        await PumpUntilQuiescentAsync(coordinator);
+
+        (await coordinator.LoadCurrentAsync()).Settings.CleaningTimeout.Should().Be(44, because: "a transient hash failure must not stop the coordinator consumer loop");
+    }
+
     [Fact]
     public async Task Reload_InvalidYaml_RejectsCandidate_ActiveUnchanged_EmitsInvalidExternalYaml()
     {
