@@ -313,7 +313,10 @@ Cross-cutting constraints:
   2. Direct xEdit and configured MO2 launches still preserve quotes, Unicode, spaces, shell-sensitive characters, and nested xEdit arguments.
   3. Unexpected launch failures use safe user-facing diagnostics after Phase 11 boundaries.
   4. Current verification and validation artifacts prove SAF-03 and TEST-02 are satisfied.
-**Plans**: 0 plans (gap closure planning pending)
+**Plans**: 1 plan
+Plans:
+**Wave 1**
+- [ ] 13-01-PLAN.md — Produce current command-launch escaping validation and verification evidence for SAF-03 and TEST-02.
 
 ### Phase 14: Orchestrator Decomposition Reverification
 **Goal**: Maintainers can trust current verification evidence that the decomposed cleaning orchestrator preserves session guarding, final detected-game preflight validation, and sequential behavior.
