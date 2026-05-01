@@ -30,8 +30,8 @@ Requirements for the cleanup milestone. Each maps to roadmap phases.
 
 ### Security
 
-- [ ] **SEC-01**: User sees concise error dialogs with log-file references instead of stack traces or excessive internal path detail.
-- [ ] **SEC-02**: User diagnostic logs avoid unnecessary full command-line/path exposure while preserving enough information for local troubleshooting.
+- [x] **SEC-01**: User sees concise error dialogs with log-file references instead of stack traces or excessive internal path detail.
+- [x] **SEC-02**: User diagnostic logs avoid unnecessary full command-line/path exposure while preserving enough information for local troubleshooting.
 
 ### Performance
 
@@ -86,8 +86,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TEST-02 | Phase 6 | Complete |
 | TEST-03 | Phase 10 | Complete |
 | TEST-04 | Phase 7 | Complete |
-| SEC-01 | Phase 11 | Pending |
-| SEC-02 | Phase 11 | Pending |
+| SEC-01 | Phase 11 | Complete |
+| SEC-02 | Phase 11 | Complete |
 | PERF-01 | Phase 9 | Complete |
 | PERF-02 | Phase 9 | Complete |
 | PERF-03 | Phase 10 | Complete |

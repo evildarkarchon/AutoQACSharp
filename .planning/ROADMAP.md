@@ -241,7 +241,7 @@ Plans:
 **Plans**: 6 plans
 Plans:
 **Wave 1**
-- [ ] 11-01-PLAN.md — Create the shared safe diagnostics formatter and sentinel tests (SEC-01, SEC-02)
+- [x] 11-01-PLAN.md — Create the shared safe diagnostics formatter and sentinel tests (SEC-01, SEC-02)
 
 **Wave 2 (blocked on 11-01 completion)**
 - [ ] 11-02-PLAN.md — Harden cleaning/preview dialogs, status text, and pre-clean validation identifiers (SEC-01)
@@ -272,7 +272,7 @@ Cross-cutting constraints:
 | 8. Cleaning Orchestrator Decomposition | v1.0 Cleanup | 10/10 | Complete | 2026-04-30 |
 | 9. Plugin Refresh & Approximation Performance | v1.0 Cleanup | 8/9 | Gaps planned | - |
 | 10. Configuration Persistence Hardening | v1.0 Cleanup | 11/11 | Complete    | 2026-05-01 |
-| 11. User-Facing Diagnostics Boundaries | v1.0 Cleanup | 0/6 | Ready to execute | - |
+| 11. User-Facing Diagnostics Boundaries | v1.0 Cleanup | 1/6 | In Progress|  |
 
 ## Coverage
 

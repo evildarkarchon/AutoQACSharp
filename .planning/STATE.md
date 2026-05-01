@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: Cleanup
 status: executing
 stopped_at: Phase 11 UI-SPEC approved
-last_updated: "2026-05-01T04:19:32.564Z"
-last_activity: 2026-05-01 -- Phase 11 planning complete
+last_updated: "2026-05-01T04:26:21.562Z"
+last_activity: 2026-05-01
 progress:
   total_phases: 7
   completed_phases: 6
   total_plans: 58
-  completed_plans: 52
-  percent: 90
+  completed_plans: 53
+  percent: 91
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-04-28)
 ## Current Position
 
 Phase: 11 (user-facing-diagnostics-boundaries) — EXECUTING
-Plan: 1 of 6
+Plan: 2 of 6
 Status: Ready to execute
-Last activity: 2026-05-01 -- Phase 11 planning complete
+Last activity: 2026-05-01
 
-Progress: [██████████] 100%
+Progress: [█████████░] 91%
 
 ## Performance Metrics
 
@@ -60,6 +60,7 @@ Progress: [██████████] 100%
 | Phase 10 P09 | 12 min | 2 tasks | 2 files |
 | Phase 10 P10 | 8 min | 3 tasks | 4 files |
 | Phase 10 P11 | 3 min | 3 tasks | 3 files |
+| Phase 11 P01 | 3 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -94,6 +95,8 @@ Progress: [██████████] 100%
 - [Phase 10]: Plan 11 closes the production DI regression where IConfigurationService can be constructed with a private coordinator instead of the registered shared IConfigPersistenceCoordinator. — Required so watcher-originated results/failures flow through the facade streams consumed by Settings UI and cleaning-adjacent workflows.
 - [Phase 10]: Production DI constructs IConfigurationService with the registered shared IConfigPersistenceCoordinator. — Prevents constructor selection from creating a private coordinator disconnected from ConfigWatcherService.
 - [Phase 10]: Watcher-originated errors are verified through IConfigurationService.PersistenceResults. — The DI regression now covers observable facade data flow, not only service resolution.
+- [Phase 11]: DiagnosticTextFormatter lives under AutoQAC.Models.Diagnostics so models, services, ViewModels, and startup code can share safe copy without a service-layer dependency. — Plan 11-01 established the shared static diagnostics boundary for later Phase 11 consumers.
+- [Phase 11]: Unsafe failure summaries fall back on paths, command flags, exception names, stack markers, executable command markers, or control whitespace. — Conservative fallback behavior prevents raw exception/path/command content from crossing into user-facing diagnostics.
 
 ### Pending Todos
 
@@ -111,6 +114,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-05-01T03:28:33.580Z
-Stopped at: Phase 11 UI-SPEC approved
-Resume file: .planning/phases/11-user-facing-diagnostics-boundaries/11-UI-SPEC.md
+Last session: 2026-05-01T04:26:15.648Z
+Stopped at: Completed 11-01-PLAN.md
+Resume file: None
