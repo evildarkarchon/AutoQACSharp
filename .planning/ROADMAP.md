@@ -28,7 +28,7 @@ Full details: [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP.md)
 - [x] **Phase 11: User-Facing Diagnostics Boundaries** - Users see concise errors while logs avoid unnecessary path and command exposure. (gaps planned 2026-05-01) (completed 2026-05-01) (additional gap planned 2026-05-01) (completed 2026-05-01) (additional gap planned 2026-05-01) (completed 2026-05-01) (additional gap planned 2026-05-01)
 - [x] **Phase 12: Process Stop Verification & Progress Flow Closure** - Users can stop cleaning from the Progress window through the confirmed two-stage termination and force-failure reporting path. (completed 2026-05-01)
 - [ ] **Phase 13: Command Launch Escaping Reverification & Safe MO2 Failures** - Users cannot accidentally launch direct xEdit when MO2 mode is enabled but MO2 configuration is missing, and command escaping safety is re-verified.
-- [ ] **Phase 14: Orchestrator Decomposition Reverification** - Maintainers have current verification evidence that orchestrator gap closures preserve session guarding and detected-game preflight validation.
+- [x] **Phase 14: Orchestrator Decomposition Reverification** - Maintainers have current verification evidence that orchestrator gap closures preserve session guarding and detected-game preflight validation. (completed 2026-05-01)
 
 ## Phase Details
 
@@ -331,7 +331,7 @@ Plans:
 **Plans**: 1 plan
 Plans:
 **Wave 1**
-- [ ] 14-01-PLAN.md — Produce current Phase 14 REF-01 verification evidence for session guarding, detected load-order validation, sequential/collaborator boundaries, and full-suite status.
+- [x] 14-01-PLAN.md — Produce current Phase 14 REF-01 verification evidence for session guarding, detected load-order validation, sequential/collaborator boundaries, and full-suite status.
 
 ## Progress
 
@@ -350,7 +350,7 @@ Plans:
 | 11. User-Facing Diagnostics Boundaries | v1.0 Cleanup | 13/13 | Complete   | 2026-05-01 |
 | 12. Process Stop Verification & Progress Flow Closure | v1.0 Cleanup | 3/3 | Complete    | 2026-05-01 |
 | 13. Command Launch Escaping Reverification & Safe MO2 Failures | v1.0 Cleanup | 0/0 | Not started | - |
-| 14. Orchestrator Decomposition Reverification | v1.0 Cleanup | 0/0 | Not started | - |
+| 14. Orchestrator Decomposition Reverification | v1.0 Cleanup | 1/1 | Complete    | 2026-05-01 |
 
 ## Coverage
 

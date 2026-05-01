@@ -16,7 +16,7 @@ Requirements for the cleanup milestone. Each maps to roadmap phases.
 
 ### Refactoring
 
-- [ ] **REF-01**: Maintainer can change cleaning preflight, backup, execution, result finalization, or termination logic without editing one monolithic cleaning orchestrator.
+- [x] **REF-01**: Maintainer can change cleaning preflight, backup, execution, result finalization, or termination logic without editing one monolithic cleaning orchestrator.
 - [x] **REF-02**: Maintainer can change plugin loading or issue approximation refresh behavior outside `ConfigurationViewModel`.
 - [x] **REF-03**: Maintainer can reason about configuration saves, reloads, deferrals, and failures through one serialized persistence flow.
 - [x] **REF-04**: Maintainer can test PID tracking through injected storage/path abstractions with process-safe update behavior.
@@ -78,7 +78,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SAF-02 | Phase 12 | Complete |
 | SAF-03 | Phase 13 | Pending |
 | SAF-04 | Phase 7 | Complete |
-| REF-01 | Phase 14 | Pending |
+| REF-01 | Phase 14 | Complete |
 | REF-02 | Phase 9 | Complete |
 | REF-03 | Phase 10 | Complete |
 | REF-04 | Phase 12 | Complete |
