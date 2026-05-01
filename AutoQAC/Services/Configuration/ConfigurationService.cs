@@ -545,6 +545,8 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
             ["LogRetention.Mode"] = config.LogRetention.Mode,
             ["LogRetention.MaxAgeDays"] = config.LogRetention.MaxAgeDays,
             ["LogRetention.MaxFileCount"] = config.LogRetention.MaxFileCount,
+            ["Backup.Enabled"] = config.Backup.Enabled,
+            ["Backup.MaxSessions"] = config.Backup.MaxSessions,
             ["SelectedGame"] = config.SelectedGame
         };
     }

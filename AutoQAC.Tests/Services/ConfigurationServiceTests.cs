@@ -174,6 +174,29 @@ public sealed class ConfigurationServiceTests : IDisposable
         loaded.Settings.CleaningTimeout.Should().Be(999);
     }
 
+    [Fact]
+    public async Task GetAllSettingsAsync_IncludesBackupSettings()
+    {
+        // Arrange
+        var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
+        var config = new UserConfiguration
+        {
+            Backup = new BackupSettings
+            {
+                Enabled = false,
+                MaxSessions = 17
+            }
+        };
+        await service.SaveUserConfigAsync(config);
+
+        // Act
+        var settings = await service.GetAllSettingsAsync();
+
+        // Assert
+        settings.Should().Contain("Backup.Enabled", false);
+        settings.Should().Contain("Backup.MaxSessions", 17);
+    }
+
     /// <summary>
     /// Verifies that a failed explicit reload does not discard the facade's pending-save marker.
     /// </summary>
