@@ -39,6 +39,21 @@ public sealed class ConfigurationServiceTests : IDisposable
         }
     }
 
+    /// <summary>
+    /// Creates a coordinator substitute with the observable streams required by the
+    /// configuration facade constructor.
+    /// </summary>
+    private static IConfigPersistenceCoordinator CreateCoordinatorSubstitute()
+    {
+        var coordinator = Substitute.For<IConfigPersistenceCoordinator>();
+        coordinator.Failures.Returns(new Subject<ConfigPersistenceFailure>());
+        coordinator.PersistenceResults.Returns(new Subject<ConfigPersistenceResult>());
+        coordinator.ConfigurationAccepted.Returns(new Subject<UserConfiguration>());
+        coordinator.StartAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        coordinator.StopAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        return coordinator;
+    }
+
     [Fact]
     public async Task LoadUserConfig_ShouldCreateDefault_WhenFileNotFound()
     {
@@ -147,6 +162,78 @@ public sealed class ConfigurationServiceTests : IDisposable
         // Assert
         var loaded = await service.LoadUserConfigAsync();
         loaded.Settings.CleaningTimeout.Should().Be(999);
+    }
+
+    /// <summary>
+    /// Verifies that a failed explicit reload does not discard the facade's pending-save marker.
+    /// </summary>
+    [Fact]
+    public async Task ReloadFromDiskAsync_FailedReload_DoesNotClearPendingSaveFlag()
+    {
+        // Arrange
+        var coordinator = CreateCoordinatorSubstitute();
+        var pendingConfig = new UserConfiguration
+        {
+            Settings = new AutoQacSettings { CleaningTimeout = 111 }
+        };
+        var failure = new ConfigPersistenceFailure(
+            ConfigPersistenceOperationKind.Reload,
+            ConfigPersistenceFailureKind.ReadFailed,
+            "Could not read settings file (read_failed)",
+            null,
+            0);
+
+        coordinator.ReloadFromDiskAsync(Arg.Any<CancellationToken>()).Returns(
+            new ConfigPersistenceResult(ConfigPersistenceStatusKind.Failed, ConfigPersistenceOperationKind.Reload, 0, failure));
+        coordinator.LoadCurrentAsync(Arg.Any<CancellationToken>()).Returns(pendingConfig);
+        coordinator.FlushPendingSavesAsync(Arg.Any<CancellationToken>()).Returns(
+            new ConfigPersistenceResult(ConfigPersistenceStatusKind.Success, ConfigPersistenceOperationKind.Flush, 1, null));
+
+        using var service = new ConfigurationService(coordinator, Substitute.For<ILoggingService>(), _testDirectory);
+        await service.SaveUserConfigAsync(pendingConfig);
+
+        // Act
+        await service.ReloadFromDiskAsync();
+        var loaded = await service.LoadUserConfigAsync();
+        await service.FlushPendingSavesAsync();
+
+        // Assert
+        loaded.Settings.CleaningTimeout.Should().Be(
+            111,
+            because: "failed reloads must leave pending facade state pointing at the unsaved user edit");
+        await coordinator.Received(1).FlushPendingSavesAsync(Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// Verifies that a successful explicit reload clears the facade's pending-save marker.
+    /// </summary>
+    [Fact]
+    public async Task ReloadFromDiskAsync_SuccessfulReload_ClearsPendingSaveFlag()
+    {
+        // Arrange
+        var coordinator = CreateCoordinatorSubstitute();
+        var pendingConfig = new UserConfiguration
+        {
+            Settings = new AutoQacSettings { CleaningTimeout = 222 }
+        };
+
+        coordinator.ReloadFromDiskAsync(Arg.Any<CancellationToken>()).Returns(
+            new ConfigPersistenceResult(ConfigPersistenceStatusKind.Success, ConfigPersistenceOperationKind.Reload, 1, null));
+        coordinator.FlushPendingSavesAsync(Arg.Any<CancellationToken>()).Returns(
+            new ConfigPersistenceResult(ConfigPersistenceStatusKind.Success, ConfigPersistenceOperationKind.Flush, 2, null));
+
+        using var service = new ConfigurationService(coordinator, Substitute.For<ILoggingService>(), _testDirectory);
+        await service.SaveUserConfigAsync(pendingConfig);
+
+        // Act
+        await service.ReloadFromDiskAsync();
+        var result = await service.FlushPendingSavesAsync();
+
+        // Assert
+        result.Status.Should().Be(
+            ConfigPersistenceStatusKind.NoOp,
+            because: "successful reloads accept disk state and clear pending facade work");
+        await coordinator.DidNotReceive().FlushPendingSavesAsync(Arg.Any<CancellationToken>());
     }
 
     [Fact]
