@@ -289,7 +289,7 @@ Cross-cutting constraints:
 **Plans**: 3 plans
 Plans:
 **Wave 1**
-- [ ] 12-01-PLAN.md — Create shared stop outcome text and explicit dialog-label contract for main/Progress Stop parity.
+- [x] 12-01-PLAN.md — Create shared stop outcome text and explicit dialog-label contract for main/Progress Stop parity.
 
 **Wave 2 (blocked on 12-01 completion)**
 - [ ] 12-02-PLAN.md — Wire Progress Stop and Hang Kill through shared two-stage outcome handling and persistent summary warnings.
@@ -342,7 +342,7 @@ Cross-cutting constraints:
 | 9. Plugin Refresh & Approximation Performance | v1.0 Cleanup | 8/9 | Gaps planned | - |
 | 10. Configuration Persistence Hardening | v1.0 Cleanup | 11/11 | Complete    | 2026-05-01 |
 | 11. User-Facing Diagnostics Boundaries | v1.0 Cleanup | 13/13 | Complete   | 2026-05-01 |
-| 12. Process Stop Verification & Progress Flow Closure | v1.0 Cleanup | 0/0 | Not started | - |
+| 12. Process Stop Verification & Progress Flow Closure | v1.0 Cleanup | 1/3 | In Progress|  |
 | 13. Command Launch Escaping Reverification & Safe MO2 Failures | v1.0 Cleanup | 0/0 | Not started | - |
 | 14. Orchestrator Decomposition Reverification | v1.0 Cleanup | 0/0 | Not started | - |
 

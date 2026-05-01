@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Cleanup
 status: executing
-stopped_at: Phase 12 context gathered
-last_updated: "2026-05-01T09:18:23.581Z"
-last_activity: 2026-05-01 -- Phase 12 execution started
+stopped_at: Completed 12-01-PLAN.md
+last_updated: "2026-05-01T09:24:30.761Z"
+last_activity: 2026-05-01
 progress:
   total_phases: 10
   completed_phases: 7
   total_plans: 68
-  completed_plans: 65
-  percent: 96
+  completed_plans: 66
+  percent: 97
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-04-28)
 ## Current Position
 
 Phase: 12 (process-stop-verification-progress-flow-closure) — EXECUTING
-Plan: 1 of 3
-Status: Executing Phase 12
-Last activity: 2026-05-01 -- Phase 12 execution started
+Plan: 2 of 3
+Status: Ready to execute
+Last activity: 2026-05-01
 
-Progress: [██████████] 100%
+Progress: [██████████] 97%
 
 ## Performance Metrics
 
@@ -73,6 +73,7 @@ Progress: [██████████] 100%
 | Phase 11 P11 | 10 min | 3 tasks | 3 files |
 | Phase 11 P12 | 8 min | 2 tasks | 4 files |
 | Phase 11 P13 | 5 min | 2 tasks | 2 files |
+| Phase 12 P01 | 5 min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -132,6 +133,8 @@ Progress: [██████████] 100%
 - [Phase 11]: ProgressWindow tooltip binding remains unchanged because the bound PluginCleaningResult.LogParseWarning value is now safe at the model boundary. — Sanitizing at PluginResultFinalizer avoids UI binding workarounds and protects every consumer of LogParseWarning.
 - [Phase 11]: Timeout retry and backup failure callbacks sanitize plugin/error display values before showing dialogs. — Plan 11-12 closes the callback trust boundary while preserving retry and backup choice behavior.
 - [Phase 11]: Restore Selected treats BackupPluginEntry.FileName as untrusted display metadata. — Plan 11-13 uses safe display projection for confirmation/status/error copy while passing the original BackupPluginEntry to the restore service.
+- [Phase 12]: [Phase 12]: Stop escalation copy lives in AutoQAC.Models.StopTerminationDialogContent so main and Progress stop surfaces can share one exact text contract. — Plan 01 centralizes Phase 12-safe Stop confirmation, force-failure, and leave-running copy. — Plan 12-01 execution decision
+- [Phase 12]: [Phase 12]: ShowChoiceAsync maps the primary custom button to MessageDialogResult.Yes and the secondary custom button to MessageDialogResult.No. — Preserves existing dialog result semantics while allowing explicit Force Terminate and Leave Running labels. — Plan 12-01 execution decision
 
 ### Pending Todos
 
@@ -149,6 +152,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-05-01T09:09:28.129Z
-Stopped at: Phase 12 context gathered
-Resume file: .planning/phases/12-process-stop-verification-progress-flow-closure/12-CONTEXT.md
+Last session: 2026-05-01T09:24:30.754Z
+Stopped at: Completed 12-01-PLAN.md
+Resume file: None
