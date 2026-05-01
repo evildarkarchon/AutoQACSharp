@@ -34,6 +34,46 @@ public sealed class SettingsViewModelTests
     }
 
     [Fact]
+    public void Failure_Save_WriteFailed_WithUnsafeDetail_UsesSafeSummaryOnly()
+    {
+        var fixture = CreateFixture();
+        using var vm = fixture.CreateViewModel();
+        const string safeSummary = "Could not write settings file (write_failed)";
+
+        fixture.Failures.OnNext(new ConfigPersistenceFailure(
+            ConfigPersistenceOperationKind.Save,
+            ConfigPersistenceFailureKind.WriteFailed,
+            safeSummary,
+            "UnauthorizedAccessException: denied J:\\Users\\Alice\\AutoQAC Settings.yaml",
+            10));
+
+        vm.PersistenceBannerText.Should().Be(safeSummary);
+        vm.PersistenceBannerText.Should().NotContain(@"J:\Users\Alice");
+        vm.PersistenceBannerText.Should().NotContain("AutoQAC Settings.yaml");
+        vm.PersistenceBannerText.Should().NotContain("UnauthorizedAccessException");
+    }
+
+    [Fact]
+    public void Failure_Reload_ReadFailed_WithUnsafeDetail_UsesSafeSummaryOnly()
+    {
+        var fixture = CreateFixture();
+        using var vm = fixture.CreateViewModel();
+        const string safeSummary = "Could not read settings file (read_failed)";
+
+        fixture.Failures.OnNext(new ConfigPersistenceFailure(
+            ConfigPersistenceOperationKind.Reload,
+            ConfigPersistenceFailureKind.ReadFailed,
+            safeSummary,
+            @"IOException reading D:\Profiles\AutoQAC Main.yaml",
+            11));
+
+        vm.PersistenceBannerText.Should().Be(safeSummary);
+        vm.PersistenceBannerText.Should().NotContain(@"D:\Profiles");
+        vm.PersistenceBannerText.Should().NotContain("AutoQAC Main.yaml");
+        vm.PersistenceBannerText.Should().NotContain("IOException reading");
+    }
+
+    [Fact]
     public void Failure_Flush_WriteFailed_PopulatesBlockedCleaningBanner()
     {
         var fixture = CreateFixture();
