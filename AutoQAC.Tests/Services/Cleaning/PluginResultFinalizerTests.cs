@@ -1,5 +1,6 @@
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
+using AutoQAC.Models.Diagnostics;
 using AutoQAC.Services.Cleaning;
 using FluentAssertions;
 using NSubstitute;
@@ -188,6 +189,93 @@ public sealed class PluginResultFinalizerTests
     }
 
     [Fact]
+    public async Task FinalizeAsync_FailedRunnerResultWithUnsafeMessage_ReplacesMessageWithSafePluginFailure()
+    {
+        // Arrange
+        var plugin = CreatePlugin("Plugin.esp");
+        var runnerOutput = new PluginRunnerOutput
+        {
+            LastAttemptResult = new CleaningResult
+            {
+                Success = false,
+                Status = CleaningStatus.Failed,
+                Message = @"Process failed at C:\Users\Alice\Tools\SSEEdit.exe -QAC"
+            },
+            AttemptCount = 1,
+            MainLogOffset = 11,
+            ExceptionLogOffset = 22,
+            Duration = TimeSpan.FromSeconds(1),
+            ReachedMaxRetryAttempts = false
+        };
+
+        _logFileServiceMock.ReadLogContentAsync(
+                "xedit",
+                GameType.SkyrimSe,
+                runnerOutput.MainLogOffset,
+                runnerOutput.ExceptionLogOffset,
+                Arg.Any<CancellationToken>())
+            .Returns(new LogReadResult { LogLines = new List<string>() });
+
+        // Act
+        var result = await _sut.FinalizeAsync(
+            plugin,
+            GameType.SkyrimSe,
+            "xedit",
+            runnerOutput,
+            new TerminationFinalizeContext(ProcessMayStillBeRunning: false, StopWasRequested: false),
+            CancellationToken.None);
+
+        // Assert
+        result.Message.Should().Be(DiagnosticTextFormatter.CleaningFailedForPlugin("Plugin.esp"));
+        result.LogParseWarning.Should().BeNull();
+        AssertSafeResultBoundary(result.Message);
+    }
+
+    [Fact]
+    public async Task FinalizeAsync_ExceptionLogContent_UsesSafeMessageAndWarningWithoutLoggingRawContent()
+    {
+        // Arrange
+        var plugin = CreatePlugin("Plugin.esp");
+        var runnerOutput = CreateRunnerOutput();
+        _logFileServiceMock.ReadLogContentAsync(
+                "xedit",
+                GameType.SkyrimSe,
+                runnerOutput.MainLogOffset,
+                runnerOutput.ExceptionLogOffset,
+                Arg.Any<CancellationToken>())
+            .Returns(new LogReadResult
+            {
+                LogLines = new List<string>(),
+                ExceptionContent = @"EAccessViolation at C:\Games\Skyrim\Data\Plugin.esp"
+            });
+
+        // Act
+        var result = await _sut.FinalizeAsync(
+            plugin,
+            GameType.SkyrimSe,
+            "xedit",
+            runnerOutput,
+            new TerminationFinalizeContext(ProcessMayStillBeRunning: false, StopWasRequested: false),
+            CancellationToken.None);
+
+        // Assert
+        var expected = DiagnosticTextFormatter.XEditReportedError("Plugin.esp");
+        result.Status.Should().Be(CleaningStatus.Failed);
+        result.Success.Should().BeFalse();
+        result.Message.Should().Be(expected);
+        result.LogParseWarning.Should().Be(expected);
+        AssertSafeResultBoundary(result.Message);
+        AssertSafeResultBoundary(result.LogParseWarning);
+
+        _loggerMock.Received(1).Warning(
+            "xEdit reported an exception log for {Plugin}; user-facing details were suppressed.",
+            "Plugin.esp");
+        _loggerMock.DidNotReceive().Warning(
+            "xEdit exception log for {Plugin}: {Content}",
+            Arg.Any<object[]>());
+    }
+
+    [Fact]
     public async Task FinalizeAsync_SkippedRunnerResult_DoesNotReadLogs_AndSuccessStaysFalse()
     {
         // Arrange: skipped runner output is a short-circuit result. The finalizer must not read logs,
@@ -250,4 +338,11 @@ public sealed class PluginResultFinalizerTests
         Duration = TimeSpan.FromSeconds(1),
         ReachedMaxRetryAttempts = false
     };
+
+    private static void AssertSafeResultBoundary(string? text)
+    {
+        text.Should().NotContain(@"C:\Users\Alice");
+        text.Should().NotContain("-QAC");
+        text.Should().NotContain("EAccessViolation");
+    }
 }
