@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: Cleanup
 status: executing
 stopped_at: Completed 12-01-PLAN.md
-last_updated: "2026-05-01T09:24:30.761Z"
+last_updated: "2026-05-01T09:32:49.902Z"
 last_activity: 2026-05-01
 progress:
   total_phases: 10
   completed_phases: 7
   total_plans: 68
-  completed_plans: 66
-  percent: 97
+  completed_plans: 67
+  percent: 99
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-04-28)
 ## Current Position
 
 Phase: 12 (process-stop-verification-progress-flow-closure) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-05-01
 
-Progress: [██████████] 97%
+Progress: [██████████] 99%
 
 ## Performance Metrics
 
@@ -74,6 +74,7 @@ Progress: [██████████] 97%
 | Phase 11 P12 | 8 min | 2 tasks | 4 files |
 | Phase 11 P13 | 5 min | 2 tasks | 2 files |
 | Phase 12 P01 | 5 min | 2 tasks | 7 files |
+| Phase 12 P02 | 5 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -135,6 +136,8 @@ Progress: [██████████] 97%
 - [Phase 11]: Restore Selected treats BackupPluginEntry.FileName as untrusted display metadata. — Plan 11-13 uses safe display projection for confirmation/status/error copy while passing the original BackupPluginEntry to the restore service.
 - [Phase 12]: [Phase 12]: Stop escalation copy lives in AutoQAC.Models.StopTerminationDialogContent so main and Progress stop surfaces can share one exact text contract. — Plan 01 centralizes Phase 12-safe Stop confirmation, force-failure, and leave-running copy. — Plan 12-01 execution decision
 - [Phase 12]: [Phase 12]: ShowChoiceAsync maps the primary custom button to MessageDialogResult.Yes and the secondary custom button to MessageDialogResult.No. — Preserves existing dialog result semantics while allowing explicit Force Terminate and Leave Running labels. — Plan 12-01 execution decision
+- [Phase 12]: ProgressViewModel uses StopTerminationDialogContent and ShowChoiceAsync for Progress Stop parity with main Stop. — Plan 12-02 keeps Progress Stop copy and button semantics aligned with the shared stop outcome contract.
+- [Phase 12]: Hang warning Kill remains immediate and only shares ForceKillFailed dialog/warning reporting. — Plan 12-02 preserves D-09/D-12 immediate hang-kill behavior while reusing the shared failure path.
 
 ### Pending Todos
 
@@ -152,6 +155,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-05-01T09:24:30.754Z
+Last session: 2026-05-01T09:32:37.292Z
 Stopped at: Completed 12-01-PLAN.md
 Resume file: None
