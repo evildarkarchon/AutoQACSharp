@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
+using AutoQAC.Models.Diagnostics;
 using AutoQAC.Services.Configuration;
 using AutoQAC.Services.GameDetection;
 using AutoQAC.Services.Plugin;
@@ -266,10 +267,10 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
 
         if (!File.Exists(path))
         {
+            var loadOrderIdentifier = DiagnosticTextFormatter.SafeFileIdentifier("Load Order File", path, "load order file");
             await _messageDialog.ShowErrorAsync(
                 "File Not Found",
-                "The selected load order file does not exist.",
-                $"Path: {path}");
+                $"{loadOrderIdentifier} is missing. Choose the current plugins.txt or loadorder.txt file.");
             return;
         }
 
@@ -284,31 +285,34 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         catch (FileNotFoundException ex)
         {
             _logger.Error(ex, "Load order file not found");
+            var loadOrderIdentifier = DiagnosticTextFormatter.SafeFileIdentifier("Load Order File", path, "load order file");
             await _messageDialog.ShowErrorAsync(
                 "File Not Found",
-                "The load order file could not be found.",
-                $"Path: {path}\n\nError: {ex.Message}");
-            StatusText = "Load order file not found";
+                $"{loadOrderIdentifier} is missing. Choose the current plugins.txt or loadorder.txt file.");
+            StatusText = $"{loadOrderIdentifier} is missing.";
             return;
         }
         catch (IOException ex)
         {
             _logger.Error(ex, "Failed to read load order file");
+            var loadOrderIdentifier = DiagnosticTextFormatter.SafeFileIdentifier("Load Order File", path, "load order file");
             await _messageDialog.ShowErrorAsync(
                 "Read Error",
-                "Failed to read the load order file. The file may be in use by another application.",
-                $"Path: {path}\n\nError: {ex.Message}");
-            StatusText = "Error reading load order file";
+                $"{loadOrderIdentifier} could not be read. See the latest AutoQAC log for technical details.",
+                DiagnosticTextFormatter.LatestLogDetails);
+            StatusText = $"{loadOrderIdentifier} could not be read. See the latest AutoQAC log for technical details.";
             return;
         }
         catch (Exception ex)
         {
             _logger.Error(ex, "Failed to parse selected load order");
+            var loadOrderIdentifier = DiagnosticTextFormatter.SafeFileIdentifier("Load Order File", path, "load order file");
+            var failureMessage = DiagnosticTextFormatter.OperationFailed("Load order selection");
             await _messageDialog.ShowErrorAsync(
                 "Invalid Load Order",
-                "Failed to parse the load order file. The file format may be invalid.",
-                $"Path: {path}\n\nError: {ex.Message}\n\nExpected format: One plugin filename per line (e.g., 'MyMod.esp')");
-            StatusText = "Error parsing load order file";
+                $"{loadOrderIdentifier} could not be parsed. {failureMessage}",
+                DiagnosticTextFormatter.LatestLogDetails);
+            StatusText = failureMessage;
             return;
         }
 
@@ -362,10 +366,10 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
 
         if (!Directory.Exists(path))
         {
+            var folderIssue = DiagnosticTextFormatter.SafeFolderIssue(GetSelectedGameFolderDisplayName());
             await _messageDialog.ShowErrorAsync(
                 "Folder Not Found",
-                "The selected folder does not exist.",
-                $"Path: {path}");
+                folderIssue);
             return;
         }
 
@@ -380,6 +384,23 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
     }
 
     private bool CanClearGameDataFolderOverride() => HasGameDataFolderOverride;
+
+    /// <summary>
+    /// Converts the selected game into the folder label used by diagnostics without exposing a selected folder path.
+    /// </summary>
+    /// <returns>A safe game label, or the stable fallback phrase when no game is selected.</returns>
+    private string GetSelectedGameFolderDisplayName() => SelectedGame switch
+    {
+        GameType.SkyrimLe => "Skyrim Legendary Edition",
+        GameType.SkyrimSe => "Skyrim Special Edition",
+        GameType.SkyrimVr => "Skyrim VR",
+        GameType.Fallout4 => "Fallout 4",
+        GameType.Fallout4Vr => "Fallout 4 VR",
+        GameType.Fallout3 => "Fallout 3",
+        GameType.FalloutNewVegas => "Fallout New Vegas",
+        GameType.Oblivion => "Oblivion",
+        _ => "selected game"
+    };
 
     [RelayCommand(CanExecute = nameof(CanClearGameDataFolderOverride))]
     private async Task ClearGameDataFolderOverrideAsync()

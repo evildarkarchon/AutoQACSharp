@@ -367,7 +367,7 @@ public sealed class MainWindowViewModelTests
             await vm.Configuration.ConfigureLoadOrderCommand.ExecuteAsync(null);
 
             // Assert
-            vm.Configuration.StatusText.Should().Contain("Error", "error should be reflected in status");
+            vm.Configuration.StatusText.Should().Contain("failed", "error should be reflected in status");
 
             // Verify error dialog was shown
             await _messageDialogMock.Received(1)
