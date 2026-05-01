@@ -345,9 +345,21 @@ Plans:
   2. If AutoQAC cannot force terminate after confirmation, the user sees the shared safe force-failure dialog and persistent Progress summary warning.
   3. Automated tests cover `GracePeriodExpired` followed by runner detach and confirmed `Force Terminate`, proving the outcome is either force termination or explicit failure reporting.
   4. Current verification artifacts prove SAF-01, SAF-02, and TEST-01 are satisfied after the ownership fix.
-**Plans**: 0 plans
+**Plans**: 3 plans
 Plans:
-- [ ] Plan with `/gsd-plan-phase 15`.
+**Wave 1**
+- [ ] 15-01-PLAN.md — Build retained coordinator ownership for detached confirmed force escalation.
+
+**Wave 2 (blocked on 15-01 completion)**
+- [ ] 15-02-PLAN.md — Wire orchestrator finalization lifetime and preserve Progress confirmation/failure proof.
+
+**Wave 3 (blocked on 15-02 completion)**
+- [ ] 15-03-PLAN.md — Produce Phase 15 verification and validation evidence for SAF-01, SAF-02, TEST-01, INT-STOP-01, and FLOW-STOP-ESCALATION-01.
+
+Cross-cutting constraints:
+- Confirmed force escalation after `GracePeriodExpired` must produce `ForceKilled`, `AlreadyExited`, or `ForceKillFailed`, never a silent cached `GracePeriodExpired`.
+- Pending force-escalation ownership must stay separate from active cleaning semantics: no hang monitoring, backup-cancel gating, active process reporting, or plugin-running state should treat the pending target as active cleaning.
+- Phase 15 writes current evidence only; Phase 16 owns milestone marker reconciliation in `ROADMAP.md` and `REQUIREMENTS.md`.
 **UI hint**: yes
 
 ### Phase 16: Milestone Evidence and Validation Reconciliation
