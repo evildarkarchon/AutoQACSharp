@@ -713,6 +713,50 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
+    public async Task StopCleaningCommand_WhenLeftRunningWarningDialogThrows_ShouldKeepLeftRunningOutcome()
+    {
+        var stateSubject = new BehaviorSubject<AppState>(new AppState { IsCleaning = true });
+        _stateServiceMock.StateChanged.Returns(stateSubject);
+        _stateServiceMock.CurrentState.Returns(new AppState { IsCleaning = true });
+        _orchestratorMock.StopCleaningAsync().Returns(new StopCleaningResult(TerminationResult.GracePeriodExpired, true));
+        _messageDialogMock.ShowChoiceAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<MessageDialogIcon>(),
+                Arg.Any<string?>())
+            .Returns(MessageDialogResult.No);
+        _messageDialogMock.ShowWarningAsync(
+                StopTerminationDialogContent.LeftRunningTitle,
+                StopTerminationDialogContent.LeftRunningMessage,
+                Arg.Any<string?>())
+            .ThrowsAsync(new ApplicationException("warning dialog failed"));
+
+        var vm = new MainWindowViewModel(
+            _configServiceMock,
+            _stateServiceMock,
+            _orchestratorMock,
+            _loggerMock,
+            _fileDialogMock,
+            _messageDialogMock,
+            _pluginServiceMock,
+            _pluginLoadingServiceMock,
+            _uiDispatcher);
+
+        await vm.Commands.StopCleaningCommand.ExecuteAsync(null);
+
+        _orchestratorMock.Received(1).MarkLeftRunningByUser();
+        await _orchestratorMock.DidNotReceive().ForceStopCleaningAsync();
+        await _messageDialogMock.DidNotReceive().ShowErrorAsync(
+            StopTerminationDialogContent.ForceFailureTitle,
+            StopTerminationDialogContent.ForceFailureMessage,
+            Arg.Any<string?>());
+        vm.Commands.StatusText.Should().Be("Cleaning stopped; xEdit left running.");
+        _loggerMock.Received(1).Error(Arg.Any<ApplicationException>(), "Failed to show left-running stop warning dialog");
+    }
+
+    [Fact]
     public async Task ConfigureLoadOrderCommand_ShouldUseSafeLoadOrderIdentifier_WhenParsingFails()
     {
         // Arrange

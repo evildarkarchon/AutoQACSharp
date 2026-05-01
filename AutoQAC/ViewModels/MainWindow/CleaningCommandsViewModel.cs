@@ -245,9 +245,7 @@ public sealed partial class CleaningCommandsViewModel : ViewModelBase, IDisposab
                 {
                     _orchestrator.MarkLeftRunningByUser();
                     StatusText = "Cleaning stopped; xEdit left running.";
-                    await _messageDialog.ShowWarningAsync(
-                        StopTerminationDialogContent.LeftRunningTitle,
-                        StopTerminationDialogContent.LeftRunningMessage);
+                    await ShowLeftRunningWarningSafelyAsync();
                 }
             }
         }
@@ -256,6 +254,23 @@ public sealed partial class CleaningCommandsViewModel : ViewModelBase, IDisposab
             _logger.Error(ex, "StopCleaningAsync failed");
             StatusText = StopTerminationDialogContent.ForceFailureTitle;
             await ShowStopFailureDialogSafelyAsync();
+        }
+    }
+
+    /// <summary>
+    /// Shows the left-running acknowledgement without converting dialog failures into force-termination failures.
+    /// </summary>
+    private async Task ShowLeftRunningWarningSafelyAsync()
+    {
+        try
+        {
+            await _messageDialog.ShowWarningAsync(
+                StopTerminationDialogContent.LeftRunningTitle,
+                StopTerminationDialogContent.LeftRunningMessage);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "Failed to show left-running stop warning dialog");
         }
     }
 
