@@ -75,18 +75,28 @@ public sealed class ConfigurationServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task FlushPendingSavesAsync_NoPending_ReturnsNoOp()
+    public async Task FlushPendingSavesAsync_NoPending_DrainsCoordinatorBarrier()
     {
         // Arrange
-        var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
+        var coordinator = CreateCoordinatorSubstitute();
+        var barrierResult = new ConfigPersistenceResult(
+            ConfigPersistenceStatusKind.NoOp,
+            ConfigPersistenceOperationKind.Flush,
+            99,
+            null);
+
+        coordinator.FlushPendingSavesAsync(Arg.Any<CancellationToken>()).Returns(barrierResult);
+        using var service = new ConfigurationService(coordinator, Substitute.For<ILoggingService>(), _testDirectory);
 
         // Act
         var result = await service.FlushPendingSavesAsync();
 
         // Assert
-        result.Status.Should().Be(
-            ConfigPersistenceStatusKind.NoOp,
-            because: "D-05 typed flush results let callers distinguish no-op barriers from persisted writes");
+        result.Should().BeSameAs(
+            barrierResult,
+            because: "D-05 forced flush is a coordinator queue barrier even when the facade has no pending app save");
+        result.Generation.Should().Be(99);
+        await coordinator.Received(1).FlushPendingSavesAsync(Arg.Any<CancellationToken>());
     }
 
     [Fact]
