@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: Cleanup
 status: executing
 stopped_at: Completed 11-01-PLAN.md
-last_updated: "2026-05-01T04:44:22.036Z"
+last_updated: "2026-05-01T04:50:05.529Z"
 last_activity: 2026-05-01
 progress:
   total_phases: 7
   completed_phases: 6
   total_plans: 58
-  completed_plans: 55
-  percent: 95
+  completed_plans: 56
+  percent: 97
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-04-28)
 ## Current Position
 
 Phase: 11 (user-facing-diagnostics-boundaries) — EXECUTING
-Plan: 4 of 6
+Plan: 5 of 6
 Status: Ready to execute
 Last activity: 2026-05-01
 
-Progress: [██████████] 95%
+Progress: [██████████] 97%
 
 ## Performance Metrics
 
@@ -63,6 +63,7 @@ Progress: [██████████] 95%
 | Phase 11 P01 | 3 min | 2 tasks | 2 files |
 | Phase 11 P02 | 7 min | 3 tasks | 2 files |
 | Phase 11 P03 | 6 min | 3 tasks | 6 files |
+| Phase 11 P04 | 4 min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -104,6 +105,8 @@ Progress: [██████████] 95%
 - [Phase 11]: Configuration load-order technical failures now use safe Load Order File identifiers and latest-log guidance. — Prevents selected profile paths and exception text from crossing into user-facing browse diagnostics.
 - [Phase 11]: Selected game data folder browse failures use safe game-folder labels with selected game fallback. — Preserves D-06/D-08 path boundaries without adding service dependencies.
 - [Phase 11]: Settings persistence write/read banners preserve ConfigPersistenceFailure.SafeSummary. — D-04 requires typed safe persistence labels instead of generic replacement text.
+- [Phase 11]: Phase 11 Plan 04 keeps xEdit exception-log content out of AutoQAC result rows, reports, and log properties. — AutoQAC records only that xEdit reported an exception log for the plugin; raw xEdit exception-log content remains outside user-facing and result-boundary logs.
+- [Phase 11]: Phase 11 Plan 04 defensively sanitizes exported failed-plugin rows with DiagnosticTextFormatter.SafeFailureSummary. — Report generation is a defense-in-depth export boundary even though finalizer-created messages are already sanitized at source.
 
 ### Pending Todos
 
@@ -121,6 +124,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-05-01T04:44:13.151Z
+Last session: 2026-05-01T04:49:46.032Z
 Stopped at: Completed 11-01-PLAN.md
 Resume file: None
