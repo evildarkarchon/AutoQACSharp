@@ -29,6 +29,7 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
     // State owned by this coordinator (lifted from CleaningOrchestrator.cs Phase 5 locks).
     private volatile bool _isStopRequested;
     private System.Diagnostics.Process? _currentProcess;
+    private System.Diagnostics.Process? _pendingForceEscalationProcess;
     private TerminationResult? _lastTerminationResult;
     private IDisposable? _hangMonitorSubscription;
 
@@ -86,7 +87,10 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
         StartHangMonitoring(process);
     }
 
-    /// <inheritdoc />
+    /// <summary>
+    /// Detaches the active cleaning process and hang monitor without discarding an unresolved pending force target.
+    /// The pending target is separate ownership for a user-confirmed escalation after <see cref="TerminationResult.GracePeriodExpired" />.
+    /// </summary>
     public void DetachProcess()
     {
         // Stop hang monitoring and dismiss any visible warning.
@@ -94,7 +98,7 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
         _hangMonitorSubscription = null;
         _hangDetected.OnNext(false);
 
-        // Clear the current process reference after plugin is done.
+        // Clear only active cleaning semantics; an unresolved pending force target may still need confirmation.
         lock (_processLock)
         {
             _currentProcess = null;
@@ -141,8 +145,13 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
                     if (result == TerminationResult.GracePeriodExpired)
                     {
                         // Path A: Grace period expired naturally, user hasn't clicked again.
-                        // Store result so the ViewModel can react and prompt the user.
+                        // Store result and retain the process so later confirmed escalation still has a target.
                         _lastTerminationResult = result;
+                        RetainPendingForceEscalationProcess(proc);
+                    }
+                    else
+                    {
+                        ReleasePendingForceEscalationProcess(proc);
                     }
 
                     return ToStopCleaningResult(result);
@@ -159,16 +168,24 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
         return new StopCleaningResult(_lastTerminationResult, MayProcessStillBeRunning(_lastTerminationResult));
     }
 
-    /// <inheritdoc />
+    /// <summary>
+    /// Performs a confirmed force stop against the active process or a retained pending force target.
+    /// Confirmed escalation never returns cached <see cref="TerminationResult.GracePeriodExpired" /> when a pending target may still be running.
+    /// </summary>
     public async Task<StopCleaningResult> ForceStopAsync()
     {
         _logger.Information("[Termination] Force stop requested -- killing process tree immediately");
 
-        // Force kill the process tree.
         System.Diagnostics.Process? proc;
+        var isPendingForceEscalation = false;
         lock (_processLock)
         {
             proc = _currentProcess;
+            if (proc is null && MayProcessStillBeRunning(_lastTerminationResult))
+            {
+                proc = _pendingForceEscalationProcess;
+                isPendingForceEscalation = proc is not null;
+            }
         }
 
         if (proc != null)
@@ -186,18 +203,39 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
                     var result = await _processService.TerminateProcessAsync(proc, forceKill: true, ct: CancellationToken.None)
                         .ConfigureAwait(false);
                     _lastTerminationResult = result;
+                    if (result is TerminationResult.ForceKilled or TerminationResult.AlreadyExited)
+                    {
+                        ReleasePendingForceEscalationProcess(proc);
+                    }
+
                     return ToStopCleaningResult(result);
                 }
 
                 _lastTerminationResult = TerminationResult.AlreadyExited;
+                ReleasePendingForceEscalationProcess(proc);
                 return ToStopCleaningResult(TerminationResult.AlreadyExited);
             }
             catch (InvalidOperationException)
             {
+                if (isPendingForceEscalation)
+                {
+                    _logger.Debug("[Termination] Pending force target was unavailable during confirmed force stop");
+                    _lastTerminationResult = TerminationResult.ForceKillFailed;
+                    return ToStopCleaningResult(TerminationResult.ForceKillFailed);
+                }
+
                 _logger.Debug("[Termination] Process already exited during force stop");
                 _lastTerminationResult = TerminationResult.AlreadyExited;
+                ReleasePendingForceEscalationProcess(proc);
                 return ToStopCleaningResult(TerminationResult.AlreadyExited);
             }
+        }
+
+        if (MayProcessStillBeRunning(_lastTerminationResult))
+        {
+            _logger.Warning("[Termination] Confirmed force stop had no available process target");
+            _lastTerminationResult = TerminationResult.ForceKillFailed;
+            return ToStopCleaningResult(TerminationResult.ForceKillFailed);
         }
 
         return new StopCleaningResult(_lastTerminationResult, MayProcessStillBeRunning(_lastTerminationResult));
@@ -206,12 +244,16 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
     /// <inheritdoc />
     public StopCleaningResult MarkLeftRunningByUser()
     {
+        ReleasePendingForceEscalationProcess();
         _lastTerminationResult = TerminationResult.LeftRunningByUser;
         _logger.Information("[Termination] User left xEdit running after declining force termination");
         return ToStopCleaningResult(TerminationResult.LeftRunningByUser);
     }
 
-    /// <inheritdoc />
+    /// <summary>
+    /// Clears per-session stop, hang, and active-process state before a new cleaning session starts.
+    /// A new-session reset is the safe boundary that releases any stale unresolved pending force target.
+    /// </summary>
     public void ResetForNewSession()
     {
         // (1) Clear stop-requested flag — next session is not pre-stopped.
@@ -234,6 +276,7 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
         lock (_processLock)
         {
             _currentProcess = null;
+            _pendingForceEscalationProcess = null;
         }
     }
 
@@ -251,6 +294,25 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
 
     private static bool MayProcessStillBeRunning(TerminationResult? result) =>
         result is TerminationResult.GracePeriodExpired or TerminationResult.LeftRunningByUser or TerminationResult.ForceKillFailed;
+
+    private void RetainPendingForceEscalationProcess(System.Diagnostics.Process process)
+    {
+        lock (_processLock)
+        {
+            _pendingForceEscalationProcess = process;
+        }
+    }
+
+    private void ReleasePendingForceEscalationProcess(System.Diagnostics.Process? process = null)
+    {
+        lock (_processLock)
+        {
+            if (process is null || ReferenceEquals(_pendingForceEscalationProcess, process))
+            {
+                _pendingForceEscalationProcess = null;
+            }
+        }
+    }
 
     private void StartHangMonitoring(System.Diagnostics.Process process)
     {

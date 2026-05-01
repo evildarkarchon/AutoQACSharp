@@ -19,7 +19,10 @@ public interface ICleaningTerminationCoordinator
     /// </summary>
     void AttachProcess(System.Diagnostics.Process process);
 
-    /// <summary>Detaches the active xEdit process and stops hang monitoring. Idempotent.</summary>
+    /// <summary>
+    /// Detaches the active xEdit process and stops hang monitoring. Idempotent.
+    /// This clears active-cleaning semantics only; an unresolved GracePeriodExpired target may remain retained for a later confirmed force escalation.
+    /// </summary>
     void DetachProcess();
 
     /// <summary>
@@ -29,21 +32,19 @@ public interface ICleaningTerminationCoordinator
     /// </summary>
     Task<StopCleaningResult> StopAsync();
 
-    /// <summary>Immediate Kill(true) of the process tree (Phase 5 D-04).</summary>
+    /// <summary>
+    /// Performs the confirmed force-stop path. Uses the active process first, then any retained pending target from GracePeriodExpired,
+    /// and returns a terminal result instead of reusing cached GracePeriodExpired after confirmation.
+    /// </summary>
     Task<StopCleaningResult> ForceStopAsync();
 
     /// <summary>User declined the force-terminate prompt (Phase 5 D-03).</summary>
     StopCleaningResult MarkLeftRunningByUser();
 
     /// <summary>
-    /// Resets ALL per-session termination state. Per R-03, this MUST mirror
-    /// CleaningOrchestrator.cs:622-648 verbatim — five resets:
-    ///   1. _isStopRequested = false
-    ///   2. _stateService.SetTerminating(false)
-    ///   3. _lastTerminationResult = null
-    ///   4. _hangMonitorSubscription?.Dispose() + null + _hangDetected.OnNext(false)
-    ///   5. _currentProcess = null under _processLock
-    /// Omitting any leaks user-visible UI state across sessions (D-09 violation).
+    /// Resets per-session termination state for a new cleaning session: stop-requested flag, UI terminating state,
+    /// last termination result, hang monitor state, active process, and any stale unresolved pending force target.
+    /// Session-finalization cleanup must not call this before the user resolves a visible GracePeriodExpired prompt.
     /// </summary>
     void ResetForNewSession();
 
