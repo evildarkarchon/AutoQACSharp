@@ -173,7 +173,7 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
         catch (Exception ex)
         {
             _logger.Error(ex, "Failed to load backup sessions");
-            StatusText = $"Error loading sessions: {ex.Message}";
+            StatusText = "Backup sessions could not be loaded. See the latest AutoQAC log for technical details.";
         }
         finally
         {
