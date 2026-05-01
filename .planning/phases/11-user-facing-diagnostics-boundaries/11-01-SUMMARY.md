@@ -68,7 +68,7 @@ Each task was committed atomically:
 1. **Task 1: RED — lock shared diagnostic text behavior** - `0f691bd` (test)
 2. **Task 2: GREEN — implement shared diagnostic text formatter** - `2dffa1f` (feat)
 
-**Plan metadata:** pending final docs commit
+**Plan metadata:** `047f760` (docs)
 
 _Note: This TDD plan produced the required RED and GREEN commits._
 
