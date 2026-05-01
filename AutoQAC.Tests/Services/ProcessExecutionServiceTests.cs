@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Models.Configuration;
@@ -92,11 +93,97 @@ public sealed class ProcessExecutionServiceTests : IDisposable
         // Assert
         result.ExitCode.Should().Be(-1, "startup failure should return -1 exit code");
 
-        // Verify logging occurred
+        // Verify logging occurred without making the executable path a structured property.
         _mockLogger.Received(1).Error(
             Arg.Any<Exception>(),
-            "Failed to start process: {FileName}",
-            "nonexistent_process_that_does_not_exist_12345.exe");
+            "Failed to start external process for {Operation}: status={Status}, reason={Reason}, argumentCount={ArgumentCount}",
+            "ExternalProcess",
+            "Failed",
+            "StartFailed",
+            1);
+    }
+
+    /// <summary>
+    /// Process-start failure diagnostics must keep troubleshooting fields while avoiding executable paths and raw command payloads.
+    /// </summary>
+    [Fact]
+    public async Task ExecuteAsync_WhenProcessStartFails_ShouldLogSafeStructuredFieldsOnly()
+    {
+        // Arrange
+        using var service = CreateService();
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = @"C:\Users\Alice\Tools\SSEEdit.exe",
+            Arguments = @"-QAC -autoload C:\Games\Skyrim\Data\Plugin.esp",
+            WorkingDirectory = @"C:\Users\Alice\Tools"
+        };
+        startInfo.ArgumentList.Add("-QAC");
+        startInfo.ArgumentList.Add("-autoload");
+        startInfo.ArgumentList.Add(@"C:\Games\Skyrim\Data\Plugin.esp");
+
+        // Act
+        var result = await service.ExecuteAsync(startInfo);
+
+        // Assert
+        result.ExitCode.Should().Be(-1);
+        _mockLogger.Received(1).Debug(
+            "Starting external process for {Operation}: status={Status}, argumentCount={ArgumentCount}",
+            "ExternalProcess",
+            "Starting",
+            3);
+        _mockLogger.Received(1).Error(
+            Arg.Any<Exception>(),
+            "Failed to start external process for {Operation}: status={Status}, reason={Reason}, argumentCount={ArgumentCount}",
+            "ExternalProcess",
+            "Failed",
+            "StartFailed",
+            3);
+
+        AssertCapturedLogTextExcludes(
+            @"C:\Users\Alice",
+            "SSEEdit.exe",
+            "-QAC",
+            "-autoload",
+            @"C:\Games\Skyrim");
+    }
+
+    /// <summary>
+    /// Successful process-start diagnostics should report PID and safe counts without mutating the caller's launch values.
+    /// </summary>
+    [Fact]
+    public async Task ExecuteAsync_WhenProcessStarts_ShouldLogPidAndPreserveLaunchValues()
+    {
+        // Arrange
+        using var service = CreateService(new RealProcessExitWaiter());
+        Process? startedProcess = null;
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = DotNetHostPath,
+            WorkingDirectory = Environment.CurrentDirectory,
+            UseShellExecute = true,
+            CreateNoWindow = true
+        };
+        startInfo.ArgumentList.Add("--info");
+
+        // Act
+        var result = await service.ExecuteAsync(startInfo, onProcessStarted: process => startedProcess = process);
+
+        // Assert
+        result.ExitCode.Should().Be(0);
+        startedProcess.Should().NotBeNull();
+        _mockLogger.Received(1).Information(
+            "Started external process for {Operation}: status={Status}, processId={ProcessId}, argumentCount={ArgumentCount}",
+            "ExternalProcess",
+            "Started",
+            Arg.Any<int>(),
+            1);
+
+        startInfo.FileName.Should().Be(DotNetHostPath);
+        startInfo.Arguments.Should().BeEmpty();
+        startInfo.ArgumentList.Should().ContainSingle().Which.Should().Be("--info");
+        startInfo.WorkingDirectory.Should().Be(Environment.CurrentDirectory);
+        startInfo.UseShellExecute.Should().BeTrue("logging changes must not mutate caller-supplied ProcessStartInfo values");
+        startInfo.CreateNoWindow.Should().BeTrue();
     }
 
     #endregion
@@ -352,7 +439,32 @@ public sealed class ProcessExecutionServiceTests : IDisposable
         return (orchestrator, processServiceMock);
     }
 
-    private ProcessExecutionService CreateService() => new(_mockLogger, _pidStore, _sessionProvider);
+    private static string DotNetHostPath => RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "dotnet.exe" : "dotnet";
+
+    private ProcessExecutionService CreateService(IProcessExitWaiter? processExitWaiter = null) =>
+        new(_mockLogger, _pidStore, _sessionProvider, processExitWaiter);
+
+    /// <summary>
+    /// Asserts that captured log message templates and structured arguments did not receive unsafe launch details.
+    /// </summary>
+    private void AssertCapturedLogTextExcludes(params string[] unsafeFragments)
+    {
+        var capturedText = string.Join(
+            Environment.NewLine,
+            _mockLogger.ReceivedCalls().SelectMany(call => call.GetArguments())
+                .Where(argument => argument is not Exception)
+                .Select(argument => argument?.ToString() ?? string.Empty));
+
+        foreach (var unsafeFragment in unsafeFragments)
+        {
+            capturedText.Should().NotContain(unsafeFragment);
+        }
+    }
+
+    private sealed class RealProcessExitWaiter : IProcessExitWaiter
+    {
+        public Task WaitForExitAsync(Process process, CancellationToken ct) => process.WaitForExitAsync(ct);
+    }
 
     private sealed class InMemoryPidStore : IPidStore
     {
