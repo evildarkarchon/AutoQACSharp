@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using AutoQAC.Models.Diagnostics;
 
 namespace AutoQAC.Models;
 
@@ -158,6 +159,7 @@ public sealed record CleaningSessionResult
         sb.AppendLine($"Date: {StartTime:yyyy-MM-dd HH:mm:ss}");
         sb.AppendLine($"Game: {GameType}");
         sb.AppendLine($"Duration: {TotalDuration:hh\\:mm\\:ss}");
+        sb.AppendLine(DiagnosticTextFormatter.ReportDisclaimer);
         sb.AppendLine();
 
         sb.AppendLine("--- Summary ---");
@@ -209,7 +211,7 @@ public sealed record CleaningSessionResult
             sb.AppendLine("--- Failed Plugins ---");
             foreach (var result in FailedPlugins)
             {
-                sb.AppendLine($"  {result.PluginName}: {result.Message}");
+                sb.AppendLine($"  {FormatFailedPluginReportLine(result)}");
             }
             sb.AppendLine();
         }
@@ -230,5 +232,20 @@ public sealed record CleaningSessionResult
         }
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Formats a failed report row with a defensive safe-summary fallback and avoids prefixing the plugin name twice.
+    /// </summary>
+    /// <param name="result">The failed plugin result to render into the exported report.</param>
+    /// <returns>A safe failed-plugin report row without raw diagnostic detail.</returns>
+    private static string FormatFailedPluginReportLine(PluginCleaningResult result)
+    {
+        var fallback = DiagnosticTextFormatter.CleaningFailedForPlugin(result.PluginName);
+        var summary = DiagnosticTextFormatter.SafeFailureSummary(result.Message, fallback);
+        var prefix = $"{result.PluginName}:";
+        return summary.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+            ? summary
+            : $"{result.PluginName}: {summary}";
     }
 }

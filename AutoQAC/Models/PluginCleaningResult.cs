@@ -1,4 +1,5 @@
 using System;
+using AutoQAC.Models.Diagnostics;
 
 namespace AutoQAC.Models;
 
@@ -86,7 +87,7 @@ public sealed record PluginCleaningResult
                 return "Skipped";
 
             if (Status == CleaningStatus.Failed)
-                return $"Failed: {Message}";
+                return $"Failed: {DiagnosticTextFormatter.SafeFailureSummary(Message, DiagnosticTextFormatter.CleaningFailedForPlugin(PluginName))}";
 
             if (Status == CleaningStatus.AlreadyClean)
                 return "Already clean";
