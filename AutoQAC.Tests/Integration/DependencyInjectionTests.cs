@@ -36,8 +36,10 @@ public sealed class DependencyInjectionTests
         appSource.Should().NotContain("xEdit Path: {XEditPath}");
         appSource.Should().Contain("DiagnosticTextFormatter.SafeFileIdentifier(\"xEdit Path\"");
         appSource.Should().Contain("Some legacy settings could not be migrated. See the latest AutoQAC log for technical details.");
+        appSource.Should().Contain("DiagnosticTextFormatter.SafeFailureSummary(result.WarningMessage");
         appSource.Should().NotContain("Legacy config migration failed unexpectedly: {ex.Message}");
         appSource.Should().NotContain("ShowMigrationWarning($\"Legacy config migration failed unexpectedly");
+        appSource.Should().NotContain("ShowMigrationWarning(result.WarningMessage)");
     }
 
     [Fact]

@@ -1,5 +1,6 @@
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Services.Configuration;
+using AutoQAC.Tests.Helpers;
 using FluentAssertions;
 using NSubstitute;
 
@@ -47,6 +48,28 @@ public sealed class LegacyMigrationServiceTests : IDisposable
     private string LegacyConfigPath => Path.Combine(_testDirectory, "AutoQAC Config.yaml");
     private string CurrentConfigPath => Path.Combine(_testDirectory, "AutoQAC Settings.yaml");
     private string BackupSubdirectory => Path.Combine(_testDirectory, "migration_backup");
+
+    /// <summary>
+    /// Verifies migration warning copy is actionable without leaking local paths, commands, or exception details.
+    /// </summary>
+    private void AssertSafeMigrationWarning(string? warningMessage, params string[] expectedFragments)
+    {
+        warningMessage.Should().NotBeNullOrWhiteSpace("migration warnings should remain actionable");
+        foreach (var expectedFragment in expectedFragments)
+        {
+            warningMessage.Should().Contain(expectedFragment);
+        }
+
+        warningMessage.Should().Contain("See the latest AutoQAC log");
+        warningMessage.Should().NotContain(_testDirectory);
+        warningMessage.Should().NotContain("IOException");
+        warningMessage.Should().NotContain("UnauthorizedAccess");
+        warningMessage.Should().NotContain("Exception");
+        foreach (var sentinel in DiagnosticSentinels.UnsafeDiagnosticSentinels)
+        {
+            warningMessage.Should().NotContain(sentinel);
+        }
+    }
 
     #region No Legacy File
 
@@ -173,6 +196,25 @@ Load_Order:
         File.Exists(CurrentConfigPath).Should().BeFalse("no config should be written on parse failure");
     }
 
+    /// <summary>
+    /// Invalid YAML warnings should identify the migration category without exposing parser exceptions or path details.
+    /// </summary>
+    [Fact]
+    public async Task MigrateIfNeeded_InvalidYaml_ReturnsSafeWarningWithoutRawDetails()
+    {
+        // Arrange -- sentinel-laden scalar content forces a conversion failure without making the warning echo the input.
+        await File.WriteAllTextAsync(LegacyConfigPath, $"xEdit: {DiagnosticSentinels.CreateUnsafePayload()}");
+        var sut = CreateSut();
+
+        // Act
+        var result = await sut.MigrateIfNeededAsync();
+
+        // Assert
+        result.Attempted.Should().BeTrue("legacy file was found and migration was attempted");
+        result.Success.Should().BeFalse("invalid YAML should cause failure");
+        AssertSafeMigrationWarning(result.WarningMessage, "Legacy config could not be migrated");
+    }
+
     #endregion
 
     #region Empty Legacy File
@@ -236,6 +278,31 @@ xEdit:
         File.Exists(LegacyConfigPath).Should().BeTrue("legacy file should be preserved on write failure");
     }
 
+    /// <summary>
+    /// Write-failure warnings should explain the blocked migration step without displaying the target path or exception type.
+    /// </summary>
+    [Fact]
+    public async Task MigrateIfNeeded_WriteFailure_ReturnsSafeWarningWithoutRawDetails()
+    {
+        // Arrange -- valid legacy config with unsafe values that must not be mirrored into warning copy.
+        var legacyContent = $@"
+xEdit:
+  Binary: {DiagnosticSentinels.CreateUnsafePayload()}
+";
+        await File.WriteAllTextAsync(LegacyConfigPath, legacyContent);
+        Directory.CreateDirectory(CurrentConfigPath);
+
+        var sut = CreateSut();
+
+        // Act
+        var result = await sut.MigrateIfNeededAsync();
+
+        // Assert
+        result.Attempted.Should().BeTrue("legacy file was found and migration was attempted");
+        result.Success.Should().BeFalse("write should fail when destination is a directory");
+        AssertSafeMigrationWarning(result.WarningMessage, "new settings file could not be written");
+    }
+
     #endregion
 
     #region Backup Failure
@@ -274,6 +341,34 @@ xEdit:
         // Original legacy file should still exist (not deleted since backup failed)
         File.Exists(LegacyConfigPath).Should().BeTrue(
             "legacy file must be preserved when backup fails -- backup-then-delete order");
+    }
+
+    /// <summary>
+    /// Backup-failure warnings should preserve the safety instruction without exposing the backup path or exception detail.
+    /// </summary>
+    [Fact]
+    public async Task MigrateIfNeeded_BackupFailure_ReturnsSafeWarningWithoutRawDetails()
+    {
+        // Arrange -- valid legacy config with unsafe values that must not be mirrored into warning copy.
+        var legacyContent = $@"
+xEdit:
+  Binary: {DiagnosticSentinels.CreateUnsafePayload()}
+";
+        await File.WriteAllTextAsync(LegacyConfigPath, legacyContent);
+        await File.WriteAllTextAsync(BackupSubdirectory, "blocker");
+
+        var sut = CreateSut();
+
+        // Act
+        var result = await sut.MigrateIfNeededAsync();
+
+        // Assert
+        result.Attempted.Should().BeTrue("legacy file was found and migration was attempted");
+        result.Success.Should().BeFalse("backup failure should cause migration to fail for safety");
+        AssertSafeMigrationWarning(
+            result.WarningMessage,
+            "could not back up the original file",
+            "Original file was kept for safety");
     }
 
     #endregion
