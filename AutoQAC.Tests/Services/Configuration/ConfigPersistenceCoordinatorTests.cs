@@ -268,6 +268,124 @@ public sealed class ConfigPersistenceCoordinatorTests
         result.Failure!.Kind.Should().Be(ConfigPersistenceFailureKind.MissingFile);
     }
 
+    /// <summary>
+    /// Verifies that a persistence result observer cannot prevent a forced flush from returning its typed result.
+    /// </summary>
+    [Fact]
+    public async Task Flush_WithThrowingObserver_StillReturnsTypedResult()
+    {
+        var coordinator = CreateCoordinator();
+        using var sub = coordinator.PersistenceResults.Subscribe(_ => throw new InvalidOperationException("boom"));
+        await coordinator.StartAsync();
+        try
+        {
+            await coordinator.SaveUserConfigAsync(NewConfig(42)).WaitAsync(TimeSpan.FromSeconds(2));
+
+            // The timeout turns the historical TCS hang into a deterministic RED failure.
+            var result = await coordinator.FlushPendingSavesAsync().WaitAsync(TimeSpan.FromSeconds(2));
+
+            result.Status.Should().Be(ConfigPersistenceStatusKind.Success);
+        }
+        finally
+        {
+            await coordinator.StopAsync().WaitAsync(TimeSpan.FromSeconds(2));
+        }
+    }
+
+    /// <summary>
+    /// Verifies that a throwing accepted-configuration observer cannot stop save completion or active state updates.
+    /// </summary>
+    [Fact]
+    public async Task Save_WithThrowingAcceptedObserver_StillCompletesAndActiveUpdates()
+    {
+        var coordinator = CreateCoordinator();
+        using var sub = coordinator.ConfigurationAccepted.Subscribe(_ => throw new InvalidOperationException("boom"));
+        await coordinator.StartAsync();
+        try
+        {
+            // The timeout turns the historical TCS hang into a deterministic RED failure.
+            await coordinator.SaveUserConfigAsync(NewConfig(77)).WaitAsync(TimeSpan.FromSeconds(2));
+            var active = await coordinator.LoadCurrentAsync();
+
+            active.Settings.CleaningTimeout.Should().Be(77);
+        }
+        finally
+        {
+            await coordinator.StopAsync().WaitAsync(TimeSpan.FromSeconds(2));
+        }
+    }
+
+    /// <summary>
+    /// Verifies that a persistence result observer cannot prevent an explicit reload from returning its typed result.
+    /// </summary>
+    [Fact]
+    public async Task Reload_WithThrowingObserver_StillReturnsTypedResult()
+    {
+        var store = new FakeUserConfigFileStore { CurrentContent = Serializer.Serialize(NewConfig(55)) };
+        var coordinator = CreateCoordinator(store);
+        using var sub = coordinator.PersistenceResults.Subscribe(_ => throw new InvalidOperationException("boom"));
+        await coordinator.StartAsync();
+        try
+        {
+            // The timeout turns the historical TCS hang into a deterministic RED failure.
+            var result = await coordinator.ReloadFromDiskAsync().WaitAsync(TimeSpan.FromSeconds(2));
+
+            result.Status.Should().Be(ConfigPersistenceStatusKind.Success);
+        }
+        finally
+        {
+            await coordinator.StopAsync().WaitAsync(TimeSpan.FromSeconds(2));
+        }
+    }
+
+    /// <summary>
+    /// Verifies that an explicit reload does not discard a queued app save before reading disk content.
+    /// </summary>
+    [Fact]
+    public async Task ExplicitReload_DuringPendingAppSave_FlushesFirstThenReloads()
+    {
+        var store = new FakeUserConfigFileStore();
+        var coordinator = CreateCoordinator(store);
+        await coordinator.StartAsync();
+        try
+        {
+            await coordinator.SaveUserConfigAsync(NewConfig(99));
+            var result = await coordinator.ReloadFromDiskAsync().WaitAsync(TimeSpan.FromSeconds(2));
+            var active = await coordinator.LoadCurrentAsync();
+
+            store.WriteCount.Should().BeGreaterThanOrEqualTo(1, because: "pending app saves must reach disk before explicit reload reads disk");
+            result.Status.Should().Be(ConfigPersistenceStatusKind.Success);
+            active.Settings.CleaningTimeout.Should().Be(99, because: "the flushed app save becomes the disk content reloaded by the explicit request");
+        }
+        finally
+        {
+            await coordinator.StopAsync().WaitAsync(TimeSpan.FromSeconds(2));
+        }
+    }
+
+    /// <summary>
+    /// Verifies that explicit reload keeps the normal no-pending-save path intact.
+    /// </summary>
+    [Fact]
+    public async Task ExplicitReload_NoPendingSave_ReloadsNormally()
+    {
+        var store = new FakeUserConfigFileStore { CurrentContent = Serializer.Serialize(NewConfig(64)) };
+        var coordinator = CreateCoordinator(store);
+        await coordinator.StartAsync();
+        try
+        {
+            var result = await coordinator.ReloadFromDiskAsync().WaitAsync(TimeSpan.FromSeconds(2));
+            var active = await coordinator.LoadCurrentAsync();
+
+            result.Status.Should().Be(ConfigPersistenceStatusKind.Success);
+            active.Settings.CleaningTimeout.Should().Be(64);
+        }
+        finally
+        {
+            await coordinator.StopAsync().WaitAsync(TimeSpan.FromSeconds(2));
+        }
+    }
+
     [Fact]
     public void TestSourceContains_NoProductionThrottleSleeps_StaticGuard()
     {
