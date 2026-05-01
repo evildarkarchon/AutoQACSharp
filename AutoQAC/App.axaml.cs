@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure;
 using AutoQAC.Infrastructure.Logging;
+using AutoQAC.Models.Diagnostics;
 using AutoQAC.Services.Backup;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
@@ -122,11 +123,16 @@ namespace AutoQAC
                 var versionStr = version != null ? $"{version.Major}.{version.Minor}.{version.Build}" : "Unknown";
 
                 var state = stateService.CurrentState;
+                var xEditIdentifier = DiagnosticTextFormatter.SafeFileIdentifier("xEdit Path", state.XEditExecutablePath, "not configured");
+                var xEditConfigured = !string.IsNullOrWhiteSpace(state.XEditExecutablePath);
 
                 logger.Information("=== AutoQAC Session Start ===");
                 logger.Information("Version: {Version}", versionStr);
                 logger.Information(".NET Runtime: {Runtime}", RuntimeInformation.FrameworkDescription);
-                logger.Information("xEdit Path: {XEditPath}", state.XEditExecutablePath ?? "(not configured)");
+                logger.Information(
+                    "xEdit configuration: configured={XEditConfigured}, identifier={XEditIdentifier}",
+                    xEditConfigured,
+                    xEditIdentifier);
                 logger.Information("Game Type: {GameType}", state.CurrentGameType);
                 logger.Information("MO2 Mode: {Mo2Mode}", state.Mo2ModeEnabled);
                 logger.Information("Load Order: {PluginCount} plugins", state.PluginsToClean.Count);
@@ -167,7 +173,7 @@ namespace AutoQAC
             catch (Exception ex)
             {
                 logger.Error(ex, "[Migration] Unexpected error during legacy migration");
-                viewModel.ShowMigrationWarning($"Legacy config migration failed unexpectedly: {ex.Message}");
+                viewModel.ShowMigrationWarning("Some legacy settings could not be migrated. See the latest AutoQAC log for technical details.");
             }
         }
     }
