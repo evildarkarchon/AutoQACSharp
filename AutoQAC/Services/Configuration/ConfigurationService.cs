@@ -166,7 +166,8 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
         ThrowIfDisposed();
         await _consumerTask.ConfigureAwait(false);
 
-        if (_hasPendingUserSave)
+        var (hasPending, loadedFromDisk) = GetUserConfigStateFlags();
+        if (hasPending)
         {
             return await _coordinator.LoadCurrentAsync(ct).ConfigureAwait(false);
         }
@@ -180,7 +181,7 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
             return defaultConfig.Copy();
         }
 
-        if (!_loadedUserConfigFromDisk && !_hasPendingUserSave)
+        if (!loadedFromDisk && !hasPending)
         {
             var result = await _coordinator.ReloadFromDiskAsync(ct).ConfigureAwait(false);
             if (result.Status == ConfigPersistenceStatusKind.Failed)
@@ -188,7 +189,10 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
                 _logger.Warning("[Config] Initial user configuration reload failed: {Summary}", result.Failure?.SafeSummary ?? "unknown");
             }
 
-            _loadedUserConfigFromDisk = true;
+            lock (_stateLock)
+            {
+                _loadedUserConfigFromDisk = true;
+            }
         }
 
         return await _coordinator.LoadCurrentAsync(ct).ConfigureAwait(false);
@@ -200,18 +204,30 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
         ct.ThrowIfCancellationRequested();
         await _consumerTask.ConfigureAwait(false);
         await _coordinator.SaveUserConfigAsync(config, ct).ConfigureAwait(false);
-        _loadedUserConfigFromDisk = true;
-        _hasPendingUserSave = true;
+        lock (_stateLock)
+        {
+            _loadedUserConfigFromDisk = true;
+            _hasPendingUserSave = true;
+        }
     }
 
     public async Task<ConfigPersistenceResult> FlushPendingSavesAsync(CancellationToken ct = default)
     {
         ThrowIfDisposed();
         await _consumerTask.ConfigureAwait(false);
+
+        if (!HasPendingUserSave())
+        {
+            return new ConfigPersistenceResult(ConfigPersistenceStatusKind.NoOp, ConfigPersistenceOperationKind.Flush, 0, null);
+        }
+
         var result = await _coordinator.FlushPendingSavesAsync(ct).ConfigureAwait(false);
         if (result.Status is ConfigPersistenceStatusKind.Success or ConfigPersistenceStatusKind.NoOp)
         {
-            _hasPendingUserSave = false;
+            lock (_stateLock)
+            {
+                _hasPendingUserSave = false;
+            }
         }
 
         return result;
@@ -540,9 +556,19 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
     {
         ThrowIfDisposed();
         await _consumerTask.ConfigureAwait(false);
-        _ = await _coordinator.ReloadFromDiskAsync(ct).ConfigureAwait(false);
-        _loadedUserConfigFromDisk = true;
-        _hasPendingUserSave = false;
+        var result = await _coordinator.ReloadFromDiskAsync(ct).ConfigureAwait(false);
+        if (result.Status is ConfigPersistenceStatusKind.Success)
+        {
+            // Only a successful coordinator reload means pending facade edits were persisted
+            // and accepted back from disk. Failed/rejected reloads must leave the pending
+            // indicator intact so a later flush still protects the user's edits.
+            lock (_stateLock)
+            {
+                _loadedUserConfigFromDisk = true;
+                _hasPendingUserSave = false;
+            }
+        }
+
         lock (_stateLock)
         {
             _mainConfigCache = null;
@@ -566,6 +592,28 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
         GameType.Oblivion => "Oblivion",
         _ => "Unknown"
     };
+
+    /// <summary>
+    /// Returns a consistent snapshot of facade user-config bookkeeping flags.
+    /// </summary>
+    private (bool HasPendingUserSave, bool LoadedUserConfigFromDisk) GetUserConfigStateFlags()
+    {
+        lock (_stateLock)
+        {
+            return (_hasPendingUserSave, _loadedUserConfigFromDisk);
+        }
+    }
+
+    /// <summary>
+    /// Returns whether the facade currently knows about an app-initiated save awaiting flush.
+    /// </summary>
+    private bool HasPendingUserSave()
+    {
+        lock (_stateLock)
+        {
+            return _hasPendingUserSave;
+        }
+    }
 
     public void Dispose()
     {
