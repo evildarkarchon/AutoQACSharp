@@ -10,6 +10,7 @@ using AutoQAC.ViewModels;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Reactive.Linq;
@@ -19,6 +20,26 @@ namespace AutoQAC.Tests.Integration;
 
 public sealed class DependencyInjectionTests
 {
+    /// <summary>
+    /// Guards private startup diagnostics and migration warning copy where dependency-injection seams are not available.
+    /// </summary>
+    [Fact]
+    public void AppStartupSource_ShouldUseSafeDiagnosticFieldsAndMigrationWarningCopy()
+    {
+        // Arrange
+        var appSourcePath = LocateRepositoryFile("AutoQAC", "App.axaml.cs");
+
+        // Act
+        var appSource = File.ReadAllText(appSourcePath);
+
+        // Assert
+        appSource.Should().NotContain("xEdit Path: {XEditPath}");
+        appSource.Should().Contain("DiagnosticTextFormatter.SafeFileIdentifier(\"xEdit Path\"");
+        appSource.Should().Contain("Some legacy settings could not be migrated. See the latest AutoQAC log for technical details.");
+        appSource.Should().NotContain("Legacy config migration failed unexpectedly: {ex.Message}");
+        appSource.Should().NotContain("ShowMigrationWarning($\"Legacy config migration failed unexpectedly");
+    }
+
     [Fact]
     public void ServiceCollection_ShouldResolveAllServices()
     {
@@ -128,5 +149,25 @@ public sealed class DependencyInjectionTests
         var field = instance.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic);
         field.Should().NotBeNull($"{instance.GetType().Name} should store {fieldName} from DI");
         return field!.GetValue(instance).Should().BeAssignableTo<T>().Subject;
+    }
+
+    /// <summary>
+    /// Locates a repository-relative file from the test output directory without assuming a fixed bin depth.
+    /// </summary>
+    private static string LocateRepositoryFile(params string[] relativeSegments)
+    {
+        var current = new DirectoryInfo(AppContext.BaseDirectory);
+        while (current is not null)
+        {
+            var candidate = Path.Combine(new[] { current.FullName }.Concat(relativeSegments).ToArray());
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            current = current.Parent;
+        }
+
+        throw new FileNotFoundException($"Could not locate repository file: {Path.Combine(relativeSegments)}");
     }
 }
