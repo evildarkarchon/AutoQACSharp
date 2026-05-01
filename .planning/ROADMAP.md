@@ -328,7 +328,10 @@ Plans:
   2. File-load-order validation runs after Unknown-game detection resolves to Fallout3, FalloutNewVegas, or Oblivion.
   3. Cleaning remains sequential and collaborator boundaries remain focused across preflight, backup, runner, finalizer, and termination responsibilities.
   4. Current verification artifacts prove REF-01 is satisfied after the Phase 8 gap closures.
-**Plans**: 0 plans (gap closure planning pending)
+**Plans**: 1 plan
+Plans:
+**Wave 1**
+- [ ] 14-01-PLAN.md — Produce current Phase 14 REF-01 verification evidence for session guarding, detected load-order validation, sequential/collaborator boundaries, and full-suite status.
 
 ## Progress
 
