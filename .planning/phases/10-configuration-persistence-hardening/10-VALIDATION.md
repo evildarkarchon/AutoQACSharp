@@ -5,7 +5,7 @@ status: complete
 nyquist_compliant: true
 wave_0_complete: true
 created: 2026-04-30
-updated: 2026-04-30
+updated: 2026-05-01
 input_state: A
 ---
 
@@ -23,8 +23,8 @@ input_state: A
 | **Config file** | `AutoQAC.Tests/AutoQAC.Tests.csproj` |
 | **Focused validation command** | `dotnet test AutoQAC.Tests/AutoQAC.Tests.csproj --filter "FullyQualifiedName~UserConfigurationCopyTests\|FullyQualifiedName~ConfigPersistenceCoordinatorTests\|FullyQualifiedName~UserConfigFileStoreTests\|FullyQualifiedName~ConfigurationServiceTests\|FullyQualifiedName~ConfigWatcherServiceTests\|FullyQualifiedName~CleaningPreflightTests\|FullyQualifiedName~SettingsViewModelTests\|FullyQualifiedName~DependencyInjectionTests" --nologo` |
 | **Full suite command** | `dotnet test AutoQACSharp.slnx --nologo` |
-| **Latest focused result** | Passed: 111/111, Failed: 0, Skipped: 0 |
-| **Latest full-suite result** | Passed: 984/984 (`AutoQAC.Tests` 923, `QueryPlugins.Tests` 61), Failed: 0 |
+| **Latest focused result** | Passed: 114/114, Failed: 0, Skipped: 0 |
+| **Latest full-suite result** | Passed: 1058/1058 (`AutoQAC.Tests` 997, `QueryPlugins.Tests` 61), Failed: 0 |
 
 ---
 
@@ -138,6 +138,33 @@ All other Phase 10 behaviors have automated verification.
 
 ---
 
+## Validation Audit 2026-05-01
+
+| Metric | Count |
+|--------|-------|
+| Input state | State A - existing `10-VALIDATION.md` re-audited |
+| PLAN files read | 11 |
+| SUMMARY files read | 11 |
+| Requirement IDs mapped | 3 |
+| Task rows audited | 12 |
+| Relevant test files cross-referenced | 9 |
+| Focused tests run | 114 |
+| Full-suite tests run | 1058 |
+| Gaps found | 0 |
+| Resolved by generated tests in this audit | 0 |
+| Escalated to manual-only in this audit | 0 |
+
+### Gap Classification
+
+| Status | Count | Notes |
+|--------|-------|-------|
+| COVERED | 11 automated task rows | Every executable Phase 10 plan has a green automated test target, including the later gap-closure regressions from Plans 10-06 through 10-11. |
+| PARTIAL | 0 | None found. |
+| MISSING | 0 | None found. |
+| MANUAL-ONLY | 1 | Plan 05 visual UAT was already approved and remains the only manual-only item. |
+
+---
+
 ## Validation Sign-Off
 
 - [x] Nyquist config checked and enabled.
@@ -147,8 +174,8 @@ All other Phase 10 behaviors have automated verification.
 - [x] Requirement-to-task map rebuilt for plans 10-01 through 10-11.
 - [x] No MISSING or PARTIAL automated-test gaps found.
 - [x] Auditor spawn skipped per workflow gap-analysis rule: no gaps required filling.
-- [x] Focused validation command passed: 111/111.
-- [x] Full solution command passed: 984/984.
+- [x] Focused validation command passed: 114/114.
+- [x] Full solution command passed: 1058/1058.
 - [x] `nyquist_compliant: true` set in frontmatter.
 
-**Approval:** Phase 10 is Nyquist-compliant.
+**Approval:** Phase 10 is Nyquist-compliant as of 2026-05-01.
