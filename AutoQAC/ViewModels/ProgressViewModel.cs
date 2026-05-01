@@ -235,7 +235,8 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
     private async System.Threading.Tasks.Task KillHungProcessAsync()
     {
         IsHangWarningVisible = false;
-        await _orchestrator.ForceStopCleaningAsync();
+        var forceResult = await _orchestrator.ForceStopCleaningAsync();
+        await ReportForceStopFailureIfNeededAsync(forceResult.TerminationResult ?? _orchestrator.LastTerminationResult);
     }
 
     /// <summary>
