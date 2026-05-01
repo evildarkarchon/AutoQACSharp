@@ -3,7 +3,7 @@
 ## Milestones
 
 - ✅ **v1.0 xEdit Log Parsing Fix** — Phases 1-4 (shipped 2026-03-31)
-- [ ] **v1.0 Cleanup** — Phases 5-11
+- [ ] **v1.0 Cleanup** — Phases 5-14
 
 ## Phases
 
@@ -26,6 +26,9 @@ Full details: [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP.md)
 - [ ] **Phase 9: Plugin Refresh & Approximation Performance** - Users can refresh approximations more efficiently while plugin-loading coordination moves out of the ViewModel.
 - [x] **Phase 10: Configuration Persistence Hardening** - Users get deterministic configuration save/reload behavior with lower clone overhead. (gaps planned 2026-05-01) (completed 2026-05-01) (additional gap planned 2026-05-01)
 - [x] **Phase 11: User-Facing Diagnostics Boundaries** - Users see concise errors while logs avoid unnecessary path and command exposure. (gaps planned 2026-05-01) (completed 2026-05-01) (additional gap planned 2026-05-01) (completed 2026-05-01) (additional gap planned 2026-05-01) (completed 2026-05-01) (additional gap planned 2026-05-01)
+- [ ] **Phase 12: Process Stop Verification & Progress Flow Closure** - Users can stop cleaning from the Progress window through the confirmed two-stage termination and force-failure reporting path.
+- [ ] **Phase 13: Command Launch Escaping Reverification & Safe MO2 Failures** - Users cannot accidentally launch direct xEdit when MO2 mode is enabled but MO2 configuration is missing, and command escaping safety is re-verified.
+- [ ] **Phase 14: Orchestrator Decomposition Reverification** - Maintainers have current verification evidence that orchestrator gap closures preserve session guarding and detected-game preflight validation.
 
 ## Phase Details
 
@@ -273,6 +276,43 @@ Cross-cutting constraints:
 - Logs must preserve local troubleshooting value through safe structured fields such as operation, launch mode, game/mode, plugin filename, PID when available, argument count, counts/status, and safe reason/category.
 **UI hint**: yes
 
+### Phase 12: Process Stop Verification & Progress Flow Closure
+**Goal**: Users can stop cleaning from the Progress window through the same confirmed two-stage termination path as the main cleaning command, and maintainers have current verification evidence for stop/PID safety requirements.
+**Depends on**: Phase 11
+**Requirements**: SAF-01, SAF-02, REF-04, TEST-01
+**Gap Closure**: Closes `v1.0-MILESTONE-AUDIT.md` orphaned Phase 5 requirements plus integration gap INT-01 and flow gap FLOW-01.
+**Success Criteria** (what must be TRUE):
+  1. User can click Stop in the Progress window and see the grace-expired force-termination confirmation before AutoQAC force-kills xEdit.
+  2. User sees an accurate force-kill failure outcome from the Progress-window Stop path.
+  3. Maintainer can verify Progress-window Stop, force-failure reporting, PID evidence, and process cleanup behavior through automated tests.
+  4. Current verification artifacts prove SAF-01, SAF-02, REF-04, and TEST-01 are satisfied.
+**Plans**: 0 plans (gap closure planning pending)
+**UI hint**: yes
+
+### Phase 13: Command Launch Escaping Reverification & Safe MO2 Failures
+**Goal**: Users can rely on MO2 mode failing safely when MO2 configuration is missing, while existing direct and MO2 command escaping guarantees remain verified.
+**Depends on**: Phase 11
+**Requirements**: SAF-03, TEST-02
+**Gap Closure**: Closes `v1.0-MILESTONE-AUDIT.md` Phase 6 SAF-03/TEST-02 unsatisfied verification gaps.
+**Success Criteria** (what must be TRUE):
+  1. MO2-enabled cleaning with a missing MO2 executable path fails before any direct xEdit launch can start.
+  2. Direct xEdit and configured MO2 launches still preserve quotes, Unicode, spaces, shell-sensitive characters, and nested xEdit arguments.
+  3. Unexpected launch failures use safe user-facing diagnostics after Phase 11 boundaries.
+  4. Current verification and validation artifacts prove SAF-03 and TEST-02 are satisfied.
+**Plans**: 0 plans (gap closure planning pending)
+
+### Phase 14: Orchestrator Decomposition Reverification
+**Goal**: Maintainers can trust current verification evidence that the decomposed cleaning orchestrator preserves session guarding, final detected-game preflight validation, and sequential behavior.
+**Depends on**: Phase 11
+**Requirements**: REF-01
+**Gap Closure**: Closes `v1.0-MILESTONE-AUDIT.md` Phase 8 REF-01 unsatisfied verification gap.
+**Success Criteria** (what must be TRUE):
+  1. Concurrent `StartCleaningAsync` calls are rejected or no-op safely without overwriting the active session CTS.
+  2. File-load-order validation runs after Unknown-game detection resolves to Fallout3, FalloutNewVegas, or Oblivion.
+  3. Cleaning remains sequential and collaborator boundaries remain focused across preflight, backup, runner, finalizer, and termination responsibilities.
+  4. Current verification artifacts prove REF-01 is satisfied after the Phase 8 gap closures.
+**Plans**: 0 plans (gap closure planning pending)
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -288,21 +328,24 @@ Cross-cutting constraints:
 | 9. Plugin Refresh & Approximation Performance | v1.0 Cleanup | 8/9 | Gaps planned | - |
 | 10. Configuration Persistence Hardening | v1.0 Cleanup | 11/11 | Complete    | 2026-05-01 |
 | 11. User-Facing Diagnostics Boundaries | v1.0 Cleanup | 11/13 | Gaps planned   | - |
+| 12. Process Stop Verification & Progress Flow Closure | v1.0 Cleanup | 0/0 | Not started | - |
+| 13. Command Launch Escaping Reverification & Safe MO2 Failures | v1.0 Cleanup | 0/0 | Not started | - |
+| 14. Orchestrator Decomposition Reverification | v1.0 Cleanup | 0/0 | Not started | - |
 
 ## Coverage
 
 | Requirement | Phase |
 |-------------|-------|
-| SAF-01 | Phase 5 |
-| SAF-02 | Phase 5 |
-| SAF-03 | Phase 6 |
+| SAF-01 | Phase 12 |
+| SAF-02 | Phase 12 |
+| SAF-03 | Phase 13 |
 | SAF-04 | Phase 7 |
-| REF-01 | Phase 8 |
+| REF-01 | Phase 14 |
 | REF-02 | Phase 9 |
 | REF-03 | Phase 10 |
-| REF-04 | Phase 5 |
-| TEST-01 | Phase 5 |
-| TEST-02 | Phase 6 |
+| REF-04 | Phase 12 |
+| TEST-01 | Phase 12 |
+| TEST-02 | Phase 13 |
 | TEST-03 | Phase 10 |
 | TEST-04 | Phase 7 |
 | SEC-01 | Phase 11 |
