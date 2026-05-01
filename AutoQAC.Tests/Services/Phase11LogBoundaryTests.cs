@@ -60,6 +60,46 @@ public sealed class Phase11LogBoundaryTests
     }
 
     /// <summary>
+    /// Successful legacy-Arguments starts must not leak raw launch text into logs or PID tracking entries.
+    /// </summary>
+    [Fact]
+    public async Task ProcessExecutionService_WhenLegacyArgumentsStartSucceeds_ShouldTrackAndLogSafeExternalProcessLabel()
+    {
+        // Arrange
+        var logger = Substitute.For<ILoggingService>();
+        var pidStore = new InMemoryPidStore();
+        var service = new ProcessExecutionService(
+            logger,
+            pidStore,
+            new StaticProcessSessionIdProvider(),
+            new RealProcessExitWaiter());
+        IReadOnlyList<TrackedProcess> trackedAtStart = [];
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = DotNetHostPath,
+            WorkingDirectory = Environment.CurrentDirectory,
+            Arguments = "--info"
+        };
+
+        // Act
+        var result = await service.ExecuteAsync(
+            startInfo,
+            onProcessStarted: _ => trackedAtStart = pidStore.LoadAsync().GetAwaiter().GetResult());
+
+        // Assert
+        result.ExitCode.Should().Be(0);
+        trackedAtStart.Should().ContainSingle();
+        trackedAtStart[0].PluginName.Should().Be("ExternalProcess");
+
+        var capturedText = CaptureNonExceptionLogArguments(logger);
+        foreach (var sentinel in DiagnosticSentinels.UnsafeDiagnosticSentinels.Concat(["--info"]))
+        {
+            capturedText.Should().NotContain(sentinel);
+            trackedAtStart[0].PluginName.Should().NotContain(sentinel);
+        }
+    }
+
+    /// <summary>
     /// Guards known bad process/startup templates and raw argument logging patterns from returning to production source.
     /// </summary>
     [Fact]
@@ -125,6 +165,13 @@ public sealed class Phase11LogBoundaryTests
     private sealed class StaticProcessSessionIdProvider : IProcessSessionIdProvider
     {
         public string CurrentSessionId => "phase-11-test";
+    }
+
+    private static string DotNetHostPath => OperatingSystem.IsWindows() ? "dotnet.exe" : "dotnet";
+
+    private sealed class RealProcessExitWaiter : IProcessExitWaiter
+    {
+        public Task WaitForExitAsync(Process process, CancellationToken ct) => process.WaitForExitAsync(ct);
     }
 
     private sealed class InMemoryPidStore : IPidStore

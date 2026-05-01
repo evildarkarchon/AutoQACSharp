@@ -12,6 +12,7 @@ using AutoQAC.Services.Monitoring;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Services.Process;
 using AutoQAC.Services.State;
+using AutoQAC.Tests.Helpers;
 using FluentAssertions;
 using NSubstitute;
 
@@ -184,6 +185,44 @@ public sealed class ProcessExecutionServiceTests : IDisposable
         startInfo.WorkingDirectory.Should().Be(Environment.CurrentDirectory);
         startInfo.UseShellExecute.Should().BeTrue("logging changes must not mutate caller-supplied ProcessStartInfo values");
         startInfo.CreateNoWindow.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// Successful legacy-Arguments launches without plugin context must use a generic PID label instead of persisting launch text.
+    /// </summary>
+    [Fact]
+    public async Task ExecuteAsync_WhenProcessStartsWithLegacyArgumentsAndNoPluginName_ShouldTrackSafeExternalProcessLabel()
+    {
+        // Arrange
+        using var service = CreateService(new RealProcessExitWaiter());
+        var legacyRawArguments = @"SSEEdit.exe -QAC -autoload C:\Users\Alice\Data\Unsafe.esp";
+        IReadOnlyList<TrackedProcess> trackedAtStart = [];
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = DotNetHostPath,
+            WorkingDirectory = Environment.CurrentDirectory,
+            Arguments = "--info"
+        };
+
+        // Act
+        var result = await service.ExecuteAsync(
+            startInfo,
+            onProcessStarted: _ => trackedAtStart = _pidStore.LoadAsync().GetAwaiter().GetResult());
+
+        // Assert
+        result.ExitCode.Should().Be(0);
+        trackedAtStart.Should().ContainSingle();
+        trackedAtStart[0].PluginName.Should().Be("ExternalProcess");
+
+        var unsafeFragments = DiagnosticSentinels.UnsafeDiagnosticSentinels
+            .Concat([legacyRawArguments, "--info"])
+            .ToArray();
+        foreach (var unsafeFragment in unsafeFragments)
+        {
+            trackedAtStart[0].PluginName.Should().NotContain(unsafeFragment);
+        }
+
+        AssertCapturedLogTextExcludes(unsafeFragments);
     }
 
     #endregion
