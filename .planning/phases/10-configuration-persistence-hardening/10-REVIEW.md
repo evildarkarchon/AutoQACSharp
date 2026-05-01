@@ -1,190 +1,141 @@
 ---
 phase: 10-configuration-persistence-hardening
-reviewed: 2026-05-01T00:57:23Z
+reviewed: 2026-05-01T01:19:20Z
 depth: deep
-files_reviewed: 27
+files_reviewed: 26
 files_reviewed_list:
-  - AutoQAC/AutoQAC.csproj
-  - AutoQAC/Infrastructure/ServiceCollectionExtensions.cs
+  - AutoQAC/Models/Configuration/UserConfiguration.cs
   - AutoQAC/Models/Configuration/BackupSettings.cs
   - AutoQAC/Models/Configuration/RetentionSettings.cs
-  - AutoQAC/Models/Configuration/UserConfiguration.cs
-  - AutoQAC/Services/Cleaning/CleaningPreflight.cs
+  - AutoQAC.Tests/Models/UserConfigurationCopyTests.cs
   - AutoQAC/Services/Configuration/ConfigPersistenceCoordinator.cs
   - AutoQAC/Services/Configuration/ConfigPersistenceOperation.cs
   - AutoQAC/Services/Configuration/ConfigPersistenceStatus.cs
-  - AutoQAC/Services/Configuration/ConfigWatcherService.cs
-  - AutoQAC/Services/Configuration/ConfigurationService.cs
-  - AutoQAC/Services/Configuration/IConfigPersistenceCoordinator.cs
-  - AutoQAC/Services/Configuration/IConfigWatcherService.cs
-  - AutoQAC/Services/Configuration/IConfigurationService.cs
   - AutoQAC/Services/Configuration/IUserConfigFileStore.cs
   - AutoQAC/Services/Configuration/UserConfigFileStore.cs
+  - AutoQAC/AutoQAC.csproj
+  - AutoQAC.Tests/Services/Configuration/ConfigPersistenceCoordinatorTests.cs
+  - AutoQAC.Tests/Services/Configuration/Fakes/FakeUserConfigFileStore.cs
+  - AutoQAC.Tests/Services/Configuration/UserConfigFileStoreTests.cs
+  - AutoQAC/Services/Configuration/IConfigurationService.cs
+  - AutoQAC/Services/Configuration/IConfigPersistenceCoordinator.cs
+  - AutoQAC/Services/Configuration/ConfigurationService.cs
+  - AutoQAC/Services/Configuration/IConfigWatcherService.cs
+  - AutoQAC/Services/Configuration/ConfigWatcherService.cs
+  - AutoQAC/Infrastructure/ServiceCollectionExtensions.cs
+  - AutoQAC.Tests/Services/ConfigurationServiceTests.cs
+  - AutoQAC.Tests/Services/ConfigWatcherServiceTests.cs
+  - AutoQAC/Services/Cleaning/CleaningPreflight.cs
+  - AutoQAC.Tests/Services/Cleaning/CleaningPreflightTests.cs
   - AutoQAC/ViewModels/SettingsViewModel.cs
   - AutoQAC/Views/SettingsWindow.axaml
-  - AutoQAC.Tests/Models/UserConfigurationCopyTests.cs
-  - AutoQAC.Tests/Services/Cleaning/CleaningPreflightTests.cs
-  - AutoQAC.Tests/Services/ConfigWatcherServiceTests.cs
-  - AutoQAC.Tests/Services/Configuration/Fakes/FakeUserConfigFileStore.cs
-  - AutoQAC.Tests/Services/Configuration/ConfigPersistenceCoordinatorTests.cs
-  - AutoQAC.Tests/Services/Configuration/UserConfigFileStoreTests.cs
-  - AutoQAC.Tests/Services/ConfigurationServiceTests.cs
   - AutoQAC.Tests/ViewModels/SettingsViewModelTests.cs
 findings:
   critical: 1
-  warning: 3
+  warning: 2
   info: 0
-  total: 4
+  total: 3
 status: issues_found
 ---
 
 # Phase 10: Code Review Report
 
-**Reviewed:** 2026-05-01T00:57:23Z
+**Reviewed:** 2026-05-01T01:19:20Z
 **Depth:** deep
-**Files Reviewed:** 27
+**Files Reviewed:** 26
 **Status:** issues_found
 
 ## Summary
 
-Deep review traced the new configuration persistence flow across DI registration, coordinator operation handling, configuration facade state, Settings UI subscriptions, file watching, and related tests. The main correctness risk is that an explicit reload can proceed after a failed pending-save flush and then report success, which can clear the facade's pending-save marker and drop unsaved user edits. Additional robustness issues make transient read failures sticky, allow unexpected coordinator exceptions to hang callers, and leave watcher smoke coverage timing-dependent.
+Deep review traced the configuration persistence flow across the watcher, coordinator, facade, cleaning preflight, and Settings UI. The central coordinator design is mostly coherent, but the facade now bypasses the coordinator barrier in a way that can let cleaning proceed before already-queued watcher reloads are processed. Two additional robustness gaps can cause external settings edits to be missed or transient reload failures to become sticky.
+
+Focused Phase 10 tests were run as a sanity check and passed, but the findings below are edge cases not covered by the current tests.
 
 ## Critical Issues
 
-### CR-01: BLOCKER - Explicit reload masks a failed pending-save flush and can drop user edits
+### CR-01: BLOCKER — Facade flush short-circuit skips the coordinator barrier, so cleaning can launch with stale external config
 
-**File:** `AutoQAC/Services/Configuration/ConfigPersistenceCoordinator.cs:350-362`
+**File:** `AutoQAC/Services/Configuration/ConfigurationService.cs:219-222`
 
-**Issue:** `ApplyReloadRequestAsync` correctly tries to flush a pending app save before reading disk, but it ignores a failed/rejected flush and continues to `ReadForReloadAsync`/`ValidateAndApply`. If the reload then succeeds with the old disk content, the public `ConfigurationService.ReloadFromDiskAsync` sees a successful reload and clears `_hasPendingUserSave` (`ConfigurationService.cs:560-569`). That sequence loses the user's pending in-memory edit after the prerequisite write failed.
+**Issue:** `ConfigurationService.FlushPendingSavesAsync` returns `NoOp` immediately when `_hasPendingUserSave` is false. That bypasses the coordinator channel entirely, so it does not drain operations already queued ahead of the flush call. This breaks the barrier semantics relied on by `CleaningPreflight.PrepareAsync` (`CleaningPreflight.cs:34-36`): a `FileSystemWatcher` event can enqueue a watcher reload (`ConfigWatcherService.cs:78-81`), then cleaning can call `FlushPendingSavesAsync`, receive the facade-level `NoOp`, and continue using the old active configuration because the queued watcher reload has not been processed yet. This can launch xEdit with stale MO2/backup/skip-list settings after a manual YAML edit.
 
-**Fix:** Treat a failed prerequisite flush as the reload result and do not continue to disk reload.
+**Fix:** Always enqueue a coordinator flush barrier so previously queued operations drain in order. The facade can still clear its pending-save flag only when the coordinator reports success/no-op.
 
 ```csharp
-private async Task ApplyReloadRequestAsync(ReloadRequest reload, CancellationToken ct)
+public async Task<ConfigPersistenceResult> FlushPendingSavesAsync(CancellationToken ct = default)
 {
-    if (_pendingApp != null)
-    {
-        _logger.Information("[ConfigPersistence] Flushing pending app save before explicit reload");
-        var flushResult = await FlushPendingInsideConsumerAsync(ct).ConfigureAwait(false);
-        SafePublishResult(flushResult);
+    ThrowIfDisposed();
+    await _consumerTask.ConfigureAwait(false);
 
-        if (flushResult.Status is ConfigPersistenceStatusKind.Failed or ConfigPersistenceStatusKind.Rejected)
+    var result = await _coordinator.FlushPendingSavesAsync(ct).ConfigureAwait(false);
+    if (result.Status is ConfigPersistenceStatusKind.Success or ConfigPersistenceStatusKind.NoOp)
+    {
+        lock (_stateLock)
         {
-            reload.Completion.TrySetResult(flushResult);
-            return;
+            _hasPendingUserSave = false;
         }
     }
 
-    var read = await ReadForReloadAsync(ConfigPersistenceOperationKind.Reload, ct).ConfigureAwait(false);
-    var result = read.Result ?? ValidateAndApply(read.ReadResult, ConfigPersistenceOperationKind.Reload);
-    SafePublishResult(result);
-    reload.Completion.TrySetResult(result);
+    return result;
 }
 ```
+
+Add a regression test that queues a watcher notification, immediately calls the facade `FlushPendingSavesAsync` with no app save pending, and asserts the external config is applied before the flush returns.
 
 ## Warnings
 
-### WR-01: WARNING - Failed initial user-config reload is marked as loaded, preventing automatic retry
+### WR-01: WARNING — FileSystemWatcher error events are logged but never trigger recovery
 
-**File:** `AutoQAC/Services/Configuration/ConfigurationService.cs:184-195`
+**File:** `AutoQAC/Services/Configuration/ConfigWatcherService.cs:82`
 
-**Issue:** `LoadUserConfigAsync` sets `_loadedUserConfigFromDisk = true` even when `ReloadFromDiskAsync` returns `Failed`. A transient read failure or temporarily invalid YAML therefore poisons the facade state: later `LoadUserConfigAsync` calls skip reload and keep returning the coordinator's default/last active config until some separate explicit reload or watcher event occurs.
+**Issue:** The watcher `Error` handler only logs the exception. `FileSystemWatcher.Error` is raised for conditions such as internal buffer overflow, where one or more file changes may have been dropped. Because no signal reaches the coordinator, the app can permanently miss a manual settings edit until another file event happens. `ConfigFileSignalKind.Error` already exists (`ConfigPersistenceOperation.cs:26`) but is unused.
 
-**Fix:** Only mark the initial disk load complete after a successful reload; leave it false on failure so the next load retries.
+**Fix:** Forward an error signal to the coordinator after logging so it can re-hash/re-read the authoritative file content. Wrap the call defensively so shutdown/disposal races do not throw from the FSW callback.
 
 ```csharp
-var result = await _coordinator.ReloadFromDiskAsync(ct).ConfigureAwait(false);
-if (result.Status == ConfigPersistenceStatusKind.Failed)
+watcher.Error += (_, e) =>
 {
-    _logger.Warning("[Config] Initial user configuration reload failed: {Summary}", result.Failure?.SafeSummary ?? "unknown");
-}
-else
-{
-    lock (_stateLock)
+    _logger.Error(e.GetException(), "[ConfigWatcher] FSW error");
+    try
     {
-        _loadedUserConfigFromDisk = true;
+        _coordinator.NotifySettingsFileChanged(ConfigFileSignalKind.Error);
     }
-}
-```
-
-### WR-02: WARNING - Unexpected coordinator operation exceptions can leave public callers waiting forever
-
-**File:** `AutoQAC/Services/Configuration/ConfigPersistenceCoordinator.cs:217-220`
-
-**Issue:** The single-reader loop catches and logs all unexpected operation exceptions but does not complete the operation's `TaskCompletionSource`. If an unexpected exception occurs inside an operation that has a caller-visible completion (for example a malformed config graph causing `ApplySaveAsync` to throw before `intent.Completion.TrySetResult()` at `ConfigPersistenceCoordinator.cs:242`), `SaveUserConfigAsync`, `FlushPendingSavesAsync`, or `ReloadFromDiskAsync` can hang indefinitely.
-
-**Fix:** Complete operation-specific TCS objects with an exception or typed failure when the dispatcher catches an unexpected exception.
-
-```csharp
-catch (Exception ex)
-{
-    _logger.Error(ex, "[ConfigPersistence] Operation handler threw");
-    CompleteOperationAsFailed(op, ex);
-}
-
-private void CompleteOperationAsFailed(ConfigPersistenceOperation op, Exception ex)
-{
-    var failure = CreateFailure(ConfigPersistenceOperationKind.Flush,
-        ConfigPersistenceFailureKind.Unknown,
-        "Configuration persistence operation failed (unknown)");
-
-    switch (op)
+    catch (ObjectDisposedException)
     {
-        case SaveIntent save:
-            save.Completion.TrySetException(ex);
-            break;
-        case FlushBarrier flush:
-            flush.Completion.TrySetResult(new ConfigPersistenceResult(ConfigPersistenceStatusKind.Failed, ConfigPersistenceOperationKind.Flush, _appGeneration, failure));
-            break;
-        case ReloadRequest reload:
-            reload.Completion.TrySetResult(new ConfigPersistenceResult(ConfigPersistenceStatusKind.Failed, ConfigPersistenceOperationKind.Reload, _appGeneration, failure));
-            break;
+        // Shutdown race: the watcher is being torn down, so there is no coordinator to notify.
     }
-}
+};
 ```
 
-### WR-03: WARNING - File-system watcher smoke test is timing-dependent and flaky
+### WR-02: WARNING — Failed initial user-config reload is marked as loaded, preventing automatic retry
 
-**File:** `AutoQAC.Tests/Services/ConfigWatcherServiceTests.cs:45-51`
+**File:** `AutoQAC/Services/Configuration/ConfigurationService.cs:186-195`
 
-**Issue:** The test writes the settings file, sleeps for two seconds, and then asserts that at least one watcher notification arrived. `FileSystemWatcher` delivery varies under CI load and Windows file-system timing, so this can fail intermittently even when production behavior is correct.
+**Issue:** `LoadUserConfigAsync` sets `_loadedUserConfigFromDisk = true` even when the initial coordinator reload returns `Failed`. After a transient read failure, temporary file lock, or invalid YAML that the user fixes, subsequent `LoadUserConfigAsync` calls will skip the disk reload path and keep returning the old in-memory default/snapshot unless a watcher event or explicit `ReloadFromDiskAsync` occurs. This makes a recoverable startup/read failure sticky through normal load calls.
 
-**Fix:** Use a bounded signal from the substitute callback instead of a fixed delay.
-
-```csharp
-var signaled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-coordinator
-    .When(c => c.NotifySettingsFileChanged(Arg.Any<ConfigFileSignalKind>()))
-    .Do(_ => signaled.TrySetResult());
-
-await File.WriteAllTextAsync(path, "Selected_Game: Unknown\n");
-await signaled.Task.WaitAsync(TimeSpan.FromSeconds(5));
-
-coordinator.Received().NotifySettingsFileChanged(Arg.Any<ConfigFileSignalKind>());
-```
-
-### WR-04: WARNING - Public path validation assumes all nested config objects are non-null
-
-**File:** `AutoQAC/Services/Configuration/ConfigurationService.cs:243-266`
-
-**Issue:** `ValidatePathsAsync` dereferences `config.LoadOrder`, `config.LoadOrderFileOverrides`, `config.XEdit`, `config.Settings`, and `config.ModOrganizer` directly. Other Phase 10 code explicitly normalizes null nested configuration objects in `UserConfiguration.Copy()`, so this public method is now inconsistent: callers passing a deserialized or partially constructed `UserConfiguration` with null nested objects can crash validation instead of receiving a safe `false` result.
-
-**Fix:** Normalize or null-check at the method boundary.
+**Fix:** Only mark the initial disk load complete after a successful reload. Leave `_loadedUserConfigFromDisk` false on failure so the next `LoadUserConfigAsync` retries the disk read.
 
 ```csharp
-public Task<bool> ValidatePathsAsync(UserConfiguration config, CancellationToken ct = default)
+if (!loadedFromDisk && !hasPending)
 {
-    ThrowIfDisposed();
-    ct.ThrowIfCancellationRequested();
-
-    config = (config ?? new UserConfiguration()).Copy();
-    var isValid = true;
-    // existing validation follows using normalized nested objects/collections
+    var result = await _coordinator.ReloadFromDiskAsync(ct).ConfigureAwait(false);
+    if (result.Status == ConfigPersistenceStatusKind.Success)
+    {
+        lock (_stateLock)
+        {
+            _loadedUserConfigFromDisk = true;
+        }
+    }
+    else
+    {
+        _logger.Warning("[Config] Initial user configuration reload failed: {Summary}",
+            result.Failure?.SafeSummary ?? "unknown");
+    }
 }
 ```
 
 ---
 
-_Reviewed: 2026-05-01T00:57:23Z_
+_Reviewed: 2026-05-01T01:19:20Z_
 _Reviewer: the agent (gsd-code-reviewer)_
 _Depth: deep_
