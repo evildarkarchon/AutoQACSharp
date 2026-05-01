@@ -225,19 +225,20 @@ public sealed partial class CleaningCommandsViewModel : ViewModelBase, IDisposab
 
         if (terminationResult == TerminationResult.GracePeriodExpired)
         {
-            // The existing dialog service exposes Yes/No buttons; Yes maps to Force Terminate and No maps to Leave Running.
-            var confirmed = await _messageDialog.ShowConfirmAsync(
-                "Force Terminate xEdit?",
-                "xEdit did not exit after the stop request. Force terminating can interrupt any remaining file or log writes. Do you want AutoQAC to force terminate xEdit now?");
+            var choice = await _messageDialog.ShowChoiceAsync(StopTerminationDialogContent.ConfirmationTitle,
+                StopTerminationDialogContent.ConfirmationMessage,
+                StopTerminationDialogContent.ForceTerminateButton,
+                StopTerminationDialogContent.LeaveRunningButton,
+                MessageDialogIcon.Question);
 
-            if (confirmed)
+            if (choice == MessageDialogResult.Yes)
             {
                 var forceResult = await _orchestrator.ForceStopCleaningAsync();
                 if (forceResult.TerminationResult == TerminationResult.ForceKillFailed)
                 {
                     await _messageDialog.ShowErrorAsync(
-                        "Could Not Force Terminate xEdit",
-                        "AutoQAC could not force terminate xEdit. xEdit may still be running; close it manually or check the log for details before starting another cleaning session.");
+                        StopTerminationDialogContent.ForceFailureTitle,
+                        StopTerminationDialogContent.ForceFailureMessage);
                 }
             }
             else
@@ -245,8 +246,8 @@ public sealed partial class CleaningCommandsViewModel : ViewModelBase, IDisposab
                 _orchestrator.MarkLeftRunningByUser();
                 StatusText = "Cleaning stopped; xEdit left running.";
                 await _messageDialog.ShowWarningAsync(
-                    "Cleaning Stopped",
-                    "AutoQAC stopped the cleaning session. xEdit was left running by your choice; close it manually when it is safe.");
+                    StopTerminationDialogContent.LeftRunningTitle,
+                    StopTerminationDialogContent.LeftRunningMessage);
             }
         }
     }
