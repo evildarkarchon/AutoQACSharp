@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Cleanup
-status: verifying
-stopped_at: Completed 11-06-PLAN.md
-last_updated: "2026-05-01T06:31:23.533Z"
-last_activity: 2026-05-01
+status: executing
+stopped_at: Completed 11-08-PLAN.md
+last_updated: "2026-05-01T06:36:53.294Z"
+last_activity: 2026-05-01 -- Completed 11-08 gap closure
 progress:
   total_phases: 7
   completed_phases: 6
   total_plans: 61
-  completed_plans: 59
-  percent: 97
+  completed_plans: 60
+  percent: 98
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-04-28)
 ## Current Position
 
 Phase: 11 (user-facing-diagnostics-boundaries) — EXECUTING
-Plan: 6 of 6
-Status: Phase complete — ready for verification
-Last activity: 2026-05-01
+Plan: 9 of 9
+Status: Ready to execute remaining gap closure plan
+Last activity: 2026-05-01 -- Completed 11-08 gap closure
 
-Progress: [██████████] 97%
+Progress: [██████████] 98%
 
 ## Performance Metrics
 
@@ -67,6 +67,7 @@ Progress: [██████████] 97%
 | Phase 11 P05 | 6 min | 3 tasks | 6 files |
 | Phase 11 P06 | 9 min | 2 tasks | 5 files |
 | Phase 11 P07 | 2m 7s | 2 tasks | 4 files |
+| Phase 11 P08 | 2m | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -117,6 +118,8 @@ Progress: [██████████] 97%
 - [Phase 11]: Plan 11-06 keeps behavioral logger capture as the primary log-boundary proof and source guards limited to private startup/known bad templates. — This satisfies SEC-02 without introducing new startup seams or testing broad source text outside unavailable behavioral boundaries.
 - [Phase 11]: Legacy migration warnings now use fixed category copy with latest-log guidance rather than interpolated exception messages.
 - [Phase 11]: Startup migration warning display defensively applies DiagnosticTextFormatter.SafeFailureSummary before calling ShowMigrationWarning.
+- [Phase 11]: Successful process-start PID tracking uses sanitized plugin filenames or ExternalProcess, never legacy Arguments. — Plan 11-08 closes SEC-02 gap #2 while preserving process launch values and normal untrack-on-exit semantics.
+- [Phase 11]: Successful-start PID tracking tests inspect entries at onProcessStarted. — Normal process completion intentionally untracks entries, so the regression guard asserts the transient tracking boundary.
 
 ### Pending Todos
 
@@ -134,6 +137,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-05-01T06:28:11.588Z
-Stopped at: Completed 11-06-PLAN.md
+Last session: 2026-05-01T06:36:35.427Z
+Stopped at: Completed 11-08-PLAN.md
 Resume file: None

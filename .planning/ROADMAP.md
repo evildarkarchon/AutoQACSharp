@@ -254,7 +254,7 @@ Plans:
 
 **Wave 4 (gap closure; blocked on 11-06 completion)**
 - [x] 11-07-PLAN.md — Close legacy migration warning raw exception disclosure gap (SEC-01)
-- [ ] 11-08-PLAN.md — Close successful process-start legacy Arguments PID/log disclosure gap (SEC-02)
+- [x] 11-08-PLAN.md — Close successful process-start legacy Arguments PID/log disclosure gap (SEC-02)
 - [ ] 11-09-PLAN.md — Close report plugin-name display sanitization gap (SEC-01)
 
 Cross-cutting constraints:
@@ -277,7 +277,7 @@ Cross-cutting constraints:
 | 8. Cleaning Orchestrator Decomposition | v1.0 Cleanup | 10/10 | Complete | 2026-04-30 |
 | 9. Plugin Refresh & Approximation Performance | v1.0 Cleanup | 8/9 | Gaps planned | - |
 | 10. Configuration Persistence Hardening | v1.0 Cleanup | 11/11 | Complete    | 2026-05-01 |
-| 11. User-Facing Diagnostics Boundaries | v1.0 Cleanup | 7/9 | In Progress|  |
+| 11. User-Facing Diagnostics Boundaries | v1.0 Cleanup | 8/9 | In Progress|  |
 
 ## Coverage
 
