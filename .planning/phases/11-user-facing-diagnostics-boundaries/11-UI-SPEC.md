@@ -57,7 +57,7 @@ Exceptions: preserve existing Avalonia window spacing that Phase 11 does not oth
 | Display | 20px | 600 semibold | 1.2 |
 
 Typography contract:
-- Use exactly these four sizes for Phase 11-touched user-facing diagnostics: 12px, 14px, 20px, and existing 11px supporting metadata only where already present in the touched view.
+- Use exactly these three sizes for Phase 11-touched user-facing diagnostics: 12px, 14px, and 20px. Existing 11px supporting metadata may remain only in untouched legacy controls; Phase 11 must not introduce, restyle, or otherwise change 11px text in any touched diagnostics surface.
 - Use only regular and semibold for new/changed diagnostics copy. Preserve existing `Bold` weight on unchanged status glyphs, counters, or headings; do not perform a typography cleanup pass.
 - Dialog messages use 14px regular body text. Expandable dialog details use the existing 12px monospace style but must contain safe details only, never stack traces, raw exception messages, paths, or command fragments.
 
@@ -79,6 +79,8 @@ Semantic diagnostics:
 - Persistence warning: preserve existing `#332400` / `#E6A817` Settings banner palette.
 - Valid/invalid path indicators: preserve existing `#4CAF50` and `#F44336`; Phase 11 changes copy, not the validation icon palette.
 - Result rows/reports: preserve existing status words and DataGrid style; make the message safer rather than visually louder.
+
+Visual hierarchy for touched diagnostic surfaces: the primary visual anchor is the concise safe failure message in 14px body text or existing heading treatment. Secondary text is latest-log guidance and user action guidance. Details expanders, safe category labels, timestamps, counts, durations, and report disclaimers remain visually subordinate through existing secondary foreground resources and must not compete with the primary failure message.
 
 ---
 
