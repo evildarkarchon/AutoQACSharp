@@ -1,5 +1,6 @@
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
+using AutoQAC.Models.Diagnostics;
 using AutoQAC.Models.Configuration;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
@@ -2124,7 +2125,7 @@ public sealed class CleaningOrchestratorTests
 
     /// <summary>
     /// Verifies that when the exception log contains content, the plugin status is set to Failed
-    /// and the exception text appears in LogParseWarning.
+    /// and the user-facing result uses safe latest-log copy instead of raw exception text.
     /// </summary>
     [Fact]
     public async Task StartCleaningAsync_ShouldSurfaceExceptionLog_WhenExceptionContentPresent()
@@ -2163,11 +2164,12 @@ public sealed class CleaningOrchestratorTests
         await _orchestrator.StartCleaningAsync();
 
         // Assert
+        var expectedWarning = DiagnosticTextFormatter.XEditReportedError("CrashMod.esp");
         _stateServiceMock.Received(1).AddDetailedCleaningResult(Arg.Is<PluginCleaningResult>(r =>
             r.PluginName == "CrashMod.esp" &&
             r.Status == CleaningStatus.Failed &&
-            r.LogParseWarning != null &&
-            r.LogParseWarning.Contains("Access violation")));
+            r.Message == expectedWarning &&
+            r.LogParseWarning == expectedWarning));
     }
 
     /// <summary>
