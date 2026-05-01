@@ -364,6 +364,39 @@ public sealed class ConfigPersistenceCoordinatorTests
     }
 
     /// <summary>
+    /// Verifies that an explicit reload reports a failed prerequisite flush instead of reading stale disk content.
+    /// </summary>
+    [Fact]
+    public async Task ExplicitReload_DuringPendingAppSave_WhenFlushFails_ReturnsFlushFailureWithoutReadingDisk()
+    {
+        var store = new FakeUserConfigFileStore();
+        var coordinator = CreateCoordinator(store);
+        await coordinator.StartAsync();
+        try
+        {
+            await coordinator.SaveUserConfigAsync(NewConfig(10));
+            await coordinator.FlushPendingSavesAsync();
+            store.CurrentContent = Serializer.Serialize(NewConfig(10));
+            store.CurrentHash = FakeUserConfigFileStore.ComputeHash(store.CurrentContent);
+            store.WriteFailure = new IOException("locked");
+            await coordinator.SaveUserConfigAsync(NewConfig(20));
+
+            var result = await coordinator.ReloadFromDiskAsync().WaitAsync(TimeSpan.FromSeconds(2));
+
+            result.Status.Should().Be(ConfigPersistenceStatusKind.Failed);
+            result.Operation.Should().Be(ConfigPersistenceOperationKind.Flush, because: "the failed prerequisite flush is the reload result that matters");
+            result.Failure!.Kind.Should().Be(ConfigPersistenceFailureKind.WriteFailed);
+            store.CallLog.Should().Contain("Write");
+            store.CallLog.Skip(store.CallLog.LastIndexOf("Write") + 1).Should().NotContain("Read", because: "a failed prerequisite flush must stop explicit reload before disk content is read");
+            (await coordinator.LoadCurrentAsync()).Settings.CleaningTimeout.Should().Be(10, because: "failed flush rolls back to last known good and must not accept stale disk content as a successful reload");
+        }
+        finally
+        {
+            await coordinator.StopAsync().WaitAsync(TimeSpan.FromSeconds(2));
+        }
+    }
+
+    /// <summary>
     /// Verifies that explicit reload keeps the normal no-pending-save path intact.
     /// </summary>
     [Fact]
