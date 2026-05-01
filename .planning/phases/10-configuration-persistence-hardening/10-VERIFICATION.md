@@ -1,54 +1,57 @@
 ---
 phase: 10-configuration-persistence-hardening
-verified: 2026-05-01T01:01:43Z
+verified: 2026-05-01T01:23:24Z
 status: gaps_found
 score: 51/52 must-haves verified
 overrides_applied: 0
 re_verification:
   previous_status: gaps_found
-  previous_score: 48/52
+  previous_score: 51/52
   gaps_closed:
-    - "Observer exceptions on Subject<T>.OnNext no longer prevent save/flush/reload caller completions."
-    - "ConfigurationService facade pending/loaded flags are synchronized under _stateLock."
-    - "ReloadFromDiskAsync only clears the facade pending-save flag after a successful reload result."
+    - "Explicit reload no longer masks a failed prerequisite pending-save flush; it returns the failed/rejected flush result before reading disk."
   gaps_remaining:
-    - "Explicit reload masks a failed prerequisite pending-save flush and can report Success after dropping the queued app edit."
+    - "ConfigurationService.FlushPendingSavesAsync still bypasses the coordinator barrier when the facade has no pending app save, so queued watcher reloads can remain unprocessed before cleaning/preflight continues."
   regressions: []
 gaps:
-  - truth: "User configuration changes save and reload deterministically when app saves and reloads occur in close timing windows."
+  - truth: "User configuration changes save and reload deterministically when app saves and external edits occur in close timing windows."
     status: failed
-    reason: "ApplyReloadRequestAsync now detects _pendingApp and flushes first, but it ignores Failed/Rejected flush results and continues to read/reload disk content. If the pending save write fails and the old disk file still parses, ReloadFromDiskAsync can return Success, clear facade pending state, and leave the user edit unpersisted."
+    reason: "Code review CR-01 remains true: ConfigurationService.FlushPendingSavesAsync returns a facade-level NoOp when _hasPendingUserSave is false instead of enqueueing a coordinator flush barrier. A watcher event already queued in ConfigPersistenceCoordinator can therefore remain behind the pre-cleaning flush call, allowing downstream code to continue with stale active config."
     artifacts:
-      - path: "AutoQAC/Services/Configuration/ConfigPersistenceCoordinator.cs"
-        issue: "Lines 348-362 call FlushPendingInsideConsumerAsync and SafePublishResult(flushResult), but do not branch on failed/rejected flushResult before ReadForReloadAsync/ValidateAndApply."
-      - path: "AutoQAC.Tests/Services/Configuration/ConfigPersistenceCoordinatorTests.cs"
-        issue: "Explicit reload regression tests cover successful pending-save flush only; no test covers pending save WriteFailure followed by a readable old disk file."
+      - path: "AutoQAC/Services/Configuration/ConfigurationService.cs"
+        issue: "Lines 214-224 short-circuit to NoOp when HasPendingUserSave() is false, bypassing _coordinator.FlushPendingSavesAsync and any queued watcher/reload operations."
+      - path: "AutoQAC/Services/Configuration/ConfigWatcherService.cs"
+        issue: "Lines 78-81 enqueue watcher signals through NotifySettingsFileChanged, but the facade no-pending flush path does not drain those signals as a barrier."
+      - path: "AutoQAC.Tests/Services/ConfigurationServiceTests.cs"
+        issue: "Existing no-pending flush test asserts NoOp behavior, but no regression proves a queued watcher reload is processed before FlushPendingSavesAsync returns."
     missing:
-      - "When explicit reload flushes a pending app save, return the failed/rejected flush result immediately and do not read/apply disk content."
-      - "Add a regression test for ReloadFromDiskAsync with _pendingApp and store.WriteFailure asserting result.Status=Failed and old disk content is not accepted as a successful reload."
+      - "Make ConfigurationService.FlushPendingSavesAsync always enqueue/await the coordinator flush barrier, even when the facade has no pending app save."
+      - "Only clear the facade pending-save flag after coordinator Success/NoOp, but do not use the facade flag to skip the barrier."
+      - "Add a regression test that queues a watcher notification/external config update, immediately calls facade FlushPendingSavesAsync with no pending app save, and asserts the external config has been applied before flush returns."
 ---
 
 # Phase 10: Configuration Persistence Hardening Verification Report
 
 **Phase Goal:** Users get reliable configuration saves/reloads under race conditions, and maintainers can reason about persistence through one serialized flow with lower in-memory clone cost.  
-**Verified:** 2026-05-01T01:01:43Z  
+**Verified:** 2026-05-01T01:23:24Z  
 **Status:** gaps_found  
-**Re-verification:** Yes — after gap-closure plans 10-06 and 10-07
+**Re-verification:** Yes — after Wave 8 gap closure
 
 ## Goal Achievement
 
-Phase 10 is substantially implemented, and two of the three previous blocker classes are closed in code. Safe observer publication is now present and tested, and facade pending/loaded flags are protected under `_stateLock`. However, the phase goal still is not achieved: explicit reload can still mask a failed prerequisite save flush and return a successful reload using old disk content.
+Wave 8 closes the prior explicit reload write-failure masking gap in the coordinator. `ApplyReloadRequestAsync` now returns a failed/rejected prerequisite flush result directly, and the deterministic regression test exists and passes.
+
+However, Phase 10 still does not satisfy the goal because the Phase 10 code review finding CR-01 is confirmed in the current codebase. `ConfigurationService.FlushPendingSavesAsync` has a facade-level no-pending short-circuit, so the required flush barrier is not always a coordinator barrier. That breaks the single serialized flow and can let queued watcher reloads remain unprocessed before cleaning preflight continues.
 
 ### Observable Truths
 
 | # | Truth | Status | Evidence |
-|---|-------|--------|----------|
-| 1 | User configuration changes save and reload deterministically when app saves and external edits occur in close timing windows. | ✗ FAILED | Watcher races are guarded, and explicit reload now checks `_pendingApp` at `ConfigPersistenceCoordinator.cs:348-357`; however, it ignores a failed/rejected `flushResult` and proceeds to `ReadForReloadAsync`/`ValidateAndApply` at lines 359-362. This can report reload Success after the queued app save failed. |
+|---|---|---|---|
+| 1 | User configuration changes save and reload deterministically when app saves and external edits occur in close timing windows. | ✗ FAILED | Wave 8 fixed explicit reload write-failure masking (`ConfigPersistenceCoordinator.cs:350-363`), but `ConfigurationService.cs:214-224` returns NoOp without entering the coordinator when no facade pending save exists. A queued watcher reload from `ConfigWatcherService.cs:78-81` is not drained by this flush call. |
 | 2 | User sees or receives a recoverable failure path when configuration persistence fails instead of silent logging-only fallback. | ✓ VERIFIED | `ConfigPersistenceFailure`, `ConfigPersistenceResult`, and `ConfigPersistenceFailureException` exist; `CleaningPreflight.cs:34-56` blocks cleaning on failed/rejected flush; `SettingsViewModel.cs:172-184` subscribes to failures/results and `SettingsWindow.axaml:28-38` binds a visible banner. |
-| 3 | Maintainer can verify watcher race cases deterministically for debounce, deferred reload, invalid YAML, and app-save interactions. | ✓ VERIFIED with coverage warning | `ConfigPersistenceCoordinatorTests` covers watcher hash echo, pending app-save rejection, cleaning deferral, invalid YAML, missing file, stale observations, and safe observer tests. Missing coverage remains for explicit reload with pending-save write failure, listed as the blocker gap. |
-| 4 | User configuration changes avoid YAML serialization round-trips for in-memory cloning. | ✓ VERIFIED | `UserConfiguration.Copy()` and nested `Copy()` methods perform manual deep copies; `ConfigurationService.cs` has zero `_serializer.Serialize` and zero `_deserializer.Deserialize<UserConfiguration>` matches. |
+| 3 | Maintainer can verify watcher race cases deterministically for debounce, deferred reload, invalid YAML, and app-save interactions. | ⚠️ PARTIAL | Coordinator tests cover hash echo, pending app-save rejection, cleaning deferral, invalid YAML, missing file, stale observations, observer safety, and explicit reload flush failure. Missing facade-barrier regression for queued watcher reload + no-pending flush remains. |
+| 4 | User configuration changes avoid YAML serialization round-trips for in-memory cloning. | ✓ VERIFIED | `UserConfiguration.Copy()` and nested `Copy()` methods perform manual deep copies; `ConfigurationService.cs` has zero `_serializer.Serialize`, `_deserializer.Deserialize<UserConfiguration>`, or `CloneConfig` matches. |
 | 5 | Settings persistence failures are visible as a text-only recoverable banner. | ✓ VERIFIED | `SettingsViewModel.cs:124-128`, `172-184`, `217-233`, and `369-386` implement banner state, typed mapping, clear-on-success, and flush-before-close; `SettingsWindow.axaml:28-38` renders the banner. |
-| 6 | Pre-cleaning flush failure blocks process-launch-adjacent workflow. | ✓ VERIFIED | `CleaningPreflight.PrepareAsync` inspects `flushResult.Status` before validation/game detection/plugin work and throws `ConfigPersistenceFailureException` on Failed/Rejected (`CleaningPreflight.cs:34-56`). |
+| 6 | Pre-cleaning flush failure blocks process-launch-adjacent workflow. | ⚠️ PARTIAL | `CleaningPreflight.PrepareAsync` branches on the typed result, but the result can be a facade-level NoOp that never drained queued watcher reloads. Failed pending saves block; pending external reload ordering is not guaranteed. |
 
 **Score:** 51/52 must-haves verified
 
@@ -59,12 +62,12 @@ Phase 10 is substantially implemented, and two of the three previous blocker cla
 | `AutoQAC/Models/Configuration/UserConfiguration.cs` | Public deep-copy methods on user config graph | ✓ VERIFIED | Parent and nested `Copy()` methods exist and deep-copy mutable containers. |
 | `AutoQAC/Models/Configuration/BackupSettings.cs` | `BackupSettings.Copy()` | ✓ VERIFIED | Present and covered by copy tests. |
 | `AutoQAC/Models/Configuration/RetentionSettings.cs` | `RetentionSettings.Copy()` | ✓ VERIFIED | Present and covered by copy tests. |
-| `AutoQAC/Services/Configuration/ConfigPersistenceCoordinator.cs` | Single-reader channel coordinator, safe publication, reload guard | ⚠️ PARTIAL | Channel and SafePublish helpers exist; explicit reload guard flushes pending saves but does not abort on failed flush. |
+| `AutoQAC/Services/Configuration/ConfigPersistenceCoordinator.cs` | Single-reader channel coordinator, safe publication, explicit reload guard | ✓ VERIFIED | Single-reader channel, SafePublish helpers, pending-save explicit reload guard, and failed/rejected flush short-circuit are present. |
 | `AutoQAC/Services/Configuration/ConfigPersistenceStatus.cs` | Typed status/failure contracts | ✓ VERIFIED | Result/failure enums, records, and `ConfigPersistenceFailureException` present. |
-| `AutoQAC/Services/Configuration/UserConfigFileStore.cs` | Temp-file write then replace/move | ✓ VERIFIED | Same-directory temp write followed by injected `File.Replace`/`File.Move`; cleanup preserves original exception. |
-| `AutoQAC/Services/Configuration/ConfigurationService.cs` | Coordinator-backed facade with synchronized flags | ✓ VERIFIED | Persistence delegates to coordinator; `_hasPendingUserSave`/`_loadedUserConfigFromDisk` are accessed through locked helpers/blocks; reload clears pending only on Success. |
-| `AutoQAC/Services/Configuration/ConfigWatcherService.cs` | Event-source-only watcher | ✓ VERIFIED | Changed/Created/Renamed/Deleted handlers call `NotifySettingsFileChanged`; legacy throttle/YAML/deferral policy is absent. |
-| `AutoQAC/Services/Cleaning/CleaningPreflight.cs` | Typed flush barrier branch | ✓ VERIFIED | Failed/Rejected flush blocks preflight before downstream work. |
+| `AutoQAC/Services/Configuration/UserConfigFileStore.cs` | Temp-file write then replace/move | ✓ VERIFIED | Same-directory temp write followed by `File.Replace`/`File.Move`; cleanup preserves original exception. |
+| `AutoQAC/Services/Configuration/ConfigurationService.cs` | Coordinator-backed facade with synchronized flags and barrier flush semantics | ✗ FAILED | Persistence delegates exist and flags are locked, but `FlushPendingSavesAsync` bypasses the coordinator barrier when `HasPendingUserSave()` is false. |
+| `AutoQAC/Services/Configuration/ConfigWatcherService.cs` | Event-source-only watcher | ⚠️ PARTIAL | Changed/Created/Renamed/Deleted handlers call `NotifySettingsFileChanged`; legacy policy is absent. Review WR-01 remains: Error events are logged only, not forwarded for recovery. |
+| `AutoQAC/Services/Cleaning/CleaningPreflight.cs` | Typed flush barrier branch | ⚠️ PARTIAL | Failed/Rejected flush blocks preflight, but facade can return NoOp without draining queued watcher reloads. |
 | `AutoQAC/ViewModels/SettingsViewModel.cs` | Failure banner and clear-on-success | ✓ VERIFIED | Failure, result, and accepted-config subscriptions use `CallbackObserver<T>` plus `IUiDispatcher.Post`; Save flushes before close. |
 | `AutoQAC/Views/SettingsWindow.axaml` | Visible banner binding | ✓ VERIFIED | `Border.IsVisible` binds `HasPersistenceBanner`; `TextBlock.Text` binds `PersistenceBannerText`. |
 
@@ -72,13 +75,13 @@ Phase 10 is substantially implemented, and two of the three previous blocker cla
 
 | From | To | Via | Status | Details |
 |---|---|---|---|---|
-| `ConfigurationService` | `IConfigPersistenceCoordinator` | `_coordinator.SaveUserConfigAsync/LoadCurrentAsync/FlushPendingSavesAsync/ReloadFromDiskAsync` | ✓ WIRED | Delegation present in `ConfigurationService.cs:164-224` and `555-580`. |
-| `ConfigWatcherService` | `IConfigPersistenceCoordinator` | FSW event handlers | ✓ WIRED | Handlers at `ConfigWatcherService.cs:78-81`. |
-| DI | Coordinator/file store | `AddSingleton` registrations | ✓ WIRED | `ServiceCollectionExtensions.cs:28-33`. |
-| `CleaningPreflight` | `IConfigurationService.FlushPendingSavesAsync` | typed result branch | ✓ WIRED | `CleaningPreflight.cs:34-56`. |
+| `ConfigurationService` | `IConfigPersistenceCoordinator` | `_coordinator.SaveUserConfigAsync/LoadCurrentAsync/FlushPendingSavesAsync/ReloadFromDiskAsync` | ⚠️ PARTIAL | Most methods delegate, but `FlushPendingSavesAsync` returns a local NoOp at `ConfigurationService.cs:219-222` when no facade pending save exists. |
+| `ConfigWatcherService` | `IConfigPersistenceCoordinator` | FSW event handlers | ✓ WIRED | Handlers at `ConfigWatcherService.cs:78-81` submit Changed/Created/Renamed/Deleted signals. |
+| DI | Coordinator/file store | `AddSingleton` registrations | ✓ WIRED | `ServiceCollectionExtensions.cs:28-33` registers file store, concrete coordinator, interface, configuration service, and watcher. |
+| `CleaningPreflight` | `IConfigurationService.FlushPendingSavesAsync` | typed result branch | ⚠️ PARTIAL | Branch exists, but it trusts the facade result; the facade may not have acted as a coordinator barrier. |
 | `SettingsViewModel` | `IConfigurationService.Failures/PersistenceResults/UserConfigurationChanged` | `CallbackObserver<T>` + dispatcher | ✓ WIRED | `SettingsViewModel.cs:172-184`. |
-| `ConfigPersistenceCoordinator.ApplySave/Flush/Reload` | Subject observers | SafePublish helpers | ✓ WIRED | Subject `OnNext` calls only occur inside `SafePublishAccepted/Result/Failure` (`ConfigPersistenceCoordinator.cs:469-512`). |
-| `ApplyReloadRequestAsync` | pending app-save guard | `_pendingApp` check before disk read | ⚠️ PARTIAL | Guard exists at `ConfigPersistenceCoordinator.cs:350-357`, but failure result is ignored before disk read. |
+| `ConfigPersistenceCoordinator.ApplySave/Flush/Reload` | Subject observers | SafePublish helpers | ✓ WIRED | Subject `OnNext` calls occur only inside `SafePublishAccepted/Result/Failure` (`ConfigPersistenceCoordinator.cs:472-519`). |
+| `ApplyReloadRequestAsync` | pending app-save guard | `_pendingApp` check before disk read | ✓ WIRED | Lines 350-363 flush pending app save and return failed/rejected flush result before disk read. |
 
 ### Data-Flow Trace (Level 4)
 
@@ -86,45 +89,55 @@ Phase 10 is substantially implemented, and two of the three previous blocker cla
 |---|---|---|---|---|
 | `SettingsViewModel.cs` | `PersistenceBannerText` | `IConfigurationService.Failures`, failed save flush result | Yes — mapped from `ConfigPersistenceFailure` | ✓ FLOWING |
 | `SettingsWindow.axaml` | `PersistenceBannerText`, `HasPersistenceBanner` | SettingsViewModel generated observable properties | Yes — bound into visible `Border`/`TextBlock` | ✓ FLOWING |
-| `CleaningPreflight.cs` | `flushResult` | `IConfigurationService.FlushPendingSavesAsync` | Yes — typed coordinator/facade result | ✓ FLOWING |
-| `ConfigPersistenceCoordinator.cs` | active config/reload result | file store read/write + channel operations | Partial — explicit reload can replace failed flush result with later reload result | ⚠️ PARTIAL |
+| `CleaningPreflight.cs` | `flushResult` | `IConfigurationService.FlushPendingSavesAsync` | Partial | ⚠️ HOLLOW for queued reload barrier semantics when facade returns local NoOp. |
+| `ConfigPersistenceCoordinator.cs` | active config/reload result | file store read/write + channel operations | Yes for coordinator-level explicit reload and watcher operations | ✓ FLOWING |
+| `ConfigurationService.cs` | facade pending flag | `_hasPendingUserSave` under `_stateLock` | Partial | ⚠️ HOLLOW as a barrier decision source; absence of pending app save does not imply the coordinator queue is drained. |
 
 ### Behavioral Spot-Checks
 
 | Behavior | Command | Result | Status |
 |---|---|---|---|
-| Phase 10 focused tests pass | `dotnet test "AutoQAC.Tests/AutoQAC.Tests.csproj" --filter "FullyQualifiedName~ConfigPersistenceCoordinatorTests|FullyQualifiedName~ConfigurationServiceTests|FullyQualifiedName~CleaningPreflightTests|FullyQualifiedName~SettingsViewModelTests|FullyQualifiedName~UserConfigurationCopyTests|FullyQualifiedName~UserConfigFileStoreTests" --nologo` | 102 passed, 0 failed | ✓ PASS |
-| Observer-exception completion safety | Code inspection + tests `Flush_WithThrowingObserver_StillReturnsTypedResult`, `Save_WithThrowingAcceptedObserver_StillCompletesAndActiveUpdates`, `Reload_WithThrowingObserver_StillReturnsTypedResult` | SafePublish helpers wrap all subject `OnNext` calls and tests exist | ✓ PASS |
-| Explicit reload after pending-save write failure | Code inspection | `ApplyReloadRequestAsync` ignores failed `flushResult` and continues to reload disk | ✗ FAIL |
+| Explicit reload gap closure tests pass. | `dotnet test "AutoQAC.Tests/AutoQAC.Tests.csproj" --filter "FullyQualifiedName~ConfigPersistenceCoordinatorTests&FullyQualifiedName~ExplicitReload" --nologo` | Passed: 3 tests. | ✓ PASS |
+| Facade no-pending flush behavior is currently locked in. | `dotnet test "AutoQAC.Tests/AutoQAC.Tests.csproj" --filter "FullyQualifiedName~ConfigurationServiceTests&FullyQualifiedName~FlushPendingSavesAsync_NoPending" --nologo` | Passed: 1 test asserting NoOp. | ⚠️ WARNING — test does not include queued watcher reload and reinforces the short-circuit. |
+| Parallel test run artifact. | Initial parallel targeted runs | One run hit an Avalonia generated-resource file lock; sequential rerun of the explicit reload tests passed. | ℹ️ INFO |
 
 ### Requirements Coverage
 
 | Requirement | Source Plan | Description | Status | Evidence |
 |---|---|---|---|---|
-| REF-03 | Plans 10-02, 10-03, 10-05, 10-06, 10-07 | Maintainer can reason about saves, reloads, deferrals, and failures through one serialized persistence flow. | ✗ BLOCKED | Core flow is serialized and facade flags are synchronized, but explicit reload result semantics are not reasoned through one barrier: a failed pending-save flush can be overwritten by a later reload success in the same operation. |
-| TEST-03 | Plans 10-02, 10-03, 10-04, 10-06, 10-07 | Maintainer can verify configuration watcher/race cases deterministically. | ⚠️ PARTIAL | Deterministic race coverage exists, but no regression test covers explicit reload with pending-save `WriteFailure` and readable old disk content. |
+| REF-03 | Plans 10-02, 10-03, 10-05, 10-06, 10-07, 10-08 | Maintainer can reason about saves, reloads, deferrals, and failures through one serialized persistence flow. | ✗ BLOCKED | Coordinator internals are serialized, but the public facade still has a non-serialized fast path for `FlushPendingSavesAsync` when no app save is pending. That means maintainers cannot treat forced flush as a queue barrier across watcher reloads. |
+| TEST-03 | Plans 10-02, 10-03, 10-04, 10-06, 10-07, 10-08 | Maintainer can verify configuration watcher/race cases deterministically. | ⚠️ PARTIAL | Deterministic coordinator race coverage exists, and Wave 8 adds the explicit reload write-failure regression. Missing deterministic facade regression for queued watcher reload followed by no-pending flush. |
 | PERF-03 | Plans 10-01, 10-03 | User configuration changes avoid YAML serialization round-trips for in-memory cloning. | ✓ SATISFIED | Manual `Copy()` graph exists; `ConfigurationService` no longer performs YAML user-config clone round-trips. |
 
 No orphaned Phase 10 requirements were found. `.planning/REQUIREMENTS.md` maps only `REF-03`, `TEST-03`, and `PERF-03` to Phase 10, and all three appear in plan frontmatter.
+
+### Code Review Findings Adjudication
+
+| Review Finding | Verdict | Verification Evidence |
+|---|---|---|
+| CR-01: `ConfigurationService.FlushPendingSavesAsync` bypasses the coordinator barrier when `_hasPendingUserSave` is false | 🛑 TRUE GAP | `ConfigurationService.cs:219-222` returns a local `ConfigPersistenceResult(NoOp, Flush, 0, null)` without awaiting `_coordinator.FlushPendingSavesAsync`. `ConfigWatcherService.cs:78-81` can queue reload signals that this path does not drain. |
+| WR-01: FileSystemWatcher error events are logged but never trigger recovery | ⚠️ TRUE WARNING | `ConfigWatcherService.cs:82` only logs `watcher.Error`; `ConfigFileSignalKind.Error` is not forwarded. This can miss changes after FSW buffer errors, but is not the primary Phase 10 blocker. |
+| WR-02: Failed initial user-config reload is marked as loaded, preventing automatic retry | ⚠️ TRUE WARNING | `ConfigurationService.cs:184-195` sets `_loadedUserConfigFromDisk = true` even when `result.Status == Failed`. This makes transient initial reload failure sticky until watcher/explicit reload. |
 
 ### Anti-Patterns Found
 
 | File | Line | Pattern | Severity | Impact |
 |---|---:|---|---|---|
-| `ConfigPersistenceCoordinator.cs` | 348-362 | Failed prerequisite flush result is published but ignored | 🛑 Blocker | Explicit reload can mask failed persistence and accept old disk content. |
-| `ConfigPersistenceCoordinatorTests.cs` | 345-358 | Positive explicit reload test only covers successful flush | ⚠️ Warning | The remaining blocker lacks deterministic regression coverage. |
-| `ConfigurationService.cs` | 184-195 | Initial load marks `_loadedUserConfigFromDisk = true` even when reload failed | ⚠️ Warning | Review WR-01 remains valid: transient initial reload failures will not be retried automatically by later `LoadUserConfigAsync` calls. Not counted as a blocker because it is not one of the previous must-have gaps and is outside the close-timing race truth, but should be considered follow-up. |
-| `ConfigPersistenceCoordinator.cs` | 217-220 | Unexpected operation exceptions are logged without operation-specific TCS completion | ⚠️ Warning | Review WR-02 remains valid for unexpected exceptions outside safe observer publication; the tested observer path is fixed. |
+| `AutoQAC/Services/Configuration/ConfigurationService.cs` | 219-222 | Facade-level NoOp bypasses coordinator flush barrier | 🛑 Blocker | Queued watcher reloads are not guaranteed to apply before pre-cleaning flush returns. |
+| `AutoQAC/Services/Configuration/ConfigWatcherService.cs` | 82 | FSW error logged only | ⚠️ Warning | Dropped file events may not trigger recovery until another file event happens. |
+| `AutoQAC/Services/Configuration/ConfigurationService.cs` | 184-195 | Initial load failure still marks loaded | ⚠️ Warning | Transient initial reload failures may not retry through normal `LoadUserConfigAsync`. |
+
+Stub-pattern scan found only legitimate empty collection/null-return cases in config helpers and file-store missing-file handling. No placeholder implementation was identified.
 
 ### Human Verification Required
 
-None for this gate decision. Plan 10-05 already recorded manual UAT approval for the settings banner, and the remaining issue is a code-level blocker.
+None for this gate decision. The remaining issue is code-level and testable without manual UI validation. Plan 10-05 already recorded manual UAT approval for the settings banner.
 
 ### Gaps Summary
 
-Plans 10-06 and 10-07 closed the observer-hang and facade synchronization gaps from the prior verification. The remaining blocker is narrower but still goal-critical: explicit reload must not report success when the pending app save it depends on failed. Phase 11 is about diagnostics boundaries and does not explicitly cover persistence race correctness, so this gap is not deferred.
+Wave 8 successfully closed the previously documented explicit reload write-failure masking blocker. The current Phase 10 blocker is the review CR-01 facade barrier bypass: a forced flush is not always a coordinator barrier. Fixing it requires removing the no-pending facade short-circuit, always awaiting the coordinator barrier, and adding deterministic regression coverage for queued watcher reloads before no-pending flush returns. Phase 11 is diagnostics-focused and does not clearly defer persistence race correctness, so this is an actionable Phase 10 gap.
 
 ---
 
-_Verified: 2026-05-01T01:01:43Z_  
+_Verified: 2026-05-01T01:23:24Z_  
 _Verifier: the agent (gsd-verifier)_
