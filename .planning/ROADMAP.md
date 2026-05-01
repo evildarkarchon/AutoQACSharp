@@ -225,7 +225,7 @@ Plans:
 - [x] 10-09-PLAN.md — Close no-pending facade flush coordinator-barrier bypass (REF-03, TEST-03)
 
 **Wave 10 (gap closure; blocked on 10-09 completion)**
-- [ ] 10-10-PLAN.md — Close watcher hash-read exception typed failure gap (REF-03, TEST-03)
+- [x] 10-10-PLAN.md — Close watcher hash-read exception typed failure gap (REF-03, TEST-03)
 
 ### Phase 11: User-Facing Diagnostics Boundaries
 **Goal**: Users receive concise, actionable error messages while logs retain local troubleshooting value without unnecessary full path or command-line exposure.
@@ -251,7 +251,7 @@ Plans:
 | 7. Backup Restore & Retention Safety | v1.0 Cleanup | 11/14 | Gaps planned | - |
 | 8. Cleaning Orchestrator Decomposition | v1.0 Cleanup | 10/10 | Complete | 2026-04-30 |
 | 9. Plugin Refresh & Approximation Performance | v1.0 Cleanup | 8/9 | Gaps planned | - |
-| 10. Configuration Persistence Hardening | v1.0 Cleanup | 9/10 | Gaps planned | - |
+| 10. Configuration Persistence Hardening | v1.0 Cleanup | 10/10 | Complete | 2026-05-01 |
 | 11. User-Facing Diagnostics Boundaries | v1.0 Cleanup | 0/0 | Not started | - |
 
 ## Coverage

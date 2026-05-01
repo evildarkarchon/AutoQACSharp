@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Cleanup
-status: executing
-stopped_at: Completed 10-09-PLAN.md
-last_updated: "2026-05-01T02:03:17.907Z"
-last_activity: 2026-05-01 -- Phase 10 planning complete
+status: phase_complete
+stopped_at: Completed 10-10-PLAN.md
+last_updated: "2026-05-01T02:09:14.081Z"
+last_activity: 2026-05-01
 progress:
   total_phases: 7
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 51
-  completed_plans: 50
-  percent: 98
+  completed_plans: 51
+  percent: 100
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-28)
 
 ## Current Position
 
-Phase: 10 (configuration-persistence-hardening) — GAPS PLANNED
-Plan: 10 of 10 planned (9 executed)
-Status: Ready to execute
-Last activity: 2026-05-01 -- Phase 10 planning complete
+Phase: 10 (configuration-persistence-hardening) — COMPLETE
+Plan: 10 of 10
+Status: Phase 10 complete, ready for verification/next phase
+Last activity: 2026-05-01
 
-Progress: [█████████░] 90%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -58,6 +58,7 @@ Progress: [█████████░] 90%
 | Phase 10 P07 | 4 min | 2 tasks | 2 files |
 | Phase 10 P08 | 3 min | 2 tasks | 3 files |
 | Phase 10 P09 | 12 min | 2 tasks | 2 files |
+| Phase 10 P10 | 8 min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -87,6 +88,8 @@ Progress: [█████████░] 90%
 - [Phase 10]: ConfigurationService.FlushPendingSavesAsync returns typed NoOp when no app-initiated save is pending. — This makes the synchronized facade pending-save marker authoritative and observable after successful reloads.
 - [Phase 10]: Explicit reload returns failed or rejected prerequisite flush results directly instead of reading stale disk content. — Plan 08 closes the pending-save write-failure masking gap by making the failed flush the reload result.
 - [Phase 10]: ConfigurationService.FlushPendingSavesAsync always delegates to the coordinator flush barrier, even when no facade pending app save exists. — Plan 09 closes the no-pending facade bypass so queued watcher/reload work drains before pre-cleaning continues.
+- [Phase 10]: Watcher hash-read exceptions are handled inside ApplyWatcherAsync as typed Watcher/ReadFailed outcomes. — Plan 10 closes the remaining verification gap where transient external writer locks could otherwise become log-only dropped watcher operations.
+- [Phase 10]: The watcher hash-read race is covered through FakeUserConfigFileStore.HashFailure instead of FileSystemWatcher timing, OS locks, or production debounce waits. — Maintainers can verify the race deterministically while preserving the single-reader coordinator policy.
 
 ### Pending Todos
 
@@ -104,6 +107,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-05-01T01:36:46.490Z
-Stopped at: Completed 10-09-PLAN.md
+Last session: 2026-05-01T02:09:14.076Z
+Stopped at: Completed 10-10-PLAN.md
 Resume file: None
