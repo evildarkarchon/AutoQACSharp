@@ -233,6 +233,111 @@ public sealed class CleaningTerminationCoordinatorTests : IDisposable
         emissions.Should().Contain(true);
     }
 
+    [Fact]
+    public async Task ForceStopAsync_AfterGracePeriodExpiredAndDetach_ForceKillsPendingProcess()
+    {
+        // Arrange
+        using var process = StartSleeperProcess();
+        _sut.AttachProcess(process);
+        _processMock.TerminateProcessAsync(
+                process,
+                forceKill: false,
+                Arg.Is<CancellationToken>(ct => ct == CancellationToken.None))
+            .Returns(TerminationResult.GracePeriodExpired);
+        _processMock.TerminateProcessAsync(
+                process,
+                forceKill: true,
+                Arg.Is<CancellationToken>(ct => ct == CancellationToken.None))
+            .Returns(TerminationResult.ForceKilled);
+
+        // Act
+        await _sut.StopAsync();
+        _sut.DetachProcess();
+        var result = await _sut.ForceStopAsync();
+
+        // Assert
+        result.TerminationResult.Should().Be(
+            TerminationResult.ForceKilled,
+            "D-01/D-03 require the coordinator to retain the original pending target after active detach");
+        result.MayStillBeRunning.Should().BeFalse("D-06 requires a terminal confirmed force-stop result");
+        await _processMock.Received(1).TerminateProcessAsync(
+            process,
+            forceKill: true,
+            Arg.Is<CancellationToken>(ct => ct == CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ForceStopAsync_AfterGracePeriodExpiredAndDetach_KeepsHasActiveProcessFalse()
+    {
+        // Arrange
+        using var process = StartSleeperProcess();
+        _sut.AttachProcess(process);
+        _processMock.TerminateProcessAsync(process, forceKill: false, Arg.Any<CancellationToken>())
+            .Returns(TerminationResult.GracePeriodExpired);
+        _processMock.TerminateProcessAsync(process, forceKill: true, Arg.Any<CancellationToken>())
+            .Returns(TerminationResult.ForceKilled);
+
+        // Act
+        await _sut.StopAsync();
+        _sut.DetachProcess();
+        var hasActiveProcessAfterDetach = _sut.HasActiveProcess;
+        var result = await _sut.ForceStopAsync();
+
+        // Assert
+        hasActiveProcessAfterDetach.Should().BeFalse(
+            "D-04 keeps active cleaning semantics separate from pending force-escalation ownership");
+        result.TerminationResult.Should().Be(TerminationResult.ForceKilled);
+        await _processMock.Received(1).TerminateProcessAsync(process, forceKill: true, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ForceStopAsync_AfterGracePeriodExpiredAndDetachedProcessAlreadyExited_ReturnsAlreadyExited()
+    {
+        // Arrange
+        using var process = StartShortLivedProcess();
+        _sut.AttachProcess(process);
+        _processMock.TerminateProcessAsync(process, forceKill: false, Arg.Any<CancellationToken>())
+            .Returns(TerminationResult.GracePeriodExpired);
+
+        // Act
+        await _sut.StopAsync();
+        _sut.DetachProcess();
+        process.WaitForExit(2000).Should().BeTrue("the helper process is intentionally short-lived");
+        var result = await _sut.ForceStopAsync();
+
+        // Assert
+        result.TerminationResult.Should().Be(
+            TerminationResult.AlreadyExited,
+            "D-07 treats an already-exited retained target as a terminal non-failure outcome");
+        result.MayStillBeRunning.Should().BeFalse();
+        await _processMock.DidNotReceive().TerminateProcessAsync(process, forceKill: true, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ForceStopAsync_AfterGracePeriodExpiredAndUnavailablePendingTarget_ReturnsForceKillFailed()
+    {
+        // Arrange
+        using var process = StartSleeperProcess();
+        _sut.AttachProcess(process);
+        _processMock.TerminateProcessAsync(process, forceKill: false, Arg.Any<CancellationToken>())
+            .Returns(TerminationResult.GracePeriodExpired);
+        _processMock.TerminateProcessAsync(process, forceKill: true, Arg.Any<CancellationToken>())
+            .Returns(TerminationResult.ForceKillFailed);
+
+        // Act
+        await _sut.StopAsync();
+        _sut.DetachProcess();
+        var result = await _sut.ForceStopAsync();
+
+        // Assert
+        result.TerminationResult.Should().Be(
+            TerminationResult.ForceKillFailed,
+            "D-08 requires unavailable or unprovable confirmed force targets to surface explicit force failure");
+        result.TerminationResult.Should().NotBe(TerminationResult.GracePeriodExpired, "D-06 forbids reusing cached grace expiry after confirmation");
+        result.MayStillBeRunning.Should().BeTrue();
+        await _processMock.Received(1).TerminateProcessAsync(process, forceKill: true, Arg.Any<CancellationToken>());
+    }
+
     private Process StartSleeperProcess()
     {
         var process = Process.Start(new ProcessStartInfo
