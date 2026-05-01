@@ -61,6 +61,7 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
     public ObservableCollection<PluginCleaningResult> CompletedPlugins { get; } = new();
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsResultsSummaryVisible))]
     private bool _isShowingResults;
 
     [ObservableProperty]
@@ -93,6 +94,7 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
     private bool _isHangWarningVisible;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsResultsSummaryVisible))]
     private bool _isPreviewMode;
 
     [ObservableProperty]
@@ -141,6 +143,11 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
     };
 
     public string BackupOperationProgressText => FormatBackupOperationProgress(BackupOperation);
+
+    /// <summary>
+    /// Gets whether the completed-cleaning summary panel should be visible instead of the active or preview panels.
+    /// </summary>
+    public bool IsResultsSummaryVisible => IsShowingResults && !IsPreviewMode;
 
     /// <summary>
     /// Gets whether a persistent stop outcome warning should remain visible in the results summary.

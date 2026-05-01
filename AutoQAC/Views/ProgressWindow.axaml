@@ -234,7 +234,7 @@
         <!-- ==================== RESULTS SUMMARY PANEL ==================== -->
         <!-- Visible when showing results AND NOT in preview mode -->
         <Grid Margin="20" RowDefinitions="Auto,Auto,Auto,Auto,*,Auto"
-              IsVisible="{Binding !IsPreviewMode, FallbackValue=True}">
+              IsVisible="{Binding IsResultsSummaryVisible}">
 
             <!-- Row 0: Session Header -->
             <StackPanel Grid.Row="0" Spacing="4"

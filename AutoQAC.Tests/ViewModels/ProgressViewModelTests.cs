@@ -616,6 +616,7 @@ public sealed class ProgressViewModelTests
 
         // Assert
         vm.IsShowingResults.Should().BeTrue();
+        vm.IsResultsSummaryVisible.Should().BeTrue();
         vm.SessionResult.Should().Be(session);
         vm.WasCancelled.Should().BeFalse();
         vm.IsCleaning.Should().BeFalse();
@@ -689,6 +690,7 @@ public sealed class ProgressViewModelTests
         // Assert
         vm.CompletedPlugins.Should().BeEmpty("should be cleared for new session");
         vm.IsShowingResults.Should().BeFalse("should not show results during active cleaning");
+        vm.IsResultsSummaryVisible.Should().BeFalse("summary overlay should not be visible during active cleaning");
         vm.CurrentItmCount.Should().Be(0);
         vm.CurrentUdrCount.Should().Be(0);
         vm.CurrentNavCount.Should().Be(0);
@@ -696,6 +698,47 @@ public sealed class ProgressViewModelTests
         vm.TotalUdrCount.Should().Be(0);
         vm.TotalNavCount.Should().Be(0);
         vm.SessionSummaryText.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void IsResultsSummaryVisible_ShouldRequireResultsAndNonPreviewMode()
+    {
+        // Arrange
+        var vm = CreateViewModel();
+
+        // Act & Assert
+        vm.IsResultsSummaryVisible.Should().BeFalse("initial state is active/idle, not completed results");
+
+        vm.IsShowingResults = true;
+        vm.IsResultsSummaryVisible.Should().BeTrue("completed cleaning results should show the summary panel");
+
+        vm.IsPreviewMode = true;
+        vm.IsResultsSummaryVisible.Should().BeFalse("dry-run preview owns the preview panel instead of the cleaning summary");
+
+        vm.IsShowingResults = false;
+        vm.IsResultsSummaryVisible.Should().BeFalse("active cleaning should never leave the summary overlay visible");
+
+        vm.IsPreviewMode = false;
+        vm.IsResultsSummaryVisible.Should().BeFalse("not showing results keeps the summary hidden even outside preview");
+    }
+
+    [Fact]
+    public void IsResultsSummaryVisible_ShouldNotifyWhenDependenciesChange()
+    {
+        // Arrange
+        var vm = CreateViewModel();
+        var notifications = new List<string?>();
+        vm.PropertyChanged += (_, args) => notifications.Add(args.PropertyName);
+
+        // Act
+        vm.IsShowingResults = true;
+        vm.IsPreviewMode = true;
+
+        // Assert
+        notifications.Should().Contain(nameof(ProgressViewModel.IsResultsSummaryVisible),
+            "IsShowingResults changes affect the summary panel visibility");
+        notifications.Count(n => n == nameof(ProgressViewModel.IsResultsSummaryVisible))
+            .Should().BeGreaterThanOrEqualTo(2, "both IsShowingResults and IsPreviewMode changes should notify the dependent property");
     }
 
     #endregion
