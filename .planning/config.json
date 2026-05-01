@@ -51,5 +51,5 @@
       "opencode": "opencode run --model opencode/claude-sonnet-4-6"
     }
   },
-  "context_window": 1000000
+  "context_window": 500000
 }
