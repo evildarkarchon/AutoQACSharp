@@ -216,11 +216,8 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
         ThrowIfDisposed();
         await _consumerTask.ConfigureAwait(false);
 
-        if (!HasPendingUserSave())
-        {
-            return new ConfigPersistenceResult(ConfigPersistenceStatusKind.NoOp, ConfigPersistenceOperationKind.Flush, 0, null);
-        }
-
+        // Forced flush is also the public queue barrier for watcher reload work; a missing
+        // facade pending-save marker does not prove the coordinator queue is already drained.
         var result = await _coordinator.FlushPendingSavesAsync(ct).ConfigureAwait(false);
         if (result.Status is ConfigPersistenceStatusKind.Success or ConfigPersistenceStatusKind.NoOp)
         {
@@ -601,17 +598,6 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
         lock (_stateLock)
         {
             return (_hasPendingUserSave, _loadedUserConfigFromDisk);
-        }
-    }
-
-    /// <summary>
-    /// Returns whether the facade currently knows about an app-initiated save awaiting flush.
-    /// </summary>
-    private bool HasPendingUserSave()
-    {
-        lock (_stateLock)
-        {
-            return _hasPendingUserSave;
         }
     }
 

@@ -215,10 +215,10 @@ public sealed class ConfigurationServiceTests : IDisposable
     }
 
     /// <summary>
-    /// Verifies that a successful explicit reload clears the facade's pending-save marker.
+    /// Verifies that a successful explicit reload still leaves later forced flushes as coordinator barriers.
     /// </summary>
     [Fact]
-    public async Task ReloadFromDiskAsync_SuccessfulReload_ClearsPendingSaveFlag()
+    public async Task ReloadFromDiskAsync_SuccessfulReload_DrainsSubsequentFlushBarrier()
     {
         // Arrange
         var coordinator = CreateCoordinatorSubstitute();
@@ -241,9 +241,9 @@ public sealed class ConfigurationServiceTests : IDisposable
 
         // Assert
         result.Status.Should().Be(
-            ConfigPersistenceStatusKind.NoOp,
-            because: "successful reloads accept disk state and clear pending facade work");
-        await coordinator.DidNotReceive().FlushPendingSavesAsync(Arg.Any<CancellationToken>());
+            ConfigPersistenceStatusKind.Success,
+            because: "forced flush remains a coordinator barrier after successful reloads clear pending facade work");
+        await coordinator.Received(1).FlushPendingSavesAsync(Arg.Any<CancellationToken>());
     }
 
     [Fact]
