@@ -401,6 +401,107 @@ public sealed class ErrorDialogTests
         }
     }
 
+    [Fact]
+    public async Task StartCleaningAsync_WhenUnexpectedError_ShouldShowSafeDiagnosticCopy()
+    {
+        // Arrange - the exception contains representative path, command, exception, and stack-like sentinels.
+        var tempFile = Path.GetTempFileName();
+        try
+        {
+            var unsafeSentinel = @"C:\Users\Alice\Tools\SSEEdit.exe -QAC System.InvalidOperationException: boom at AutoQAC.Services.Cleaning Stack Trace";
+            var vm = CreateViewModelWithValidState(tempFile);
+            using var _ = vm.ShowProgressInteraction.RegisterHandler(_ => Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
+            vm.Configuration.XEditPath = tempFile;
+
+            _orchestratorMock.StartCleaningAsync(
+                    Arg.Any<TimeoutRetryCallback>(),
+                    Arg.Any<BackupFailureCallback>(),
+                    Arg.Any<CancellationToken>())
+                .ThrowsAsync(new Exception(unsafeSentinel));
+
+            // Act
+            await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
+
+            // Assert
+            var expectedMessage = "Cleaning failed. See the latest AutoQAC log for technical details.";
+            var expectedDetails = "Technical details were written to the latest AutoQAC log.";
+            vm.Commands.StatusText.Should().Be(expectedMessage);
+
+            await _messageDialogMock.Received(1).ShowErrorAsync(
+                "Cleaning Failed",
+                expectedMessage,
+                expectedDetails);
+
+            AssertDoesNotContainUnsafeDiagnosticDetails(
+                ["Cleaning Failed", expectedMessage, expectedDetails, vm.Commands.StatusText],
+                unsafeSentinel);
+        }
+        finally
+        {
+            if (File.Exists(tempFile))
+                File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public async Task PreviewAsync_WhenUnexpectedError_ShouldShowSafeDiagnosticCopy()
+    {
+        // Arrange - the exception contains representative path, command, exception, and stack-like sentinels.
+        var tempFile = Path.GetTempFileName();
+        try
+        {
+            var unsafeSentinel = @"C:\Users\Alice\Tools\SSEEdit.exe -QAC System.InvalidOperationException: boom at AutoQAC.Services.Cleaning Stack Trace";
+            var vm = CreateViewModelWithValidState(tempFile);
+            vm.Configuration.XEditPath = tempFile;
+
+            _orchestratorMock.RunDryRunAsync(Arg.Any<CancellationToken>())
+                .ThrowsAsync(new Exception(unsafeSentinel));
+
+            // Act
+            await vm.Commands.PreviewCommand.ExecuteAsync(null);
+
+            // Assert
+            var expectedMessage = "Preview failed. See the latest AutoQAC log for technical details.";
+            var expectedDetails = "Technical details were written to the latest AutoQAC log.";
+            vm.Commands.StatusText.Should().Be(expectedMessage);
+
+            await _messageDialogMock.Received(1).ShowErrorAsync(
+                "Preview Failed",
+                expectedMessage,
+                expectedDetails);
+
+            AssertDoesNotContainUnsafeDiagnosticDetails(
+                ["Preview Failed", expectedMessage, expectedDetails, vm.Commands.StatusText],
+                unsafeSentinel);
+        }
+        finally
+        {
+            if (File.Exists(tempFile))
+                File.Delete(tempFile);
+        }
+    }
+
+    private static void AssertDoesNotContainUnsafeDiagnosticDetails(IEnumerable<string?> userVisibleTexts, string unsafeSentinel)
+    {
+        var forbiddenFragments = new[]
+        {
+            @"C:\Users\Alice",
+            "SSEEdit.exe -QAC",
+            "System.InvalidOperationException",
+            "AutoQAC.Services.Cleaning",
+            "Stack Trace",
+            unsafeSentinel
+        };
+
+        foreach (var text in userVisibleTexts)
+        {
+            foreach (var fragment in forbiddenFragments)
+            {
+                text.Should().NotContain(fragment);
+            }
+        }
+    }
+
     #endregion
 
     #region Timeout Retry Tests
