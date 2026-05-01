@@ -9,8 +9,8 @@ Requirements for the cleanup milestone. Each maps to roadmap phases.
 
 ### Safety
 
-- [ ] **SAF-01**: User can stop cleaning without AutoQAC force-killing xEdit before the confirmation path is shown.
-- [ ] **SAF-02**: User can see an accurate failure outcome when force-killing xEdit fails.
+- [x] **SAF-01**: User can stop cleaning without AutoQAC force-killing xEdit before the confirmation path is shown.
+- [x] **SAF-02**: User can see an accurate failure outcome when force-killing xEdit fails.
 - [ ] **SAF-03**: User can clean plugins whose paths or names contain quotes, Unicode, spaces, or shell-sensitive characters.
 - [x] **SAF-04**: User can restore backups with clear failure reporting when directories are missing, permissions fail, or a session partially restores.
 
@@ -19,11 +19,11 @@ Requirements for the cleanup milestone. Each maps to roadmap phases.
 - [ ] **REF-01**: Maintainer can change cleaning preflight, backup, execution, result finalization, or termination logic without editing one monolithic cleaning orchestrator.
 - [x] **REF-02**: Maintainer can change plugin loading or issue approximation refresh behavior outside `ConfigurationViewModel`.
 - [x] **REF-03**: Maintainer can reason about configuration saves, reloads, deferrals, and failures through one serialized persistence flow.
-- [ ] **REF-04**: Maintainer can test PID tracking through injected storage/path abstractions with process-safe update behavior.
+- [x] **REF-04**: Maintainer can test PID tracking through injected storage/path abstractions with process-safe update behavior.
 
 ### Tests
 
-- [ ] **TEST-01**: Maintainer can verify real child-process timeout, graceful stop, force kill, and PID cleanup behavior through controlled integration tests.
+- [x] **TEST-01**: Maintainer can verify real child-process timeout, graceful stop, force kill, and PID cleanup behavior through controlled integration tests.
 - [ ] **TEST-02**: Maintainer can verify xEdit and MO2 command argument escaping across quotes, Unicode, shell-sensitive characters, and nested arguments.
 - [x] **TEST-03**: Maintainer can verify configuration watcher race cases deterministically.
 - [x] **TEST-04**: Maintainer can verify backup restore safety across missing target directories, permission failures, partial failures, and cleanup deletion failures.
@@ -74,15 +74,15 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SAF-01 | Phase 12 | Pending |
-| SAF-02 | Phase 12 | Pending |
+| SAF-01 | Phase 12 | Complete |
+| SAF-02 | Phase 12 | Complete |
 | SAF-03 | Phase 13 | Pending |
 | SAF-04 | Phase 7 | Complete |
 | REF-01 | Phase 14 | Pending |
 | REF-02 | Phase 9 | Complete |
 | REF-03 | Phase 10 | Complete |
-| REF-04 | Phase 12 | Pending |
-| TEST-01 | Phase 12 | Pending |
+| REF-04 | Phase 12 | Complete |
+| TEST-01 | Phase 12 | Complete |
 | TEST-02 | Phase 13 | Pending |
 | TEST-03 | Phase 10 | Complete |
 | TEST-04 | Phase 7 | Complete |
