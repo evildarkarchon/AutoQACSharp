@@ -129,6 +129,7 @@ public sealed class SettingsViewModelTests
         await vm.SaveCommand.ExecuteAsync(null);
 
         vm.PersistenceBannerText.Should().Contain("restored to last saved values");
+        vm.PersistenceBannerText.Should().NotContain("Cleaning was blocked");
         closeResult.Should().BeFalse("the settings dialog must stay open when the flush barrier fails");
     }
 

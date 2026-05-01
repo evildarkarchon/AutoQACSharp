@@ -370,9 +370,7 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
             var flushResult = await _configService.FlushPendingSavesAsync();
             if (flushResult.Status is ConfigPersistenceStatusKind.Failed or ConfigPersistenceStatusKind.Rejected)
             {
-                PersistenceBannerText = flushResult.Failure is not null
-                    ? MapFailureToBanner(flushResult.Failure)
-                    : "Could not save settings. Settings were restored to last saved values.";
+                PersistenceBannerText = MapExplicitSaveFlushFailureToBanner(flushResult.Failure);
                 CloseRequested?.Invoke(false);
                 return;
             }
@@ -396,6 +394,23 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
             }
             CloseRequested?.Invoke(false);
         }
+    }
+
+    /// <summary>
+    /// Maps the Settings dialog's explicit save barrier failure without using cleaning-specific copy.
+    /// </summary>
+    /// <param name="failure">Optional coordinator failure payload returned by the flush barrier.</param>
+    /// <returns>User-facing banner text for the Settings Save command.</returns>
+    private static string MapExplicitSaveFlushFailureToBanner(ConfigPersistenceFailure? failure)
+    {
+        if (failure is { Kind: ConfigPersistenceFailureKind.WriteFailed })
+        {
+            return "Could not save settings. Settings were restored to last saved values.";
+        }
+
+        return failure is not null
+            ? MapFailureToBanner(failure)
+            : "Could not save settings. Settings were restored to last saved values.";
     }
 
     [RelayCommand]
