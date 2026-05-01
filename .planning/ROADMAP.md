@@ -213,7 +213,7 @@ Plans:
 - [x] 10-05-PLAN.md — Settings ViewModel + SettingsWindow typed-failure banner (REF-03)
 
 **Wave 6 (gap closure; blocked on Wave 4 completion)**
-- [ ] 10-06-PLAN.md — Safe observer publication + explicit reload pending-save guard (REF-03, TEST-03)
+- [x] 10-06-PLAN.md — Safe observer publication + explicit reload pending-save guard (REF-03, TEST-03)
 
 **Wave 7 (gap closure; blocked on 10-06 completion)**
 - [ ] 10-07-PLAN.md — Facade state synchronization and conditional reload flag clearing (REF-03, TEST-03)
@@ -242,7 +242,7 @@ Plans:
 | 7. Backup Restore & Retention Safety | v1.0 Cleanup | 11/14 | Gaps planned | - |
 | 8. Cleaning Orchestrator Decomposition | v1.0 Cleanup | 10/10 | Complete | 2026-04-30 |
 | 9. Plugin Refresh & Approximation Performance | v1.0 Cleanup | 8/9 | Gaps planned | - |
-| 10. Configuration Persistence Hardening | v1.0 Cleanup | 5/7 | Gaps planned | - |
+| 10. Configuration Persistence Hardening | v1.0 Cleanup | 6/7 | In Progress|  |
 | 11. User-Facing Diagnostics Boundaries | v1.0 Cleanup | 0/0 | Not started | - |
 
 ## Coverage
