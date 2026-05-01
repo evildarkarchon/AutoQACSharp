@@ -24,7 +24,7 @@ Full details: [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP.md)
 - [ ] **Phase 7: Backup Restore & Retention Safety** - Users can recover from backup/restore problems with clear, cancellable outcomes.
 - [ ] **Phase 8: Cleaning Orchestrator Decomposition** - Maintainers can change cleaning flow pieces without broad orchestrator rewrites.
 - [ ] **Phase 9: Plugin Refresh & Approximation Performance** - Users can refresh approximations more efficiently while plugin-loading coordination moves out of the ViewModel.
-- [x] **Phase 10: Configuration Persistence Hardening** - Users get deterministic configuration save/reload behavior with lower clone overhead. (gaps planned 2026-05-01) (completed 2026-05-01)
+- [x] **Phase 10: Configuration Persistence Hardening** - Users get deterministic configuration save/reload behavior with lower clone overhead. (gaps planned 2026-05-01) (completed 2026-05-01) (additional gap planned 2026-05-01)
 - [ ] **Phase 11: User-Facing Diagnostics Boundaries** - Users see concise errors while logs avoid unnecessary path and command exposure.
 
 ## Phase Details
@@ -197,7 +197,7 @@ Plans:
   2. User sees or receives a recoverable failure path when configuration persistence fails instead of silent logging-only fallback.
   3. Maintainer can verify watcher race cases deterministically for debounce, deferred reload, invalid YAML, and app-save interactions.
   4. User configuration changes avoid YAML serialization round-trips for in-memory cloning.
-**Plans**: 10 plans (5 original + 5 gap-closure)
+**Plans**: 11 plans (5 original + 6 gap-closure)
 Plans:
 **Wave 1**
 - [x] 10-01-PLAN.md — Manual deep-copy on UserConfiguration graph (PERF-03)
@@ -226,6 +226,9 @@ Plans:
 
 **Wave 10 (gap closure; blocked on 10-09 completion)**
 - [x] 10-10-PLAN.md — Close watcher hash-read exception typed failure gap (REF-03, TEST-03)
+
+**Wave 11 (gap closure; blocked on 10-10 completion)**
+- [ ] 10-11-PLAN.md — Close production DI shared-coordinator wiring regression (REF-03, TEST-03)
 
 ### Phase 11: User-Facing Diagnostics Boundaries
 **Goal**: Users receive concise, actionable error messages while logs retain local troubleshooting value without unnecessary full path or command-line exposure.

@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Cleanup
-status: phase_complete
-stopped_at: Completed 10-10-PLAN.md
+status: gaps_planned
+stopped_at: Planned 10-11-PLAN.md
 last_updated: "2026-05-01T02:09:14.081Z"
 last_activity: 2026-05-01
 progress:
   total_phases: 7
   completed_phases: 6
-  total_plans: 51
+  total_plans: 52
   completed_plans: 51
   percent: 100
 ---
@@ -26,8 +26,8 @@ See: .planning/PROJECT.md (updated 2026-04-28)
 ## Current Position
 
 Phase: 10 (configuration-persistence-hardening) — COMPLETE
-Plan: 10 of 10
-Status: Phase 10 complete, ready for verification/next phase
+Plan: 10 of 11
+Status: Phase 10 gap closure planned, ready to execute 10-11-PLAN.md
 Last activity: 2026-05-01
 
 Progress: [██████████] 100%
@@ -90,6 +90,7 @@ Progress: [██████████] 100%
 - [Phase 10]: ConfigurationService.FlushPendingSavesAsync always delegates to the coordinator flush barrier, even when no facade pending app save exists. — Plan 09 closes the no-pending facade bypass so queued watcher/reload work drains before pre-cleaning continues.
 - [Phase 10]: Watcher hash-read exceptions are handled inside ApplyWatcherAsync as typed Watcher/ReadFailed outcomes. — Plan 10 closes the remaining verification gap where transient external writer locks could otherwise become log-only dropped watcher operations.
 - [Phase 10]: The watcher hash-read race is covered through FakeUserConfigFileStore.HashFailure instead of FileSystemWatcher timing, OS locks, or production debounce waits. — Maintainers can verify the race deterministically while preserving the single-reader coordinator policy.
+- [Phase 10]: Plan 11 closes the production DI regression where IConfigurationService can be constructed with a private coordinator instead of the registered shared IConfigPersistenceCoordinator. — Required so watcher-originated results/failures flow through the facade streams consumed by Settings UI and cleaning-adjacent workflows.
 
 ### Pending Todos
 
@@ -107,6 +108,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-05-01T02:09:14.076Z
-Stopped at: Completed 10-10-PLAN.md
+Last session: 2026-05-01T02:18:05Z
+Stopped at: Planned 10-11-PLAN.md
 Resume file: None
