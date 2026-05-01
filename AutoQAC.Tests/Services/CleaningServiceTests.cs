@@ -106,6 +106,173 @@ public sealed class CleaningServiceTests
     #region Error Path Tests
 
     /// <summary>
+    /// Direct xEdit launch diagnostics should use safe structured fields and leave command construction untouched.
+    /// </summary>
+    [Fact]
+    public async Task CleanPluginAsync_WhenDirectLaunchSucceeds_ShouldLogSafeFieldsAndPreserveProcessStartInfo()
+    {
+        // Arrange
+        var service = new CleaningService(
+            _mockGameDetection,
+            _mockState,
+            _mockLogger,
+            _mockProcess,
+            _mockCommandBuilder);
+
+        var plugin = new PluginInfo
+        {
+            FileName = "Plugin.esp",
+            FullPath = @"C:\Games\Skyrim\Data\Plugin.esp",
+            DetectedGameType = GameType.SkyrimSe,
+            IsInSkipList = false
+        };
+
+        var appState = new AppState
+        {
+            CurrentGameType = GameType.SkyrimSe,
+            Mo2ModeEnabled = false,
+            CleaningTimeout = 300
+        };
+        _mockState.CurrentState.Returns(appState);
+        _mockGameDetection.GetGameDisplayName(GameType.SkyrimSe).Returns("Skyrim SE");
+
+        var startInfo = new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = @"C:\Users\Alice\Tools\SSEEdit.exe",
+            WorkingDirectory = @"C:\Users\Alice\Tools"
+        };
+        startInfo.ArgumentList.Add("-QAC");
+        startInfo.ArgumentList.Add("-autoload");
+        startInfo.ArgumentList.Add("Plugin.esp");
+        _mockCommandBuilder.BuildCommand(plugin, GameType.SkyrimSe).Returns(startInfo);
+
+        System.Diagnostics.ProcessStartInfo? capturedStartInfo = null;
+        _mockProcess.ExecuteAsync(
+                Arg.Do<System.Diagnostics.ProcessStartInfo>(value => capturedStartInfo = value),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<Action<System.Diagnostics.Process>?>(),
+                Arg.Any<string?>())
+            .Returns(new ProcessResult { ExitCode = 0 });
+
+        // Act
+        var result = await service.CleanPluginAsync(plugin);
+
+        // Assert
+        result.Success.Should().BeTrue();
+        capturedStartInfo.Should().BeSameAs(startInfo);
+        capturedStartInfo!.FileName.Should().Be(@"C:\Users\Alice\Tools\SSEEdit.exe");
+        capturedStartInfo.WorkingDirectory.Should().Be(@"C:\Users\Alice\Tools");
+        capturedStartInfo.Arguments.Should().BeEmpty();
+        capturedStartInfo.ArgumentList.Should().Equal("-QAC", "-autoload", "Plugin.esp");
+
+        _mockLogger.Received(1).Information(
+            "Starting {Operation} launch: mode={LaunchMode}, game={Game}, plugin={Plugin}, argumentCount={ArgumentCount}, status={Status}",
+            "QuickAutoClean",
+            "direct xEdit",
+            "Skyrim SE",
+            "Plugin.esp",
+            3,
+            "Starting");
+        _mockLogger.Received(1).Information(
+            "Completed {Operation} launch: mode={LaunchMode}, game={Game}, plugin={Plugin}, argumentCount={ArgumentCount}, status={Status}, reason={Reason}",
+            "QuickAutoClean",
+            "direct xEdit",
+            "Skyrim SE",
+            "Plugin.esp",
+            3,
+            "Succeeded",
+            "ProcessExited");
+
+        AssertCapturedLogTextExcludes(@"C:\Users\Alice", @"C:\Games\Skyrim", "-QAC", "-autoload");
+    }
+
+    /// <summary>
+    /// MO2 launch diagnostics should not log the nested xEdit payload while preserving the MO2 argv contract.
+    /// </summary>
+    [Fact]
+    public async Task CleanPluginAsync_WhenMo2LaunchFails_ShouldLogSafeFieldsAndPreserveNestedPayload()
+    {
+        // Arrange
+        var service = new CleaningService(
+            _mockGameDetection,
+            _mockState,
+            _mockLogger,
+            _mockProcess,
+            _mockCommandBuilder);
+
+        var plugin = new PluginInfo
+        {
+            FileName = "Plugin.esp",
+            FullPath = @"C:\Games\Skyrim\Data\Plugin.esp",
+            DetectedGameType = GameType.SkyrimSe,
+            IsInSkipList = false
+        };
+
+        var appState = new AppState
+        {
+            CurrentGameType = GameType.SkyrimSe,
+            Mo2ModeEnabled = true,
+            CleaningTimeout = 300
+        };
+        _mockState.CurrentState.Returns(appState);
+        _mockGameDetection.GetGameDisplayName(GameType.SkyrimSe).Returns("Skyrim SE");
+
+        const string nestedPayload = @"-QAC -autoload C:\Games\Skyrim\Data\Plugin.esp";
+        var startInfo = new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = @"C:\Users\Alice\MO2\ModOrganizer.exe"
+        };
+        startInfo.ArgumentList.Add("run");
+        startInfo.ArgumentList.Add(@"C:\Users\Alice\Tools\SSEEdit.exe");
+        startInfo.ArgumentList.Add("-a");
+        startInfo.ArgumentList.Add(nestedPayload);
+        _mockCommandBuilder.BuildCommand(plugin, GameType.SkyrimSe).Returns(startInfo);
+
+        System.Diagnostics.ProcessStartInfo? capturedStartInfo = null;
+        _mockProcess.ExecuteAsync(
+                Arg.Do<System.Diagnostics.ProcessStartInfo>(value => capturedStartInfo = value),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<Action<System.Diagnostics.Process>?>(),
+                Arg.Any<string?>())
+            .Returns(new ProcessResult { ExitCode = 1 });
+
+        // Act
+        var result = await service.CleanPluginAsync(plugin);
+
+        // Assert
+        result.Success.Should().BeFalse();
+        capturedStartInfo.Should().BeSameAs(startInfo);
+        capturedStartInfo!.FileName.Should().Be(@"C:\Users\Alice\MO2\ModOrganizer.exe");
+        capturedStartInfo.ArgumentList.Should().Equal(
+            "run",
+            @"C:\Users\Alice\Tools\SSEEdit.exe",
+            "-a",
+            nestedPayload);
+
+        _mockLogger.Received(1).Information(
+            "Starting {Operation} launch: mode={LaunchMode}, game={Game}, plugin={Plugin}, argumentCount={ArgumentCount}, status={Status}",
+            "QuickAutoClean",
+            "MO2",
+            "Skyrim SE",
+            "Plugin.esp",
+            4,
+            "Starting");
+        _mockLogger.Received(1).Warning(
+            "Completed {Operation} launch: mode={LaunchMode}, game={Game}, plugin={Plugin}, argumentCount={ArgumentCount}, status={Status}, reason={Reason}",
+            "QuickAutoClean",
+            "MO2",
+            "Skyrim SE",
+            "Plugin.esp",
+            4,
+            "Failed",
+            "ExitCode");
+
+        AssertCapturedLogTextExcludes(@"C:\Users\Alice", @"C:\Games\Skyrim", "-QAC", "-autoload", nestedPayload);
+    }
+
+    /// <summary>
     /// Verifies that direct xEdit command-build failures report a concise user-facing failure
     /// without exposing configured executable paths or attempting to start a process.
     /// </summary>
@@ -687,4 +854,21 @@ public sealed class CleaningServiceTests
     }
 
     #endregion
+
+    /// <summary>
+    /// Asserts that captured log message templates and structured arguments exclude unsafe command or path fragments.
+    /// </summary>
+    private void AssertCapturedLogTextExcludes(params string[] unsafeFragments)
+    {
+        var capturedText = string.Join(
+            Environment.NewLine,
+            _mockLogger.ReceivedCalls().SelectMany(call => call.GetArguments())
+                .Where(argument => argument is not Exception)
+                .Select(argument => argument?.ToString() ?? string.Empty));
+
+        foreach (var unsafeFragment in unsafeFragments)
+        {
+            capturedText.Should().NotContain(unsafeFragment);
+        }
+    }
 }
