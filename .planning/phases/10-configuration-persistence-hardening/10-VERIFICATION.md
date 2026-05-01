@@ -1,60 +1,59 @@
 ---
 phase: 10-configuration-persistence-hardening
-verified: 2026-05-01T00:00:00Z
+verified: 2026-05-01T02:18:05Z
 status: gaps_found
 score: 54/55 must-haves verified
 overrides_applied: 0
 re_verification:
   previous_status: gaps_found
-  previous_score: 51/52
+  previous_score: 54/55
   gaps_closed:
-    - "Explicit reload no longer masks a failed prerequisite pending-save flush; it returns the failed/rejected flush result before reading disk."
-    - "ConfigurationService.FlushPendingSavesAsync no longer bypasses the coordinator barrier when the facade has no pending app save; it always awaits the coordinator flush barrier."
-  gaps_remaining:
-    - "Watcher reloads can still be silently dropped when ComputeHashAsync throws while an external writer holds/locks the settings file."
-  regressions: []
+    - "Watcher hash-read failures now publish typed Watcher/ReadFailed results and do not stop later watcher reloads."
+  gaps_remaining: []
+  regressions:
+    - "10-REVIEW CR-01 is true: production DI resolves ConfigurationService through its public logger-only constructor, creating a private coordinator that ConfigWatcherService does not notify."
 gaps:
   - truth: "User configuration changes save and reload deterministically when app saves and external edits occur in close timing windows."
     status: failed
-    reason: "The code review CR-01 finding is true in the current codebase: ApplyWatcherAsync computes the current file hash before entering the reload read/failure path. If ComputeHashAsync throws during a normal FileSystemWatcher race with an external writer lock, the operation-loop catch only logs and drops the watcher operation; no ReadFailed failure/result is published and no retry is scheduled."
+    reason: "The Plan 10-10 hash-read gap is closed, but the current code review CR-01 is a production wiring blocker: ConfigurationService ignores the DI-registered IConfigPersistenceCoordinator because its coordinator-taking constructor is internal. Microsoft.Extensions.DependencyInjection selects public constructors, so IConfigurationService is constructed through the public logger-only constructor, which creates a separate coordinator. ConfigWatcherService notifies the registered shared coordinator, while ConfigurationService starts and observes a private coordinator; external watcher reloads cannot update the facade in the running app."
     artifacts:
-      - path: "AutoQAC/Services/Configuration/ConfigPersistenceCoordinator.cs"
-        issue: "Lines 288-290 call _fileStore.ComputeHashAsync before ReadForReloadAsync; exceptions escape to RunAsync lines 217-220, which log only and drop the operation."
-      - path: "AutoQAC/Services/Configuration/UserConfigFileStore.cs"
-        issue: "Lines 106-115 read the settings file directly for hash computation and can throw IOException/UnauthorizedAccessException while another process is writing."
-      - path: "AutoQAC.Tests/Services/Configuration/ConfigPersistenceCoordinatorTests.cs"
-        issue: "No regression covers ComputeHashAsync throwing for watcher signals; FakeUserConfigFileStore has no hash-failure knob."
+      - path: "AutoQAC/Infrastructure/ServiceCollectionExtensions.cs"
+        issue: "Lines 30-33 register ConfigPersistenceCoordinator/IConfigPersistenceCoordinator and then AddSingleton<IConfigurationService, ConfigurationService>(), relying on constructor selection that cannot use ConfigurationService's internal coordinator constructor."
+      - path: "AutoQAC/Services/Configuration/ConfigurationService.cs"
+        issue: "Lines 42-66 contain the coordinator-taking constructor but it is internal; lines 68-79 expose the public DI-selected constructor that calls CreateDefaultCoordinator and constructs a separate StateService/file store/coordinator."
+      - path: "AutoQAC.Tests/Integration/DependencyInjectionTests.cs"
+        issue: "Existing DI test only asserts services resolve; it does not prove IConfigurationService and ConfigWatcherService share the same IConfigPersistenceCoordinator or that watcher notifications reach the facade."
     missing:
-      - "Catch hash/read exceptions inside ApplyWatcherAsync (or route hashing through ReadForReloadAsync) and publish a typed Watcher/ReadFailed result/failure instead of dropping the operation."
-      - "Add a deterministic coordinator test where ComputeHashAsync throws once and assert a ReadFailed failure/result is emitted and the coordinator remains able to process a later valid watcher reload."
+      - "Wire IConfigurationService explicitly to the registered IConfigPersistenceCoordinator (or make the coordinator-taking constructor public and remove the self-constructed DI path)."
+      - "Add an integration test that builds the real ServiceCollection and proves ConfigWatcherService/coordinator notifications update the same IConfigurationService facade state/result/failure streams."
 ---
 
 # Phase 10: Configuration Persistence Hardening Verification Report
 
 **Phase Goal:** Users get reliable configuration saves/reloads under race conditions, and maintainers can reason about persistence through one serialized flow with lower in-memory clone cost.  
-**Verified:** 2026-05-01T00:00:00Z  
+**Verified:** 2026-05-01T02:18:05Z  
 **Status:** gaps_found  
-**Re-verification:** Yes — after Plan 10-09 gap closure
+**Re-verification:** Yes — after Plan 10-10 gap closure
 
 ## Goal Achievement
 
-Plan 10-09 closes the prior verifier gap: `ConfigurationService.FlushPendingSavesAsync` now always awaits `_coordinator.FlushPendingSavesAsync(ct)`, including no-pending facade calls, so forced flush is again a public coordinator barrier.
+Plan 10-10 closes the previous verifier blocker: watcher hash reads are now wrapped inside `ApplyWatcherAsync`, publish typed `Watcher`/`ReadFailed` failure/result events, and have deterministic regression coverage proving a later valid watcher reload still applies.
 
-However, the phase goal is still not achieved. The required `10-REVIEW.md` critical finding CR-01 remains present in the codebase. Watcher hash computation is outside the typed reload failure path, so a close-timing external edit can be dropped under a file-lock race with only a log entry and no recoverable failure or retry. That violates the core Phase 10 outcome: reliable save/reload behavior under race conditions through one serialized, reason-about-able flow.
+However, the phase goal is still not achieved. The required advisory code review's critical finding is true in the actual codebase: production DI does not connect `ConfigurationService` and `ConfigWatcherService` to the same coordinator instance. That breaks the phase's primary external reload behavior in the running app even though the coordinator itself is now correct.
 
 ### Observable Truths
 
 | # | Truth | Status | Evidence |
 |---|---|---|---|
-| 1 | User configuration changes save and reload deterministically when app saves and external edits occur in close timing windows. | ✗ FAILED | `ConfigPersistenceCoordinator.ApplyWatcherAsync` computes `_fileStore.ComputeHashAsync` at lines 288-290 before entering `ReadForReloadAsync`. `UserConfigFileStore.ComputeHashAsync` reads the file directly at lines 106-115. If that read throws during an external writer lock, `RunAsync` lines 217-220 logs and drops the operation; no `ReadFailed` result/failure is emitted. |
-| 2 | User sees or receives a recoverable failure path when configuration persistence fails instead of silent logging-only fallback. | ⚠️ PARTIAL | Write, invalid YAML, missing file, explicit reload, and pre-cleaning flush failures have typed paths. Watcher hash read failures do not: they are log-only through the top-level operation-loop catch. |
-| 3 | Maintainer can verify watcher race cases deterministically for debounce, deferred reload, invalid YAML, and app-save interactions. | ⚠️ PARTIAL | Deterministic coordinator tests cover hash echo, pending app-save rejection, cleaning deferral, invalid YAML, missing file, observer safety, explicit reload flush failure, and facade no-pending flush. No deterministic test covers the review CR-01 hash-read exception race; grep found no ComputeHash failure regression. |
-| 4 | User configuration changes avoid YAML serialization round-trips for in-memory cloning. | ✓ VERIFIED | `UserConfiguration.Copy()` and nested `Copy()` methods perform manual deep copies. `ConfigurationService.cs` contains no `_serializer.Serialize`, `_deserializer.Deserialize<UserConfiguration>`, or `CloneConfig` matches; YamlDotNet remains only for disk persistence/main config. |
-| 5 | Forced configuration flush is always a coordinator queue barrier, even when the facade has no pending app save. | ✓ VERIFIED | `ConfigurationService.cs:214-230` always awaits `_coordinator.FlushPendingSavesAsync(ct)` and only clears `_hasPendingUserSave` after `Success`/`NoOp`. `FlushPendingSavesAsync_NoPending_DrainsCoordinatorBarrier` passed. |
-| 6 | Queued watcher reload work cannot remain behind a pre-cleaning/no-pending facade flush. | ✓ VERIFIED | The facade no-pending shortcut is gone; no-pending flush returns the coordinator barrier result rather than a local generation-0 NoOp. |
-| 7 | Explicit reload cannot mask a failed pending app-save flush as a successful disk reload. | ✓ VERIFIED | `ConfigPersistenceCoordinator.cs:348-370` returns failed/rejected prerequisite flush results before `ReadForReloadAsync`; explicit reload regression tests passed. |
-| 8 | Settings persistence failures are visible as a text-only recoverable banner. | ✓ VERIFIED | `SettingsViewModel.cs:124-128`, `172-184`, `217-233`, `369-386`, and `SettingsWindow.axaml:28-38` implement and bind the banner; manual UAT was approved in `10-05-SUMMARY.md`. |
-| 9 | Pre-cleaning flush failure blocks process-launch-adjacent workflow. | ✓ VERIFIED | `CleaningPreflight.cs:34-56` branches on failed/rejected flush results before validation/game detection/plugin/MO2 work and throws `ConfigPersistenceFailureException`. |
+| 1 | User configuration changes save and reload deterministically when app saves and external edits occur in close timing windows. | ✗ FAILED | Coordinator internals now handle hash failures, but production DI is unwired. `ServiceCollectionExtensions.cs:30-33` registers a shared coordinator and `AddSingleton<IConfigurationService, ConfigurationService>()`; `ConfigurationService.cs:42-66` has the shared-coordinator constructor as `internal`, while `ConfigurationService.cs:68-79` public constructor creates a private coordinator. `ConfigWatcherService.cs:25-32` receives the DI coordinator, so watcher reloads go to a different coordinator than the facade observes. |
+| 2 | User sees or receives a recoverable failure path when configuration persistence fails instead of silent logging-only fallback. | ⚠️ PARTIAL | Hash-read failures and FileSystemWatcher error signals now emit typed `Watcher/ReadFailed` results (`ConfigPersistenceCoordinator.cs:288-312`, `ConfigWatcherService.cs:82-85`). But because production watcher signals go to the wrong coordinator, those results/failures are not visible through the `IConfigurationService` facade used by Settings UI. |
+| 3 | Maintainer can verify watcher race cases deterministically for debounce, deferred reload, invalid YAML, and app-save interactions. | ⚠️ PARTIAL | `Watcher_HashFailure_EmitsReadFailedAndProcessesLaterReload` exists and passed; `DependencyInjectionTests` passed but only asserts service resolution and does not cover the shared-coordinator wiring regression. |
+| 4 | User configuration changes avoid YAML serialization round-trips for in-memory cloning. | ✓ VERIFIED | `UserConfiguration.Copy()` and nested copy methods remain model-owned; `ConfigurationService` normal in-memory paths use `.Copy()` rather than YAML clone round-trips. |
+| 5 | Forced configuration flush is always a coordinator queue barrier, even when the facade has no pending app save. | ✓ VERIFIED | `ConfigurationService.cs:214-230` always awaits `_coordinator.FlushPendingSavesAsync(ct)` and clears `_hasPendingUserSave` only after `Success`/`NoOp`. |
+| 6 | Queued watcher reload work cannot remain behind a pre-cleaning/no-pending facade flush. | ⚠️ PARTIAL | The facade no-pending bypass is fixed for its own coordinator, but production watcher work is queued to a different coordinator, so the facade flush cannot drain watcher work submitted by `ConfigWatcherService`. |
+| 7 | Explicit reload cannot mask a failed pending app-save flush as a successful disk reload. | ✓ VERIFIED | `ConfigPersistenceCoordinator.cs:371-392` returns failed/rejected prerequisite flush results before reading disk. |
+| 8 | Settings persistence failures are visible as a text-only recoverable banner. | ⚠️ PARTIAL | Banner wiring exists, but watcher-originated failures in production can be published on the DI coordinator rather than the facade coordinator exposed through `IConfigurationService.Failures`. |
+| 9 | Pre-cleaning flush failure blocks process-launch-adjacent workflow. | ✓ VERIFIED | `CleaningPreflight` branches on failed/rejected flush results before downstream validation/game detection/plugin/MO2 work. |
 
 **Score:** 54/55 must-haves verified
 
@@ -62,92 +61,81 @@ However, the phase goal is still not achieved. The required `10-REVIEW.md` criti
 
 | Artifact | Expected | Status | Details |
 |---|---|---|---|
-| `AutoQAC/Models/Configuration/UserConfiguration.cs` | Public manual deep-copy methods on user config graph | ✓ VERIFIED | Parent and nested `Copy()` methods exist and deep-copy dictionaries/SkipLists; null normalization is implemented. |
-| `AutoQAC/Models/Configuration/BackupSettings.cs` | `BackupSettings.Copy()` | ✓ VERIFIED | Present at line 23. |
-| `AutoQAC/Models/Configuration/RetentionSettings.cs` | `RetentionSettings.Copy()` | ✓ VERIFIED | Present at line 36. |
-| `AutoQAC/Services/Configuration/ConfigPersistenceCoordinator.cs` | Single-reader channel coordinator with safe publication and race policies | ✗ FAILED | Substantive and wired, but watcher hash exceptions escape before the typed failure/reload path and are dropped by the top-level catch. |
-| `AutoQAC/Services/Configuration/ConfigPersistenceStatus.cs` | Typed result/failure/exception contracts | ✓ VERIFIED | `ConfigPersistenceResult`, `ConfigPersistenceFailure`, enums, and `ConfigPersistenceFailureException` are present with safe-summary documentation. |
-| `AutoQAC/Services/Configuration/UserConfigFileStore.cs` | Temp-file write then replace/move and hash/read seam | ⚠️ PARTIAL | Temp+replace/move exists. Review WR-04 remains: temp file write at line 72 is outside the cleanup `try`, so cancellation/write failure during temp write can leave `*.tmp`. |
-| `AutoQAC/Services/Configuration/ConfigurationService.cs` | Coordinator-backed facade with synchronized flags and barrier flush semantics | ✓ VERIFIED | Persistence delegates to coordinator; facade flags use `_stateLock`; flush no longer has the local no-pending NoOp bypass. |
-| `AutoQAC/Services/Configuration/ConfigWatcherService.cs` | Event-source-only watcher | ⚠️ PARTIAL | Changed/Created/Renamed/Deleted signals are forwarded; Error events are still logged only at line 82 and do not enter the recoverable failure path. |
-| `AutoQAC/Services/Cleaning/CleaningPreflight.cs` | Typed flush barrier branch | ✓ VERIFIED | Failed/rejected flush blocks before downstream workflow steps. |
-| `AutoQAC/ViewModels/SettingsViewModel.cs` | Failure banner and clear-on-success | ✓ VERIFIED | Failure/result/reload subscriptions use `CallbackObserver<T>` plus `IUiDispatcher.Post`; Save flushes before close. |
-| `AutoQAC/Views/SettingsWindow.axaml` | Visible banner binding | ✓ VERIFIED | `Border.IsVisible` binds `HasPersistenceBanner`; `TextBlock.Text` binds `PersistenceBannerText`. |
+| `AutoQAC/Models/Configuration/UserConfiguration.cs` | Public manual deep-copy methods on user config graph | ✓ VERIFIED | Parent and nested copy methods remain substantive and YAML-free for clone paths. |
+| `AutoQAC/Services/Configuration/ConfigPersistenceCoordinator.cs` | Single-reader coordinator with typed watcher failure handling | ✓ VERIFIED | `ApplyWatcherAsync` handles `ConfigFileSignalKind.Error` and catches non-cancellation `ComputeHashAsync` exceptions, publishing `Watcher/ReadFailed` failed results. |
+| `AutoQAC/Services/Configuration/ConfigurationService.cs` | Coordinator-backed facade using shared production coordinator | ✗ FAILED | The coordinator-backed constructor is `internal`; the public constructor creates a private default coordinator, so DI facade wiring is not shared with watcher. |
+| `AutoQAC/Services/Configuration/ConfigWatcherService.cs` | Event-source-only watcher forwarding signals to persistence coordinator | ⚠️ PARTIAL | Changed/Created/Renamed/Deleted/Error are forwarded to its injected coordinator, but DI injects a different coordinator than the facade uses. Shutdown callback `ObjectDisposedException` can still escape per WR-01. |
+| `AutoQAC/Infrastructure/ServiceCollectionExtensions.cs` | Shared coordinator registration for facade and watcher | ✗ FAILED | Registers the shared coordinator but does not construct `ConfigurationService` with it. |
+| `AutoQAC.Tests/Services/Configuration/ConfigPersistenceCoordinatorTests.cs` | Deterministic race coverage | ✓ VERIFIED | Contains `Watcher_HashFailure_EmitsReadFailedAndProcessesLaterReload` and `Watcher_ErrorSignal_EmitsReadFailedWithoutReadingFile`. |
+| `AutoQAC.Tests/Services/Configuration/Fakes/FakeUserConfigFileStore.cs` | Deterministic hash-failure injection seam | ✓ VERIFIED | `HashFailure` is thrown from `ComputeHashAsync` after logging `Hash`. |
+| `AutoQAC.Tests/Integration/DependencyInjectionTests.cs` | Production DI wiring coverage | ⚠️ PARTIAL | Resolves services successfully, but no assertion proves shared coordinator identity or watcher-to-facade data flow. |
 
 ### Key Link Verification
 
 | From | To | Via | Status | Details |
 |---|---|---|---|---|
-| `ConfigurationService` | `IConfigPersistenceCoordinator` | Save/load/flush/reload/status delegation | ✓ WIRED | `SaveUserConfigAsync`, `LoadUserConfigAsync`, `FlushPendingSavesAsync`, `ReloadFromDiskAsync`, `Failures`, `PersistenceResults`, and `UserConfigurationChanged` route to the coordinator. |
-| `ConfigurationService.FlushPendingSavesAsync` | coordinator flush barrier | unconditional `await _coordinator.FlushPendingSavesAsync(ct)` | ✓ WIRED | Plan 10-09 gap closure verified by code and targeted test pass. |
-| `ConfigWatcherService` | `IConfigPersistenceCoordinator` | FSW Changed/Created/Renamed/Deleted handlers | ✓ WIRED | Lines 78-81 call `NotifySettingsFileChanged`. |
-| `ConfigWatcherService.Error` | recoverable failure pipeline | Error handler | ⚠️ PARTIAL | Line 82 logs only; no coordinator signal/error operation is sent. |
-| `ConfigPersistenceCoordinator.ApplyWatcherAsync` | typed read failure handling | hash/read-before-reload flow | ✗ NOT_WIRED | `ComputeHashAsync` exceptions occur before `ReadForReloadAsync`; top-level catch logs and drops. |
-| DI | coordinator/file store/facade/watcher | `AddSingleton` registrations | ✓ WIRED | `ServiceCollectionExtensions.cs:28-33`. |
-| `CleaningPreflight` | `IConfigurationService.FlushPendingSavesAsync` | typed result branch | ✓ WIRED | Failed/rejected flush throws before process-launch-adjacent work. |
-| `SettingsViewModel` | `IConfigurationService.Failures/PersistenceResults/UserConfigurationChanged` | `CallbackObserver<T>` + dispatcher | ✓ WIRED | `SettingsViewModel.cs:172-184`. |
+| `ConfigPersistenceCoordinator.ApplyWatcherAsync` | `IUserConfigFileStore.ComputeHashAsync` | try/catch around hash acquisition | ✓ WIRED | `ConfigPersistenceCoordinator.cs:298-312` catches non-cancellation hash exceptions and publishes typed failed watcher results. |
+| `ConfigWatcherService` | `IConfigPersistenceCoordinator` | FSW Changed/Created/Renamed/Deleted/Error handlers | ✓ WIRED locally | `ConfigWatcherService.cs:78-85` forwards signals to the injected coordinator. |
+| DI `IConfigWatcherService` | DI `IConfigPersistenceCoordinator` | constructor injection | ✓ WIRED | The watcher receives the registered coordinator. |
+| DI `IConfigurationService` | DI `IConfigPersistenceCoordinator` | constructor selection | ✗ NOT_WIRED | `AddSingleton<IConfigurationService, ConfigurationService>()` cannot use the internal coordinator constructor; public constructor creates a separate default coordinator. |
+| `ConfigurationService.Failures/PersistenceResults/UserConfigurationChanged` | watcher-originated events | shared coordinator observable streams | ✗ NOT_WIRED | Facade observable properties read from its private coordinator, not the coordinator that watcher notifies in production DI. |
+| `CleaningPreflight` | `IConfigurationService.FlushPendingSavesAsync` | typed result branch | ✓ WIRED | Preflight receives facade flush results and blocks on failed/rejected status. |
 
 ### Data-Flow Trace (Level 4)
 
 | Artifact | Data Variable | Source | Produces Real Data | Status |
 |---|---|---|---|---|
-| `ConfigPersistenceCoordinator.cs` | watcher reload candidate | `IUserConfigFileStore.ComputeHashAsync` then `ReadAsync` | Partial | ⚠️ HOLLOW for hash-read failure: exception bypasses typed result/failure publication. |
-| `ConfigurationService.cs` | forced flush result | `_coordinator.FlushPendingSavesAsync` | Yes | ✓ FLOWING — no-pending facade flush returns coordinator result. |
-| `CleaningPreflight.cs` | `flushResult` | `IConfigurationService.FlushPendingSavesAsync` | Yes | ✓ FLOWING — failed/rejected blocks before downstream work. |
-| `SettingsViewModel.cs` | `PersistenceBannerText` | `IConfigurationService.Failures`, failed Save flush result | Yes | ✓ FLOWING — mapped to visible banner text. |
-| `SettingsWindow.axaml` | `PersistenceBannerText`, `HasPersistenceBanner` | SettingsViewModel generated properties | Yes | ✓ FLOWING — visible `Border`/`TextBlock` bindings. |
-| `UserConfiguration.Copy()` | copied config graph | mutable `UserConfiguration` instance | Yes | ✓ FLOWING — manual deep copies, no YAML clone. |
+| `ConfigPersistenceCoordinator.cs` | watcher reload candidate | hash/read via `IUserConfigFileStore` | Yes | ✓ FLOWING inside the coordinator; hash exceptions now produce typed failures. |
+| `ConfigWatcherService.cs` | watcher signal | `FileSystemWatcher` events | Yes | ⚠️ HOLLOW at app level — signal flows to the registered coordinator, but not to the facade's private coordinator. |
+| `ConfigurationService.cs` | `UserConfigurationChanged`, `Failures`, `PersistenceResults` | private `_coordinator` | Partial | ✗ DISCONNECTED from watcher in production DI. |
+| `SettingsViewModel.cs` | persistence banner state | `IConfigurationService.Failures/PersistenceResults` | Partial | ⚠️ Watcher-originated failures can miss the facade stream due to DI mismatch. |
+| `UserConfiguration.Copy()` | copied config graph | mutable `UserConfiguration` instance | Yes | ✓ FLOWING — manual deep copies remain substantive. |
 
 ### Behavioral Spot-Checks
 
 | Behavior | Command | Result | Status |
 |---|---|---|---|
-| No-pending facade flush drains coordinator barrier. | `dotnet test "AutoQAC.Tests/AutoQAC.Tests.csproj" --filter "FullyQualifiedName~ConfigurationServiceTests&FullyQualifiedName~FlushPendingSavesAsync_NoPending_DrainsCoordinatorBarrier" --nologo` | Passed: 1 test. | ✓ PASS |
-| Explicit reload regressions remain green. | `dotnet test "AutoQAC.Tests/AutoQAC.Tests.csproj" --filter "FullyQualifiedName~ConfigPersistenceCoordinatorTests&FullyQualifiedName~ExplicitReload" --nologo` | Sequential rerun passed: 3 tests. | ✓ PASS |
-| Parallel targeted run artifact. | Initial parallel targeted test run | One run hit an Avalonia generated-resource file lock; sequential rerun passed. | ℹ️ INFO |
-| Watcher hash exception coverage exists. | Grep for `ComputeHash.*throw`, `ComputeHashAsync.*ReadFailed`, watcher hash failure tests. | No regression found; fake lacks a hash-failure knob. | ✗ FAIL |
+| Watcher hash-read regression closes prior gap. | `dotnet test "AutoQAC.Tests/AutoQAC.Tests.csproj" --filter "FullyQualifiedName~ConfigPersistenceCoordinatorTests&FullyQualifiedName~Watcher_HashFailure_EmitsReadFailedAndProcessesLaterReload" --nologo` | Passed: 1 test after sequential rerun. Initial parallel run hit a build file lock while another test command was compiling. | ✓ PASS |
+| Existing DI smoke tests. | `dotnet test "AutoQAC.Tests/AutoQAC.Tests.csproj" --filter "FullyQualifiedName~DependencyInjectionTests" --nologo` | Passed: 1 test. | ⚠️ PASS BUT INSUFFICIENT — test only resolves services; it does not detect the shared-coordinator wiring break. |
+| Production DI watcher-to-facade data flow. | Source inspection of `ServiceCollectionExtensions.cs`, `ConfigurationService.cs`, `ConfigWatcherService.cs`. | DI constructs facade through public logger-only constructor, creating a private coordinator. | ✗ FAIL |
 
 ### Requirements Coverage
 
 | Requirement | Source Plan | Description | Status | Evidence |
 |---|---|---|---|---|
-| REF-03 | Plans 10-02, 10-03, 10-05, 10-06, 10-07, 10-08, 10-09 | Maintainer can reason about saves, reloads, deferrals, and failures through one serialized persistence flow. | ✗ BLOCKED | The facade barrier bypass is closed, but watcher hash failures still bypass the typed coordinator failure flow and are log-only at the top-level operation-loop catch. That is not one reason-about-able serialized failure path. |
-| TEST-03 | Plans 10-02, 10-03, 10-04, 10-06, 10-07, 10-08, 10-09 | Maintainer can verify configuration watcher race cases deterministically. | ⚠️ PARTIAL | Many deterministic race tests exist and targeted regressions passed, but no test covers the writer-lock/hash-read race identified by code review CR-01. |
-| PERF-03 | Plans 10-01, 10-03 | User configuration changes avoid YAML serialization round-trips for in-memory cloning. | ✓ SATISFIED | Manual `Copy()` graph exists; `ConfigurationService` no longer performs user-config YAML clone round-trips. |
+| REF-03 | Plans 10-02, 10-03, 10-05, 10-06, 10-07, 10-08, 10-09, 10-10 | Maintainer can reason about saves, reloads, deferrals, and failures through one serialized persistence flow. | ✗ BLOCKED | The coordinator implementation is reason-about-able, but production has two coordinators: watcher signals go to one, facade state/result/failure observers use another. |
+| TEST-03 | Plans 10-02, 10-03, 10-04, 10-06, 10-07, 10-08, 10-09, 10-10 | Maintainer can verify configuration watcher race cases deterministically. | ⚠️ PARTIAL | Deterministic coordinator tests cover the race matrix including hash failures; missing deterministic DI integration test lets the production watcher/facade disconnect pass. |
+| PERF-03 | Plans 10-01, 10-03 | User configuration changes avoid YAML serialization round-trips for in-memory cloning. | ✓ SATISFIED | Manual copy graph remains in use for in-memory snapshots; YAML remains disk persistence only. |
 
-No orphaned Phase 10 requirements were found. `.planning/REQUIREMENTS.md` maps only `REF-03`, `TEST-03`, and `PERF-03` to Phase 10, and all three appear in plan frontmatter.
+No orphaned Phase 10 requirements were found. `.planning/REQUIREMENTS.md` maps only `REF-03`, `TEST-03`, and `PERF-03` to Phase 10, and all three appear in plan frontmatter across Phase 10 plans.
 
 ### Code Review Findings Adjudication
 
 | Review Finding | Verdict | Verification Evidence |
 |---|---|---|
-| CR-01: Watcher reloads are silently dropped if hashing races a writer lock | 🛑 TRUE GAP | `ApplyWatcherAsync` line 290 computes hash outside any catch/retry/failure publication. `RunAsync` catches the escaped exception and logs only. |
-| WR-01: Settings Save failures are reported as cleaning-blocked failures | ⚠️ TRUE WARNING | `SettingsViewModel.SaveAsync` receives a `Flush` + `WriteFailed` result and maps all Flush write failures to “Could not save settings before cleaning. Cleaning was blocked...” at lines 222-223, even for the Settings dialog Save button. |
-| WR-02: Public settings snapshot omits new Backup settings | ⚠️ TRUE WARNING | `ConfigurationService.GetAllSettingsAsync` lines 534-549 includes retention/settings fields but not `Backup.Enabled` or `Backup.MaxSessions`. |
-| WR-03: FileSystemWatcher internal errors never reach the persistence failure pipeline | ⚠️ TRUE WARNING | `ConfigWatcherService.cs:82` logs `watcher.Error` only; `ConfigFileSignalKind.Error` is not forwarded. |
-| WR-04: Canceled writes can leave temp settings files behind | ⚠️ TRUE WARNING | `UserConfigFileStore.WriteAsync` writes the temp file at line 72 before the cleanup-protected `try` starts at line 73. |
+| CR-01: ConfigurationService ignores the DI coordinator, so watcher reloads go to an unstarted/separate coordinator | 🛑 TRUE GAP | `ConfigurationService` shared-coordinator constructor is internal; public constructor creates `CreateDefaultCoordinator`. DI registration uses `AddSingleton<IConfigurationService, ConfigurationService>()`, so production facade and watcher do not share coordinator state. |
+| WR-01: FileSystemWatcher callbacks can throw during shutdown races | ⚠️ TRUE WARNING | `ConfigWatcherService.cs:78-85` directly calls `_coordinator.NotifySettingsFileChanged`; `ConfigPersistenceCoordinator.NotifySettingsFileChanged` throws after disposal. Non-blocking robustness issue unless it masks shutdown. |
 
 ### Anti-Patterns Found
 
 | File | Line | Pattern | Severity | Impact |
 |---|---:|---|---|---|
-| `AutoQAC/Services/Configuration/ConfigPersistenceCoordinator.cs` | 288-290 | Hash read before typed reload failure handling | 🛑 Blocker | External edit watcher operation can be dropped during writer-lock races, leaving stale active config with no recoverable failure. |
-| `AutoQAC/Services/Configuration/ConfigWatcherService.cs` | 82 | FSW error logged only | ⚠️ Warning | Dropped file events may not trigger recovery until another file event happens. |
-| `AutoQAC/ViewModels/SettingsViewModel.cs` | 222-223 | Settings Save flush failure uses cleaning-blocked banner copy | ⚠️ Warning | Users saving Settings can see misleading cleaning-specific text. |
-| `AutoQAC/Services/Configuration/ConfigurationService.cs` | 534-549 | Backup settings omitted from public settings snapshot | ⚠️ Warning | Diagnostics/import/export-style callers may miss user-facing backup policy. |
-| `AutoQAC/Services/Configuration/UserConfigFileStore.cs` | 72-73 | Temp write outside cleanup-protected region | ⚠️ Warning | Cancellation or write failure during temp write may leave same-directory `*.tmp` files. |
+| `AutoQAC/Services/Configuration/ConfigurationService.cs` | 42-79 | DI-relevant constructor is internal; public constructor creates service-local coordinator | 🛑 Blocker | Watcher reloads/failures are not observed by the production facade/UI/preflight path. |
+| `AutoQAC/Infrastructure/ServiceCollectionExtensions.cs` | 30-33 | Registers shared coordinator but uses type registration for facade | 🛑 Blocker | The intended shared coordinator is bypassed by DI constructor selection. |
+| `AutoQAC.Tests/Integration/DependencyInjectionTests.cs` | 34-39 | Resolve-only DI smoke test | ⚠️ Warning | Allows broken shared-instance/data-flow wiring to pass. |
+| `AutoQAC/Services/Configuration/ConfigWatcherService.cs` | 78-85 | Watcher callbacks do not swallow disposal races | ⚠️ Warning | Queued FSW callback during shutdown can throw `ObjectDisposedException`. |
 
-Stub-pattern scan found only legitimate empty collection/default/null-return cases in configuration helpers and file-store missing-file handling. No placeholder implementation was identified.
+No placeholder or stub implementation was identified in the Plan 10-10 coordinator fix or fake-store test seam.
 
 ### Human Verification Required
 
-None for this gate decision. The remaining blocker is source-verifiable and testable with a deterministic file-store fake; Plan 10-05 already recorded manual UAT approval for the settings banner.
+None for this gate decision. The blocking issue is source-verifiable and should be covered by a deterministic DI integration test.
 
 ### Gaps Summary
 
-Plan 10-09 correctly closes the previous no-pending facade flush barrier bypass. The current blocking gap is the required code review CR-01: watcher hash computation can fail before typed reload/read failure handling and the coordinator drops the operation through the top-level catch. This is not deferred to Phase 11, whose roadmap scope is user-facing diagnostics boundaries; it is a Phase 10 race-correctness and TEST-03 coverage gap. Fixing it requires moving hash failure handling into the watcher/reload failure pipeline and adding deterministic regression coverage for a thrown `ComputeHashAsync` followed by a later successful watcher reload.
+The previous watcher hash-read blocker is closed by Plan 10-10. The phase remains blocked by a new, true code-review critical issue: the production DI graph registers a shared coordinator for `ConfigWatcherService`, but `ConfigurationService` is constructed through a public constructor that creates a private coordinator. This means external settings file changes and watcher-originated failures are processed by the wrong coordinator and do not update the facade/UI streams that Phase 10 was meant to harden. Fix the DI wiring and add an integration regression proving watcher signals reach the same `IConfigurationService` facade.
 
 ---
 
-_Verified: 2026-05-01T00:00:00Z_  
+_Verified: 2026-05-01T02:18:05Z_  
 _Verifier: the agent (gsd-verifier)_
