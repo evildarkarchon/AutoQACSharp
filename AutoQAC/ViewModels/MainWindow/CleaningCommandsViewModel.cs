@@ -219,36 +219,60 @@ public sealed partial class CleaningCommandsViewModel : ViewModelBase, IDisposab
     [RelayCommand(CanExecute = nameof(CanStop))]
     private async Task StopCleaningAsync()
     {
-        StatusText = "Stopping...";
-        var stopResult = await _orchestrator.StopCleaningAsync();
-        var terminationResult = stopResult.TerminationResult ?? _orchestrator.LastTerminationResult;
-
-        if (terminationResult == TerminationResult.GracePeriodExpired)
+        try
         {
-            var choice = await _messageDialog.ShowChoiceAsync(StopTerminationDialogContent.ConfirmationTitle,
-                StopTerminationDialogContent.ConfirmationMessage,
-                StopTerminationDialogContent.ForceTerminateButton,
-                StopTerminationDialogContent.LeaveRunningButton,
-                MessageDialogIcon.Question);
+            StatusText = "Stopping...";
+            var stopResult = await _orchestrator.StopCleaningAsync();
+            var terminationResult = stopResult.TerminationResult ?? _orchestrator.LastTerminationResult;
 
-            if (choice == MessageDialogResult.Yes)
+            if (terminationResult == TerminationResult.GracePeriodExpired)
             {
-                var forceResult = await _orchestrator.ForceStopCleaningAsync();
-                if (forceResult.TerminationResult == TerminationResult.ForceKillFailed)
+                var choice = await _messageDialog.ShowChoiceAsync(StopTerminationDialogContent.ConfirmationTitle,
+                    StopTerminationDialogContent.ConfirmationMessage,
+                    StopTerminationDialogContent.ForceTerminateButton,
+                    StopTerminationDialogContent.LeaveRunningButton,
+                    MessageDialogIcon.Question);
+
+                if (choice == MessageDialogResult.Yes)
                 {
-                    await _messageDialog.ShowErrorAsync(
-                        StopTerminationDialogContent.ForceFailureTitle,
-                        StopTerminationDialogContent.ForceFailureMessage);
+                    var forceResult = await _orchestrator.ForceStopCleaningAsync();
+                    if (forceResult.TerminationResult == TerminationResult.ForceKillFailed)
+                    {
+                        await ShowStopFailureDialogSafelyAsync();
+                    }
+                }
+                else
+                {
+                    _orchestrator.MarkLeftRunningByUser();
+                    StatusText = "Cleaning stopped; xEdit left running.";
+                    await _messageDialog.ShowWarningAsync(
+                        StopTerminationDialogContent.LeftRunningTitle,
+                        StopTerminationDialogContent.LeftRunningMessage);
                 }
             }
-            else
-            {
-                _orchestrator.MarkLeftRunningByUser();
-                StatusText = "Cleaning stopped; xEdit left running.";
-                await _messageDialog.ShowWarningAsync(
-                    StopTerminationDialogContent.LeftRunningTitle,
-                    StopTerminationDialogContent.LeftRunningMessage);
-            }
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "StopCleaningAsync failed");
+            StatusText = StopTerminationDialogContent.ForceFailureTitle;
+            await ShowStopFailureDialogSafelyAsync();
+        }
+    }
+
+    /// <summary>
+    /// Shows the shared force-failure dialog without letting dialog-service failures escape the stop command.
+    /// </summary>
+    private async Task ShowStopFailureDialogSafelyAsync()
+    {
+        try
+        {
+            await _messageDialog.ShowErrorAsync(
+                StopTerminationDialogContent.ForceFailureTitle,
+                StopTerminationDialogContent.ForceFailureMessage);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "Failed to show stop failure dialog");
         }
     }
 

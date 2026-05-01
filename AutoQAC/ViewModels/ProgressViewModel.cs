@@ -197,28 +197,35 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
     [RelayCommand(CanExecute = nameof(CanStop))]
     private async System.Threading.Tasks.Task StopAsync()
     {
-        var stopResult = await _orchestrator.StopCleaningAsync();
-        var terminationResult = stopResult.TerminationResult ?? _orchestrator.LastTerminationResult;
-
-        if (terminationResult != TerminationResult.GracePeriodExpired)
+        try
         {
-            return;
+            var stopResult = await _orchestrator.StopCleaningAsync();
+            var terminationResult = stopResult.TerminationResult ?? _orchestrator.LastTerminationResult;
+
+            if (terminationResult != TerminationResult.GracePeriodExpired)
+            {
+                return;
+            }
+
+            var choice = await _messageDialog.ShowChoiceAsync(StopTerminationDialogContent.ConfirmationTitle,
+                StopTerminationDialogContent.ConfirmationMessage,
+                StopTerminationDialogContent.ForceTerminateButton,
+                StopTerminationDialogContent.LeaveRunningButton);
+
+            if (choice == MessageDialogResult.Yes)
+            {
+                var forceResult = await _orchestrator.ForceStopCleaningAsync();
+                await ReportForceStopFailureIfNeededAsync(forceResult.TerminationResult ?? _orchestrator.LastTerminationResult);
+                return;
+            }
+
+            _orchestrator.MarkLeftRunningByUser();
+            StopOutcomeWarningText = StopTerminationDialogContent.LeftRunningMessage;
         }
-
-        var choice = await _messageDialog.ShowChoiceAsync(StopTerminationDialogContent.ConfirmationTitle,
-            StopTerminationDialogContent.ConfirmationMessage,
-            StopTerminationDialogContent.ForceTerminateButton,
-            StopTerminationDialogContent.LeaveRunningButton);
-
-        if (choice == MessageDialogResult.Yes)
+        catch (Exception)
         {
-            var forceResult = await _orchestrator.ForceStopCleaningAsync();
-            await ReportForceStopFailureIfNeededAsync(forceResult.TerminationResult ?? _orchestrator.LastTerminationResult);
-            return;
+            await ShowForceFailureDialogSafelyAsync();
         }
-
-        _orchestrator.MarkLeftRunningByUser();
-        StopOutcomeWarningText = StopTerminationDialogContent.LeftRunningMessage;
     }
 
     [RelayCommand]
@@ -234,9 +241,17 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
     [RelayCommand]
     private async System.Threading.Tasks.Task KillHungProcessAsync()
     {
-        IsHangWarningVisible = false;
-        var forceResult = await _orchestrator.ForceStopCleaningAsync();
-        await ReportForceStopFailureIfNeededAsync(forceResult.TerminationResult ?? _orchestrator.LastTerminationResult);
+        try
+        {
+            IsHangWarningVisible = false;
+            var forceResult = await _orchestrator.ForceStopCleaningAsync();
+            await ReportForceStopFailureIfNeededAsync(forceResult.TerminationResult ?? _orchestrator.LastTerminationResult);
+        }
+        catch (Exception)
+        {
+            IsHangWarningVisible = false;
+            await ShowForceFailureDialogSafelyAsync();
+        }
     }
 
     /// <summary>
@@ -250,10 +265,25 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
             return;
         }
 
+        await ShowForceFailureDialogSafelyAsync();
+    }
+
+    /// <summary>
+    /// Persists the shared force-failure warning and best-effort displays the matching dialog.
+    /// </summary>
+    private async System.Threading.Tasks.Task ShowForceFailureDialogSafelyAsync()
+    {
         StopOutcomeWarningText = StopTerminationDialogContent.ForceFailureMessage;
-        await _messageDialog.ShowErrorAsync(
-            StopTerminationDialogContent.ForceFailureTitle,
-            StopTerminationDialogContent.ForceFailureMessage);
+        try
+        {
+            await _messageDialog.ShowErrorAsync(
+                StopTerminationDialogContent.ForceFailureTitle,
+                StopTerminationDialogContent.ForceFailureMessage);
+        }
+        catch (Exception)
+        {
+            // The persistent warning remains visible when the modal dialog itself cannot be shown.
+        }
     }
 
     /// <summary>

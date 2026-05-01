@@ -855,6 +855,74 @@ public sealed class MainWindowViewModelTests
             null);
     }
 
+    [Fact]
+    public async Task StopCleaningCommand_WhenStopThrows_ShouldShowSafeFailureCopy()
+    {
+        var stateSubject = new BehaviorSubject<AppState>(new AppState { IsCleaning = true });
+        _stateServiceMock.StateChanged.Returns(stateSubject);
+        _stateServiceMock.CurrentState.Returns(new AppState { IsCleaning = true });
+        _orchestratorMock.StopCleaningAsync().ThrowsAsync(new InvalidOperationException("stop failed"));
+        _messageDialogMock.ShowErrorAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>())
+            .Returns(Task.CompletedTask);
+
+        var vm = new MainWindowViewModel(
+            _configServiceMock,
+            _stateServiceMock,
+            _orchestratorMock,
+            _loggerMock,
+            _fileDialogMock,
+            _messageDialogMock,
+            _pluginServiceMock,
+            _pluginLoadingServiceMock,
+            _uiDispatcher);
+
+        await vm.Commands.StopCleaningCommand.ExecuteAsync(null);
+
+        await _messageDialogMock.Received(1).ShowErrorAsync(
+            StopTerminationDialogContent.ForceFailureTitle,
+            StopTerminationDialogContent.ForceFailureMessage,
+            null);
+        _loggerMock.Received().Error(Arg.Any<InvalidOperationException>(), "StopCleaningAsync failed");
+    }
+
+    [Fact]
+    public async Task StopCleaningCommand_WhenFailureDialogThrows_ShouldLogAndComplete()
+    {
+        var stateSubject = new BehaviorSubject<AppState>(new AppState { IsCleaning = true });
+        _stateServiceMock.StateChanged.Returns(stateSubject);
+        _stateServiceMock.CurrentState.Returns(new AppState { IsCleaning = true });
+        _orchestratorMock.StopCleaningAsync().Returns(new StopCleaningResult(TerminationResult.GracePeriodExpired, true));
+        _orchestratorMock.ForceStopCleaningAsync().Returns(new StopCleaningResult(TerminationResult.ForceKillFailed, true));
+        _messageDialogMock.ShowChoiceAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<MessageDialogIcon>(),
+                Arg.Any<string?>())
+            .Returns(MessageDialogResult.Yes);
+        _messageDialogMock.ShowErrorAsync(
+                StopTerminationDialogContent.ForceFailureTitle,
+                StopTerminationDialogContent.ForceFailureMessage,
+                Arg.Any<string?>())
+            .ThrowsAsync(new ApplicationException("dialog failed"));
+
+        var vm = new MainWindowViewModel(
+            _configServiceMock,
+            _stateServiceMock,
+            _orchestratorMock,
+            _loggerMock,
+            _fileDialogMock,
+            _messageDialogMock,
+            _pluginServiceMock,
+            _pluginLoadingServiceMock,
+            _uiDispatcher);
+
+        await vm.Commands.StopCleaningCommand.ExecuteAsync(null);
+
+        _loggerMock.Received().Error(Arg.Any<ApplicationException>(), "Failed to show stop failure dialog");
+    }
+
     #endregion
 
     #region State Synchronization Tests

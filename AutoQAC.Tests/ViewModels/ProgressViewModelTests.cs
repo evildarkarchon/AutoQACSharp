@@ -9,6 +9,7 @@ using AutoQAC.Tests.TestInfrastructure;
 using AutoQAC.ViewModels;
 using FluentAssertions;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 
 namespace AutoQAC.Tests.ViewModels;
 
@@ -198,6 +199,63 @@ public sealed class ProgressViewModelTests
             StopTerminationDialogContent.ForceFailureTitle,
             StopTerminationDialogContent.ForceFailureMessage,
             Arg.Any<string?>());
+        vm.StopOutcomeWarningText.Should().Be(StopTerminationDialogContent.ForceFailureMessage);
+        vm.HasStopOutcomeWarning.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task StopCommand_WhenStopThrows_ShouldPersistFailureWarningAndShowSharedFailure()
+    {
+        // Arrange
+        _orchestratorMock.StopCleaningAsync()
+            .ThrowsAsync(new InvalidOperationException("stop failed"));
+        _messageDialogMock.ShowErrorAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>())
+            .Returns(Task.CompletedTask);
+
+        var vm = CreateViewModel();
+        _stateSubject.OnNext(new AppState { IsCleaning = true });
+
+        // Act
+        await vm.StopCommand.ExecuteAsync(null);
+
+        // Assert
+        vm.StopOutcomeWarningText.Should().Be(StopTerminationDialogContent.ForceFailureMessage);
+        vm.HasStopOutcomeWarning.Should().BeTrue();
+        await _messageDialogMock.Received(1).ShowErrorAsync(
+            StopTerminationDialogContent.ForceFailureTitle,
+            StopTerminationDialogContent.ForceFailureMessage,
+            Arg.Any<string?>());
+    }
+
+    [Fact]
+    public async Task StopCommand_WhenFailureDialogThrows_ShouldPersistWarningAndComplete()
+    {
+        // Arrange
+        _orchestratorMock.StopCleaningAsync()
+            .Returns(new StopCleaningResult(TerminationResult.GracePeriodExpired, true));
+        _orchestratorMock.ForceStopCleaningAsync()
+            .Returns(new StopCleaningResult(TerminationResult.ForceKillFailed, true));
+        _messageDialogMock.ShowChoiceAsync(
+                StopTerminationDialogContent.ConfirmationTitle,
+                StopTerminationDialogContent.ConfirmationMessage,
+                StopTerminationDialogContent.ForceTerminateButton,
+                StopTerminationDialogContent.LeaveRunningButton,
+                MessageDialogIcon.Question,
+                Arg.Any<string?>())
+            .Returns(MessageDialogResult.Yes);
+        _messageDialogMock.ShowErrorAsync(
+                StopTerminationDialogContent.ForceFailureTitle,
+                StopTerminationDialogContent.ForceFailureMessage,
+                Arg.Any<string?>())
+            .ThrowsAsync(new ApplicationException("dialog failed"));
+
+        var vm = CreateViewModel();
+        _stateSubject.OnNext(new AppState { IsCleaning = true });
+
+        // Act
+        await vm.StopCommand.ExecuteAsync(null);
+
+        // Assert
         vm.StopOutcomeWarningText.Should().Be(StopTerminationDialogContent.ForceFailureMessage);
         vm.HasStopOutcomeWarning.Should().BeTrue();
     }
@@ -909,6 +967,30 @@ public sealed class ProgressViewModelTests
             Arg.Any<string?>());
         vm.StopOutcomeWarningText.Should().Be(StopTerminationDialogContent.ForceFailureMessage);
         vm.HasStopOutcomeWarning.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task KillHungProcessCommand_WhenForceStopThrows_ShouldPersistFailureWarningAndShowSharedFailure()
+    {
+        // Arrange
+        _orchestratorMock.ForceStopCleaningAsync()
+            .ThrowsAsync(new InvalidOperationException("force stop failed"));
+        _messageDialogMock.ShowErrorAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>())
+            .Returns(Task.CompletedTask);
+        var vm = CreateViewModel();
+        vm.IsHangWarningVisible = true;
+
+        // Act
+        await vm.KillHungProcessCommand.ExecuteAsync(null);
+
+        // Assert
+        vm.IsHangWarningVisible.Should().BeFalse();
+        vm.StopOutcomeWarningText.Should().Be(StopTerminationDialogContent.ForceFailureMessage);
+        vm.HasStopOutcomeWarning.Should().BeTrue();
+        await _messageDialogMock.Received(1).ShowErrorAsync(
+            StopTerminationDialogContent.ForceFailureTitle,
+            StopTerminationDialogContent.ForceFailureMessage,
+            Arg.Any<string?>());
     }
 
     [Fact]
