@@ -1,5 +1,6 @@
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
+using AutoQAC.Models.Diagnostics;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.GameDetection;
 using AutoQAC.Services.Process;
@@ -104,6 +105,107 @@ public sealed class CleaningServiceTests
     }
 
     #region Error Path Tests
+
+    /// <summary>
+    /// Verifies that command-build failures sanitize unsafe plugin basenames before returning user-facing result text.
+    /// </summary>
+    [Fact]
+    public async Task CleanPluginAsync_WhenCommandBuildFailsWithUnsafePluginName_ShouldReturnSanitizedFailureMessage()
+    {
+        // Arrange
+        var service = new CleaningService(
+            _mockGameDetection,
+            _mockState,
+            _mockLogger,
+            _mockProcess,
+            _mockCommandBuilder);
+
+        var plugin = new PluginInfo
+        {
+            FileName = "Unsafe\"Plugin\t|-QAC-autoload.esp",
+            FullPath = "Unsafe\"Plugin\t|-QAC-autoload.esp",
+            DetectedGameType = GameType.SkyrimSe,
+            IsInSkipList = false
+        };
+
+        _mockState.CurrentState.Returns(new AppState
+        {
+            CurrentGameType = GameType.SkyrimSe,
+            Mo2ModeEnabled = false
+        });
+        _mockCommandBuilder.BuildCommand(plugin, GameType.SkyrimSe)
+            .Returns((System.Diagnostics.ProcessStartInfo?)null);
+
+        // Act
+        var result = await service.CleanPluginAsync(plugin);
+
+        // Assert
+        result.Success.Should().BeFalse();
+        result.Status.Should().Be(CleaningStatus.Failed);
+        result.Message.Should().Contain("UnsafePlugin.esp");
+        result.Message.Should().Contain("No process was started");
+        result.Message.Should().Contain("See the latest AutoQAC log");
+        AssertUnsafeFailureFragmentsExcluded(result.Message);
+
+        await _mockProcess.DidNotReceive().ExecuteAsync(
+            Arg.Any<System.Diagnostics.ProcessStartInfo>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>(),
+            Arg.Any<Action<System.Diagnostics.Process>?>(),
+            Arg.Any<string?>());
+    }
+
+    /// <summary>
+    /// Verifies that unexpected launch exceptions use shared safe plugin-failure copy for unsafe basenames.
+    /// </summary>
+    [Fact]
+    public async Task CleanPluginAsync_WhenUnexpectedLaunchExceptionWithUnsafePluginName_ShouldReturnSanitizedFailureMessage()
+    {
+        // Arrange
+        var service = new CleaningService(
+            _mockGameDetection,
+            _mockState,
+            _mockLogger,
+            _mockProcess,
+            _mockCommandBuilder);
+
+        var plugin = new PluginInfo
+        {
+            FileName = "Unsafe\"Plugin\t|-QAC-autoload.esp",
+            FullPath = "Unsafe\"Plugin\t|-QAC-autoload.esp",
+            DetectedGameType = GameType.SkyrimSe,
+            IsInSkipList = false
+        };
+
+        _mockState.CurrentState.Returns(new AppState
+        {
+            CurrentGameType = GameType.SkyrimSe,
+            Mo2ModeEnabled = false,
+            CleaningTimeout = 300
+        });
+        _mockGameDetection.GetGameDisplayName(GameType.SkyrimSe).Returns("Skyrim SE");
+
+        var startInfo = new System.Diagnostics.ProcessStartInfo("SSEEdit.exe");
+        _mockCommandBuilder.BuildCommand(plugin, GameType.SkyrimSe).Returns(startInfo);
+        var exception = new InvalidOperationException(@"System.InvalidOperationException launching C:\Users\Alice\Tools\SSEEdit.exe -QAC");
+        _mockProcess.ExecuteAsync(
+                startInfo,
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>(),
+                Arg.Any<Action<System.Diagnostics.Process>?>(),
+                Arg.Any<string?>())
+            .ThrowsAsync(exception);
+
+        // Act
+        var result = await service.CleanPluginAsync(plugin);
+
+        // Assert
+        result.Success.Should().BeFalse();
+        result.Status.Should().Be(CleaningStatus.Failed);
+        result.Message.Should().Be(DiagnosticTextFormatter.CleaningFailedForPlugin(plugin.FileName));
+        result.Message.Should().Contain("UnsafePlugin.esp");
+        AssertUnsafeFailureFragmentsExcluded(result.Message);
+    }
 
     /// <summary>
     /// Direct xEdit launch diagnostics should use safe structured fields and leave command construction untouched.
@@ -870,5 +972,22 @@ public sealed class CleaningServiceTests
         {
             capturedText.Should().NotContain(unsafeFragment);
         }
+    }
+
+    /// <summary>
+    /// Asserts that user-facing failed cleaning messages exclude unsafe basename and diagnostic fragments.
+    /// </summary>
+    private static void AssertUnsafeFailureFragmentsExcluded(string? text)
+    {
+        text.Should().NotBeNull();
+        text.Should().NotContain("\"");
+        text.Should().NotContain("`");
+        text.Should().NotContain("|");
+        text.Should().NotContain("\t");
+        text.Should().NotContain("-QAC");
+        text.Should().NotContain("-autoload");
+        text.Should().NotContain(@"C:\Users\Alice");
+        text.Should().NotContain("SSEEdit.exe -QAC");
+        text.Should().NotContain("System.InvalidOperationException");
     }
 }

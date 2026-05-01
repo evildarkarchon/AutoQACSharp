@@ -320,6 +320,67 @@ public sealed class PluginResultFinalizerTests
         result.Message.Should().Be("Skipped by backup cancellation.");
     }
 
+    /// <summary>
+    /// Verifies that service-shaped sanitized failure messages remain safe through finalizer, summary, and report output.
+    /// </summary>
+    [Fact]
+    public async Task FinalizeAsync_FailedRunnerResultFromCleaningServiceUnsafePluginMessage_ShouldKeepSummaryAndReportSafe()
+    {
+        // Arrange
+        var unsafePluginName = "Unsafe\"Plugin\t|-QAC-autoload.esp";
+        var plugin = CreatePlugin(unsafePluginName);
+        var runnerOutput = new PluginRunnerOutput
+        {
+            LastAttemptResult = new CleaningResult
+            {
+                Success = false,
+                Status = CleaningStatus.Failed,
+                Message = $"Could not build direct xEdit launch command for {DiagnosticTextFormatter.SafePluginName(unsafePluginName)}. No process was started. See the latest AutoQAC log."
+            },
+            AttemptCount = 1,
+            MainLogOffset = 11,
+            ExceptionLogOffset = 22,
+            Duration = TimeSpan.FromSeconds(1),
+            ReachedMaxRetryAttempts = false
+        };
+
+        _logFileServiceMock.ReadLogContentAsync(
+                "xedit",
+                GameType.SkyrimSe,
+                runnerOutput.MainLogOffset,
+                runnerOutput.ExceptionLogOffset,
+                Arg.Any<CancellationToken>())
+            .Returns(new LogReadResult { LogLines = new List<string>() });
+
+        // Act
+        var result = await _sut.FinalizeAsync(
+            plugin,
+            GameType.SkyrimSe,
+            "xedit",
+            runnerOutput,
+            new TerminationFinalizeContext(ProcessMayStillBeRunning: false, StopWasRequested: false),
+            CancellationToken.None);
+        var session = new CleaningSessionResult
+        {
+            StartTime = new DateTime(2026, 5, 1, 7, 0, 0),
+            EndTime = new DateTime(2026, 5, 1, 7, 1, 0),
+            GameType = GameType.SkyrimSe,
+            PluginResults = [result]
+        };
+        var report = session.GenerateReport();
+
+        // Assert
+        result.Message.Should().Contain("UnsafePlugin.esp");
+        result.Message.Should().Contain("No process was started");
+        result.Message.Should().Contain("See the latest AutoQAC log");
+        result.Summary.Should().Contain("UnsafePlugin.esp");
+        report.Should().Contain("UnsafePlugin.esp");
+        report.Should().Contain("No process was started");
+        AssertUnsafeServiceFailureFragmentsExcluded(result.Message);
+        AssertUnsafeServiceFailureFragmentsExcluded(result.Summary);
+        AssertUnsafeServiceFailureFragmentsExcluded(report);
+    }
+
     private static PluginInfo CreatePlugin(string fileName) => new()
     {
         FileName = fileName,
@@ -347,5 +408,22 @@ public sealed class PluginResultFinalizerTests
         text.Should().NotContain(@"C:\Users\Alice");
         text.Should().NotContain("-QAC");
         text.Should().NotContain("EAccessViolation");
+    }
+
+    /// <summary>
+    /// Asserts that downstream failed-result text excludes unsafe service-message fragments and raw plugin basename characters.
+    /// </summary>
+    private static void AssertUnsafeServiceFailureFragmentsExcluded(string? text)
+    {
+        text.Should().NotBeNull();
+        text.Should().NotContain("\"");
+        text.Should().NotContain("`");
+        text.Should().NotContain("|");
+        text.Should().NotContain("\t");
+        text.Should().NotContain("-QAC");
+        text.Should().NotContain("-autoload");
+        text.Should().NotContain(@"C:\Users\Alice");
+        text.Should().NotContain("SSEEdit.exe -QAC");
+        text.Should().NotContain("System.InvalidOperationException");
     }
 }
