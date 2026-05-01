@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Cleanup
-status: gaps_planned
-stopped_at: Planned 10-11-PLAN.md
-last_updated: "2026-05-01T02:09:14.081Z"
+status: executing
+stopped_at: Completed 10-11-PLAN.md
+last_updated: "2026-05-01T02:30:15.590Z"
 last_activity: 2026-05-01
 progress:
   total_phases: 7
   completed_phases: 6
   total_plans: 52
-  completed_plans: 51
+  completed_plans: 52
   percent: 100
 ---
 
@@ -26,8 +26,8 @@ See: .planning/PROJECT.md (updated 2026-04-28)
 ## Current Position
 
 Phase: 10 (configuration-persistence-hardening) — COMPLETE
-Plan: 10 of 11
-Status: Phase 10 gap closure planned, ready to execute 10-11-PLAN.md
+Plan: 11 of 11
+Status: Phase complete, ready for verification
 Last activity: 2026-05-01
 
 Progress: [██████████] 100%
@@ -59,6 +59,7 @@ Progress: [██████████] 100%
 | Phase 10 P08 | 3 min | 2 tasks | 3 files |
 | Phase 10 P09 | 12 min | 2 tasks | 2 files |
 | Phase 10 P10 | 8 min | 3 tasks | 4 files |
+| Phase 10 P11 | 3 min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -91,6 +92,8 @@ Progress: [██████████] 100%
 - [Phase 10]: Watcher hash-read exceptions are handled inside ApplyWatcherAsync as typed Watcher/ReadFailed outcomes. — Plan 10 closes the remaining verification gap where transient external writer locks could otherwise become log-only dropped watcher operations.
 - [Phase 10]: The watcher hash-read race is covered through FakeUserConfigFileStore.HashFailure instead of FileSystemWatcher timing, OS locks, or production debounce waits. — Maintainers can verify the race deterministically while preserving the single-reader coordinator policy.
 - [Phase 10]: Plan 11 closes the production DI regression where IConfigurationService can be constructed with a private coordinator instead of the registered shared IConfigPersistenceCoordinator. — Required so watcher-originated results/failures flow through the facade streams consumed by Settings UI and cleaning-adjacent workflows.
+- [Phase 10]: Production DI constructs IConfigurationService with the registered shared IConfigPersistenceCoordinator. — Prevents constructor selection from creating a private coordinator disconnected from ConfigWatcherService.
+- [Phase 10]: Watcher-originated errors are verified through IConfigurationService.PersistenceResults. — The DI regression now covers observable facade data flow, not only service resolution.
 
 ### Pending Todos
 
@@ -108,6 +111,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-05-01T02:18:05Z
-Stopped at: Planned 10-11-PLAN.md
+Last session: 2026-05-01T02:30:15.585Z
+Stopped at: Completed 10-11-PLAN.md
 Resume file: None
