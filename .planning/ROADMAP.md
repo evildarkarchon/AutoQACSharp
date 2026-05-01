@@ -197,7 +197,7 @@ Plans:
   2. User sees or receives a recoverable failure path when configuration persistence fails instead of silent logging-only fallback.
   3. Maintainer can verify watcher race cases deterministically for debounce, deferred reload, invalid YAML, and app-save interactions.
   4. User configuration changes avoid YAML serialization round-trips for in-memory cloning.
-**Plans**: 5 plans
+**Plans**: 7 plans (5 original + 2 gap-closure)
 Plans:
 **Wave 1**
 - [x] 10-01-PLAN.md — Manual deep-copy on UserConfiguration graph (PERF-03)
@@ -211,6 +211,12 @@ Plans:
 **Wave 4 (blocked on 10-03 completion)**
 - [x] 10-04-PLAN.md — Pre-cleaning flush failure blocks xEdit launch (TEST-03)
 - [x] 10-05-PLAN.md — Settings ViewModel + SettingsWindow typed-failure banner (REF-03)
+
+**Wave 6 (gap closure; blocked on Wave 4 completion)**
+- [ ] 10-06-PLAN.md — Safe observer publication + explicit reload pending-save guard (REF-03, TEST-03)
+
+**Wave 7 (gap closure; blocked on 10-06 completion)**
+- [ ] 10-07-PLAN.md — Facade state synchronization and conditional reload flag clearing (REF-03, TEST-03)
 
 ### Phase 11: User-Facing Diagnostics Boundaries
 **Goal**: Users receive concise, actionable error messages while logs retain local troubleshooting value without unnecessary full path or command-line exposure.
@@ -236,7 +242,7 @@ Plans:
 | 7. Backup Restore & Retention Safety | v1.0 Cleanup | 11/14 | Gaps planned | - |
 | 8. Cleaning Orchestrator Decomposition | v1.0 Cleanup | 10/10 | Complete | 2026-04-30 |
 | 9. Plugin Refresh & Approximation Performance | v1.0 Cleanup | 8/9 | Gaps planned | - |
-| 10. Configuration Persistence Hardening | v1.0 Cleanup | 5/5 | Gaps found | - |
+| 10. Configuration Persistence Hardening | v1.0 Cleanup | 5/7 | Gaps planned | - |
 | 11. User-Facing Diagnostics Boundaries | v1.0 Cleanup | 0/0 | Not started | - |
 
 ## Coverage
