@@ -26,6 +26,7 @@ public sealed class ProgressViewModelTests
     private readonly Subject<CleaningSessionResult> _cleaningCompletedSubject;
     private readonly BehaviorSubject<bool> _isTerminatingSubject;
     private readonly Subject<bool> _hangDetectedSubject;
+    private readonly IMessageDialogService _messageDialogMock;
     private readonly IUiDispatcher _uiDispatcher;
 
     /// <summary>
@@ -51,6 +52,8 @@ public sealed class ProgressViewModelTests
 
         _orchestratorMock = Substitute.For<ICleaningOrchestrator>();
         _orchestratorMock.HangDetected.Returns(_hangDetectedSubject);
+
+        _messageDialogMock = Substitute.For<IMessageDialogService>();
     }
 
     /// <summary>
@@ -58,7 +61,7 @@ public sealed class ProgressViewModelTests
     /// </summary>
     private ProgressViewModel CreateViewModel()
     {
-        return new ProgressViewModel(_stateServiceMock, _orchestratorMock, _uiDispatcher);
+        return new ProgressViewModel(_stateServiceMock, _orchestratorMock, _messageDialogMock, _uiDispatcher);
     }
 
     [Fact]
@@ -97,6 +100,104 @@ public sealed class ProgressViewModelTests
 
         // Assert
         await _orchestratorMock.Received(1).StopCleaningAsync();
+    }
+
+    [Fact]
+    public async Task StopCommand_WhenGracePeriodExpires_ShouldPromptBeforeForceStop()
+    {
+        // Arrange
+        var choiceCompletion = new TaskCompletionSource<MessageDialogResult>();
+        _orchestratorMock.StopCleaningAsync()
+            .Returns(new StopCleaningResult(TerminationResult.GracePeriodExpired, true));
+        _messageDialogMock.ShowChoiceAsync(
+                StopTerminationDialogContent.ConfirmationTitle,
+                StopTerminationDialogContent.ConfirmationMessage,
+                StopTerminationDialogContent.ForceTerminateButton,
+                StopTerminationDialogContent.LeaveRunningButton,
+                MessageDialogIcon.Question,
+                Arg.Any<string?>())
+            .Returns(choiceCompletion.Task);
+
+        var vm = CreateViewModel();
+        _stateSubject.OnNext(new AppState { IsCleaning = true });
+
+        // Act
+        var stopTask = vm.StopCommand.ExecuteAsync(null);
+
+        // Assert
+        await _messageDialogMock.Received(1).ShowChoiceAsync(
+            StopTerminationDialogContent.ConfirmationTitle,
+            StopTerminationDialogContent.ConfirmationMessage,
+            StopTerminationDialogContent.ForceTerminateButton,
+            StopTerminationDialogContent.LeaveRunningButton,
+            MessageDialogIcon.Question,
+            Arg.Any<string?>());
+        await _orchestratorMock.DidNotReceive().ForceStopCleaningAsync();
+
+        choiceCompletion.SetResult(MessageDialogResult.Yes);
+        await stopTask;
+        await _orchestratorMock.Received(1).ForceStopCleaningAsync();
+    }
+
+    [Fact]
+    public async Task StopCommand_WhenForceTerminationDeclined_ShouldMarkLeftRunningAndPersistWarning()
+    {
+        // Arrange
+        _orchestratorMock.StopCleaningAsync()
+            .Returns(new StopCleaningResult(TerminationResult.GracePeriodExpired, true));
+        _messageDialogMock.ShowChoiceAsync(
+                StopTerminationDialogContent.ConfirmationTitle,
+                StopTerminationDialogContent.ConfirmationMessage,
+                StopTerminationDialogContent.ForceTerminateButton,
+                StopTerminationDialogContent.LeaveRunningButton,
+                MessageDialogIcon.Question,
+                Arg.Any<string?>())
+            .Returns(MessageDialogResult.No);
+
+        var vm = CreateViewModel();
+        _stateSubject.OnNext(new AppState { IsCleaning = true });
+
+        // Act
+        await vm.StopCommand.ExecuteAsync(null);
+
+        // Assert
+        _orchestratorMock.Received(1).MarkLeftRunningByUser();
+        await _orchestratorMock.DidNotReceive().ForceStopCleaningAsync();
+        vm.StopOutcomeWarningText.Should().Be(StopTerminationDialogContent.LeftRunningMessage);
+        vm.HasStopOutcomeWarning.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task StopCommand_WhenConfirmedForceTerminationFails_ShouldShowSharedFailureAndPersistWarning()
+    {
+        // Arrange
+        _orchestratorMock.StopCleaningAsync()
+            .Returns(new StopCleaningResult(TerminationResult.GracePeriodExpired, true));
+        _orchestratorMock.ForceStopCleaningAsync()
+            .Returns(new StopCleaningResult(TerminationResult.ForceKillFailed, true));
+        _messageDialogMock.ShowChoiceAsync(
+                StopTerminationDialogContent.ConfirmationTitle,
+                StopTerminationDialogContent.ConfirmationMessage,
+                StopTerminationDialogContent.ForceTerminateButton,
+                StopTerminationDialogContent.LeaveRunningButton,
+                MessageDialogIcon.Question,
+                Arg.Any<string?>())
+            .Returns(MessageDialogResult.Yes);
+
+        var vm = CreateViewModel();
+        _stateSubject.OnNext(new AppState { IsCleaning = true });
+
+        // Act
+        await vm.StopCommand.ExecuteAsync(null);
+
+        // Assert
+        await _orchestratorMock.Received(1).ForceStopCleaningAsync();
+        await _messageDialogMock.Received(1).ShowErrorAsync(
+            StopTerminationDialogContent.ForceFailureTitle,
+            StopTerminationDialogContent.ForceFailureMessage,
+            Arg.Any<string?>());
+        vm.StopOutcomeWarningText.Should().Be(StopTerminationDialogContent.ForceFailureMessage);
+        vm.HasStopOutcomeWarning.Should().BeTrue();
     }
 
     #region Edge Case Tests
