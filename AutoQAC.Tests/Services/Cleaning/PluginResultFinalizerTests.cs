@@ -2,6 +2,7 @@ using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Models.Diagnostics;
 using AutoQAC.Services.Cleaning;
+using AutoQAC.Tests.Helpers;
 using FluentAssertions;
 using NSubstitute;
 
@@ -278,6 +279,58 @@ public sealed class PluginResultFinalizerTests
             Arg.Any<object[]>());
     }
 
+    /// <summary>
+    /// Verifies that path-bearing xEdit log-read warnings are retained in local logs but replaced before user-facing result/report surfaces consume them.
+    /// </summary>
+    [Fact]
+    public async Task FinalizeAsync_LogReadWarningWithMainLogPath_UsesSafeUserFacingWarningAndKeepsRawWarningInLogs()
+    {
+        // Arrange
+        const string safeWarning = "xEdit log could not be read. See the latest AutoQAC log.";
+        const string rawWarning = @"Main log file not found: C:\Users\Alice\AppData\Local\SSEEdit\SSEEdit_log.txt";
+        var plugin = CreatePlugin("Plugin.esp");
+        var runnerOutput = CreateRunnerOutput();
+
+        _logFileServiceMock.ReadLogContentAsync(
+                "xedit",
+                GameType.SkyrimSe,
+                runnerOutput.MainLogOffset,
+                runnerOutput.ExceptionLogOffset,
+                Arg.Any<CancellationToken>())
+            .Returns(new LogReadResult
+            {
+                LogLines = [],
+                Warning = rawWarning
+            });
+
+        // Act
+        var result = await _sut.FinalizeAsync(
+            plugin,
+            GameType.SkyrimSe,
+            "xedit",
+            runnerOutput,
+            new TerminationFinalizeContext(ProcessMayStillBeRunning: false, StopWasRequested: false),
+            CancellationToken.None);
+        var session = new CleaningSessionResult
+        {
+            StartTime = new DateTime(2026, 5, 1, 7, 30, 0),
+            EndTime = new DateTime(2026, 5, 1, 7, 31, 0),
+            GameType = GameType.SkyrimSe,
+            PluginResults = [result]
+        };
+        var report = session.GenerateReport();
+
+        // Assert
+        result.LogParseWarning.Should().Be(safeWarning);
+        AssertSharedUnsafeSentinelsExcluded(result.LogParseWarning);
+        AssertSharedUnsafeSentinelsExcluded(result.Summary);
+        AssertSharedUnsafeSentinelsExcluded(report);
+        _loggerMock.Received(1).Warning(
+            "Log read warning for {Plugin}: {Warning}",
+            "Plugin.esp",
+            rawWarning);
+    }
+
     [Fact]
     public async Task FinalizeAsync_SkippedRunnerResult_DoesNotReadLogs_AndSuccessStaysFalse()
     {
@@ -425,5 +478,17 @@ public sealed class PluginResultFinalizerTests
         text.Should().NotContain(@"C:\Users\Alice");
         text.Should().NotContain("SSEEdit.exe -QAC");
         text.Should().NotContain("System.InvalidOperationException");
+    }
+
+    /// <summary>
+    /// Asserts that user-facing finalizer/report text excludes the shared Phase 11 unsafe diagnostic fragments.
+    /// </summary>
+    private static void AssertSharedUnsafeSentinelsExcluded(string? text)
+    {
+        text.Should().NotBeNull();
+        foreach (var sentinel in DiagnosticSentinels.UnsafeDiagnosticSentinels)
+        {
+            text.Should().NotContain(sentinel);
+        }
     }
 }
