@@ -29,7 +29,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IUserConfigFileStore, UserConfigFileStore>();
         services.AddSingleton<ConfigPersistenceCoordinator>();
         services.AddSingleton<IConfigPersistenceCoordinator>(sp => sp.GetRequiredService<ConfigPersistenceCoordinator>());
-        services.AddSingleton<IConfigurationService, ConfigurationService>();
+        services.AddSingleton<IConfigurationService>(sp => new ConfigurationService(
+            sp.GetRequiredService<IConfigPersistenceCoordinator>(),
+            sp.GetRequiredService<ILoggingService>()));
         services.AddSingleton<IConfigWatcherService, ConfigWatcherService>();
         services.AddSingleton<ILegacyMigrationService, LegacyMigrationService>();
         services.AddSingleton<ILogRetentionService, LogRetentionService>();
