@@ -262,6 +262,38 @@ public sealed class ConfigPersistenceCoordinatorTests
     }
 
     [Fact]
+    public async Task Watcher_ErrorSignal_EmitsReadFailedWithoutReadingFile()
+    {
+        var store = new FakeUserConfigFileStore { CurrentContent = Serializer.Serialize(NewConfig(33)) };
+        var failures = new List<ConfigPersistenceFailure>();
+        var results = new List<ConfigPersistenceResult>();
+        var coordinator = CreateCoordinator(store);
+        using var failureSub = coordinator.Failures.Subscribe(failures.Add);
+        using var resultSub = coordinator.PersistenceResults.Subscribe(results.Add);
+        await coordinator.StartAsync();
+
+        coordinator.NotifySettingsFileChanged(ConfigFileSignalKind.Error);
+        await PumpUntilQuiescentAsync(coordinator);
+
+        failures.Should().Contain(f => f.Operation == ConfigPersistenceOperationKind.Watcher && f.Kind == ConfigPersistenceFailureKind.ReadFailed);
+        results.Should().Contain(r =>
+            r.Operation == ConfigPersistenceOperationKind.Watcher
+            && r.Status == ConfigPersistenceStatusKind.Failed
+            && r.Failure != null
+            && r.Failure.Kind == ConfigPersistenceFailureKind.ReadFailed);
+        store.CallLog.Should().NotContain("Hash");
+        store.CallLog.Should().NotContain("Read");
+    }
+
+    [Fact]
+    public void ConfigWatcherService_ForwardsFileSystemWatcherErrors_StaticGuard()
+    {
+        var source = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "AutoQAC", "Services", "Configuration", "ConfigWatcherService.cs"));
+
+        source.Should().Contain("NotifySettingsFileChanged(ConfigFileSignalKind.Error)");
+    }
+
+    [Fact]
     public async Task Reload_InvalidYaml_RejectsCandidate_ActiveUnchanged_EmitsInvalidExternalYaml()
     {
         var store = new FakeUserConfigFileStore { CurrentContent = "<>not yaml:\nbad: : :" };

@@ -79,7 +79,11 @@ public sealed class ConfigWatcherService : IConfigWatcherService
             watcher.Created += (_, _) => _coordinator.NotifySettingsFileChanged(ConfigFileSignalKind.Created);
             watcher.Renamed += (_, _) => _coordinator.NotifySettingsFileChanged(ConfigFileSignalKind.Renamed);
             watcher.Deleted += (_, _) => _coordinator.NotifySettingsFileChanged(ConfigFileSignalKind.Deleted);
-            watcher.Error += (_, e) => _logger.Error(e.GetException(), "[ConfigWatcher] FSW error");
+            watcher.Error += (_, e) =>
+            {
+                _logger.Error(e.GetException(), "[ConfigWatcher] FSW error");
+                _coordinator.NotifySettingsFileChanged(ConfigFileSignalKind.Error);
+            };
 
             watcher.EnableRaisingEvents = true;
             _watcher = watcher;

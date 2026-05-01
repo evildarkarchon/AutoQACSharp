@@ -287,6 +287,14 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
 
     private async Task ApplyWatcherAsync(WatcherObserved op, CancellationToken ct)
     {
+        if (op.Kind == ConfigFileSignalKind.Error)
+        {
+            var failure = CreateFailure(ConfigPersistenceOperationKind.Watcher, ConfigPersistenceFailureKind.ReadFailed, "Could not read settings file (read_failed)");
+            PublishFailure(failure);
+            SafePublishResult(new ConfigPersistenceResult(ConfigPersistenceStatusKind.Failed, ConfigPersistenceOperationKind.Watcher, _appGeneration, failure));
+            return;
+        }
+
         string? currentHash;
         try
         {
