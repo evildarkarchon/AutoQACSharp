@@ -50,6 +50,7 @@ public sealed class ProcessExecutionService(
         {
             var fileName = startInfo.FileName;
             var arguments = GetArgumentSummary(startInfo);
+            var argumentCount = GetArgumentCount(startInfo);
             var workingDirectory = startInfo.WorkingDirectory;
 
             var processStartInfo = CloneStartInfoForLaunch(startInfo, fileName, workingDirectory);
@@ -57,7 +58,11 @@ public sealed class ProcessExecutionService(
             using var process = new System.Diagnostics.Process();
             process.StartInfo = processStartInfo;
 
-            logger.Debug("Starting process: {FileName} {Arguments}", startInfo.FileName, arguments);
+            logger.Debug(
+                "Starting external process for {Operation}: status={Status}, argumentCount={ArgumentCount}",
+                "ExternalProcess",
+                "Starting",
+                argumentCount);
 
             try
             {
@@ -65,12 +70,24 @@ public sealed class ProcessExecutionService(
             }
             catch (Exception ex)
             {
-                logger.Error(ex, "Failed to start process: {FileName}", startInfo.FileName);
+                logger.Error(
+                    ex,
+                    "Failed to start external process for {Operation}: status={Status}, reason={Reason}, argumentCount={ArgumentCount}",
+                    "ExternalProcess",
+                    "Failed",
+                    "StartFailed",
+                    argumentCount);
                 return new ProcessResult { ExitCode = -1 };
             }
 
             // Track PID after successful start
             var processId = process.Id;
+            logger.Information(
+                "Started external process for {Operation}: status={Status}, processId={ProcessId}, argumentCount={ArgumentCount}",
+                "ExternalProcess",
+                "Started",
+                processId,
+                argumentCount);
             try
             {
                 await TrackProcessAsync(process, pluginName ?? arguments, ct).ConfigureAwait(false);
@@ -199,6 +216,14 @@ public sealed class ProcessExecutionService(
         startInfo.ArgumentList.Count > 0
             ? $"{startInfo.ArgumentList.Count} argument-list entries"
             : startInfo.Arguments;
+
+    /// <summary>
+    /// Counts launch arguments without exposing their raw values in process-start diagnostics.
+    /// </summary>
+    private static int GetArgumentCount(ProcessStartInfo startInfo) =>
+        startInfo.ArgumentList.Count > 0
+            ? startInfo.ArgumentList.Count
+            : string.IsNullOrWhiteSpace(startInfo.Arguments) ? 0 : 1;
 
     public async Task<TerminationResult> TerminateProcessAsync(
         System.Diagnostics.Process process,
