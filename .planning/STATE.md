@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Cleanup
 status: executing
-stopped_at: Phase 11 UI-SPEC approved
-last_updated: "2026-05-01T04:26:21.562Z"
+stopped_at: Completed 11-01-PLAN.md
+last_updated: "2026-05-01T04:35:43.047Z"
 last_activity: 2026-05-01
 progress:
   total_phases: 7
   completed_phases: 6
   total_plans: 58
-  completed_plans: 53
-  percent: 91
+  completed_plans: 54
+  percent: 93
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-04-28)
 ## Current Position
 
 Phase: 11 (user-facing-diagnostics-boundaries) — EXECUTING
-Plan: 2 of 6
+Plan: 3 of 6
 Status: Ready to execute
 Last activity: 2026-05-01
 
-Progress: [█████████░] 91%
+Progress: [█████████░] 93%
 
 ## Performance Metrics
 
@@ -61,6 +61,7 @@ Progress: [█████████░] 91%
 | Phase 10 P10 | 8 min | 3 tasks | 4 files |
 | Phase 10 P11 | 3 min | 3 tasks | 3 files |
 | Phase 11 P01 | 3 min | 2 tasks | 2 files |
+| Phase 11 P02 | 7 min | 3 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -97,6 +98,8 @@ Progress: [█████████░] 91%
 - [Phase 10]: Watcher-originated errors are verified through IConfigurationService.PersistenceResults. — The DI regression now covers observable facade data flow, not only service resolution.
 - [Phase 11]: DiagnosticTextFormatter lives under AutoQAC.Models.Diagnostics so models, services, ViewModels, and startup code can share safe copy without a service-layer dependency. — Plan 11-01 established the shared static diagnostics boundary for later Phase 11 consumers.
 - [Phase 11]: Unsafe failure summaries fall back on paths, command flags, exception names, stack markers, executable command markers, or control whitespace. — Conservative fallback behavior prevents raw exception/path/command content from crossing into user-facing diagnostics.
+- [Phase 11]: CleaningCommandsViewModel now treats unexpected cleaning and preview failures as latest-log UI copy only; raw exception and stack details stay in logs. — Plan 11-02 SEC-01 command-boundary hardening keeps technical details in logs while preserving user actionability.
+- [Phase 11]: Pre-clean missing-path validation uses DiagnosticTextFormatter.SafeFileIdentifier for xEdit, MO2, and file-load-order paths, preserving basenames while hiding directories. — Plan 11-02 D-05/D-08 require safe basenames and direct fix guidance without full paths or latest-log guidance for simple missing-path validation.
 
 ### Pending Todos
 
@@ -114,6 +117,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-05-01T04:26:15.648Z
+Last session: 2026-05-01T04:35:04.385Z
 Stopped at: Completed 11-01-PLAN.md
 Resume file: None
