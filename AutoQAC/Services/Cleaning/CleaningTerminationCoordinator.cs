@@ -1,6 +1,5 @@
 using System;
 using System.ComponentModel;
-using System.Diagnostics;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
 using System.Threading;
@@ -10,6 +9,7 @@ using AutoQAC.Models;
 using AutoQAC.Services.Monitoring;
 using AutoQAC.Services.Process;
 using AutoQAC.Services.State;
+using DiagnosticsProcess = System.Diagnostics.Process;
 
 namespace AutoQAC.Services.Cleaning;
 
@@ -30,7 +30,7 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
 
     // State owned by this coordinator (lifted from CleaningOrchestrator.cs Phase 5 locks).
     private volatile bool _isStopRequested;
-    private Process? _currentProcess;
+    private DiagnosticsProcess? _currentProcess;
     private PendingForceTarget? _pendingForceEscalationTarget;
     private TerminationResult? _lastTerminationResult;
     private IDisposable? _hangMonitorSubscription;
@@ -81,7 +81,7 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
     public bool ProcessMayStillBeRunning => MayProcessStillBeRunning(_lastTerminationResult);
 
     /// <inheritdoc />
-    public void AttachProcess(Process process)
+    public void AttachProcess(DiagnosticsProcess process)
     {
         lock (_processLock)
         {
@@ -124,7 +124,7 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
         _logger.Information("[Termination] Graceful stop requested");
 
         // Attempt graceful termination on the current process.
-        Process? proc;
+        DiagnosticsProcess? proc;
         lock (_processLock)
         {
             proc = _currentProcess;
@@ -180,7 +180,7 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
     {
         _logger.Information("[Termination] Force stop requested -- killing process tree immediately");
 
-        Process? proc;
+        DiagnosticsProcess? proc;
         PendingForceTarget? pendingTarget = null;
         var isPendingForceEscalation = false;
         lock (_processLock)
@@ -353,7 +353,7 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
     /// Captures durable process identity for a later confirmed force escalation without retaining the borrowed process handle.
     /// </summary>
     /// <param name="process">The currently attached process whose owner may dispose it after session finalization.</param>
-    private void RetainPendingForceEscalationProcess(Process process)
+    private void RetainPendingForceEscalationProcess(DiagnosticsProcess process)
     {
         var processId = TryGetProcessId(process);
         if (processId is null)
@@ -390,7 +390,7 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
     /// </summary>
     /// <param name="process">Process handle to inspect.</param>
     /// <returns>The process ID when available; otherwise <see langword="null" />.</returns>
-    private static int? TryGetProcessId(Process process)
+    private static int? TryGetProcessId(DiagnosticsProcess process)
     {
         try
         {
@@ -407,7 +407,7 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
     /// </summary>
     /// <param name="process">Process handle to inspect.</param>
     /// <returns>The process start time when available; otherwise <see langword="null" />.</returns>
-    private static DateTime? TryGetStartTime(Process process)
+    private static DateTime? TryGetStartTime(DiagnosticsProcess process)
     {
         try
         {
@@ -424,11 +424,11 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
     /// </summary>
     /// <param name="target">Durable identity captured during graceful termination expiry.</param>
     /// <returns>A newly opened process handle owned by the caller, or <see langword="null" /> if unavailable or recycled.</returns>
-    private static Process? TryReopenPendingTarget(PendingForceTarget target)
+    private static DiagnosticsProcess? TryReopenPendingTarget(PendingForceTarget target)
     {
         try
         {
-            var process = Process.GetProcessById(target.ProcessId);
+            var process = DiagnosticsProcess.GetProcessById(target.ProcessId);
             if (target.StartTime is { } expectedStartTime && process.StartTime != expectedStartTime)
             {
                 process.Dispose();
@@ -443,7 +443,7 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
         }
     }
 
-    private void StartHangMonitoring(Process process)
+    private void StartHangMonitoring(DiagnosticsProcess process)
     {
         // Ensure only one active monitor subscription per xEdit process lifecycle.
         _hangMonitorSubscription?.Dispose();
