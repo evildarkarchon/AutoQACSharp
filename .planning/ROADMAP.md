@@ -375,9 +375,14 @@ Cross-cutting constraints:
   2. Phase 06 validation metadata reflects current command-launch closure evidence and no longer contradicts Phase 13's source-of-truth verification.
   3. Phase 14 has current Nyquist validation evidence or an explicit validation decision that satisfies the audit discovery gate.
   4. `ROADMAP.md` and `REQUIREMENTS.md` markers align with the latest Phase 13, Phase 14, and Phase 15 evidence before milestone completion.
-**Plans**: 0 plans
+**Plans**: 3 plans
 Plans:
-- [ ] Plan with `/gsd-plan-phase 16`.
+**Wave 1**
+- [ ] 16-01-PLAN.md — Create/refresh Phase 05, Phase 06, and Phase 14 evidence artifacts.
+
+**Wave 2 (blocked on Wave 1 completion)**
+- [ ] 16-02-PLAN.md — Update the milestone audit to passed/ready with closed findings.
+- [ ] 16-03-PLAN.md — Reconcile requirements and roadmap markers.
 
 ## Progress
 
