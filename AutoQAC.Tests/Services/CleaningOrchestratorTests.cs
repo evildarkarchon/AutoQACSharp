@@ -2454,6 +2454,148 @@ public sealed class CleaningOrchestratorTests
     }
 
     [Fact]
+    public async Task StartCleaningAsync_AfterGracePeriodExpiredAndDetach_PreservesPendingTargetForForceStopAfterFinalization()
+    {
+        // Arrange
+        Process? sleeper = null;
+        var plugin = new PluginInfo { FileName = "Detached.esp", FullPath = "Path/Detached.esp" };
+        _stateServiceMock.CurrentState.Returns(new AppState
+        {
+            LoadOrderPath = "plugins.txt",
+            XEditExecutablePath = "xedit.exe",
+            CurrentGameType = GameType.SkyrimSe,
+            PluginsToClean = new List<PluginInfo> { plugin }
+        });
+        _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>()).Returns(true);
+        _processServiceMock.TerminateProcessAsync(Arg.Any<Process>(), forceKill: false, Arg.Any<CancellationToken>())
+            .Returns(TerminationResult.GracePeriodExpired);
+        _processServiceMock.TerminateProcessAsync(Arg.Any<Process>(), forceKill: true, Arg.Any<CancellationToken>())
+            .Returns(TerminationResult.ForceKilled);
+
+        var processStarted = CreateSignal();
+        var releasePlugin = CreateSignal();
+
+        try
+        {
+            sleeper = StartSleeperProcess();
+
+            _cleaningServiceMock.CleanPluginAsync(
+                    Arg.Any<PluginInfo>(),
+                    Arg.Any<CancellationToken>(),
+                    Arg.Any<Action<Process>?>())
+                .Returns(async callInfo =>
+                {
+                    callInfo.ArgAt<Action<Process>?>(2)?.Invoke(sleeper);
+                    processStarted.TrySetResult(true);
+                    await releasePlugin.Task;
+                    return new CleaningResult { Status = CleaningStatus.Cleaned, Success = true };
+                });
+
+            var cleaningTask = _orchestrator.StartCleaningAsync();
+            await WaitForSignalAsync(processStarted);
+            var stopResult = await _orchestrator.StopCleaningAsync();
+            stopResult.TerminationResult.Should().Be(TerminationResult.GracePeriodExpired);
+
+            // Let the runner detach and the orchestrator finalize before the user confirms Force Terminate.
+            releasePlugin.SetResult(true);
+            await cleaningTask;
+
+            // Act
+            var forceResult = await _orchestrator.ForceStopCleaningAsync();
+
+            // Assert
+            forceResult.TerminationResult.Should().Be(
+                TerminationResult.ForceKilled,
+                "normal finalization must preserve the unresolved GracePeriodExpired pending target for confirmed force stop");
+            forceResult.MayStillBeRunning.Should().BeFalse();
+            await _processServiceMock.Received(1).TerminateProcessAsync(
+                sleeper,
+                forceKill: true,
+                Arg.Is<CancellationToken>(ct => ct == CancellationToken.None));
+        }
+        finally
+        {
+            KillProcessIfRunning(sleeper);
+        }
+    }
+
+    [Fact]
+    public async Task StartCleaningAsync_AfterUnresolvedGracePeriodExpiredAndDetach_NextSessionResetClearsStalePendingTarget()
+    {
+        // Arrange
+        Process? sleeper = null;
+        var firstPlugin = new PluginInfo { FileName = "Detached.esp", FullPath = "Path/Detached.esp" };
+        _stateServiceMock.CurrentState.Returns(new AppState
+        {
+            LoadOrderPath = "plugins.txt",
+            XEditExecutablePath = "xedit.exe",
+            CurrentGameType = GameType.SkyrimSe,
+            PluginsToClean = new List<PluginInfo> { firstPlugin }
+        });
+        _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>()).Returns(true);
+        _processServiceMock.TerminateProcessAsync(Arg.Any<Process>(), forceKill: false, Arg.Any<CancellationToken>())
+            .Returns(TerminationResult.GracePeriodExpired);
+
+        var processStarted = CreateSignal();
+        var releasePlugin = CreateSignal();
+
+        try
+        {
+            sleeper = StartSleeperProcess();
+
+            _cleaningServiceMock.CleanPluginAsync(
+                    Arg.Any<PluginInfo>(),
+                    Arg.Any<CancellationToken>(),
+                    Arg.Any<Action<Process>?>())
+                .Returns(async callInfo =>
+                {
+                    callInfo.ArgAt<Action<Process>?>(2)?.Invoke(sleeper);
+                    processStarted.TrySetResult(true);
+                    await releasePlugin.Task;
+                    return new CleaningResult { Status = CleaningStatus.Cleaned, Success = true };
+                });
+
+            var firstSession = _orchestrator.StartCleaningAsync();
+            await WaitForSignalAsync(processStarted);
+            await _orchestrator.StopCleaningAsync();
+            releasePlugin.SetResult(true);
+            await firstSession;
+
+            var secondPlugin = new PluginInfo { FileName = "Second.esp", FullPath = "Path/Second.esp" };
+            _stateServiceMock.CurrentState.Returns(new AppState
+            {
+                LoadOrderPath = "plugins.txt",
+                XEditExecutablePath = "xedit.exe",
+                CurrentGameType = GameType.SkyrimSe,
+                PluginsToClean = new List<PluginInfo> { secondPlugin }
+            });
+            TerminationResult? capturedAtStart = TerminationResult.GracePeriodExpired;
+            _cleaningServiceMock.CleanPluginAsync(
+                    Arg.Any<PluginInfo>(),
+                    Arg.Any<CancellationToken>(),
+                    Arg.Any<Action<Process>?>())
+                .Returns(_ =>
+                {
+                    // Sample LastTerminationResult on the very first plugin of session 2.
+                    capturedAtStart = _orchestrator.LastTerminationResult;
+                    return Task.FromResult(new CleaningResult { Status = CleaningStatus.Cleaned, Success = true });
+                });
+
+            // Act
+            await _orchestrator.StartCleaningAsync();
+
+            // Assert
+            capturedAtStart.Should().BeNull(
+                "the start-of-session reset boundary must clear stale unresolved pending escalation state before new cleaning starts");
+            _orchestrator.LastTerminationResult.Should().BeNull();
+        }
+        finally
+        {
+            KillProcessIfRunning(sleeper);
+        }
+    }
+
+    [Fact]
     public async Task LastTerminationResult_IsResetToNull_AtSessionStartAndEnd()
     {
         // Arrange
