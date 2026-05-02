@@ -971,6 +971,72 @@ public sealed class CleaningOrchestratorTests
     }
 
     [Fact]
+    public async Task StopCleaningAsync_WhenFinalPluginReturnsFailedAfterGracePeriodExpired_ShouldFinishAsCancelled()
+    {
+        // Arrange
+        Process? sleeper = null;
+        var plugins = new List<PluginInfo>
+        {
+            new() { FileName = "Plugin1.esp", FullPath = "Path/Plugin1.esp" }
+        };
+
+        var appState = new AppState
+        {
+            LoadOrderPath = "plugins.txt",
+            XEditExecutablePath = "xedit.exe",
+            CurrentGameType = GameType.SkyrimSe,
+            PluginsToClean = plugins
+        };
+        _stateServiceMock.CurrentState.Returns(appState);
+
+        _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        _processServiceMock.TerminateProcessAsync(Arg.Any<Process>(), false, Arg.Any<CancellationToken>())
+            .Returns(TerminationResult.GracePeriodExpired);
+
+        var processStarted = CreateSignal();
+
+        try
+        {
+            sleeper = StartSleeperProcess();
+
+            _cleaningServiceMock.CleanPluginAsync(
+                    Arg.Any<PluginInfo>(),
+                    Arg.Any<CancellationToken>(),
+                    Arg.Any<Action<Process>?>())
+                .Returns(async callInfo =>
+                {
+                    callInfo.ArgAt<Action<Process>?>(2)?.Invoke(sleeper);
+                    processStarted.TrySetResult(true);
+
+                    await WaitForCancellationAsync(callInfo.ArgAt<CancellationToken>(1));
+                    return new CleaningResult
+                    {
+                        Status = CleaningStatus.Failed,
+                        Success = false,
+                        Message = "xEdit exited with code -1"
+                    };
+                });
+
+            // Act
+            var cleaningTask = _orchestrator.StartCleaningAsync();
+            await processStarted.Task;
+            await _orchestrator.StopCleaningAsync();
+            await cleaningTask;
+
+            // Assert
+            _orchestrator.LastTerminationResult.Should().Be(TerminationResult.GracePeriodExpired);
+            _stateServiceMock.Received(1).FinishCleaningWithResults(
+                Arg.Is<CleaningSessionResult>(session => session.WasCancelled));
+        }
+        finally
+        {
+            KillProcessIfRunning(sleeper);
+        }
+    }
+
+    [Fact]
     public async Task ForceStopCleaningAsync_ShouldTerminateActiveProcess_WithForceKillTrue()
     {
         // Arrange
