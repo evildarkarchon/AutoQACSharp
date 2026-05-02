@@ -253,6 +253,32 @@ public sealed class CleaningOrchestratorTests
         }
     }
 
+    /// <summary>
+    /// Best-effort cleanup for a helper process after the test intentionally disposes its original handle.
+    /// </summary>
+    /// <param name="processId">Operating-system process ID captured before the original handle was disposed.</param>
+    private static void KillProcessByIdIfRunning(int? processId)
+    {
+        if (processId is null)
+        {
+            return;
+        }
+
+        try
+        {
+            using var process = Process.GetProcessById(processId.Value);
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+                process.WaitForExit(2000);
+            }
+        }
+        catch
+        {
+            // Best-effort cleanup for test helper processes that may have exited or already been killed.
+        }
+    }
+
     [Fact]
     public async Task StartCleaningAsync_ShouldProcessPlugins_WhenConfigIsValid()
     {
@@ -2458,6 +2484,10 @@ public sealed class CleaningOrchestratorTests
     {
         // Arrange
         Process? sleeper = null;
+        Process? disposedOriginalHandle = null;
+        int? sleeperId = null;
+        int? forceProcessId = null;
+        bool? forceUsedDisposedOriginalHandle = null;
         var plugin = new PluginInfo { FileName = "Detached.esp", FullPath = "Path/Detached.esp" };
         _stateServiceMock.CurrentState.Returns(new AppState
         {
@@ -2470,7 +2500,19 @@ public sealed class CleaningOrchestratorTests
         _processServiceMock.TerminateProcessAsync(Arg.Any<Process>(), forceKill: false, Arg.Any<CancellationToken>())
             .Returns(TerminationResult.GracePeriodExpired);
         _processServiceMock.TerminateProcessAsync(Arg.Any<Process>(), forceKill: true, Arg.Any<CancellationToken>())
-            .Returns(TerminationResult.ForceKilled);
+            .Returns(callInfo =>
+            {
+                var process = callInfo.ArgAt<Process>(0);
+                forceProcessId = process.Id;
+                forceUsedDisposedOriginalHandle = ReferenceEquals(process, disposedOriginalHandle);
+                if (!process.HasExited)
+                {
+                    process.Kill(entireProcessTree: true);
+                    process.WaitForExit(2000);
+                }
+
+                return TerminationResult.ForceKilled;
+            });
 
         var processStarted = CreateSignal();
         var releasePlugin = CreateSignal();
@@ -2478,6 +2520,7 @@ public sealed class CleaningOrchestratorTests
         try
         {
             sleeper = StartSleeperProcess();
+            sleeperId = sleeper.Id;
 
             _cleaningServiceMock.CleanPluginAsync(
                     Arg.Any<PluginInfo>(),
@@ -2499,6 +2542,9 @@ public sealed class CleaningOrchestratorTests
             // Let the runner detach and the orchestrator finalize before the user confirms Force Terminate.
             releasePlugin.SetResult(true);
             await cleaningTask;
+            disposedOriginalHandle = sleeper;
+            sleeper.Dispose();
+            sleeper = null;
 
             // Act
             var forceResult = await _orchestrator.ForceStopCleaningAsync();
@@ -2506,16 +2552,19 @@ public sealed class CleaningOrchestratorTests
             // Assert
             forceResult.TerminationResult.Should().Be(
                 TerminationResult.ForceKilled,
-                "normal finalization must preserve the unresolved GracePeriodExpired pending target for confirmed force stop");
+                "normal finalization must preserve durable identity for confirmed force stop after the original handle is disposed");
             forceResult.MayStillBeRunning.Should().BeFalse();
+            forceProcessId.Should().Be(sleeperId);
+            forceUsedDisposedOriginalHandle.Should().BeFalse("confirmed force stop must reopen a fresh process handle instead of reusing the disposed original");
             await _processServiceMock.Received(1).TerminateProcessAsync(
-                sleeper,
+                Arg.Any<Process>(),
                 forceKill: true,
                 Arg.Is<CancellationToken>(ct => ct == CancellationToken.None));
         }
         finally
         {
             KillProcessIfRunning(sleeper);
+            KillProcessByIdIfRunning(sleeperId);
         }
     }
 
