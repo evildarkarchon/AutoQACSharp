@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Cleanup
 status: executing
-stopped_at: Completed 15-01-PLAN.md
-last_updated: "2026-05-01T23:51:44.124Z"
-last_activity: 2026-05-01
+stopped_at: Completed 15-02-PLAN.md
+last_updated: "2026-05-02T00:12:11.899Z"
+last_activity: 2026-05-02
 progress:
   total_phases: 12
   completed_phases: 10
   total_plans: 74
-  completed_plans: 72
-  percent: 97
+  completed_plans: 73
+  percent: 99
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-04-28)
 ## Current Position
 
 Phase: 15 (stop-escalation-ownership-closure) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
-Last activity: 2026-05-01
+Last activity: 2026-05-02
 
-Progress: [██████████] 97%
+Progress: [██████████] 99%
 
 ## Performance Metrics
 
@@ -79,6 +79,7 @@ Progress: [██████████] 97%
 | Phase 13 P01 | 20min | 2 tasks | 2 files |
 | Phase 13 P02 | 3min | 2 tasks | 3 files |
 | Phase 15 P01 | 5 min | 2 tasks | 4 files |
+| Phase 15 P02 | 18 min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -150,6 +151,8 @@ Progress: [██████████] 97%
 - [Phase 15]: Retained the original Process handle in a separate pending force-escalation field instead of adding PID/start-time recovery. — Plan 15-01 keeps confirmed detached escalation ownership narrow and aligned with D-01/D-05.
 - [Phase 15]: HasActiveProcess remains tied only to the active cleaning process while pending force escalation is separate. — Plan 15-01 preserves active-cleaning semantics for hang monitoring and backup-cancel gating.
 - [Phase 15]: Confirmed detached force-stop without a usable target maps to ForceKillFailed instead of cached GracePeriodExpired. — Plan 15-01 guarantees terminal confirmed outcomes for force escalation.
+- [Phase 15]: Termination cleanup is split into new-session reset versus session-finalization cleanup. — Plan 15-02 preserves unresolved GracePeriodExpired targets through normal finalization while clearing stale pending escalation before the next cleaning session.
+- [Phase 15]: ProgressViewModel behavior remained unchanged for detached force-failure proof. — Existing Phase 12 confirmation ordering and shared force-failure copy already satisfied D-12/D-13 after the orchestrator lifetime fix.
 
 ### Pending Todos
 
@@ -167,6 +170,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-05-01T23:51:30.400Z
-Stopped at: Completed 15-01-PLAN.md
+Last session: 2026-05-02T00:12:11.892Z
+Stopped at: Completed 15-02-PLAN.md
 Resume file: None

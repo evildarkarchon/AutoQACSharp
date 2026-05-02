@@ -351,7 +351,7 @@ Plans:
 - [x] 15-01-PLAN.md — Build retained coordinator ownership for detached confirmed force escalation.
 
 **Wave 2 (blocked on 15-01 completion)**
-- [ ] 15-02-PLAN.md — Wire orchestrator finalization lifetime and preserve Progress confirmation/failure proof.
+- [x] 15-02-PLAN.md — Wire orchestrator finalization lifetime and preserve Progress confirmation/failure proof.
 
 **Wave 3 (blocked on 15-02 completion)**
 - [ ] 15-03-PLAN.md — Produce Phase 15 verification and validation evidence for SAF-01, SAF-02, TEST-01, INT-STOP-01, and FLOW-STOP-ESCALATION-01.
@@ -394,7 +394,7 @@ Plans:
 | 12. Process Stop Verification & Progress Flow Closure | v1.0 Cleanup | 3/3 | Complete    | 2026-05-01 |
 | 13. Command Launch Escaping Reverification & Safe MO2 Failures | v1.0 Cleanup | 0/0 | Not started | - |
 | 14. Orchestrator Decomposition Reverification | v1.0 Cleanup | 1/1 | Complete    | 2026-05-01 |
-| 15. Stop Escalation Ownership Closure | v1.0 Cleanup | 1/3 | In Progress|  |
+| 15. Stop Escalation Ownership Closure | v1.0 Cleanup | 2/3 | In Progress|  |
 | 16. Milestone Evidence and Validation Reconciliation | v1.0 Cleanup | 0/0 | Not started | - |
 
 ## Coverage
