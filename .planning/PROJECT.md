@@ -46,6 +46,7 @@ Accurate, automated xEdit Quick Auto Clean with reliable result reporting.
 - ✓ Stale test mocks and unused parameters cleaned up — v1.0
 - ✓ Cleaning orchestrator decomposition preserves session guarding, detected-game preflight validation, sequential behavior, and focused collaborator boundaries — Phase 14 (REF-01)
 - ✓ Stop escalation ownership survives graceful timeout, runner detach/finalization, and confirmed force-stop paths without relying on a disposed process wrapper — Phase 15 (SAF-01, SAF-02, TEST-01)
+- ✓ v1.0 Cleanup milestone audit, validation, roadmap, and requirement markers reconcile to current Phase 13/14/15 evidence — Phase 16
 
 ### Active
 
@@ -66,7 +67,7 @@ Accurate, automated xEdit Quick Auto Clean with reliable result reporting.
 
 Shipped v1.0 with the xEdit log parsing fix. The app now correctly reads xEdit results from log files (`<game>Edit_log.txt`) using offset-based reading that isolates each plugin's output. All dead stdout parsing code has been removed. 838 tests passing across AutoQAC and QueryPlugins after Phase 07 (779 + 59).
 
-Current cleanup scope is driven by `.planning/codebase/CONCERNS.md` from 2026-04-28, covering safety bugs, refactor debt, test gaps, security polish, and performance bottlenecks. Phase 15 (stop-escalation-ownership-closure) is complete: current evidence shows confirmed force-stop ownership survives graceful timeout, runner detach/finalization, and disposed wrapper boundaries for SAF-01, SAF-02, and TEST-01.
+Current cleanup scope is driven by `.planning/codebase/CONCERNS.md` from 2026-04-28, covering safety bugs, refactor debt, test gaps, security polish, and performance bottlenecks. Phase 16 (milestone-evidence-validation-reconciliation) is complete: the v1.0 Cleanup milestone audit now reports passed with reconciled verification, validation, roadmap, and requirements evidence.
 
 Tech stack: .NET 10, C# 13, Avalonia 11.3, ReactiveUI, Mutagen 0.53.1, Serilog, YamlDotNet.
 
@@ -98,6 +99,7 @@ Tech stack: .NET 10, C# 13, Avalonia 11.3, ReactiveUI, Mutagen 0.53.1, Serilog, 
 | Manual user-config copy graph | User-configuration cloning uses model-owned `Copy()` methods instead of YAML serialization round-trips for in-memory copies | ✓ Implemented in Phase 10 |
 | Shared stop termination copy and choice contract | Main Stop, Progress Stop, and Hang Kill force-failure paths use one fixed, Phase 11-safe stop outcome text contract with explicit `Force Terminate` / `Leave Running` labels | ✓ Implemented in Phase 12 |
 | Durable stop-escalation target identity | Confirmed force-stop after a graceful timeout must reopen and validate the pending target instead of depending on a disposed `ExecuteAsync` process wrapper | ✓ Implemented in Phase 15 |
+| Milestone audit reconciliation uses current source-of-truth evidence | Historical Phase 05/06/14 audit blockers are closed by explicit reconciliation artifacts and current Phase 13/14/15 verification instead of rewriting old source history | ✓ Implemented in Phase 16 |
 
 ## Evolution
 
@@ -117,4 +119,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-02 after Phase 15 (stop-escalation-ownership-closure) completion*
+*Last updated: 2026-05-02 after Phase 16 (milestone-evidence-validation-reconciliation) completion*
