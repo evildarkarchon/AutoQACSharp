@@ -1,6 +1,6 @@
 ---
 phase: 15-stop-escalation-ownership-closure
-reviewed: 2026-05-02T00:54:50Z
+reviewed: 2026-05-02T01:30:00Z
 depth: deep
 files_reviewed: 6
 files_reviewed_list:
@@ -11,8 +11,8 @@ files_reviewed_list:
   - AutoQAC/Services/Cleaning/CleaningTerminationCoordinator.cs
   - AutoQAC/Services/Cleaning/ICleaningTerminationCoordinator.cs
 findings:
-  critical: 1
-  warning: 1
+  critical: 0
+  warning: 2
   info: 0
   total: 2
 status: issues_found
@@ -20,90 +20,101 @@ status: issues_found
 
 # Phase 15: Code Review Report
 
-**Reviewed:** 2026-05-02T00:54:50Z
+**Reviewed:** 2026-05-02T01:30:00Z
 **Depth:** deep
 **Files Reviewed:** 6
 **Status:** issues_found
 
 ## Summary
 
-Re-reviewed the same stop-escalation scope at deep depth for auto iteration 3/3. The remediation preserves pending force-stop ownership after detach/finalization and keeps startup cancellation wired through orphan cleanup and preflight, but the same two ship-blocking robustness problems remain: retained PID-only targets are unsafe when start-time proof is unavailable, and first-stop ownership is still non-atomic under concurrent callers.
-
-## Critical Issues
-
-### CR-01: BLOCKER - Unverified PID-only pending target can kill the wrong process
-
-**File:** `AutoQAC/Services/Cleaning/CleaningTerminationCoordinator.cs:365`
-
-**Issue:** `RetainPendingForceEscalationProcess` stores a pending force target even when `TryGetStartTime(process)` returns `null`. Later, `TryReopenPendingTarget` only rejects recycled PIDs when `target.StartTime` has a value (`AutoQAC/Services/Cleaning/CleaningTerminationCoordinator.cs:432`); if start time was unavailable, any process currently using the same PID is accepted and passed to `TerminateProcessAsync(... forceKill: true)`. After `GracePeriodExpired`, the original xEdit process can exit before the user confirms force termination, and Windows can recycle the PID. A delayed confirmation can therefore kill an unrelated process tree, creating a data-loss/safety risk.
-
-**Fix:** Treat missing start-time proof as not safely reopenable. Either do not retain a pending force target unless both PID and start time were captured, or make `TryReopenPendingTarget` return `null` when `StartTime` is missing so the caller reports `ForceKillFailed` instead of killing an unverified PID.
-
-```csharp
-private void RetainPendingForceEscalationProcess(DiagnosticsProcess process)
-{
-    var processId = TryGetProcessId(process);
-    var startTime = TryGetStartTime(process);
-    if (processId is null || startTime is null)
-    {
-        _logger.Warning("[Termination] Could not retain pending force target because process identity was not fully verifiable");
-        return;
-    }
-
-    lock (_processLock)
-    {
-        _pendingForceEscalationTarget = new PendingForceTarget(processId.Value, startTime.Value);
-    }
-}
-
-private static DiagnosticsProcess? TryReopenPendingTarget(PendingForceTarget target)
-{
-    if (target.StartTime is not { } expectedStartTime)
-    {
-        return null;
-    }
-
-    var process = DiagnosticsProcess.GetProcessById(target.ProcessId);
-    if (process.StartTime != expectedStartTime)
-    {
-        process.Dispose();
-        return null;
-    }
-
-    return process;
-}
-```
+Reviewed the stop-escalation ownership closure implementation and its targeted tests at deep depth, including the orchestrator-to-runner attach/detach flow, pending force-target reopening, UI-facing stop result semantics, and process termination service boundaries. The previous PID-reuse blocker appears remediated by requiring both PID and start-time proof before retaining a pending target. Two robustness issues remain in `CleaningTerminationCoordinator`: a non-terminating stop path can leave the UI terminating flag stuck, and the reopened-process helper can leak a process handle on validation exceptions.
 
 ## Warnings
 
-### WR-01: WARNING - Concurrent first stop calls can both take the graceful path
+### WR-01: WARNING - Stop path can leave terminating state stuck when no termination actually runs
 
-**File:** `AutoQAC/Services/Cleaning/CleaningTerminationCoordinator.cs:115-123`
+**File:** `AutoQAC/Services/Cleaning/CleaningTerminationCoordinator.cs:122-171`
 
-**Issue:** `StopAsync` checks `_isStopRequested` and then sets it in separate unsynchronized operations. Two near-simultaneous stop requests can both read `false`, both call `SetTerminating(true)`, and both invoke `TerminateProcessAsync(... forceKill: false)` instead of one caller owning the graceful path and the other escalating through `ForceStopAsync`. This violates the two-stage stop contract for reentrant/concurrent UI paths or service callers.
+**Issue:** `StopAsync` publishes `_stateService.SetTerminating(true)` before proving there is a terminable external xEdit process. If the attached process is AutoQAC itself (`lines 136-139`) or the process has already exited before the first stop request (`lines 142-171` fall through), the method returns without resetting `IsTerminatingChanged` to `false`. In those paths no graceful termination is in progress, but `ProgressViewModel.CanStop()` disables Stop while `IsTerminating` is true, so the UI can be left in a stale terminating/spinner state until a later session reset or finalization happens. The existing tests assert the self-protection return value, but do not assert that `SetTerminating(false)` is emitted for non-terminating exits.
 
-**Fix:** Make the first-stop transition atomic with `Interlocked.Exchange` (or protect the check/set with a lock) so exactly one caller can enter the graceful path.
+**Fix:** Only set the terminating flag after a real external process termination is about to be attempted, or explicitly clear it on every early return that does not start termination.
 
 ```csharp
-private int _isStopRequested;
-
-public bool IsStopRequested => Volatile.Read(ref _isStopRequested) != 0;
-
-public async Task<StopCleaningResult> StopAsync()
+// After reading proc under _processLock:
+if (proc is null)
 {
-    if (Interlocked.Exchange(ref _isStopRequested, 1) == 1)
+    return new StopCleaningResult(_lastTerminationResult, MayProcessStillBeRunning(_lastTerminationResult));
+}
+
+try
+{
+    if (proc.Id == Environment.ProcessId)
     {
-        _logger.Information("[Termination] Second stop requested -- escalating to force kill");
-        return await ForceStopAsync().ConfigureAwait(false);
+        _logger.Error(null, "[Termination] Refusing to terminate the AutoQAC process during stop request");
+        _stateService.SetTerminating(false);
+        return new StopCleaningResult(null, MayStillBeRunning: false);
+    }
+
+    if (proc.HasExited)
+    {
+        _lastTerminationResult = TerminationResult.AlreadyExited;
+        _stateService.SetTerminating(false);
+        ReleasePendingForceEscalationTarget();
+        return ToStopCleaningResult(TerminationResult.AlreadyExited);
     }
 
     _stateService.SetTerminating(true);
-    // existing graceful stop path...
+    var result = await _processService.TerminateProcessAsync(proc, forceKill: false, ct: CancellationToken.None)
+        .ConfigureAwait(false);
+    // existing result handling...
+}
+catch (InvalidOperationException)
+{
+    _stateService.SetTerminating(false);
+    _lastTerminationResult = TerminationResult.AlreadyExited;
+    return ToStopCleaningResult(TerminationResult.AlreadyExited);
 }
 ```
 
+Add tests covering both self-refusal and already-exited first-stop paths with `_stateMock.Received().SetTerminating(false)`.
+
+### WR-02: WARNING - Reopened process handle leaks when start-time validation throws
+
+**File:** `AutoQAC/Services/Cleaning/CleaningTerminationCoordinator.cs:431-442`
+
+**Issue:** `TryReopenPendingTarget` owns the `Process` returned by `DiagnosticsProcess.GetProcessById`, but if `process.StartTime` throws `InvalidOperationException` or `Win32Exception`, control jumps to the catch block and returns `null` without disposing the opened handle. This is a resource ownership defect in the confirmed force-stop fallback path. It is not just theoretical: `TryGetStartTime` already treats `Win32Exception` as expected for protected/unavailable processes, so the reopen validation path should apply the same cleanup discipline.
+
+**Fix:** Dispose the process handle in the exceptional validation path. One simple pattern is to keep the handle in an outer variable and dispose it in the catch before returning `null`.
+
+```csharp
+private static DiagnosticsProcess? TryReopenPendingTarget(PendingForceTarget target)
+{
+    DiagnosticsProcess? process = null;
+    try
+    {
+        process = DiagnosticsProcess.GetProcessById(target.ProcessId);
+        if (process.StartTime != target.StartTime)
+        {
+            process.Dispose();
+            return null;
+        }
+
+        var reopened = process;
+        process = null;
+        return reopened;
+    }
+    catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or Win32Exception)
+    {
+        process?.Dispose();
+        return null;
+    }
+}
+```
+
+Add a small unit seam or wrapper for process reopening if direct coverage is otherwise impractical; at minimum, keep the ownership rule explicit in the helper.
+
 ---
 
-_Reviewed: 2026-05-02T00:54:50Z_
+_Reviewed: 2026-05-02T01:30:00Z_
 _Reviewer: the agent (gsd-code-reviewer)_
 _Depth: deep_
