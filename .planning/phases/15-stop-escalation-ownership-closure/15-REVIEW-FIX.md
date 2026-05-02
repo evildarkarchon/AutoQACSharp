@@ -1,8 +1,8 @@
 ---
 phase: 15-stop-escalation-ownership-closure
-fixed_at: 2026-05-02T00:58:00Z
+fixed_at: 2026-05-02T01:41:30Z
 review_path: .planning/phases/15-stop-escalation-ownership-closure/15-REVIEW.md
-iteration: 3
+iteration: 1
 findings_in_scope: 2
 fixed: 2
 skipped: 0
@@ -11,9 +11,9 @@ status: all_fixed
 
 # Phase 15: Code Review Fix Report
 
-**Fixed at:** 2026-05-02T00:58:00Z
+**Fixed at:** 2026-05-02T01:41:30Z
 **Source review:** .planning/phases/15-stop-escalation-ownership-closure/15-REVIEW.md
-**Iteration:** 3
+**Iteration:** 1
 
 **Summary:**
 - Findings in scope: 2
@@ -22,20 +22,20 @@ status: all_fixed
 
 ## Fixed Issues
 
-### CR-01: BLOCKER - Unverified PID-only pending target can kill the wrong process
+### CR-01: BLOCKER — Finalization clears unresolved force-failure/left-running state
 
-**Files modified:** `AutoQAC/Services/Cleaning/CleaningTerminationCoordinator.cs`
-**Commit:** 6f9647d
-**Applied fix:** Pending force-escalation targets now require both PID and captured start time before retention, and reopened targets are validated against the captured start time before force termination.
+**Files modified:** `AutoQAC/Services/Cleaning/CleaningTerminationCoordinator.cs`, `AutoQAC.Tests/Services/Cleaning/CleaningTerminationCoordinatorTests.cs`
+**Commit:** 0daed55
+**Applied fix:** `CompleteSessionFinalization` now preserves every termination result that may still indicate a running process, and a regression test verifies `ForceKillFailed` remains visible until `ResetForNewSession`.
 
-### WR-01: WARNING - Concurrent first stop calls can both take the graceful path
+### WR-01: WARNING — Protected/no-op stop paths leave IsTerminating true
 
-**Files modified:** `AutoQAC/Services/Cleaning/CleaningTerminationCoordinator.cs`
-**Commit:** a7bbfbf
-**Applied fix:** Stop ownership now uses an atomic `Interlocked.Exchange` transition with volatile reads, so only one caller can enter the graceful stop path and concurrent callers escalate.
+**Files modified:** `AutoQAC/Services/Cleaning/CleaningTerminationCoordinator.cs`, `AutoQAC.Tests/Services/Cleaning/CleaningTerminationCoordinatorTests.cs`
+**Commit:** cdf93b4
+**Applied fix:** `StopAsync` now clears the terminating flag before protected self-process and no-active-process returns, with test coverage for both no-op paths.
 
 ---
 
-_Fixed: 2026-05-02T00:58:00Z_
+_Fixed: 2026-05-02T01:41:30Z_
 _Fixer: the agent (gsd-code-fixer)_
-_Iteration: 3_
+_Iteration: 1_
