@@ -1,4 +1,6 @@
 using System;
+using System.ComponentModel;
+using System.Diagnostics;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
 using System.Threading;
@@ -28,10 +30,12 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
 
     // State owned by this coordinator (lifted from CleaningOrchestrator.cs Phase 5 locks).
     private volatile bool _isStopRequested;
-    private System.Diagnostics.Process? _currentProcess;
-    private System.Diagnostics.Process? _pendingForceEscalationProcess;
+    private Process? _currentProcess;
+    private PendingForceTarget? _pendingForceEscalationTarget;
     private TerminationResult? _lastTerminationResult;
     private IDisposable? _hangMonitorSubscription;
+
+    private sealed record PendingForceTarget(int ProcessId, DateTime? StartTime);
 
     /// <summary>
     /// Creates a termination coordinator using existing process, hang detection, state, and logging services.
@@ -77,7 +81,7 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
     public bool ProcessMayStillBeRunning => MayProcessStillBeRunning(_lastTerminationResult);
 
     /// <inheritdoc />
-    public void AttachProcess(System.Diagnostics.Process process)
+    public void AttachProcess(Process process)
     {
         lock (_processLock)
         {
@@ -120,7 +124,7 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
         _logger.Information("[Termination] Graceful stop requested");
 
         // Attempt graceful termination on the current process.
-        System.Diagnostics.Process? proc;
+        Process? proc;
         lock (_processLock)
         {
             proc = _currentProcess;
@@ -145,13 +149,13 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
                     if (result == TerminationResult.GracePeriodExpired)
                     {
                         // Path A: Grace period expired naturally, user hasn't clicked again.
-                        // Store result and retain the process so later confirmed escalation still has a target.
+                        // Store result and retain durable identity so later confirmed escalation can reopen the target.
                         _lastTerminationResult = result;
                         RetainPendingForceEscalationProcess(proc);
                     }
                     else
                     {
-                        ReleasePendingForceEscalationProcess(proc);
+                        ReleasePendingForceEscalationTarget();
                     }
 
                     return ToStopCleaningResult(result);
@@ -176,15 +180,33 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
     {
         _logger.Information("[Termination] Force stop requested -- killing process tree immediately");
 
-        System.Diagnostics.Process? proc;
+        Process? proc;
+        PendingForceTarget? pendingTarget = null;
         var isPendingForceEscalation = false;
         lock (_processLock)
         {
             proc = _currentProcess;
             if (proc is null && MayProcessStillBeRunning(_lastTerminationResult))
             {
-                proc = _pendingForceEscalationProcess;
-                isPendingForceEscalation = proc is not null;
+                pendingTarget = _pendingForceEscalationTarget;
+                isPendingForceEscalation = pendingTarget is not null;
+            }
+        }
+
+        var disposeReopenedProcess = false;
+        if (proc is null && pendingTarget is not null)
+        {
+            // The original Process is owned by the execution service and may be disposed after finalization.
+            // Reopen by PID/start time so confirmed escalation never dereferences a borrowed disposed handle.
+            proc = TryReopenPendingTarget(pendingTarget);
+            disposeReopenedProcess = proc is not null;
+
+            if (proc is null)
+            {
+                _logger.Warning("[Termination] Confirmed force stop could not reopen the pending force target");
+                _lastTerminationResult = TerminationResult.ForceKillFailed;
+                ReleasePendingForceEscalationTarget(pendingTarget);
+                return ToStopCleaningResult(TerminationResult.ForceKillFailed);
             }
         }
 
@@ -205,29 +227,37 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
                     _lastTerminationResult = result;
                     if (result is TerminationResult.ForceKilled or TerminationResult.AlreadyExited)
                     {
-                        ReleasePendingForceEscalationProcess(proc);
+                        ReleasePendingForceEscalationTarget();
                     }
 
                     return ToStopCleaningResult(result);
                 }
 
                 _lastTerminationResult = TerminationResult.AlreadyExited;
-                ReleasePendingForceEscalationProcess(proc);
+                ReleasePendingForceEscalationTarget();
                 return ToStopCleaningResult(TerminationResult.AlreadyExited);
             }
-            catch (InvalidOperationException)
+            catch (Exception ex) when (ex is InvalidOperationException or ObjectDisposedException)
             {
                 if (isPendingForceEscalation)
                 {
                     _logger.Debug("[Termination] Pending force target was unavailable during confirmed force stop");
                     _lastTerminationResult = TerminationResult.ForceKillFailed;
+                    ReleasePendingForceEscalationTarget(pendingTarget);
                     return ToStopCleaningResult(TerminationResult.ForceKillFailed);
                 }
 
                 _logger.Debug("[Termination] Process already exited during force stop");
                 _lastTerminationResult = TerminationResult.AlreadyExited;
-                ReleasePendingForceEscalationProcess(proc);
+                ReleasePendingForceEscalationTarget();
                 return ToStopCleaningResult(TerminationResult.AlreadyExited);
+            }
+            finally
+            {
+                if (disposeReopenedProcess)
+                {
+                    proc.Dispose();
+                }
             }
         }
 
@@ -244,7 +274,7 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
     /// <inheritdoc />
     public StopCleaningResult MarkLeftRunningByUser()
     {
-        ReleasePendingForceEscalationProcess();
+        ReleasePendingForceEscalationTarget();
         _lastTerminationResult = TerminationResult.LeftRunningByUser;
         _logger.Information("[Termination] User left xEdit running after declining force termination");
         return ToStopCleaningResult(TerminationResult.LeftRunningByUser);
@@ -276,7 +306,7 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
         lock (_processLock)
         {
             _currentProcess = null;
-            _pendingForceEscalationProcess = null;
+            _pendingForceEscalationTarget = null;
         }
     }
 
@@ -298,7 +328,7 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
 
             if (_lastTerminationResult != TerminationResult.GracePeriodExpired)
             {
-                _pendingForceEscalationProcess = null;
+                _pendingForceEscalationTarget = null;
                 _lastTerminationResult = null;
             }
         }
@@ -319,26 +349,101 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
     private static bool MayProcessStillBeRunning(TerminationResult? result) =>
         result is TerminationResult.GracePeriodExpired or TerminationResult.LeftRunningByUser or TerminationResult.ForceKillFailed;
 
-    private void RetainPendingForceEscalationProcess(System.Diagnostics.Process process)
+    /// <summary>
+    /// Captures durable process identity for a later confirmed force escalation without retaining the borrowed process handle.
+    /// </summary>
+    /// <param name="process">The currently attached process whose owner may dispose it after session finalization.</param>
+    private void RetainPendingForceEscalationProcess(Process process)
     {
+        var processId = TryGetProcessId(process);
+        if (processId is null)
+        {
+            _logger.Warning("[Termination] Could not retain pending force target because the process identity was unavailable");
+            return;
+        }
+
+        var target = new PendingForceTarget(processId.Value, TryGetStartTime(process));
+
         lock (_processLock)
         {
-            _pendingForceEscalationProcess = process;
+            _pendingForceEscalationTarget = target;
         }
     }
 
-    private void ReleasePendingForceEscalationProcess(System.Diagnostics.Process? process = null)
+    /// <summary>
+    /// Clears the unresolved pending force target, optionally only if it still matches the expected target snapshot.
+    /// </summary>
+    /// <param name="target">Expected pending target, or <see langword="null" /> to clear any pending target.</param>
+    private void ReleasePendingForceEscalationTarget(PendingForceTarget? target = null)
     {
         lock (_processLock)
         {
-            if (process is null || ReferenceEquals(_pendingForceEscalationProcess, process))
+            if (target is null || Equals(_pendingForceEscalationTarget, target))
             {
-                _pendingForceEscalationProcess = null;
+                _pendingForceEscalationTarget = null;
             }
         }
     }
 
-    private void StartHangMonitoring(System.Diagnostics.Process process)
+    /// <summary>
+    /// Attempts to read the OS process identifier from a process handle that may already be unavailable.
+    /// </summary>
+    /// <param name="process">Process handle to inspect.</param>
+    /// <returns>The process ID when available; otherwise <see langword="null" />.</returns>
+    private static int? TryGetProcessId(Process process)
+    {
+        try
+        {
+            return process.Id;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ObjectDisposedException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Attempts to capture process start time so a later PID lookup can reject recycled process IDs.
+    /// </summary>
+    /// <param name="process">Process handle to inspect.</param>
+    /// <returns>The process start time when available; otherwise <see langword="null" />.</returns>
+    private static DateTime? TryGetStartTime(Process process)
+    {
+        try
+        {
+            return process.StartTime;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ObjectDisposedException or Win32Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Reopens a pending force target by PID and validates its start time when the original start time was captured.
+    /// </summary>
+    /// <param name="target">Durable identity captured during graceful termination expiry.</param>
+    /// <returns>A newly opened process handle owned by the caller, or <see langword="null" /> if unavailable or recycled.</returns>
+    private static Process? TryReopenPendingTarget(PendingForceTarget target)
+    {
+        try
+        {
+            var process = Process.GetProcessById(target.ProcessId);
+            if (target.StartTime is { } expectedStartTime && process.StartTime != expectedStartTime)
+            {
+                process.Dispose();
+                return null;
+            }
+
+            return process;
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or Win32Exception)
+        {
+            return null;
+        }
+    }
+
+    private void StartHangMonitoring(Process process)
     {
         // Ensure only one active monitor subscription per xEdit process lifecycle.
         _hangMonitorSubscription?.Dispose();
