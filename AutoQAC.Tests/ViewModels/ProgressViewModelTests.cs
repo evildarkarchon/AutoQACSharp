@@ -174,7 +174,7 @@ public sealed class ProgressViewModelTests
     }
 
     [Fact]
-    public async Task StopCommand_WhenConfirmedForceTerminationFails_ShouldShowSharedFailureAndPersistWarning()
+    public async Task StopCommand_WhenConfirmedDetachedForceTerminationFails_ShouldShowSharedFailureAndPersistWarning()
     {
         // Arrange
         _orchestratorMock.StopCleaningAsync()
