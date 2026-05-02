@@ -1062,6 +1062,7 @@ public sealed class CleaningOrchestratorTests
             .Returns(TerminationResult.ForceKilled);
 
         var processStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releasePlugin = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         try
         {
@@ -1076,8 +1077,7 @@ public sealed class CleaningOrchestratorTests
                     callInfo.ArgAt<Action<Process>?>(2)?.Invoke(sleeper);
                     processStarted.TrySetResult(true);
 
-                    var ct = callInfo.ArgAt<CancellationToken>(1);
-                    await WaitForCancellationAndThrowAsync(ct);
+                    await releasePlugin.Task;
                     return new CleaningResult { Status = CleaningStatus.Cleaned, Success = true };
                 });
 
@@ -1085,6 +1085,7 @@ public sealed class CleaningOrchestratorTests
             var cleaningTask = _orchestrator.StartCleaningAsync();
             await WaitForSignalAsync(processStarted);
             await _orchestrator.ForceStopCleaningAsync();
+            releasePlugin.SetResult(true);
             await cleaningTask;
 
             // Assert
@@ -1093,6 +1094,7 @@ public sealed class CleaningOrchestratorTests
         }
         finally
         {
+            releasePlugin.TrySetResult(true);
             KillProcessIfRunning(sleeper);
         }
     }

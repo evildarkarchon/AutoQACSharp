@@ -334,15 +334,16 @@ public sealed class CleaningTerminationCoordinatorTests : IDisposable
     public async Task ForceStopAsync_AfterGracePeriodExpiredAndDetachedProcessAlreadyExited_ReturnsForceKillFailed()
     {
         // Arrange
-        using var process = StartShortLivedProcess();
+        using var process = StartSelfExitingProcess();
         _sut.AttachProcess(process);
         _processMock.TerminateProcessAsync(process, forceKill: false, Arg.Any<CancellationToken>())
             .Returns(TerminationResult.GracePeriodExpired);
 
         // Act
+        process.HasExited.Should().BeFalse("the target must still be alive when StopAsync captures durable pending identity");
         await _sut.StopAsync();
         _sut.DetachProcess();
-        process.WaitForExit(2000).Should().BeTrue("the helper process is intentionally short-lived");
+        process.WaitForExit(5000).Should().BeTrue("the helper process is intentionally short-lived");
         var result = await _sut.ForceStopAsync();
 
         // Assert
@@ -389,6 +390,24 @@ public sealed class CleaningTerminationCoordinatorTests : IDisposable
         });
 
         process.Should().NotBeNull("a real external process is needed to exercise termination paths safely");
+        _startedProcesses.Add(process!);
+        return process!;
+    }
+
+    /// <summary>
+    /// Starts a process that stays alive long enough for StopAsync to capture PID/start-time identity, then exits before confirmed force stop.
+    /// </summary>
+    private Process StartSelfExitingProcess()
+    {
+        var process = Process.Start(new ProcessStartInfo
+        {
+            FileName = "powershell",
+            Arguments = "-NoProfile -Command \"Start-Sleep -Milliseconds 2000\"",
+            UseShellExecute = false,
+            CreateNoWindow = true
+        });
+
+        process.Should().NotBeNull("a real external process is needed to exercise pending target identity safely");
         _startedProcesses.Add(process!);
         return process!;
     }
