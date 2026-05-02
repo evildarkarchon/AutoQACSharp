@@ -29,7 +29,7 @@ Full details: [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP.md)
 - [x] **Phase 12: Process Stop Verification & Progress Flow Closure** - Users can stop cleaning from the Progress window through the confirmed two-stage termination and force-failure reporting path. (completed 2026-05-01)
 - [ ] **Phase 13: Command Launch Escaping Reverification & Safe MO2 Failures** - Users cannot accidentally launch direct xEdit when MO2 mode is enabled but MO2 configuration is missing, and command escaping safety is re-verified.
 - [x] **Phase 14: Orchestrator Decomposition Reverification** - Maintainers have current verification evidence that orchestrator gap closures preserve session guarding and detected-game preflight validation. (completed 2026-05-01)
-- [x] **Phase 15: Stop Escalation Ownership Closure** - Users get a reliable confirmed force-termination outcome when graceful stop expires, even if process execution has returned. (completed 2026-05-02)
+- [ ] **Phase 15: Stop Escalation Ownership Closure** - Users get a reliable confirmed force-termination outcome when graceful stop expires, even if process execution has returned. (completed 2026-05-02) (gap planned 2026-05-02)
 - [ ] **Phase 16: Milestone Evidence and Validation Reconciliation** - Maintainers can complete the milestone audit with current verification, validation, and requirement-tracking artifacts.
 
 ## Phase Details
@@ -345,7 +345,7 @@ Plans:
   2. If AutoQAC cannot force terminate after confirmation, the user sees the shared safe force-failure dialog and persistent Progress summary warning.
   3. Automated tests cover `GracePeriodExpired` followed by runner detach and confirmed `Force Terminate`, proving the outcome is either force termination or explicit failure reporting.
   4. Current verification artifacts prove SAF-01, SAF-02, and TEST-01 are satisfied after the ownership fix.
-**Plans**: 3 plans
+**Plans**: 4 plans (3 original + 1 gap-closure)
 Plans:
 **Wave 1**
 - [x] 15-01-PLAN.md — Build retained coordinator ownership for detached confirmed force escalation.
@@ -355,6 +355,9 @@ Plans:
 
 **Wave 3 (blocked on 15-02 completion)**
 - [x] 15-03-PLAN.md — Produce Phase 15 verification and validation evidence for SAF-01, SAF-02, TEST-01, INT-STOP-01, and FLOW-STOP-ESCALATION-01.
+
+**Wave 4 (gap closure; blocked on 15-03 completion)**
+- [ ] 15-04-PLAN.md — Close durable pending-target ownership verification gaps and refresh Phase 15 passed evidence.
 
 Cross-cutting constraints:
 - Confirmed force escalation after `GracePeriodExpired` must produce `ForceKilled`, `AlreadyExited`, or `ForceKillFailed`, never a silent cached `GracePeriodExpired`.
@@ -394,7 +397,7 @@ Plans:
 | 12. Process Stop Verification & Progress Flow Closure | v1.0 Cleanup | 3/3 | Complete    | 2026-05-01 |
 | 13. Command Launch Escaping Reverification & Safe MO2 Failures | v1.0 Cleanup | 0/0 | Not started | - |
 | 14. Orchestrator Decomposition Reverification | v1.0 Cleanup | 1/1 | Complete    | 2026-05-01 |
-| 15. Stop Escalation Ownership Closure | v1.0 Cleanup | 3/3 | Complete   | 2026-05-02 |
+| 15. Stop Escalation Ownership Closure | v1.0 Cleanup | 3/4 | Gaps planned | - |
 | 16. Milestone Evidence and Validation Reconciliation | v1.0 Cleanup | 0/0 | Not started | - |
 
 ## Coverage
