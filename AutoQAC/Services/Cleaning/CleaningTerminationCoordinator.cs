@@ -325,7 +325,7 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
         {
             _currentProcess = null;
 
-            if (_lastTerminationResult != TerminationResult.GracePeriodExpired)
+            if (!MayProcessStillBeRunning(_lastTerminationResult))
             {
                 _pendingForceEscalationTarget = null;
                 _lastTerminationResult = null;

@@ -160,6 +160,30 @@ public sealed class CleaningTerminationCoordinatorTests : IDisposable
     }
 
     [Fact]
+    public async Task CompleteSessionFinalization_AfterForceKillFailed_PreservesUnresolvedTerminationStateUntilReset()
+    {
+        // Arrange
+        using var process = StartSleeperProcess();
+        _sut.AttachProcess(process);
+        _processMock.TerminateProcessAsync(process, forceKill: true, Arg.Any<CancellationToken>())
+            .Returns(TerminationResult.ForceKillFailed);
+
+        // Act
+        var stopResult = await _sut.ForceStopAsync();
+        _sut.CompleteSessionFinalization();
+
+        // Assert
+        stopResult.TerminationResult.Should().Be(TerminationResult.ForceKillFailed);
+        stopResult.MayStillBeRunning.Should().BeTrue();
+        _sut.LastTerminationResult.Should().Be(TerminationResult.ForceKillFailed);
+        _sut.ProcessMayStillBeRunning.Should().BeTrue();
+
+        _sut.ResetForNewSession();
+        _sut.LastTerminationResult.Should().BeNull();
+        _sut.ProcessMayStillBeRunning.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task ResetForNewSession_ClearsStopFlag_AndLastTerminationResult()
     {
         // Arrange
