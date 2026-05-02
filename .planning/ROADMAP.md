@@ -27,7 +27,7 @@ Full details: [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP.md)
 - [x] **Phase 10: Configuration Persistence Hardening** - Users get deterministic configuration save/reload behavior with lower clone overhead. (gaps planned 2026-05-01) (completed 2026-05-01) (additional gap planned 2026-05-01)
 - [x] **Phase 11: User-Facing Diagnostics Boundaries** - Users see concise errors while logs avoid unnecessary path and command exposure. (gaps planned 2026-05-01) (completed 2026-05-01) (additional gap planned 2026-05-01) (completed 2026-05-01) (additional gap planned 2026-05-01) (completed 2026-05-01) (additional gap planned 2026-05-01)
 - [x] **Phase 12: Process Stop Verification & Progress Flow Closure** - Users can stop cleaning from the Progress window through the confirmed two-stage termination and force-failure reporting path. (completed 2026-05-01)
-- [ ] **Phase 13: Command Launch Escaping Reverification & Safe MO2 Failures** - Users cannot accidentally launch direct xEdit when MO2 mode is enabled but MO2 configuration is missing, and command escaping safety is re-verified.
+- [x] **Phase 13: Command Launch Escaping Reverification & Safe MO2 Failures** - Users cannot accidentally launch direct xEdit when MO2 mode is enabled but MO2 configuration is missing, and command escaping safety is re-verified. (Complete 2026-05-01)
 - [x] **Phase 14: Orchestrator Decomposition Reverification** - Maintainers have current verification evidence that orchestrator gap closures preserve session guarding and detected-game preflight validation. (completed 2026-05-01)
 - [x] **Phase 15: Stop Escalation Ownership Closure** - Users get a reliable confirmed force-termination outcome when graceful stop expires, even if process execution has returned. (completed 2026-05-02) (gap planned 2026-05-02) (completed 2026-05-02)
 - [ ] **Phase 16: Milestone Evidence and Validation Reconciliation** - Maintainers can complete the milestone audit with current verification, validation, and requirement-tracking artifacts.
@@ -318,7 +318,7 @@ Cross-cutting constraints:
 **Plans**: 1 plan
 Plans:
 **Wave 1**
-- [ ] 13-01-PLAN.md — Produce current command-launch escaping validation and verification evidence for SAF-03 and TEST-02.
+- [x] 13-01-PLAN.md — Produce current command-launch escaping validation and verification evidence for SAF-03 and TEST-02.
 
 ### Phase 14: Orchestrator Decomposition Reverification
 **Goal**: Maintainers can trust current verification evidence that the decomposed cleaning orchestrator preserves session guarding, final detected-game preflight validation, and sequential behavior.
@@ -400,7 +400,7 @@ Plans:
 | 10. Configuration Persistence Hardening | v1.0 Cleanup | 11/11 | Complete    | 2026-05-01 |
 | 11. User-Facing Diagnostics Boundaries | v1.0 Cleanup | 13/13 | Complete   | 2026-05-01 |
 | 12. Process Stop Verification & Progress Flow Closure | v1.0 Cleanup | 3/3 | Complete    | 2026-05-01 |
-| 13. Command Launch Escaping Reverification & Safe MO2 Failures | v1.0 Cleanup | 0/0 | Not started | - |
+| 13. Command Launch Escaping Reverification & Safe MO2 Failures | v1.0 Cleanup | 1/1 | Complete | 2026-05-01 |
 | 14. Orchestrator Decomposition Reverification | v1.0 Cleanup | 1/1 | Complete    | 2026-05-01 |
 | 15. Stop Escalation Ownership Closure | v1.0 Cleanup | 4/4 | Complete    | 2026-05-02 |
 | 16. Milestone Evidence and Validation Reconciliation | v1.0 Cleanup | 2/3 | In Progress|  |
