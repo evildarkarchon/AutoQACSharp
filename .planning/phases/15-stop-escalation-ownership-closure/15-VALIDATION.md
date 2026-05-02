@@ -43,6 +43,8 @@ created: 2026-05-01
 | 15-02-01 | 02 | 2 | SAF-01, TEST-01 | — | Orchestrator finalization preserves unresolved pending target until user resolution | service | `dotnet test AutoQAC.Tests/AutoQAC.Tests.csproj --filter FullyQualifiedName~CleaningOrchestratorTests --nologo` | ✅ | ✅ passed |
 | 15-02-02 | 02 | 2 | SAF-01, SAF-02, TEST-01 | — | Progress Stop prompts before force and shows shared failure warning on ForceKillFailed | viewmodel | `dotnet test AutoQAC.Tests/AutoQAC.Tests.csproj --filter FullyQualifiedName~ProgressViewModelTests --nologo` | ✅ | ✅ passed |
 | 15-03-01 | 03 | 3 | SAF-01, SAF-02, TEST-01 | — | Verification maps requirements and audit gaps to current evidence | artifact | `dotnet test AutoQACSharp.slnx --nologo` | ✅ | ✅ passed |
+| 15-04-01 | 04 | 4 | SAF-01, SAF-02, TEST-01 | T-15-04-01, T-15-04-02 | Durable PID/start-time pending target survives original Process wrapper disposal and rejects unverifiable targets safely | unit/service | `dotnet test AutoQAC.Tests/AutoQAC.Tests.csproj --filter "FullyQualifiedName~CleaningTerminationCoordinatorTests\|FullyQualifiedName~CleaningOrchestratorTests" --nologo` | ✅ | ✅ passed |
+| 15-04-02 | 04 | 4 | SAF-01, SAF-02, TEST-01 | T-15-04-03, T-15-04-04 | Refreshed verification evidence supersedes stale gaps_found report without Phase 16 marker reconciliation | artifact/regression | `dotnet test AutoQAC.Tests/AutoQAC.Tests.csproj --filter "FullyQualifiedName~CleaningTerminationCoordinatorTests\|FullyQualifiedName~CleaningOrchestratorTests\|FullyQualifiedName~ProgressViewModelTests\|FullyQualifiedName~ProcessExecutionIntegrationTests" --nologo` | ✅ | ✅ passed |
 
 ---
 
@@ -67,4 +69,4 @@ All Phase 15 behaviors have automated verification through coordinator, process-
 - [x] Feedback latency is bounded by targeted commands before full-suite evidence
 - [x] `nyquist_compliant: true` set in frontmatter after execution evidence passes
 
-**Approval:** passed — targeted coordinator, orchestrator, Progress ViewModel, process integration, and full solution evidence passed on 2026-05-02. `wave_0_complete: true` is preserved because existing test infrastructure remained sufficient.
+**Approval:** passed — targeted coordinator, orchestrator, Progress ViewModel, process integration, and full solution evidence passed on 2026-05-02. Plan 15-04 closes the verifier gap by proving durable PID/start-time pending-target ownership after original wrapper disposal and refreshing verification evidence from `gaps_found` to passed. `wave_0_complete: true` is preserved because existing test infrastructure remained sufficient.
