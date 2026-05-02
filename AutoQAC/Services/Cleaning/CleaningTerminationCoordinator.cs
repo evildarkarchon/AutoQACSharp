@@ -281,6 +281,30 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
     }
 
     /// <summary>
+    /// Clears active session state after normal finalization without erasing an unresolved grace-expired pending force target.
+    /// </summary>
+    public void CompleteSessionFinalization()
+    {
+        _isStopRequested = false;
+        _stateService.SetTerminating(false);
+
+        _hangMonitorSubscription?.Dispose();
+        _hangMonitorSubscription = null;
+        _hangDetected.OnNext(false);
+
+        lock (_processLock)
+        {
+            _currentProcess = null;
+
+            if (_lastTerminationResult != TerminationResult.GracePeriodExpired)
+            {
+                _pendingForceEscalationProcess = null;
+                _lastTerminationResult = null;
+            }
+        }
+    }
+
+    /// <summary>
     /// Releases the app-lifetime hang monitor subscription and hang-detected subject owned by this coordinator.
     /// </summary>
     public void Dispose()

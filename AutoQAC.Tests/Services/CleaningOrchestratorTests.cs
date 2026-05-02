@@ -2560,6 +2560,9 @@ public sealed class CleaningOrchestratorTests
             await _orchestrator.StopCleaningAsync();
             releasePlugin.SetResult(true);
             await firstSession;
+            _orchestrator.LastTerminationResult.Should().Be(
+                TerminationResult.GracePeriodExpired,
+                "normal finalization preserves unresolved pending force escalation until user resolution or next-session reset");
 
             var secondPlugin = new PluginInfo { FileName = "Second.esp", FullPath = "Path/Second.esp" };
             _stateServiceMock.CurrentState.Returns(new AppState
@@ -2596,7 +2599,7 @@ public sealed class CleaningOrchestratorTests
     }
 
     [Fact]
-    public async Task LastTerminationResult_IsResetToNull_AtSessionStartAndEnd()
+    public async Task LastTerminationResult_AfterGracePeriodExpiredFinalization_IsPreservedUntilNextSessionStart()
     {
         // Arrange
         Process? sleeper = null;

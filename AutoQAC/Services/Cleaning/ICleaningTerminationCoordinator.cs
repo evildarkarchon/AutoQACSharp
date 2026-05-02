@@ -7,7 +7,7 @@ namespace AutoQAC.Services.Cleaning;
 /// <summary>
 /// Owns xEdit termination policy: process attach/detach, two-stage stop, force-stop,
 /// hang-monitor lifecycle, and Phase 5 stop semantics. Lifetime: per cleaning session;
-/// state is reset between sessions via <see cref="ResetForNewSession" />.
+/// state is reset before sessions via <see cref="ResetForNewSession" /> and finalized after sessions via <see cref="CompleteSessionFinalization" />.
 /// </summary>
 public interface ICleaningTerminationCoordinator
 {
@@ -47,6 +47,12 @@ public interface ICleaningTerminationCoordinator
     /// Session-finalization cleanup must not call this before the user resolves a visible GracePeriodExpired prompt.
     /// </summary>
     void ResetForNewSession();
+
+    /// <summary>
+    /// Cleans up active session state after a cleaning run completes while preserving an unresolved
+    /// <see cref="TerminationResult.GracePeriodExpired" /> pending force-escalation target until the user resolves it or the next-session reset clears it.
+    /// </summary>
+    void CompleteSessionFinalization();
 
     /// <summary>True when a stop was requested in the current session.</summary>
     bool IsStopRequested { get; }

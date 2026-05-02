@@ -132,7 +132,7 @@ public sealed class CleaningOrchestrator(
         }
         finally
         {
-            terminationCoordinator.ResetForNewSession();
+            terminationCoordinator.CompleteSessionFinalization();
             DisposeSessionCts();
             ExitSession();
         }
