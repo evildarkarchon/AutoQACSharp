@@ -1,6 +1,6 @@
 ---
 phase: 15-stop-escalation-ownership-closure
-reviewed: 2026-05-02T01:38:05Z
+reviewed: 2026-05-01T00:00:00Z
 depth: deep
 files_reviewed: 6
 files_reviewed_list:
@@ -12,71 +12,103 @@ files_reviewed_list:
   - AutoQAC/Services/Cleaning/ICleaningTerminationCoordinator.cs
 findings:
   critical: 1
-  warning: 1
+  warning: 2
   info: 0
-  total: 2
+  total: 3
 status: issues_found
 ---
 
 # Phase 15: Code Review Report
 
-**Reviewed:** 2026-05-02T01:38:05Z
+**Reviewed:** 2026-05-01T00:00:00Z
 **Depth:** deep
 **Files Reviewed:** 6
 **Status:** issues_found
 
 ## Summary
 
-Reviewed the termination coordinator split, orchestrator ownership handoff, and related stop/escalation UI tests at deep depth. The new pending-target flow covers the happy GracePeriodExpired confirmation path, but session finalization still forgets other “may still be running” terminal states, and the coordinator can leave the terminating state stuck on protected/no-op stop paths.
+Reviewed the termination coordinator, orchestrator integration, and related tests at deep depth, including the process execution/finalization call chain. The implementation still has a cancellation accounting bug for stop requests during the final/no-backup plugin, a force-stop UI state gap, and tests that miss the real production path.
 
 ## Critical Issues
 
-### CR-01: BLOCKER — Finalization clears unresolved force-failure/left-running state
+### CR-01: Stop during the last plugin can finish as a non-cancelled session
 
-**File:** `AutoQAC/Services/Cleaning/CleaningTerminationCoordinator.cs:328-332`
+**File:** `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs:92-113`
 
-**Issue:** `CompleteSessionFinalization` preserves unresolved state only when `_lastTerminationResult == GracePeriodExpired`. The same class defines `ForceKillFailed` and `LeftRunningByUser` as “may still be running” states at lines 348-349, but finalization clears `_pendingForceEscalationTarget` and `_lastTerminationResult` for both. After a failed confirmed force kill, or after the user leaves xEdit running and the session completes, the singleton coordinator reports no unresolved process even though xEdit may still be alive. This loses the safety signal and prevents a later retry/accurate status from using the retained target.
+**Issue:** `StartCleaningAsync` only marks `context.WasCancelled` when cancellation is observed before the next loop iteration or when `ProcessPluginAsync` returns `false`. If the user stops during the last plugin, `ProcessPluginAsync` can return `true` after `CleaningService` converts the cancelled process execution into a failed result. With no next plugin and no backup finalization that observes the cancelled token, the loop falls through to `FinishSession(context)` with `WasCancelled = false`. This misreports a user-cancelled run as an ordinary failed/completed session and can show the wrong summary/UI state.
 
-**Fix:** Preserve all unresolved states through finalization, and clear only confirmed terminal results. Add a test where `ForceStopCleaningAsync` returns `ForceKillFailed`, the session finalizes, and `LastTerminationResult`/`MayStillBeRunning` remain true until `ResetForNewSession`.
+**Fix:** Re-check cancellation/stop state immediately after each plugin before normal finalization.
 
 ```csharp
-lock (_processLock)
-{
-    _currentProcess = null;
+var processed = await ProcessPluginAsync(
+    plugin, preflightPlan, sessionDir, backupEntries, onTimeout, onBackupFailure,
+    maxRetryAttempts, context, cts.Token).ConfigureAwait(false);
 
-    if (!MayProcessStillBeRunning(_lastTerminationResult))
+if (!processed || cts.Token.IsCancellationRequested || terminationCoordinator.IsStopRequested)
+{
+    context = context with { WasCancelled = true };
+    break;
+}
+
+if (context.ReturnedEarly)
+{
+    return;
+}
+```
+
+Also consider mapping `ProcessResult.TerminationResult` from user-requested termination into a cancelled/skipped `CleaningResult` in `CleaningService` so downstream status and session cancellation cannot diverge.
+
+## Warnings
+
+### WR-01: Direct force-stop path does not publish terminating state
+
+**File:** `AutoQAC/Services/Cleaning/CleaningTerminationCoordinator.cs:180-183`
+
+**Issue:** `ForceStopAsync` starts a potentially long-running kill/wait operation without calling `_stateService.SetTerminating(true)`. The graceful stop path does publish this state, but hang-warning force kill and confirmed detached force kill do not. This can leave the UI without termination feedback and allows other UI state to behave as if no termination operation is in progress until finalization later clears the flag.
+
+**Fix:** Publish terminating state for force-stop operations and clear it on terminal/no-target exits where the session will not clear it immediately.
+
+```csharp
+public async Task<StopCleaningResult> ForceStopAsync()
+{
+    _stateService.SetTerminating(true);
+    try
     {
-        _pendingForceEscalationTarget = null;
-        _lastTerminationResult = null;
+        // existing force-stop logic
+    }
+    finally
+    {
+        if (!MayProcessStillBeRunning(_lastTerminationResult))
+        {
+            _stateService.SetTerminating(false);
+        }
     }
 }
 ```
 
-## Warnings
+### WR-02: Stop tests miss the production cancellation/accounting path
 
-### WR-01: WARNING — Protected/no-op stop paths leave IsTerminating true
+**File:** `AutoQAC.Tests/Services/CleaningOrchestratorTests.cs:910-963`
 
-**File:** `AutoQAC/Services/Cleaning/CleaningTerminationCoordinator.cs:122-139`
+**Issue:** `StopCleaningAsync_ShouldTerminateActiveProcess_Gracefully_AndStoreGracePeriodExpiredResult` verifies the termination call and cached result, but it releases the mocked plugin normally and never asserts that the final `CleaningSessionResult.WasCancelled` is true. Because the mock does not model `CleaningService` returning a failed `CleaningResult` after `ProcessExecutionService` returns `GracePeriodExpired`, this test gives false confidence and would not catch CR-01.
 
-**Issue:** `StopAsync` sets `_stateService.SetTerminating(true)` before it knows whether it will actually terminate anything. If the attached process is AutoQAC itself, the method returns at line 139 without resetting the flag. The no-active-process path at line 171 also returns without clearing it. In normal orchestrated cancellation finalization may eventually reset the flag, but direct coordinator callers and protected early-return paths can leave the UI in a permanently terminating/disabled state.
-
-**Fix:** Reset the flag before every no-op/protected return, or delay setting it until there is a real external process to stop. Add assertions to the self-process and no-active-process coordinator tests.
+**Fix:** Add a regression test for a single-plugin/no-backup session where stop returns `GracePeriodExpired`, the plugin returns a failed result after cancellation, and `FinishCleaningWithResults` must receive `WasCancelled == true`.
 
 ```csharp
-if (proc.Id == Environment.ProcessId)
-{
-    _logger.Error(null, "[Termination] Refusing to terminate the AutoQAC process during stop request");
-    _stateService.SetTerminating(false);
-    return new StopCleaningResult(null, MayStillBeRunning: false);
-}
+_cleaningServiceMock.CleanPluginAsync(...)
+    .Returns(async callInfo =>
+    {
+        callInfo.ArgAt<Action<Process>?>(2)?.Invoke(sleeper);
+        await WaitForCancellationAsync(callInfo.ArgAt<CancellationToken>(1));
+        return new CleaningResult { Status = CleaningStatus.Failed, Success = false, Message = "xEdit exited with code -1" };
+    });
 
-// Before the final cached-result return when no process was available:
-_stateService.SetTerminating(false);
-return new StopCleaningResult(_lastTerminationResult, MayProcessStillBeRunning(_lastTerminationResult));
+_stateServiceMock.Received(1).FinishCleaningWithResults(
+    Arg.Is<CleaningSessionResult>(session => session.WasCancelled));
 ```
 
 ---
 
-_Reviewed: 2026-05-02T01:38:05Z_
+_Reviewed: 2026-05-01T00:00:00Z_
 _Reviewer: the agent (gsd-code-reviewer)_
 _Depth: deep_
