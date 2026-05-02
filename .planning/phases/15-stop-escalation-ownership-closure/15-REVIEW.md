@@ -1,89 +1,117 @@
 ---
 phase: 15-stop-escalation-ownership-closure
-reviewed: 2026-05-02T00:24:14Z
+reviewed: 2026-05-02T00:38:07Z
 depth: deep
 files_reviewed: 6
 files_reviewed_list:
+  - AutoQAC.Tests/Services/Cleaning/CleaningTerminationCoordinatorTests.cs
+  - AutoQAC.Tests/Services/CleaningOrchestratorTests.cs
+  - AutoQAC.Tests/ViewModels/ProgressViewModelTests.cs
   - AutoQAC/Services/Cleaning/CleaningOrchestrator.cs
   - AutoQAC/Services/Cleaning/CleaningTerminationCoordinator.cs
   - AutoQAC/Services/Cleaning/ICleaningTerminationCoordinator.cs
-  - AutoQAC.Tests/Services/CleaningOrchestratorTests.cs
-  - AutoQAC.Tests/Services/Cleaning/CleaningTerminationCoordinatorTests.cs
-  - AutoQAC.Tests/ViewModels/ProgressViewModelTests.cs
 findings:
-  critical: 2
+  critical: 1
   warning: 1
   info: 0
-  total: 3
+  total: 2
 status: issues_found
 ---
 
 # Phase 15: Code Review Report
 
-**Reviewed:** 2026-05-02T00:24:14Z
+**Reviewed:** 2026-05-02T00:38:07Z
 **Depth:** deep
 **Files Reviewed:** 6
 **Status:** issues_found
 
 ## Summary
 
-Reviewed the stop-escalation ownership changes across the orchestrator, termination coordinator, and related tests. The implementation still has a process-lifetime ownership bug in the detached force-stop path, and the UI currently prevents the coordinator's documented second-stop escalation path from being invoked.
-
-Note: the requested `AutoQAC.Tests/Services/Cleaning/CleaningOrchestratorTests.cs` path does not exist in the working tree; the matching source file reviewed was `AutoQAC.Tests/Services/CleaningOrchestratorTests.cs`.
+Reviewed the stop-escalation ownership changes across the orchestrator, termination coordinator, and affected tests. The retained pending-force process target is not safe across the production process ownership boundary: `ProcessExecutionService.ExecuteAsync` creates the xEdit `Process` in a `using var`, so the coordinator can retain a disposed `Process` object and later fail/crash when the user confirms force termination after finalization. The new tests use externally owned test processes, which masks this production failure mode.
 
 ## Critical Issues
 
-### CR-01: Detached force escalation retains a `Process` object that production code disposes before the user confirms
+### CR-01: BLOCKER - Retained force-escalation target can be disposed before confirmed force kill
 
-**File:** `AutoQAC/Services/Cleaning/CleaningTerminationCoordinator.cs:145-151`
-**Issue:** `StopAsync` retains the live `Process` instance for later confirmation after `GracePeriodExpired`. In the real call chain, that same instance is created inside `ProcessExecutionService.ExecuteAsync` with `using var process` and is disposed as soon as `ExecuteAsync` returns. `PluginCleaningRunner` then detaches the active process, leaving `_pendingForceEscalationProcess` pointing at a disposed wrapper while the OS process may still be running. A delayed confirmation can therefore return `ForceKillFailed` or be unable to kill xEdit, exactly when the user asked for force termination.
-**Fix:** Retain force-escalation ownership by stable process identity rather than by the disposable `Process` wrapper, then reopen/verify the process at confirmation time. For example:
+**File:** `AutoQAC/Services/Cleaning/CleaningTerminationCoordinator.cs:150`
+
+**Issue:** `RetainPendingForceEscalationProcess(proc)` stores a `System.Diagnostics.Process` object so a later confirmed force stop can target it. In the real call chain, however, that object is created inside `ProcessExecutionService.ExecuteAsync` as `using var process` and is disposed as soon as the cleaning attempt returns. If the graceful stop returns `GracePeriodExpired`, the runner detaches/finalizes, the UI prompt remains visible, and the user then confirms force termination, `ForceStopAsync` uses the retained object at lines 195/201/203. At that point the `Process` instance may be disposed, so reading `Id`/`HasExited` or passing it to `TerminateProcessAsync` can throw instead of killing xEdit, leaving the process running after the user explicitly chose force terminate.
+
+**Fix:** Do not retain a borrowed `Process` object beyond the lifetime of its owner. Retain a durable process identity and reacquire/validate the process for confirmed escalation, or transfer ownership so the process is not disposed until the pending escalation is resolved. For example:
+
 ```csharp
-private sealed record PendingForceTarget(int ProcessId, DateTime StartTime);
+private sealed record PendingForceTarget(int ProcessId, DateTime? StartTime);
+private PendingForceTarget? _pendingForceEscalationTarget;
+
+private static DateTime? TryGetStartTime(Process process)
+{
+    try { return process.StartTime; }
+    catch (InvalidOperationException) { return null; }
+    catch (System.ComponentModel.Win32Exception) { return null; }
+}
 
 private void RetainPendingForceEscalationProcess(Process process)
 {
     lock (_processLock)
     {
-        _pendingForceEscalationTarget = new PendingForceTarget(process.Id, process.StartTime);
+        _pendingForceEscalationTarget = new PendingForceTarget(process.Id, TryGetStartTime(process));
     }
 }
 
-private static Process? TryOpenPendingTarget(PendingForceTarget target)
+private static Process? TryReopenPendingTarget(PendingForceTarget target)
 {
     try
     {
         var process = Process.GetProcessById(target.ProcessId);
-        return Math.Abs((process.StartTime - target.StartTime).TotalSeconds) < 5 ? process : null;
+        if (target.StartTime is { } expected && process.StartTime != expected)
+        {
+            process.Dispose();
+            return null;
+        }
+
+        return process;
     }
-    catch (ArgumentException)
-    {
-        return null;
-    }
+    catch (ArgumentException) { return null; }
+    catch (InvalidOperationException) { return null; }
+    catch (System.ComponentModel.Win32Exception) { return null; }
 }
 ```
-Then have `ForceStopAsync` use the active `Process` while attached, or reopen the pending target by PID/start time once detached. Add an integration-style test where `CleanPluginAsync` goes through `ProcessExecutionService.ExecuteAsync`, returns `GracePeriodExpired`, lets `ExecuteAsync` dispose its local `Process`, then confirms force termination.
 
-### CR-02: Progress UI disables Stop during termination, making the coordinator's second-click force escalation unreachable
-
-**File:** `AutoQAC/ViewModels/ProgressViewModel.cs:205`
-**Issue:** `CanStop()` returns `IsCleaning && !IsTerminating`, and `CleaningTerminationCoordinator.StopAsync` sets `IsTerminating` as soon as the first graceful stop starts. That disables `StopCommand` during the grace window, so the documented `StopAsync` second-call path (`CleaningTerminationCoordinator.cs:111-116`) cannot be triggered from the UI. This is a behavioral regression against the two-stage stop requirement: users cannot click Stop again to immediately force-kill while xEdit is still in the grace period.
-**Fix:** Keep the Stop command executable during active cleaning and route a second click to the coordinator, while separately guarding only modal prompt reentrancy if needed. For example:
-```csharp
-private bool CanStop() => IsCleaning;
-```
-If the UI needs to prevent duplicate confirmation dialogs, add a separate `_isStopPromptOpen` flag around `ShowChoiceAsync` rather than disabling the stop escalation command when `IsTerminating` is true. Update `StopCommand_ShouldBeDisabled_WhenTerminating` to assert the required second-click behavior instead of asserting the regression.
+Then have `ForceStopAsync` reopen the pending target, dispose that reopened handle after termination, and convert unavailable/recycled targets to `ForceKillFailed` or `AlreadyExited` as appropriate.
 
 ## Warnings
 
-### WR-01: Detached force-stop tests do not exercise production process ownership
+### WR-01: WARNING - Tests mask the production ownership/lifetime boundary
 
-**File:** `AutoQAC.Tests/Services/Cleaning/CleaningTerminationCoordinatorTests.cs:237-256`
-**Issue:** The detached force escalation tests attach a test-owned `Process` and then call `DetachProcess()`, but they never simulate the actual production owner (`ProcessExecutionService.ExecuteAsync`) disposing the `Process` wrapper before the confirmation arrives. That test shape masks CR-01: it proves the coordinator works with an externally-owned, still-valid `Process` object, not with the disposed wrapper it will commonly hold after the real runner/finalizer path unwinds.
-**Fix:** Add coverage through the real execution path or explicitly dispose the retained wrapper before `ForceStopAsync` to reproduce production ownership. The test should fail unless force escalation stores PID/start-time identity and reopens the process safely.
+**File:** `AutoQAC.Tests/Services/CleaningOrchestratorTests.cs:2457-2514`
+
+**Issue:** The regression tests for post-finalization force escalation pass because they inject a sleeper `Process` owned by the test (`StartSleeperProcess`) and keep it alive until assertions complete. Production uses `ProcessExecutionService.ExecuteAsync`, which owns the `Process` with `using var` and disposes it before the delayed confirmation path runs. The tests therefore verify a different ownership model than the application actually uses and would not catch CR-01.
+
+**Fix:** Add a regression test that exercises the real ownership boundary or a fake runner that disposes the process before `ForceStopCleaningAsync`. The assertion should prove confirmed force termination does not throw and returns an explicit terminal failure/success instead of reusing a disposed `Process` object. For example:
+
+```csharp
+[Fact]
+public async Task ForceStopAsync_AfterPendingProcessObjectDisposed_DoesNotThrowAndDoesNotReuseDisposedHandle()
+{
+    using var process = StartSleeperProcess();
+    _sut.AttachProcess(process);
+    _processMock.TerminateProcessAsync(process, forceKill: false, Arg.Any<CancellationToken>())
+        .Returns(TerminationResult.GracePeriodExpired);
+
+    await _sut.StopAsync();
+    _sut.DetachProcess();
+    process.Dispose();
+
+    var act = () => _sut.ForceStopAsync();
+
+    await act.Should().NotThrowAsync();
+    // Expected result depends on the production fix: ForceKillFailed if the target cannot be safely reopened,
+    // or ForceKilled/AlreadyExited if it can be reacquired and validated by PID/start time.
+}
+```
 
 ---
 
-_Reviewed: 2026-05-02T00:24:14Z_
+_Reviewed: 2026-05-02T00:38:07Z_
 _Reviewer: the agent (gsd-code-reviewer)_
 _Depth: deep_
