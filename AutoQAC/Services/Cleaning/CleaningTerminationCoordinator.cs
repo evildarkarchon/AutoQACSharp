@@ -184,96 +184,95 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
 
         try
         {
-
-        DiagnosticsProcess? proc;
-        PendingForceTarget? pendingTarget = null;
-        var isPendingForceEscalation = false;
-        lock (_processLock)
-        {
-            proc = _currentProcess;
-            if (proc is null && MayProcessStillBeRunning(_lastTerminationResult))
+            DiagnosticsProcess? proc;
+            PendingForceTarget? pendingTarget = null;
+            var isPendingForceEscalation = false;
+            lock (_processLock)
             {
-                pendingTarget = _pendingForceEscalationTarget;
-                isPendingForceEscalation = pendingTarget is not null;
-            }
-        }
-
-        var disposeReopenedProcess = false;
-        if (proc is null && pendingTarget is not null)
-        {
-            // The original Process is owned by the execution service and may be disposed after finalization.
-            // Reopen by PID/start time so confirmed escalation never dereferences a borrowed disposed handle.
-            proc = TryReopenPendingTarget(pendingTarget);
-            disposeReopenedProcess = proc is not null;
-
-            if (proc is null)
-            {
-                _logger.Warning("[Termination] Confirmed force stop could not reopen the pending force target");
-                _lastTerminationResult = TerminationResult.ForceKillFailed;
-                ReleasePendingForceEscalationTarget(pendingTarget);
-                return ToStopCleaningResult(TerminationResult.ForceKillFailed);
-            }
-        }
-
-        if (proc != null)
-        {
-            try
-            {
-                if (proc.Id == Environment.ProcessId)
+                proc = _currentProcess;
+                if (proc is null && MayProcessStillBeRunning(_lastTerminationResult))
                 {
-                    _logger.Error(null, "[Termination] Refusing to terminate the AutoQAC process during force stop request");
-                    return new StopCleaningResult(null, MayStillBeRunning: false);
+                    pendingTarget = _pendingForceEscalationTarget;
+                    isPendingForceEscalation = pendingTarget is not null;
                 }
-
-                if (!proc.HasExited)
-                {
-                    var result = await _processService.TerminateProcessAsync(proc, forceKill: true, ct: CancellationToken.None)
-                        .ConfigureAwait(false);
-                    _lastTerminationResult = result;
-                    if (result is TerminationResult.ForceKilled or TerminationResult.AlreadyExited)
-                    {
-                        ReleasePendingForceEscalationTarget();
-                    }
-
-                    return ToStopCleaningResult(result);
-                }
-
-                _lastTerminationResult = TerminationResult.AlreadyExited;
-                ReleasePendingForceEscalationTarget();
-                return ToStopCleaningResult(TerminationResult.AlreadyExited);
             }
-            catch (Exception ex) when (ex is InvalidOperationException or ObjectDisposedException)
+
+            var disposeReopenedProcess = false;
+            if (proc is null && pendingTarget is not null)
             {
-                if (isPendingForceEscalation)
+                // The original Process is owned by the execution service and may be disposed after finalization.
+                // Reopen by PID/start time so confirmed escalation never dereferences a borrowed disposed handle.
+                proc = TryReopenPendingTarget(pendingTarget);
+                disposeReopenedProcess = proc is not null;
+
+                if (proc is null)
                 {
-                    _logger.Debug("[Termination] Pending force target was unavailable during confirmed force stop");
+                    _logger.Warning("[Termination] Confirmed force stop could not reopen the pending force target");
                     _lastTerminationResult = TerminationResult.ForceKillFailed;
                     ReleasePendingForceEscalationTarget(pendingTarget);
                     return ToStopCleaningResult(TerminationResult.ForceKillFailed);
                 }
-
-                _logger.Debug("[Termination] Process already exited during force stop");
-                _lastTerminationResult = TerminationResult.AlreadyExited;
-                ReleasePendingForceEscalationTarget();
-                return ToStopCleaningResult(TerminationResult.AlreadyExited);
             }
-            finally
+
+            if (proc != null)
             {
-                if (disposeReopenedProcess)
+                try
                 {
-                    proc.Dispose();
+                    if (proc.Id == Environment.ProcessId)
+                    {
+                        _logger.Error(null, "[Termination] Refusing to terminate the AutoQAC process during force stop request");
+                        return new StopCleaningResult(null, MayStillBeRunning: false);
+                    }
+
+                    if (!proc.HasExited)
+                    {
+                        var result = await _processService.TerminateProcessAsync(proc, forceKill: true, ct: CancellationToken.None)
+                            .ConfigureAwait(false);
+                        _lastTerminationResult = result;
+                        if (result is TerminationResult.ForceKilled or TerminationResult.AlreadyExited)
+                        {
+                            ReleasePendingForceEscalationTarget();
+                        }
+
+                        return ToStopCleaningResult(result);
+                    }
+
+                    _lastTerminationResult = TerminationResult.AlreadyExited;
+                    ReleasePendingForceEscalationTarget();
+                    return ToStopCleaningResult(TerminationResult.AlreadyExited);
+                }
+                catch (Exception ex) when (ex is InvalidOperationException or ObjectDisposedException)
+                {
+                    if (isPendingForceEscalation)
+                    {
+                        _logger.Debug("[Termination] Pending force target was unavailable during confirmed force stop");
+                        _lastTerminationResult = TerminationResult.ForceKillFailed;
+                        ReleasePendingForceEscalationTarget(pendingTarget);
+                        return ToStopCleaningResult(TerminationResult.ForceKillFailed);
+                    }
+
+                    _logger.Debug("[Termination] Process already exited during force stop");
+                    _lastTerminationResult = TerminationResult.AlreadyExited;
+                    ReleasePendingForceEscalationTarget();
+                    return ToStopCleaningResult(TerminationResult.AlreadyExited);
+                }
+                finally
+                {
+                    if (disposeReopenedProcess)
+                    {
+                        proc.Dispose();
+                    }
                 }
             }
-        }
 
-        if (MayProcessStillBeRunning(_lastTerminationResult))
-        {
-            _logger.Warning("[Termination] Confirmed force stop had no available process target");
-            _lastTerminationResult = TerminationResult.ForceKillFailed;
-            return ToStopCleaningResult(TerminationResult.ForceKillFailed);
-        }
+            if (MayProcessStillBeRunning(_lastTerminationResult))
+            {
+                _logger.Warning("[Termination] Confirmed force stop had no available process target");
+                _lastTerminationResult = TerminationResult.ForceKillFailed;
+                return ToStopCleaningResult(TerminationResult.ForceKillFailed);
+            }
 
-        return new StopCleaningResult(_lastTerminationResult, MayProcessStillBeRunning(_lastTerminationResult));
+            return new StopCleaningResult(_lastTerminationResult, MayProcessStillBeRunning(_lastTerminationResult));
         }
         finally
         {
