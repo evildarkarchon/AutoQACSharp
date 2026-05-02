@@ -381,7 +381,7 @@ Plans:
 - [x] 16-01-PLAN.md — Create/refresh Phase 05, Phase 06, and Phase 14 evidence artifacts.
 
 **Wave 2 (blocked on Wave 1 completion)**
-- [ ] 16-02-PLAN.md — Update the milestone audit to passed/ready with closed findings.
+- [x] 16-02-PLAN.md — Update the milestone audit to passed/ready with closed findings.
 - [ ] 16-03-PLAN.md — Reconcile requirements and roadmap markers.
 
 ## Progress
@@ -403,7 +403,7 @@ Plans:
 | 13. Command Launch Escaping Reverification & Safe MO2 Failures | v1.0 Cleanup | 0/0 | Not started | - |
 | 14. Orchestrator Decomposition Reverification | v1.0 Cleanup | 1/1 | Complete    | 2026-05-01 |
 | 15. Stop Escalation Ownership Closure | v1.0 Cleanup | 4/4 | Complete    | 2026-05-02 |
-| 16. Milestone Evidence and Validation Reconciliation | v1.0 Cleanup | 1/3 | In Progress|  |
+| 16. Milestone Evidence and Validation Reconciliation | v1.0 Cleanup | 2/3 | In Progress|  |
 
 ## Coverage
 

@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Cleanup
 status: executing
-stopped_at: Phase 16 context gathered
-last_updated: "2026-05-02T06:44:49.620Z"
+stopped_at: Completed 16-02-PLAN.md
+last_updated: "2026-05-02T06:52:01.820Z"
 last_activity: 2026-05-02
 progress:
   total_phases: 12
   completed_phases: 11
   total_plans: 78
-  completed_plans: 76
-  percent: 97
+  completed_plans: 77
+  percent: 99
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-04-28)
 ## Current Position
 
 Phase: 16 (milestone-evidence-validation-reconciliation) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-05-02
 
-Progress: [██████████] 97%
+Progress: [██████████] 99%
 
 ## Performance Metrics
 
@@ -83,6 +83,7 @@ Progress: [██████████] 97%
 | Phase 15 P03 | 4 min | 2 tasks | 3 files |
 | Phase 15 P04 | 5 min | 3 tasks | 3 files |
 | Phase 16 P01 | 3 min | 3 tasks | 3 files |
+| Phase 16 P02 | 3 min | 3 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -165,6 +166,9 @@ Progress: [██████████] 97%
 - [Phase 16]: Plan 16-01 treats Phase 05 verification as a current reconciliation pass based on Phase 12/15 evidence, not original historical Phase 05 execution. — This unblocks audit discovery while preserving historical provenance.
 - [Phase 16]: Phase 06 validation metadata is passed/superseded by row-specific Phase 13 AC evidence while 06-VERIFICATION.md remains historical gaps_found. — Current closure should cite Phase 13 without rewriting stale verification history.
 - [Phase 16]: Phase 14 validation coverage is a Phase 16 audit-discovery override sourced from 14-VERIFICATION.md. — This satisfies Nyquist discovery without changing Phase 14's original verification-only rationale.
+- [Phase 16]: Milestone audit passed state now uses Phase 15 verification/validation as the source of truth for stop-escalation closure. — Plan 16-02 reconciled stale audit blockers into closed findings.
+- [Phase 16]: Closed historical audit findings remain visible only in a dedicated Closed / Superseded Findings ledger with evidence paths. — Preserves audit history without blocking milestone routing.
+- [Phase 16]: No dedicated audit rerun command was discoverable from available GSD CLI help, so manual artifact inspection against 16-SPEC criteria was recorded. — Satisfies D-16 with explicit fallback evidence.
 
 ### Pending Todos
 
@@ -182,6 +186,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-05-02T06:44:27.525Z
-Stopped at: Phase 16 context gathered
+Last session: 2026-05-02T06:52:01.812Z
+Stopped at: Completed 16-02-PLAN.md
 Resume file: None
