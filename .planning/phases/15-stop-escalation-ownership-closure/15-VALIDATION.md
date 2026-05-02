@@ -5,6 +5,7 @@ status: passed
 nyquist_compliant: true
 wave_0_complete: true
 created: 2026-05-01
+updated: 2026-05-02
 ---
 
 # Phase 15 — Validation Strategy
@@ -70,3 +71,15 @@ All Phase 15 behaviors have automated verification through coordinator, process-
 - [x] `nyquist_compliant: true` set in frontmatter after execution evidence passes
 
 **Approval:** passed — targeted coordinator, orchestrator, Progress ViewModel, process integration, and full solution evidence passed on 2026-05-02. Plan 15-04 closes the verifier gap by proving durable PID/start-time pending-target ownership after original wrapper disposal and refreshing verification evidence from `gaps_found` to passed. `wave_0_complete: true` is preserved because existing test infrastructure remained sufficient.
+
+## Validation Audit 2026-05-02
+
+| Metric | Count |
+|--------|-------|
+| Gaps found | 2 |
+| Resolved | 2 |
+| Escalated | 0 |
+
+Resolved `15-01-02` / `15-04-01` by stabilizing the detached already-exited pending-target regression in `CleaningTerminationCoordinatorTests.cs`. The test now keeps the helper process alive long enough for `StopAsync()` to capture durable PID/start-time identity, then lets it exit before confirmed `ForceStopAsync()` so `ForceKillFailed` coverage exercises the intended SAF-02/TEST-01 path.
+
+Resolved the `15-04-01` targeted-command gap by stabilizing `ForceStopCleaningAsync_ShouldTerminateActiveProcess_WithForceKillTrue` in `CleaningOrchestratorTests.cs`. The mock plugin run now keeps the active process attached until `ForceStopCleaningAsync()` attempts the force-stop call, removing the suite-order race where cancellation finalization could detach before the assertion target executed.
