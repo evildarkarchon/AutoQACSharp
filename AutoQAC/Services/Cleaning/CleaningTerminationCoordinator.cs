@@ -29,7 +29,7 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
     private readonly object _processLock = new();
 
     // State owned by this coordinator (lifted from CleaningOrchestrator.cs Phase 5 locks).
-    private volatile bool _isStopRequested;
+    private int _isStopRequested;
     private DiagnosticsProcess? _currentProcess;
     private PendingForceTarget? _pendingForceEscalationTarget;
     private TerminationResult? _lastTerminationResult;
@@ -57,7 +57,7 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
     }
 
     /// <inheritdoc />
-    public bool IsStopRequested => _isStopRequested;
+    public bool IsStopRequested => Volatile.Read(ref _isStopRequested) != 0;
 
     /// <inheritdoc />
     public TerminationResult? LastTerminationResult => _lastTerminationResult;
@@ -112,14 +112,13 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
     /// <inheritdoc />
     public async Task<StopCleaningResult> StopAsync()
     {
-        if (_isStopRequested)
+        if (Interlocked.Exchange(ref _isStopRequested, 1) == 1)
         {
             // Path B: Second click during grace period -- immediate force kill, no prompt
             _logger.Information("[Termination] Second stop requested -- escalating to force kill");
             return await ForceStopAsync().ConfigureAwait(false);
         }
 
-        _isStopRequested = true;
         _stateService.SetTerminating(true);
         _logger.Information("[Termination] Graceful stop requested");
 
@@ -287,7 +286,7 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
     public void ResetForNewSession()
     {
         // (1) Clear stop-requested flag — next session is not pre-stopped.
-        _isStopRequested = false;
+        Interlocked.Exchange(ref _isStopRequested, 0);
 
         // (2) Clear UI "terminating" state — without this, prior session's terminating UI leaks (D-09).
         _stateService.SetTerminating(false);
@@ -315,7 +314,7 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
     /// </summary>
     public void CompleteSessionFinalization()
     {
-        _isStopRequested = false;
+        Interlocked.Exchange(ref _isStopRequested, 0);
         _stateService.SetTerminating(false);
 
         _hangMonitorSubscription?.Dispose();
