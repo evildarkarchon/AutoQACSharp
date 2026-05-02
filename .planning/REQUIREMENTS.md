@@ -95,11 +95,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 **Coverage:**
 - v1.0 Cleanup requirements: 18 total
-- Satisfied in latest milestone audit: 15
-- Pending gap closure: 3
+- Satisfied in latest milestone audit: 18
+- Pending gap closure: 0
 - Mapped to phases: 18
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-04-28*
-*Last updated: 2026-05-01 after milestone gap closure phase planning*
+*Last updated: 2026-05-02 after Phase 16 milestone evidence reconciliation*
