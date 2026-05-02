@@ -180,6 +180,10 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
     public async Task<StopCleaningResult> ForceStopAsync()
     {
         _logger.Information("[Termination] Force stop requested -- killing process tree immediately");
+        _stateService.SetTerminating(true);
+
+        try
+        {
 
         DiagnosticsProcess? proc;
         PendingForceTarget? pendingTarget = null;
@@ -270,6 +274,14 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
         }
 
         return new StopCleaningResult(_lastTerminationResult, MayProcessStillBeRunning(_lastTerminationResult));
+        }
+        finally
+        {
+            if (!MayProcessStillBeRunning(_lastTerminationResult))
+            {
+                _stateService.SetTerminating(false);
+            }
+        }
     }
 
     /// <inheritdoc />
