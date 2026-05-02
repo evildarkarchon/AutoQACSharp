@@ -136,6 +136,7 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
                 if (proc.Id == Environment.ProcessId)
                 {
                     _logger.Error(null, "[Termination] Refusing to terminate the AutoQAC process during stop request");
+                    _stateService.SetTerminating(false);
                     return new StopCleaningResult(null, MayStillBeRunning: false);
                 }
 
@@ -168,6 +169,7 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
             }
         }
 
+        _stateService.SetTerminating(false);
         return new StopCleaningResult(_lastTerminationResult, MayProcessStillBeRunning(_lastTerminationResult));
     }
 

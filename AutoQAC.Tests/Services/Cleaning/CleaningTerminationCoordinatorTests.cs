@@ -125,6 +125,22 @@ public sealed class CleaningTerminationCoordinatorTests : IDisposable
         // Assert
         result.TerminationResult.Should().BeNull();
         result.MayStillBeRunning.Should().BeFalse();
+        _stateMock.Received(1).SetTerminating(false);
+        await _processMock.DidNotReceive().TerminateProcessAsync(
+            Arg.Any<Process>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task StopAsync_WithNoActiveProcess_ClearsTerminatingFlag()
+    {
+        // Act
+        var result = await _sut.StopAsync();
+
+        // Assert
+        result.TerminationResult.Should().BeNull();
+        result.MayStillBeRunning.Should().BeFalse();
+        _stateMock.Received(1).SetTerminating(true);
+        _stateMock.Received(1).SetTerminating(false);
         await _processMock.DidNotReceive().TerminateProcessAsync(
             Arg.Any<Process>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
     }
