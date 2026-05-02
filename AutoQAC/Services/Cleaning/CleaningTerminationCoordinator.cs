@@ -35,7 +35,7 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
     private TerminationResult? _lastTerminationResult;
     private IDisposable? _hangMonitorSubscription;
 
-    private sealed record PendingForceTarget(int ProcessId, DateTime? StartTime);
+    private sealed record PendingForceTarget(int ProcessId, DateTime StartTime);
 
     /// <summary>
     /// Creates a termination coordinator using existing process, hang detection, state, and logging services.
@@ -356,13 +356,14 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
     private void RetainPendingForceEscalationProcess(DiagnosticsProcess process)
     {
         var processId = TryGetProcessId(process);
-        if (processId is null)
+        var startTime = TryGetStartTime(process);
+        if (processId is null || startTime is null)
         {
-            _logger.Warning("[Termination] Could not retain pending force target because the process identity was unavailable");
+            _logger.Warning("[Termination] Could not retain pending force target because the process identity was not fully verifiable");
             return;
         }
 
-        var target = new PendingForceTarget(processId.Value, TryGetStartTime(process));
+        var target = new PendingForceTarget(processId.Value, startTime.Value);
 
         lock (_processLock)
         {
@@ -420,7 +421,7 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
     }
 
     /// <summary>
-    /// Reopens a pending force target by PID and validates its start time when the original start time was captured.
+    /// Reopens a pending force target by PID and validates its captured start time.
     /// </summary>
     /// <param name="target">Durable identity captured during graceful termination expiry.</param>
     /// <returns>A newly opened process handle owned by the caller, or <see langword="null" /> if unavailable or recycled.</returns>
@@ -429,7 +430,7 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
         try
         {
             var process = DiagnosticsProcess.GetProcessById(target.ProcessId);
-            if (target.StartTime is { } expectedStartTime && process.StartTime != expectedStartTime)
+            if (process.StartTime != target.StartTime)
             {
                 process.Dispose();
                 return null;
