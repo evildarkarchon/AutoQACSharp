@@ -1,6 +1,6 @@
 ---
 phase: 15-stop-escalation-ownership-closure
-reviewed: 2026-05-02T01:30:00Z
+reviewed: 2026-05-02T01:38:05Z
 depth: deep
 files_reviewed: 6
 files_reviewed_list:
@@ -11,8 +11,8 @@ files_reviewed_list:
   - AutoQAC/Services/Cleaning/CleaningTerminationCoordinator.cs
   - AutoQAC/Services/Cleaning/ICleaningTerminationCoordinator.cs
 findings:
-  critical: 0
-  warning: 2
+  critical: 1
+  warning: 1
   info: 0
   total: 2
 status: issues_found
@@ -20,101 +20,63 @@ status: issues_found
 
 # Phase 15: Code Review Report
 
-**Reviewed:** 2026-05-02T01:30:00Z
+**Reviewed:** 2026-05-02T01:38:05Z
 **Depth:** deep
 **Files Reviewed:** 6
 **Status:** issues_found
 
 ## Summary
 
-Reviewed the stop-escalation ownership closure implementation and its targeted tests at deep depth, including the orchestrator-to-runner attach/detach flow, pending force-target reopening, UI-facing stop result semantics, and process termination service boundaries. The previous PID-reuse blocker appears remediated by requiring both PID and start-time proof before retaining a pending target. Two robustness issues remain in `CleaningTerminationCoordinator`: a non-terminating stop path can leave the UI terminating flag stuck, and the reopened-process helper can leak a process handle on validation exceptions.
+Reviewed the termination coordinator split, orchestrator ownership handoff, and related stop/escalation UI tests at deep depth. The new pending-target flow covers the happy GracePeriodExpired confirmation path, but session finalization still forgets other “may still be running” terminal states, and the coordinator can leave the terminating state stuck on protected/no-op stop paths.
+
+## Critical Issues
+
+### CR-01: BLOCKER — Finalization clears unresolved force-failure/left-running state
+
+**File:** `AutoQAC/Services/Cleaning/CleaningTerminationCoordinator.cs:328-332`
+
+**Issue:** `CompleteSessionFinalization` preserves unresolved state only when `_lastTerminationResult == GracePeriodExpired`. The same class defines `ForceKillFailed` and `LeftRunningByUser` as “may still be running” states at lines 348-349, but finalization clears `_pendingForceEscalationTarget` and `_lastTerminationResult` for both. After a failed confirmed force kill, or after the user leaves xEdit running and the session completes, the singleton coordinator reports no unresolved process even though xEdit may still be alive. This loses the safety signal and prevents a later retry/accurate status from using the retained target.
+
+**Fix:** Preserve all unresolved states through finalization, and clear only confirmed terminal results. Add a test where `ForceStopCleaningAsync` returns `ForceKillFailed`, the session finalizes, and `LastTerminationResult`/`MayStillBeRunning` remain true until `ResetForNewSession`.
+
+```csharp
+lock (_processLock)
+{
+    _currentProcess = null;
+
+    if (!MayProcessStillBeRunning(_lastTerminationResult))
+    {
+        _pendingForceEscalationTarget = null;
+        _lastTerminationResult = null;
+    }
+}
+```
 
 ## Warnings
 
-### WR-01: WARNING - Stop path can leave terminating state stuck when no termination actually runs
+### WR-01: WARNING — Protected/no-op stop paths leave IsTerminating true
 
-**File:** `AutoQAC/Services/Cleaning/CleaningTerminationCoordinator.cs:122-171`
+**File:** `AutoQAC/Services/Cleaning/CleaningTerminationCoordinator.cs:122-139`
 
-**Issue:** `StopAsync` publishes `_stateService.SetTerminating(true)` before proving there is a terminable external xEdit process. If the attached process is AutoQAC itself (`lines 136-139`) or the process has already exited before the first stop request (`lines 142-171` fall through), the method returns without resetting `IsTerminatingChanged` to `false`. In those paths no graceful termination is in progress, but `ProgressViewModel.CanStop()` disables Stop while `IsTerminating` is true, so the UI can be left in a stale terminating/spinner state until a later session reset or finalization happens. The existing tests assert the self-protection return value, but do not assert that `SetTerminating(false)` is emitted for non-terminating exits.
+**Issue:** `StopAsync` sets `_stateService.SetTerminating(true)` before it knows whether it will actually terminate anything. If the attached process is AutoQAC itself, the method returns at line 139 without resetting the flag. The no-active-process path at line 171 also returns without clearing it. In normal orchestrated cancellation finalization may eventually reset the flag, but direct coordinator callers and protected early-return paths can leave the UI in a permanently terminating/disabled state.
 
-**Fix:** Only set the terminating flag after a real external process termination is about to be attempted, or explicitly clear it on every early return that does not start termination.
+**Fix:** Reset the flag before every no-op/protected return, or delay setting it until there is a real external process to stop. Add assertions to the self-process and no-active-process coordinator tests.
 
 ```csharp
-// After reading proc under _processLock:
-if (proc is null)
+if (proc.Id == Environment.ProcessId)
 {
-    return new StopCleaningResult(_lastTerminationResult, MayProcessStillBeRunning(_lastTerminationResult));
-}
-
-try
-{
-    if (proc.Id == Environment.ProcessId)
-    {
-        _logger.Error(null, "[Termination] Refusing to terminate the AutoQAC process during stop request");
-        _stateService.SetTerminating(false);
-        return new StopCleaningResult(null, MayStillBeRunning: false);
-    }
-
-    if (proc.HasExited)
-    {
-        _lastTerminationResult = TerminationResult.AlreadyExited;
-        _stateService.SetTerminating(false);
-        ReleasePendingForceEscalationTarget();
-        return ToStopCleaningResult(TerminationResult.AlreadyExited);
-    }
-
-    _stateService.SetTerminating(true);
-    var result = await _processService.TerminateProcessAsync(proc, forceKill: false, ct: CancellationToken.None)
-        .ConfigureAwait(false);
-    // existing result handling...
-}
-catch (InvalidOperationException)
-{
+    _logger.Error(null, "[Termination] Refusing to terminate the AutoQAC process during stop request");
     _stateService.SetTerminating(false);
-    _lastTerminationResult = TerminationResult.AlreadyExited;
-    return ToStopCleaningResult(TerminationResult.AlreadyExited);
+    return new StopCleaningResult(null, MayStillBeRunning: false);
 }
+
+// Before the final cached-result return when no process was available:
+_stateService.SetTerminating(false);
+return new StopCleaningResult(_lastTerminationResult, MayProcessStillBeRunning(_lastTerminationResult));
 ```
-
-Add tests covering both self-refusal and already-exited first-stop paths with `_stateMock.Received().SetTerminating(false)`.
-
-### WR-02: WARNING - Reopened process handle leaks when start-time validation throws
-
-**File:** `AutoQAC/Services/Cleaning/CleaningTerminationCoordinator.cs:431-442`
-
-**Issue:** `TryReopenPendingTarget` owns the `Process` returned by `DiagnosticsProcess.GetProcessById`, but if `process.StartTime` throws `InvalidOperationException` or `Win32Exception`, control jumps to the catch block and returns `null` without disposing the opened handle. This is a resource ownership defect in the confirmed force-stop fallback path. It is not just theoretical: `TryGetStartTime` already treats `Win32Exception` as expected for protected/unavailable processes, so the reopen validation path should apply the same cleanup discipline.
-
-**Fix:** Dispose the process handle in the exceptional validation path. One simple pattern is to keep the handle in an outer variable and dispose it in the catch before returning `null`.
-
-```csharp
-private static DiagnosticsProcess? TryReopenPendingTarget(PendingForceTarget target)
-{
-    DiagnosticsProcess? process = null;
-    try
-    {
-        process = DiagnosticsProcess.GetProcessById(target.ProcessId);
-        if (process.StartTime != target.StartTime)
-        {
-            process.Dispose();
-            return null;
-        }
-
-        var reopened = process;
-        process = null;
-        return reopened;
-    }
-    catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or Win32Exception)
-    {
-        process?.Dispose();
-        return null;
-    }
-}
-```
-
-Add a small unit seam or wrapper for process reopening if direct coverage is otherwise impractical; at minimum, keep the ownership rule explicit in the helper.
 
 ---
 
-_Reviewed: 2026-05-02T01:30:00Z_
+_Reviewed: 2026-05-02T01:38:05Z_
 _Reviewer: the agent (gsd-code-reviewer)_
 _Depth: deep_
