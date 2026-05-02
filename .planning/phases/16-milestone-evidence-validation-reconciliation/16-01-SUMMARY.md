@@ -71,7 +71,7 @@ Each task was committed atomically:
 2. **Task 2: Refresh Phase 06 validation metadata with Phase 13 mapping** - `6e906db` (docs)
 3. **Task 3: Create Phase 14 validation artifact from existing evidence** - `0cde192` (docs)
 
-**Plan metadata:** pending final metadata commit
+**Plan metadata:** recorded in the final plan metadata commit listed in the executor completion output.
 
 ## Files Created/Modified
 
