@@ -30,7 +30,7 @@ Full details: [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP.md)
 - [x] **Phase 13: Command Launch Escaping Reverification & Safe MO2 Failures** - Users cannot accidentally launch direct xEdit when MO2 mode is enabled but MO2 configuration is missing, and command escaping safety is re-verified. (Complete 2026-05-01)
 - [x] **Phase 14: Orchestrator Decomposition Reverification** - Maintainers have current verification evidence that orchestrator gap closures preserve session guarding and detected-game preflight validation. (completed 2026-05-01)
 - [x] **Phase 15: Stop Escalation Ownership Closure** - Users get a reliable confirmed force-termination outcome when graceful stop expires, even if process execution has returned. (completed 2026-05-02) (gap planned 2026-05-02) (completed 2026-05-02)
-- [ ] **Phase 16: Milestone Evidence and Validation Reconciliation** - Maintainers can complete the milestone audit with current verification, validation, and requirement-tracking artifacts.
+- [x] **Phase 16: Milestone Evidence and Validation Reconciliation** - Maintainers can complete the milestone audit with current verification, validation, and requirement-tracking artifacts. (completed 2026-05-02)
 
 ## Phase Details
 
@@ -382,7 +382,7 @@ Plans:
 
 **Wave 2 (blocked on Wave 1 completion)**
 - [x] 16-02-PLAN.md — Update the milestone audit to passed/ready with closed findings.
-- [ ] 16-03-PLAN.md — Reconcile requirements and roadmap markers.
+- [x] 16-03-PLAN.md — Reconcile requirements and roadmap markers.
 
 ## Progress
 
@@ -403,7 +403,7 @@ Plans:
 | 13. Command Launch Escaping Reverification & Safe MO2 Failures | v1.0 Cleanup | 1/1 | Complete | 2026-05-01 |
 | 14. Orchestrator Decomposition Reverification | v1.0 Cleanup | 1/1 | Complete    | 2026-05-01 |
 | 15. Stop Escalation Ownership Closure | v1.0 Cleanup | 4/4 | Complete    | 2026-05-02 |
-| 16. Milestone Evidence and Validation Reconciliation | v1.0 Cleanup | 2/3 | In Progress|  |
+| 16. Milestone Evidence and Validation Reconciliation | v1.0 Cleanup | 3/3 | Complete   | 2026-05-02 |
 
 ## Coverage
 
