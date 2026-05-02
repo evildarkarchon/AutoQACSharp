@@ -89,7 +89,10 @@ public sealed class CleaningOrchestrator(
                     break;
                 }
 
-                if (!await ProcessPluginAsync(plugin, preflightPlan, sessionDir, backupEntries, onTimeout, onBackupFailure, maxRetryAttempts, context, cts.Token).ConfigureAwait(false))
+                var processed = await ProcessPluginAsync(plugin, preflightPlan, sessionDir, backupEntries, onTimeout, onBackupFailure, maxRetryAttempts, context, cts.Token)
+                    .ConfigureAwait(false);
+
+                if (!processed || cts.Token.IsCancellationRequested || terminationCoordinator.IsStopRequested)
                 {
                     context = context with { WasCancelled = true };
                     break;
