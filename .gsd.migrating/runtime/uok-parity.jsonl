@@ -1,2 +1,0 @@
-{"ts":"2026-05-20T09:18:22.035Z","path":"uok-kernel","flags":{"enabled":true,"legacyFallback":false,"gates":true,"modelPolicy":true,"executionGraph":true,"gitops":true,"gitopsTurnAction":"commit","gitopsTurnPush":false,"auditUnified":true,"planV2":true},"phase":"enter"}
-{"ts":"2026-05-20T09:19:06.014Z","path":"uok-kernel","flags":{"enabled":true,"legacyFallback":false,"gates":true,"modelPolicy":true,"executionGraph":true,"gitops":true,"gitopsTurnAction":"commit","gitopsTurnPush":false,"auditUnified":true,"planV2":true},"phase":"exit","status":"ok"}
