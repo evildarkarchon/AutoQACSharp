@@ -1,0 +1,7 @@
+roadmap slices: 17 done: 13
+first/last titles: [('S01', True, 'XEdit Log Parsing Fix'), ('S02', True, 'Foundation'), ('S03', True, 'Process Layer')] [('S15', True, 'Orchestrator Decomposition Reverification'), ('S16', True, 'Stop Escalation Ownership Closure'), ('S17', True, 'Milestone Evidence Validation Reconciliation')]
+plan files: 17 task plans: 78 task summaries: 78 slice summaries: 8 research files: 11
+task counts by slice: [('S01', 0, 0, False, 0), ('S02', 0, 0, False, 0), ('S03', 0, 0, False, 0), ('S04', 0, 0, False, 0), ('S05', 0, 0, False, 0), ('S06', 4, 4, False, 44602), ('S07', 4, 4, True, 44239), ('S08', 14, 14, False, 8119), ('S09', 10, 10, False, 70811), ('S10', 9, 9, False, 47177), ('S11', 11, 11, True, 43879), ('S12', 13, 13, True, 40794), ('S13', 3, 3, True, 8784), ('S14', 2, 2, True, 6731), ('S15', 1, 1, True, 6640), ('S16', 4, 4, True, 8325), ('S17', 3, 3, True, 0)]
+research file sizes: [('S06', 44602), ('S07', 44239), ('S08', 8119), ('S09', 70811), ('S10', 47177), ('S11', 43879), ('S12', 40794), ('S13', 8784), ('S14', 6731), ('S15', 6640), ('S16', 8325)]
+requirements: 18 unique: 18 statuses: {'validated': 18}
+decisions: 184 unique: 184 first_last: (['D001', 'D002', 'D003'], ['D182', 'D183', 'D184'])

@@ -1,0 +1,18 @@
+{
+  "id": "494399cf-b952-4e89-bdc3-2783c20bd6bf",
+  "runtime": "python",
+  "purpose": "compare old roadmap phase markers to migrated roadmap slices",
+  "script_chars": 980,
+  "started_at": "2026-05-20T09:05:18.196Z",
+  "finished_at": "2026-05-20T09:05:18.263Z",
+  "exit_code": 0,
+  "signal": null,
+  "timed_out": false,
+  "duration_ms": 67,
+  "stdout_bytes": 345,
+  "stderr_bytes": 0,
+  "stdout_truncated": false,
+  "stderr_truncated": false,
+  "stdout_path": "J:\\AutoQACSharp\\.gsd\\exec\\494399cf-b952-4e89-bdc3-2783c20bd6bf.stdout",
+  "stderr_path": "J:\\AutoQACSharp\\.gsd\\exec\\494399cf-b952-4e89-bdc3-2783c20bd6bf.stderr"
+}
