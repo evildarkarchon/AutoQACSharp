@@ -12,6 +12,7 @@ using AutoQAC.Services.UI;
 using AutoQAC.ViewModels;
 using AutoQAC.Views;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.UI.Dispatching;
 
 namespace AutoQAC.Infrastructure;
 
@@ -56,7 +57,6 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IProcessSessionIdProvider, ProcessSessionIdProvider>();
         services.AddSingleton<IPidStore, JsonPidStore>();
         services.AddSingleton<IProcessExitWaiter, ProcessExitWaiter>();
-        services.AddSingleton<ISingleInstanceGuard, SingleInstanceGuard>();
         services.AddSingleton<IProcessExecutionService, ProcessExecutionService>();
         services.AddSingleton<IMo2ValidationService, Mo2ValidationService>();
         services.AddSingleton<IXEditCommandBuilder, XEditCommandBuilder>();
@@ -76,11 +76,11 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
-    public static IServiceCollection AddUiServices(this IServiceCollection services)
+    public static IServiceCollection AddUiServices(this IServiceCollection services, DispatcherQueue? dispatcherQueue = null)
     {
-        services.AddSingleton<IAppLifetime, AvaloniaAppLifetime>();
-        services.AddSingleton<IUiFrameworkVersionProvider, AvaloniaUiFrameworkVersionProvider>();
-        services.AddSingleton<IUiDispatcher, AvaloniaUiDispatcher>();
+        services.AddSingleton<IAppLifetime, WinAppLifetime>();
+        services.AddSingleton<IUiFrameworkVersionProvider, WinUiFrameworkVersionProvider>();
+        services.AddSingleton<IUiDispatcher>(_ => new WinUiDispatcher(dispatcherQueue));
         services.AddSingleton<IFileDialogService, FileDialogService>();
         services.AddSingleton<IMessageDialogService, MessageDialogService>();
         return services;

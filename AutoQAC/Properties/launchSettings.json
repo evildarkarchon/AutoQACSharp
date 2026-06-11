@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "AutoQAC (Unpackaged)": {
+      "commandName": "Project",
+      "nativeDebugging": false
+    }
+  }
+}
