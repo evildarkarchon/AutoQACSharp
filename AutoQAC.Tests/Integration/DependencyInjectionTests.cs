@@ -27,7 +27,7 @@ public sealed class DependencyInjectionTests
     public void AppStartupSource_ShouldUseSafeDiagnosticFieldsAndMigrationWarningCopy()
     {
         // Arrange
-        var appSourcePath = LocateRepositoryFile("AutoQAC", "App.axaml.cs");
+        var appSourcePath = LocateRepositoryFile("AutoQAC", "App.xaml.cs");
 
         // Act
         var appSource = File.ReadAllText(appSourcePath);

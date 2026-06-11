@@ -107,7 +107,6 @@ public static class ServiceCollectionExtensions
         services.AddTransient<PartialFormsWarningDialog>();
         services.AddTransient<SettingsWindow>();
         services.AddTransient<RestoreWindow>();
-        services.AddTransient<MessageDialog>();
         return services;
     }
 }

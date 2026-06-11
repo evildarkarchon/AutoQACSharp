@@ -111,7 +111,7 @@ public sealed class Phase11LogBoundaryTests
         {
             File.ReadAllText(Path.Combine(repositoryRoot, "AutoQAC", "Services", "Process", "ProcessExecutionService.cs")),
             File.ReadAllText(Path.Combine(repositoryRoot, "AutoQAC", "Services", "Cleaning", "CleaningService.cs")),
-            File.ReadAllText(Path.Combine(repositoryRoot, "AutoQAC", "App.axaml.cs"))
+            File.ReadAllText(Path.Combine(repositoryRoot, "AutoQAC", "App.xaml.cs"))
         });
         var forbiddenTemplates = new[]
         {

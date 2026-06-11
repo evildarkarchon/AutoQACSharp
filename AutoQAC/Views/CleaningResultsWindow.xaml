@@ -1,0 +1,42 @@
+<Window
+    x:Class="AutoQAC.Views.CleaningResultsWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="{Binding WindowTitle}">
+    <Grid x:Name="Root" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}" Padding="16" RowDefinitions="Auto,Auto,*,Auto" RowSpacing="12">
+        <TextBlock Grid.Row="0" Text="{Binding SummaryText, Mode=OneWay}" Style="{StaticResource SubtitleTextBlockStyle}" TextWrapping="Wrap" />
+
+        <Grid Grid.Row="1" ColumnDefinitions="*,*,*,*" ColumnSpacing="8">
+            <TextBlock Grid.Column="0" Text="{Binding TotalPlugins, Mode=OneWay}" />
+            <TextBlock Grid.Column="1" Text="{Binding CleanedCount, Mode=OneWay}" />
+            <TextBlock Grid.Column="2" Text="{Binding SkippedCount, Mode=OneWay}" />
+            <TextBlock Grid.Column="3" Text="{Binding FailedCount, Mode=OneWay}" />
+        </Grid>
+
+        <Grid Grid.Row="2" RowDefinitions="Auto,*" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="{ThemeResource ControlCornerRadius}">
+            <Grid Grid.Row="0" ColumnDefinitions="2*,Auto,Auto,*" ColumnSpacing="12" Padding="8">
+                <TextBlock Grid.Column="0" Text="Plugin" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                <TextBlock Grid.Column="1" Text="Status" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                <TextBlock Grid.Column="2" Text="ITMs" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                <TextBlock Grid.Column="3" Text="Summary" Style="{StaticResource BodyStrongTextBlockStyle}" />
+            </Grid>
+            <ListView Grid.Row="1" ItemsSource="{Binding PluginResults, Mode=OneWay}">
+                <ListView.ItemTemplate>
+                    <DataTemplate>
+                        <Grid ColumnDefinitions="2*,Auto,Auto,*" ColumnSpacing="12" Padding="8,4">
+                            <TextBlock Grid.Column="0" Text="{Binding PluginName}" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Grid.Column="1" Text="{Binding Status}" />
+                            <TextBlock Grid.Column="2" Text="{Binding ItemsRemoved}" />
+                            <TextBlock Grid.Column="3" Text="{Binding Summary}" TextTrimming="CharacterEllipsis" />
+                        </Grid>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+        </Grid>
+
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+            <Button Content="Export Report" Command="{Binding ExportReportCommand}" />
+            <Button Content="Close" Command="{Binding CloseCommand}" />
+        </StackPanel>
+    </Grid>
+</Window>

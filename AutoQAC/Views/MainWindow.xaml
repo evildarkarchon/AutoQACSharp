@@ -2,14 +2,160 @@
     x:Class="AutoQAC.Views.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    Title="AutoQAC">
-    <Grid
-        x:Name="Root"
-        Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
-        <TextBlock
-            HorizontalAlignment="Center"
-            VerticalAlignment="Center"
-            FontSize="18"
-            Text="AutoQAC WinUI bootstrap" />
+    xmlns:m="using:AutoQAC.Models"
+    xmlns:mw="using:AutoQAC.ViewModels.MainWindow"
+    Title="AutoQAC - Plugin Auto Cleaning Tool">
+    <Grid x:Name="Root" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}" RowDefinitions="Auto,Auto,*,Auto">
+        <MenuBar Grid.Row="0">
+            <MenuBarItem Title="File">
+                <MenuFlyoutItem Text="Exit" Command="{Binding Commands.ExitCommand}" />
+            </MenuBarItem>
+            <MenuBarItem Title="Edit">
+                <MenuFlyoutItem Text="Settings..." Command="{Binding Commands.ShowSettingsCommand}" />
+                <MenuFlyoutItem Text="Skip List..." Command="{Binding Commands.ShowSkipListCommand}" />
+            </MenuBarItem>
+            <MenuBarItem Title="Help">
+                <MenuFlyoutItem Text="About" Command="{Binding Commands.ShowAboutCommand}" />
+            </MenuBarItem>
+        </MenuBar>
+
+        <InfoBar
+            Grid.Row="1"
+            Margin="12,8,12,0"
+            IsOpen="{Binding Configuration.HasMigrationWarning, Mode=OneWay}"
+            Severity="Warning"
+            Title="Migration notice"
+            Message="{Binding Configuration.MigrationWarningMessage, Mode=OneWay}">
+            <InfoBar.ActionButton>
+                <Button Content="Dismiss" Command="{Binding Configuration.DismissMigrationWarningCommand}" />
+            </InfoBar.ActionButton>
+        </InfoBar>
+
+        <Grid Grid.Row="2" Margin="12" RowDefinitions="Auto,Auto,*,Auto" RowSpacing="10">
+            <StackPanel Grid.Row="0" Spacing="10">
+                <TextBlock Text="Configuration" Style="{StaticResource SubtitleTextBlockStyle}" />
+
+                <Grid ColumnDefinitions="120,*,Auto" ColumnSpacing="8">
+                    <TextBlock Grid.Column="0" Text="Game:" VerticalAlignment="Center" />
+                    <ComboBox
+                        Grid.Column="1"
+                        AutomationProperties.AutomationId="GameComboBox"
+                        ItemsSource="{Binding Configuration.AvailableGames, Mode=OneWay}"
+                        SelectedItem="{Binding Configuration.SelectedGame, Mode=TwoWay}"
+                        HorizontalAlignment="Stretch">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="m:GameType">
+                                <TextBlock Text="{Binding Converter={StaticResource GameTypeDisplayConverter}}" />
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <TextBlock
+                        Grid.Column="2"
+                        Text="{Binding Configuration.IsMutagenSupported, Mode=OneWay}"
+                        VerticalAlignment="Center"
+                        Style="{StaticResource CaptionTextBlockStyle}"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </Grid>
+
+                <Grid ColumnDefinitions="120,*,Auto,Auto,Auto" ColumnSpacing="8" Visibility="{Binding Configuration.IsGameSelected, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}">
+                    <TextBlock Grid.Column="0" Text="Data Folder:" VerticalAlignment="Center" />
+                    <TextBox Grid.Column="1" Text="{Binding Configuration.GameDataFolder, Mode=OneWay}" IsReadOnly="True" PlaceholderText="Auto-detected via Mutagen/registry" />
+                    <Grid Grid.Column="2" Width="24" VerticalAlignment="Center">
+                        <TextBlock Text="&#x2713;" Foreground="{ThemeResource SystemFillColorSuccessBrush}" HorizontalAlignment="Center" Visibility="{Binding Configuration.IsGameDataFolderValid, Converter={StaticResource NullableTrueToVisibilityConverter}, Mode=OneWay}" />
+                        <TextBlock Text="&#x2717;" Foreground="{ThemeResource SystemFillColorCriticalBrush}" HorizontalAlignment="Center" Visibility="{Binding Configuration.IsGameDataFolderValid, Converter={StaticResource NullableFalseToVisibilityConverter}, Mode=OneWay}" />
+                    </Grid>
+                    <Button Grid.Column="3" Content="Override..." Command="{Binding Configuration.ConfigureGameDataFolderCommand}" />
+                    <Button Grid.Column="4" Content="Reset" Command="{Binding Configuration.ClearGameDataFolderOverrideCommand}" Visibility="{Binding Configuration.HasGameDataFolderOverride, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}" />
+                </Grid>
+
+                <Grid ColumnDefinitions="120,*,Auto,Auto" ColumnSpacing="8" Visibility="{Binding Configuration.RequiresLoadOrderFile, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}">
+                    <TextBlock Grid.Column="0" Text="Load Order File:" VerticalAlignment="Center" />
+                    <TextBox Grid.Column="1" Text="{Binding Configuration.LoadOrderPath, Mode=OneWay}" IsReadOnly="True" PlaceholderText="Required for this game (plugins.txt/loadorder.txt)" />
+                    <Grid Grid.Column="2" Width="24" VerticalAlignment="Center">
+                        <TextBlock Text="&#x2713;" Foreground="{ThemeResource SystemFillColorSuccessBrush}" HorizontalAlignment="Center" Visibility="{Binding Configuration.IsLoadOrderPathValid, Converter={StaticResource NullableTrueToVisibilityConverter}, Mode=OneWay}" />
+                        <TextBlock Text="&#x2717;" Foreground="{ThemeResource SystemFillColorCriticalBrush}" HorizontalAlignment="Center" Visibility="{Binding Configuration.IsLoadOrderPathValid, Converter={StaticResource NullableFalseToVisibilityConverter}, Mode=OneWay}" />
+                    </Grid>
+                    <Button Grid.Column="3" Content="Browse..." Command="{Binding Configuration.ConfigureLoadOrderCommand}" />
+                </Grid>
+
+                <Grid ColumnDefinitions="120,*,Auto,Auto" ColumnSpacing="8">
+                    <TextBlock Grid.Column="0" Text="xEdit:" VerticalAlignment="Center" />
+                    <TextBox Grid.Column="1" Text="{Binding Configuration.XEditPath, Mode=OneWay}" IsReadOnly="True" PlaceholderText="Not configured" />
+                    <Grid Grid.Column="2" Width="24" VerticalAlignment="Center">
+                        <TextBlock Text="&#x2713;" Foreground="{ThemeResource SystemFillColorSuccessBrush}" HorizontalAlignment="Center" Visibility="{Binding Configuration.IsXEditPathValid, Converter={StaticResource NullableTrueToVisibilityConverter}, Mode=OneWay}" />
+                        <TextBlock Text="&#x2717;" Foreground="{ThemeResource SystemFillColorCriticalBrush}" HorizontalAlignment="Center" Visibility="{Binding Configuration.IsXEditPathValid, Converter={StaticResource NullableFalseToVisibilityConverter}, Mode=OneWay}" />
+                    </Grid>
+                    <Button Grid.Column="3" Content="Browse..." Command="{Binding Configuration.ConfigureXEditCommand}" />
+                </Grid>
+
+                <Grid ColumnDefinitions="120,*,Auto,Auto" ColumnSpacing="8">
+                    <TextBlock Grid.Column="0" Text="Mod Organizer 2:" VerticalAlignment="Center" />
+                    <TextBox Grid.Column="1" Text="{Binding Configuration.Mo2Path, Mode=OneWay}" IsReadOnly="True" PlaceholderText="Optional - for MO2 mode" />
+                    <Grid Grid.Column="2" Width="24" VerticalAlignment="Center">
+                        <TextBlock Text="&#x2713;" Foreground="{ThemeResource SystemFillColorSuccessBrush}" HorizontalAlignment="Center" Visibility="{Binding Configuration.IsMo2PathValid, Converter={StaticResource NullableTrueToVisibilityConverter}, Mode=OneWay}" />
+                        <TextBlock Text="&#x2717;" Foreground="{ThemeResource SystemFillColorCriticalBrush}" HorizontalAlignment="Center" Visibility="{Binding Configuration.IsMo2PathValid, Converter={StaticResource NullableFalseToVisibilityConverter}, Mode=OneWay}" />
+                    </Grid>
+                    <Button Grid.Column="3" Content="Browse..." Command="{Binding Configuration.ConfigureMo2Command}" />
+                </Grid>
+
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                    <CheckBox Content="MO2 Mode" IsChecked="{Binding Configuration.Mo2ModeEnabled, Mode=TwoWay}" />
+                    <CheckBox Content="Partial Forms (Experimental)" IsChecked="{Binding Configuration.PartialFormsEnabled, Mode=TwoWay}" Command="{Binding Configuration.TogglePartialFormsCommand}" />
+                    <CheckBox Content="Disable Skip Lists" IsChecked="{Binding Configuration.DisableSkipListsEnabled, Mode=TwoWay}" ToolTipService.ToolTip="Show all plugins, ignoring skip and ignore lists" />
+                    <Button Content="Reset Settings" Command="{Binding Configuration.ResetSettingsCommand}" />
+                </StackPanel>
+            </StackPanel>
+
+            <InfoBar Grid.Row="1" IsOpen="{Binding Commands.HasValidationErrors, Mode=OneWay}" Severity="Warning" Title="Cannot start cleaning">
+                <StackPanel Spacing="8">
+                    <ItemsControl ItemsSource="{Binding Commands.ValidationErrors, Mode=OneWay}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="m:ValidationError">
+                                <StackPanel Margin="0,4">
+                                    <TextBlock Text="{Binding Title}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                    <TextBlock Text="{Binding Message}" TextWrapping="Wrap" />
+                                    <TextBlock Text="{Binding FixStep}" TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <Button Content="Dismiss" Command="{Binding Commands.DismissValidationCommand}" HorizontalAlignment="Left" />
+                </StackPanel>
+            </InfoBar>
+
+            <Grid Grid.Row="2" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="{ThemeResource ControlCornerRadius}" RowDefinitions="Auto,*">
+                <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="4" Padding="8">
+                    <TextBlock Grid.Column="0" Text="Plugins to Clean" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
+                    <Button Grid.Column="1" Content="Refresh selected approximations" Command="{Binding PluginList.RefreshSelectedApproximationsCommand}" />
+                    <Button Grid.Column="2" Content="Cancel refresh" Command="{Binding PluginList.CancelApproximationRefreshCommand}" Visibility="{Binding PluginList.IsApproximationRefreshRunning, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}" />
+                    <Button Grid.Column="3" Content="All" Command="{Binding PluginList.SelectAllCommand}" />
+                    <Button Grid.Column="4" Content="None" Command="{Binding PluginList.DeselectAllCommand}" />
+                    <Button Grid.Column="5" Content="Manage Skip List" Command="{Binding Commands.ShowSkipListCommand}" />
+                </Grid>
+                <ListView Grid.Row="1" Margin="8" ItemsSource="{Binding PluginList.PluginsToClean, Mode=OneWay}" SelectedItem="{Binding PluginList.SelectedPlugin, Mode=TwoWay}">
+                    <ListView.ItemTemplate>
+                        <DataTemplate x:DataType="mw:PluginListItem">
+                            <StackPanel Margin="0,4">
+                                <CheckBox Content="{Binding FileName}" IsChecked="{Binding IsSelected, Mode=TwoWay}" />
+                                <TextBlock Text="{Binding ApproximationDisplayText}" Margin="32,0,0,0" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+            </Grid>
+
+            <Grid Grid.Row="3" ColumnDefinitions="Auto,*,Auto">
+                <Button Grid.Column="0" Content="Restore Backups" Command="{Binding Commands.RestoreBackupsCommand}" ToolTipService.ToolTip="Browse and restore plugins from previous backup sessions" />
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10">
+                    <Button Content="Preview" Command="{Binding Commands.PreviewCommand}" ToolTipService.ToolTip="Preview which plugins will be cleaned or skipped without running xEdit" MinWidth="120" />
+                    <Button Content="Start Cleaning" Command="{Binding Commands.StartCleaningCommand}" IsEnabled="{Binding Commands.CanStartCleaning, Mode=OneWay}" MinWidth="120" />
+                    <Button Content="Stop" Command="{Binding Commands.StopCleaningCommand}" IsEnabled="{Binding Commands.IsCleaning, Mode=OneWay}" MinWidth="120" />
+                </StackPanel>
+            </Grid>
+        </Grid>
+
+        <Border Grid.Row="3" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="0,1,0,0" Padding="8,4">
+            <TextBlock Text="{Binding Configuration.StatusText, Mode=OneWay}" />
+        </Border>
     </Grid>
 </Window>
