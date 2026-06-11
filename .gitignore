@@ -493,7 +493,6 @@ Thumbs.db
 *.swp
 *.swo
 .idea/
-.vscode/
 *.code-workspace
 .env
 .env.*

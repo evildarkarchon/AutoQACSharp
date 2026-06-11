@@ -4,7 +4,7 @@
 >
 > Scope: `AutoQAC` desktop app only. `QueryPlugins`, `QueryPlugins.Tests`, and all non-UI services are unaffected. The app is already Windows-only (`net10.0-windows10.0.19041.0`), so there is no cross-platform capability being given up.
 >
-> Last Microsoft Learn refresh: June 2026, covering Windows App SDK 1.8 storage pickers, AppWindow modal windows, ContentDialog ownership, unpackaged deployment, and .NET 10 WinUI guidance.
+> Last Microsoft Learn refresh: June 2026, covering Windows App SDK 2.2.0 storage pickers, AppWindow modal windows, ContentDialog ownership, unpackaged deployment, and .NET 10 WinUI guidance.
 
 ## 1. Why this migration is tractable
 
@@ -73,7 +73,7 @@ These are the things that will actually hurt; plan around them up front.
 1. **No simple `ShowDialog()` equivalent, but modal windows exist.** WinUI 3 `Window` still has no Avalonia/WPF-style `ShowDialog()`. Current architecture opens Settings, SkipList, Restore, CleaningResults, About, and Progress as separate (sometimes modal) windows. Windows App SDK windowing now supports modal top-level windows via `OverlappedPresenter.IsModal`, but the modal window must have an owner, and setting that owner still requires Win32 interop. Options:
    - **Recommended:** Convert MessageDialog and PartialFormsWarning to `ContentDialog`; convert Settings/SkipList/About to `ContentDialog` or in-window navigation; keep Progress, Restore, and CleaningResults as secondary `Window`s. Use `OverlappedPresenter.IsModal` only where true owner-blocking behavior is worth the interop.
    - `ContentDialog` constraint: Microsoft Learn still warns that attempting to open multiple dialogs throws (wording varies between one per window and one per thread depending on article/API page). Keep `MessageDialogService` serialized and audit dialog flows such as backup-failure prompts while progress UI is active.
-2. **Use Windows App SDK pickers, not legacy HWND-initialized UWP pickers.** In Windows App SDK 1.8+, `Microsoft.Windows.Storage.Pickers.FileOpenPicker`, `FileSavePicker`, and `FolderPicker` are the WinUI 3 path. They take a `WindowId` in the constructor and return lightweight `PickFileResult`/`PickFolderResult` path results, so they do **not** need `WinRT.Interop.InitializeWithWindow`. HWND interop is only needed if falling back to legacy `Windows.Storage.Pickers` or other WinRT UI objects that depend on `CoreWindow`. `FileDialogService` should therefore depend on an active `WindowId`/`AppWindow` provider, not an HWND-only provider.
+2. **Use Windows App SDK pickers, not legacy HWND-initialized UWP pickers.** In Windows App SDK 2.2.0+, `Microsoft.Windows.Storage.Pickers.FileOpenPicker`, `FileSavePicker`, and `FolderPicker` are the WinUI 3 path. They take a `WindowId` in the constructor and return lightweight `PickFileResult`/`PickFolderResult` path results, so they do **not** need `WinRT.Interop.InitializeWithWindow`. HWND interop is only needed if falling back to legacy `Windows.Storage.Pickers` or other WinRT UI objects that depend on `CoreWindow`. `FileDialogService` should therefore depend on an active `WindowId`/`AppWindow` provider, not an HWND-only provider.
 3. **No `SizeToContent`.** `MessageDialog` relies on it; `ContentDialog` solves this naturally.
 4. **Binding model change.** Avalonia compiled bindings (`x:DataType`) map to WinUI `{x:Bind}` (default `OneTime` — must specify `Mode=OneWay`/`TwoWay` explicitly; this is the most common porting bug). `Binding`-with-`DataContext` still works as a fallback.
 5. **DataGrid is not in the box.** Use `CommunityToolkit.WinUI.Controls.DataGrid` (maintenance-mode but functional) or rework `CleaningResultsWindow` to a `ListView` with column headers. Given it's a single read-only results grid, `ListView` is the lower-risk choice.
@@ -105,7 +105,7 @@ Exit criteria: `dotnet test` green; `rg "Avalonia" AutoQAC/ViewModels AutoQAC/Se
 3. Single-instance: switch to `AppInstance.FindOrRegisterForKey` + redirection.
 4. Delete `Program.cs` Avalonia bootstrap (WinUI generates `Main`, or keep a custom `[STAThread]` Main for unpackaged bootstrap).
 
-### Phase 2 — UI service implementations
+### ~~Phase 2 — UI service implementations~~
 
 1. `WinUiDispatcher : IUiDispatcher` over a captured `DispatcherQueue`.
 2. `FileDialogService` over Windows App SDK `Microsoft.Windows.Storage.Pickers`; reuse the extracted filter parser. Add an `IWindowContextProvider` (or similar) abstraction that exposes the active `WindowId`/`AppWindow` and root `XamlRoot` for picker/dialog ownership.
@@ -157,5 +157,5 @@ Per view: port XAML (`x:Bind` with explicit modes), port code-behind contracts (
    - Secondary `Window`: Progress, Restore, CleaningResults.
    - `OverlappedPresenter.IsModal` only where true owner-blocking behavior is worth the Win32 interop.
 3. **DataGrid** — **`ListView` with column headers** for `CleaningResultsWindow` (not CommunityToolkit DataGrid).
-4. **Windows App SDK version** — **1.8+** (required for `Microsoft.Windows.Storage.Pickers`). Confirm the exact stable package and Visual Studio/tooling requirements at Phase 1 kickoff.
+4. **Windows App SDK version** — **2.2.0+** (required for `Microsoft.Windows.Storage.Pickers`). Confirm the exact stable package and Visual Studio/tooling requirements at Phase 1 kickoff.
 5. **PartialFormsWarningDialog** — **Port as `ContentDialog` in Phase 3** (not dead code; DI-registered but unwired). The call site ships in a subsequent Partial Forms plan after migration.
