@@ -51,9 +51,11 @@ public sealed partial class App
         var messageDialog = Services.GetRequiredService<IMessageDialogService>();
         var uiDispatcher = Services.GetRequiredService<IUiDispatcher>();
         var uiFrameworkVersionProvider = Services.GetRequiredService<IUiFrameworkVersionProvider>();
+        var windowContextProvider = Services.GetRequiredService<IWindowContextProvider>();
 
         _mainWindow = new MainWindow(viewModel, logger, fileDialog, configService, stateService,
-            orchestrator, backupService, messageDialog, uiDispatcher, uiFrameworkVersionProvider);
+            orchestrator, backupService, messageDialog, uiDispatcher, uiFrameworkVersionProvider,
+            windowContextProvider);
 
         LogStartupInfo(logger, stateService);
 

@@ -81,8 +81,11 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IAppLifetime, WinAppLifetime>();
         services.AddSingleton<IUiFrameworkVersionProvider, WinUiFrameworkVersionProvider>();
         services.AddSingleton<IUiDispatcher>(_ => new WinUiDispatcher(dispatcherQueue));
-        services.AddSingleton<IFileDialogService, FileDialogService>();
-        services.AddSingleton<IMessageDialogService, MessageDialogService>();
+        services.AddSingleton<IWindowContextProvider, WindowContextProvider>();
+        services.AddSingleton<FileDialogService>();
+        services.AddSingleton<IFileDialogService>(sp => sp.GetRequiredService<FileDialogService>());
+        services.AddSingleton<MessageDialogService>();
+        services.AddSingleton<IMessageDialogService>(sp => sp.GetRequiredService<MessageDialogService>());
         return services;
     }
 

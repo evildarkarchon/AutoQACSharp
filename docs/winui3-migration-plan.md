@@ -86,7 +86,7 @@ These are the things that will actually hurt; plan around them up front.
 
 The recommended approach is a **branch-based big-bang for the view layer** with **incremental pre-work on `main`** to shrink the cutover. A side-by-side dual-UI approach is possible but not worth it for ~10 windows.
 
-### Phase 0 — Pre-work on `main` (Avalonia still in place, all tests green)
+### ~~Phase 0 — Pre-work on `main` (Avalonia still in place, all tests green)~~
 
 Goal: eliminate all Avalonia references outside `Program.cs`, `App.axaml*`, `Views/`, `Converters/`, and the three UI service implementations.
 
@@ -98,7 +98,7 @@ Goal: eliminate all Avalonia references outside `Program.cs`, `App.axaml*`, `Vie
 
 Exit criteria: `dotnet test` green; `rg "Avalonia" AutoQAC/ViewModels AutoQAC/Services` returns only `Services/UI` implementation files.
 
-### Phase 1 — Project and bootstrap (migration branch)
+### ~~Phase 1 — Project and bootstrap (migration branch)~~
 
 1. Retarget `AutoQAC.csproj`: `UseWinUI`, `Microsoft.WindowsAppSDK`, unpackaged self-contained settings, and any build/MSIX tooling package required by the chosen Windows App SDK version; remove all Avalonia packages; convert `AvaloniaResource` assets to `Content`/`ms-appx` assets (replace `avalonia-logo.ico` with an AutoQAC icon).
 2. Rewrite `App.xaml`/`App.xaml.cs`: WinUI `Application`, `OnLaunched` builds the existing DI container (unchanged service registrations except UI swaps below), creates `MainWindow`, wires `Closed` → existing shutdown/dispose path (`config watcher dispose`, provider dispose, `Log.CloseAndFlush()`).

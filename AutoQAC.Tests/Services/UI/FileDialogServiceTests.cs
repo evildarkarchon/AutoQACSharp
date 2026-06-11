@@ -143,6 +143,45 @@ public sealed class FileDialogServiceTests
         result[1].Patterns.Should().Contain("*.*");
     }
 
+    [Fact]
+    public void BuildExtensionList_ShouldNormalizePickerExtensions()
+    {
+        // Arrange
+        var filter = "Executables (*.exe)|*.exe|All Files (*.*)|*.*";
+
+        // Act
+        var result = FileDialogFilterMapper.BuildExtensionList(filter);
+
+        // Assert
+        result.Should().Equal("exe", "*");
+    }
+
+    [Fact]
+    public void BuildFileTypeChoices_ShouldPreserveFilterNamesAndNormalizePatterns()
+    {
+        // Arrange
+        var filter = "Images (*.jpg;*.png)|*.jpg;*.png|All Files (*.*)|*.*";
+
+        // Act
+        var result = FileDialogFilterMapper.BuildFileTypeChoices(filter);
+
+        // Assert
+        result.Should().ContainKey("Images (*.jpg;*.png)");
+        result["Images (*.jpg;*.png)"].Should().Equal("jpg", "png");
+        result["All Files (*.*)"].Should().Equal("*");
+    }
+
+    [Fact]
+    public void BuildFileTypeChoices_ShouldFallbackToAllFilesForEmptyFilter()
+    {
+        // Act
+        var result = FileDialogFilterMapper.BuildFileTypeChoices(string.Empty);
+
+        // Assert
+        result.Should().ContainSingle();
+        result["All Files (*.*)"].Should().Equal("*");
+    }
+
     #endregion
 
     #region Helper Methods
