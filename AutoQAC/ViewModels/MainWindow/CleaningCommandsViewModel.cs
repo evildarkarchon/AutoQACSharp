@@ -15,8 +15,6 @@ using AutoQAC.Services.Plugin;
 using AutoQAC.Services.State;
 using AutoQAC.Services.UI;
 using AutoQAC.Services.UI.Interactions;
-using Avalonia;
-using Avalonia.Controls.ApplicationLifetimes;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -32,6 +30,7 @@ public sealed partial class CleaningCommandsViewModel : ViewModelBase, IDisposab
     private readonly ILoggingService _logger;
     private readonly IMessageDialogService _messageDialog;
     private readonly ICleaningOrchestrator _orchestrator;
+    private readonly IAppLifetime _appLifetime;
     private readonly IPluginLoadingService _pluginLoadingService;
     private readonly IPluginRefreshCoordinator _pluginRefreshCoordinator;
     private readonly IStateService _stateService;
@@ -72,6 +71,7 @@ public sealed partial class CleaningCommandsViewModel : ViewModelBase, IDisposab
         IPluginRefreshCoordinator? pluginRefreshCoordinator,
         ILoggingService logger,
         IMessageDialogService messageDialog,
+        IAppLifetime appLifetime,
         IUiDispatcher uiDispatcher,
         Interaction<Unit, Unit> showProgressInteraction,
         Interaction<List<DryRunResult>, Unit> showPreviewInteraction,
@@ -87,6 +87,7 @@ public sealed partial class CleaningCommandsViewModel : ViewModelBase, IDisposab
         _pluginRefreshCoordinator = pluginRefreshCoordinator ?? NoOpPluginRefreshCoordinator.Instance;
         _logger = logger;
         _messageDialog = messageDialog;
+        _appLifetime = appLifetime;
         _uiDispatcher = uiDispatcher;
         _showProgressInteraction = showProgressInteraction;
         _showPreviewInteraction = showPreviewInteraction;
@@ -294,10 +295,7 @@ public sealed partial class CleaningCommandsViewModel : ViewModelBase, IDisposab
     [RelayCommand]
     private void Exit()
     {
-        if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
-        {
-            desktop.Shutdown();
-        }
+        _appLifetime.Shutdown();
     }
 
     [RelayCommand]

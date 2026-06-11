@@ -1,17 +1,11 @@
-using System.Reflection;
-using Avalonia.Platform.Storage;
+using AutoQAC.Services.UI;
 using FluentAssertions;
 
 namespace AutoQAC.Tests.Services.UI;
 
 /// <summary>
-/// Unit tests for <see cref="AutoQAC.Services.UI.FileDialogService"/>.
-///
-/// NOTE: The FileDialogService is tightly coupled to Avalonia UI and cannot be
-/// fully unit tested without the Avalonia.Headless infrastructure. These tests
-/// focus on the testable ParseFilter method via reflection.
-///
-/// For full UI testing, consider using Avalonia.Headless for integration tests.
+/// Unit tests for framework-neutral file dialog filter parsing.
+/// The UI-specific file dialog services adapt these entries to their picker APIs.
 /// </summary>
 public sealed class FileDialogServiceTests
 {
@@ -154,23 +148,11 @@ public sealed class FileDialogServiceTests
     #region Helper Methods
 
     /// <summary>
-    /// Invokes the private ParseFilter method via reflection for testing.
+    /// Parses the filter string through the framework-neutral helper used by
+    /// UI-specific file dialog service implementations.
     /// </summary>
-    private static List<FilePickerFileType> InvokeParseFilter(string filter)
-    {
-        var serviceType = typeof(AutoQAC.Services.UI.FileDialogService);
-        var method = serviceType.GetMethod("ParseFilter",
-            BindingFlags.NonPublic | BindingFlags.Static);
-
-        if (method == null)
-        {
-            throw new InvalidOperationException("ParseFilter method not found");
-        }
-
-        var result = method.Invoke(null, new object[] { filter });
-        return result as List<FilePickerFileType>
-               ?? throw new InvalidOperationException("ParseFilter returned unexpected type");
-    }
+    private static IReadOnlyList<FileDialogFilterEntry> InvokeParseFilter(string filter) =>
+        FileDialogFilterParser.Parse(filter);
 
     #endregion
 }

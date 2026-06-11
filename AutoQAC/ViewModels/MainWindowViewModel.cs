@@ -46,7 +46,8 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
         IUiDispatcher uiDispatcher,
         IPluginIssueApproximationService? pluginIssueApproximationService = null,
         IPluginRefreshCoordinator? pluginRefreshCoordinator = null,
-        IPluginRefreshCapabilityPolicy? pluginRefreshCapabilityPolicy = null)
+        IPluginRefreshCapabilityPolicy? pluginRefreshCapabilityPolicy = null,
+        IAppLifetime? appLifetime = null)
     {
         _uiDispatcher = uiDispatcher;
 
@@ -60,7 +61,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
         Commands = new CleaningCommandsViewModel(
             stateService, orchestrator, configService, pluginLoadingService,
             pluginRefreshCoordinator,
-            logger, messageDialog, uiDispatcher,
+            logger, messageDialog, appLifetime ?? NoOpAppLifetime.Instance, uiDispatcher,
             ShowProgressInteraction, ShowPreviewInteraction,
             ShowSettingsInteraction, ShowSkipListInteraction,
             ShowRestoreInteraction, ShowAboutInteraction);
@@ -94,4 +95,12 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
         Commands.Dispose();
     }
 
+    private sealed class NoOpAppLifetime : IAppLifetime
+    {
+        public static NoOpAppLifetime Instance { get; } = new();
+
+        public void Shutdown()
+        {
+        }
+    }
 }

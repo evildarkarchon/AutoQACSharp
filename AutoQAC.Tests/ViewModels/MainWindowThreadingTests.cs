@@ -103,6 +103,7 @@ public sealed class MainWindowThreadingTests
             Substitute.For<IPluginRefreshCoordinator>(),
             Substitute.For<ILoggingService>(),
             Substitute.For<IMessageDialogService>(),
+            Substitute.For<IAppLifetime>(),
             dispatcher,
             new Interaction<Unit, Unit>(),
             new Interaction<List<DryRunResult>, Unit>(),

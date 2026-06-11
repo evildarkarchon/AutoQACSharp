@@ -61,6 +61,7 @@ public sealed class CleaningCommandsViewModelTests
             coordinator,
             Substitute.For<ILoggingService>(),
             Substitute.For<IMessageDialogService>(),
+            Substitute.For<IAppLifetime>(),
             Substitute.For<IUiDispatcher>(),
             progressInteraction,
             new Interaction<List<DryRunResult>, Unit>(),
@@ -88,5 +89,31 @@ public sealed class CleaningCommandsViewModelTests
             stateService.Dispose();
             File.Delete(tempXEditPath);
         }
+    }
+
+    [Fact]
+    public void ExitCommand_ShouldRequestApplicationShutdown()
+    {
+        var appLifetime = Substitute.For<IAppLifetime>();
+        var viewModel = new CleaningCommandsViewModel(
+            Substitute.For<IStateService>(),
+            Substitute.For<ICleaningOrchestrator>(),
+            Substitute.For<IConfigurationService>(),
+            Substitute.For<IPluginLoadingService>(),
+            Substitute.For<IPluginRefreshCoordinator>(),
+            Substitute.For<ILoggingService>(),
+            Substitute.For<IMessageDialogService>(),
+            appLifetime,
+            Substitute.For<IUiDispatcher>(),
+            new Interaction<Unit, Unit>(),
+            new Interaction<List<DryRunResult>, Unit>(),
+            new Interaction<Unit, bool>(),
+            new Interaction<Unit, bool>(),
+            new Interaction<Unit, Unit>(),
+            new Interaction<Unit, Unit>());
+
+        viewModel.ExitCommand.Execute(null);
+
+        appLifetime.Received(1).Shutdown();
     }
 }

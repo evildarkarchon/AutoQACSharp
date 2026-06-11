@@ -78,6 +78,8 @@ public static class ServiceCollectionExtensions
 
     public static IServiceCollection AddUiServices(this IServiceCollection services)
     {
+        services.AddSingleton<IAppLifetime, AvaloniaAppLifetime>();
+        services.AddSingleton<IUiFrameworkVersionProvider, AvaloniaUiFrameworkVersionProvider>();
         services.AddSingleton<IUiDispatcher, AvaloniaUiDispatcher>();
         services.AddSingleton<IFileDialogService, FileDialogService>();
         services.AddSingleton<IMessageDialogService, MessageDialogService>();

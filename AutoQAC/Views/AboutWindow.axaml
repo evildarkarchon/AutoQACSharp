@@ -48,8 +48,8 @@
                 <TextBlock Grid.Row="2" Grid.Column="0" Text=".NET Runtime:" FontWeight="SemiBold" Margin="0,2" />
                 <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding DotNetVersion}" Margin="8,2" />
 
-                <TextBlock Grid.Row="3" Grid.Column="0" Text="Avalonia:" FontWeight="SemiBold" Margin="0,2" />
-                <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding AvaloniaVersion}" Margin="8,2" />
+                <TextBlock Grid.Row="3" Grid.Column="0" Text="{Binding UiFrameworkDisplayName}" FontWeight="SemiBold" Margin="0,2" />
+                <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding UiFrameworkVersion}" Margin="8,2" />
 
                 <TextBlock Grid.Row="4" Grid.Column="0" Text="MVVM Toolkit:" FontWeight="SemiBold" Margin="0,2" />
                 <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding MvvmToolkitVersion}" Margin="8,2" />

@@ -6,6 +6,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Threading.Tasks;
+using AutoQAC.Services.UI;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -25,7 +26,8 @@ public sealed partial class AboutViewModel : ViewModelBase
     public string InformationalVersion { get; }
     public string BuildDate { get; }
     public string DotNetVersion { get; }
-    public string AvaloniaVersion { get; }
+    public string UiFrameworkDisplayName { get; }
+    public string UiFrameworkVersion { get; }
     public string MvvmToolkitVersion { get; }
 
     public string GitHubUrl => "https://github.com/evildarkarchon/AutoQACSharp";
@@ -47,7 +49,7 @@ public sealed partial class AboutViewModel : ViewModelBase
     [NotifyCanExecuteChangedFor(nameof(OpenLatestReleaseCommand))]
     private string? _latestVersionUrl;
 
-    public AboutViewModel()
+    public AboutViewModel(IUiFrameworkVersionProvider uiFrameworkVersionProvider)
     {
         var assembly = Assembly.GetEntryAssembly();
         var version = assembly?.GetName().Version;
@@ -62,9 +64,8 @@ public sealed partial class AboutViewModel : ViewModelBase
 
         DotNetVersion = RuntimeInformation.FrameworkDescription;
 
-        var avaloniaAssembly = typeof(Avalonia.Application).Assembly;
-        var avaloniaVer = avaloniaAssembly.GetName().Version;
-        AvaloniaVersion = avaloniaVer != null ? $"{avaloniaVer.Major}.{avaloniaVer.Minor}.{avaloniaVer.Build}" : "Unknown";
+        UiFrameworkDisplayName = $"{uiFrameworkVersionProvider.DisplayName}:";
+        UiFrameworkVersion = uiFrameworkVersionProvider.Version;
 
         var toolkitAssembly = typeof(ObservableObject).Assembly;
         var toolkitVer = toolkitAssembly.GetName().Version;

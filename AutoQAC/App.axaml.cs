@@ -59,6 +59,7 @@ namespace AutoQAC
                 var backupService = Services.GetRequiredService<IBackupService>();
                 var messageDialog = Services.GetRequiredService<IMessageDialogService>();
                 var uiDispatcher = Services.GetRequiredService<IUiDispatcher>();
+                var uiFrameworkVersionProvider = Services.GetRequiredService<IUiFrameworkVersionProvider>();
                 var singleInstanceGuard = Services.GetRequiredService<ISingleInstanceGuard>();
 
                 if (!singleInstanceGuard.HasInstanceLock)
@@ -72,7 +73,7 @@ namespace AutoQAC
                 }
 
                 var mainWindow = new MainWindow(viewModel, logger, fileDialog, configService, stateService,
-                    orchestrator, backupService, messageDialog, uiDispatcher);
+                    orchestrator, backupService, messageDialog, uiDispatcher, uiFrameworkVersionProvider);
                 desktop.MainWindow = mainWindow;
 
                 // Log startup diagnostics

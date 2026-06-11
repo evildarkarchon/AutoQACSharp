@@ -42,7 +42,12 @@ public sealed class FileDialogService : IFileDialogService
 
         if (!string.IsNullOrEmpty(filter))
         {
-            options.FileTypeFilter = ParseFilter(filter);
+            options.FileTypeFilter = FileDialogFilterParser.Parse(filter)
+                .Select(entry => new FilePickerFileType(entry.Name)
+                {
+                    Patterns = entry.Patterns.ToList()
+                })
+                .ToList();
         }
 
         var result = await topLevel.StorageProvider.OpenFilePickerAsync(options);
@@ -79,7 +84,12 @@ public sealed class FileDialogService : IFileDialogService
 
         if (!string.IsNullOrEmpty(filter))
         {
-            options.FileTypeChoices = ParseFilter(filter);
+            options.FileTypeChoices = FileDialogFilterParser.Parse(filter)
+                .Select(entry => new FilePickerFileType(entry.Name)
+                {
+                    Patterns = entry.Patterns.ToList()
+                })
+                .ToList();
         }
 
         var result = await topLevel.StorageProvider.SaveFilePickerAsync(options);
@@ -114,34 +124,6 @@ public sealed class FileDialogService : IFileDialogService
 
         var result = await topLevel.StorageProvider.OpenFolderPickerAsync(options);
         return result.FirstOrDefault()?.Path.LocalPath;
-    }
-
-    private static List<FilePickerFileType> ParseFilter(string filter)
-    {
-        // Format: "Text Files (*.txt)|*.txt|All Files (*.*)|*.*"
-        var result = new List<FilePickerFileType>();
-        var parts = filter.Split('|');
-        
-        for (int i = 0; i < parts.Length; i += 2)
-        {
-            if (i + 1 >= parts.Length) break;
-            
-            var name = parts[i];
-            var patterns = parts[i+1].Split(';');
-            
-            // Remove * prefix for patterns list, e.g. "*.txt" -> "txt"
-            // Avalonia expects patterns like ["txt", "md"] or MIME types
-            // Actually FilePickerFileType Patterns property expects glob patterns like "*.txt" 
-            // Wait, checking Avalonia docs... 
-            // Patterns: "The list of file name patterns (globs), e.g. *.txt, *.md."
-            
-            result.Add(new FilePickerFileType(name)
-            {
-                Patterns = patterns.ToList()
-            });
-        }
-        
-        return result;
     }
 
     private static Window? GetMainWindow()

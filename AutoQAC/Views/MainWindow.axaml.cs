@@ -24,6 +24,7 @@ public partial class MainWindow : Window
     private readonly IBackupService? _backupService;
     private readonly IMessageDialogService? _messageDialog;
     private readonly IUiDispatcher? _uiDispatcher;
+    private readonly IUiFrameworkVersionProvider? _uiFrameworkVersionProvider;
 
     private readonly List<IDisposable> _interactionRegistrations = new();
 
@@ -41,7 +42,8 @@ public partial class MainWindow : Window
         ICleaningOrchestrator orchestrator,
         IBackupService backupService,
         IMessageDialogService messageDialog,
-        IUiDispatcher uiDispatcher) : this()
+        IUiDispatcher uiDispatcher,
+        IUiFrameworkVersionProvider uiFrameworkVersionProvider) : this()
     {
         DataContext = viewModel;
         _logger = logger;
@@ -52,6 +54,7 @@ public partial class MainWindow : Window
         _backupService = backupService;
         _messageDialog = messageDialog;
         _uiDispatcher = uiDispatcher;
+        _uiFrameworkVersionProvider = uiFrameworkVersionProvider;
 
         _interactionRegistrations.Add(viewModel.ShowCleaningResultsInteraction.RegisterHandler(ShowCleaningResultsAsync));
         _interactionRegistrations.Add(viewModel.ShowSettingsInteraction.RegisterHandler(ShowSettingsAsync));
@@ -210,7 +213,12 @@ public partial class MainWindow : Window
 
     private async Task<Unit> ShowAboutAsync(Unit input)
     {
-        var aboutViewModel = new AboutViewModel();
+        if (_uiFrameworkVersionProvider == null)
+        {
+            return Unit.Default;
+        }
+
+        var aboutViewModel = new AboutViewModel(_uiFrameworkVersionProvider);
         var aboutWindow = new AboutWindow(aboutViewModel);
 
         await aboutWindow.ShowDialog(this);
