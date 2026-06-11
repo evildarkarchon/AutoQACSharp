@@ -601,7 +601,7 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
 
     /// <summary>
     /// Shows a non-modal migration warning banner in the main window.
-    /// Called from App.axaml.cs after legacy migration runs on startup.
+    /// Called from App.xaml.cs after legacy migration runs on startup.
     /// </summary>
     public void ShowMigrationWarning(string message)
     {

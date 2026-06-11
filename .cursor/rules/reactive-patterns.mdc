@@ -1,56 +1,55 @@
 ---
-description: ReactiveUI patterns, async/await rules, and thread safety guidelines
+description: CommunityToolkit.Mvvm, async/await rules, and thread safety guidelines
 globs:
   - "AutoQAC/ViewModels/**/*.cs"
   - "AutoQAC/Services/**/*.cs"
 ---
 
-# Reactive Programming & Async Patterns
+# MVVM, Reactive Streams, and Async Patterns
 
-## ReactiveUI Patterns
+## CommunityToolkit.Mvvm Patterns
 
 ### Commands
 
-Use `ReactiveCommand` for all commands in ViewModels:
+Use `[RelayCommand]` for ViewModel commands:
 
 ```csharp
-// Sync command
-public ReactiveCommand<Unit, Unit> ResetCommand { get; }
-ResetCommand = ReactiveCommand.Create(Reset);
+[RelayCommand]
+private void Reset()
+{
+}
 
-// Async command
-public ReactiveCommand<Unit, Unit> LoadCommand { get; }
-LoadCommand = ReactiveCommand.CreateFromTask(LoadAsync);
+[RelayCommand]
+private Task LoadAsync(CancellationToken cancellationToken)
+{
+    return Task.CompletedTask;
+}
 
-// Command with parameter
-public ReactiveCommand<string, Unit> SelectCommand { get; }
-SelectCommand = ReactiveCommand.Create<string>(Select);
+[RelayCommand]
+private void Select(string pluginName)
+{
+}
 ```
 
 ### Property Change Notifications
 
-Always use `RaiseAndSetIfChanged` for property setters:
+Use `[ObservableProperty]` for generated properties:
 
 ```csharp
+[ObservableProperty]
 private string _status = string.Empty;
-public string Status
-{
-    get => _status;
-    set => this.RaiseAndSetIfChanged(ref _status, value);
-}
 ```
 
 ### Computed Properties
 
-Use `WhenAnyValue` and `ObservableAsPropertyHelper` for derived properties:
+Use `[NotifyPropertyChangedFor]` for derived properties:
 
 ```csharp
-private readonly ObservableAsPropertyHelper<bool> _canStart;
-public bool CanStart => _canStart.Value;
+[ObservableProperty]
+[NotifyPropertyChangedFor(nameof(CanStart))]
+private int _pluginCount;
 
-// In constructor:
-_canStart = this.WhenAnyValue(x => x.PluginCount, count => count > 0)
-    .ToProperty(this, x => x.CanStart);
+public bool CanStart => PluginCount > 0;
 ```
 
 ## Async/Await Rules
@@ -103,13 +102,14 @@ public async Task CleanPluginAsync(string plugin, CancellationToken cancellation
 
 ### Cross-Thread UI Updates
 
-Use `Dispatcher.UIThread.InvokeAsync` for UI updates from background threads:
+Use the injected `IUiDispatcher` for UI updates from background threads:
 
 ```csharp
-await Dispatcher.UIThread.InvokeAsync(() =>
+await _uiDispatcher.InvokeAsync(() =>
 {
     Status = "Processing complete";
     Progress = 100;
+    return Task.CompletedTask;
 });
 ```
 

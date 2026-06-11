@@ -14,7 +14,7 @@ namespace AutoQAC.ViewModels;
 
 /// <summary>
 /// Slim orchestrator that composes Configuration, PluginList, and CleaningCommands
-/// sub-ViewModels. Owns Interactions (registered in MainWindow.axaml.cs code-behind)
+/// sub-ViewModels. Owns Interactions (registered in MainWindow.xaml.cs code-behind)
 /// and mediates cross-VM state changes.
 /// </summary>
 public sealed class MainWindowViewModel : ViewModelBase, IDisposable

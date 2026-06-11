@@ -1,6 +1,6 @@
 # AutoQAC: Avalonia → WinUI 3 Migration Plan
 
-> Status: **Approved** — migration is go. Phase 0 pre-work on `main` is the starting point; no WinUI cutover branch work has started yet.
+> Status: **Phase 5 complete** — WinUI cutover, tests/docs cleanup, legacy Avalonia source removal, and release publish validation are complete.
 >
 > Scope: `AutoQAC` desktop app only. `QueryPlugins`, `QueryPlugins.Tests`, and all non-UI services are unaffected. The app is already Windows-only (`net10.0-windows10.0.19041.0`), so there is no cross-platform capability being given up.
 >
@@ -112,7 +112,7 @@ Exit criteria: `dotnet test` green; `rg "Avalonia" AutoQAC/ViewModels AutoQAC/Se
 3. `MessageDialogService` over `ContentDialog`, including the backup-failure dialog. Map `MessageDialogResult` enum 1:1. Serialize dialog display to respect the one-ContentDialog-at-a-time rule.
 4. Update `ServiceCollectionExtensions` registrations.
 
-### Phase 3 — Views, in dependency order
+### ~~Phase 3 — Views, in dependency order~~
 
 Per view: port XAML (`x:Bind` with explicit modes), port code-behind contracts (interaction handlers, `CloseRequested`, dispose-on-close), verify against the Phase 0 contract document.
 
@@ -124,7 +124,7 @@ Per view: port XAML (`x:Bind` with explicit modes), port code-behind contracts (
 6. Recreate the `hyperlink` button style and theme resources in `App.xaml` (WinUI Fluent is the default theme; `RequestedTheme` left unset = follow system).
 7. Port converters that survive (`GameTypeDisplayConverter`) and replace boolean/null converters with `x:Bind` functions.
 
-### Phase 4 — Tests and verification
+### ~~Phase 4 — Tests and verification~~
 
 1. Update the 5 affected test files (paths, contract strings, filter-parser test rehosting).
 2. Confirm no Avalonia.Headless-style claims creep into docs/tests (none today; keep it that way unless WinUI UI tests are deliberately added).
@@ -132,10 +132,25 @@ Per view: port XAML (`x:Bind` with explicit modes), port code-behind contracts (
    - Sequential cleaning, single xEdit process slot, stop (graceful → force), hang detection banner, MO2 wrapped launch, backup skip in MO2 mode, dry-run preview, restore flow, skip-list editing, settings persistence + `FlushPendingSavesAsync` before launch, log retention on startup, single-instance guard.
 4. Update `AGENTS.md`, `.cursor/rules/project-overview.mdc`, and `README.md` (stack section, commands unchanged).
 
-### Phase 5 — Release
+Phase 4 completion notes:
+
+- Source-contract tests now read active WinUI files (`.xaml`, `.xaml.cs`, and `ContentDialogPresenter`) instead of deleted `.axaml` sources.
+- Legacy Avalonia views, converters, and UI service implementations were removed from `AutoQAC`.
+- Agent guidance, README, workspace rules, and WinUI view contracts now describe the WinUI 3 stack.
+- Automated validation passes with `dotnet test AutoQACSharp.slnx`.
+
+### ~~Phase 5 — Release~~
 
 1. Verify Release build, self-contained publish, and that `AutoQAC Data` copy-to-output and relative paths behave identically unpackaged.
 2. Smoke-test on a clean Windows 10 19041+ machine. Self-contained publish should remove the separate Windows App SDK runtime-install requirement; if `PublishSingleFile` is enabled, also verify first-launch extraction and runtime lookup behavior.
+
+Phase 5 completion notes:
+
+- Added [scripts/Publish-Release.ps1](../scripts/Publish-Release.ps1) to build, test, publish, verify output layout, and run a short launch smoke check.
+- Release publish output lands in `artifacts/publish/win-x64/` with `AutoQAC.exe`, `AutoQAC Data/`, assets, and self-contained runtime files; no Avalonia artifacts remain.
+- [README.md](../README.md) documents the publish workflow and folder-based distribution model.
+- Automated validation passes with `dotnet build`, `dotnet test`, and `.\scripts\Publish-Release.ps1` in Release.
+- Remaining manual sign-off: full UI regression from the published folder on a clean Windows 10 19041+ machine (config/logs paths, dialogs, single-instance, and cleaning flows when xEdit/game env is available).
 
 ## 5. Effort estimate (rough)
 

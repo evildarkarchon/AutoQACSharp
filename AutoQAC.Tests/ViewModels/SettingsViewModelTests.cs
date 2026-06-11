@@ -203,9 +203,9 @@ public sealed class SettingsViewModelTests
     }
 
     [Fact]
-    public void SettingsWindow_BindsPersistenceBannerText_StaticGuard()
+    public void SettingsContent_BindsPersistenceBannerText_StaticGuard()
     {
-        var source = File.ReadAllText(ProjectPath("AutoQAC", "Views", "SettingsWindow.axaml"));
+        var source = File.ReadAllText(ProjectPath("AutoQAC", "Views", "SettingsContent.xaml"));
 
         source.Should().Contain("PersistenceBannerText");
         source.Should().Contain("HasPersistenceBanner");

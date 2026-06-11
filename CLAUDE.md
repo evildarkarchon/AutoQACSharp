@@ -4,7 +4,7 @@ Guidance for Claude Code when working in this repository.
 
 ## Project Overview
 
-- `AutoQAC` is a Windows-only Avalonia desktop app for running xEdit Quick Auto Clean (`-QAC`) safely, one plugin at a time.
+- `AutoQAC` is a Windows-only WinUI 3 desktop app for running xEdit Quick Auto Clean (`-QAC`) safely, one plugin at a time.
 - `QueryPlugins` is a separate Mutagen-based analysis library for detecting ITMs, deleted references, and deleted navmeshes.
 - The solution currently includes `AutoQAC`, `AutoQAC.Tests`, `QueryPlugins`, and `QueryPlugins.Tests`.
 
@@ -23,7 +23,7 @@ dotnet clean AutoQACSharp.slnx
 - .NET 10
 - C# 13 with nullable reference types enabled
 - `AutoQAC`: `net10.0-windows10.0.19041.0`
-- Avalonia 12.0.1 (DataGrid 12.0.0)
+- WinUI 3 with Microsoft Windows App SDK 2.2.0
 - CommunityToolkit.Mvvm 8.4.2 (source-generator MVVM)
 - Microsoft.Extensions.DependencyInjection 10.0.3
 - Serilog 4.3.1 with console and file sinks
@@ -36,9 +36,10 @@ dotnet clean AutoQACSharp.slnx
 - `AutoQAC/Infrastructure` contains DI wiring and logging.
 - `AutoQAC/Services` contains the main business logic, grouped into `Backup`, `Cleaning`, `Configuration`, `GameDetection`, `MO2`, `Monitoring`, `Plugin`, `Process`, `State`, and `UI`.
 - `AutoQAC/ViewModels/MainWindow` splits the main window into `ConfigurationViewModel`, `PluginListViewModel`, and `CleaningCommandsViewModel`, coordinated by `MainWindowViewModel`.
-- `MainWindow.axaml.cs` owns dialog and window interactions; ViewModels should not directly manipulate controls.
+- `MainWindow.xaml.cs` owns dialog and window interactions; ViewModels should not directly manipulate controls.
 - `IStateService` and `AppState` are the shared runtime state hub for cleaning progress, plugin lists, and session results.
-- `App.axaml.cs` builds the service provider, starts config watching, runs legacy config migration, and triggers log retention cleanup on startup.
+- `App.xaml.cs` builds the service provider, starts config watching, runs legacy config migration, and triggers log retention cleanup on startup.
+- `IWindowContextProvider` supplies active WinUI window context for file pickers and `ContentDialog` ownership; `IAppLifetime` abstracts shutdown.
 
 ## Runtime Behavior To Preserve
 
@@ -58,7 +59,7 @@ dotnet clean AutoQACSharp.slnx
 - Maintain strict MVVM boundaries.
 - Use CommunityToolkit.Mvvm source generators for ViewModel state: `[ObservableProperty]` on private `_camelCase` fields, `[RelayCommand]` on private methods, `[NotifyPropertyChangedFor(...)]` and `[NotifyCanExecuteChangedFor(...)]` for derived/gated properties. Manual `SetProperty(ref field, value)` is allowed when the setter has side effects that don't fit `partial void OnXChanged` hooks.
 - Every concrete ViewModel must be `public sealed partial class … : ViewModelBase` (the `partial` is required for source generation).
-- ViewModels SHALL NOT depend on `ReactiveUI` or `System.Reactive`. UI-thread marshaling for service observables (e.g. `IStateService.StateChanged`) goes through the injected `IUiDispatcher` (`AutoQAC.Services.UI.IUiDispatcher`); production resolves to `AvaloniaUiDispatcher` (wraps `Dispatcher.UIThread`), tests use `SynchronousUiDispatcher`. Subscribe to `IObservable<T>` from services using `CallbackObserver<T>` (`AutoQAC.Services.UI.CallbackObserver`) so VMs don't pull in `System.Reactive`.
+- ViewModels SHALL NOT depend on `ReactiveUI` or `System.Reactive`. UI-thread marshaling for service observables (e.g. `IStateService.StateChanged`) goes through the injected `IUiDispatcher` (`AutoQAC.Services.UI.IUiDispatcher`); production resolves to `WinUiDispatcher` (wraps `DispatcherQueue`), tests use `SynchronousUiDispatcher`. Subscribe to `IObservable<T>` from services using `CallbackObserver<T>` (`AutoQAC.Services.UI.CallbackObserver`) so VMs don't pull in `System.Reactive`.
 - Dialog interactions use the in-house `Interaction<TInput, TOutput>` (`AutoQAC.Services.UI.Interactions`). The View code-behind calls `RegisterHandler` and stores the returned `IDisposable` for disposal on close. The in-house `Unit` (`AutoQAC.Services.UI.Interactions.Unit`) replaces `System.Reactive.Unit` for void-shaped interactions.
 - Dialog VMs that need to close with a result expose a `CloseRequested` C# event (`Action<bool>`, `Action<MessageDialogResult>`, or `EventHandler`) that the View subscribes to and disposes on `OnClosed`. The `[RelayCommand]` Save/Cancel methods invoke that event.
 - Services in `AutoQAC/Services` (notably `StateService` `BehaviorSubject` and `ConfigurationService` debounce pipeline) keep their `System.Reactive` use; the Rx ban applies only to the ViewModel layer.
@@ -74,11 +75,11 @@ dotnet clean AutoQACSharp.slnx
 - `QueryPlugins.Tests` covers the standalone detector library.
 - `dotnet test` auto-collects Cobertura coverage into each test project's `TestResults/coverage/` directory.
 - Use NSubstitute for mocks, and match optional parameters explicitly in substitute setups and assertions.
-- There is no separate Avalonia.Headless test project in the current solution. Do not document or depend on one unless you add it intentionally.
+- There is no separate WinUI UI automation/headless test project in the current solution. Do not document or depend on one unless you add it intentionally.
 
 ## Important Files
 
-- `AutoQAC/App.axaml.cs`
+- `AutoQAC/App.xaml.cs`
 - `AutoQAC/Infrastructure/ServiceCollectionExtensions.cs`
 - `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs`
 - `AutoQAC/Services/Process/ProcessExecutionService.cs`
@@ -105,7 +106,7 @@ dotnet clean AutoQACSharp.slnx
 
 **AutoQAC — xEdit Log Parsing Fix**
 
-AutoQAC is a Windows-only Avalonia desktop app that runs xEdit Quick Auto Clean (`-QAC`) safely, one plugin at a time, with Mutagen-based plugin analysis. This milestone fixes the fundamental bug where the app tries to parse xEdit's stdout/stderr for cleaning results, when xEdit actually writes its output to log files in its install directory.
+AutoQAC is a Windows-only WinUI 3 desktop app that runs xEdit Quick Auto Clean (`-QAC`) safely, one plugin at a time, with Mutagen-based plugin analysis. This milestone fixes the fundamental bug where the app tries to parse xEdit's stdout/stderr for cleaning results, when xEdit actually writes its output to log files in its install directory.
 
 **Core Value:** Correctly parse xEdit cleaning results from log files so users get accurate feedback on what was cleaned, skipped, removed, or undeleted.
 
@@ -120,7 +121,7 @@ AutoQAC is a Windows-only Avalonia desktop app that runs xEdit Quick Auto Clean 
 
 ## Languages
 - C# 13 with nullable reference types (`<Nullable>enable</Nullable>` in all projects)
-- XAML (Avalonia AXAML) for UI layout and resource definitions
+- XAML (WinUI 3) for UI layout and resource definitions
 ## Runtime
 - .NET 10 (`net10.0` and `net10.0-windows10.0.19041.0`)
 - Windows 10+ only for the main app (`AutoQAC.csproj` targets `net10.0-windows10.0.19041.0`)
@@ -130,7 +131,7 @@ AutoQAC is a Windows-only Avalonia desktop app that runs xEdit Quick Auto Clean 
 - No `global.json` present; relies on whatever SDK is installed
 - No `Directory.Build.props`; each `.csproj` is self-contained
 ## Frameworks
-- Avalonia 12.0.1 - Cross-platform UI framework (Windows-only deployment)
+- WinUI 3 / Microsoft Windows App SDK 2.2.0 - Windows desktop UI framework
 - CommunityToolkit.Mvvm 8.4.2 - Source-generator MVVM framework
 - Microsoft.Extensions.DependencyInjection 10.0.3 - IoC container
 - xUnit 2.9.3 - Test runner and assertions
@@ -145,12 +146,7 @@ AutoQAC is a Windows-only Avalonia desktop app that runs xEdit Quick Auto Clean 
 ## Key Dependencies
 | Package | Version | Purpose |
 |---------|---------|---------|
-| Avalonia | 12.0.1 | UI framework (core rendering, controls, themes) |
-| Avalonia.Desktop | 12.0.1 | Desktop platform backend |
-| Avalonia.Themes.Fluent | 12.0.1 | Fluent Design theme |
-| Avalonia.Fonts.Inter | 12.0.1 | Inter font family |
-| Avalonia.Controls.DataGrid | 12.0.0 | DataGrid control for plugin lists |
-| AvaloniaUI.DiagnosticsSupport | 2.2.1 | Dev-only diagnostic overlay (excluded from Release builds) |
+| Microsoft.WindowsAppSDK | 2.2.0 | WinUI 3 runtime and Windows App SDK APIs |
 | CommunityToolkit.Mvvm | 8.4.2 | Source-generator MVVM (`[ObservableProperty]`, `[RelayCommand]`) |
 | Mutagen.Bethesda | 0.53.1 | Core Bethesda plugin handling (load orders, game locations) |
 | Mutagen.Bethesda.Skyrim | 0.53.1 | Skyrim-specific record types (LE, SE, VR, Enderal) |
@@ -169,10 +165,10 @@ AutoQAC is a Windows-only Avalonia desktop app that runs xEdit Quick Auto Clean 
 | coverlet.collector | 8.0.0 | Code coverage collector |
 | coverlet.msbuild | 8.0.0 | MSBuild coverage integration (auto-collects on `dotnet test`) |
 ## Configuration
-- `AutoQAC/AutoQAC.csproj`: `WinExe` output, compiled Avalonia bindings enabled, COM interop enabled
+- `AutoQAC/AutoQAC.csproj`: `WinExe` output, `UseWinUI`, unpackaged self-contained publish, COM interop enabled
 - `AutoQAC/AutoQAC.csproj`: Embeds build date as `AssemblyMetadata` via MSBuild `$([System.DateTime]::UtcNow)`
 - `AutoQAC/AutoQAC.csproj`: Copies `AutoQAC Data/` folder to output directory (`PreserveNewest`)
-- Debug vs Release: `Avalonia.Diagnostics` is included only in Debug builds
+- Publish output: `.\scripts\Publish-Release.ps1` produces `artifacts/publish/win-x64/` for xcopy/zip distribution
 - `AutoQAC Data/AutoQAC Main.yaml`: Bundled read-only config (skip lists, xEdit executable names, version info)
 - `AutoQAC Data/AutoQAC Settings.yaml`: User-editable config (game selection, paths, timeouts, MO2 mode)
 - No `.env` files; all configuration is file-based YAML
@@ -188,9 +184,8 @@ AutoQAC is a Windows-only Avalonia desktop app that runs xEdit Quick Auto Clean 
 - `dotnet test AutoQACSharp.slnx` runs tests with auto-coverage
 - `dotnet run --project AutoQAC/AutoQAC.csproj` launches the app
 - Windows 10 or later (declared in `app.manifest`)
-- .NET 10 runtime (framework-dependent deployment)
-- Pre-built release in `Release/` directory includes `AutoQAC.exe` plus native Avalonia/Skia dependencies
-- Native DLLs bundled: `libSkiaSharp.dll`, `libHarfBuzzSharp.dll`, `av_libglesv2.dll`, `D3DCompiler_47_cor3.dll`, WPF interop DLLs
+- Self-contained publish bundles .NET and Windows App SDK runtime; no separate runtime install required on target machines
+- Release folder publish includes `AutoQAC.exe`, `AutoQAC Data/`, assets, and self-contained runtime files
 ## Mutagen Submodule
 - Git submodule at `Mutagen/` pinned to tag `0.53.1` (commit `bdbb6ff`)
 - Read-only reference; do not build or modify
@@ -206,7 +201,7 @@ AutoQAC is a Windows-only Avalonia desktop app that runs xEdit Quick Auto Clean 
 ## Naming Patterns
 - One public type per file, file named to match the type: `CleaningOrchestrator.cs`, `ICleaningOrchestrator.cs`
 - Interfaces get their own file prefixed with `I`: `ICleaningService.cs`, `IStateService.cs`
-- AXAML code-behind matches the view name: `MainWindow.axaml` / `MainWindow.axaml.cs`
+- XAML code-behind matches the view name: `MainWindow.xaml` / `MainWindow.xaml.cs`
 - Test files mirror source path with `Tests` suffix: `Services/CleaningOrchestrator.cs` -> `Services/CleaningOrchestratorTests.cs`
 - PascalCase for all types: `CleaningOrchestrator`, `PluginLoadingService`, `GameDetectionService`
 - Sealed by default for service implementations: `public sealed class ConfigurationService`
@@ -294,13 +289,13 @@ AutoQAC is a Windows-only Avalonia desktop app that runs xEdit Quick Auto Clean 
 - Optional dependencies with `= null` default: `IPluginIssueApproximationService? pluginIssueApproximationService = null`
 ## MVVM Conventions
 - Own observable properties, commands, and business logic coordination
-- Never reference Avalonia UI types or controls
+- Never reference WinUI control types directly for business logic; keep UI in Views
 - Use the in-house `Interaction<TInput, TOutput>` for dialog triggers (not direct window references)
 - Manage subscriptions via explicit `IDisposable?` fields or a small `List<IDisposable>` (no `CompositeDisposable`)
 - Implement `IDisposable` when holding subscriptions or resources
 - Register `Interaction` handlers that create and show windows/dialogs
 - Own dialog/window lifecycle (open, close, result handling)
-- `MainWindow.axaml.cs` is the Interaction registration hub; it stores each `RegisterHandler` `IDisposable` in a list and disposes them in `OnClosed`
+- `MainWindow.xaml.cs` is the Interaction registration hub; it stores each `RegisterHandler` `IDisposable` in a list and disposes them in `OnClosed`
 - Views can receive services via constructor for interaction handling (e.g., `IFileDialogService`)
 - Dialog code-behind subscribes to VM `CloseRequested` events on `DataContextChanged` and unsubscribes in `OnClosed`
 - Split into sub-ViewModels: `ConfigurationViewModel`, `PluginListViewModel`, `CleaningCommandsViewModel`
@@ -361,17 +356,17 @@ AutoQAC is a Windows-only Avalonia desktop app that runs xEdit Quick Auto Clean 
 ### Standalone ViewModels (Transient, created per dialog):
 | ViewModel | Purpose | Created in |
 |-----------|---------|------------|
-| `ProgressViewModel` | Live cleaning progress, dry-run preview | `MainWindow.axaml.cs` |
-| `SettingsViewModel` | Settings editing dialog | `MainWindow.axaml.cs` |
-| `SkipListViewModel` | Skip list editing dialog | `MainWindow.axaml.cs` |
-| `RestoreViewModel` | Backup restore browser | `MainWindow.axaml.cs` |
-| `CleaningResultsViewModel` | Post-session results display | `MainWindow.axaml.cs` |
-| `PartialFormsWarningViewModel` | Experimental feature warning | `MainWindow.axaml.cs` |
+| `ProgressViewModel` | Live cleaning progress, dry-run preview | `MainWindow.xaml.cs` |
+| `SettingsViewModel` | Settings editing dialog | `MainWindow.xaml.cs` |
+| `SkipListViewModel` | Skip list editing dialog | `MainWindow.xaml.cs` |
+| `RestoreViewModel` | Backup restore browser | `MainWindow.xaml.cs` |
+| `CleaningResultsViewModel` | Post-session results display | `MainWindow.xaml.cs` |
+| `PartialFormsWarningViewModel` | Experimental feature warning | `MainWindow.xaml.cs` |
 | `MessageDialogViewModel` | Generic message/error dialogs | `MessageDialogService` |
-| `AboutViewModel` | About window | `MainWindow.axaml.cs` |
+| `AboutViewModel` | About window | `MainWindow.xaml.cs` |
 ### View-ViewModel Binding Approach
 - `DataContext` is set in code-behind, not in XAML
-- Avalonia compiled bindings are enabled by default (`AvaloniaUseCompiledBindingsByDefault=true` in csproj)
+- WinUI `x:Bind` is preferred where views have a strongly typed surface; specify `Mode=OneWay` or `Mode=TwoWay` explicitly because the default is `OneTime`
 - `ViewModelBase` extends `CommunityToolkit.Mvvm.ComponentModel.ObservableObject` for `INotifyPropertyChanged` support
 - Dialog results flow through the in-house `Interaction<TInput, TOutput>` -- ViewModel raises the interaction, View code-behind handles it by creating/showing the dialog window. Dialog VMs raise `CloseRequested` events for Save/Cancel close.
 ### MVVM Patterns Used
@@ -406,7 +401,7 @@ AutoQAC is a Windows-only Avalonia desktop app that runs xEdit Quick Auto Clean 
 - `IMo2ValidationService` / `Mo2ValidationService` -- Validates MO2 executable path. File: `AutoQAC/Services/MO2/MO2ValidationService.cs`
 - `IHangDetectionService` / `HangDetectionService` -- Polls process CPU usage; emits hang state when near-zero CPU persists for 60+ seconds. File: `AutoQAC/Services/Monitoring/HangDetectionService.cs`
 - `IBackupService` / `BackupService` -- Pre-cleaning plugin backup with session directories, `session.json` metadata, restore capability, and session retention cleanup. Skipped in MO2 mode (MO2 manages files via VFS). File: `AutoQAC/Services/Backup/BackupService.cs`
-- `IFileDialogService` / `FileDialogService` -- Wraps Avalonia file/folder dialogs. File: `AutoQAC/Services/UI/FileDialogService.cs`
+- `IFileDialogService` / `FileDialogService` -- Wraps Windows App SDK `Microsoft.Windows.Storage.Pickers` file/folder dialogs. File: `AutoQAC/Services/UI/FileDialogService.cs`
 - `IMessageDialogService` / `MessageDialogService` -- Shows error/warning/confirm/retry dialogs. File: `AutoQAC/Services/UI/MessageDialogService.cs`
 ### Service Interaction Patterns
 - Services communicate through `IStateService` as the shared state hub, not by calling each other's methods directly for state queries

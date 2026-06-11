@@ -34,13 +34,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Remove="App.axaml.cs" />
-    <Compile Remove="Views\**\*.axaml.cs" />
-    <Compile Remove="Converters\**\*.cs" />
-    <Compile Remove="Services\UI\Avalonia*.cs" />
-  </ItemGroup>
-
-  <ItemGroup>
     <!-- Copy AutoQAC Data folder to output directory -->
     <None Include="AutoQAC Data\**" CopyToOutputDirectory="PreserveNewest" LinkBase="AutoQAC Data" />
   </ItemGroup>
