@@ -507,3 +507,4 @@ target/
 vendor/
 coverage/
 .cache/
+.kilo/package-lock.json
