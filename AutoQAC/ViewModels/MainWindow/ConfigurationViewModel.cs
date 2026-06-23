@@ -39,57 +39,57 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsLoadOrderConfigured))]
-    private string? _loadOrderPath;
+    public partial string? LoadOrderPath { get; set; }
 
     [ObservableProperty]
-    private string? _xEditPath;
+    public partial string? XEditPath { get; set; }
 
     [ObservableProperty]
-    private string? _mo2Path;
+    public partial string? Mo2Path { get; set; }
 
     [ObservableProperty]
-    private bool _mo2ModeEnabled;
+    public partial bool Mo2ModeEnabled { get; set; }
 
     [ObservableProperty]
-    private bool _partialFormsEnabled;
+    public partial bool PartialFormsEnabled { get; set; }
 
     [ObservableProperty]
-    private bool _disableSkipListsEnabled;
+    public partial bool DisableSkipListsEnabled { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsMutagenSupported))]
     [NotifyPropertyChangedFor(nameof(IsGameSelected))]
     [NotifyPropertyChangedFor(nameof(RequiresLoadOrderFile))]
     [NotifyCanExecuteChangedFor(nameof(ConfigureGameDataFolderCommand))]
-    private GameType _selectedGame = GameType.Unknown;
+    public partial GameType SelectedGame { get; set; } = GameType.Unknown;
 
     [ObservableProperty]
-    private string? _gameDataFolder;
+    public partial string? GameDataFolder { get; set; }
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(ClearGameDataFolderOverrideCommand))]
-    private bool _hasGameDataFolderOverride;
+    public partial bool HasGameDataFolderOverride { get; set; }
 
     [ObservableProperty]
-    private bool _hasMigrationWarning;
+    public partial bool HasMigrationWarning { get; set; }
 
     [ObservableProperty]
-    private string? _migrationWarningMessage;
+    public partial string? MigrationWarningMessage { get; set; }
 
     [ObservableProperty]
-    private string _statusText = "Ready";
+    public partial string StatusText { get; set; } = "Ready";
 
     [ObservableProperty]
-    private bool? _isXEditPathValid;
+    public partial bool? IsXEditPathValid { get; set; }
 
     [ObservableProperty]
-    private bool? _isMo2PathValid;
+    public partial bool? IsMo2PathValid { get; set; }
 
     [ObservableProperty]
-    private bool? _isLoadOrderPathValid;
+    public partial bool? IsLoadOrderPathValid { get; set; }
 
     [ObservableProperty]
-    private bool? _isGameDataFolderValid;
+    public partial bool? IsGameDataFolderValid { get; set; }
 
     public IReadOnlyList<GameType> AvailableGames { get; }
 

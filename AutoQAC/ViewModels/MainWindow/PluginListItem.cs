@@ -20,15 +20,15 @@ public sealed partial class PluginListItem : ObservableObject
 
     public PluginListItem(PluginInfo info, bool isSelected)
     {
-        _info = info;
-        _isSelected = isSelected;
+        Info = info;
+        IsSelected = isSelected;
     }
 
     [ObservableProperty]
-    private PluginInfo _info;
+    public partial PluginInfo Info { get; set; }
 
     [ObservableProperty]
-    private bool _isSelected;
+    public partial bool IsSelected { get; set; }
 
     public string FileName => Info.FileName;
     public string FullPath => Info.FullPath;

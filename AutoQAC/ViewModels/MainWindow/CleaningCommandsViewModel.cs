@@ -44,24 +44,24 @@ public sealed partial class CleaningCommandsViewModel : ViewModelBase, IDisposab
     private readonly Interaction<Unit, Unit> _showAboutInteraction;
 
     [ObservableProperty]
-    private string _statusText = "Ready";
+    public partial string StatusText { get; set; } = "Ready";
 
     [ObservableProperty]
-    private ObservableCollection<ValidationError> _validationErrors = new();
+    public partial ObservableCollection<ValidationError> ValidationErrors { get; set; } = new();
 
     [ObservableProperty]
-    private bool _hasValidationErrors;
+    public partial bool HasValidationErrors { get; set; }
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(StopCleaningCommand))]
     [NotifyCanExecuteChangedFor(nameof(ShowSkipListCommand))]
     [NotifyCanExecuteChangedFor(nameof(RestoreBackupsCommand))]
-    private bool _isCleaning;
+    public partial bool IsCleaning { get; set; }
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(StartCleaningCommand))]
     [NotifyCanExecuteChangedFor(nameof(PreviewCommand))]
-    private bool _canStartCleaning;
+    public partial bool CanStartCleaning { get; set; }
 
     public CleaningCommandsViewModel(
         IStateService stateService,

@@ -25,79 +25,79 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
     private bool _hangWarningDismissed;
 
     [ObservableProperty]
-    private string? _currentPlugin;
+    public partial string? CurrentPlugin { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ProgressText))]
-    private int _progress;
+    public partial int Progress { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ProgressText))]
-    private int _total;
+    public partial int Total { get; set; }
 
     [ObservableProperty]
-    private int _cleanedCount;
+    public partial int CleanedCount { get; set; }
 
     [ObservableProperty]
-    private int _skippedCount;
+    public partial int SkippedCount { get; set; }
 
     [ObservableProperty]
-    private int _failedCount;
+    public partial int FailedCount { get; set; }
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(StopCommand))]
-    private bool _isCleaning;
+    public partial bool IsCleaning { get; set; }
 
     [ObservableProperty]
-    private int _currentItmCount;
+    public partial int CurrentItmCount { get; set; }
 
     [ObservableProperty]
-    private int _currentUdrCount;
+    public partial int CurrentUdrCount { get; set; }
 
     [ObservableProperty]
-    private int _currentNavCount;
+    public partial int CurrentNavCount { get; set; }
 
     [ObservableProperty]
-    private bool _hasCurrentPluginStats;
+    public partial bool HasCurrentPluginStats { get; set; }
 
     public ObservableCollection<PluginCleaningResult> CompletedPlugins { get; } = new();
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsResultsSummaryVisible))]
-    private bool _isShowingResults;
+    public partial bool IsShowingResults { get; set; }
 
     [ObservableProperty]
-    private CleaningSessionResult? _sessionResult;
+    public partial CleaningSessionResult? SessionResult { get; set; }
 
     [ObservableProperty]
-    private bool _wasCancelled;
+    public partial bool WasCancelled { get; set; }
 
     [ObservableProperty]
-    private string _sessionSummaryText = string.Empty;
+    public partial string SessionSummaryText { get; set; } = string.Empty;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasStopOutcomeWarning))]
-    private string? _stopOutcomeWarningText;
+    public partial string? StopOutcomeWarningText { get; set; }
 
     [ObservableProperty]
-    private int _totalItmCount;
+    public partial int TotalItmCount { get; set; }
 
     [ObservableProperty]
-    private int _totalUdrCount;
+    public partial int TotalUdrCount { get; set; }
 
     [ObservableProperty]
-    private int _totalNavCount;
+    public partial int TotalNavCount { get; set; }
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(StopCommand))]
-    private bool _isTerminating;
+    public partial bool IsTerminating { get; set; }
 
     [ObservableProperty]
-    private bool _isHangWarningVisible;
+    public partial bool IsHangWarningVisible { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsResultsSummaryVisible))]
-    private bool _isPreviewMode;
+    public partial bool IsPreviewMode { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ActiveOperationLabel))]
@@ -106,17 +106,17 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
     [NotifyPropertyChangedFor(nameof(IsCleanupCancelVisible))]
     [NotifyPropertyChangedFor(nameof(BackupOperationProgressText))]
     [NotifyCanExecuteChangedFor(nameof(CancelBackupOperationCommand))]
-    private BackupOperationState? _backupOperation;
+    public partial BackupOperationState? BackupOperation { get; set; }
 
     public ObservableCollection<DryRunResult> DryRunResults { get; } = new();
 
     public string PreviewDisclaimer => "Preview only -- does not detect ITMs/UDRs (requires xEdit)";
 
     [ObservableProperty]
-    private int _willCleanCount;
+    public partial int WillCleanCount { get; set; }
 
     [ObservableProperty]
-    private int _willSkipCount;
+    public partial int WillSkipCount { get; set; }
 
     public string ProgressText => Total > 0
         ? $"{Progress} / {Total} ({Progress * 100 / Total}%)"

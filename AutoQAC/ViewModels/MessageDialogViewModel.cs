@@ -8,44 +8,44 @@ namespace AutoQAC.ViewModels;
 public sealed partial class MessageDialogViewModel : ViewModelBase
 {
     [ObservableProperty]
-    private string _title = string.Empty;
+    public partial string Title { get; set; } = string.Empty;
 
     [ObservableProperty]
-    private string _message = string.Empty;
+    public partial string Message { get; set; } = string.Empty;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasDetails))]
-    private string? _details;
+    public partial string? Details { get; set; }
 
     [ObservableProperty]
-    private bool _showDetailsExpanded;
+    public partial bool ShowDetailsExpanded { get; set; }
 
     [ObservableProperty]
-    private string _iconGlyph = string.Empty;
+    public partial string IconGlyph { get; set; } = string.Empty;
 
     [ObservableProperty]
-    private string _iconColor = "Gray";
+    public partial string IconColor { get; set; } = "Gray";
 
     [ObservableProperty]
-    private bool _showOkButton;
+    public partial bool ShowOkButton { get; set; }
 
     [ObservableProperty]
-    private bool _showCancelButton;
+    public partial bool ShowCancelButton { get; set; }
 
     [ObservableProperty]
-    private bool _showYesButton;
+    public partial bool ShowYesButton { get; set; }
 
     [ObservableProperty]
-    private bool _showNoButton;
+    public partial bool ShowNoButton { get; set; }
 
     [ObservableProperty]
-    private string _yesButtonText = "Yes";
+    public partial string YesButtonText { get; set; } = "Yes";
 
     [ObservableProperty]
-    private string _noButtonText = "No";
+    public partial string NoButtonText { get; set; } = "No";
 
     [ObservableProperty]
-    private bool _showRetryButton;
+    public partial bool ShowRetryButton { get; set; }
 
     public bool HasDetails => !string.IsNullOrEmpty(Details);
 

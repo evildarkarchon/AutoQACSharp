@@ -25,7 +25,7 @@ public sealed partial class SkipListViewModel : ViewModelBase, IDisposable
     private static readonly string[] ValidExtensions = [".esp", ".esm", ".esl"];
 
     [ObservableProperty]
-    private GameType _selectedGame;
+    public partial GameType SelectedGame { get; set; }
 
     public IReadOnlyList<GameType> AvailableGames { get; }
 
@@ -33,26 +33,26 @@ public sealed partial class SkipListViewModel : ViewModelBase, IDisposable
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(RemoveSelectedEntryCommand))]
-    private string? _selectedEntry;
+    public partial string? SelectedEntry { get; set; }
 
     public ObservableCollection<string> AvailablePlugins { get; } = new();
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(AddSelectedPluginCommand))]
-    private string? _selectedPlugin;
+    public partial string? SelectedPlugin { get; set; }
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(AddManualEntryCommand))]
-    private string _manualEntryText = string.Empty;
+    public partial string ManualEntryText { get; set; } = string.Empty;
 
     [ObservableProperty]
-    private string? _manualEntryError;
+    public partial string? ManualEntryError { get; set; }
 
     [ObservableProperty]
-    private bool _hasUnsavedChanges;
+    public partial bool HasUnsavedChanges { get; set; }
 
     [ObservableProperty]
-    private bool _isLoading;
+    public partial bool IsLoading { get; set; }
 
     /// <summary>Raised when the user picks Save or Cancel. The view closes the dialog with this value.</summary>
     public event Action<bool>? CloseRequested;

@@ -1,5 +1,7 @@
 using System;
+using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.UI.Dispatching;
 using Microsoft.Windows.AppLifecycle;
 using WinRT;
 using WinUIApplication = Microsoft.UI.Xaml.Application;
@@ -26,6 +28,8 @@ namespace AutoQAC
             instance.Activated += OnActivated;
             WinUIApplication.Start(_ =>
             {
+                var context = new DispatcherQueueSynchronizationContext(DispatcherQueue.GetForCurrentThread());
+                SynchronizationContext.SetSynchronizationContext(context);
                 _app = new App();
             });
         }

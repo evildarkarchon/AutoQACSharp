@@ -26,46 +26,46 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasSessions))]
-    private ObservableCollection<BackupSession> _sessions = new();
+    public partial ObservableCollection<BackupSession> Sessions { get; set; } = new();
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(RestoreAllCommand))]
     [NotifyCanExecuteChangedFor(nameof(DeleteSessionCommand))]
-    private BackupSession? _selectedSession;
+    public partial BackupSession? SelectedSession { get; set; }
 
     [ObservableProperty]
-    private ObservableCollection<BackupPluginEntry> _selectedSessionPlugins = new();
+    public partial ObservableCollection<BackupPluginEntry> SelectedSessionPlugins { get; set; } = new();
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(RestorePluginCommand))]
-    private BackupPluginEntry? _selectedPlugin;
+    public partial BackupPluginEntry? SelectedPlugin { get; set; }
 
     [ObservableProperty]
-    private bool _isLoading;
+    public partial bool IsLoading { get; set; }
 
     [ObservableProperty]
-    private string _statusText = "Select a backup session to view plugins";
+    public partial string StatusText { get; set; } = "Select a backup session to view plugins";
 
     [ObservableProperty]
-    private string _restoreOutcomeTitle = string.Empty;
+    public partial string RestoreOutcomeTitle { get; set; } = string.Empty;
 
     [ObservableProperty]
-    private string _restoreSummaryText = string.Empty;
+    public partial string RestoreSummaryText { get; set; } = string.Empty;
 
     [ObservableProperty]
-    private string _restoreProgressText = string.Empty;
+    public partial string RestoreProgressText { get; set; } = string.Empty;
 
     [ObservableProperty]
-    private long _restoreBytesCopied;
+    public partial long RestoreBytesCopied { get; set; }
 
     [ObservableProperty]
-    private long? _restoreTotalBytes;
+    public partial long? RestoreTotalBytes { get; set; }
 
     [ObservableProperty]
-    private ObservableCollection<BackupRestoreRowResult> _restoreResults = new();
+    public partial ObservableCollection<BackupRestoreRowResult> RestoreResults { get; set; } = new();
 
     [ObservableProperty]
-    private bool _isRestoreResultVisible;
+    public partial bool IsRestoreResultVisible { get; set; }
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(RestorePluginCommand))]
@@ -73,7 +73,7 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
     [NotifyCanExecuteChangedFor(nameof(DeleteSessionCommand))]
     [NotifyCanExecuteChangedFor(nameof(LoadSessionsCommand))]
     [NotifyCanExecuteChangedFor(nameof(CancelRestoreCommand))]
-    private bool _isRestoreActive;
+    public partial bool IsRestoreActive { get; set; }
 
     public bool HasSessions => Sessions.Count > 0;
 

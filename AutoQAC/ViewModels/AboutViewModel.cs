@@ -35,19 +35,19 @@ public sealed partial class AboutViewModel : ViewModelBase
     public string XEditUrl => "https://github.com/TES5Edit/TES5Edit";
 
     [ObservableProperty]
-    private string _updateStatusText = string.Empty;
+    public partial string UpdateStatusText { get; set; } = string.Empty;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(CheckForUpdateCommand))]
-    private bool _isCheckingUpdate;
+    public partial bool IsCheckingUpdate { get; set; }
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(OpenLatestReleaseCommand))]
-    private bool _updateAvailable;
+    public partial bool UpdateAvailable { get; set; }
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(OpenLatestReleaseCommand))]
-    private string? _latestVersionUrl;
+    public partial string? LatestVersionUrl { get; set; }
 
     public AboutViewModel(IUiFrameworkVersionProvider uiFrameworkVersionProvider)
     {

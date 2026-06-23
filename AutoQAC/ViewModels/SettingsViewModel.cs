@@ -41,89 +41,89 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
     [NotifyPropertyChangedFor(nameof(HasUnsavedChanges))]
     [NotifyPropertyChangedFor(nameof(HasValidationErrors))]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
-    private int _journalExpiration;
+    public partial int JournalExpiration { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasUnsavedChanges))]
     [NotifyPropertyChangedFor(nameof(HasValidationErrors))]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
-    private int _cleaningTimeout;
+    public partial int CleaningTimeout { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasUnsavedChanges))]
     [NotifyPropertyChangedFor(nameof(HasValidationErrors))]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
-    private int _cpuThreshold;
+    public partial int CpuThreshold { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasUnsavedChanges))]
-    private bool _mo2Mode;
+    public partial bool Mo2Mode { get; set; }
 
     [ObservableProperty]
-    private string? _cleaningTimeoutError;
+    public partial string? CleaningTimeoutError { get; set; }
 
     [ObservableProperty]
-    private string? _journalExpirationError;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasUnsavedChanges))]
-    private string? _xEditPath;
+    public partial string? JournalExpirationError { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasUnsavedChanges))]
-    private string? _mo2Path;
+    public partial string? XEditPath { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasUnsavedChanges))]
-    private string? _loadOrderPath;
-
-    [ObservableProperty]
-    private bool? _isXEditPathValid;
-
-    [ObservableProperty]
-    private bool? _isMo2PathValid;
-
-    [ObservableProperty]
-    private bool? _isLoadOrderPathValid;
+    public partial string? Mo2Path { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasUnsavedChanges))]
-    private int _retentionMode;
+    public partial string? LoadOrderPath { get; set; }
+
+    [ObservableProperty]
+    public partial bool? IsXEditPathValid { get; set; }
+
+    [ObservableProperty]
+    public partial bool? IsMo2PathValid { get; set; }
+
+    [ObservableProperty]
+    public partial bool? IsLoadOrderPathValid { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasUnsavedChanges))]
-    [NotifyPropertyChangedFor(nameof(HasValidationErrors))]
-    [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
-    private int _maxAgeDays;
+    public partial int RetentionMode { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasUnsavedChanges))]
     [NotifyPropertyChangedFor(nameof(HasValidationErrors))]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
-    private int _maxFileCount;
-
-    [ObservableProperty]
-    private bool _isAgeBasedMode = true;
-
-    [ObservableProperty]
-    private bool _isCountBasedMode;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasUnsavedChanges))]
-    private bool _backupEnabled = true;
+    public partial int MaxAgeDays { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasUnsavedChanges))]
     [NotifyPropertyChangedFor(nameof(HasValidationErrors))]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
-    private int _backupMaxSessions = 10;
+    public partial int MaxFileCount { get; set; }
 
     [ObservableProperty]
-    private string? _backupMaxSessionsError;
+    public partial bool IsAgeBasedMode { get; set; } = true;
+
+    [ObservableProperty]
+    public partial bool IsCountBasedMode { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasUnsavedChanges))]
+    public partial bool BackupEnabled { get; set; } = true;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasUnsavedChanges))]
+    [NotifyPropertyChangedFor(nameof(HasValidationErrors))]
+    [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
+    public partial int BackupMaxSessions { get; set; } = 10;
+
+    [ObservableProperty]
+    public partial string? BackupMaxSessionsError { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasPersistenceBanner))]
-    private string? _persistenceBannerText;
+    public partial string? PersistenceBannerText { get; set; }
 
     public bool HasPersistenceBanner => !string.IsNullOrWhiteSpace(PersistenceBannerText);
 

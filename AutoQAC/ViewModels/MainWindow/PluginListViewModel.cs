@@ -30,32 +30,32 @@ public sealed partial class PluginListViewModel : ViewModelBase, IDisposable
     public ObservableCollection<PluginListItem> PluginsToClean { get; } = new();
 
     [ObservableProperty]
-    private PluginListItem? _selectedPlugin;
+    public partial PluginListItem? SelectedPlugin { get; set; }
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SelectAllCommand))]
     [NotifyCanExecuteChangedFor(nameof(DeselectAllCommand))]
     [NotifyCanExecuteChangedFor(nameof(RefreshSelectedApproximationsCommand))]
-    private bool _hasPlugins;
+    public partial bool HasPlugins { get; set; }
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SelectAllCommand))]
     [NotifyCanExecuteChangedFor(nameof(DeselectAllCommand))]
     [NotifyCanExecuteChangedFor(nameof(RefreshSelectedApproximationsCommand))]
-    private bool _isCleaning;
+    public partial bool IsCleaning { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanRefreshApproximations))]
     [NotifyCanExecuteChangedFor(nameof(RefreshSelectedApproximationsCommand))]
-    private GameType _currentGameType = GameType.Unknown;
+    public partial GameType CurrentGameType { get; set; } = GameType.Unknown;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(RefreshSelectedApproximationsCommand))]
-    private bool _hasSelectedVisiblePlugin;
+    public partial bool HasSelectedVisiblePlugin { get; set; }
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(CancelApproximationRefreshCommand))]
-    private bool _isApproximationRefreshRunning;
+    public partial bool IsApproximationRefreshRunning { get; set; }
 
     public bool CanRefreshApproximations =>
         CurrentGameType != GameType.Unknown && _refreshCapabilityPolicy.SupportsIssueApproximation(CurrentGameType);
