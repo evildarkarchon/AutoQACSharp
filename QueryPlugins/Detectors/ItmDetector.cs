@@ -38,6 +38,11 @@ public sealed class ItmDetector : IItmDetector
         {
             ct.ThrowIfCancellationRequested();
 
+            // Some Creation Club plugins contain records Mutagen exposes with a null FormKey.
+            // They cannot be resolved through a link cache, so they cannot be classified as ITMs.
+            if (record.FormKey.IsNull)
+                continue;
+
             // New records defined in this plugin cannot be ITMs — they have no master to be identical to.
             if (record.FormKey.ModKey == pluginModKey)
                 continue;

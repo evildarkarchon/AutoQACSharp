@@ -176,6 +176,22 @@ public sealed class ItmDetectorTests
         issues.Should().BeEmpty();
     }
 
+    [Fact]
+    public void FindItmRecords_RecordWithNullFormKey_IsSkipped()
+    {
+        var masterMod = new SkyrimMod(MasterKey, SkyrimRelease.SkyrimSE);
+        masterMod.Npcs.AddNew("OriginalNpc");
+
+        var pluginMod = new SkyrimMod(PluginKey, SkyrimRelease.SkyrimSE);
+        pluginMod.Npcs.Add(new Npc(FormKey.Null, SkyrimRelease.SkyrimSE));
+
+        var cache = new ISkyrimModGetter[] { masterMod, pluginMod }.ToImmutableLinkCache();
+
+        var issues = _sut.FindItmRecords(pluginMod, cache).ToList();
+
+        issues.Should().BeEmpty("null-form-key records cannot be resolved through the link cache and are ignored for approximation");
+    }
+
     // ── Multiple records ──────────────────────────────────────────────────────
 
     [Fact]
