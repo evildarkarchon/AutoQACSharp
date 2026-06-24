@@ -207,8 +207,6 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
         TryWrite(new WatcherObserved(null, Volatile.Read(ref _appGenerationProducer), kind));
     }
 
-    public string? GetLastWrittenHash() => Volatile.Read(ref _lastWrittenHash);
-
     private async Task RunAsync(CancellationToken ct)
     {
         await foreach (var op in _operations.Reader.ReadAllAsync(ct).ConfigureAwait(false))

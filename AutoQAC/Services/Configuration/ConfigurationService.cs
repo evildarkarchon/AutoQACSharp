@@ -635,11 +635,6 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
         }
     }
 
-    public string? GetLastWrittenHash()
-    {
-        return _coordinator.GetLastWrittenHash();
-    }
-
     private string GetGameKey(GameType gameType) => gameType switch
     {
         GameType.Fallout3 => "FO3",

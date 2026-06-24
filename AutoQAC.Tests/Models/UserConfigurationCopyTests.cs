@@ -174,6 +174,8 @@ public sealed class UserConfigurationCopyTests
             Settings = null!,
             SkipLists = null!,
             GameDataFolderOverrides = null!,
+            Mo2InstanceOverrides = null!,
+            Mo2ProfileSelections = null!,
             LogRetention = null!,
             Backup = null!
         };
@@ -189,6 +191,8 @@ public sealed class UserConfigurationCopyTests
         copy.LoadOrderFileOverrides.Should().BeEmpty(because: "D-44 normalizes null collections to empty collections");
         copy.SkipLists.Should().BeEmpty(because: "D-44 normalizes null collections to empty collections");
         copy.GameDataFolderOverrides.Should().BeEmpty(because: "D-44 normalizes null collections to empty collections");
+        copy.Mo2InstanceOverrides.Should().BeEmpty(because: "D-44 normalizes null collections to empty collections");
+        copy.Mo2ProfileSelections.Should().BeEmpty(because: "D-44 normalizes null collections to empty collections");
     }
 
     [Fact]

@@ -44,24 +44,35 @@ public sealed class UserConfiguration
     /// (PERF-03). Behavior parity with the prior YAML round-trip clone is verified by the
     /// `Copy_BehaviorMatchesYamlRoundTrip_FullyPopulatedGraph` test in AutoQAC.Tests.
     /// </summary>
-    public UserConfiguration Copy() => new()
+    public UserConfiguration Copy()
     {
-        SelectedGame = SelectedGame,
-        LoadOrder = (LoadOrder).Copy(),
-        LoadOrderFileOverrides =
-            new Dictionary<string, string>(LoadOrderFileOverrides),
-        ModOrganizer = (ModOrganizer).Copy(),
-        XEdit = (XEdit).Copy(),
-        Settings = (Settings).Copy(),
-        SkipLists = (SkipLists)
-            .ToDictionary(kvp => kvp.Key, kvp => kvp.Value.ToList(), StringComparer.Ordinal),
-        GameDataFolderOverrides =
-            new Dictionary<string, string>(GameDataFolderOverrides),
-        Mo2InstanceOverrides = new Dictionary<string, string>(Mo2InstanceOverrides),
-        Mo2ProfileSelections = new Dictionary<string, string>(Mo2ProfileSelections),
-        LogRetention = (LogRetention).Copy(),
-        Backup = (Backup).Copy()
-    };
+        static Dictionary<string, string> CopyDictionary(Dictionary<string, string>? source) =>
+            source is null ? new Dictionary<string, string>() : new Dictionary<string, string>(source);
+
+        static Dictionary<string, List<string>> CopySkipLists(Dictionary<string, List<string>>? source) =>
+            source is null
+                ? new Dictionary<string, List<string>>(StringComparer.Ordinal)
+                : source.ToDictionary(
+                    kvp => kvp.Key,
+                    kvp => kvp.Value?.ToList() ?? new List<string>(),
+                    StringComparer.Ordinal);
+
+        return new UserConfiguration
+        {
+            SelectedGame = SelectedGame,
+            LoadOrder = (LoadOrder ?? new LoadOrderConfig()).Copy(),
+            LoadOrderFileOverrides = CopyDictionary(LoadOrderFileOverrides),
+            ModOrganizer = (ModOrganizer ?? new ModOrganizerConfig()).Copy(),
+            XEdit = (XEdit ?? new XEditConfig()).Copy(),
+            Settings = (Settings ?? new AutoQacSettings()).Copy(),
+            SkipLists = CopySkipLists(SkipLists),
+            GameDataFolderOverrides = CopyDictionary(GameDataFolderOverrides),
+            Mo2InstanceOverrides = CopyDictionary(Mo2InstanceOverrides),
+            Mo2ProfileSelections = CopyDictionary(Mo2ProfileSelections),
+            LogRetention = (LogRetention ?? new RetentionSettings()).Copy(),
+            Backup = (Backup ?? new BackupSettings()).Copy()
+        };
+    }
 }
 
 public sealed class LoadOrderConfig

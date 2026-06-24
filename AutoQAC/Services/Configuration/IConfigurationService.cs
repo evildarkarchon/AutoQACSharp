@@ -24,6 +24,7 @@ public interface IConfigurationService
         GameType gameType,
         GameVariant variant = GameVariant.None,
         CancellationToken ct = default);
+
     Task<List<string>> GetDefaultSkipListAsync(GameType gameType, CancellationToken ct = default);
     Task<List<string>> GetXEditExecutableNamesAsync(GameType gameType, CancellationToken ct = default);
 
@@ -73,13 +74,6 @@ public interface IConfigurationService
     /// Used by ConfigWatcherService after detecting an external file change.
     /// </summary>
     Task ReloadFromDiskAsync(CancellationToken ct = default);
-
-    /// <summary>
-    /// Returns the SHA256 hex hash of the config file as written by the last app-initiated save.
-    /// The ConfigWatcherService compares this to the on-disk hash to detect external changes.
-    /// Returns null if no save has occurred yet.
-    /// </summary>
-    string? GetLastWrittenHash();
 
     // Reactive configuration changes
     IObservable<UserConfiguration> UserConfigurationChanged { get; }

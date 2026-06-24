@@ -27,7 +27,5 @@ public interface IConfigPersistenceCoordinator
 
     IObservable<UserConfiguration> ConfigurationAccepted { get; }
 
-    string? GetLastWrittenHash();
-
     ConfigPersistenceFailure? LastFailure { get; }
 }

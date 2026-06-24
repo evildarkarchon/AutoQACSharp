@@ -34,8 +34,6 @@ public enum ConfigPersistenceFailureKind
     ReadFailed,
     InvalidExternalYaml,
     MissingFile,
-    RaceRejected,
-    Canceled,
     Unknown
 }
 
