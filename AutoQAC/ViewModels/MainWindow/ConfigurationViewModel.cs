@@ -1,7 +1,7 @@
 using System;
+using System.Collections.ObjectModel;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
@@ -9,6 +9,7 @@ using AutoQAC.Models;
 using AutoQAC.Models.Diagnostics;
 using AutoQAC.Services.Configuration;
 using AutoQAC.Services.GameDetection;
+using AutoQAC.Services.MO2;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Services.State;
 using AutoQAC.Services.UI;
@@ -30,74 +31,86 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
     private readonly IPluginLoadingService _pluginLoadingService;
     private readonly IPluginRefreshCoordinator _pluginRefreshCoordinator;
     private readonly IPluginValidationService _pluginService;
+    private readonly IMo2InstanceService _mo2InstanceService;
     private readonly IStateService _stateService;
-    private readonly IUiDispatcher _uiDispatcher;
     private readonly IDisposable _skipListChangedSubscription;
     private readonly IDisposable _pluginRefreshStatusSubscription;
 
     private bool _initialized;
+    private bool _suppressSelectedProfileChanged;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsLoadOrderConfigured))]
     public partial string? LoadOrderPath { get; set; }
 
-    [ObservableProperty]
-    public partial string? XEditPath { get; set; }
+    [ObservableProperty] public partial string? XEditPath { get; set; }
+
+    [ObservableProperty] public partial string? Mo2Path { get; set; }
 
     [ObservableProperty]
-    public partial string? Mo2Path { get; set; }
-
-    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowMo2Config))]
+    [NotifyPropertyChangedFor(nameof(ShowProfileSelector))]
+    [NotifyPropertyChangedFor(nameof(RequiresLoadOrderFile))]
     public partial bool Mo2ModeEnabled { get; set; }
 
-    [ObservableProperty]
-    public partial bool PartialFormsEnabled { get; set; }
+    [ObservableProperty] public partial bool PartialFormsEnabled { get; set; }
 
-    [ObservableProperty]
-    public partial bool DisableSkipListsEnabled { get; set; }
+    [ObservableProperty] public partial bool DisableSkipListsEnabled { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsMutagenSupported))]
     [NotifyPropertyChangedFor(nameof(IsGameSelected))]
     [NotifyPropertyChangedFor(nameof(RequiresLoadOrderFile))]
+    [NotifyPropertyChangedFor(nameof(ShowMo2Config))]
+    [NotifyPropertyChangedFor(nameof(ShowProfileSelector))]
     [NotifyCanExecuteChangedFor(nameof(ConfigureGameDataFolderCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ConfigureMo2InstanceCommand))]
     public partial GameType SelectedGame { get; set; } = GameType.Unknown;
 
-    [ObservableProperty]
-    public partial string? GameDataFolder { get; set; }
+    [ObservableProperty] public partial string? GameDataFolder { get; set; }
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(ClearGameDataFolderOverrideCommand))]
     public partial bool HasGameDataFolderOverride { get; set; }
 
-    [ObservableProperty]
-    public partial bool HasMigrationWarning { get; set; }
+    [ObservableProperty] public partial bool HasMigrationWarning { get; set; }
+
+    [ObservableProperty] public partial string? MigrationWarningMessage { get; set; }
+
+    [ObservableProperty] public partial string StatusText { get; set; } = "Ready";
+
+    [ObservableProperty] public partial bool? IsXEditPathValid { get; set; }
+
+    [ObservableProperty] public partial bool? IsMo2PathValid { get; set; }
+
+    [ObservableProperty] public partial bool? IsLoadOrderPathValid { get; set; }
+
+    [ObservableProperty] public partial bool? IsGameDataFolderValid { get; set; }
+
+    [ObservableProperty] public partial string? Mo2InstancePath { get; set; }
 
     [ObservableProperty]
-    public partial string? MigrationWarningMessage { get; set; }
+    [NotifyCanExecuteChangedFor(nameof(ResetMo2InstanceCommand))]
+    public partial bool IsMo2InstanceOverride { get; set; }
 
-    [ObservableProperty]
-    public partial string StatusText { get; set; } = "Ready";
+    [ObservableProperty] public partial bool? IsMo2InstanceValid { get; set; }
 
-    [ObservableProperty]
-    public partial bool? IsXEditPathValid { get; set; }
+    [ObservableProperty] public partial string? SelectedProfile { get; set; }
 
-    [ObservableProperty]
-    public partial bool? IsMo2PathValid { get; set; }
-
-    [ObservableProperty]
-    public partial bool? IsLoadOrderPathValid { get; set; }
-
-    [ObservableProperty]
-    public partial bool? IsGameDataFolderValid { get; set; }
+    public ObservableCollection<string> AvailableProfiles { get; } = [];
 
     public IReadOnlyList<GameType> AvailableGames { get; }
 
     public bool IsMutagenSupported => _pluginLoadingService.IsGameSupportedByMutagen(SelectedGame);
     public bool IsGameSelected => SelectedGame != GameType.Unknown;
+
     public bool RequiresLoadOrderFile =>
-        SelectedGame != GameType.Unknown && !_pluginLoadingService.IsGameSupportedByMutagen(SelectedGame);
+        SelectedGame != GameType.Unknown && !Mo2ModeEnabled &&
+        !_pluginLoadingService.IsGameSupportedByMutagen(SelectedGame);
+
     public bool IsLoadOrderConfigured => !string.IsNullOrWhiteSpace(LoadOrderPath);
+    public bool ShowMo2Config => Mo2ModeEnabled && IsGameSelected;
+    public bool ShowProfileSelector => ShowMo2Config && AvailableProfiles.Count > 1;
 
     public ConfigurationViewModel(
         IConfigurationService configService,
@@ -110,7 +123,8 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         IPluginIssueApproximationService? pluginIssueApproximationService = null,
         IPluginRefreshCoordinator? pluginRefreshCoordinator = null,
         IGameDetectionService? gameDetectionService = null,
-        IUiDispatcher? uiDispatcher = null)
+        IUiDispatcher? uiDispatcher = null,
+        IMo2InstanceService? mo2InstanceService = null)
     {
         _configService = configService;
         _stateService = stateService;
@@ -119,6 +133,7 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         _messageDialog = messageDialog;
         _pluginService = pluginService;
         _pluginLoadingService = pluginLoadingService;
+        _mo2InstanceService = mo2InstanceService ?? new Mo2InstanceService(logger);
         _pluginRefreshCoordinator = pluginRefreshCoordinator ?? new PluginRefreshCoordinator(
             pluginLoadingService,
             pluginIssueApproximationService ?? NoOpPluginIssueApproximationService.Instance,
@@ -127,7 +142,7 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
             gameDetectionService ?? new GameDetectionService(logger),
             configService,
             logger);
-        _uiDispatcher = uiDispatcher ?? new SynchronousFallbackDispatcher();
+        var dispatcher = uiDispatcher ?? new SynchronousFallbackDispatcher();
 
         AvailableGames = _pluginLoadingService.GetAvailableGames();
 
@@ -135,7 +150,7 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
             new CallbackObserver<GameType>(OnSkipListChanged));
         _pluginRefreshStatusSubscription = _pluginRefreshCoordinator.StatusChanged.Subscribe(
             new CallbackObserver<PluginRefreshStatus>(status =>
-                _uiDispatcher.Post(() => OnPluginRefreshStatusChanged(status))));
+                dispatcher.Post(() => OnPluginRefreshStatusChanged(status))));
     }
 
     private void OnPluginRefreshStatusChanged(PluginRefreshStatus status)
@@ -144,7 +159,8 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         {
             PluginRefreshStatusKind.SelectPlugins => "Select plugins to refresh.",
             PluginRefreshStatusKind.Canceled => "Approximation refresh canceled.",
-            PluginRefreshStatusKind.AnalyzingSelected => $"Analyzing {status.Current} of {status.Total} selected plugins.",
+            PluginRefreshStatusKind.AnalyzingSelected =>
+                $"Analyzing {status.Current} of {status.Total} selected plugins.",
             PluginRefreshStatusKind.SelectedRefreshCompleted =>
                 $"Updated {status.UpdatedCount} selected plugin approximations.",
             PluginRefreshStatusKind.ApproximationUnavailable => "Approximation refresh is not available for this game.",
@@ -175,6 +191,11 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
             ? null
             : File.Exists(value) && value.EndsWith(".exe", StringComparison.OrdinalIgnoreCase);
 
+    partial void OnMo2InstancePathChanged(string? value) =>
+        IsMo2InstanceValid = string.IsNullOrWhiteSpace(value)
+            ? null
+            : Directory.Exists(value);
+    // ReSharper disable once UnusedParameter.Global
     partial void OnLoadOrderPathChanged(string? value) => RecomputeLoadOrderValidity();
 
     partial void OnSelectedGameChanged(GameType value)
@@ -221,9 +242,51 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
     partial void OnMo2ModeEnabledChanged(bool value)
     {
         if (!_initialized) return;
-        _ = AutoSaveConfigurationAsync("MO2 mode");
+        _ = HandleMo2ModeChangedAsync(value);
     }
 
+    partial void OnPartialFormsEnabledChanged(bool value)
+    {
+        if (!_initialized) return;
+        _stateService.UpdateState(s => s with { PartialFormsEnabled = value });
+    }
+
+    partial void OnSelectedProfileChanged(string? value)
+    {
+        if (_suppressSelectedProfileChanged || !_initialized || !Mo2ModeEnabled ||
+            SelectedGame == GameType.Unknown) return;
+        _ = HandleSelectedProfileChangedAsync(value);
+    }
+
+    private async Task HandleMo2ModeChangedAsync(bool value)
+    {
+        try
+        {
+            await SaveConfigurationAsync();
+            _stateService.UpdateState(s => s with { Mo2ModeEnabled = value });
+            await RefreshPluginsForGameAsync(SelectedGame);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "Failed to handle MO2 mode change");
+        }
+    }
+
+    private async Task HandleSelectedProfileChangedAsync(string? value)
+    {
+        try
+        {
+            await _configService.SetMo2ProfileAsync(SelectedGame, value);
+            await _configService.FlushPendingSavesAsync();
+            await RefreshPluginsForGameAsync(SelectedGame);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "Failed to handle MO2 profile change");
+            StatusText = "Error changing MO2 profile";
+        }
+    }
+    // ReSharper disable once UnusedParameter.Global
     partial void OnDisableSkipListsEnabledChanged(bool value)
     {
         if (!_initialized) return;
@@ -243,18 +306,6 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         }
     }
 
-    private async Task AutoSaveConfigurationAsync(string description)
-    {
-        try
-        {
-            await SaveConfigurationAsync();
-        }
-        catch (Exception ex)
-        {
-            _logger.Error(ex, "Failed to auto-save {Description} configuration", description);
-        }
-    }
-
     [RelayCommand]
     private async Task ConfigureLoadOrderAsync()
     {
@@ -267,7 +318,8 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
 
         if (!File.Exists(path))
         {
-            var loadOrderIdentifier = DiagnosticTextFormatter.SafeFileIdentifier("Load Order File", path, "load order file");
+            var loadOrderIdentifier =
+                DiagnosticTextFormatter.SafeFileIdentifier("Load Order File", path, "load order file");
             await _messageDialog.ShowErrorAsync(
                 "File Not Found",
                 $"{loadOrderIdentifier} is missing. Choose the current plugins.txt or loadorder.txt file.");
@@ -285,7 +337,8 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         catch (FileNotFoundException ex)
         {
             _logger.Error(ex, "Load order file not found");
-            var loadOrderIdentifier = DiagnosticTextFormatter.SafeFileIdentifier("Load Order File", path, "load order file");
+            var loadOrderIdentifier =
+                DiagnosticTextFormatter.SafeFileIdentifier("Load Order File", path, "load order file");
             await _messageDialog.ShowErrorAsync(
                 "File Not Found",
                 $"{loadOrderIdentifier} is missing. Choose the current plugins.txt or loadorder.txt file.");
@@ -295,7 +348,8 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         catch (IOException ex)
         {
             _logger.Error(ex, "Failed to read load order file");
-            var loadOrderIdentifier = DiagnosticTextFormatter.SafeFileIdentifier("Load Order File", path, "load order file");
+            var loadOrderIdentifier =
+                DiagnosticTextFormatter.SafeFileIdentifier("Load Order File", path, "load order file");
             await _messageDialog.ShowErrorAsync(
                 "Read Error",
                 $"{loadOrderIdentifier} could not be read. See the latest AutoQAC log for technical details.",
@@ -306,7 +360,8 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         catch (Exception ex)
         {
             _logger.Error(ex, "Failed to parse selected load order");
-            var loadOrderIdentifier = DiagnosticTextFormatter.SafeFileIdentifier("Load Order File", path, "load order file");
+            var loadOrderIdentifier =
+                DiagnosticTextFormatter.SafeFileIdentifier("Load Order File", path, "load order file");
             var failureMessage = DiagnosticTextFormatter.OperationFailed("Load order selection");
             await _messageDialog.ShowErrorAsync(
                 "Invalid Load Order",
@@ -351,6 +406,48 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         Mo2Path = path;
         _stateService.UpdateConfigurationPaths(LoadOrderPath, path, XEditPath);
         await SaveConfigurationAsync(flushToDisk: true);
+        await RefreshPluginsForGameAsync(SelectedGame);
+    }
+
+    private bool CanConfigureMo2Instance() => IsGameSelected;
+
+    [RelayCommand(CanExecute = nameof(CanConfigureMo2Instance))]
+    private async Task ConfigureMo2InstanceAsync()
+    {
+        var path = await _fileDialog.OpenFolderDialogAsync(
+            "Select MO2 Instance Folder",
+            Mo2InstancePath);
+
+        if (string.IsNullOrEmpty(path))
+            return;
+
+        if (!Directory.Exists(path))
+        {
+            await _messageDialog.ShowErrorAsync(
+                "Folder Not Found",
+                "The selected MO2 instance folder does not exist.");
+            return;
+        }
+
+        Mo2InstancePath = path;
+        await _configService.SetMo2InstanceOverrideAsync(SelectedGame, path);
+        await _configService.FlushPendingSavesAsync();
+        IsMo2InstanceOverride = true;
+
+        await RefreshPluginsForGameAsync(SelectedGame);
+        StatusText = $"MO2 instance override set for {SelectedGame}";
+    }
+
+    private bool CanResetMo2Instance() => IsMo2InstanceOverride;
+
+    [RelayCommand(CanExecute = nameof(CanResetMo2Instance))]
+    private async Task ResetMo2InstanceAsync()
+    {
+        await _configService.SetMo2InstanceOverrideAsync(SelectedGame, null);
+        await _configService.FlushPendingSavesAsync();
+        IsMo2InstanceOverride = false;
+        await RefreshPluginsForGameAsync(SelectedGame);
+        StatusText = $"MO2 instance reset to auto-detect for {SelectedGame}";
     }
 
     private bool CanConfigureGameDataFolder() => IsGameSelected;
@@ -416,12 +513,6 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
     }
 
     [RelayCommand]
-    private void TogglePartialForms()
-    {
-        // PartialFormsEnabled is bound to a CheckBox, so it updates automatically.
-    }
-
-    [RelayCommand]
     private void DismissMigrationWarning()
     {
         HasMigrationWarning = false;
@@ -448,11 +539,16 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
             {
                 Mo2ModeEnabled = config.Settings.Mo2Mode,
                 CleaningTimeout = config.Settings.CleaningTimeout,
-                PartialFormsEnabled = false
+                PartialFormsEnabled = false,
+                Mo2Profile = null
             });
 
             SelectedGame = GameType.Unknown;
-            _stateService.SetPluginsToClean(new List<PluginInfo>());
+            Mo2InstancePath = null;
+            IsMo2InstanceOverride = false;
+            SetSelectedProfileWithoutPersistence(null);
+            AvailableProfiles.Clear();
+            _stateService.SetPluginsToClean([]);
 
             StatusText = "Settings reset to defaults";
             _logger.Information("Settings reset to defaults by user");
@@ -528,6 +624,7 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         Mo2Path = state.Mo2ExecutablePath;
         Mo2ModeEnabled = state.Mo2ModeEnabled;
         PartialFormsEnabled = state.PartialFormsEnabled;
+        SetSelectedProfileWithoutPersistence(state.Mo2Profile);
     }
 
     /// <summary>
@@ -560,17 +657,117 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
             ? null
             : _pluginLoadingService.GetGameDataFolder(gameType, customDataFolder);
 
+        if (Mo2ModeEnabled && gameType != GameType.Unknown)
+        {
+            await RefreshMo2PluginsForGameAsync(gameType);
+            return;
+        }
+
+        ClearMo2ProfileState();
+
         LoadOrderPath = _pluginLoadingService.IsGameSupportedByMutagen(gameType)
             ? null
             : await ResolveLoadOrderPathAsync(gameType);
 
-        _stateService.UpdateConfigurationPaths(LoadOrderPath, Mo2Path, XEditPath);
+        _stateService.UpdateConfigurationPaths(LoadOrderPath, Mo2Path, XEditPath, null);
         await _pluginRefreshCoordinator.RefreshForGameAsync(
             new PluginRefreshRequest(
                 gameType,
                 GameDataFolder,
                 LoadOrderPath,
                 DisableSkipLists: DisableSkipListsEnabled));
+    }
+
+    private async Task RefreshMo2PluginsForGameAsync(GameType gameType)
+    {
+        LoadOrderPath = null;
+        var instanceOverride = await _configService.GetMo2InstanceOverrideAsync(gameType);
+        IsMo2InstanceOverride = !string.IsNullOrWhiteSpace(instanceOverride);
+
+        var instance = await _mo2InstanceService.ResolveInstanceAsync(gameType, Mo2Path, instanceOverride);
+        if (instance is null)
+        {
+            Mo2InstancePath = instanceOverride;
+            IsMo2InstanceValid = string.IsNullOrWhiteSpace(Mo2InstancePath) ? null : Directory.Exists(Mo2InstancePath);
+            ClearAvailableProfiles();
+            SetSelectedProfileWithoutPersistence(null);
+            _stateService.UpdateConfigurationPaths(null, Mo2Path, XEditPath, null);
+            _stateService.SetPluginsToClean([]);
+            StatusText = $"No MO2 instance found for {gameType}. Browse to the instance folder.";
+            return;
+        }
+
+        Mo2InstancePath = instance.BaseDirectory;
+        IsMo2InstanceValid = Directory.Exists(instance.BaseDirectory);
+
+        var profiles = _mo2InstanceService.GetProfiles(instance);
+        SetAvailableProfiles(profiles);
+
+        var persistedProfile = await _configService.GetMo2ProfileAsync(gameType);
+        var profile = _mo2InstanceService.ChooseProfile(instance, profiles, persistedProfile);
+        SetSelectedProfileWithoutPersistence(profile);
+        _stateService.UpdateConfigurationPaths(null, Mo2Path, XEditPath, profile);
+
+        if (string.IsNullOrWhiteSpace(profile))
+        {
+            _stateService.SetPluginsToClean([]);
+            StatusText = $"No MO2 profiles with loadorder.txt were found for {gameType}.";
+            return;
+        }
+
+        var mo2LoadOrderPath = _mo2InstanceService.GetLoadOrderPath(instance, profile);
+        if (string.IsNullOrWhiteSpace(mo2LoadOrderPath) || !File.Exists(mo2LoadOrderPath))
+        {
+            _stateService.SetPluginsToClean([]);
+            StatusText = $"MO2 profile '{profile}' does not contain a loadorder.txt.";
+            return;
+        }
+
+        var pathMap = _mo2InstanceService.BuildPluginPathMap(instance, profile, GameDataFolder);
+        await _pluginRefreshCoordinator.RefreshForGameAsync(
+            new PluginRefreshRequest(
+                gameType,
+                GameDataFolder,
+                DisableSkipLists: DisableSkipListsEnabled,
+                Mo2Mode: true,
+                Mo2LoadOrderPath: mo2LoadOrderPath,
+                Mo2PathMap: pathMap,
+                Mo2BaseDataFolder: GameDataFolder));
+    }
+
+    private void SetAvailableProfiles(IReadOnlyList<string> profiles)
+    {
+        AvailableProfiles.Clear();
+        foreach (var profile in profiles)
+        {
+            AvailableProfiles.Add(profile);
+        }
+
+        OnPropertyChanged(nameof(ShowProfileSelector));
+    }
+
+    private void ClearAvailableProfiles() => SetAvailableProfiles([]);
+
+    private void ClearMo2ProfileState()
+    {
+        Mo2InstancePath = null;
+        IsMo2InstanceOverride = false;
+        IsMo2InstanceValid = null;
+        SetSelectedProfileWithoutPersistence(null);
+        ClearAvailableProfiles();
+    }
+
+    private void SetSelectedProfileWithoutPersistence(string? profile)
+    {
+        _suppressSelectedProfileChanged = true;
+        try
+        {
+            SelectedProfile = profile;
+        }
+        finally
+        {
+            _suppressSelectedProfileChanged = false;
+        }
     }
 
     private async Task<string?> ResolveLoadOrderPathAsync(GameType gameType)
@@ -633,6 +830,16 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
             Action<PluginIssueApproximationResult>? onApproximationReady = null,
             CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<PluginIssueApproximationResult>>(
-                Array.Empty<PluginIssueApproximationResult>());
+                []);
+
+        public Task<IReadOnlyList<PluginIssueApproximationResult>> GetApproximationsAsync(
+            GameType gameType,
+            string baseDataFolder,
+            IReadOnlyList<string> orderedPluginNames,
+            Func<Mutagen.Bethesda.Plugins.ModKey, string?> pathResolver,
+            Action<PluginIssueApproximationResult>? onApproximationReady = null,
+            CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<PluginIssueApproximationResult>>(
+                []);
     }
 }

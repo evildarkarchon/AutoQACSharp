@@ -29,7 +29,8 @@ public static class ServiceCollectionExtensions
         // Persistence coordinator + file store registered first; ConfigurationService and ConfigWatcherService both depend on the coordinator (Phase 10 D-08, D-15).
         services.AddSingleton<IUserConfigFileStore, UserConfigFileStore>();
         services.AddSingleton<ConfigPersistenceCoordinator>();
-        services.AddSingleton<IConfigPersistenceCoordinator>(sp => sp.GetRequiredService<ConfigPersistenceCoordinator>());
+        services.AddSingleton<IConfigPersistenceCoordinator>(sp =>
+            sp.GetRequiredService<ConfigPersistenceCoordinator>());
         services.AddSingleton<IConfigurationService>(sp => new ConfigurationService(
             sp.GetRequiredService<IConfigPersistenceCoordinator>(),
             sp.GetRequiredService<ILoggingService>()));
@@ -59,6 +60,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IProcessExitWaiter, ProcessExitWaiter>();
         services.AddSingleton<IProcessExecutionService, ProcessExecutionService>();
         services.AddSingleton<IMo2ValidationService, Mo2ValidationService>();
+        services.AddSingleton<IMo2InstanceService, Mo2InstanceService>();
         services.AddSingleton<IXEditCommandBuilder, XEditCommandBuilder>();
         services.AddSingleton<IXEditOutputParser, XEditOutputParser>();
         services.AddSingleton<IXEditLogFileService, XEditLogFileService>();
@@ -76,7 +78,8 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
-    public static IServiceCollection AddUiServices(this IServiceCollection services, DispatcherQueue? dispatcherQueue = null)
+    public static IServiceCollection AddUiServices(this IServiceCollection services,
+        DispatcherQueue? dispatcherQueue = null)
     {
         services.AddSingleton<IAppLifetime, WinAppLifetime>();
         services.AddSingleton<IUiFrameworkVersionProvider, WinUiFrameworkVersionProvider>();

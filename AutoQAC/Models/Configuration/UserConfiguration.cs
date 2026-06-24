@@ -26,11 +26,15 @@ public sealed class UserConfiguration
     [YamlMember(Alias = "Game_Data_Folders")]
     public Dictionary<string, string> GameDataFolderOverrides { get; set; } = new();
 
-    [YamlMember(Alias = "Log_Retention")]
-    public RetentionSettings LogRetention { get; set; } = new();
+    [YamlMember(Alias = "Mo2_Instance_Overrides")]
+    public Dictionary<string, string> Mo2InstanceOverrides { get; set; } = new();
 
-    [YamlMember(Alias = "Backup")]
-    public BackupSettings Backup { get; set; } = new();
+    [YamlMember(Alias = "Mo2_Profile_Selections")]
+    public Dictionary<string, string> Mo2ProfileSelections { get; set; } = new();
+
+    [YamlMember(Alias = "Log_Retention")] public RetentionSettings LogRetention { get; set; } = new();
+
+    [YamlMember(Alias = "Backup")] public BackupSettings Backup { get; set; } = new();
 
     /// <summary>
     /// Returns a deep copy of this configuration with independent mutable containers and
@@ -43,16 +47,20 @@ public sealed class UserConfiguration
     public UserConfiguration Copy() => new()
     {
         SelectedGame = SelectedGame,
-        LoadOrder = (LoadOrder ?? new LoadOrderConfig()).Copy(),
-        LoadOrderFileOverrides = new Dictionary<string, string>(LoadOrderFileOverrides ?? new Dictionary<string, string>()),
-        ModOrganizer = (ModOrganizer ?? new ModOrganizerConfig()).Copy(),
-        XEdit = (XEdit ?? new XEditConfig()).Copy(),
-        Settings = (Settings ?? new AutoQacSettings()).Copy(),
-        SkipLists = (SkipLists ?? new Dictionary<string, List<string>>())
-            .ToDictionary(kvp => kvp.Key, kvp => kvp.Value?.ToList() ?? new List<string>(), StringComparer.Ordinal),
-        GameDataFolderOverrides = new Dictionary<string, string>(GameDataFolderOverrides ?? new Dictionary<string, string>()),
-        LogRetention = (LogRetention ?? new RetentionSettings()).Copy(),
-        Backup = (Backup ?? new BackupSettings()).Copy()
+        LoadOrder = (LoadOrder).Copy(),
+        LoadOrderFileOverrides =
+            new Dictionary<string, string>(LoadOrderFileOverrides),
+        ModOrganizer = (ModOrganizer).Copy(),
+        XEdit = (XEdit).Copy(),
+        Settings = (Settings).Copy(),
+        SkipLists = (SkipLists)
+            .ToDictionary(kvp => kvp.Key, kvp => kvp.Value.ToList(), StringComparer.Ordinal),
+        GameDataFolderOverrides =
+            new Dictionary<string, string>(GameDataFolderOverrides),
+        Mo2InstanceOverrides = new Dictionary<string, string>(Mo2InstanceOverrides),
+        Mo2ProfileSelections = new Dictionary<string, string>(Mo2ProfileSelections),
+        LogRetention = (LogRetention).Copy(),
+        Backup = (Backup).Copy()
     };
 }
 

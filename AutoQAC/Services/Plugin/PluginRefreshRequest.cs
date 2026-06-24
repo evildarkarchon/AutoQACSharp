@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using AutoQAC.Models;
 
 namespace AutoQAC.Services.Plugin;
@@ -14,7 +15,11 @@ public sealed record PluginRefreshRequest(
     GameType GameType,
     string? DataFolderPath = null,
     string? LoadOrderPath = null,
-    bool DisableSkipLists = false);
+    bool DisableSkipLists = false,
+    bool Mo2Mode = false,
+    string? Mo2LoadOrderPath = null,
+    IReadOnlyDictionary<string, string>? Mo2PathMap = null,
+    string? Mo2BaseDataFolder = null);
 
 /// <summary>
 /// Immutable snapshot of a plugin row selected for targeted approximation refresh.

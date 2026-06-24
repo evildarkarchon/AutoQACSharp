@@ -56,21 +56,22 @@ public enum BackupFailureReason
 /// </summary>
 public static class BackupFailureReasonExtensions
 {
-    private static readonly IReadOnlyDictionary<BackupFailureReason, string> DisplayLabels = new Dictionary<BackupFailureReason, string>
-    {
-        [BackupFailureReason.MissingBackupFile] = "Missing backup file",
-        [BackupFailureReason.AccessDenied] = "Access denied",
-        [BackupFailureReason.TargetFolderCreationFailed] = "Target folder creation failed",
-        [BackupFailureReason.TargetWriteFailed] = "Target write failed",
-        [BackupFailureReason.Canceled] = "Canceled",
-        [BackupFailureReason.CleanupDeletionFailed] = "Cleanup deletion failed"
-    };
+    private static readonly IReadOnlyDictionary<BackupFailureReason, string> DisplayLabels =
+        new Dictionary<BackupFailureReason, string>
+        {
+            [BackupFailureReason.MissingBackupFile] = "Missing backup file",
+            [BackupFailureReason.AccessDenied] = "Access denied",
+            [BackupFailureReason.TargetFolderCreationFailed] = "Target folder creation failed",
+            [BackupFailureReason.TargetWriteFailed] = "Target write failed",
+            [BackupFailureReason.Canceled] = "Canceled",
+            [BackupFailureReason.CleanupDeletionFailed] = "Cleanup deletion failed"
+        };
 
     /// <summary>
     /// Returns the approved UI label for a reason, or null when callers must map neutral reasons themselves.
     /// </summary>
     public static string? ToDisplayLabel(this BackupFailureReason reason) =>
-        DisplayLabels.TryGetValue(reason, out var label) ? label : null;
+        DisplayLabels.GetValueOrDefault(reason);
 }
 
 /// <summary>
@@ -143,7 +144,8 @@ public sealed record BackupCopyResult(
     /// <summary>
     /// Creates a completed copy result.
     /// </summary>
-    public static BackupCopyResult Complete(string sourcePath, string destinationPath, long bytesCopied, long? totalBytes) =>
+    public static BackupCopyResult Complete(string sourcePath, string destinationPath, long bytesCopied,
+        long? totalBytes) =>
         new(BackupOperationStatus.Complete, sourcePath, destinationPath, bytesCopied, totalBytes, FailureReason: null);
 
     /// <summary>
@@ -160,8 +162,10 @@ public sealed record BackupCopyResult(
     /// <summary>
     /// Creates a canceled copy result.
     /// </summary>
-    public static BackupCopyResult Canceled(string sourcePath, string destinationPath, long bytesCopied, long? totalBytes) =>
-        new(BackupOperationStatus.Canceled, sourcePath, destinationPath, bytesCopied, totalBytes, BackupFailureReason.Canceled);
+    public static BackupCopyResult Canceled(string sourcePath, string destinationPath, long bytesCopied,
+        long? totalBytes) =>
+        new(BackupOperationStatus.Canceled, sourcePath, destinationPath, bytesCopied, totalBytes,
+            BackupFailureReason.Canceled);
 }
 
 /// <summary>
@@ -245,7 +249,9 @@ public sealed record BackupRetentionRowResult(
 /// </summary>
 /// <param name="Status">Aggregate retention status.</param>
 /// <param name="Rows">Per-session retention cleanup rows.</param>
-public sealed record BackupRetentionCleanupResult(BackupOperationStatus Status, IReadOnlyList<BackupRetentionRowResult> Rows)
+public sealed record BackupRetentionCleanupResult(
+    BackupOperationStatus Status,
+    IReadOnlyList<BackupRetentionRowResult> Rows)
 {
     /// <summary>Number of old backup session directories deleted.</summary>
     public int DeletedCount => Rows.Count(row => row.Status == BackupRetentionRowStatus.Deleted);
@@ -254,7 +260,8 @@ public sealed record BackupRetentionCleanupResult(BackupOperationStatus Status, 
     public int SkippedCount => Rows.Count(row => row.Status == BackupRetentionRowStatus.Kept);
 
     /// <summary>Number of backup session directories still present after cleanup.</summary>
-    public int RemainingCount => Rows.Count(row => row.Status is BackupRetentionRowStatus.Kept or BackupRetentionRowStatus.Failed);
+    public int RemainingCount =>
+        Rows.Count(row => row.Status is BackupRetentionRowStatus.Kept or BackupRetentionRowStatus.Failed);
 }
 
 /// <summary>

@@ -11,7 +11,9 @@ public sealed class BackupResult
     public long FileSizeBytes { get; private init; }
     public string? Error { get; private init; }
 
-    private BackupResult() { }
+    private BackupResult()
+    {
+    }
 
     /// <summary>
     /// Creates a successful backup result.

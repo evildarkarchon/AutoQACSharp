@@ -1,0 +1,4 @@
+# ReSharper currently reports WinUI {Binding} markup extensions as non-public constructors.
+# The XAML compiler accepts them; keep the suppression scoped to that analyzer only.
+[*.xaml]
+resharper_xaml_constructor_warning_highlighting = none

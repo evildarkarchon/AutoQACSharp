@@ -488,6 +488,33 @@ public sealed class PluginRefreshCoordinatorTests
             return results;
         }
 
+        public async Task<IReadOnlyList<PluginIssueApproximationResult>> GetApproximationsAsync(
+            GameType gameType,
+            string baseDataFolder,
+            IReadOnlyList<string> orderedPluginNames,
+            Func<Mutagen.Bethesda.Plugins.ModKey, string?> pathResolver,
+            Action<PluginIssueApproximationResult>? onApproximationReady = null,
+            CancellationToken ct = default)
+        {
+            var results = orderedPluginNames
+                .Select(name => new PluginIssueApproximationResult
+                {
+                    FileName = name,
+                    FullPath = pathResolver(Mutagen.Bethesda.Plugins.ModKey.FromFileName(name)) ?? name,
+                    Approximation = PluginIssueApproximation.Available(1, 2, 3)
+                })
+                .ToList();
+
+            foreach (var result in results)
+            {
+                ct.ThrowIfCancellationRequested();
+                onApproximationReady?.Invoke(result);
+                await Task.Delay(25, ct);
+            }
+
+            return results;
+        }
+
         private static PluginIssueApproximationResult CreateResult(string dataFolder, string fileName) =>
             new()
             {
@@ -567,6 +594,15 @@ public sealed class PluginRefreshCoordinatorTests
         public Task<IReadOnlyList<PluginIssueApproximationResult>> GetApproximationsAsync(
             GameType gameType,
             string dataFolder,
+            Action<PluginIssueApproximationResult>? onApproximationReady = null,
+            CancellationToken ct = default) =>
+            throw new InvalidOperationException("Synthetic approximation failure");
+
+        public Task<IReadOnlyList<PluginIssueApproximationResult>> GetApproximationsAsync(
+            GameType gameType,
+            string baseDataFolder,
+            IReadOnlyList<string> orderedPluginNames,
+            Func<Mutagen.Bethesda.Plugins.ModKey, string?> pathResolver,
             Action<PluginIssueApproximationResult>? onApproximationReady = null,
             CancellationToken ct = default) =>
             throw new InvalidOperationException("Synthetic approximation failure");

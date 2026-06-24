@@ -38,7 +38,7 @@ public sealed record CleaningSessionResult
     /// <summary>
     /// Detailed results for each plugin processed.
     /// </summary>
-    public IReadOnlyList<PluginCleaningResult> PluginResults { get; init; } = Array.Empty<PluginCleaningResult>();
+    public IReadOnlyList<PluginCleaningResult> PluginResults { get; init; } = [];
 
     /// <summary>
     /// Structured result for post-cleaning backup retention cleanup, if backup cleanup ran.
@@ -145,7 +145,7 @@ public sealed record CleaningSessionResult
         EndTime = DateTime.Now,
         GameType = GameType.Unknown,
         WasCancelled = false,
-        PluginResults = Array.Empty<PluginCleaningResult>()
+        PluginResults = []
     };
 
     /// <summary>

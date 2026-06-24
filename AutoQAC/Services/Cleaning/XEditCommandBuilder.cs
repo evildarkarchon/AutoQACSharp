@@ -46,6 +46,12 @@ public sealed class XEditCommandBuilder(IStateService stateService) : IXEditComm
                 UseShellExecute = false
             };
 
+            if (!string.IsNullOrWhiteSpace(config.Mo2Profile))
+            {
+                startInfo.ArgumentList.Add("-p");
+                startInfo.ArgumentList.Add(config.Mo2Profile);
+            }
+
             startInfo.ArgumentList.Add("run");
             startInfo.ArgumentList.Add(xEditPath);
             startInfo.ArgumentList.Add("-a");

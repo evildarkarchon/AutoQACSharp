@@ -147,6 +147,45 @@ public sealed class ErrorDialogTests
     }
 
     [Fact]
+    public async Task StartCleaningCommand_ShouldShowInlineValidation_WhenXEditPathIsWhitespace()
+    {
+        // Arrange - whitespace-only paths are not valid configured executable paths.
+        var stateWithWhitespaceXEdit = new AppState
+        {
+            XEditExecutablePath = "   ",
+            PluginsToClean = new List<PluginInfo>
+            {
+                new() { FileName = "Test.esp", FullPath = "Test.esp" }
+            }
+        };
+        var stateSubject = new BehaviorSubject<AppState>(stateWithWhitespaceXEdit);
+        _stateServiceMock.StateChanged.Returns(stateSubject);
+        _stateServiceMock.CurrentState.Returns(stateWithWhitespaceXEdit);
+
+        var vm = new MainWindowViewModel(
+            _configServiceMock,
+            _stateServiceMock,
+            _orchestratorMock,
+            _loggerMock,
+            _fileDialogMock,
+            _messageDialogMock,
+            _pluginServiceMock,
+            _pluginLoadingServiceMock,
+            _uiDispatcher);
+
+        // Act
+        await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
+
+        // Assert
+        vm.Commands.HasValidationErrors.Should().BeTrue();
+        vm.Commands.ValidationErrors.Should().ContainSingle(e => e.Title == "xEdit not configured");
+        await _orchestratorMock.DidNotReceive().StartCleaningAsync(
+            Arg.Any<TimeoutRetryCallback>(),
+            Arg.Any<BackupFailureCallback>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task StartCleaningCommand_ShouldShowInlineValidation_WhenXEditFileNotFound()
     {
         // Arrange - CurrentState has xEdit path that doesn't exist on disk
@@ -577,6 +616,59 @@ public sealed class ErrorDialogTests
             var error = vm.Commands.ValidationErrors.Single(e => e.Title == "MO2 not found");
             error.Message.Should().Be("MO2 Path (ModOrganizer.exe) is missing. Choose ModOrganizer.exe or disable MO2 Mode.");
             AssertValidationErrorDoesNotContainFullPath(error, @"C:\Users\Alice");
+        }
+        finally
+        {
+            if (File.Exists(tempXEdit))
+                File.Delete(tempXEdit);
+        }
+    }
+
+    [Fact]
+    public async Task StartCleaningCommand_ShouldShowSingleMo2ExecutableValidation_WhenMo2PathMissing()
+    {
+        // Arrange
+        var tempXEdit = Path.GetTempFileName();
+        try
+        {
+            var state = new AppState
+            {
+                XEditExecutablePath = tempXEdit,
+                Mo2ModeEnabled = true,
+                Mo2ExecutablePath = @"C:\Users\Alice\MO2\ModOrganizer.exe",
+                Mo2Profile = "Default",
+                PluginsToClean = new List<PluginInfo>
+                {
+                    new() { FileName = "Test.esp", FullPath = "Test.esp" }
+                }
+            };
+            var stateSubject = new BehaviorSubject<AppState>(state);
+            _stateServiceMock.StateChanged.Returns(stateSubject);
+            _stateServiceMock.CurrentState.Returns(state);
+
+            var vm = new MainWindowViewModel(
+                _configServiceMock,
+                _stateServiceMock,
+                _orchestratorMock,
+                _loggerMock,
+                _fileDialogMock,
+                _messageDialogMock,
+                _pluginServiceMock,
+                _pluginLoadingServiceMock,
+                _uiDispatcher);
+
+            // Act
+            await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
+
+            // Assert
+            var error = vm.Commands.ValidationErrors.Should().ContainSingle().Subject;
+            error.Title.Should().Be("MO2 not found");
+            error.Message.Should().Be("MO2 Path (ModOrganizer.exe) is missing. Choose ModOrganizer.exe or disable MO2 Mode.");
+            AssertValidationErrorDoesNotContainFullPath(error, @"C:\Users\Alice");
+            await _orchestratorMock.DidNotReceive().StartCleaningAsync(
+                Arg.Any<TimeoutRetryCallback>(),
+                Arg.Any<BackupFailureCallback>(),
+                Arg.Any<CancellationToken>());
         }
         finally
         {

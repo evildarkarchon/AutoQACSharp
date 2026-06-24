@@ -19,16 +19,23 @@ public static class DiagnosticTextFormatter
     /// <summary>
     /// Export report disclaimer explaining why technical diagnostics are not repeated in report text.
     /// </summary>
-    public const string ReportDisclaimer = "Technical details are intentionally kept in AutoQAC logs and are not repeated in this report.";
+    public const string ReportDisclaimer =
+        "Technical details are intentionally kept in AutoQAC logs and are not repeated in this report.";
 
     private const string LatestLogShort = "See the latest AutoQAC log.";
 
     private static readonly char[] ExplicitUnsafeNameCharacters = ['\'', '"', '`', '|', '&', ';', '<', '>'];
     private static readonly HashSet<char> InvalidFileNameCharacters = Path.GetInvalidFileNameChars().ToHashSet();
     private static readonly Regex DriveRootedPathPattern = new(@"[A-Za-z]:[\\/]", RegexOptions.Compiled);
-    private static readonly Regex NamespaceStackFramePattern = new(@"\bat\s+[A-Za-z_][\w]*(\.[A-Za-z_][\w]*)+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
-    private static readonly Regex ExeCommandMarkerPattern = new(@"\.exe(?=$|[\s""'`])", RegexOptions.Compiled | RegexOptions.IgnoreCase);
-    private static readonly Regex PluginCommandFlagPattern = new(@"(?:[\s_-]*(?:-QAC|-autoload))+(?=\.[^./\\]+$|$)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private static readonly Regex NamespaceStackFramePattern = new(@"\bat\s+[A-Za-z_][\w]*(\.[A-Za-z_][\w]*)+",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private static readonly Regex ExeCommandMarkerPattern =
+        new(@"\.exe(?=$|[\s""'`])", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private static readonly Regex PluginCommandFlagPattern = new(@"(?:[\s_-]*(?:-QAC|-autoload))+(?=\.[^./\\]+$|$)",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     /// <summary>
     /// Builds operation-specific unexpected-failure copy with latest-log guidance and no raw technical detail.
@@ -78,7 +85,9 @@ public static class DiagnosticTextFormatter
     public static string SafePluginName(string? pluginNameOrPath, string fallbackName = "selected plugin")
     {
         var fileName = Path.GetFileName(pluginNameOrPath);
-        var withoutCommandFlags = string.IsNullOrWhiteSpace(fileName) ? fileName : PluginCommandFlagPattern.Replace(fileName, string.Empty);
+        var withoutCommandFlags = string.IsNullOrWhiteSpace(fileName)
+            ? fileName
+            : PluginCommandFlagPattern.Replace(fileName, string.Empty);
         return SanitizeDisplayName(withoutCommandFlags, fallbackName);
     }
 
@@ -106,7 +115,9 @@ public static class DiagnosticTextFormatter
     /// <returns>The trimmed candidate if safe; otherwise the fallback.</returns>
     public static string SafeFailureSummary(string? candidate, string fallback)
     {
-        var safeFallback = string.IsNullOrWhiteSpace(fallback) ? "Operation failed. See the latest AutoQAC log." : fallback.Trim();
+        var safeFallback = string.IsNullOrWhiteSpace(fallback)
+            ? "Operation failed. See the latest AutoQAC log."
+            : fallback.Trim();
 
         if (string.IsNullOrWhiteSpace(candidate))
         {
@@ -136,10 +147,10 @@ public static class DiagnosticTextFormatter
     {
         var source = string.IsNullOrWhiteSpace(candidate) ? fallback : candidate;
         var sanitized = new string(source
-            .Where(ch => !char.IsControl(ch)
-                && !InvalidFileNameCharacters.Contains(ch)
-                && !ExplicitUnsafeNameCharacters.Contains(ch))
-            .ToArray())
+                .Where(ch => !char.IsControl(ch)
+                             && !InvalidFileNameCharacters.Contains(ch)
+                             && !ExplicitUnsafeNameCharacters.Contains(ch))
+                .ToArray())
             .Trim();
 
         return string.IsNullOrWhiteSpace(sanitized) ? fallback : sanitized;

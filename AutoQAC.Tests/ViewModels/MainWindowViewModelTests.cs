@@ -1013,6 +1013,108 @@ public sealed class MainWindowViewModelTests
         vm.Configuration.PartialFormsEnabled.Should().BeTrue();
     }
 
+    [Fact]
+    public async Task Mo2ModeEnabled_ShouldPersistAndUpdateRuntimeState_WhenToggledInMainWindow()
+    {
+        // Arrange
+        using var stateService = new StateService();
+        var configService = Substitute.For<IConfigurationService>();
+        var refreshCoordinator = Substitute.For<IPluginRefreshCoordinator>();
+        var refreshObserved = CreateSignal();
+        UserConfiguration? savedConfig = null;
+
+        configService.SkipListChanged.Returns(Observable.Never<GameType>());
+        configService.LoadUserConfigAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => new UserConfiguration { LoadOrder = new(), XEdit = new(), ModOrganizer = new(), Settings = new() });
+        configService.GetSelectedGameAsync(Arg.Any<CancellationToken>())
+            .Returns(GameType.Unknown);
+        configService.SaveUserConfigAsync(Arg.Any<UserConfiguration>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                savedConfig = callInfo.Arg<UserConfiguration>();
+                return Task.CompletedTask;
+            });
+
+        refreshCoordinator.StatusChanged.Returns(Observable.Never<PluginRefreshStatus>());
+        refreshCoordinator.RefreshForGameAsync(Arg.Any<PluginRefreshRequest>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                refreshObserved.TrySetResult(true);
+                return Task.CompletedTask;
+            });
+
+        var vm = new ConfigurationViewModel(
+            configService,
+            stateService,
+            _loggerMock,
+            _fileDialogMock,
+            _messageDialogMock,
+            _pluginServiceMock,
+            _pluginLoadingServiceMock,
+            pluginRefreshCoordinator: refreshCoordinator);
+
+        try
+        {
+            await vm.InitializeAsync();
+
+            // Act
+            vm.Mo2ModeEnabled = true;
+            await WaitForSignalAsync(refreshObserved);
+
+            // Assert
+            savedConfig.Should().NotBeNull();
+            savedConfig!.Settings.Mo2Mode.Should().BeTrue();
+            stateService.CurrentState.Mo2ModeEnabled.Should().BeTrue(
+                "cleaning command construction reads MO2 mode from AppState");
+        }
+        finally
+        {
+            vm.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task PartialFormsEnabled_ShouldUpdateRuntimeState_WhenToggledInMainWindow()
+    {
+        // Arrange
+        using var stateService = new StateService();
+        var configService = Substitute.For<IConfigurationService>();
+        var refreshCoordinator = Substitute.For<IPluginRefreshCoordinator>();
+
+        configService.SkipListChanged.Returns(Observable.Never<GameType>());
+        configService.LoadUserConfigAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => new UserConfiguration { LoadOrder = new(), XEdit = new(), ModOrganizer = new(), Settings = new() });
+        configService.GetSelectedGameAsync(Arg.Any<CancellationToken>())
+            .Returns(GameType.Unknown);
+        refreshCoordinator.StatusChanged.Returns(Observable.Never<PluginRefreshStatus>());
+
+        var vm = new ConfigurationViewModel(
+            configService,
+            stateService,
+            _loggerMock,
+            _fileDialogMock,
+            _messageDialogMock,
+            _pluginServiceMock,
+            _pluginLoadingServiceMock,
+            pluginRefreshCoordinator: refreshCoordinator);
+
+        try
+        {
+            await vm.InitializeAsync();
+
+            // Act
+            vm.PartialFormsEnabled = true;
+
+            // Assert
+            stateService.CurrentState.PartialFormsEnabled.Should().BeTrue(
+                "xEdit argument construction reads Partial Forms from AppState");
+        }
+        finally
+        {
+            vm.Dispose();
+        }
+    }
+
     #endregion
 
     #region Game Selection Tests

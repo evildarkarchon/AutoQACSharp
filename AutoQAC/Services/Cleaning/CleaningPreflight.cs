@@ -25,7 +25,8 @@ public sealed class CleaningPreflight(
     IMo2ValidationService mo2Validation,
     ICleaningService cleaningService,
     IStateService stateService,
-    ILoggingService logger)
+    ILoggingService logger,
+    IMo2InstanceService? mo2InstanceService = null)
     : ICleaningPreflight
 {
     /// <inheritdoc />
@@ -129,6 +130,33 @@ public sealed class CleaningPreflight(
                 throw new InvalidOperationException(
                     $"MO2 mode is enabled but MO2 executable not found at '{mo2Path}'. " +
                     "Check MO2 executable path in Settings, or disable MO2 mode if not using Mod Organizer 2.");
+            }
+
+            var instanceService = mo2InstanceService ?? new Mo2InstanceService(logger);
+            var instanceOverride = await configService.GetMo2InstanceOverrideAsync(gameType, ct).ConfigureAwait(false);
+            var instance = await instanceService.ResolveInstanceAsync(gameType, mo2Path, instanceOverride, ct).ConfigureAwait(false);
+            if (instance is null)
+            {
+                throw new InvalidOperationException(
+                    $"MO2 mode is enabled but no MO2 instance was found for {gameType}. " +
+                    "Browse to the MO2 instance folder or disable MO2 mode.");
+            }
+
+            var profiles = instanceService.GetProfiles(instance);
+            var selectedProfile = config.Mo2Profile;
+            if (string.IsNullOrWhiteSpace(selectedProfile) || !profiles.Contains(selectedProfile, StringComparer.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    $"MO2 mode is enabled but the selected profile '{selectedProfile ?? "<none>"}' was not found. " +
+                    "Select a valid MO2 profile before cleaning.");
+            }
+
+            var loadOrderPath = instanceService.GetLoadOrderPath(instance, selectedProfile);
+            if (string.IsNullOrWhiteSpace(loadOrderPath) || !File.Exists(loadOrderPath))
+            {
+                throw new InvalidOperationException(
+                    $"MO2 profile '{selectedProfile}' does not contain a loadorder.txt. " +
+                    "Select a profile with a valid load order before cleaning.");
             }
         }
 

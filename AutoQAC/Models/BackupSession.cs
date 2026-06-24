@@ -10,11 +10,9 @@ namespace AutoQAC.Models;
 /// </summary>
 public sealed record BackupSession
 {
-    [JsonPropertyName("timestamp")]
-    public DateTime Timestamp { get; init; }
+    [JsonPropertyName("timestamp")] public DateTime Timestamp { get; init; }
 
-    [JsonPropertyName("game_type")]
-    public string GameType { get; init; } = string.Empty;
+    [JsonPropertyName("game_type")] public string GameType { get; init; } = string.Empty;
 
     /// <summary>
     /// Absolute path to the session directory on disk.
@@ -23,8 +21,7 @@ public sealed record BackupSession
     [JsonIgnore]
     public string SessionDirectory { get; init; } = string.Empty;
 
-    [JsonPropertyName("plugins")]
-    public List<BackupPluginEntry> Plugins { get; init; } = new();
+    [JsonPropertyName("plugins")] public List<BackupPluginEntry> Plugins { get; init; } = [];
 }
 
 /// <summary>
@@ -32,12 +29,9 @@ public sealed record BackupSession
 /// </summary>
 public sealed record BackupPluginEntry
 {
-    [JsonPropertyName("file_name")]
-    public string FileName { get; init; } = string.Empty;
+    [JsonPropertyName("file_name")] public string FileName { get; init; } = string.Empty;
 
-    [JsonPropertyName("original_path")]
-    public string OriginalPath { get; init; } = string.Empty;
+    [JsonPropertyName("original_path")] public string OriginalPath { get; init; } = string.Empty;
 
-    [JsonPropertyName("file_size_bytes")]
-    public long FileSizeBytes { get; init; }
+    [JsonPropertyName("file_size_bytes")] public long FileSizeBytes { get; init; }
 }

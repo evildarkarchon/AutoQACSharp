@@ -153,7 +153,7 @@ public sealed class FileDialogServiceTests
         var result = FileDialogFilterMapper.BuildExtensionList(filter);
 
         // Assert
-        result.Should().Equal("exe", "*");
+        result.Should().Equal(".exe", "*");
     }
 
     [Fact]
@@ -167,7 +167,7 @@ public sealed class FileDialogServiceTests
 
         // Assert
         result.Should().ContainKey("Images (*.jpg;*.png)");
-        result["Images (*.jpg;*.png)"].Should().Equal("jpg", "png");
+        result["Images (*.jpg;*.png)"].Should().Equal(".jpg", ".png");
         result["All Files (*.*)"].Should().Equal("*");
     }
 

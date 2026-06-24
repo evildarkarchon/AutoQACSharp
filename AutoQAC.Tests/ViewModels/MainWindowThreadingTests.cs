@@ -93,7 +93,6 @@ public sealed class MainWindowThreadingTests
     [Fact]
     public void CleaningCommandsViewModel_OnStateChanged_ShouldApplyStateSynchronously()
     {
-        var dispatcher = Substitute.For<IUiDispatcher>();
         var pluginLoadingService = Substitute.For<IPluginLoadingService>();
         var viewModel = new CleaningCommandsViewModel(
             Substitute.For<IStateService>(),
@@ -104,7 +103,6 @@ public sealed class MainWindowThreadingTests
             Substitute.For<ILoggingService>(),
             Substitute.For<IMessageDialogService>(),
             Substitute.For<IAppLifetime>(),
-            dispatcher,
             new Interaction<Unit, Unit>(),
             new Interaction<List<DryRunResult>, Unit>(),
             new Interaction<Unit, bool>(),
@@ -127,7 +125,6 @@ public sealed class MainWindowThreadingTests
 
             viewModel.CanStartCleaning.Should().BeTrue(
                 "the parent VM already dispatched state changes before invoking the child VM");
-            dispatcher.DidNotReceive().Post(Arg.Any<Action>());
         }
         finally
         {

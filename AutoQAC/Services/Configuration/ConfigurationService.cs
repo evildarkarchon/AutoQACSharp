@@ -519,6 +519,65 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
         await SaveUserConfigAsync(config, ct).ConfigureAwait(false);
     }
 
+    public async Task<string?> GetMo2InstanceOverrideAsync(GameType gameType, CancellationToken ct = default)
+    {
+        ThrowIfDisposed();
+        var config = await LoadUserConfigAsync(ct).ConfigureAwait(false);
+        var key = GetGameKey(gameType);
+        return config.Mo2InstanceOverrides.GetValueOrDefault(key);
+    }
+
+    public async Task SetMo2InstanceOverrideAsync(
+        GameType gameType,
+        string? folderPath,
+        CancellationToken ct = default)
+    {
+        ThrowIfDisposed();
+        var config = await LoadUserConfigAsync(ct).ConfigureAwait(false);
+        var key = GetGameKey(gameType);
+
+        if (string.IsNullOrWhiteSpace(folderPath))
+        {
+            config.Mo2InstanceOverrides.Remove(key);
+            _logger.Information("Removed MO2 instance override for {GameType}", gameType);
+        }
+        else
+        {
+            config.Mo2InstanceOverrides[key] = folderPath;
+            _logger.Information("Set MO2 instance override for {GameType} to {FolderPath}", gameType, folderPath);
+        }
+
+        await SaveUserConfigAsync(config, ct).ConfigureAwait(false);
+    }
+
+    public async Task<string?> GetMo2ProfileAsync(GameType gameType, CancellationToken ct = default)
+    {
+        ThrowIfDisposed();
+        var config = await LoadUserConfigAsync(ct).ConfigureAwait(false);
+        var key = GetGameKey(gameType);
+        return config.Mo2ProfileSelections.GetValueOrDefault(key);
+    }
+
+    public async Task SetMo2ProfileAsync(GameType gameType, string? profileName, CancellationToken ct = default)
+    {
+        ThrowIfDisposed();
+        var config = await LoadUserConfigAsync(ct).ConfigureAwait(false);
+        var key = GetGameKey(gameType);
+
+        if (string.IsNullOrWhiteSpace(profileName))
+        {
+            config.Mo2ProfileSelections.Remove(key);
+            _logger.Information("Removed MO2 profile selection for {GameType}", gameType);
+        }
+        else
+        {
+            config.Mo2ProfileSelections[key] = profileName;
+            _logger.Information("Set MO2 profile selection for {GameType} to {ProfileName}", gameType, profileName);
+        }
+
+        await SaveUserConfigAsync(config, ct).ConfigureAwait(false);
+    }
+
     public async Task ResetToDefaultsAsync(CancellationToken ct = default)
     {
         ThrowIfDisposed();
@@ -537,6 +596,8 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
             ["LoadOrderPath"] = config.LoadOrder.File,
             ["LoadOrderOverrides"] = config.LoadOrderFileOverrides,
             ["Mo2Binary"] = config.ModOrganizer.Binary,
+            ["Mo2InstanceOverrides"] = config.Mo2InstanceOverrides,
+            ["Mo2ProfileSelections"] = config.Mo2ProfileSelections,
             ["Mo2Mode"] = config.Settings.Mo2Mode,
             ["CleaningTimeout"] = config.Settings.CleaningTimeout,
             ["JournalExpiration"] = config.Settings.JournalExpiration,

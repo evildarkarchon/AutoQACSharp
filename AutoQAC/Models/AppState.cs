@@ -54,6 +54,7 @@ public sealed record AppState
     // Configuration paths
     public string? LoadOrderPath { get; init; }
     public string? Mo2ExecutablePath { get; init; }
+    public string? Mo2Profile { get; init; }
     public string? XEditExecutablePath { get; init; }
 
     // Configuration validity

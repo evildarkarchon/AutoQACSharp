@@ -150,6 +150,26 @@ public class XEditCommandBuilderTests
         parsedPayload.Should().Equal("-FO4", "-QAC", "-autoexit", "-autoload", WorstCasePluginName);
     }
 
+    [Fact]
+    public void BuildCommand_Mo2ModeWithProfile_ShouldInjectProfileBeforeRun()
+    {
+        const string xEditPath = @"C:\Tools\xEdit.exe";
+        const string mo2Path = @"C:\MO2\ModOrganizer.exe";
+        _stateServiceMock.CurrentState.Returns(new AppState
+        {
+            XEditExecutablePath = xEditPath,
+            Mo2ExecutablePath = mo2Path,
+            Mo2ModeEnabled = true,
+            Mo2Profile = "Testing Profile"
+        });
+
+        var result = _sut.BuildCommand(CreatePlugin("Plugin.esp"), GameType.SkyrimSe);
+
+        result.Should().NotBeNull();
+        result!.ArgumentList.Should().HaveCount(6);
+        result.ArgumentList.Should().Equal("-p", "Testing Profile", "run", xEditPath, "-a", result.ArgumentList[5]);
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]

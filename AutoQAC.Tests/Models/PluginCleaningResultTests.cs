@@ -21,6 +21,7 @@ public sealed class PluginCleaningResultTests
         result.Message.Should().BeEmpty();
         result.Duration.Should().Be(TimeSpan.Zero);
         result.Statistics.Should().BeNull();
+        result.LogParseWarning.Should().BeNull();
     }
 
     [Theory]
@@ -169,6 +170,21 @@ public sealed class PluginCleaningResultTests
     }
 
     [Fact]
+    public void Summary_WhenCleanedWithOnlySkippedRecords_ShouldShowSkipped()
+    {
+        // Arrange
+        var result = new PluginCleaningResult
+        {
+            PluginName = "Test.esp",
+            Status = CleaningStatus.Cleaned,
+            Statistics = new CleaningStatistics { ItemsSkipped = 4 }
+        };
+
+        // Assert
+        result.Summary.Should().Be("4 skipped");
+    }
+
+    [Fact]
     public void Summary_WhenCleanedWithMixedStats_ShouldShowAll()
     {
         // Arrange
@@ -180,12 +196,13 @@ public sealed class PluginCleaningResultTests
             {
                 ItemsRemoved = 10,
                 ItemsUndeleted = 5,
+                ItemsSkipped = 3,
                 PartialFormsCreated = 2
             }
         };
 
         // Assert
-        result.Summary.Should().Be("10 ITMs, 5 UDRs, 2 partial");
+        result.Summary.Should().Be("10 ITMs, 5 UDRs, 3 skipped, 2 partial");
     }
 
     [Fact]

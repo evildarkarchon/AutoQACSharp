@@ -17,7 +17,7 @@ namespace AutoQAC.Services.Plugin;
 /// Coordinates plugin list refresh, generation cancellation, and incremental issue approximation updates.
 /// The coordinator publishes rows through <see cref="IStateService"/> before background approximation work starts.
 /// </summary>
-public sealed class PluginRefreshCoordinator : IPluginRefreshCoordinator, IDisposable
+public sealed partial class PluginRefreshCoordinator : IPluginRefreshCoordinator, IDisposable
 {
     private readonly IPluginLoadingService _pluginLoadingService;
     private readonly IPluginIssueApproximationService _pluginIssueApproximationService;
@@ -74,7 +74,7 @@ public sealed class PluginRefreshCoordinator : IPluginRefreshCoordinator, IDispo
             {
                 if (!IsCurrent(generation, token)) return;
                 _stateService.UpdateState(s => s with { CurrentGameType = GameType.Unknown });
-                _stateService.SetPluginsToClean(new List<PluginInfo>());
+                _stateService.SetPluginsToClean([]);
                 Publish(new PluginRefreshStatus(PluginRefreshStatusKind.Idle, Message: "No game selected"));
                 return;
             }
@@ -86,6 +86,13 @@ public sealed class PluginRefreshCoordinator : IPluginRefreshCoordinator, IDispo
             var loadedPlugins = await LoadPluginsAsync(request, token).ConfigureAwait(false);
             if (!IsCurrent(generation, token)) return;
 
+            if (loadedPlugins.Count == 0)
+            {
+                _stateService.SetPluginsToClean([]);
+                Publish(new PluginRefreshStatus(PluginRefreshStatusKind.Idle, Message: GetNoPluginsFoundMessage(request.GameType)));
+                return;
+            }
+
             var pluginNames = loadedPlugins.Select(p => p.FileName).ToList();
             var variant = _gameDetectionService.DetectVariant(request.GameType, pluginNames);
             var skipList = await GetSkipListAsync(request.GameType, variant, token).ConfigureAwait(false);
@@ -96,15 +103,6 @@ public sealed class PluginRefreshCoordinator : IPluginRefreshCoordinator, IDispo
                 : PluginIssueApproximation.Unavailable;
             var rows = ApplySkipListStatus(loadedPlugins, skipList, request.GameType, disableSkipLists: request.DisableSkipLists, initialApproximation);
             _stateService.SetPluginsToClean(rows);
-
-            if (rows.Count == 0)
-            {
-                var message = _pluginLoadingService.IsGameSupportedByMutagen(request.GameType)
-                    ? $"No plugins discovered via Mutagen for {request.GameType}."
-                    : "No plugins found in the selected load order.";
-                Publish(new PluginRefreshStatus(PluginRefreshStatusKind.Idle, Message: message));
-                return;
-            }
 
             if (!_capabilityPolicy.SupportsIssueApproximation(request.GameType))
             {
@@ -119,7 +117,7 @@ public sealed class PluginRefreshCoordinator : IPluginRefreshCoordinator, IDispo
                 .ToList();
             try
             {
-                var updated = await AnalyzeTargetsAsync(request.GameType, dataFolder, targets, generation, token).ConfigureAwait(false);
+                var updated = await AnalyzeTargetsAsync(request, dataFolder, targets, generation, token).ConfigureAwait(false);
                 if (IsCurrent(generation, token))
                 {
                     // Publish terminal status so PluginListViewModel can clear IsApproximationRefreshRunning
@@ -214,7 +212,7 @@ public sealed class PluginRefreshCoordinator : IPluginRefreshCoordinator, IDispo
             }
 
             var dataFolder = ResolveDataFolder(request, pendingRows);
-            var updated = await AnalyzeTargetsAsync(request.GameType, dataFolder, snapshot, generation, token).ConfigureAwait(false);
+            var updated = await AnalyzeTargetsAsync(request, dataFolder, snapshot, generation, token).ConfigureAwait(false);
             if (IsCurrent(generation, token))
             {
                 Publish(PluginRefreshStatus.SelectedRefreshCompleted(updated));
@@ -288,6 +286,26 @@ public sealed class PluginRefreshCoordinator : IPluginRefreshCoordinator, IDispo
 
     private async Task<IReadOnlyList<PluginInfo>> LoadPluginsAsync(PluginRefreshRequest request, CancellationToken ct)
     {
+        if (request.Mo2Mode)
+        {
+            if (string.IsNullOrWhiteSpace(request.Mo2LoadOrderPath))
+            {
+                return [];
+            }
+
+            var plugins = await _pluginLoadingService.GetPluginsFromFileAsync(request.Mo2LoadOrderPath, null, ct)
+                .ConfigureAwait(false);
+            if (request.Mo2PathMap is null || request.Mo2PathMap.Count == 0)
+            {
+                return plugins;
+            }
+
+            return plugins.Select(plugin => request.Mo2PathMap.TryGetValue(plugin.FileName, out var fullPath)
+                    ? plugin with { FullPath = fullPath }
+                    : plugin)
+                .ToList();
+        }
+
         if (!string.IsNullOrWhiteSpace(request.LoadOrderPath))
         {
             return await _pluginLoadingService.GetPluginsFromFileAsync(request.LoadOrderPath, request.DataFolderPath, ct)
@@ -296,7 +314,7 @@ public sealed class PluginRefreshCoordinator : IPluginRefreshCoordinator, IDispo
 
         if (!_capabilityPolicy.SupportsPluginLoading(request.GameType))
         {
-            return Array.Empty<PluginInfo>();
+            return [];
         }
 
         if (_capabilityPolicy.RequiresLoadOrderFile(request.GameType))
@@ -315,9 +333,9 @@ public sealed class PluginRefreshCoordinator : IPluginRefreshCoordinator, IDispo
 
         var loadResult = await _pluginLoadingService.TryGetPluginsAsync(request.GameType, request.DataFolderPath, ct)
             .ConfigureAwait(false);
-        return loadResult?.Status == PluginLoadingStatus.Success
+        return loadResult.Status == PluginLoadingStatus.Success
             ? loadResult.Plugins
-            : Array.Empty<PluginInfo>();
+            : [];
     }
 
     private async Task<List<string>> GetSkipListAsync(GameType gameType, GameVariant variant, CancellationToken ct)
@@ -327,11 +345,11 @@ public sealed class PluginRefreshCoordinator : IPluginRefreshCoordinator, IDispo
             return [];
         }
 
-        return await _configurationService.GetSkipListAsync(gameType, variant, ct).ConfigureAwait(false) ?? [];
+        return await _configurationService.GetSkipListAsync(gameType, variant, ct).ConfigureAwait(false);
     }
 
     private async Task<int> AnalyzeTargetsAsync(
-        GameType gameType,
+        PluginRefreshRequest request,
         string? dataFolder,
         IReadOnlyList<PluginRefreshTarget> targets,
         int generation,
@@ -347,21 +365,42 @@ public sealed class PluginRefreshCoordinator : IPluginRefreshCoordinator, IDispo
         var updated = 0;
         var total = targets.Count;
 
-        await _pluginIssueApproximationService.GetApproximationsAsync(
-            gameType,
-            dataFolder,
-            approximation =>
+        var callback = new Action<PluginIssueApproximationResult>(approximation =>
+        {
+            if (!IsCurrent(generation, ct) || !IsTarget(approximation, targetPaths, targetNames))
             {
-                if (!IsCurrent(generation, ct) || !IsTarget(approximation, targetPaths, targetNames))
-                {
-                    return;
-                }
+                return;
+            }
 
-                updated++;
-                Publish(PluginRefreshStatus.AnalyzingSelected(updated, total));
-                _stateService.MergePluginApproximation(approximation);
-            },
-            ct).ConfigureAwait(false);
+            updated++;
+            Publish(PluginRefreshStatus.AnalyzingSelected(updated, total));
+            _stateService.MergePluginApproximation(approximation);
+        });
+
+        if (request.Mo2Mode)
+        {
+            await _pluginIssueApproximationService.GetApproximationsAsync(
+                request.GameType,
+                dataFolder,
+                targets.Select(target => target.FileName).ToList(),
+                modKey =>
+                {
+                    var fileName = modKey.FileName.String;
+                    return request.Mo2PathMap is not null && request.Mo2PathMap.TryGetValue(fileName, out var path)
+                        ? path
+                        : null;
+                },
+                callback,
+                ct).ConfigureAwait(false);
+        }
+        else
+        {
+            await _pluginIssueApproximationService.GetApproximationsAsync(
+                request.GameType,
+                dataFolder,
+                callback,
+                ct).ConfigureAwait(false);
+        }
 
         return updated;
     }
@@ -381,6 +420,11 @@ public sealed class PluginRefreshCoordinator : IPluginRefreshCoordinator, IDispo
 
     private static string? ResolveDataFolder(PluginRefreshRequest request, IReadOnlyList<PluginInfo> rows)
     {
+        if (request.Mo2Mode)
+        {
+            return request.Mo2BaseDataFolder;
+        }
+
         if (!string.IsNullOrWhiteSpace(request.DataFolderPath))
         {
             return request.DataFolderPath;
@@ -405,6 +449,11 @@ public sealed class PluginRefreshCoordinator : IPluginRefreshCoordinator, IDispo
             Approximation = approximation
         }).ToList();
     }
+
+    private string GetNoPluginsFoundMessage(GameType gameType) =>
+        _pluginLoadingService.IsGameSupportedByMutagen(gameType)
+            ? $"No plugins discovered via Mutagen for {gameType}."
+            : "No plugins found in the selected load order.";
 
     private void Publish(PluginRefreshStatus status) => _statusChanged.OnNext(status);
 }

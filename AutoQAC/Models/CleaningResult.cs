@@ -14,7 +14,6 @@ public sealed record CleaningResult
     /// Indicates if the cleaning operation timed out.
     /// </summary>
     public bool TimedOut { get; init; }
-
 }
 
 public enum CleaningStatus

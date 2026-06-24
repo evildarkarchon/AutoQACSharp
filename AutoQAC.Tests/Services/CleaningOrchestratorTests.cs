@@ -20,7 +20,7 @@ using System.Reactive.Subjects;
 
 namespace AutoQAC.Tests.Services;
 
-public sealed class CleaningOrchestratorTests
+public sealed class CleaningOrchestratorTests : IDisposable
 {
     private readonly ICleaningService _cleaningServiceMock;
     private readonly IPluginValidationService _pluginServiceMock;
@@ -34,6 +34,8 @@ public sealed class CleaningOrchestratorTests
     private readonly IBackupService _backupServiceMock;
     private readonly IHangDetectionService _hangDetectionMock;
     private readonly IMo2ValidationService _mo2ValidationServiceMock;
+    private readonly IMo2InstanceService _mo2InstanceServiceMock;
+    private readonly string _mo2LoadOrderPath;
     private readonly CleaningOrchestrator _orchestrator;
 
     public CleaningOrchestratorTests()
@@ -50,6 +52,8 @@ public sealed class CleaningOrchestratorTests
         _backupServiceMock = Substitute.For<IBackupService>();
         _hangDetectionMock = Substitute.For<IHangDetectionService>();
         _mo2ValidationServiceMock = Substitute.For<IMo2ValidationService>();
+        _mo2InstanceServiceMock = Substitute.For<IMo2InstanceService>();
+        _mo2LoadOrderPath = Path.GetTempFileName();
 
         // Default mock setup for GetSkipListAsync to return empty list instead of null
         _configServiceMock.FlushPendingSavesAsync(Arg.Any<CancellationToken>())
@@ -81,6 +85,23 @@ public sealed class CleaningOrchestratorTests
                 Arg.Any<CancellationToken>())
             .Returns(new LogReadResult { LogLines = new List<string>() });
         _mo2ValidationServiceMock.ValidateMo2ExecutableAsync(Arg.Any<string>()).Returns(true);
+        var mo2Instance = new Mo2InstanceInfo(
+            @"C:\MO2\Instances\SSE",
+            @"C:\MO2\Instances\SSE\mods",
+            @"C:\MO2\Instances\SSE\profiles",
+            @"C:\MO2\Instances\SSE\overwrite",
+            "Default",
+            "Skyrim Special Edition",
+            true,
+            null);
+        _mo2InstanceServiceMock.ResolveInstanceAsync(
+                Arg.Any<GameType>(),
+                Arg.Any<string?>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(mo2Instance);
+        _mo2InstanceServiceMock.GetProfiles(Arg.Any<Mo2InstanceInfo>()).Returns(["Default"]);
+        _mo2InstanceServiceMock.GetLoadOrderPath(Arg.Any<Mo2InstanceInfo>(), Arg.Any<string>()).Returns(_mo2LoadOrderPath);
 
         _orchestrator = new CleaningOrchestrator(
             CreatePreflight(),
@@ -100,7 +121,16 @@ public sealed class CleaningOrchestratorTests
         _mo2ValidationServiceMock,
         _cleaningServiceMock,
         _stateServiceMock,
-        _loggerMock);
+        _loggerMock,
+        _mo2InstanceServiceMock);
+
+    public void Dispose()
+    {
+        if (File.Exists(_mo2LoadOrderPath))
+        {
+            File.Delete(_mo2LoadOrderPath);
+        }
+    }
 
     private static CleaningPreflightPlan CreateEmptyPreflightPlan() => new()
     {
@@ -1650,6 +1680,7 @@ public sealed class CleaningOrchestratorTests
                 LoadOrderPath = "plugins.txt",
                 XEditExecutablePath = "xedit.exe",
                 Mo2ExecutablePath = tempMo2,
+                Mo2Profile = "Default",
                 CurrentGameType = GameType.SkyrimSe,
                 Mo2ModeEnabled = true,
                 PluginsToClean = plugins
@@ -2002,6 +2033,7 @@ public sealed class CleaningOrchestratorTests
                 LoadOrderPath = "plugins.txt",
                 XEditExecutablePath = "xedit.exe",
                 Mo2ExecutablePath = tempMo2,
+                Mo2Profile = "Default",
                 CurrentGameType = GameType.SkyrimSe,
                 Mo2ModeEnabled = true,
                 PluginsToClean = new List<PluginInfo> { plugin }

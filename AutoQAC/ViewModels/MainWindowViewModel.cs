@@ -61,7 +61,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
         Commands = new CleaningCommandsViewModel(
             stateService, orchestrator, configService, pluginLoadingService,
             pluginRefreshCoordinator,
-            logger, messageDialog, appLifetime ?? NoOpAppLifetime.Instance, uiDispatcher,
+            logger, messageDialog, appLifetime ?? NoOpAppLifetime.Instance,
             ShowProgressInteraction, ShowPreviewInteraction,
             ShowSettingsInteraction, ShowSkipListInteraction,
             ShowRestoreInteraction, ShowAboutInteraction);

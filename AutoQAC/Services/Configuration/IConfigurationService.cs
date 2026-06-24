@@ -42,6 +42,12 @@ public interface IConfigurationService
     Task<string?> GetGameDataFolderOverrideAsync(GameType gameType, CancellationToken ct = default);
     Task SetGameDataFolderOverrideAsync(GameType gameType, string? folderPath, CancellationToken ct = default);
 
+    // MO2 per-game instance/profile overrides
+    Task<string?> GetMo2InstanceOverrideAsync(GameType gameType, CancellationToken ct = default);
+    Task SetMo2InstanceOverrideAsync(GameType gameType, string? folderPath, CancellationToken ct = default);
+    Task<string?> GetMo2ProfileAsync(GameType gameType, CancellationToken ct = default);
+    Task SetMo2ProfileAsync(GameType gameType, string? profileName, CancellationToken ct = default);
+
     // Game-specific load order path overrides
     Task<string?> GetGameLoadOrderOverrideAsync(GameType gameType, CancellationToken ct = default);
     Task SetGameLoadOrderOverrideAsync(GameType gameType, string? loadOrderPath, CancellationToken ct = default);

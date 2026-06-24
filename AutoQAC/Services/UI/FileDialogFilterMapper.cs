@@ -45,9 +45,11 @@ internal static class FileDialogFilterMapper
         {
             "*.*" => "*",
             "*" => "*",
-            _ when normalized.StartsWith("*.") => normalized[2..],
-            _ when normalized.StartsWith('.') => normalized[1..],
-            _ => normalized
+            // Windows App SDK pickers expect extensions in ".ext" form; the
+            // wildcard is the only supported value without a leading dot.
+            _ when normalized.StartsWith("*.") => normalized[1..],
+            _ when normalized.StartsWith('.') => normalized,
+            _ => $".{normalized}"
         };
     }
 }

@@ -18,6 +18,7 @@ public sealed class CleaningPreflightTests
     private readonly IGameDetectionService _gameDetectionMock;
     private readonly IPluginValidationService _validationMock;
     private readonly IMo2ValidationService _mo2ValidationMock;
+    private readonly IMo2InstanceService _mo2InstanceMock;
     private readonly ICleaningService _cleaningServiceMock;
     private readonly IStateService _stateMock;
     private readonly ILoggingService _loggerMock;
@@ -29,6 +30,7 @@ public sealed class CleaningPreflightTests
         _gameDetectionMock = Substitute.For<IGameDetectionService>();
         _validationMock = Substitute.For<IPluginValidationService>();
         _mo2ValidationMock = Substitute.For<IMo2ValidationService>();
+        _mo2InstanceMock = Substitute.For<IMo2InstanceService>();
         _cleaningServiceMock = Substitute.For<ICleaningService>();
         _stateMock = Substitute.For<IStateService>();
         _loggerMock = Substitute.For<ILoggingService>();
@@ -47,6 +49,24 @@ public sealed class CleaningPreflightTests
             .Returns(true);
         _gameDetectionMock.DetectVariant(Arg.Any<GameType>(), Arg.Any<IReadOnlyList<string>>())
             .Returns(GameVariant.None);
+        var mo2Instance = new Mo2InstanceInfo(
+            @"C:\MO2\Instances\SSE",
+            @"C:\MO2\Instances\SSE\mods",
+            @"C:\MO2\Instances\SSE\profiles",
+            @"C:\MO2\Instances\SSE\overwrite",
+            "Default",
+            "Skyrim Special Edition",
+            true,
+            null);
+        _mo2InstanceMock.ResolveInstanceAsync(
+                Arg.Any<GameType>(),
+                Arg.Any<string?>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(mo2Instance);
+        _mo2InstanceMock.GetProfiles(Arg.Any<Mo2InstanceInfo>()).Returns(["Default"]);
+        _mo2InstanceMock.GetLoadOrderPath(Arg.Any<Mo2InstanceInfo>(), Arg.Any<string>())
+            .Returns(@"C:\MO2\Instances\SSE\profiles\Default\loadorder.txt");
 
         _stateMock.CurrentState.Returns(CreateState());
         _sut = new CleaningPreflight(
@@ -56,7 +76,8 @@ public sealed class CleaningPreflightTests
             _mo2ValidationMock,
             _cleaningServiceMock,
             _stateMock,
-            _loggerMock);
+            _loggerMock,
+            _mo2InstanceMock);
     }
 
     [Fact]
@@ -79,9 +100,12 @@ public sealed class CleaningPreflightTests
     {
         // Arrange
         var tempMo2Path = Path.GetTempFileName();
+        var tempLoadOrderPath = Path.GetTempFileName();
         try
         {
-            _stateMock.CurrentState.Returns(CreateState(mo2Mode: true, mo2ExecutablePath: tempMo2Path));
+            _mo2InstanceMock.GetLoadOrderPath(Arg.Any<Mo2InstanceInfo>(), Arg.Any<string>())
+                .Returns(tempLoadOrderPath);
+            _stateMock.CurrentState.Returns(CreateState(mo2Mode: true, mo2ExecutablePath: tempMo2Path, mo2Profile: "Default"));
             _configMock.LoadUserConfigAsync(Arg.Any<CancellationToken>())
                 .Returns(new UserConfiguration
                 {
@@ -104,6 +128,11 @@ public sealed class CleaningPreflightTests
             if (File.Exists(tempMo2Path))
             {
                 File.Delete(tempMo2Path);
+            }
+
+            if (File.Exists(tempLoadOrderPath))
+            {
+                File.Delete(tempLoadOrderPath);
             }
         }
     }
@@ -320,6 +349,7 @@ public sealed class CleaningPreflightTests
         IReadOnlyList<PluginInfo>? plugins = null,
         bool mo2Mode = false,
         string mo2ExecutablePath = @"C:\MO2\ModOrganizer.exe",
+        string? mo2Profile = null,
         string? loadOrderPath = @"C:\Games\Skyrim Special Edition\plugins.txt") =>
         new()
         {
@@ -327,6 +357,7 @@ public sealed class CleaningPreflightTests
             XEditExecutablePath = @"C:\Games\SSEEdit\SSEEdit.exe",
             LoadOrderPath = loadOrderPath,
             Mo2ExecutablePath = mo2ExecutablePath,
+            Mo2Profile = mo2Profile,
             Mo2ModeEnabled = mo2Mode,
             CleaningTimeout = 300,
             PluginsToClean = plugins ?? [CreatePlugin("Update.esm")]
