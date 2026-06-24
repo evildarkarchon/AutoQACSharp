@@ -119,7 +119,8 @@ public sealed partial class App
             var versionStr = version != null ? $"{version.Major}.{version.Minor}.{version.Build}" : "Unknown";
 
             var state = stateService.CurrentState;
-            var xEditIdentifier = DiagnosticTextFormatter.SafeFileIdentifier("xEdit Path", state.XEditExecutablePath, "not configured");
+            var xEditIdentifier =
+                DiagnosticTextFormatter.SafeFileIdentifier("xEdit Path", state.XEditExecutablePath, "not configured");
             var xEditConfigured = !string.IsNullOrWhiteSpace(state.XEditExecutablePath);
 
             logger.Information("=== AutoQAC Session Start ===");
@@ -171,7 +172,8 @@ public sealed partial class App
         catch (Exception ex)
         {
             logger.Error(ex, "[Migration] Unexpected error during legacy migration");
-            viewModel.ShowMigrationWarning("Some legacy settings could not be migrated. See the latest AutoQAC log for technical details.");
+            viewModel.ShowMigrationWarning(
+                "Some legacy settings could not be migrated. See the latest AutoQAC log for technical details.");
         }
     }
 

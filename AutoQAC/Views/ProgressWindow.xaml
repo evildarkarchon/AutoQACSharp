@@ -4,11 +4,16 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     Title="Cleaning Progress">
     <Grid x:Name="Root" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}" Padding="20">
-        <Grid Visibility="{Binding IsShowingResults, Converter={StaticResource InverseBoolToVisibilityConverter}, Mode=OneWay}" RowDefinitions="Auto,Auto,Auto,Auto,*,Auto" RowSpacing="12">
+        <Grid
+            Visibility="{Binding IsShowingResults, Converter={StaticResource InverseBoolToVisibilityConverter}, Mode=OneWay}"
+            RowDefinitions="Auto,Auto,Auto,Auto,*,Auto" RowSpacing="12">
             <StackPanel Grid.Row="0" Spacing="6">
-                <TextBlock Text="Current phase:" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                <TextBlock Text="{Binding ActiveOperationLabel, Mode=OneWay}" Style="{StaticResource SubtitleTextBlockStyle}" TextTrimming="CharacterEllipsis" />
-                <StackPanel Orientation="Horizontal" Spacing="8" Visibility="{Binding HasCurrentPluginStats, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}">
+                <TextBlock Text="Current phase:" Style="{StaticResource CaptionTextBlockStyle}"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <TextBlock Text="{Binding ActiveOperationLabel, Mode=OneWay}"
+                           Style="{StaticResource SubtitleTextBlockStyle}" TextTrimming="CharacterEllipsis" />
+                <StackPanel Orientation="Horizontal" Spacing="8"
+                            Visibility="{Binding HasCurrentPluginStats, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}">
                     <TextBlock Text="ITM:" Style="{StaticResource BodyStrongTextBlockStyle}" />
                     <TextBlock Text="{Binding CurrentItmCount, Mode=OneWay}" />
                     <TextBlock Text="UDR:" Style="{StaticResource BodyStrongTextBlockStyle}" />
@@ -39,7 +44,8 @@
             <StackPanel Grid.Row="3" Spacing="8">
                 <ProgressBar Minimum="0" Maximum="{Binding Total, Mode=OneWay}" Value="{Binding Progress, Mode=OneWay}" />
                 <TextBlock Text="{Binding ProgressText, Mode=OneWay}" HorizontalAlignment="Center" />
-                <TextBlock Text="{Binding CurrentPlugin, Mode=OneWay}" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <TextBlock Text="{Binding CurrentPlugin, Mode=OneWay}" TextWrapping="Wrap"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             </StackPanel>
 
             <ListView Grid.Row="4" ItemsSource="{Binding CompletedPlugins, Mode=OneWay}">
@@ -57,14 +63,19 @@
             </ListView>
 
             <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
-                <Button Content="Cancel File Operation" Command="{Binding CancelBackupOperationCommand}" Visibility="{Binding IsBackupCancelVisible, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}" />
-                <Button Content="Cancel Cleanup" Command="{Binding CancelBackupOperationCommand}" Visibility="{Binding IsCleanupCancelVisible, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}" />
+                <Button Content="Cancel File Operation" Command="{Binding CancelBackupOperationCommand}"
+                        Visibility="{Binding IsBackupCancelVisible, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}" />
+                <Button Content="Cancel Cleanup" Command="{Binding CancelBackupOperationCommand}"
+                        Visibility="{Binding IsCleanupCancelVisible, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}" />
                 <Button Content="Stop" Command="{Binding StopCommand}" IsEnabled="{Binding IsCleaning, Mode=OneWay}" />
             </StackPanel>
         </Grid>
 
-        <Grid Visibility="{Binding IsResultsSummaryVisible, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}" RowDefinitions="Auto,Auto,*,Auto" RowSpacing="12">
-            <TextBlock Grid.Row="0" Text="{Binding SessionSummaryText, Mode=OneWay}" Style="{StaticResource SubtitleTextBlockStyle}" TextWrapping="Wrap" />
+        <Grid
+            Visibility="{Binding IsResultsSummaryVisible, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}"
+            RowDefinitions="Auto,Auto,*,Auto" RowSpacing="12">
+            <TextBlock Grid.Row="0" Text="{Binding SessionSummaryText, Mode=OneWay}"
+                       Style="{StaticResource SubtitleTextBlockStyle}" TextWrapping="Wrap" />
             <InfoBar
                 Grid.Row="1"
                 IsOpen="{Binding HasStopOutcomeWarning, Mode=OneWay}"
@@ -93,9 +104,11 @@
             <Button Grid.Row="3" Content="Close" Command="{Binding CloseCommand}" HorizontalAlignment="Right" />
         </Grid>
 
-        <Grid Visibility="{Binding IsPreviewMode, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}" RowDefinitions="Auto,Auto,*,Auto" RowSpacing="12">
+        <Grid Visibility="{Binding IsPreviewMode, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}"
+              RowDefinitions="Auto,Auto,*,Auto" RowSpacing="12">
             <TextBlock Grid.Row="0" Text="Dry-Run Preview" Style="{StaticResource SubtitleTextBlockStyle}" />
-            <InfoBar Grid.Row="1" IsOpen="True" Severity="Informational" Message="{Binding PreviewDisclaimer, Mode=OneWay}" />
+            <InfoBar Grid.Row="1" IsOpen="True" Severity="Informational"
+                     Message="{Binding PreviewDisclaimer, Mode=OneWay}" />
             <ListView Grid.Row="2" ItemsSource="{Binding DryRunResults, Mode=OneWay}">
                 <ListView.ItemTemplate>
                     <DataTemplate>
@@ -111,3 +124,4 @@
         </Grid>
     </Grid>
 </Window>
+

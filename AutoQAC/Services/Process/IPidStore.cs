@@ -24,5 +24,6 @@ public interface IPidStore
     /// </summary>
     /// <param name="update">Pure transformation from existing entries to replacement entries.</param>
     /// <param name="ct">Cancellation token for I/O work.</param>
-    Task UpdateAsync(Func<IReadOnlyList<TrackedProcess>, IReadOnlyList<TrackedProcess>> update, CancellationToken ct = default);
+    Task UpdateAsync(Func<IReadOnlyList<TrackedProcess>, IReadOnlyList<TrackedProcess>> update,
+        CancellationToken ct = default);
 }

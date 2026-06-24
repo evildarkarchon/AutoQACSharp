@@ -1,3 +1,4 @@
+using System.Threading;
 using Microsoft.UI;
 using Microsoft.UI.Xaml;
 
@@ -5,7 +6,7 @@ namespace AutoQAC.Services.UI;
 
 public sealed class WindowContextProvider : IWindowContextProvider
 {
-    private readonly object _gate = new();
+    private readonly Lock _gate = new();
     private WindowId? _windowId;
     private XamlRoot? _xamlRoot;
 

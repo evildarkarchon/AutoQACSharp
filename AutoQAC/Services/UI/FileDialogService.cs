@@ -6,19 +6,11 @@ using Microsoft.Windows.Storage.Pickers;
 
 namespace AutoQAC.Services.UI;
 
-public sealed class FileDialogService : IFileDialogService
+public sealed class FileDialogService(
+    IWindowContextProvider windowContextProvider,
+    IUiDispatcher uiDispatcher)
+    : IFileDialogService
 {
-    private readonly IWindowContextProvider _windowContextProvider;
-    private readonly IUiDispatcher _uiDispatcher;
-
-    public FileDialogService(
-        IWindowContextProvider windowContextProvider,
-        IUiDispatcher uiDispatcher)
-    {
-        _windowContextProvider = windowContextProvider;
-        _uiDispatcher = uiDispatcher;
-    }
-
     public Task<string?> OpenFileDialogAsync(
         string title,
         string filter,
@@ -26,7 +18,7 @@ public sealed class FileDialogService : IFileDialogService
     {
         return InvokeOnUiThreadAsync(async () =>
         {
-            if (!_windowContextProvider.TryGetContext(out var windowId, out _))
+            if (!windowContextProvider.TryGetContext(out var windowId, out _))
             {
                 return null;
             }
@@ -56,7 +48,7 @@ public sealed class FileDialogService : IFileDialogService
     {
         return InvokeOnUiThreadAsync(async () =>
         {
-            if (!_windowContextProvider.TryGetContext(out var windowId, out _))
+            if (!windowContextProvider.TryGetContext(out var windowId, out _))
             {
                 return null;
             }
@@ -92,7 +84,7 @@ public sealed class FileDialogService : IFileDialogService
     {
         return InvokeOnUiThreadAsync(async () =>
         {
-            if (!_windowContextProvider.TryGetContext(out var windowId, out _))
+            if (!windowContextProvider.TryGetContext(out var windowId, out _))
             {
                 return null;
             }
@@ -112,7 +104,7 @@ public sealed class FileDialogService : IFileDialogService
     private async Task<T> InvokeOnUiThreadAsync<T>(Func<Task<T>> action)
     {
         T result = default!;
-        await _uiDispatcher.InvokeAsync(async () => result = await action());
+        await uiDispatcher.InvokeAsync(async () => result = await action());
         return result;
     }
 

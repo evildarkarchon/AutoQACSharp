@@ -5,15 +5,8 @@ using AutoQAC.Views.Helpers;
 
 namespace AutoQAC.Views;
 
-public sealed class PartialFormsWarningDialog
+public sealed class PartialFormsWarningDialog(IWindowContextProvider windowContextProvider)
 {
-    private readonly IWindowContextProvider _windowContextProvider;
-
-    public PartialFormsWarningDialog(IWindowContextProvider windowContextProvider)
-    {
-        _windowContextProvider = windowContextProvider;
-    }
-
     public Task<bool> ShowAsync(PartialFormsWarningViewModel viewModel)
     {
         var content = new PartialFormsWarningContent
@@ -22,7 +15,7 @@ public sealed class PartialFormsWarningDialog
         };
 
         return ContentDialogPresenter.ShowBooleanAsync(
-            _windowContextProvider,
+            windowContextProvider,
             "Partial Forms Warning",
             content,
             handler => viewModel.CloseRequested += handler,

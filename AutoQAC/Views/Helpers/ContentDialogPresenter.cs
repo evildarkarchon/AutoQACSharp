@@ -31,13 +31,6 @@ public static class ContentDialogPresenter
 
             var dialog = CreateDialog(title, content, xamlRoot);
 
-            void OnCloseRequested(bool closeResult)
-            {
-                result = closeResult;
-                hasResult = true;
-                dialog.Hide();
-            }
-
             subscribeCloseRequested(OnCloseRequested);
             try
             {
@@ -49,6 +42,13 @@ public static class ContentDialogPresenter
             }
 
             return hasResult && result;
+
+            void OnCloseRequested(bool closeResult)
+            {
+                result = closeResult;
+                hasResult = true;
+                dialog.Hide();
+            }
         }
         finally
         {

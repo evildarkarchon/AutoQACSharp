@@ -29,13 +29,13 @@ public sealed partial class SkipListViewModel : ViewModelBase, IDisposable
 
     public IReadOnlyList<GameType> AvailableGames { get; }
 
-    public ObservableCollection<string> SkipListEntries { get; } = new();
+    public ObservableCollection<string> SkipListEntries { get; } = [];
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(RemoveSelectedEntryCommand))]
     public partial string? SelectedEntry { get; set; }
 
-    public ObservableCollection<string> AvailablePlugins { get; } = new();
+    public ObservableCollection<string> AvailablePlugins { get; } = [];
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(AddSelectedPluginCommand))]

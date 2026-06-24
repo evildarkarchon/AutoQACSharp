@@ -28,6 +28,7 @@ public sealed class ProcessExecutionService(
         ["sseedit", "fo4edit", "fo3edit", "fnvedit", "tes5vredit", "xedit", "fo76edit", "tes4edit"];
 
     private const int GracePeriodMs = 2500;
+
     private enum ProcessStopReason
     {
         Timeout,
@@ -215,7 +216,9 @@ public sealed class ProcessExecutionService(
     private static int GetArgumentCount(ProcessStartInfo startInfo) =>
         startInfo.ArgumentList.Count > 0
             ? startInfo.ArgumentList.Count
-            : string.IsNullOrWhiteSpace(startInfo.Arguments) ? 0 : 1;
+            : string.IsNullOrWhiteSpace(startInfo.Arguments)
+                ? 0
+                : 1;
 
     /// <summary>
     /// Selects a PID tracking label that cannot expose raw launch arguments or local paths.
@@ -270,12 +273,14 @@ public sealed class ProcessExecutionService(
             }
             catch (AggregateException ex)
             {
-                logger.Error(ex, "[Termination] Force kill failed while waiting for process tree exit (PID: {Pid})", process.Id);
+                logger.Error(ex, "[Termination] Force kill failed while waiting for process tree exit (PID: {Pid})",
+                    process.Id);
                 return TerminationResult.ForceKillFailed;
             }
             catch (OperationCanceledException ex)
             {
-                logger.Error(ex, "[Termination] Force kill wait was canceled for process tree (PID: {Pid})", process.Id);
+                logger.Error(ex, "[Termination] Force kill wait was canceled for process tree (PID: {Pid})",
+                    process.Id);
                 return TerminationResult.ForceKillFailed;
             }
         }
@@ -296,7 +301,8 @@ public sealed class ProcessExecutionService(
         {
             // CloseMainWindow returned false -- process may not have a visible main window.
             // Skip the grace period, caller should escalate.
-            logger.Debug("[Termination] CloseMainWindow returned false (no window) -- returning GracePeriodExpired for escalation");
+            logger.Debug(
+                "[Termination] CloseMainWindow returned false (no window) -- returning GracePeriodExpired for escalation");
             return TerminationResult.GracePeriodExpired;
         }
 
@@ -320,7 +326,8 @@ public sealed class ProcessExecutionService(
 
     #region PID Tracking
 
-    public async Task TrackProcessAsync(System.Diagnostics.Process process, string pluginName, CancellationToken ct = default)
+    public async Task TrackProcessAsync(System.Diagnostics.Process process, string pluginName,
+        CancellationToken ct = default)
     {
         DateTime startTime;
         try
@@ -362,7 +369,8 @@ public sealed class ProcessExecutionService(
 
         foreach (var entry in tracked)
         {
-            var isCurrentSession = string.Equals(entry.SessionId, sessionIdProvider.CurrentSessionId, StringComparison.Ordinal);
+            var isCurrentSession = string.Equals(entry.SessionId, sessionIdProvider.CurrentSessionId,
+                StringComparison.Ordinal);
             try
             {
                 using var process = System.Diagnostics.Process.GetProcessById(entry.Pid);
@@ -375,7 +383,8 @@ public sealed class ProcessExecutionService(
 
                 if (IsXEditProcess(process, entry.StartTime))
                 {
-                    logger.Information("[Orphan] Detected orphaned xEdit process (PID: {Pid}, Plugin: {Plugin})", entry.Pid, entry.PluginName);
+                    logger.Information("[Orphan] Detected orphaned xEdit process (PID: {Pid}, Plugin: {Plugin})",
+                        entry.Pid, entry.PluginName);
                     try
                     {
                         process.Kill(entireProcessTree: true);
@@ -393,7 +402,8 @@ public sealed class ProcessExecutionService(
                 }
                 else
                 {
-                    logger.Debug("[Orphan] PID {Pid} is not an xEdit process (name: {Name}) -- skipping", entry.Pid, process.ProcessName);
+                    logger.Debug("[Orphan] PID {Pid} is not an xEdit process (name: {Name}) -- skipping", entry.Pid,
+                        process.ProcessName);
                 }
             }
             catch (ArgumentException)
@@ -411,7 +421,8 @@ public sealed class ProcessExecutionService(
     }
 
     private static bool ShouldPreservePidEvidence(TerminationResult? result) =>
-        result is TerminationResult.GracePeriodExpired or TerminationResult.ForceKillFailed or TerminationResult.LeftRunningByUser;
+        result is TerminationResult.GracePeriodExpired or TerminationResult.ForceKillFailed
+            or TerminationResult.LeftRunningByUser;
 
     /// <summary>
     /// Verify a process is actually xEdit, not a recycled PID.
@@ -445,5 +456,4 @@ public sealed class ProcessExecutionService(
     {
         _processSlots.Dispose();
     }
-
 }

@@ -13,7 +13,7 @@ internal static class MessageDialogButtonMapper
     public static MessageDialogButtonConfiguration Build(MessageDialogButtons buttons) =>
         buttons switch
         {
-            MessageDialogButtons.Ok => new(
+            MessageDialogButtons.Ok => new MessageDialogButtonConfiguration(
                 PrimaryButtonText: null,
                 SecondaryButtonText: null,
                 CloseButtonText: "OK",
@@ -21,7 +21,7 @@ internal static class MessageDialogButtonMapper
                 SecondaryResult: MessageDialogResult.None,
                 CloseResult: MessageDialogResult.Ok),
 
-            MessageDialogButtons.OkCancel => new(
+            MessageDialogButtons.OkCancel => new MessageDialogButtonConfiguration(
                 PrimaryButtonText: "OK",
                 SecondaryButtonText: null,
                 CloseButtonText: "Cancel",
@@ -29,7 +29,7 @@ internal static class MessageDialogButtonMapper
                 SecondaryResult: MessageDialogResult.None,
                 CloseResult: MessageDialogResult.Cancel),
 
-            MessageDialogButtons.YesNo => new(
+            MessageDialogButtons.YesNo => new MessageDialogButtonConfiguration(
                 PrimaryButtonText: "Yes",
                 SecondaryButtonText: "No",
                 CloseButtonText: null,
@@ -37,7 +37,7 @@ internal static class MessageDialogButtonMapper
                 SecondaryResult: MessageDialogResult.No,
                 CloseResult: MessageDialogResult.None),
 
-            MessageDialogButtons.YesNoCancel => new(
+            MessageDialogButtons.YesNoCancel => new MessageDialogButtonConfiguration(
                 PrimaryButtonText: "Yes",
                 SecondaryButtonText: "No",
                 CloseButtonText: "Cancel",
@@ -45,7 +45,7 @@ internal static class MessageDialogButtonMapper
                 SecondaryResult: MessageDialogResult.No,
                 CloseResult: MessageDialogResult.Cancel),
 
-            MessageDialogButtons.RetryCancel => new(
+            MessageDialogButtons.RetryCancel => new MessageDialogButtonConfiguration(
                 PrimaryButtonText: "Retry",
                 SecondaryButtonText: null,
                 CloseButtonText: "Cancel",

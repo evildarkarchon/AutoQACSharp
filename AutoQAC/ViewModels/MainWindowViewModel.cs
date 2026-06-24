@@ -17,9 +17,8 @@ namespace AutoQAC.ViewModels;
 /// sub-ViewModels. Owns Interactions (registered in MainWindow.xaml.cs code-behind)
 /// and mediates cross-VM state changes.
 /// </summary>
-public sealed class MainWindowViewModel : ViewModelBase, IDisposable
+public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
 {
-    private readonly IUiDispatcher _uiDispatcher;
     private readonly IDisposable _stateSubscription;
 
     public ConfigurationViewModel Configuration { get; }
@@ -49,17 +48,17 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
         IPluginRefreshCapabilityPolicy? pluginRefreshCapabilityPolicy = null,
         IAppLifetime? appLifetime = null)
     {
-        _uiDispatcher = uiDispatcher;
-
         Configuration = new ConfigurationViewModel(
             configService, stateService, logger, fileDialog,
-            messageDialog, pluginService, pluginLoadingService, pluginIssueApproximationService, pluginRefreshCoordinator,
+            messageDialog, pluginService, pluginLoadingService, pluginIssueApproximationService,
+            pluginRefreshCoordinator,
             null, uiDispatcher);
 
-        PluginList = new PluginListViewModel(stateService, pluginRefreshCoordinator, pluginRefreshCapabilityPolicy, uiDispatcher);
+        PluginList = new PluginListViewModel(stateService, pluginRefreshCoordinator, pluginRefreshCapabilityPolicy,
+            uiDispatcher);
 
         Commands = new CleaningCommandsViewModel(
-            stateService, orchestrator, configService, pluginLoadingService,
+             stateService, orchestrator, configService, pluginLoadingService,
             pluginRefreshCoordinator,
             logger, messageDialog, appLifetime ?? NoOpAppLifetime.Instance,
             ShowProgressInteraction, ShowPreviewInteraction,
@@ -67,7 +66,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
             ShowRestoreInteraction, ShowAboutInteraction);
 
         _stateSubscription = stateService.StateChanged.Subscribe(
-            new CallbackObserver<AppState>(state => _uiDispatcher.Post(() => OnStateChanged(state))));
+            new CallbackObserver<AppState>(state => uiDispatcher.Post(() => OnStateChanged(state))));
 
         OnStateChanged(stateService.CurrentState);
 

@@ -5,14 +5,9 @@ using Microsoft.UI.Dispatching;
 
 namespace AutoQAC.Services.UI;
 
-public sealed class WinUiDispatcher : IUiDispatcher
+public sealed class WinUiDispatcher(DispatcherQueue? dispatcherQueue = null) : IUiDispatcher
 {
-    private readonly DispatcherQueue? _dispatcherQueue;
-
-    public WinUiDispatcher(DispatcherQueue? dispatcherQueue = null)
-    {
-        _dispatcherQueue = dispatcherQueue ?? TryGetDispatcherQueueForCurrentThread();
-    }
+    private readonly DispatcherQueue? _dispatcherQueue = dispatcherQueue ?? TryGetDispatcherQueueForCurrentThread();
 
     public void Post(Action action)
     {

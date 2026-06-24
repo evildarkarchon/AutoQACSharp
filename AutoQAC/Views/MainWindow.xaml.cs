@@ -66,7 +66,8 @@ public sealed partial class MainWindow : Window
         Root.Loaded += OnRootLoaded;
         Closed += OnClosed;
 
-        _interactionRegistrations.Add(viewModel.ShowCleaningResultsInteraction.RegisterHandler(ShowCleaningResultsAsync));
+        _interactionRegistrations.Add(
+            viewModel.ShowCleaningResultsInteraction.RegisterHandler(ShowCleaningResultsAsync));
         _interactionRegistrations.Add(viewModel.ShowSettingsInteraction.RegisterHandler(ShowSettingsAsync));
         _interactionRegistrations.Add(viewModel.ShowSkipListInteraction.RegisterHandler(ShowSkipListAsync));
         _interactionRegistrations.Add(viewModel.ShowProgressInteraction.RegisterHandler(ShowProgressAsync));
@@ -166,17 +167,26 @@ public sealed partial class MainWindow : Window
 
     private Task<Unit> ShowProgressAsync(Unit input)
     {
-        if (_stateService is null || _orchestrator is null || _messageDialog is null || _logger is null || _uiDispatcher is null)
+        if (_stateService is null || _orchestrator is null || _messageDialog is null || _logger is null ||
+            _uiDispatcher is null)
         {
             return Task.FromResult(Unit.Default);
         }
 
-        var progressViewModel = new ProgressViewModel(_stateService, _orchestrator, _messageDialog, _logger, _uiDispatcher);
+        var progressViewModel =
+            new ProgressViewModel(_stateService, _orchestrator, _messageDialog, _logger, _uiDispatcher);
         var progressWindow = new ProgressWindow(progressViewModel);
 
         // Defense in depth: ProgressWindow subscribes to CloseRequested and disposes
         // its ViewModel. The local guard keeps this path safe if that contract changes.
         var progressDisposed = false;
+
+        progressViewModel.CloseRequested += (_, _) => progressWindow.Close();
+        progressWindow.Closed += (_, _) => DisposeProgressViewModel();
+        progressWindow.Activate();
+
+        return Task.FromResult(Unit.Default);
+
         void DisposeProgressViewModel()
         {
             if (progressDisposed)
@@ -187,22 +197,18 @@ public sealed partial class MainWindow : Window
             progressDisposed = true;
             progressViewModel.Dispose();
         }
-
-        progressViewModel.CloseRequested += (_, _) => progressWindow.Close();
-        progressWindow.Closed += (_, _) => DisposeProgressViewModel();
-        progressWindow.Activate();
-
-        return Task.FromResult(Unit.Default);
     }
 
     private Task<Unit> ShowPreviewAsync(List<DryRunResult> input)
     {
-        if (_stateService is null || _orchestrator is null || _messageDialog is null || _logger is null || _uiDispatcher is null)
+        if (_stateService is null || _orchestrator is null || _messageDialog is null || _logger is null ||
+            _uiDispatcher is null)
         {
             return Task.FromResult(Unit.Default);
         }
 
-        var progressViewModel = new ProgressViewModel(_stateService, _orchestrator, _messageDialog, _logger, _uiDispatcher);
+        var progressViewModel =
+            new ProgressViewModel(_stateService, _orchestrator, _messageDialog, _logger, _uiDispatcher);
         progressViewModel.LoadDryRunResults(input);
 
         var progressWindow = new ProgressWindow(progressViewModel)

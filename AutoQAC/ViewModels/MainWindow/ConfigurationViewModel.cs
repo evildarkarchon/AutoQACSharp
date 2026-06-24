@@ -195,6 +195,7 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         IsMo2InstanceValid = string.IsNullOrWhiteSpace(value)
             ? null
             : Directory.Exists(value);
+
     // ReSharper disable once UnusedParameter.Global
     partial void OnLoadOrderPathChanged(string? value) => RecomputeLoadOrderValidity();
 
@@ -286,6 +287,7 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
             StatusText = "Error changing MO2 profile";
         }
     }
+
     // ReSharper disable once UnusedParameter.Global
     partial void OnDisableSkipListsEnabledChanged(bool value)
     {

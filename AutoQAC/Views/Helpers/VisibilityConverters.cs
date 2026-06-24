@@ -4,7 +4,7 @@ using Microsoft.UI.Xaml.Data;
 
 namespace AutoQAC.Views.Helpers;
 
-public sealed class BoolToVisibilityConverter : IValueConverter
+public sealed partial class BoolToVisibilityConverter : IValueConverter
 {
     public object Convert(object value, Type targetType, object parameter, string language) =>
         value is true ? Visibility.Visible : Visibility.Collapsed;
@@ -13,7 +13,7 @@ public sealed class BoolToVisibilityConverter : IValueConverter
         throw new NotSupportedException();
 }
 
-public sealed class InverseBoolToVisibilityConverter : IValueConverter
+public sealed partial class InverseBoolToVisibilityConverter : IValueConverter
 {
     public object Convert(object value, Type targetType, object parameter, string language) =>
         value is true ? Visibility.Collapsed : Visibility.Visible;
@@ -22,7 +22,7 @@ public sealed class InverseBoolToVisibilityConverter : IValueConverter
         throw new NotSupportedException();
 }
 
-public sealed class NullableTrueToVisibilityConverter : IValueConverter
+public sealed partial class NullableTrueToVisibilityConverter : IValueConverter
 {
     public object Convert(object value, Type targetType, object parameter, string language) =>
         BindingHelpers.NullableTrueToVisibility(value as bool?);
@@ -31,7 +31,7 @@ public sealed class NullableTrueToVisibilityConverter : IValueConverter
         throw new NotSupportedException();
 }
 
-public sealed class NullableFalseToVisibilityConverter : IValueConverter
+public sealed partial class NullableFalseToVisibilityConverter : IValueConverter
 {
     public object Convert(object value, Type targetType, object parameter, string language) =>
         BindingHelpers.NullableFalseToVisibility(value as bool?);
@@ -40,7 +40,7 @@ public sealed class NullableFalseToVisibilityConverter : IValueConverter
         throw new NotSupportedException();
 }
 
-public sealed class StringToVisibilityConverter : IValueConverter
+public sealed partial class StringToVisibilityConverter : IValueConverter
 {
     public object Convert(object value, Type targetType, object parameter, string language) =>
         BindingHelpers.StringToVisibility(value as string);

@@ -2,7 +2,6 @@ using AutoQAC.ViewModels;
 using AutoQAC.Views.Helpers;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
 
 namespace AutoQAC.Views;
 

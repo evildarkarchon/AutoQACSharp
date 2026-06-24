@@ -16,13 +16,15 @@
             <helpers:NullableFalseToVisibilityConverter x:Key="NullableFalseToVisibilityConverter" />
             <helpers:StringToVisibilityConverter x:Key="StringToVisibilityConverter" />
             <helpers:IntDoubleConverter x:Key="IntDoubleConverter" />
-            <Style x:Key="BodyStrongTextBlockStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyTextBlockStyle}">
+            <Style x:Key="BodyStrongTextBlockStyle" TargetType="TextBlock"
+                   BasedOn="{StaticResource BodyTextBlockStyle}">
                 <Setter Property="FontWeight" Value="SemiBold" />
             </Style>
-            <Style x:Key="AutoQACHyperlinkButtonStyle" TargetType="HyperlinkButton">
+            <Style x:Key="AutoQacHyperlinkButtonStyle" TargetType="HyperlinkButton">
                 <Setter Property="Padding" Value="0" />
                 <Setter Property="HorizontalAlignment" Value="Left" />
             </Style>
         </ResourceDictionary>
     </Application.Resources>
 </Application>
+

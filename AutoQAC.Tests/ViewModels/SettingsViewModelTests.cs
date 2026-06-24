@@ -128,6 +128,7 @@ public sealed class SettingsViewModelTests
     {
         var fixture = CreateFixture();
         using var vm = fixture.CreateViewModel();
+        await vm.LoadSettingsAsync();
         ApplyValidEditableValues(vm);
         bool? closeResult = null;
         vm.CloseRequested += result => closeResult = result;
@@ -153,6 +154,7 @@ public sealed class SettingsViewModelTests
     {
         var fixture = CreateFixture();
         using var vm = fixture.CreateViewModel();
+        await vm.LoadSettingsAsync();
         ApplyValidEditableValues(vm);
         bool? closeResult = null;
         vm.CloseRequested += result => closeResult = result;
@@ -169,7 +171,42 @@ public sealed class SettingsViewModelTests
 
         vm.PersistenceBannerText.Should().Contain("restored to last saved values");
         vm.PersistenceBannerText.Should().NotContain("Cleaning was blocked");
-        closeResult.Should().BeFalse("the settings dialog must stay open when the flush barrier fails");
+        closeResult.Should().BeNull("the settings dialog must stay open when the flush barrier fails");
+    }
+
+    [Fact]
+    public async Task SaveAsync_Exception_KeepsDialogOpenAndShowsBanner()
+    {
+        var fixture = CreateFixture();
+        using var vm = fixture.CreateViewModel();
+        await vm.LoadSettingsAsync();
+        ApplyValidEditableValues(vm);
+        bool? closeResult = null;
+        vm.CloseRequested += result => closeResult = result;
+        fixture.ConfigService.SaveUserConfigAsync(Arg.Any<UserConfiguration>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromException(new InvalidOperationException("save failed")));
+
+        await vm.SaveCommand.ExecuteAsync(null);
+
+        vm.PersistenceBannerText.Should().Contain("Could not save settings");
+        closeResult.Should().BeNull("the settings dialog must stay open so the failure banner is visible");
+    }
+
+    [Fact]
+    public async Task LoadSettingsAsync_Failure_DisablesSaveAndDoesNotOverwriteSettings()
+    {
+        var fixture = CreateFixture();
+        fixture.ConfigService.LoadUserConfigAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromException<UserConfiguration>(new InvalidOperationException("load failed")));
+        using var vm = fixture.CreateViewModel();
+
+        await vm.LoadSettingsAsync();
+        await vm.SaveCommand.ExecuteAsync(null);
+
+        vm.SaveCommand.CanExecute(null).Should().BeFalse();
+        vm.PersistenceBannerText.Should().Contain("Could not load settings");
+        await fixture.ConfigService.DidNotReceive()
+            .SaveUserConfigAsync(Arg.Any<UserConfiguration>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -200,6 +237,15 @@ public sealed class SettingsViewModelTests
         fixture.RecordingFailures!.DisposeCount.Should().Be(1);
         fixture.RecordingResults!.DisposeCount.Should().Be(1);
         fixture.RecordingUserConfigurationChanged!.DisposeCount.Should().Be(1);
+    }
+
+    [Fact]
+    public void DesignTimeConstructor_UsesValidDefaultsAndDisablesSave()
+    {
+        using var vm = new SettingsViewModel();
+
+        vm.HasValidationErrors.Should().BeFalse();
+        vm.SaveCommand.CanExecute(null).Should().BeFalse();
     }
 
     [Fact]

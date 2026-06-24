@@ -13,20 +13,20 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace AutoQAC.ViewModels;
 
-public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
+public sealed partial class RestoreViewModel(
+    IBackupService backupService,
+    IMessageDialogService messageDialog,
+    ILoggingService logger,
+    IUiDispatcher uiDispatcher)
+    : ViewModelBase, IDisposable
 {
-    private readonly IBackupService _backupService;
-    private readonly IMessageDialogService _messageDialog;
-    private readonly ILoggingService _logger;
-    private readonly IUiDispatcher _uiDispatcher;
-
     private string? _backupRoot;
     private string? _trustedRestoreRoot;
     private CancellationTokenSource? _restoreCts;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasSessions))]
-    public partial ObservableCollection<BackupSession> Sessions { get; set; } = new();
+    public partial ObservableCollection<BackupSession> Sessions { get; set; } = [];
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(RestoreAllCommand))]
@@ -34,38 +34,30 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
     public partial BackupSession? SelectedSession { get; set; }
 
     [ObservableProperty]
-    public partial ObservableCollection<BackupPluginEntry> SelectedSessionPlugins { get; set; } = new();
+    public partial ObservableCollection<BackupPluginEntry> SelectedSessionPlugins { get; set; } = [];
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(RestorePluginCommand))]
     public partial BackupPluginEntry? SelectedPlugin { get; set; }
 
-    [ObservableProperty]
-    public partial bool IsLoading { get; set; }
+    [ObservableProperty] public partial bool IsLoading { get; set; }
+
+    [ObservableProperty] public partial string StatusText { get; set; } = "Select a backup session to view plugins";
+
+    [ObservableProperty] public partial string RestoreOutcomeTitle { get; set; } = string.Empty;
+
+    [ObservableProperty] public partial string RestoreSummaryText { get; set; } = string.Empty;
+
+    [ObservableProperty] public partial string RestoreProgressText { get; set; } = string.Empty;
+
+    [ObservableProperty] public partial long RestoreBytesCopied { get; set; }
+
+    [ObservableProperty] public partial long? RestoreTotalBytes { get; set; }
 
     [ObservableProperty]
-    public partial string StatusText { get; set; } = "Select a backup session to view plugins";
+    public partial ObservableCollection<BackupRestoreRowResult> RestoreResults { get; set; } = [];
 
-    [ObservableProperty]
-    public partial string RestoreOutcomeTitle { get; set; } = string.Empty;
-
-    [ObservableProperty]
-    public partial string RestoreSummaryText { get; set; } = string.Empty;
-
-    [ObservableProperty]
-    public partial string RestoreProgressText { get; set; } = string.Empty;
-
-    [ObservableProperty]
-    public partial long RestoreBytesCopied { get; set; }
-
-    [ObservableProperty]
-    public partial long? RestoreTotalBytes { get; set; }
-
-    [ObservableProperty]
-    public partial ObservableCollection<BackupRestoreRowResult> RestoreResults { get; set; } = new();
-
-    [ObservableProperty]
-    public partial bool IsRestoreResultVisible { get; set; }
+    [ObservableProperty] public partial bool IsRestoreResultVisible { get; set; }
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(RestorePluginCommand))]
@@ -80,18 +72,8 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
     public event EventHandler? CloseRequested;
 
     /// <summary>Design-time constructor.</summary>
-    public RestoreViewModel() : this(null!, null!, null!, new SynchronousFallbackDispatcher()) { }
-
-    public RestoreViewModel(
-        IBackupService backupService,
-        IMessageDialogService messageDialog,
-        ILoggingService logger,
-        IUiDispatcher uiDispatcher)
+    public RestoreViewModel() : this(null!, null!, null!, new SynchronousFallbackDispatcher())
     {
-        _backupService = backupService;
-        _messageDialog = messageDialog;
-        _logger = logger;
-        _uiDispatcher = uiDispatcher;
     }
 
     private bool HasTrustedRestoreRoot => !string.IsNullOrWhiteSpace(_trustedRestoreRoot);
@@ -107,6 +89,7 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
             {
                 SelectedSessionPlugins.Add(plugin);
             }
+
             StatusText = $"Session: {FormatSessionTimestamp(value.Timestamp)} - {value.Plugins.Count} plugin(s)";
         }
         else
@@ -135,7 +118,7 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
         }
 
         var trustedRestoreRoot = _trustedRestoreRoot!;
-        _backupRoot = _backupService.GetBackupRoot(trustedRestoreRoot);
+        _backupRoot = backupService.GetBackupRoot(trustedRestoreRoot);
         // Re-evaluate DeleteSession predicate after _backupRoot transitions to a non-null value.
         DeleteSessionCommand.NotifyCanExecuteChanged();
         await LoadSessions();
@@ -157,7 +140,7 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
             IsLoading = true;
             StatusText = "Loading backup sessions...";
 
-            var sessions = await _backupService.GetBackupSessionsAsync(_backupRoot);
+            var sessions = await backupService.GetBackupSessionsAsync(_backupRoot);
 
             Sessions.Clear();
             foreach (var session in sessions)
@@ -173,7 +156,7 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
         }
         catch (Exception ex)
         {
-            _logger.Error(ex, "Failed to load backup sessions");
+            logger.Error(ex, "Failed to load backup sessions");
             StatusText = "Backup sessions could not be loaded. See the latest AutoQAC log for technical details.";
         }
         finally
@@ -194,7 +177,7 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
         var session = SelectedSession;
         var safePluginName = DiagnosticTextFormatter.SafePluginName(plugin.FileName);
         var timestamp = FormatSessionTimestamp(session.Timestamp);
-        var confirmed = await _messageDialog.ShowConfirmAsync(
+        var confirmed = await messageDialog.ShowConfirmAsync(
             "Restore Selected",
             $"Restore Selected: Restore {safePluginName} from {timestamp}? This overwrites the current plugin file with the backup copy.");
 
@@ -206,19 +189,21 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
             IsRestoreActive = true;
             ClearRestoreResult();
             StatusText = $"Restoring: {safePluginName}";
-            RestoreProgressText = $"Restoring 1 / 1 plugins";
+            RestoreProgressText = "Restoring 1 / 1 plugins";
 
             var cts = CreateRestoreCancellationSource();
             var progress = CreateRestoreProgressReporter([plugin]);
 
-            var result = await _backupService.RestorePluginAsync(plugin, session.SessionDirectory, _trustedRestoreRoot, progress, cts.Token);
+            var result = await backupService.RestorePluginAsync(plugin, session.SessionDirectory, _trustedRestoreRoot,
+                progress, cts.Token);
             ApplyRestoreResult(result);
-            _logger.Information("Restore selected completed with status {Status} for plugin {Plugin}", result.Status, plugin.FileName);
+            logger.Information("Restore selected completed with status {Status} for plugin {Plugin}", result.Status,
+                plugin.FileName);
         }
         catch (Exception ex)
         {
-            _logger.Error(ex, "Failed to restore plugin {Plugin}", plugin.FileName);
-            await _messageDialog.ShowErrorAsync(
+            logger.Error(ex, "Failed to restore plugin {Plugin}", plugin.FileName);
+            await messageDialog.ShowErrorAsync(
                 "Restore Failed",
                 $"Failed to restore '{safePluginName}'.",
                 "Technical details were written to the log.");
@@ -243,7 +228,7 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
         var session = SelectedSession;
         var timestamp = FormatSessionTimestamp(session.Timestamp);
 
-        var confirmed = await _messageDialog.ShowConfirmAsync(
+        var confirmed = await messageDialog.ShowConfirmAsync(
             "Restore All",
             $"Restore All: Restore {pluginCount} plugin(s) from {timestamp}? Current plugin files will be overwritten by backup copies. AutoQAC will continue past individual failures and show a result list.");
 
@@ -260,15 +245,15 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
             var cts = CreateRestoreCancellationSource();
             var progress = CreateRestoreProgressReporter(session.Plugins);
 
-            var result = await _backupService.RestoreSessionAsync(session, _trustedRestoreRoot, progress, cts.Token);
+            var result = await backupService.RestoreSessionAsync(session, _trustedRestoreRoot, progress, cts.Token);
             ApplyRestoreResult(result);
-            _logger.Information("Restore all completed with status {Status} for backup session {Timestamp}",
+            logger.Information("Restore all completed with status {Status} for backup session {Timestamp}",
                 result.Status, timestamp);
         }
         catch (Exception ex)
         {
-            _logger.Error(ex, "Failed to restore session");
-            await _messageDialog.ShowErrorAsync(
+            logger.Error(ex, "Failed to restore session");
+            await messageDialog.ShowErrorAsync(
                 "Restore Failed",
                 "Some plugins may have failed to restore.",
                 "Technical details were written to the log.");
@@ -287,7 +272,8 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
     private void CancelRestore()
     {
         _restoreCts?.Cancel();
-        StatusText = "Cancel restore requested. The partial file will be deleted and completed/failed/canceled rows will remain visible.";
+        StatusText =
+            "Cancel restore requested. The partial file will be deleted and completed/failed/canceled rows will remain visible.";
     }
 
     /// <summary>
@@ -313,7 +299,7 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
 
         var session = SelectedSession;
         var timestamp = FormatSessionTimestamp(session.Timestamp);
-        var confirmed = await _messageDialog.ShowConfirmAsync(
+        var confirmed = await messageDialog.ShowConfirmAsync(
             "Delete Backup Session",
             $"Permanently delete backup session from {timestamp}?\n\n" +
             "This action cannot be undone.");
@@ -325,7 +311,7 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
         // "All business logic lives in services, not ViewModels"). The service validates
         // session-directory containment via BackupPathContainment.IsContained (Plan 07-14)
         // and routes the recursive delete through IBackupSessionDeleter (Plan 07-02).
-        var result = await _backupService.DeleteSessionAsync(session, _backupRoot!, CancellationToken.None);
+        var result = await backupService.DeleteSessionAsync(session, _backupRoot!, CancellationToken.None);
 
         switch (result.Status)
         {
@@ -334,7 +320,7 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
                 SelectedSession = null;
                 OnPropertyChanged(nameof(HasSessions));
                 StatusText = "Session deleted";
-                _logger.Information("Deleted backup session: {Timestamp}", timestamp);
+                logger.Information("Deleted backup session: {Timestamp}", timestamp);
                 break;
 
             case BackupSessionDeleteStatus.RejectedOutsideBackupRoot:
@@ -342,7 +328,7 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
                 // details so the safety message stays consistent across the restore-window
                 // surface (LOW finding from cross-AI review).
                 StatusText = "The selected backup session is outside the configured backup folder.";
-                await _messageDialog.ShowErrorAsync(
+                await messageDialog.ShowErrorAsync(
                     "Delete Failed",
                     "Failed to delete the backup session.",
                     "The selected backup session is outside the configured backup folder.");
@@ -353,7 +339,7 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
                 // Generic IO failure copy: the technical exception detail lives in the
                 // service log, not in the dialog (D-04 concise reason pattern).
                 StatusText = "Failed to delete the backup session. Technical details were written to the log.";
-                await _messageDialog.ShowErrorAsync(
+                await messageDialog.ShowErrorAsync(
                     "Delete Failed",
                     "Failed to delete the backup session.",
                     "Technical details were written to the log.");
@@ -416,7 +402,7 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
     /// <returns>A progress reporter safe for the backup service to call during restore copies.</returns>
     private IProgress<BackupCopyProgress> CreateRestoreProgressReporter(IReadOnlyList<BackupPluginEntry> plugins) =>
         new RestoreProgressReporter(progress =>
-            _uiDispatcher.Post(() => UpdateRestoreProgress(progress, plugins)));
+            uiDispatcher.Post(() => UpdateRestoreProgress(progress, plugins)));
 
     /// <summary>
     /// Updates bindable progress fields with plugin position and decimal byte counts when available.
@@ -437,12 +423,14 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
                 break;
             }
         }
+
         var currentCount = currentIndex >= 0 ? currentIndex + 1 : Math.Min(RestoreResults.Count + 1, plugins.Count);
         var text = $"Restoring {currentCount} / {plugins.Count} plugins";
 
         if (progress.TotalBytes is { } totalBytes)
         {
-            text += $" — {BackupProgressTextFormatter.FormatBytes(progress.BytesCopied)} / {BackupProgressTextFormatter.FormatBytes(totalBytes)}";
+            text +=
+                $" — {BackupProgressTextFormatter.FormatBytes(progress.BytesCopied)} / {BackupProgressTextFormatter.FormatBytes(totalBytes)}";
         }
 
         RestoreProgressText = text;
@@ -510,9 +498,12 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
         return result.Status switch
         {
             BackupOperationStatus.Complete => $"Restore completed: {result.RestoredCount} plugin(s) restored.",
-            BackupOperationStatus.Partial => $"Restore partially completed: {counts}. Review the rows below. Technical details were written to the log.",
-            BackupOperationStatus.Failed => $"Restore failed: {counts}. Review the failed rows, fix missing files or permissions, then try again. Technical details were written to the log.",
-            BackupOperationStatus.Canceled => $"Restore canceled: {counts}. Partial files were removed and completed/failed/canceled rows remain visible.",
+            BackupOperationStatus.Partial =>
+                $"Restore partially completed: {counts}. Review the rows below. Technical details were written to the log.",
+            BackupOperationStatus.Failed =>
+                $"Restore failed: {counts}. Review the failed rows, fix missing files or permissions, then try again. Technical details were written to the log.",
+            BackupOperationStatus.Canceled =>
+                $"Restore canceled: {counts}. Partial files were removed and completed/failed/canceled rows remain visible.",
             _ => $"Restore completed with status {result.Status}: {counts}."
         };
     }

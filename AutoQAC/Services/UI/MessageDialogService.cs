@@ -9,19 +9,12 @@ using Microsoft.UI.Xaml.Media;
 
 namespace AutoQAC.Services.UI;
 
-public sealed class MessageDialogService : IMessageDialogService
+public sealed class MessageDialogService(
+    IWindowContextProvider windowContextProvider,
+    IUiDispatcher uiDispatcher)
+    : IMessageDialogService
 {
-    private readonly IWindowContextProvider _windowContextProvider;
-    private readonly IUiDispatcher _uiDispatcher;
     private readonly SemaphoreSlim _dialogLock = new(1, 1);
-
-    public MessageDialogService(
-        IWindowContextProvider windowContextProvider,
-        IUiDispatcher uiDispatcher)
-    {
-        _windowContextProvider = windowContextProvider;
-        _uiDispatcher = uiDispatcher;
-    }
 
     public Task<MessageDialogResult> ShowAsync(
         string title,
@@ -72,7 +65,8 @@ public sealed class MessageDialogService : IMessageDialogService
 
     public async Task<bool> ShowRetryAsync(string title, string message, string? details = null)
     {
-        var result = await ShowAsync(title, message, MessageDialogButtons.RetryCancel, MessageDialogIcon.Warning, details);
+        var result = await ShowAsync(title, message, MessageDialogButtons.RetryCancel, MessageDialogIcon.Warning,
+            details);
         return result == MessageDialogResult.Retry;
     }
 
@@ -85,7 +79,7 @@ public sealed class MessageDialogService : IMessageDialogService
 
         return ShowSerializedAsync(async () =>
         {
-            if (!_windowContextProvider.TryGetContext(out _, out var xamlRoot))
+            if (!windowContextProvider.TryGetContext(out _, out var xamlRoot))
             {
                 return BackupFailureChoice.SkipPlugin;
             }
@@ -120,7 +114,7 @@ public sealed class MessageDialogService : IMessageDialogService
     {
         return ShowSerializedAsync(async () =>
         {
-            if (!_windowContextProvider.TryGetContext(out _, out var xamlRoot))
+            if (!windowContextProvider.TryGetContext(out _, out var xamlRoot))
             {
                 return buttonConfiguration.CloseResult;
             }
@@ -154,7 +148,7 @@ public sealed class MessageDialogService : IMessageDialogService
         try
         {
             T result = default!;
-            await _uiDispatcher.InvokeAsync(async () => result = await show());
+            await uiDispatcher.InvokeAsync(async () => result = await show());
             return result;
         }
         finally

@@ -23,7 +23,7 @@ public sealed class JsonPidStore(IPidStorePathProvider pathProvider, ILoggingSer
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            using var stream = OpenPidFile();
+            await using var stream = OpenPidFile();
             await LockWithRetryAsync(stream, ct).ConfigureAwait(false);
             var locked = true;
             try
@@ -49,7 +49,7 @@ public sealed class JsonPidStore(IPidStorePathProvider pathProvider, ILoggingSer
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            using var stream = OpenPidFile();
+            await using var stream = OpenPidFile();
             await LockWithRetryAsync(stream, ct).ConfigureAwait(false);
             var locked = true;
             try
@@ -106,7 +106,8 @@ public sealed class JsonPidStore(IPidStorePathProvider pathProvider, ILoggingSer
         catch (JsonException ex) when (resetOnCorrupt)
         {
             await PreserveCorruptStoreAsync(stream, ct).ConfigureAwait(false);
-            logger.Error(ex, "[Orphan] PID store JSON was corrupt and has been reset: {Path}", pathProvider.PidFilePath);
+            logger.Error(ex, "[Orphan] PID store JSON was corrupt and has been reset: {Path}",
+                pathProvider.PidFilePath);
             await WriteEntriesAsync(stream, [], ct).ConfigureAwait(false);
             return [];
         }
@@ -119,7 +120,8 @@ public sealed class JsonPidStore(IPidStorePathProvider pathProvider, ILoggingSer
             Path.GetDirectoryName(pathProvider.PidFilePath) ?? string.Empty,
             $"autoqac-pids.corrupt-{DateTime.UtcNow:yyyyMMddHHmmssfff}.json");
 
-        await using var copy = new FileStream(copyPath, FileMode.CreateNew, FileAccess.Write, FileShare.Read, 4096, useAsync: true);
+        await using var copy = new FileStream(copyPath, FileMode.CreateNew, FileAccess.Write, FileShare.Read, 4096,
+            useAsync: true);
         await stream.CopyToAsync(copy, ct).ConfigureAwait(false);
     }
 

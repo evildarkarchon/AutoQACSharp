@@ -24,10 +24,9 @@ public sealed partial class PluginListViewModel : ViewModelBase, IDisposable
     private readonly IStateService _stateService;
     private readonly IPluginRefreshCoordinator _pluginRefreshCoordinator;
     private readonly IPluginRefreshCapabilityPolicy _refreshCapabilityPolicy;
-    private readonly IUiDispatcher _uiDispatcher;
     private readonly IDisposable _pluginRefreshStatusSubscription;
 
-    public ObservableCollection<PluginListItem> PluginsToClean { get; } = new();
+    public ObservableCollection<PluginListItem> PluginsToClean { get; } = [];
 
     [ObservableProperty]
     public partial PluginListItem? SelectedPlugin { get; set; }
@@ -47,7 +46,7 @@ public sealed partial class PluginListViewModel : ViewModelBase, IDisposable
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanRefreshApproximations))]
     [NotifyCanExecuteChangedFor(nameof(RefreshSelectedApproximationsCommand))]
-    public partial GameType CurrentGameType { get; set; } = GameType.Unknown;
+    public partial GameType CurrentGameType { get; set; }
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(RefreshSelectedApproximationsCommand))]
@@ -69,10 +68,10 @@ public sealed partial class PluginListViewModel : ViewModelBase, IDisposable
         _stateService = stateService;
         _pluginRefreshCoordinator = pluginRefreshCoordinator ?? NoOpPluginRefreshCoordinator.Instance;
         _refreshCapabilityPolicy = refreshCapabilityPolicy ?? NoApproximationRefreshCapabilityPolicy.Instance;
-        _uiDispatcher = uiDispatcher ?? new SynchronousFallbackDispatcher();
+        var dispatcher = uiDispatcher ?? new SynchronousFallbackDispatcher();
         _pluginRefreshStatusSubscription = _pluginRefreshCoordinator.StatusChanged.Subscribe(
             new CallbackObserver<PluginRefreshStatus>(status =>
-                _uiDispatcher.Post(() => OnPluginRefreshStatusChanged(status))));
+                dispatcher.Post(() => OnPluginRefreshStatusChanged(status))));
         // No subscription here — the parent VM dispatches OnStateChanged on the UI thread.
         // Initial pull from current state so commands reflect reality before first change event.
         var initial = stateService.CurrentState;
