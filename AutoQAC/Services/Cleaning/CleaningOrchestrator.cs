@@ -22,7 +22,7 @@ public sealed class CleaningOrchestrator(
     IProcessExecutionService processService)
     : ICleaningOrchestrator, IDisposable
 {
-    private readonly object _ctsLock = new();
+    private readonly Lock _ctsLock = new();
     private CancellationTokenSource? _cleaningCts;
     private int _sessionActive;
 
@@ -40,12 +40,13 @@ public sealed class CleaningOrchestrator(
         StartCleaningAsync(onTimeout, null, ct);
 
     /// <inheritdoc />
-    public async Task StartCleaningAsync(TimeoutRetryCallback? onTimeout, BackupFailureCallback? onBackupFailure, CancellationToken ct = default)
+    public async Task StartCleaningAsync(TimeoutRetryCallback? onTimeout, BackupFailureCallback? onBackupFailure,
+        CancellationToken ct = default)
     {
         EnterSessionOrThrow();
         const int maxRetryAttempts = 3;
         var context = new SessionContext(DateTime.Now, GameType.Unknown);
-        string? sessionDir = null;
+        string? backupSessionDir = null;
         var backupEntries = new List<BackupPluginEntry>();
 
         // Reset stop flags at the start of each cleaning session.
@@ -66,14 +67,16 @@ public sealed class CleaningOrchestrator(
 
             var preflightPlan = await preflight.PrepareAsync(cts.Token).ConfigureAwait(false);
             context = context with { GameType = preflightPlan.DetectedGameType };
-            var pluginsToClean = preflightPlan.PluginRows.Where(r => r.Decision == PreflightDecision.Clean).Select(r => r.Plugin).ToList();
+            var pluginsToClean = preflightPlan.PluginRows.Where(r => r.Decision == PreflightDecision.Clean)
+                .Select(r => r.Plugin).ToList();
             ThrowIfNoValidPluginsAfterFileValidation(preflightPlan);
 
             // D-14: real cleaning mode applies detected game state; dry-run does not.
-            stateService.UpdateState(s => s with { CurrentGameType = context.GameType });
+            var context1 = context;
+            stateService.UpdateState(s => s with { CurrentGameType = context1.GameType });
             stateService.StartCleaning(pluginsToClean);
 
-            sessionDir = await backupCoordinator.BeginSessionAsync(preflightPlan, cts.Token).ConfigureAwait(false);
+            backupSessionDir = await backupCoordinator.BeginSessionAsync(preflightPlan, cts.Token).ConfigureAwait(false);
 
             // Gap CR-01 fix: if the user requested Stop during orphan cleanup, preflight, state
             // initialization, or backup session begin, bail out cleanly before launching xEdit.
@@ -89,26 +92,29 @@ public sealed class CleaningOrchestrator(
                     break;
                 }
 
-                var processed = await ProcessPluginAsync(plugin, preflightPlan, sessionDir, backupEntries, onTimeout, onBackupFailure, maxRetryAttempts, context, cts.Token)
+                var pluginDecision = await ProcessPluginAsync(plugin, preflightPlan, backupSessionDir, backupEntries, onTimeout,
+                        onBackupFailure, maxRetryAttempts, context, cts.Token)
                     .ConfigureAwait(false);
 
-                if (!processed || cts.Token.IsCancellationRequested || terminationCoordinator.IsStopRequested)
+                if (pluginDecision == PluginLoopDecision.ReturnedEarly)
+                {
+                    return;
+                }
+
+                if (pluginDecision == PluginLoopDecision.StopSession || cts.Token.IsCancellationRequested ||
+                    terminationCoordinator.IsStopRequested)
                 {
                     context = context with { WasCancelled = true };
                     break;
                 }
-
-                if (context.ReturnedEarly)
-                {
-                    return;
-                }
             }
 
-            if (sessionDir is not null && backupEntries.Count > 0)
+            if (backupSessionDir is not null && backupEntries.Count > 0)
             {
                 context = context with
                 {
-                    BackupCleanup = await backupCoordinator.FinalizeSessionAsync(sessionDir, context.GameType, backupEntries, preflightPlan.BackupMaxSessions, cts.Token)
+                    BackupCleanup = await backupCoordinator.FinalizeSessionAsync(backupSessionDir, context.GameType,
+                            backupEntries, preflightPlan.BackupMaxSessions, cts.Token)
                         .ConfigureAwait(false)
                 };
             }
@@ -119,9 +125,11 @@ public sealed class CleaningOrchestrator(
         {
             // Cancellation is not an error -- preserve partial results.
             logger.Information("Cleaning workflow cancelled");
-            if (sessionDir is not null && backupEntries.Count > 0)
+            if (backupSessionDir is not null && backupEntries.Count > 0)
             {
-                await backupCoordinator.WritePartialMetadataAsync(sessionDir, context.GameType, backupEntries, CancellationToken.None).ConfigureAwait(false);
+                await backupCoordinator
+                    .WritePartialMetadataAsync(backupSessionDir, context.GameType, backupEntries, CancellationToken.None)
+                    .ConfigureAwait(false);
             }
 
             FinishSession(context with { WasCancelled = true });
@@ -140,77 +148,103 @@ public sealed class CleaningOrchestrator(
             ExitSession();
         }
 
-        async Task<bool> ProcessPluginAsync(PluginInfo plugin, CleaningPreflightPlan preflightPlan, string? sessionDir,
-            List<BackupPluginEntry> backupEntries, TimeoutRetryCallback? onTimeout, BackupFailureCallback? onBackupFailure,
-            int maxRetryAttempts, SessionContext contextSnapshot, CancellationToken ct)
+        async Task<PluginLoopDecision> ProcessPluginAsync(PluginInfo plugin, CleaningPreflightPlan plan, string? sessionDir,
+            List<BackupPluginEntry> backupPluginEntries, TimeoutRetryCallback? timeoutRetryCallback,
+            BackupFailureCallback? backupFailureCallback,
+            int retryLimit, SessionContext contextSnapshot, CancellationToken cancellationToken)
         {
             logger.Information("Processing plugin: {Plugin}", plugin.FileName);
             stateService.UpdateState(s => s with { CurrentPlugin = plugin.FileName });
 
             if (sessionDir is not null)
             {
-                var backupResult = await HandleBackupOutcomeAsync(plugin, sessionDir, backupEntries, onBackupFailure, contextSnapshot, ct).ConfigureAwait(false);
-                if (backupResult == PluginLoopDecision.SkipPlugin) return true;
-                if (backupResult == PluginLoopDecision.StopSession) return false;
-                if (backupResult == PluginLoopDecision.ReturnedEarly) return true;
+                var backupResult =
+                    await HandleBackupOutcomeAsync(plugin, sessionDir, backupPluginEntries, backupFailureCallback,
+                        contextSnapshot, cancellationToken).ConfigureAwait(false);
+                switch (backupResult)
+                {
+                    case PluginLoopDecision.SkipPlugin:
+                    case PluginLoopDecision.StopSession:
+                    case PluginLoopDecision.ReturnedEarly:
+                        return backupResult;
+                    case PluginLoopDecision.Continue:
+                        break;
+                    default:
+                        throw new ArgumentOutOfRangeException(nameof(backupResult), backupResult,
+                            "Unexpected backup handling decision.");
+                }
             }
 
             // RunPluginBackupAsync is handled above via HandleBackupOutcomeAsync; keep backup before runner.RunAsync.
             // R-01: maxRetryAttempts = 3 matches the original retry ceiling defined for this method.
             // R-08: runner and finalizer both consume plan.XEditDirectory; the facade does not re-derive it.
             var runnerOutput = await runner.RunAsync(
-                plugin, preflightPlan.DetectedGameType, preflightPlan.XEditDirectory, onTimeout,
-                preflightPlan.CleaningTimeoutSeconds, maxRetryAttempts,
-                attachProcess: proc => terminationCoordinator.AttachProcess(proc),
-                detachProcess: () => terminationCoordinator.DetachProcess(), ct).ConfigureAwait(false);
+                plugin, plan.DetectedGameType, plan.XEditDirectory, timeoutRetryCallback,
+                plan.CleaningTimeoutSeconds, retryLimit,
+                attachProcess: terminationCoordinator.AttachProcess,
+                detachProcess: terminationCoordinator.DetachProcess, cancellationToken).ConfigureAwait(false);
 
             // Snapshot termination context AFTER detach so ProcessMayStillBeRunning reflects final state (Research Open Question #3).
-            var terminationContext = new TerminationFinalizeContext(terminationCoordinator.ProcessMayStillBeRunning, terminationCoordinator.IsStopRequested);
-            var result = await finalizer.FinalizeAsync(plugin, preflightPlan.DetectedGameType, preflightPlan.XEditDirectory, runnerOutput, terminationContext, ct)
+            var terminationContext = new TerminationFinalizeContext(terminationCoordinator.ProcessMayStillBeRunning,
+                terminationCoordinator.IsStopRequested);
+            var result = await finalizer.FinalizeAsync(plugin, plan.DetectedGameType,
+                    plan.XEditDirectory, runnerOutput, terminationContext, cancellationToken)
                 .ConfigureAwait(false);
 
-            context.Results.Add(result);
+            contextSnapshot.Results.Add(result);
             stateService.AddDetailedCleaningResult(result);
-            logger.Information("Plugin {Plugin} processed: {Status} - {Message}", plugin.FileName, result.Status, result.Message);
-            return true;
+            logger.Information("Plugin {Plugin} processed: {Status} - {Message}", plugin.FileName, result.Status,
+                result.Message);
+            return PluginLoopDecision.Continue;
         }
 
         async Task<PluginLoopDecision> HandleBackupOutcomeAsync(PluginInfo plugin, string sessionDir,
-            List<BackupPluginEntry> backupEntries, BackupFailureCallback? onBackupFailure, SessionContext contextSnapshot,
-            CancellationToken ct)
+            List<BackupPluginEntry> backupPluginEntries, BackupFailureCallback? backupFailureCallback,
+            SessionContext contextSnapshot,
+            CancellationToken cancellationToken)
         {
-            var outcome = await backupCoordinator.RunPluginBackupAsync(plugin, sessionDir, onBackupFailure, ct).ConfigureAwait(false);
+            var outcome = await backupCoordinator.RunPluginBackupAsync(plugin, sessionDir, backupFailureCallback,
+                    cancellationToken)
+                .ConfigureAwait(false);
             switch (outcome.Kind)
             {
                 case PluginBackupOutcomeKind.Canceled:
                 case PluginBackupOutcomeKind.UserSkipped:
                     if (outcome.SkippedResult is not null)
                     {
-                        context.Results.Add(outcome.SkippedResult);
+                        contextSnapshot.Results.Add(outcome.SkippedResult);
                         stateService.AddDetailedCleaningResult(outcome.SkippedResult);
                     }
 
                     if (outcome.Kind == PluginBackupOutcomeKind.UserSkipped)
                     {
-                        stateService.UpdateState(s => s with { SkippedPlugins = new HashSet<string>(s.SkippedPlugins) { plugin.FileName }.ToFrozenSet(StringComparer.Ordinal) });
+                        stateService.UpdateState(s => s with
+                        {
+                            SkippedPlugins =
+                            new HashSet<string>(s.SkippedPlugins) { plugin.FileName }.ToFrozenSet(StringComparer
+                                .Ordinal)
+                        });
                     }
 
-                    return ct.IsCancellationRequested ? PluginLoopDecision.StopSession : PluginLoopDecision.SkipPlugin;
+                    return cancellationToken.IsCancellationRequested
+                        ? PluginLoopDecision.StopSession
+                        : PluginLoopDecision.SkipPlugin;
 
                 case PluginBackupOutcomeKind.AbortSession:
                     // R-09: full AbortSession branch -- verbatim from CleaningOrchestrator.cs:333-362.
                     // Step 1: best-effort partial metadata write so the abandoned session has a manifest.
-                    await backupCoordinator.WritePartialMetadataAsync(sessionDir, contextSnapshot.GameType, backupEntries, CancellationToken.None).ConfigureAwait(false);
+                    await backupCoordinator
+                        .WritePartialMetadataAsync(sessionDir, contextSnapshot.GameType, backupPluginEntries,
+                            CancellationToken.None).ConfigureAwait(false);
                     // Step 2: mark the session as cancelled so finalization classifies correctly.
                     var abortedContext = contextSnapshot with { WasCancelled = true };
                     // Steps 3-5: build CleaningSessionResult, publish to state, then log the legacy summary.
                     FinishSession(abortedContext);
                     // Step 6: exit the StartCleaningAsync method.
-                    context = context with { ReturnedEarly = true };
                     return PluginLoopDecision.ReturnedEarly;
 
                 case PluginBackupOutcomeKind.Succeeded:
-                    if (outcome.Entry is not null) backupEntries.Add(outcome.Entry);
+                    if (outcome.Entry is not null) backupPluginEntries.Add(outcome.Entry);
                     break;
 
                 case PluginBackupOutcomeKind.ContinueWithoutBackup:
@@ -266,7 +300,11 @@ public sealed class CleaningOrchestrator(
     /// <summary>Creates the session CTS linked to the caller token and publishes it under the facade lock.</summary>
     private CancellationTokenSource CreateSessionCts(CancellationToken ct)
     {
-        lock (_ctsLock) { _cleaningCts = CancellationTokenSource.CreateLinkedTokenSource(ct); return _cleaningCts; }
+        lock (_ctsLock)
+        {
+            _cleaningCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            return _cleaningCts;
+        }
     }
 
     /// <summary>
@@ -294,7 +332,11 @@ public sealed class CleaningOrchestrator(
     private void CancelSessionCts()
     {
         CancellationTokenSource? cts;
-        lock (_ctsLock) { cts = _cleaningCts; }
+        lock (_ctsLock)
+        {
+            cts = _cleaningCts;
+        }
+
         try
         {
             if (cts is not null) _ = cts.CancelAsync();
@@ -308,7 +350,11 @@ public sealed class CleaningOrchestrator(
     /// <summary>Disposes and clears the session CTS owned by the facade.</summary>
     private void DisposeSessionCts()
     {
-        lock (_ctsLock) { _cleaningCts?.Dispose(); _cleaningCts = null; }
+        lock (_ctsLock)
+        {
+            _cleaningCts?.Dispose();
+            _cleaningCts = null;
+        }
     }
 
     /// <summary>Builds the final session result, publishes it, and logs the legacy session summary.</summary>
@@ -329,8 +375,10 @@ public sealed class CleaningOrchestrator(
         : new DryRunResult(row.Plugin.FileName, DryRunStatus.WillSkip, row.SkipReason switch
         {
             PreflightSkipReason.NotSelected => "Not selected", PreflightSkipReason.InSkipList => "In skip list",
-            PreflightSkipReason.FileNotFound => "File not found", PreflightSkipReason.Unreadable => "File is unreadable",
-            PreflightSkipReason.ZeroByte => "Zero-byte file", PreflightSkipReason.MalformedEntry => "Malformed file name",
+            PreflightSkipReason.FileNotFound => "File not found",
+            PreflightSkipReason.Unreadable => "File is unreadable",
+            PreflightSkipReason.ZeroByte => "Zero-byte file",
+            PreflightSkipReason.MalformedEntry => "Malformed file name",
             PreflightSkipReason.InvalidExtension => "Invalid file extension", _ => "Skipped"
         });
 
@@ -341,7 +389,8 @@ public sealed class CleaningOrchestrator(
         var pathFailures = plan.PluginRows.Where(r => IsFileValidationReason(r.SkipReason))
             .Select(r => $"{r.Plugin.FileName} ({MapReasonToPluginWarningLabel(r.SkipReason!.Value)})").ToList();
         if (pathFailures.Count == 0) return;
-        throw new InvalidOperationException($"No valid plugins to clean. {pathFailures.Count} plugin(s) not found or unreadable: {string.Join(", ", pathFailures)}");
+        throw new InvalidOperationException(
+            $"No valid plugins to clean. {pathFailures.Count} plugin(s) not found or unreadable: {string.Join(", ", pathFailures)}");
     }
 
     /// <summary>True for skip reasons produced by on-disk plugin validation.</summary>
@@ -352,8 +401,10 @@ public sealed class CleaningOrchestrator(
     /// <summary>Converts a file-validation preflight reason to the legacy warning label used in exception summaries.</summary>
     private static string MapReasonToPluginWarningLabel(PreflightSkipReason reason) => reason switch
     {
-        PreflightSkipReason.FileNotFound => nameof(PluginWarningKind.NotFound), PreflightSkipReason.Unreadable => nameof(PluginWarningKind.Unreadable),
-        PreflightSkipReason.ZeroByte => nameof(PluginWarningKind.ZeroByte), PreflightSkipReason.MalformedEntry => nameof(PluginWarningKind.MalformedEntry),
+        PreflightSkipReason.FileNotFound => nameof(PluginWarningKind.NotFound),
+        PreflightSkipReason.Unreadable => nameof(PluginWarningKind.Unreadable),
+        PreflightSkipReason.ZeroByte => nameof(PluginWarningKind.ZeroByte),
+        PreflightSkipReason.MalformedEntry => nameof(PluginWarningKind.MalformedEntry),
         PreflightSkipReason.InvalidExtension => nameof(PluginWarningKind.InvalidExtension), _ => reason.ToString()
     };
 
@@ -374,10 +425,15 @@ public sealed class CleaningOrchestrator(
     private sealed record SessionContext(DateTime StartTime, GameType GameType)
     {
         public bool WasCancelled { get; init; }
-        public bool ReturnedEarly { get; init; }
         public BackupRetentionCleanupResult? BackupCleanup { get; init; }
         public List<PluginCleaningResult> Results { get; } = [];
     }
 
-    private enum PluginLoopDecision { Continue, SkipPlugin, StopSession, ReturnedEarly }
+    private enum PluginLoopDecision
+    {
+        Continue,
+        SkipPlugin,
+        StopSession,
+        ReturnedEarly
+    }
 }

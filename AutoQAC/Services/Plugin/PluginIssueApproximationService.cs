@@ -32,7 +32,9 @@ public sealed class PluginIssueApproximationService(
         IReadOnlyList<AnalysisTarget> Targets);
 
     private readonly IPluginQueryService _pluginQueryService = pluginQueryService ?? PluginQueryService.Default;
-    private readonly Func<GameType, string, CancellationToken, AnalysisContext> _contextFactory = contextFactory ?? CreateAnalysisContext;
+
+    private readonly Func<GameType, string, CancellationToken, AnalysisContext> _contextFactory =
+        contextFactory ?? CreateAnalysisContext;
 
     public async Task<IReadOnlyList<PluginIssueApproximationResult>> GetApproximationsAsync(
         GameType gameType,
@@ -45,7 +47,8 @@ public sealed class PluginIssueApproximationService(
             return [];
         }
 
-        return await Task.Run(() => AnalyzePlugins(gameType, dataFolder, onApproximationReady, ct), ct).ConfigureAwait(false);
+        return await Task.Run(() => AnalyzePlugins(gameType, dataFolder, onApproximationReady, ct), ct)
+            .ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<PluginIssueApproximationResult>> GetApproximationsAsync(
@@ -62,7 +65,8 @@ public sealed class PluginIssueApproximationService(
         }
 
         return await Task.Run(
-            () => AnalyzePluginsFromResolvedPaths(gameType, baseDataFolder, orderedPluginNames, pathResolver, onApproximationReady, ct),
+            () => AnalyzePluginsFromResolvedPaths(gameType, baseDataFolder, orderedPluginNames, pathResolver,
+                onApproximationReady, ct),
             ct).ConfigureAwait(false);
     }
 
@@ -111,7 +115,8 @@ public sealed class PluginIssueApproximationService(
             }
             catch (Exception ex)
             {
-                logger.Warning("Approximation analysis failed for plugin {PluginName}: {Message}", target.FileName, ex.Message);
+                logger.Warning("Approximation analysis failed for plugin {PluginName}: {Message}", target.FileName,
+                    ex.Message);
                 var unavailableResult = CreateUnavailableResult(target);
                 results.Add(unavailableResult);
                 onApproximationReady?.Invoke(unavailableResult);
@@ -123,7 +128,8 @@ public sealed class PluginIssueApproximationService(
 
     private static bool IsSupportedGame(GameType gameType)
     {
-        return gameType is GameType.SkyrimLe or GameType.SkyrimSe or GameType.SkyrimVr or GameType.Fallout4 or GameType.Fallout4Vr;
+        return gameType is GameType.SkyrimLe or GameType.SkyrimSe or GameType.SkyrimVr or GameType.Fallout4
+            or GameType.Fallout4Vr;
     }
 
     private static PluginIssueApproximationResult CreateUnavailableResult(AnalysisTarget target)
@@ -353,7 +359,8 @@ public sealed class PluginIssueApproximationService(
             }
             catch (Exception ex)
             {
-                logger.Warning("Approximation analysis failed for plugin {PluginName}: {Message}", target.FileName, ex.Message);
+                logger.Warning("Approximation analysis failed for plugin {PluginName}: {Message}", target.FileName,
+                    ex.Message);
                 var unavailableResult = CreateUnavailableResult(target);
                 results.Add(unavailableResult);
                 onApproximationReady?.Invoke(unavailableResult);
