@@ -12,22 +12,17 @@ namespace AutoQAC.Services.Configuration;
 /// Cleans up old log files on app startup according to configured retention policy.
 /// Always skips the most recent log file (the active Serilog file).
 /// </summary>
-public sealed class LogRetentionService : ILogRetentionService
+public sealed class LogRetentionService(
+    IConfigurationService configService,
+    ILoggingService logger,
+    string logDirectory)
+    : ILogRetentionService
 {
-    private readonly IConfigurationService _configService;
-    private readonly ILoggingService _logger;
-    private readonly string _logDirectory;
+    private readonly string _logDirectory = Path.GetFullPath(logDirectory);
 
     public LogRetentionService(IConfigurationService configService, ILoggingService logger)
         : this(configService, logger, LogFilePaths.GetLogDirectory())
     {
-    }
-
-    public LogRetentionService(IConfigurationService configService, ILoggingService logger, string logDirectory)
-    {
-        _configService = configService;
-        _logger = logger;
-        _logDirectory = Path.GetFullPath(logDirectory);
     }
 
     public async Task CleanupAsync(CancellationToken ct = default)
@@ -36,11 +31,11 @@ public sealed class LogRetentionService : ILogRetentionService
         {
             if (!Directory.Exists(_logDirectory))
             {
-                _logger.Debug("[LogRetention] Log directory does not exist, skipping cleanup");
+                logger.Debug("[LogRetention] Log directory does not exist, skipping cleanup");
                 return;
             }
 
-            var config = await _configService.LoadUserConfigAsync(ct);
+            var config = await configService.LoadUserConfigAsync(ct);
             var settings = config.LogRetention;
 
             var logFiles = Directory.GetFiles(_logDirectory, LogFilePaths.LogFilePattern)
@@ -50,7 +45,7 @@ public sealed class LogRetentionService : ILogRetentionService
 
             if (logFiles.Count <= 1)
             {
-                _logger.Debug("[LogRetention] No old log files to clean up ({Count} total)", logFiles.Count);
+                logger.Debug("[LogRetention] No old log files to clean up ({Count} total)", logFiles.Count);
                 return;
             }
 
@@ -73,6 +68,7 @@ public sealed class LogRetentionService : ILogRetentionService
                                 deletedCount++;
                         }
                     }
+
                     break;
                 }
                 case RetentionMode.CountBased:
@@ -87,17 +83,18 @@ public sealed class LogRetentionService : ILogRetentionService
                         if (TryDeleteFile(file.FullName))
                             deletedCount++;
                     }
+
                     break;
                 }
             }
 
             if (deletedCount > 0)
             {
-                _logger.Information("[LogRetention] Cleaned up {Count} old log files", deletedCount);
+                logger.Information("[LogRetention] Cleaned up {Count} old log files", deletedCount);
             }
             else
             {
-                _logger.Debug("[LogRetention] No log files exceeded retention policy");
+                logger.Debug("[LogRetention] No log files exceeded retention policy");
             }
         }
         catch (OperationCanceledException)
@@ -106,7 +103,7 @@ public sealed class LogRetentionService : ILogRetentionService
         }
         catch (Exception ex)
         {
-            _logger.Warning("[LogRetention] Failed to complete log cleanup: {Message}", ex.Message);
+            logger.Warning("[LogRetention] Failed to complete log cleanup: {Message}", ex.Message);
         }
     }
 
@@ -115,12 +112,12 @@ public sealed class LogRetentionService : ILogRetentionService
         try
         {
             File.Delete(filePath);
-            _logger.Debug("[LogRetention] Deleted old log file: {File}", Path.GetFileName(filePath));
+            logger.Debug("[LogRetention] Deleted old log file: {File}", Path.GetFileName(filePath));
             return true;
         }
         catch (Exception ex)
         {
-            _logger.Warning("[LogRetention] Failed to delete {File}: {Message}",
+            logger.Warning("[LogRetention] Failed to delete {File}: {Message}",
                 Path.GetFileName(filePath), ex.Message);
             return false;
         }

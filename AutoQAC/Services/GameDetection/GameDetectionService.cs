@@ -130,18 +130,16 @@ public sealed class GameDetectionService(ILoggingService logger) : IGameDetectio
             }
         }
 
-        if (baseGame == GameType.SkyrimSe)
+        if (baseGame != GameType.SkyrimSe) return GameVariant.None;
         {
-            if (pluginNames.Any(p =>
-                p.Equals("Enderal - Forgotten Stories.esm", StringComparison.OrdinalIgnoreCase) ||
-                p.Equals("Enderal.esm", StringComparison.OrdinalIgnoreCase)))
-            {
-                logger.Information("Detected Enderal variant");
-                return GameVariant.Enderal;
-            }
-        }
+            if (!pluginNames.Any(p =>
+                    p.Equals("Enderal - Forgotten Stories.esm", StringComparison.OrdinalIgnoreCase) ||
+                    p.Equals("Enderal.esm", StringComparison.OrdinalIgnoreCase))) return GameVariant.None;
+            logger.Information("Detected Enderal variant");
 
-        return GameVariant.None;
+            return GameVariant.Enderal;
+
+        }
     }
 
     public bool IsValidGameType(GameType gameType)

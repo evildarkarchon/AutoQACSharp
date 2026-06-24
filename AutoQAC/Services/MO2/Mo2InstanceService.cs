@@ -14,7 +14,9 @@ public sealed class Mo2InstanceService(ILoggingService? logger = null, Func<stri
 {
     private static readonly string[] PluginPatterns = ["*.esm", "*.esp", "*.esl"];
 
-    private readonly Func<string> _localAppDataResolver = localAppDataResolver ?? (() => Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData));
+    private readonly Func<string> _localAppDataResolver = localAppDataResolver ??
+                                                          (() => Environment.GetFolderPath(Environment.SpecialFolder
+                                                              .LocalApplicationData));
 
     public Task<Mo2InstanceInfo?> ResolveInstanceAsync(
         GameType game,
@@ -33,7 +35,8 @@ public sealed class Mo2InstanceService(ILoggingService? logger = null, Func<stri
         }
 
         return Directory.EnumerateDirectories(instance.ProfilesDirectory)
-            .Where(dir => File.Exists(Path.Combine(dir, "loadorder.txt")) || File.Exists(Path.Combine(dir, "plugins.txt")))
+            .Where(dir =>
+                File.Exists(Path.Combine(dir, "loadorder.txt")) || File.Exists(Path.Combine(dir, "plugins.txt")))
             .Select(Path.GetFileName)
             .Where(name => !string.IsNullOrWhiteSpace(name))
             .Cast<string>()
@@ -48,20 +51,24 @@ public sealed class Mo2InstanceService(ILoggingService? logger = null, Func<stri
             return null;
         }
 
-        if (!string.IsNullOrWhiteSpace(persistedProfile) && profiles.Contains(persistedProfile, StringComparer.OrdinalIgnoreCase))
+        if (!string.IsNullOrWhiteSpace(persistedProfile) &&
+            profiles.Contains(persistedProfile, StringComparer.OrdinalIgnoreCase))
         {
             return profiles.First(p => string.Equals(p, persistedProfile, StringComparison.OrdinalIgnoreCase));
         }
 
-        var defaultProfile = profiles.FirstOrDefault(p => string.Equals(p, "Default", StringComparison.OrdinalIgnoreCase));
+        var defaultProfile =
+            profiles.FirstOrDefault(p => string.Equals(p, "Default", StringComparison.OrdinalIgnoreCase));
         if (defaultProfile is not null)
         {
             return defaultProfile;
         }
 
-        if (!string.IsNullOrWhiteSpace(instance.IniSelectedProfile) && profiles.Contains(instance.IniSelectedProfile, StringComparer.OrdinalIgnoreCase))
+        if (!string.IsNullOrWhiteSpace(instance.IniSelectedProfile) &&
+            profiles.Contains(instance.IniSelectedProfile, StringComparer.OrdinalIgnoreCase))
         {
-            return profiles.First(p => string.Equals(p, instance.IniSelectedProfile, StringComparison.OrdinalIgnoreCase));
+            return profiles.First(p =>
+                string.Equals(p, instance.IniSelectedProfile, StringComparison.OrdinalIgnoreCase));
         }
 
         return profiles[0];
@@ -96,7 +103,9 @@ public sealed class Mo2InstanceService(ILoggingService? logger = null, Func<stri
         var enabledMods = GetEnabledMods(instance, profile);
         if (enabledMods.Count == 0)
         {
-            logger?.Warning("MO2 modlist.txt missing or empty for profile {Profile}; scanning all mods with degraded priority accuracy", profile);
+            logger?.Warning(
+                "MO2 modlist.txt missing or empty for profile {Profile}; scanning all mods with degraded priority accuracy",
+                profile);
             enabledMods = Directory.Exists(instance.ModsDirectory)
                 ? Directory.EnumerateDirectories(instance.ModsDirectory)
                     .Select(Path.GetFileName)
@@ -116,7 +125,8 @@ public sealed class Mo2InstanceService(ILoggingService? logger = null, Func<stri
         return map;
     }
 
-    private Mo2InstanceInfo? ResolveInstance(GameType game, string? mo2BinaryPath, string? overrideBaseDir, CancellationToken ct)
+    private Mo2InstanceInfo? ResolveInstance(GameType game, string? mo2BinaryPath, string? overrideBaseDir,
+        CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
 
@@ -145,7 +155,8 @@ public sealed class Mo2InstanceService(ILoggingService? logger = null, Func<stri
             .OrderByDescending(c => File.GetLastWriteTimeUtc(c.Path))
             .First();
 
-        return BuildInstance(Path.GetDirectoryName(selected.Path) ?? string.Empty, selected.Path, isAutoDetected: true, selected.Values);
+        return BuildInstance(Path.GetDirectoryName(selected.Path) ?? string.Empty, selected.Path, isAutoDetected: true,
+            selected.Values);
     }
 
     private IEnumerable<string> EnumerateCandidateIniFiles(string? mo2BinaryPath)
@@ -284,9 +295,9 @@ public sealed class Mo2InstanceService(ILoggingService? logger = null, Func<stri
         GameType.Fallout4Vr => string.Equals(gameName, "Fallout 4 VR", StringComparison.OrdinalIgnoreCase),
         GameType.Fallout3 => string.Equals(gameName, "Fallout 3", StringComparison.OrdinalIgnoreCase),
         GameType.FalloutNewVegas => gameName is not null &&
-            (string.Equals(gameName, "New Vegas", StringComparison.OrdinalIgnoreCase) ||
-             string.Equals(gameName, "Fallout New Vegas", StringComparison.OrdinalIgnoreCase) ||
-             string.Equals(gameName, "TTW", StringComparison.OrdinalIgnoreCase)),
+                                    (string.Equals(gameName, "New Vegas", StringComparison.OrdinalIgnoreCase) ||
+                                     string.Equals(gameName, "Fallout New Vegas", StringComparison.OrdinalIgnoreCase) ||
+                                     string.Equals(gameName, "TTW", StringComparison.OrdinalIgnoreCase)),
         GameType.Oblivion => string.Equals(gameName, "Oblivion", StringComparison.OrdinalIgnoreCase),
         _ => false
     };
@@ -294,27 +305,7 @@ public sealed class Mo2InstanceService(ILoggingService? logger = null, Func<stri
     private static List<string> GetEnabledMods(Mo2InstanceInfo instance, string profile)
     {
         var modListPath = Path.Combine(instance.ProfilesDirectory, profile, "modlist.txt");
-        if (!File.Exists(modListPath))
-        {
-            return [];
-        }
-
-        var enabled = new List<string>();
-        foreach (var rawLine in File.ReadLines(modListPath))
-        {
-            var line = rawLine.Trim();
-            if (line.Length < 2 || line.StartsWith('#') || line.StartsWith("_separator", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            if (line[0] == '+')
-            {
-                enabled.Add(line[1..]);
-            }
-        }
-
-        return enabled;
+        return !File.Exists(modListPath) ? [] : (from rawLine in File.ReadLines(modListPath) select rawLine.Trim() into line where line.Length >= 2 && !line.StartsWith('#') && !line.StartsWith("_separator", StringComparison.OrdinalIgnoreCase) where line[0] == '+' select line[1..]).ToList();
     }
 
     private static void AddPluginFiles(Dictionary<string, string> map, string? root)

@@ -9,7 +9,7 @@ namespace AutoQAC.Services.Monitoring;
 /// at regular intervals and flags a process as hung when CPU usage is near-zero
 /// for a sustained duration (default 60 seconds).
 /// </summary>
-public sealed class HangDetectionService : IHangDetectionService
+public sealed class HangDetectionService(ILoggingService logger) : IHangDetectionService
 {
     /// <summary>
     /// How often to poll CPU usage, in milliseconds.
@@ -26,13 +26,6 @@ public sealed class HangDetectionService : IHangDetectionService
     /// Process.TotalProcessorTime delta divided by wall-clock delta * 100.
     /// </summary>
     public const double CpuThreshold = 0.5;
-
-    private readonly ILoggingService _logger;
-
-    public HangDetectionService(ILoggingService logger)
-    {
-        _logger = logger;
-    }
 
     /// <inheritdoc />
     public IObservable<bool> MonitorProcess(System.Diagnostics.Process process)
@@ -77,7 +70,7 @@ public sealed class HangDetectionService : IHangDetectionService
                     {
                         if (process.HasExited)
                         {
-                            _logger.Debug("[HangDetection] Process exited, completing monitor");
+                            logger.Debug("[HangDetection] Process exited, completing monitor");
                             observer.OnCompleted();
                             return;
                         }
@@ -103,7 +96,7 @@ public sealed class HangDetectionService : IHangDetectionService
                             if (nearZeroDuration.TotalMilliseconds >= HangThresholdMs && !wasHung)
                             {
                                 wasHung = true;
-                                _logger.Warning(
+                                logger.Warning(
                                     "[HangDetection] Process appears hung: near-zero CPU for {Duration}s",
                                     nearZeroDuration.TotalSeconds.ToString("F0"));
                                 observer.OnNext(true);
@@ -114,9 +107,10 @@ public sealed class HangDetectionService : IHangDetectionService
                             if (wasHung)
                             {
                                 wasHung = false;
-                                _logger.Information("[HangDetection] Process resumed CPU activity");
+                                logger.Information("[HangDetection] Process resumed CPU activity");
                                 observer.OnNext(false);
                             }
+
                             nearZeroDuration = TimeSpan.Zero;
                         }
 
@@ -126,7 +120,7 @@ public sealed class HangDetectionService : IHangDetectionService
                     catch (InvalidOperationException)
                     {
                         // Process exited between HasExited check and TotalProcessorTime read
-                        _logger.Debug("[HangDetection] Process exited during poll, completing monitor");
+                        logger.Debug("[HangDetection] Process exited during poll, completing monitor");
                         observer.OnCompleted();
                     }
                 });

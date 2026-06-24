@@ -22,7 +22,7 @@ internal sealed class UserConfigFileStore : IUserConfigFileStore
     private readonly Action<string, string> _move;
 
     public UserConfigFileStore(ILoggingService logger, string? configDirectory = null)
-        : this(logger, configDirectory, (source, dest, backup) => File.Replace(source, dest, backup), (source, dest) => File.Move(source, dest, overwrite: false))
+        : this(logger, configDirectory, File.Replace, (source, dest) => File.Move(source, dest, overwrite: false))
     {
     }
 

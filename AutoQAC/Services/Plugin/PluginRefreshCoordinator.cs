@@ -89,7 +89,8 @@ public sealed partial class PluginRefreshCoordinator : IPluginRefreshCoordinator
             if (loadedPlugins.Count == 0)
             {
                 _stateService.SetPluginsToClean([]);
-                Publish(new PluginRefreshStatus(PluginRefreshStatusKind.Idle, Message: GetNoPluginsFoundMessage(request.GameType)));
+                Publish(new PluginRefreshStatus(PluginRefreshStatusKind.Idle,
+                    Message: GetNoPluginsFoundMessage(request.GameType)));
                 return;
             }
 
@@ -101,7 +102,8 @@ public sealed partial class PluginRefreshCoordinator : IPluginRefreshCoordinator
             var initialApproximation = _capabilityPolicy.SupportsIssueApproximation(request.GameType)
                 ? PluginIssueApproximation.Pending
                 : PluginIssueApproximation.Unavailable;
-            var rows = ApplySkipListStatus(loadedPlugins, skipList, request.GameType, disableSkipLists: request.DisableSkipLists, initialApproximation);
+            var rows = ApplySkipListStatus(loadedPlugins, skipList, request.GameType,
+                disableSkipLists: request.DisableSkipLists, initialApproximation);
             _stateService.SetPluginsToClean(rows);
 
             if (!_capabilityPolicy.SupportsIssueApproximation(request.GameType))
@@ -117,7 +119,8 @@ public sealed partial class PluginRefreshCoordinator : IPluginRefreshCoordinator
                 .ToList();
             try
             {
-                var updated = await AnalyzeTargetsAsync(request, dataFolder, targets, generation, token).ConfigureAwait(false);
+                var updated = await AnalyzeTargetsAsync(request, dataFolder, targets, generation, token)
+                    .ConfigureAwait(false);
                 if (IsCurrent(generation, token))
                 {
                     // Publish terminal status so PluginListViewModel can clear IsApproximationRefreshRunning
@@ -140,7 +143,8 @@ public sealed partial class PluginRefreshCoordinator : IPluginRefreshCoordinator
                 }
 
                 if (IsCurrent(generation, token))
-                    Publish(new PluginRefreshStatus(PluginRefreshStatusKind.Idle, Message: "Approximation refresh failed."));
+                    Publish(new PluginRefreshStatus(PluginRefreshStatusKind.Idle,
+                        Message: "Approximation refresh failed."));
             }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
@@ -187,8 +191,10 @@ public sealed partial class PluginRefreshCoordinator : IPluginRefreshCoordinator
             }).ToList();
             if (IsCurrent(generation, token))
             {
-                var targetPaths = snapshot.Select(target => target.FullPath).ToHashSet(StringComparer.OrdinalIgnoreCase);
-                var targetNames = snapshot.Select(target => target.FileName).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var targetPaths = snapshot.Select(target => target.FullPath)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var targetNames = snapshot.Select(target => target.FileName)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
                 _stateService.UpdateState(s =>
                 {
                     if (s.PluginsToClean.Count == 0)
@@ -212,7 +218,8 @@ public sealed partial class PluginRefreshCoordinator : IPluginRefreshCoordinator
             }
 
             var dataFolder = ResolveDataFolder(request, pendingRows);
-            var updated = await AnalyzeTargetsAsync(request, dataFolder, snapshot, generation, token).ConfigureAwait(false);
+            var updated = await AnalyzeTargetsAsync(request, dataFolder, snapshot, generation, token)
+                .ConfigureAwait(false);
             if (IsCurrent(generation, token))
             {
                 Publish(PluginRefreshStatus.SelectedRefreshCompleted(updated));
@@ -308,7 +315,8 @@ public sealed partial class PluginRefreshCoordinator : IPluginRefreshCoordinator
 
         if (!string.IsNullOrWhiteSpace(request.LoadOrderPath))
         {
-            return await _pluginLoadingService.GetPluginsFromFileAsync(request.LoadOrderPath, request.DataFolderPath, ct)
+            return await _pluginLoadingService
+                .GetPluginsFromFileAsync(request.LoadOrderPath, request.DataFolderPath, ct)
                 .ConfigureAwait(false);
         }
 
@@ -322,13 +330,15 @@ public sealed partial class PluginRefreshCoordinator : IPluginRefreshCoordinator
             var loadOrderPath = request.LoadOrderPath;
             if (string.IsNullOrWhiteSpace(loadOrderPath) && _configurationService is not null)
             {
-                loadOrderPath = await _configurationService.GetGameLoadOrderOverrideAsync(request.GameType, ct).ConfigureAwait(false)
-                    ?? _pluginLoadingService.GetDefaultLoadOrderPath(request.GameType);
+                loadOrderPath = await _configurationService.GetGameLoadOrderOverrideAsync(request.GameType, ct)
+                                    .ConfigureAwait(false)
+                                ?? _pluginLoadingService.GetDefaultLoadOrderPath(request.GameType);
             }
 
             return string.IsNullOrWhiteSpace(loadOrderPath)
                 ? Array.Empty<PluginInfo>()
-                : await _pluginLoadingService.GetPluginsFromFileAsync(loadOrderPath, request.DataFolderPath, ct).ConfigureAwait(false);
+                : await _pluginLoadingService.GetPluginsFromFileAsync(loadOrderPath, request.DataFolderPath, ct)
+                    .ConfigureAwait(false);
         }
 
         var loadResult = await _pluginLoadingService.TryGetPluginsAsync(request.GameType, request.DataFolderPath, ct)

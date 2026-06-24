@@ -78,7 +78,7 @@ public sealed class PluginLoadingService : IPluginLoadingService
         var result = await TryGetPluginsAsync(gameType, customDataFolder, ct).ConfigureAwait(false);
         return result.Status == PluginLoadingStatus.Success
             ? result.Plugins.ToList()
-            : new List<PluginInfo>();
+            : [];
     }
 
     /// <inheritdoc />
@@ -95,7 +95,7 @@ public sealed class PluginLoadingService : IPluginLoadingService
             return new PluginLoadingResult
             {
                 Status = PluginLoadingStatus.UnsupportedGame,
-                Plugins = Array.Empty<PluginInfo>()
+                Plugins = []
             };
         }
 
@@ -113,7 +113,7 @@ public sealed class PluginLoadingService : IPluginLoadingService
                 return new PluginLoadingResult
                 {
                     Status = PluginLoadingStatus.DataFolderNotFound,
-                    Plugins = Array.Empty<PluginInfo>(),
+                    Plugins = [],
                     DataFolder = customDataFolder
                 };
             }
@@ -125,7 +125,7 @@ public sealed class PluginLoadingService : IPluginLoadingService
                 return new PluginLoadingResult
                 {
                     Status = PluginLoadingStatus.NoPluginsDiscovered,
-                    Plugins = Array.Empty<PluginInfo>(),
+                    Plugins = [],
                     DataFolder = resolvedDataFolder
                 };
             }
@@ -151,7 +151,7 @@ public sealed class PluginLoadingService : IPluginLoadingService
             return new PluginLoadingResult
             {
                 Status = PluginLoadingStatus.Failed,
-                Plugins = Array.Empty<PluginInfo>(),
+                Plugins = [],
                 DataFolder = customDataFolder,
                 FailureReason = ex.Message
             };
@@ -274,7 +274,7 @@ public sealed class PluginLoadingService : IPluginLoadingService
         {
             if (!GameLocations.TryGetDataFolder(release, out var detectedDataFolder))
             {
-                return (null, Array.Empty<string>());
+                return (null, []);
             }
 
             dataFolder = detectedDataFolder.Path;
@@ -282,7 +282,7 @@ public sealed class PluginLoadingService : IPluginLoadingService
 
         if (string.IsNullOrWhiteSpace(dataFolder))
         {
-            return (null, Array.Empty<string>());
+            return (null, []);
         }
 
         var listings = LoadOrder.GetLoadOrderListings(
