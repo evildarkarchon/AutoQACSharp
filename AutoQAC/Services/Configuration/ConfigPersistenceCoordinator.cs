@@ -107,7 +107,10 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
             return;
         }
 
-        _autoFlushCts?.Cancel();
+        if (_autoFlushCts != null)
+        {
+            await _autoFlushCts.CancelAsync().ConfigureAwait(false);
+        }
         _cleaningSubscription?.Dispose();
 
         if (_consumerTask == null)
@@ -137,7 +140,10 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
         }
         catch (TimeoutException)
         {
-            _consumerCts?.Cancel();
+            if (_consumerCts != null)
+            {
+                await _consumerCts.CancelAsync().ConfigureAwait(false);
+            }
             _logger.Warning("[ConfigPersistence] Coordinator consumer did not drain before shutdown timeout");
         }
 
@@ -165,7 +171,8 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
         ThrowIfDisposed();
         var generation = Interlocked.Increment(ref _appGenerationProducer);
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        await _operations.Writer.WriteAsync(new SaveIntent(config.Copy(), generation, completion), ct).ConfigureAwait(false);
+        await _operations.Writer.WriteAsync(new SaveIntent(config.Copy(), generation, completion), ct)
+            .ConfigureAwait(false);
         await completion.Task.WaitAsync(ct).ConfigureAwait(false);
     }
 
@@ -226,7 +233,7 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
         SaveIntent save => ApplySaveAsync(save),
         FlushBarrier flush => ApplyFlushAsync(flush, ct),
         WatcherObserved watcher => ApplyWatcherAsync(watcher, ct),
-        CleaningStateChanged cleaning => ApplyCleaningStateAsync(cleaning, ct),
+        CleaningStateChanged cleaning => ApplyCleaningStateAsync(cleaning),
         ReloadRequest reload => ApplyReloadRequestAsync(reload, ct),
         ShutdownOperation shutdown => ApplyShutdownAsync(shutdown, ct),
         _ => Task.CompletedTask
@@ -236,6 +243,7 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
     {
         _appGeneration = Math.Max(_appGeneration, intent.Generation);
         _pendingApp = intent.Config.Copy();
+        _deferredCandidate = null;
         SetActive(intent.Config);
         SafePublishAccepted(intent.Config.Copy());
         ScheduleAutoFlush();
@@ -254,7 +262,8 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
     {
         if (_pendingApp == null)
         {
-            return new ConfigPersistenceResult(ConfigPersistenceStatusKind.NoOp, ConfigPersistenceOperationKind.Flush, _appGeneration, null);
+            return new ConfigPersistenceResult(ConfigPersistenceStatusKind.NoOp, ConfigPersistenceOperationKind.Flush,
+                _appGeneration, null);
         }
 
         try
@@ -267,7 +276,8 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
             _lastKnownExternalHash = hash;
             _pendingApp = null;
             _lastFailure = null;
-            return new ConfigPersistenceResult(ConfigPersistenceStatusKind.Success, ConfigPersistenceOperationKind.Flush, _appGeneration, null);
+            return new ConfigPersistenceResult(ConfigPersistenceStatusKind.Success,
+                ConfigPersistenceOperationKind.Flush, _appGeneration, null);
         }
         catch (OperationCanceledException)
         {
@@ -279,9 +289,11 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
             _pendingApp = null;
             SetActive(_lastKnownGood);
             SafePublishAccepted(_lastKnownGood.Copy());
-            var failure = CreateFailure(ConfigPersistenceOperationKind.Flush, ConfigPersistenceFailureKind.WriteFailed, "Could not write settings file (write_failed)");
+            var failure = CreateFailure(ConfigPersistenceOperationKind.Flush, ConfigPersistenceFailureKind.WriteFailed,
+                "Could not write settings file (write_failed)");
             PublishFailure(failure);
-            return new ConfigPersistenceResult(ConfigPersistenceStatusKind.Failed, ConfigPersistenceOperationKind.Flush, _appGeneration, failure);
+            return new ConfigPersistenceResult(ConfigPersistenceStatusKind.Failed, ConfigPersistenceOperationKind.Flush,
+                _appGeneration, failure);
         }
     }
 
@@ -289,9 +301,11 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
     {
         if (op.Kind == ConfigFileSignalKind.Error)
         {
-            var failure = CreateFailure(ConfigPersistenceOperationKind.Watcher, ConfigPersistenceFailureKind.ReadFailed, "Could not read settings file (read_failed)");
+            var failure = CreateFailure(ConfigPersistenceOperationKind.Watcher, ConfigPersistenceFailureKind.ReadFailed,
+                "Could not read settings file (read_failed)");
             PublishFailure(failure);
-            SafePublishResult(new ConfigPersistenceResult(ConfigPersistenceStatusKind.Failed, ConfigPersistenceOperationKind.Watcher, _appGeneration, failure));
+            SafePublishResult(new ConfigPersistenceResult(ConfigPersistenceStatusKind.Failed,
+                ConfigPersistenceOperationKind.Watcher, _appGeneration, failure));
             return;
         }
 
@@ -305,20 +319,24 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
             // Hashing reads the live settings file, so file-lock races must surface
             // through the typed watcher failure path instead of dropping the signal.
             _logger.Error(ex, "[ConfigPersistence] Could not hash settings file for watcher reload");
-            var failure = CreateFailure(ConfigPersistenceOperationKind.Watcher, ConfigPersistenceFailureKind.ReadFailed, "Could not read settings file (read_failed)");
+            var failure = CreateFailure(ConfigPersistenceOperationKind.Watcher, ConfigPersistenceFailureKind.ReadFailed,
+                "Could not read settings file (read_failed)");
             PublishFailure(failure);
-            SafePublishResult(new ConfigPersistenceResult(ConfigPersistenceStatusKind.Failed, ConfigPersistenceOperationKind.Watcher, _appGeneration, failure));
+            SafePublishResult(new ConfigPersistenceResult(ConfigPersistenceStatusKind.Failed,
+                ConfigPersistenceOperationKind.Watcher, _appGeneration, failure));
             return;
         }
 
-        if (_lastWrittenHash != null && string.Equals(currentHash, _lastWrittenHash, StringComparison.OrdinalIgnoreCase))
+        if (_lastWrittenHash != null &&
+            string.Equals(currentHash, _lastWrittenHash, StringComparison.OrdinalIgnoreCase))
         {
             _logger.Debug("[ConfigPersistence] Watcher echo matched last app-written hash; skipping reload");
             _lastKnownExternalHash = currentHash;
             return;
         }
 
-        if (_lastKnownExternalHash != null && string.Equals(currentHash, _lastKnownExternalHash, StringComparison.OrdinalIgnoreCase))
+        if (_lastKnownExternalHash != null &&
+            string.Equals(currentHash, _lastKnownExternalHash, StringComparison.OrdinalIgnoreCase))
         {
             _logger.Debug("[ConfigPersistence] Watcher hash has already been observed; skipping reload");
             return;
@@ -332,7 +350,8 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
 
         if (op.ObservedAtGeneration < _appGeneration)
         {
-            _logger.Information("[ConfigPersistence] Rejected stale watcher reload for generation {Generation}", op.ObservedAtGeneration);
+            _logger.Information("[ConfigPersistence] Rejected stale watcher reload for generation {Generation}",
+                op.ObservedAtGeneration);
             return;
         }
 
@@ -347,25 +366,26 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
         {
             _deferredCandidate = read.ReadResult;
             _lastKnownExternalHash = read.ReadResult.Hash ?? currentHash;
-            _logger.Warning("[ConfigPersistence] Config changed externally during cleaning; deferring latest candidate");
+            _logger.Warning(
+                "[ConfigPersistence] Config changed externally during cleaning; deferring latest candidate");
             return;
         }
 
         ApplyCandidate(read.ReadResult, ConfigPersistenceOperationKind.Watcher);
     }
 
-    private async Task ApplyCleaningStateAsync(CleaningStateChanged cleaning, CancellationToken ct)
+    private Task ApplyCleaningStateAsync(CleaningStateChanged cleaning)
     {
         if (cleaning.IsCleaning || _deferredCandidate == null)
         {
-            return;
+            return Task.CompletedTask;
         }
 
         var candidate = _deferredCandidate;
         _deferredCandidate = null;
         var result = ValidateAndApply(candidate, ConfigPersistenceOperationKind.DeferredReload);
         SafePublishResult(result);
-        await Task.CompletedTask.ConfigureAwait(false);
+        return Task.CompletedTask;
     }
 
     private async Task ApplyReloadRequestAsync(ReloadRequest reload, CancellationToken ct)
@@ -401,7 +421,8 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
             var result = await FlushPendingInsideConsumerAsync(linked.Token).ConfigureAwait(false);
             if (result.Status == ConfigPersistenceStatusKind.Failed)
             {
-                _logger.Warning("[ConfigPersistence] Final shutdown flush failed: {SafeSummary}", result.Failure?.SafeSummary ?? "unknown");
+                _logger.Warning("[ConfigPersistence] Final shutdown flush failed: {SafeSummary}",
+                    result.Failure?.SafeSummary ?? "unknown");
             }
         }
         catch (Exception ex) when (ex is OperationCanceledException or TimeoutException)
@@ -423,9 +444,12 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
             var read = await _fileStore.ReadAsync(ct).ConfigureAwait(false);
             if (!read.Exists)
             {
-                var failure = CreateFailure(operation, ConfigPersistenceFailureKind.MissingFile, "Settings file is missing (missing_file)");
+                var failure = CreateFailure(operation, ConfigPersistenceFailureKind.MissingFile,
+                    "Settings file is missing (missing_file)");
                 PublishFailure(failure);
-                return (read, new ConfigPersistenceResult(ConfigPersistenceStatusKind.Failed, operation, _appGeneration, failure));
+                return (read,
+                    new ConfigPersistenceResult(ConfigPersistenceStatusKind.Failed, operation, _appGeneration,
+                        failure));
             }
 
             return (read, null);
@@ -433,9 +457,11 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.Error(ex, "[ConfigPersistence] Could not read settings file");
-            var failure = CreateFailure(operation, ConfigPersistenceFailureKind.ReadFailed, "Could not read settings file (read_failed)");
+            var failure = CreateFailure(operation, ConfigPersistenceFailureKind.ReadFailed,
+                "Could not read settings file (read_failed)");
             PublishFailure(failure);
-            return (new UserConfigReadResult(false, null, null), new ConfigPersistenceResult(ConfigPersistenceStatusKind.Failed, operation, _appGeneration, failure));
+            return (new UserConfigReadResult(false, null, null),
+                new ConfigPersistenceResult(ConfigPersistenceStatusKind.Failed, operation, _appGeneration, failure));
         }
     }
 
@@ -445,11 +471,13 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
         SafePublishResult(result);
     }
 
-    private ConfigPersistenceResult ValidateAndApply(UserConfigReadResult readResult, ConfigPersistenceOperationKind operation)
+    private ConfigPersistenceResult ValidateAndApply(UserConfigReadResult readResult,
+        ConfigPersistenceOperationKind operation)
     {
         if (!readResult.Exists || string.IsNullOrWhiteSpace(readResult.Content))
         {
-            var missing = CreateFailure(operation, ConfigPersistenceFailureKind.MissingFile, "Settings file is missing (missing_file)");
+            var missing = CreateFailure(operation, ConfigPersistenceFailureKind.MissingFile,
+                "Settings file is missing (missing_file)");
             PublishFailure(missing);
             return new ConfigPersistenceResult(ConfigPersistenceStatusKind.Failed, operation, _appGeneration, missing);
         }
@@ -473,7 +501,8 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
         catch (Exception ex)
         {
             _logger.Warning("[ConfigPersistence] Invalid external config edit rejected: {Message}", ex.Message);
-            var failure = CreateFailure(operation, ConfigPersistenceFailureKind.InvalidExternalYaml, "Invalid settings YAML was rejected (invalid_external_yaml)");
+            var failure = CreateFailure(operation, ConfigPersistenceFailureKind.InvalidExternalYaml,
+                "Invalid settings YAML was rejected (invalid_external_yaml)");
             PublishFailure(failure);
             return new ConfigPersistenceResult(ConfigPersistenceStatusKind.Failed, operation, _appGeneration, failure);
         }

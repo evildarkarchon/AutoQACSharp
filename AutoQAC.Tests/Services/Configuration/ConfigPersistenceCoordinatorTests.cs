@@ -194,6 +194,28 @@ public sealed class ConfigPersistenceCoordinatorTests
     }
 
     [Fact]
+    public async Task Save_DuringCleaning_SupersedesDeferredExternalReload()
+    {
+        var subject = new Subject<AppState>();
+        var state = new AppState { IsCleaning = true };
+        var store = new FakeUserConfigFileStore { CurrentContent = Serializer.Serialize(NewConfig(55)) };
+        var coordinator = CreateCoordinator(store, () => state, subject);
+        await coordinator.StartAsync();
+
+        coordinator.NotifySettingsFileChanged(ConfigFileSignalKind.Changed);
+        await PumpUntilQuiescentAsync(coordinator);
+        await coordinator.SaveUserConfigAsync(NewConfig(99));
+        await coordinator.FlushPendingSavesAsync();
+
+        state = state with { IsCleaning = false };
+        subject.OnNext(state);
+        await PumpUntilQuiescentAsync(coordinator);
+
+        (await coordinator.LoadCurrentAsync()).Settings.CleaningTimeout.Should().Be(99,
+            because: "a later app save must not be overwritten by an older external candidate deferred during cleaning");
+    }
+
+    [Fact]
     public async Task Watcher_DeferredInvalidYaml_RejectsAndKeepsCurrent_DoesNotApplyEarlierValid()
     {
         var subject = new Subject<AppState>();

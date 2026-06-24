@@ -31,10 +31,12 @@ public sealed class PluginResultFinalizer(
         var finalStatus = result.Status;
 
         // Guard: only read logs if process was not killed/cancelled (per D-04)
-        if (!terminationContext.ProcessMayStillBeRunning && !terminationContext.StopWasRequested && result.Status != CleaningStatus.Skipped)
+        if (terminationContext is { ProcessMayStillBeRunning: false, StopWasRequested: false } &&
+            result.Status != CleaningStatus.Skipped)
         {
             var logResult = await logFileService.ReadLogContentAsync(
-                xEditDir, gameType, runnerOutput.MainLogOffset, runnerOutput.ExceptionLogOffset, ct).ConfigureAwait(false);
+                    xEditDir, gameType, runnerOutput.MainLogOffset, runnerOutput.ExceptionLogOffset, ct)
+                .ConfigureAwait(false);
 
             if (logResult.Warning != null)
             {
@@ -54,8 +56,7 @@ public sealed class PluginResultFinalizer(
                 // promotion. A failed xEdit attempt whose log slice happens to contain a completion line
                 // and zero parsed stats must remain Failed -- otherwise a real failure is hidden as
                 // AlreadyClean and CleaningSessionResult miscounts the session as successful.
-                if (result.Success
-                    && result.Status == CleaningStatus.Cleaned
+                if (result is { Success: true, Status: CleaningStatus.Cleaned }
                     && logResult.LogLines.Any(outputParser.IsCompletionLine)
                     && logStats is { ItemsRemoved: 0, ItemsUndeleted: 0, ItemsSkipped: 0, PartialFormsCreated: 0 })
                 {

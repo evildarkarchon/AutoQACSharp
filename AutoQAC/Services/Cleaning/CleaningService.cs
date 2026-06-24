@@ -66,7 +66,8 @@ public sealed class CleaningService(
                 {
                     Success = false,
                     Status = CleaningStatus.Failed,
-                    Message = $"Could not build {buildFailureLaunchMode} launch command for {safePluginName}. No process was started. See the latest AutoQAC log.",
+                    Message =
+                        $"Could not build {buildFailureLaunchMode} launch command for {safePluginName}. No process was started. See the latest AutoQAC log.",
                     Duration = sw.Elapsed
                 };
             }
@@ -88,7 +89,8 @@ public sealed class CleaningService(
                 argumentCount,
                 "Starting");
 
-            var result = await processService.ExecuteAsync(command, timeout, ct, onProcessStarted).ConfigureAwait(false);
+            var result = await processService.ExecuteAsync(command, timeout, ct, onProcessStarted)
+                .ConfigureAwait(false);
 
             sw.Stop();
 
@@ -154,7 +156,6 @@ public sealed class CleaningService(
                 Message = "Cleaning completed successfully.",
                 Duration = sw.Elapsed
             };
-
         }
         catch (OperationCanceledException)
         {
@@ -213,5 +214,7 @@ public sealed class CleaningService(
     private static int GetArgumentCount(ProcessStartInfo startInfo) =>
         startInfo.ArgumentList.Count > 0
             ? startInfo.ArgumentList.Count
-            : string.IsNullOrWhiteSpace(startInfo.Arguments) ? 0 : 1;
+            : string.IsNullOrWhiteSpace(startInfo.Arguments)
+                ? 0
+                : 1;
 }

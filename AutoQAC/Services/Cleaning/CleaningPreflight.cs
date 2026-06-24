@@ -36,7 +36,7 @@ public sealed class CleaningPreflight(
         // failure must block cleaning; the typed result lets us decide deterministically.
         var flushResult = await configService.FlushPendingSavesAsync(ct).ConfigureAwait(false);
         if (flushResult.Status is ConfigPersistenceStatusKind.Failed
-                               or ConfigPersistenceStatusKind.Rejected)
+            or ConfigPersistenceStatusKind.Rejected)
         {
             // Defensive: Rejected is not currently emitted by FlushPendingSavesAsync (Plan 02
             // contract emits Success/NoOp/Failed only) but treating it as a hard block is safe
@@ -87,7 +87,8 @@ public sealed class CleaningPreflight(
             }
             else
             {
-                logger.Error(null, "Cannot determine game type. Cleaning blocked for safety -- skip lists cannot be applied without a known game type.");
+                logger.Error(null,
+                    "Cannot determine game type. Cleaning blocked for safety -- skip lists cannot be applied without a known game type.");
                 throw new InvalidOperationException(
                     "Cannot start cleaning: game type could not be determined. " +
                     "Please select a game type in Settings, or ensure the xEdit executable name matches a supported game.");
@@ -134,7 +135,8 @@ public sealed class CleaningPreflight(
 
             var instanceService = mo2InstanceService ?? new Mo2InstanceService(logger);
             var instanceOverride = await configService.GetMo2InstanceOverrideAsync(gameType, ct).ConfigureAwait(false);
-            var instance = await instanceService.ResolveInstanceAsync(gameType, mo2Path, instanceOverride, ct).ConfigureAwait(false);
+            var instance = await instanceService.ResolveInstanceAsync(gameType, mo2Path, instanceOverride, ct)
+                .ConfigureAwait(false);
             if (instance is null)
             {
                 throw new InvalidOperationException(
@@ -144,7 +146,8 @@ public sealed class CleaningPreflight(
 
             var profiles = instanceService.GetProfiles(instance);
             var selectedProfile = config.Mo2Profile;
-            if (string.IsNullOrWhiteSpace(selectedProfile) || !profiles.Contains(selectedProfile, StringComparer.OrdinalIgnoreCase))
+            if (string.IsNullOrWhiteSpace(selectedProfile) ||
+                !profiles.Contains(selectedProfile, StringComparer.OrdinalIgnoreCase))
             {
                 throw new InvalidOperationException(
                     $"MO2 mode is enabled but the selected profile '{selectedProfile ?? "<none>"}' was not found. " +
@@ -163,7 +166,7 @@ public sealed class CleaningPreflight(
         var excluded = config.ExcludedPluginPaths;
         var rows = new List<PreflightPluginRow>();
         HashSet<string>? skipSet = null;
-        if (!disableSkipLists && gameType != GameType.Unknown)
+        if (!disableSkipLists)
         {
             var skipList = await configService.GetSkipListAsync(gameType, gameVariant, ct)
                 .ConfigureAwait(false);
@@ -181,13 +184,15 @@ public sealed class CleaningPreflight(
 
             if (excluded.Contains(plugin.FullPath))
             {
-                rows.Add(new PreflightPluginRow(enrichedPlugin, PreflightDecision.Skip, PreflightSkipReason.NotSelected));
+                rows.Add(
+                    new PreflightPluginRow(enrichedPlugin, PreflightDecision.Skip, PreflightSkipReason.NotSelected));
                 continue;
             }
 
             if (skipSet != null && skipSet.Contains(plugin.FileName))
             {
-                rows.Add(new PreflightPluginRow(enrichedPlugin, PreflightDecision.Skip, PreflightSkipReason.InSkipList));
+                rows.Add(new PreflightPluginRow(enrichedPlugin, PreflightDecision.Skip,
+                    PreflightSkipReason.InSkipList));
                 continue;
             }
 
@@ -197,7 +202,8 @@ public sealed class CleaningPreflight(
                 var warning = pluginValidation.ValidatePluginFile(enrichedPlugin);
                 if (warning != PluginWarningKind.None)
                 {
-                    rows.Add(new PreflightPluginRow(enrichedPlugin, PreflightDecision.Skip, MapPluginWarningToReason(warning)));
+                    rows.Add(new PreflightPluginRow(enrichedPlugin, PreflightDecision.Skip,
+                        MapPluginWarningToReason(warning)));
                     continue;
                 }
             }
@@ -213,13 +219,15 @@ public sealed class CleaningPreflight(
                 .ToList();
             if (pathFailures.Count > 0)
             {
-                var summary = $"{pathFailures.Count} plugin(s) not found or unreadable: {string.Join(", ", pathFailures)}";
+                var summary =
+                    $"{pathFailures.Count} plugin(s) not found or unreadable: {string.Join(", ", pathFailures)}";
                 logger.Warning(summary);
             }
         }
         else
         {
-            logger.Debug("MO2 mode active -- skipping file-existence validation (MO2 VFS resolves paths at xEdit runtime)");
+            logger.Debug(
+                "MO2 mode active -- skipping file-existence validation (MO2 VFS resolves paths at xEdit runtime)");
         }
 
         // Step 7 (R-08): compute XEditDirectory once. Both runner and finalizer consume this.

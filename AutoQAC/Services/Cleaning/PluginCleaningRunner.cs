@@ -26,15 +26,10 @@ public sealed class PluginCleaningRunner(
         CancellationToken ct)
     {
         var pluginStopwatch = Stopwatch.StartNew();
-        var result = new CleaningResult
-        {
-            Success = false,
-            Status = CleaningStatus.Failed,
-            Message = "Cleaning did not run."
-        };
+        CleaningResult result;
         var attemptNumber = 0;
-        long mainLogOffset = 0;
-        long exceptionLogOffset = 0;
+        long mainLogOffset;
+        long exceptionLogOffset;
 
         try
         {
@@ -57,12 +52,7 @@ public sealed class PluginCleaningRunner(
                 result = await cleaningService.CleanPluginAsync(
                     plugin,
                     ct,
-                    onProcessStarted: proc =>
-                    {
-                        // attachProcess is called per attempt by CleanPluginAsync (Research A3).
-                        // detachProcess is NOT called here — it is called once after the loop.
-                        attachProcess(proc);
-                    }).ConfigureAwait(false);
+                    onProcessStarted: attachProcess).ConfigureAwait(false);
 
                 // If timed out and callback provided, ask user if they want to retry
                 if (result.TimedOut && onTimeout != null && attemptNumber < maxRetryAttempts)

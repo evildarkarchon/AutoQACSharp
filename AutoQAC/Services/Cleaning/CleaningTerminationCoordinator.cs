@@ -26,7 +26,7 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
 
     // Reactive Subject for hang state — stays in service tier per AGENTS.md (only ViewModels avoid System.Reactive).
     private readonly Subject<bool> _hangDetected = new();
-    private readonly object _processLock = new();
+    private readonly Lock _processLock = new();
 
     // State owned by this coordinator (lifted from CleaningOrchestrator.cs Phase 5 locks).
     private int _isStopRequested;
@@ -142,7 +142,8 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
 
                 if (!proc.HasExited)
                 {
-                    var result = await _processService.TerminateProcessAsync(proc, forceKill: false, ct: CancellationToken.None)
+                    var result = await _processService
+                        .TerminateProcessAsync(proc, forceKill: false, ct: CancellationToken.None)
                         .ConfigureAwait(false);
                     _lastTerminationResult = result;
 
@@ -220,13 +221,15 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
                 {
                     if (proc.Id == Environment.ProcessId)
                     {
-                        _logger.Error(null, "[Termination] Refusing to terminate the AutoQAC process during force stop request");
+                        _logger.Error(null,
+                            "[Termination] Refusing to terminate the AutoQAC process during force stop request");
                         return new StopCleaningResult(null, MayStillBeRunning: false);
                     }
 
                     if (!proc.HasExited)
                     {
-                        var result = await _processService.TerminateProcessAsync(proc, forceKill: true, ct: CancellationToken.None)
+                        var result = await _processService
+                            .TerminateProcessAsync(proc, forceKill: true, ct: CancellationToken.None)
                             .ConfigureAwait(false);
                         _lastTerminationResult = result;
                         if (result is TerminationResult.ForceKilled or TerminationResult.AlreadyExited)
@@ -359,7 +362,8 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
         new(result, MayProcessStillBeRunning(result));
 
     private static bool MayProcessStillBeRunning(TerminationResult? result) =>
-        result is TerminationResult.GracePeriodExpired or TerminationResult.LeftRunningByUser or TerminationResult.ForceKillFailed;
+        result is TerminationResult.GracePeriodExpired or TerminationResult.LeftRunningByUser
+            or TerminationResult.ForceKillFailed;
 
     /// <summary>
     /// Captures durable process identity for a later confirmed force escalation without retaining the borrowed process handle.
@@ -371,7 +375,8 @@ public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordin
         var startTime = TryGetStartTime(process);
         if (processId is null || startTime is null)
         {
-            _logger.Warning("[Termination] Could not retain pending force target because the process identity was not fully verifiable");
+            _logger.Warning(
+                "[Termination] Could not retain pending force target because the process identity was not fully verifiable");
             return;
         }
 

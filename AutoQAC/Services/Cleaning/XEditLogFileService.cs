@@ -27,14 +27,14 @@ public sealed class XEditLogFileService(ILoggingService logger) : IXEditLogFileS
     /// </summary>
     internal static string GetXEditAppName(GameType gameType) => gameType switch
     {
-        GameType.SkyrimLe        => "TES5",
-        GameType.SkyrimSe        => "SSE",
-        GameType.SkyrimVr        => "TES5VR",
-        GameType.Fallout4        => "FO4",
-        GameType.Fallout4Vr      => "FO4VR",
-        GameType.Fallout3        => "FO3",
+        GameType.SkyrimLe => "TES5",
+        GameType.SkyrimSe => "SSE",
+        GameType.SkyrimVr => "TES5VR",
+        GameType.Fallout4 => "FO4",
+        GameType.Fallout4Vr => "FO4VR",
+        GameType.Fallout3 => "FO3",
         GameType.FalloutNewVegas => "FNV",
-        GameType.Oblivion        => "TES4",
+        GameType.Oblivion => "TES4",
         _ => throw new ArgumentOutOfRangeException(nameof(gameType), gameType,
             "Unsupported game type for xEdit log file resolution")
     };
@@ -139,7 +139,8 @@ public sealed class XEditLogFileService(ILoggingService logger) : IXEditLogFileS
                 if (offset > fs.Length)
                 {
                     // File was truncated (xEdit 3MB threshold) -- read entire file
-                    logger.Debug("[LogFile] File truncated (offset {Offset} > length {Length}), reading entire file: {Path}",
+                    logger.Debug(
+                        "[LogFile] File truncated (offset {Offset} > length {Length}), reading entire file: {Path}",
                         offset, fs.Length, filePath);
                     offset = 0;
                 }
@@ -166,5 +167,4 @@ public sealed class XEditLogFileService(ILoggingService logger) : IXEditLogFileS
         // Unreachable, but compiler needs it
         return string.Empty;
     }
-
 }

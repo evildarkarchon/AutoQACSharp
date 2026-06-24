@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using AutoQAC.Models;
 using AutoQAC.Services.State;
 
@@ -79,16 +80,15 @@ public sealed class XEditCommandBuilder(IStateService stateService) : IXEditComm
         directStartInfo.ArgumentList.Add("-autoload");
         directStartInfo.ArgumentList.Add(plugin.FileName);
 
-        if (config.PartialFormsEnabled)
-        {
-            directStartInfo.ArgumentList.Add("-iknowwhatimdoing");
-            directStartInfo.ArgumentList.Add("-allowmakepartial");
-        }
+        if (!config.PartialFormsEnabled) return directStartInfo;
+        directStartInfo.ArgumentList.Add("-iknowwhatimdoing");
+        directStartInfo.ArgumentList.Add("-allowmakepartial");
 
         return directStartInfo;
     }
 
-    private static List<string> BuildXEditArguments(PluginInfo plugin, GameType gameType, bool partialFormsEnabled, string xEditPath)
+    private static List<string> BuildXEditArguments(PluginInfo plugin, GameType gameType, bool partialFormsEnabled,
+        string xEditPath)
     {
         var args = new List<string>();
 
@@ -104,22 +104,17 @@ public sealed class XEditCommandBuilder(IStateService stateService) : IXEditComm
         args.Add("-autoload");
         args.Add(plugin.FileName);
 
-        if (partialFormsEnabled)
-        {
-            args.Add("-iknowwhatimdoing");
-            args.Add("-allowmakepartial");
-        }
+        if (!partialFormsEnabled) return args;
+        args.Add("-iknowwhatimdoing");
+        args.Add("-allowmakepartial");
 
         return args;
     }
 
-    private static string BuildMo2NestedPayload(IReadOnlyList<string> args)
+    private static string BuildMo2NestedPayload(List<string> args)
     {
         var formattedArgs = new List<string>(args.Count);
-        foreach (var arg in args)
-        {
-            formattedArgs.Add(FormatMo2NestedArgument(arg));
-        }
+        formattedArgs.AddRange(args.Select(FormatMo2NestedArgument));
 
         return string.Join(" ", formattedArgs);
     }
