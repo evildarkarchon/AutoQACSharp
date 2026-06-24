@@ -80,50 +80,8 @@ public sealed class PluginIssueApproximationService(
 
         var context = _contextFactory(gameType, dataFolder, ct);
         ct.ThrowIfCancellationRequested();
-        var results = new List<PluginIssueApproximationResult>(context.Targets.Count);
 
-        foreach (var target in context.Targets)
-        {
-            ct.ThrowIfCancellationRequested();
-
-            if (target.Plugin is null)
-            {
-                var unavailableResult = CreateUnavailableResult(target);
-                results.Add(unavailableResult);
-                onApproximationReady?.Invoke(unavailableResult);
-                continue;
-            }
-
-            try
-            {
-                var analysis = _pluginQueryService.Analyse(target.Plugin, context.LinkCache, context.GameRelease, ct);
-                var result = new PluginIssueApproximationResult
-                {
-                    FileName = target.FileName,
-                    FullPath = target.FullPath,
-                    Approximation = PluginIssueApproximation.Available(
-                        analysis.ItmCount,
-                        analysis.DeletedReferenceCount,
-                        analysis.DeletedNavmeshCount)
-                };
-                results.Add(result);
-                onApproximationReady?.Invoke(result);
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                logger.Warning("Approximation analysis failed for plugin {PluginName}: {Message}", target.FileName,
-                    ex.Message);
-                var unavailableResult = CreateUnavailableResult(target);
-                results.Add(unavailableResult);
-                onApproximationReady?.Invoke(unavailableResult);
-            }
-        }
-
-        return results;
+        return AnalyzeContext(context, onApproximationReady, ct);
     }
 
     private static bool IsSupportedGame(GameType gameType)

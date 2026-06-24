@@ -702,7 +702,7 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         Mo2InstancePath = instance.BaseDirectory;
         IsMo2InstanceValid = Directory.Exists(instance.BaseDirectory);
 
-        var profiles = _mo2InstanceService.GetProfiles(instance);
+        var profiles = await Task.Run(() => _mo2InstanceService.GetProfiles(instance));
         SetAvailableProfiles(profiles);
 
         var persistedProfile = await _configService.GetMo2ProfileAsync(gameType);
@@ -725,7 +725,7 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        var pathMap = _mo2InstanceService.BuildPluginPathMap(instance, profile, GameDataFolder);
+        var pathMap = await Task.Run(() => _mo2InstanceService.BuildPluginPathMap(instance, profile, GameDataFolder));
         await _pluginRefreshCoordinator.RefreshForGameAsync(
             new PluginRefreshRequest(
                 gameType,
