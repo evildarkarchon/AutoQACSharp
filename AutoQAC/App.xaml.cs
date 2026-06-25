@@ -85,7 +85,11 @@ public sealed partial class App
             var hWnd = WindowNative.GetWindowHandle(mainWindow);
             if (hWnd != IntPtr.Zero)
             {
-                SetForegroundWindow(hWnd);
+                var foregroundSet = SetForegroundWindow(hWnd);
+                if (!foregroundSet)
+                {
+                    mainWindow.Activate();
+                }
             }
         });
     }
@@ -177,6 +181,7 @@ public sealed partial class App
         }
     }
 
-    [DllImport("user32.dll")]
-    private static extern bool SetForegroundWindow(IntPtr hWnd);
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool SetForegroundWindow(IntPtr hWnd);
 }

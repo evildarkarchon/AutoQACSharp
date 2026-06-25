@@ -20,6 +20,7 @@
     <IntermediateOutputPath Condition="'$(Platform)' == 'AnyCPU' or '$(Platform)' == 'Any CPU'">obj\x64\$(Configuration)\</IntermediateOutputPath>
     <OutputPath Condition="'$(Platform)' == 'AnyCPU' or '$(Platform)' == 'Any CPU'">bin\x64\$(Configuration)\</OutputPath>
     <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
