@@ -57,5 +57,4 @@ public sealed partial class MessageDialogViewModel : ViewModelBase
 
     [RelayCommand]
     private void ToggleDetails() => ShowDetailsExpanded = !ShowDetailsExpanded;
-
 }

@@ -606,7 +606,7 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
     {
         if (!_operations.Writer.TryWrite(operation) && Volatile.Read(ref _disposed) == 0)
         {
-            throw new ObjectDisposedException(nameof(ConfigPersistenceCoordinator));
+            ObjectDisposedException.ThrowIf(true, this);
         }
     }
 
@@ -614,7 +614,7 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
     {
         if (Volatile.Read(ref _disposed) != 0)
         {
-            throw new ObjectDisposedException(nameof(ConfigPersistenceCoordinator));
+            ObjectDisposedException.ThrowIf(true, this);
         }
     }
 

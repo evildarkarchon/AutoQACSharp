@@ -24,8 +24,7 @@ public sealed partial class SkipListViewModel : ViewModelBase, IDisposable
 
     private static readonly string[] ValidExtensions = [".esp", ".esm", ".esl"];
 
-    [ObservableProperty]
-    public partial GameType SelectedGame { get; set; }
+    [ObservableProperty] public partial GameType SelectedGame { get; set; }
 
     public IReadOnlyList<GameType> AvailableGames { get; }
 
@@ -45,14 +44,11 @@ public sealed partial class SkipListViewModel : ViewModelBase, IDisposable
     [NotifyCanExecuteChangedFor(nameof(AddManualEntryCommand))]
     public partial string ManualEntryText { get; set; } = string.Empty;
 
-    [ObservableProperty]
-    public partial string? ManualEntryError { get; set; }
+    [ObservableProperty] public partial string? ManualEntryError { get; set; }
 
-    [ObservableProperty]
-    public partial bool HasUnsavedChanges { get; set; }
+    [ObservableProperty] public partial bool HasUnsavedChanges { get; set; }
 
-    [ObservableProperty]
-    public partial bool IsLoading { get; set; }
+    [ObservableProperty] public partial bool IsLoading { get; set; }
 
     /// <summary>Raised when the user picks Save or Cancel. The view closes the dialog with this value.</summary>
     public event Action<bool>? CloseRequested;
@@ -183,7 +179,8 @@ public sealed partial class SkipListViewModel : ViewModelBase, IDisposable
         _logger.Debug("Added {Plugin} to skip list from loaded plugins", plugin);
     }
 
-    private bool CanAddManualEntry() => ValidatePluginName(ManualEntryText) == null && !string.IsNullOrWhiteSpace(ManualEntryText);
+    private bool CanAddManualEntry() =>
+        ValidatePluginName(ManualEntryText) == null && !string.IsNullOrWhiteSpace(ManualEntryText);
 
     [RelayCommand(CanExecute = nameof(CanAddManualEntry))]
     private void AddManualEntry()
@@ -230,12 +227,14 @@ public sealed partial class SkipListViewModel : ViewModelBase, IDisposable
         SkipListEntries.Remove(entry);
 
         var loadedPlugins = _stateService.CurrentState.PluginsToClean;
-        var isLoadedPlugin = loadedPlugins.Any(p => string.Equals(p.FileName, entry, StringComparison.OrdinalIgnoreCase));
+        var isLoadedPlugin =
+            loadedPlugins.Any(p => string.Equals(p.FileName, entry, StringComparison.OrdinalIgnoreCase));
 
         if (isLoadedPlugin)
         {
             var defaultSkipList = await _configService.GetDefaultSkipListAsync(SelectedGame, CancellationToken.None);
-            var inDefaultSkipList = defaultSkipList.Any(s => string.Equals(s, entry, StringComparison.OrdinalIgnoreCase));
+            var inDefaultSkipList =
+                defaultSkipList.Any(s => string.Equals(s, entry, StringComparison.OrdinalIgnoreCase));
 
             if (!inDefaultSkipList)
             {

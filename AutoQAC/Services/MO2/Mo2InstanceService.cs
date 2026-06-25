@@ -305,7 +305,15 @@ public sealed class Mo2InstanceService(ILoggingService? logger = null, Func<stri
     private static List<string> GetEnabledMods(Mo2InstanceInfo instance, string profile)
     {
         var modListPath = Path.Combine(instance.ProfilesDirectory, profile, "modlist.txt");
-        return !File.Exists(modListPath) ? [] : (from rawLine in File.ReadLines(modListPath) select rawLine.Trim() into line where line.Length >= 2 && !line.StartsWith('#') && !line.StartsWith("_separator", StringComparison.OrdinalIgnoreCase) where line[0] == '+' select line[1..]).ToList();
+        return !File.Exists(modListPath)
+            ? []
+            : (from rawLine in File.ReadLines(modListPath)
+                select rawLine.Trim()
+                into line
+                where line.Length >= 2 && !line.StartsWith('#') &&
+                      !line.StartsWith("_separator", StringComparison.OrdinalIgnoreCase)
+                where line[0] == '+'
+                select line[1..]).ToList();
     }
 
     private static void AddPluginFiles(Dictionary<string, string> map, string? root)

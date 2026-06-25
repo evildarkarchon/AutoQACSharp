@@ -58,7 +58,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
             uiDispatcher);
 
         Commands = new CleaningCommandsViewModel(
-             stateService, orchestrator, configService, pluginLoadingService,
+            stateService, orchestrator, configService, pluginLoadingService,
             pluginRefreshCoordinator,
             logger, messageDialog, appLifetime ?? NoOpAppLifetime.Instance,
             ShowProgressInteraction, ShowPreviewInteraction,

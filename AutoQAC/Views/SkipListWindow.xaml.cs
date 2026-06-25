@@ -5,29 +5,20 @@ using AutoQAC.Views.Helpers;
 
 namespace AutoQAC.Views;
 
-public sealed class SkipListWindow
+public sealed class SkipListWindow(IWindowContextProvider windowContextProvider, SkipListViewModel viewModel)
 {
-    private readonly IWindowContextProvider _windowContextProvider;
-    private readonly SkipListViewModel _viewModel;
-
-    public SkipListWindow(IWindowContextProvider windowContextProvider, SkipListViewModel viewModel)
-    {
-        _windowContextProvider = windowContextProvider;
-        _viewModel = viewModel;
-    }
-
     public Task<bool> ShowAsync()
     {
         var content = new SkipListContent
         {
-            DataContext = _viewModel
+            DataContext = viewModel
         };
 
         return ContentDialogPresenter.ShowBooleanAsync(
-            _windowContextProvider,
+            windowContextProvider,
             "Skip List",
             content,
-            handler => _viewModel.CloseRequested += handler,
-            handler => _viewModel.CloseRequested -= handler);
+            handler => viewModel.CloseRequested += handler,
+            handler => viewModel.CloseRequested -= handler);
     }
 }

@@ -30,11 +30,11 @@
 
         <StackPanel Grid.Row="2" Spacing="6">
             <HyperlinkButton Content="GitHub Repository" Command="{Binding OpenGitHubCommand}"
-                              Style="{StaticResource AutoQacHyperlinkButtonStyle}" />
+                             Style="{StaticResource AutoQacHyperlinkButtonStyle}" />
             <HyperlinkButton Content="Report an Issue" Command="{Binding OpenIssuesCommand}"
-                              Style="{StaticResource AutoQacHyperlinkButtonStyle}" />
+                             Style="{StaticResource AutoQacHyperlinkButtonStyle}" />
             <HyperlinkButton Content="xEdit Project" Command="{Binding OpenXEditCommand}"
-                              Style="{StaticResource AutoQacHyperlinkButtonStyle}" />
+                             Style="{StaticResource AutoQacHyperlinkButtonStyle}" />
         </StackPanel>
 
         <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="8">

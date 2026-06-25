@@ -33,36 +33,36 @@ public sealed class WinUiDispatcher(DispatcherQueue? dispatcherQueue = null) : I
 
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         if (!_dispatcherQueue.TryEnqueue(() =>
-        {
-            Task task;
-            try
             {
-                task = action();
-            }
-            catch (Exception ex)
-            {
-                completion.SetException(ex);
-                return;
-            }
-
-            task.ContinueWith(
-                completedTask =>
+                Task task;
+                try
                 {
-                    if (completedTask.Exception != null)
+                    task = action();
+                }
+                catch (Exception ex)
+                {
+                    completion.SetException(ex);
+                    return;
+                }
+
+                task.ContinueWith(
+                    completedTask =>
                     {
-                        completion.SetException(completedTask.Exception.InnerExceptions);
-                    }
-                    else if (completedTask.IsCanceled)
-                    {
-                        completion.SetCanceled();
-                    }
-                    else
-                    {
-                        completion.SetResult();
-                    }
-                },
-                TaskScheduler.Default);
-        }))
+                        if (completedTask.Exception != null)
+                        {
+                            completion.SetException(completedTask.Exception.InnerExceptions);
+                        }
+                        else if (completedTask.IsCanceled)
+                        {
+                            completion.SetCanceled();
+                        }
+                        else
+                        {
+                            completion.SetResult();
+                        }
+                    },
+                    TaskScheduler.Default);
+            }))
         {
             completion.SetException(new InvalidOperationException("Failed to enqueue work on the UI dispatcher."));
         }

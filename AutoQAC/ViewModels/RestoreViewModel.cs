@@ -54,8 +54,7 @@ public sealed partial class RestoreViewModel(
 
     [ObservableProperty] public partial long? RestoreTotalBytes { get; set; }
 
-    [ObservableProperty]
-    public partial ObservableCollection<BackupRestoreRowResult> RestoreResults { get; set; } = [];
+    [ObservableProperty] public partial ObservableCollection<BackupRestoreRowResult> RestoreResults { get; set; } = [];
 
     [ObservableProperty] public partial bool IsRestoreResultVisible { get; set; }
 
@@ -417,11 +416,9 @@ public sealed partial class RestoreViewModel(
         var currentIndex = -1;
         for (var i = 0; i < plugins.Count; i++)
         {
-            if (string.Equals(plugins[i].FileName, progress.FileName, StringComparison.OrdinalIgnoreCase))
-            {
-                currentIndex = i;
-                break;
-            }
+            if (!string.Equals(plugins[i].FileName, progress.FileName, StringComparison.OrdinalIgnoreCase)) continue;
+            currentIndex = i;
+            break;
         }
 
         var currentCount = currentIndex >= 0 ? currentIndex + 1 : Math.Min(RestoreResults.Count + 1, plugins.Count);

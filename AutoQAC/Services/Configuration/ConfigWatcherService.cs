@@ -32,13 +32,13 @@ public sealed class ConfigWatcherService : IConfigWatcherService
         _configDirectory = configDirectory ?? ResolveConfigDirectory();
     }
 
-    private string ResolveConfigDirectory()
+    private static string ResolveConfigDirectory()
     {
         var baseDir = AppContext.BaseDirectory;
 
 #if DEBUG
         var current = new DirectoryInfo(baseDir);
-        for (int i = 0; i < 6 && current != null; i++)
+        for (var i = 0; i < 6 && current != null; i++)
         {
             var candidate = Path.Combine(current.FullName, "AutoQAC Data");
             if (Directory.Exists(candidate))

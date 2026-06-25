@@ -23,7 +23,9 @@ public sealed class PluginLoadingService : IPluginLoadingService
     private readonly IPluginValidationService _pluginValidation;
     private readonly ILoggingService _logger;
     private readonly Func<GameType, string?> _registryDataFolderResolver;
-    private readonly Func<GameType, string?, CancellationToken, (string? DataFolder, IReadOnlyList<string> PluginFileNames)>
+
+    private readonly Func<GameType, string?, CancellationToken, (string? DataFolder, IReadOnlyList<string>
+            PluginFileNames)>
         _mutagenListingProvider;
 
     /// <summary>
@@ -204,18 +206,16 @@ public sealed class PluginLoadingService : IPluginLoadingService
             }
             catch (Exception ex)
             {
-                _logger.Debug("Could not detect data folder via Mutagen for {GameType}: {Message}", gameType, ex.Message);
+                _logger.Debug("Could not detect data folder via Mutagen for {GameType}: {Message}", gameType,
+                    ex.Message);
             }
         }
 
         var registryPath = _registryDataFolderResolver(gameType);
-        if (!string.IsNullOrWhiteSpace(registryPath))
-        {
-            _logger.Information("Detected data folder via registry for {GameType}: {DataFolder}", gameType, registryPath);
-            return registryPath;
-        }
-
-        return null;
+        if (string.IsNullOrWhiteSpace(registryPath)) return null;
+        _logger.Information("Detected data folder via registry for {GameType}: {DataFolder}", gameType,
+            registryPath);
+        return registryPath;
     }
 
     /// <inheritdoc />
@@ -245,17 +245,11 @@ public sealed class PluginLoadingService : IPluginLoadingService
         IReadOnlyList<string> pluginFileNames)
     {
         var plugins = new List<PluginInfo>(pluginFileNames.Count);
-
-        foreach (var fileName in pluginFileNames)
+        plugins.AddRange(pluginFileNames.Select(fileName => new PluginInfo
         {
-            plugins.Add(new PluginInfo
-            {
-                FileName = fileName,
-                FullPath = Path.Combine(dataFolder, fileName),
-                IsInSkipList = false,
-                DetectedGameType = gameType
-            });
-        }
+            FileName = fileName, FullPath = Path.Combine(dataFolder, fileName), IsInSkipList = false,
+            DetectedGameType = gameType
+        }));
 
         return plugins;
     }
@@ -362,13 +356,11 @@ public sealed class PluginLoadingService : IPluginLoadingService
 
                         foreach (var valueName in RegistryInstallPathValueNames)
                         {
-                            if (key.GetValue(valueName) is string rawPath)
+                            if (key.GetValue(valueName) is not string rawPath) continue;
+                            var normalized = NormalizeDataFolderPath(rawPath);
+                            if (!string.IsNullOrWhiteSpace(normalized))
                             {
-                                var normalized = NormalizeDataFolderPath(rawPath);
-                                if (!string.IsNullOrWhiteSpace(normalized))
-                                {
-                                    return normalized;
-                                }
+                                return normalized;
                             }
                         }
                     }
@@ -404,7 +396,8 @@ public sealed class PluginLoadingService : IPluginLoadingService
 
         if (Directory.Exists(trimmed))
         {
-            var dirName = Path.GetFileName(trimmed.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            var dirName =
+                Path.GetFileName(trimmed.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
             if (string.Equals(dirName, "Data", StringComparison.OrdinalIgnoreCase))
             {
                 return trimmed;
@@ -412,11 +405,6 @@ public sealed class PluginLoadingService : IPluginLoadingService
         }
 
         var dataFolder = Path.Combine(trimmed, "Data");
-        if (Directory.Exists(dataFolder))
-        {
-            return dataFolder;
-        }
-
-        return null;
+        return Directory.Exists(dataFolder) ? dataFolder : null;
     }
 }

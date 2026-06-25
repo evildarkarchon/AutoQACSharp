@@ -269,6 +269,9 @@ public sealed class StateService : IStateService, IDisposable
                 case CleaningStatus.Skipped:
                     skipped.Add(plugin);
                     break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(status), status,
+                        "Unexpected cleaning status.");
             }
 
             return s with

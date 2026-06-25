@@ -125,9 +125,9 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
     public bool HasValidationErrors =>
         !ValidateCleaningTimeout(CleaningTimeout)
         || !ValidateJournalExpiration(JournalExpiration)
-        || !(CpuThreshold is >= 1 and <= 100)
+        || CpuThreshold is < 1 or > 100
         || !(MaxAgeDays >= 1 && MaxFileCount >= 1)
-        || !(BackupMaxSessions is >= 1 and <= 100);
+        || BackupMaxSessions is < 1 or > 100;
 
     public bool HasUnsavedChanges =>
         JournalExpiration != _originalSettings.JournalExpiration ||

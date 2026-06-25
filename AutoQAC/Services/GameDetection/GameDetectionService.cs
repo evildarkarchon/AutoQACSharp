@@ -91,14 +91,14 @@ public sealed class GameDetectionService(ILoggingService logger) : IGameDetectio
             foreach (var line in lines)
             {
                 if (string.IsNullOrWhiteSpace(line)) continue;
-                if (line.TrimStart().StartsWith("#")) continue;
+                if (line.TrimStart().StartsWith('#')) continue;
 
                 // Clean up the line to get the plugin name
                 // Remove leading * (enabled flag in plugins.txt)
                 var pluginName = line.Trim();
-                if (pluginName.StartsWith("*"))
+                if (pluginName.StartsWith('*'))
                 {
-                    pluginName = pluginName.Substring(1);
+                    pluginName = pluginName[1..];
                 }
 
                 // Check if this plugin is a known master
@@ -138,7 +138,6 @@ public sealed class GameDetectionService(ILoggingService logger) : IGameDetectio
             logger.Information("Detected Enderal variant");
 
             return GameVariant.Enderal;
-
         }
     }
 

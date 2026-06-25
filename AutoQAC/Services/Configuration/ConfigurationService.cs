@@ -85,7 +85,7 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
 
 #if DEBUG
         var current = new DirectoryInfo(baseDir);
-        for (int i = 0; i < 6 && current != null; i++)
+        for (var i = 0; i < 6 && current != null; i++)
         {
             var candidate = Path.Combine(current.FullName, "AutoQAC Data");
             if (Directory.Exists(candidate))
@@ -181,18 +181,17 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
             return defaultConfig.Copy();
         }
 
-        if (!loadedFromDisk && !hasPending)
+        if (loadedFromDisk || hasPending) return await _coordinator.LoadCurrentAsync(ct).ConfigureAwait(false);
+        var result = await _coordinator.ReloadFromDiskAsync(ct).ConfigureAwait(false);
+        if (result.Status == ConfigPersistenceStatusKind.Failed)
         {
-            var result = await _coordinator.ReloadFromDiskAsync(ct).ConfigureAwait(false);
-            if (result.Status == ConfigPersistenceStatusKind.Failed)
-            {
-                _logger.Warning("[Config] Initial user configuration reload failed: {Summary}", result.Failure?.SafeSummary ?? "unknown");
-            }
+            _logger.Warning("[Config] Initial user configuration reload failed: {Summary}",
+                result.Failure?.SafeSummary ?? "unknown");
+        }
 
-            lock (_stateLock)
-            {
-                _loadedUserConfigFromDisk = true;
-            }
+        lock (_stateLock)
+        {
+            _loadedUserConfigFromDisk = true;
         }
 
         return await _coordinator.LoadCurrentAsync(ct).ConfigureAwait(false);
@@ -345,12 +344,7 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
             return list;
         }
 
-        if (mainConfig.Data.XEditLists.TryGetValue("Universal", out var universalList))
-        {
-            return universalList;
-        }
-
-        return [];
+        return mainConfig.Data.XEditLists.TryGetValue("Universal", out var universalList) ? universalList : [];
     }
 
     public async Task<List<string>> GetGameSpecificSkipListAsync(GameType gameType, CancellationToken ct = default)
@@ -409,8 +403,8 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
         }
 
         var currentList = await GetGameSpecificSkipListAsync(gameType, ct).ConfigureAwait(false);
-        var toRemove = currentList.FirstOrDefault(
-            p => string.Equals(p, pluginName, StringComparison.OrdinalIgnoreCase));
+        var toRemove =
+            currentList.FirstOrDefault(p => string.Equals(p, pluginName, StringComparison.OrdinalIgnoreCase));
 
         if (toRemove != null)
         {
@@ -635,7 +629,7 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
         }
     }
 
-    private string GetGameKey(GameType gameType) => gameType switch
+    private static string GetGameKey(GameType gameType) => gameType switch
     {
         GameType.Fallout3 => "FO3",
         GameType.FalloutNewVegas => "FNV",
@@ -689,9 +683,6 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
 
     private void ThrowIfDisposed()
     {
-        if (Volatile.Read(ref _disposeState) >= 2)
-        {
-            throw new ObjectDisposedException(nameof(ConfigurationService));
-        }
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposeState) >= 2, this);
     }
 }

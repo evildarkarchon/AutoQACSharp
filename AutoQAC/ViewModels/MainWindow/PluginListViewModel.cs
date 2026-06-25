@@ -28,8 +28,7 @@ public sealed partial class PluginListViewModel : ViewModelBase, IDisposable
 
     public ObservableCollection<PluginListItem> PluginsToClean { get; } = [];
 
-    [ObservableProperty]
-    public partial PluginListItem? SelectedPlugin { get; set; }
+    [ObservableProperty] public partial PluginListItem? SelectedPlugin { get; set; }
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SelectAllCommand))]
@@ -321,9 +320,11 @@ public sealed partial class PluginListViewModel : ViewModelBase, IDisposable
     {
         public static NoOpPluginRefreshCoordinator Instance { get; } = new();
 
-        public IObservable<PluginRefreshStatus> StatusChanged => System.Reactive.Linq.Observable.Never<PluginRefreshStatus>();
+        public IObservable<PluginRefreshStatus> StatusChanged =>
+            System.Reactive.Linq.Observable.Never<PluginRefreshStatus>();
 
-        public Task RefreshForGameAsync(PluginRefreshRequest request, CancellationToken ct = default) => Task.CompletedTask;
+        public Task RefreshForGameAsync(PluginRefreshRequest request, CancellationToken ct = default) =>
+            Task.CompletedTask;
 
         public Task RefreshSelectedApproximationsAsync(
             PluginRefreshRequest request,

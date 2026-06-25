@@ -61,7 +61,7 @@ public sealed partial class CleaningResultsViewModel : ViewModelBase
     public CleaningResultsViewModel()
     {
         SessionResult = CleaningSessionResult.CreateEmpty();
-        PluginResults = new ObservableCollection<PluginCleaningResult>();
+        PluginResults = [];
     }
 
     public CleaningResultsViewModel(

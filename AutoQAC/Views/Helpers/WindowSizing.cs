@@ -6,7 +6,7 @@ using Windows.Graphics;
 
 namespace AutoQAC.Views.Helpers;
 
-public static class WindowSizing
+public static partial class WindowSizing
 {
     public static void Resize(Window window, int width, int height)
     {
@@ -29,6 +29,6 @@ public static class WindowSizing
         }
     }
 
-    [DllImport("user32.dll")]
-    private static extern uint GetDpiForWindow(IntPtr hwnd);
+    [LibraryImport("user32.dll")]
+    private static partial uint GetDpiForWindow(IntPtr hwnd);
 }

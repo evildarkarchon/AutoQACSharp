@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.Cleaning;
@@ -14,18 +15,15 @@ namespace AutoQAC.ViewModels;
 
 public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
 {
-    private readonly IStateService _stateService;
     private readonly ICleaningOrchestrator _orchestrator;
     private readonly IMessageDialogService _messageDialog;
     private readonly ILoggingService _logger;
-    private readonly IUiDispatcher _uiDispatcher;
-    private readonly List<IDisposable> _subscriptions = new();
+    private readonly List<IDisposable> _subscriptions = [];
 
     private bool _wasPreviouslyCleaning;
     private bool _hangWarningDismissed;
 
-    [ObservableProperty]
-    public partial string? CurrentPlugin { get; set; }
+    [ObservableProperty] public partial string? CurrentPlugin { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ProgressText))]
@@ -35,65 +33,51 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
     [NotifyPropertyChangedFor(nameof(ProgressText))]
     public partial int Total { get; set; }
 
-    [ObservableProperty]
-    public partial int CleanedCount { get; set; }
+    [ObservableProperty] public partial int CleanedCount { get; set; }
 
-    [ObservableProperty]
-    public partial int SkippedCount { get; set; }
+    [ObservableProperty] public partial int SkippedCount { get; set; }
 
-    [ObservableProperty]
-    public partial int FailedCount { get; set; }
+    [ObservableProperty] public partial int FailedCount { get; set; }
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(StopCommand))]
     public partial bool IsCleaning { get; set; }
 
-    [ObservableProperty]
-    public partial int CurrentItmCount { get; set; }
+    [ObservableProperty] public partial int CurrentItmCount { get; set; }
 
-    [ObservableProperty]
-    public partial int CurrentUdrCount { get; set; }
+    [ObservableProperty] public partial int CurrentUdrCount { get; set; }
 
-    [ObservableProperty]
-    public partial int CurrentNavCount { get; set; }
+    [ObservableProperty] public partial int CurrentNavCount { get; set; }
 
-    [ObservableProperty]
-    public partial bool HasCurrentPluginStats { get; set; }
+    [ObservableProperty] public partial bool HasCurrentPluginStats { get; set; }
 
-    public ObservableCollection<PluginCleaningResult> CompletedPlugins { get; } = new();
+    public ObservableCollection<PluginCleaningResult> CompletedPlugins { get; } = [];
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsResultsSummaryVisible))]
     public partial bool IsShowingResults { get; set; }
 
-    [ObservableProperty]
-    public partial CleaningSessionResult? SessionResult { get; set; }
+    [ObservableProperty] public partial CleaningSessionResult? SessionResult { get; set; }
 
-    [ObservableProperty]
-    public partial bool WasCancelled { get; set; }
+    [ObservableProperty] public partial bool WasCancelled { get; set; }
 
-    [ObservableProperty]
-    public partial string SessionSummaryText { get; set; } = string.Empty;
+    [ObservableProperty] public partial string SessionSummaryText { get; set; } = string.Empty;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasStopOutcomeWarning))]
     public partial string? StopOutcomeWarningText { get; set; }
 
-    [ObservableProperty]
-    public partial int TotalItmCount { get; set; }
+    [ObservableProperty] public partial int TotalItmCount { get; set; }
 
-    [ObservableProperty]
-    public partial int TotalUdrCount { get; set; }
+    [ObservableProperty] public partial int TotalUdrCount { get; set; }
 
-    [ObservableProperty]
-    public partial int TotalNavCount { get; set; }
+    [ObservableProperty] public partial int TotalNavCount { get; set; }
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(StopCommand))]
     public partial bool IsTerminating { get; set; }
 
-    [ObservableProperty]
-    public partial bool IsHangWarningVisible { get; set; }
+    [ObservableProperty] public partial bool IsHangWarningVisible { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsResultsSummaryVisible))]
@@ -108,15 +92,14 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
     [NotifyCanExecuteChangedFor(nameof(CancelBackupOperationCommand))]
     public partial BackupOperationState? BackupOperation { get; set; }
 
-    public ObservableCollection<DryRunResult> DryRunResults { get; } = new();
+    public ObservableCollection<DryRunResult> DryRunResults { get; } = [];
 
+    // ReSharper disable once UnusedMember.Global - bound from ProgressWindow.xaml.
     public string PreviewDisclaimer => "Preview only -- does not detect ITMs/UDRs (requires xEdit)";
 
-    [ObservableProperty]
-    public partial int WillCleanCount { get; set; }
+    [ObservableProperty] public partial int WillCleanCount { get; set; }
 
-    [ObservableProperty]
-    public partial int WillSkipCount { get; set; }
+    [ObservableProperty] public partial int WillSkipCount { get; set; }
 
     public string ProgressText => Total > 0
         ? $"{Progress} / {Total} ({Progress * 100 / Total}%)"
@@ -159,30 +142,30 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
     /// <summary>Event raised when the window should close.</summary>
     public event EventHandler? CloseRequested;
 
-    public ProgressViewModel(IStateService stateService, ICleaningOrchestrator orchestrator, IMessageDialogService messageDialog, ILoggingService logger, IUiDispatcher uiDispatcher)
+    public ProgressViewModel(IStateService stateService, ICleaningOrchestrator orchestrator,
+        IMessageDialogService messageDialog, ILoggingService logger, IUiDispatcher uiDispatcher)
     {
-        _stateService = stateService;
         _orchestrator = orchestrator;
         _messageDialog = messageDialog;
         _logger = logger;
-        _uiDispatcher = uiDispatcher;
 
-        _subscriptions.Add(_stateService.StateChanged.Subscribe(
-            new CallbackObserver<AppState>(state => _uiDispatcher.Post(() => OnStateChanged(state)))));
+        _subscriptions.Add(stateService.StateChanged.Subscribe(
+            new CallbackObserver<AppState>(state => uiDispatcher.Post(() => OnStateChanged(state)))));
 
-        _subscriptions.Add(_stateService.DetailedPluginResult.Subscribe(
-            new CallbackObserver<PluginCleaningResult>(result => _uiDispatcher.Post(() => OnDetailedResult(result)))));
+        _subscriptions.Add(stateService.DetailedPluginResult.Subscribe(
+            new CallbackObserver<PluginCleaningResult>(result => uiDispatcher.Post(() => OnDetailedResult(result)))));
 
-        _subscriptions.Add(_stateService.CleaningCompleted.Subscribe(
-            new CallbackObserver<CleaningSessionResult>(session => _uiDispatcher.Post(() => OnCleaningCompleted(session)))));
+        _subscriptions.Add(stateService.CleaningCompleted.Subscribe(
+            new CallbackObserver<CleaningSessionResult>(session =>
+                uiDispatcher.Post(() => OnCleaningCompleted(session)))));
 
         _subscriptions.Add(_orchestrator.HangDetected.Subscribe(
-            new CallbackObserver<bool>(isHung => _uiDispatcher.Post(() => OnHangDetected(isHung)))));
+            new CallbackObserver<bool>(isHung => uiDispatcher.Post(() => OnHangDetected(isHung)))));
 
-        _subscriptions.Add(_stateService.IsTerminatingChanged.Subscribe(
-            new CallbackObserver<bool>(isTerminating => _uiDispatcher.Post(() => IsTerminating = isTerminating))));
+        _subscriptions.Add(stateService.IsTerminatingChanged.Subscribe(
+            new CallbackObserver<bool>(isTerminating => uiDispatcher.Post(() => IsTerminating = isTerminating))));
 
-        OnStateChanged(_stateService.CurrentState);
+        OnStateChanged(stateService.CurrentState);
     }
 
     /// <summary>
@@ -197,6 +180,7 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
         {
             DryRunResults.Add(result);
         }
+
         WillCleanCount = results.Count(r => r.Status == DryRunStatus.WillClean);
         WillSkipCount = results.Count(r => r.Status == DryRunStatus.WillSkip);
         IsShowingResults = true;
@@ -205,7 +189,7 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
     private bool CanStop() => IsCleaning && !IsTerminating;
 
     [RelayCommand(CanExecute = nameof(CanStop))]
-    private async System.Threading.Tasks.Task StopAsync()
+    private async Task StopAsync()
     {
         try
         {
@@ -225,7 +209,8 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
             if (choice == MessageDialogResult.Yes)
             {
                 var forceResult = await _orchestrator.ForceStopCleaningAsync();
-                await ReportForceStopFailureIfNeededAsync(forceResult.TerminationResult ?? _orchestrator.LastTerminationResult);
+                await ReportForceStopFailureIfNeededAsync(forceResult.TerminationResult ??
+                                                          _orchestrator.LastTerminationResult);
                 return;
             }
 
@@ -250,13 +235,14 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
     }
 
     [RelayCommand]
-    private async System.Threading.Tasks.Task KillHungProcessAsync()
+    private async Task KillHungProcessAsync()
     {
         try
         {
             IsHangWarningVisible = false;
             var forceResult = await _orchestrator.ForceStopCleaningAsync();
-            await ReportForceStopFailureIfNeededAsync(forceResult.TerminationResult ?? _orchestrator.LastTerminationResult);
+            await ReportForceStopFailureIfNeededAsync(forceResult.TerminationResult ??
+                                                      _orchestrator.LastTerminationResult);
         }
         catch (Exception ex)
         {
@@ -270,7 +256,7 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
     /// Reports force-stop failures through the shared safe dialog copy and persistent Progress summary warning.
     /// </summary>
     /// <param name="terminationResult">The latest termination result returned by the orchestrator or cached by it.</param>
-    private async System.Threading.Tasks.Task ReportForceStopFailureIfNeededAsync(TerminationResult? terminationResult)
+    private async Task ReportForceStopFailureIfNeededAsync(TerminationResult? terminationResult)
     {
         if (terminationResult != TerminationResult.ForceKillFailed)
         {
@@ -283,7 +269,7 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
     /// <summary>
     /// Persists the shared force-failure warning and best-effort displays the matching dialog.
     /// </summary>
-    private async System.Threading.Tasks.Task ShowForceFailureDialogSafelyAsync()
+    private async Task ShowForceFailureDialogSafelyAsync()
     {
         StopOutcomeWarningText = StopTerminationDialogContent.ForceFailureMessage;
         try
@@ -303,7 +289,8 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
     /// Requests cancellation of the active backup or retention file operation without using the xEdit Stop path.
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanCancelBackupOperation))]
-    private async System.Threading.Tasks.Task CancelBackupOperationAsync() => await _orchestrator.CancelBackupOperationAsync();
+    private async Task CancelBackupOperationAsync() =>
+        await _orchestrator.CancelBackupOperationAsync();
 
     private void OnStateChanged(AppState state)
     {
@@ -311,6 +298,7 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
         {
             ResetForNewSession();
         }
+
         _wasPreviouslyCleaning = state.IsCleaning;
 
         IsCleaning = state.IsCleaning;
@@ -423,6 +411,7 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
         {
             sub.Dispose();
         }
+
         _subscriptions.Clear();
     }
 }

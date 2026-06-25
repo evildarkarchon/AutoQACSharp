@@ -43,24 +43,11 @@ public sealed class PluginValidationService(ILoggingService logger) : IPluginVal
             var lines = await ReadLinesWithEncodingDetectionAsync(loadOrderPath, ct)
                 .ConfigureAwait(false);
 
-            foreach (var line in lines)
-            {
-                var processed = ProcessLine(line);
-                if (processed is null)
-                    continue;
-
-                var fullPath = dataFolderPath is not null
+            plugins.AddRange(from processed in lines.Select(ProcessLine).OfType<string>()
+                let fullPath = dataFolderPath is not null
                     ? Path.Combine(dataFolderPath, processed)
-                    : processed;
-
-                plugins.Add(new PluginInfo
-                {
-                    FileName = processed,
-                    FullPath = fullPath,
-                    IsInSkipList = false,
-                    DetectedGameType = GameType.Unknown
-                });
-            }
+                    : processed
+                select new PluginInfo { FileName = processed, FullPath = fullPath, IsInSkipList = false, DetectedGameType = GameType.Unknown });
         }
         catch (Exception ex)
         {
@@ -144,7 +131,7 @@ public sealed class PluginValidationService(ILoggingService logger) : IPluginVal
         // Step 3: Strip leading prefix character (* + -) then re-trim
         if (trimmed.Length > 0 && PrefixChars.Contains(trimmed[0]))
         {
-            trimmed = trimmed.Substring(1).Trim();
+            trimmed = trimmed[1..].Trim();
         }
 
         // Step 4: If empty after stripping prefix, skip (separator line)

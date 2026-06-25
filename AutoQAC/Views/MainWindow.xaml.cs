@@ -18,7 +18,7 @@ namespace AutoQAC.Views;
 
 public sealed partial class MainWindow : Window
 {
-    private readonly List<IDisposable> _interactionRegistrations = new();
+    private readonly List<IDisposable> _interactionRegistrations = [];
     private ILoggingService? _logger;
     private IFileDialogService? _fileDialog;
     private IConfigurationService? _configService;

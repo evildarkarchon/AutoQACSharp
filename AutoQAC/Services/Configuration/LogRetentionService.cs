@@ -52,7 +52,7 @@ public sealed class LogRetentionService(
             // CRITICAL: Always skip the first file (most recent = active Serilog log file)
             var candidates = logFiles.Skip(1).ToList();
 
-            int deletedCount = 0;
+            var deletedCount = 0;
 
             switch (settings.Mode)
             {
@@ -62,11 +62,9 @@ public sealed class LogRetentionService(
                     foreach (var file in candidates)
                     {
                         ct.ThrowIfCancellationRequested();
-                        if (file.LastWriteTimeUtc < cutoff)
-                        {
-                            if (TryDeleteFile(file.FullName))
-                                deletedCount++;
-                        }
+                        if (file.LastWriteTimeUtc >= cutoff) continue;
+                        if (TryDeleteFile(file.FullName))
+                            deletedCount++;
                     }
 
                     break;
@@ -86,6 +84,9 @@ public sealed class LogRetentionService(
 
                     break;
                 }
+                default:
+                    logger.Warning("[LogRetention] Unknown retention mode {Mode}, skipping cleanup", settings.Mode);
+                    return;
             }
 
             if (deletedCount > 0)
