@@ -452,8 +452,8 @@ public sealed class ProcessExecutionServiceTests : IDisposable
         // Default: CleanPluginAsync succeeds and captures the onProcessStarted callback
         cleaningServiceMock.CleanPluginAsync(
                 Arg.Any<PluginInfo>(),
-                Arg.Any<CancellationToken>(),
-                Arg.Any<Action<Process>?>())
+                Arg.Any<Action<Process>?>(),
+                Arg.Any<CancellationToken>())
             .Returns(new CleaningResult
             {
                 Status = CleaningStatus.Cleaned,
@@ -558,14 +558,14 @@ public sealed class ProcessExecutionServiceTests : IDisposable
             .Returns(true);
         cleaningServiceMock.CleanPluginAsync(
                 Arg.Any<PluginInfo>(),
-                Arg.Any<CancellationToken>(),
-                Arg.Any<Action<Process>?>())
+                Arg.Any<Action<Process>?>(),
+                Arg.Any<CancellationToken>())
             .Returns(async callInfo =>
             {
                 cleaningStarted.TrySetResult(true);
                 // Block until cancellation -- let the exception propagate so the
                 // orchestrator's catch(OperationCanceledException) sets WasCancelled
-                var ct = callInfo.ArgAt<CancellationToken>(1);
+                var ct = callInfo.ArgAt<CancellationToken>(2);
                 await WaitForCancellationAndThrowAsync(ct);
                 return new CleaningResult { Status = CleaningStatus.Failed, Message = "Cancelled" };
             });

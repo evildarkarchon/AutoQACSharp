@@ -17,7 +17,7 @@ namespace AutoQAC.Services.Cleaning;
 /// Coordinates the active xEdit process reference, hang monitor lifecycle, and two-stage
 /// user stop/force-stop policy while preserving the Phase 5 termination invariants.
 /// </summary>
-public sealed class CleaningTerminationCoordinator : ICleaningTerminationCoordinator, IDisposable
+public sealed partial class CleaningTerminationCoordinator : ICleaningTerminationCoordinator, IDisposable
 {
     private readonly IProcessExecutionService _processService;
     private readonly IHangDetectionService _hangDetection;

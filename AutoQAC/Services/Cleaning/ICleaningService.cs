@@ -10,8 +10,8 @@ public interface ICleaningService
     // Main cleaning entry point
     Task<CleaningResult> CleanPluginAsync(
         PluginInfo plugin,
-        CancellationToken ct = default,
-        Action<System.Diagnostics.Process>? onProcessStarted = null);
+        Action<System.Diagnostics.Process>? onProcessStarted = null,
+        CancellationToken ct = default);
 
     // Pre-cleaning validation
     Task<bool> ValidateEnvironmentAsync(CancellationToken ct = default);

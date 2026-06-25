@@ -57,11 +57,6 @@ public interface IBackupService
         CancellationToken ct = default);
 
     /// <summary>
-    /// Restores all plugins from a session.
-    /// </summary>
-    void RestoreSession(BackupSession session, string? trustedRestoreRoot);
-
-    /// <summary>
     /// Restores all plugins from a session while preserving partial, failed, and canceled aggregate outcomes.
     /// </summary>
     Task<BackupRestoreResult> RestoreSessionAsync(

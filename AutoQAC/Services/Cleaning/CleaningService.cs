@@ -22,8 +22,8 @@ public sealed class CleaningService(
 {
     public async Task<CleaningResult> CleanPluginAsync(
         PluginInfo plugin,
-        CancellationToken ct = default,
-        Action<System.Diagnostics.Process>? onProcessStarted = null)
+        Action<System.Diagnostics.Process>? onProcessStarted = null,
+        CancellationToken ct = default)
     {
         var sw = Stopwatch.StartNew();
 

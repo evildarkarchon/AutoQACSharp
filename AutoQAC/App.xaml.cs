@@ -1,6 +1,7 @@
 using System;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure;
 using AutoQAC.Infrastructure.Logging;
@@ -20,6 +21,7 @@ using WinRT.Interop;
 
 namespace AutoQAC;
 
+[SupportedOSPlatform("windows10.0.19041.0")]
 public sealed partial class App
 {
     private MainWindow? _mainWindow;

@@ -50,11 +50,6 @@ public sealed class LoggingService : ILoggingService, IDisposable
         _logger.Error(ex, message, args);
     }
 
-    public void Fatal(Exception? ex, string message, params object[] args)
-    {
-        _logger.Fatal(ex, message, args);
-    }
-
     public void Dispose()
     {
         if (_logger is IDisposable disposable)

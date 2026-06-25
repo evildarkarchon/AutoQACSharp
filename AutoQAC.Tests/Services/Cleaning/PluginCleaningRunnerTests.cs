@@ -33,7 +33,7 @@ public sealed class PluginCleaningRunnerTests
     {
         // Arrange
         var plugin = CreatePlugin("Retry.esp");
-        _cleaningServiceMock.CleanPluginAsync(plugin, Arg.Any<CancellationToken>(), Arg.Any<Action<Process>?>())
+        _cleaningServiceMock.CleanPluginAsync(plugin, Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>())
             .Returns(
                 new CleaningResult { Success = false, Status = CleaningStatus.Failed, Message = "Timeout", TimedOut = true },
                 new CleaningResult { Success = true, Status = CleaningStatus.Cleaned, Message = "Cleaned" });
@@ -57,8 +57,8 @@ public sealed class PluginCleaningRunnerTests
         _logFileServiceMock.Received(2).CaptureOffset("exception.log");
         await _cleaningServiceMock.Received(2).CleanPluginAsync(
             plugin,
-            Arg.Any<CancellationToken>(),
-            Arg.Any<Action<Process>?>());
+            Arg.Any<Action<Process>?>(),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -66,7 +66,7 @@ public sealed class PluginCleaningRunnerTests
     {
         // Arrange
         var plugin = CreatePlugin("NoRetry.esp");
-        _cleaningServiceMock.CleanPluginAsync(plugin, Arg.Any<CancellationToken>(), Arg.Any<Action<Process>?>())
+        _cleaningServiceMock.CleanPluginAsync(plugin, Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>())
             .Returns(new CleaningResult { Success = false, Status = CleaningStatus.Failed, Message = "Timeout", TimedOut = true });
         TimeoutRetryCallback onTimeout = (_, _, _) => Task.FromResult(false);
 
@@ -86,8 +86,8 @@ public sealed class PluginCleaningRunnerTests
         output.AttemptCount.Should().Be(1);
         await _cleaningServiceMock.Received(1).CleanPluginAsync(
             plugin,
-            Arg.Any<CancellationToken>(),
-            Arg.Any<Action<Process>?>());
+            Arg.Any<Action<Process>?>(),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -97,10 +97,10 @@ public sealed class PluginCleaningRunnerTests
         var plugin = CreatePlugin("Attach.esp");
         var attachCount = 0;
         var detachCount = 0;
-        _cleaningServiceMock.CleanPluginAsync(plugin, Arg.Any<CancellationToken>(), Arg.Any<Action<Process>?>())
+        _cleaningServiceMock.CleanPluginAsync(plugin, Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>())
             .Returns(callInfo =>
             {
-                callInfo.ArgAt<Action<Process>?>(2)?.Invoke(Process.GetCurrentProcess());
+                callInfo.ArgAt<Action<Process>?>(1)?.Invoke(Process.GetCurrentProcess());
                 return new CleaningResult { Success = true, Status = CleaningStatus.Cleaned, Message = "Cleaned" };
             });
 
@@ -127,7 +127,7 @@ public sealed class PluginCleaningRunnerTests
         // Arrange
         var plugin = CreatePlugin("DetachOnce.esp");
         var detachCount = 0;
-        _cleaningServiceMock.CleanPluginAsync(plugin, Arg.Any<CancellationToken>(), Arg.Any<Action<Process>?>())
+        _cleaningServiceMock.CleanPluginAsync(plugin, Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>())
             .Returns(
                 new CleaningResult { Success = false, Status = CleaningStatus.Failed, Message = "Timeout", TimedOut = true },
                 new CleaningResult { Success = true, Status = CleaningStatus.Cleaned, Message = "Cleaned" });

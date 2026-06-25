@@ -120,10 +120,12 @@ public sealed record CleaningSessionResult
                 return $"Cancelled after {CleanedCount} of {TotalPlugins} plugins";
 
             if (BackupCleanup?.Status == BackupOperationStatus.Canceled)
-                return $"Backup cleanup canceled: {BackupCleanup.DeletedCount} deleted, {BackupCleanup.SkippedCount} skipped, {BackupCleanup.RemainingCount} remaining";
+                return
+                    $"Backup cleanup canceled: {BackupCleanup.DeletedCount} deleted, {BackupCleanup.SkippedCount} skipped, {BackupCleanup.RemainingCount} remaining";
 
             if (BackupCleanup?.Status == BackupOperationStatus.Warning)
-                return $"Backup cleanup warning: {BackupCleanup.DeletedCount} deleted, {BackupCleanup.SkippedCount} skipped, {BackupCleanup.RemainingCount} remaining";
+                return
+                    $"Backup cleanup warning: {BackupCleanup.DeletedCount} deleted, {BackupCleanup.SkippedCount} skipped, {BackupCleanup.RemainingCount} remaining";
 
             if (FailedCount > 0)
                 return $"Completed with errors: {CleanedCount} cleaned, {FailedCount} failed, {SkippedCount} skipped";
@@ -184,6 +186,7 @@ public sealed record CleaningSessionResult
                 var safePluginName = DiagnosticTextFormatter.SafePluginName(result.PluginName);
                 sb.AppendLine($"  {safePluginName}: {result.Summary} ({result.Duration:mm\\:ss})");
             }
+
             sb.AppendLine();
         }
 
@@ -194,6 +197,7 @@ public sealed record CleaningSessionResult
             {
                 sb.AppendLine($"  {DiagnosticTextFormatter.SafePluginName(result.PluginName)}");
             }
+
             sb.AppendLine();
         }
 
@@ -204,6 +208,7 @@ public sealed record CleaningSessionResult
             {
                 sb.AppendLine($"  {DiagnosticTextFormatter.SafePluginName(result.PluginName)}");
             }
+
             sb.AppendLine();
         }
 
@@ -214,6 +219,7 @@ public sealed record CleaningSessionResult
             {
                 sb.AppendLine($"  {FormatFailedPluginReportLine(result)}");
             }
+
             sb.AppendLine();
         }
 

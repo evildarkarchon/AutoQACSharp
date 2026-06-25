@@ -131,18 +131,20 @@ public sealed class XEditCommandBuilder(IStateService stateService) : IXEditComm
         var backslashes = 0;
         foreach (var c in argument)
         {
-            if (c == '\\')
+            switch (c)
             {
-                backslashes++;
-                continue;
-            }
+                case '\\':
 
-            if (c == '"')
-            {
-                formatted.Append('\\', backslashes * 2 + 1);
-                formatted.Append('"');
-                backslashes = 0;
-                continue;
+                    backslashes++;
+
+                    continue;
+                case '"':
+                    formatted.Append('\\', backslashes * 2 + 1);
+
+                    formatted.Append('"');
+                    backslashes = 0;
+                    continue;
+
             }
 
             formatted.Append('\\', backslashes);

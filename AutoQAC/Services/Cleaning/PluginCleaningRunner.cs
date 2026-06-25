@@ -51,8 +51,8 @@ public sealed class PluginCleaningRunner(
 
                 result = await cleaningService.CleanPluginAsync(
                     plugin,
-                    ct,
-                    onProcessStarted: attachProcess).ConfigureAwait(false);
+                    onProcessStarted: attachProcess,
+                    ct: ct).ConfigureAwait(false);
 
                 // If timed out and callback provided, ask user if they want to retry
                 if (result.TimedOut && onTimeout != null && attemptNumber < maxRetryAttempts)

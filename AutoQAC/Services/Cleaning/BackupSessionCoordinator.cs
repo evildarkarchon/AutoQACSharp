@@ -21,7 +21,7 @@ public sealed class BackupSessionCoordinator : IBackupSessionCoordinator
     private readonly IStateService _stateService;
     private readonly ILoggingService _logger;
 
-    private readonly object _backupOperationLock = new();
+    private readonly Lock _backupOperationLock = new();
     private CancellationTokenSource? _backupOperationCts;
 
     /// <summary>

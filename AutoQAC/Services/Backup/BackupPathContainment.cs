@@ -45,7 +45,8 @@ internal static class BackupPathContainment
             var normalizedCandidate = Path.GetFullPath(candidatePath);
             return normalizedCandidate.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase);
         }
-        catch (Exception ex) when (ex is ArgumentException or IOException or NotSupportedException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is ArgumentException or IOException or NotSupportedException
+                                       or UnauthorizedAccessException)
         {
             // Malformed paths must fail closed without leaking exception detail to callers; the
             // calling site (BackupService / RestoreViewModel) is responsible for any logging it

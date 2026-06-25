@@ -15,6 +15,7 @@
     <Include>[AutoQAC]*</Include>
     <Exclude>[AutoQAC.Tests]*</Exclude>
     <ExcludeByAttribute>ExcludeFromCodeCoverage</ExcludeByAttribute>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>

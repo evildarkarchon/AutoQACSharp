@@ -18,98 +18,100 @@ namespace AutoQAC.Infrastructure;
 
 public static class ServiceCollectionExtensions
 {
-    public static IServiceCollection AddInfrastructure(this IServiceCollection services)
+    extension(IServiceCollection services)
     {
-        services.AddSingleton<ILoggingService, LoggingService>();
-        return services;
-    }
+        public IServiceCollection AddInfrastructure()
+        {
+            services.AddSingleton<ILoggingService, LoggingService>();
+            return services;
+        }
 
-    public static IServiceCollection AddConfiguration(this IServiceCollection services)
-    {
-        // Persistence coordinator + file store registered first; ConfigurationService and ConfigWatcherService both depend on the coordinator (Phase 10 D-08, D-15).
-        services.AddSingleton<IUserConfigFileStore, UserConfigFileStore>();
-        services.AddSingleton<ConfigPersistenceCoordinator>();
-        services.AddSingleton<IConfigPersistenceCoordinator>(sp =>
-            sp.GetRequiredService<ConfigPersistenceCoordinator>());
-        services.AddSingleton<IConfigurationService>(sp => new ConfigurationService(
-            sp.GetRequiredService<IConfigPersistenceCoordinator>(),
-            sp.GetRequiredService<ILoggingService>()));
-        services.AddSingleton<IConfigWatcherService, ConfigWatcherService>();
-        services.AddSingleton<ILegacyMigrationService, LegacyMigrationService>();
-        services.AddSingleton<ILogRetentionService, LogRetentionService>();
-        return services;
-    }
+        public IServiceCollection AddConfiguration()
+        {
+            // Persistence coordinator + file store registered first; ConfigurationService and ConfigWatcherService both depend on the coordinator (Phase 10 D-08, D-15).
+            services.AddSingleton<IUserConfigFileStore, UserConfigFileStore>();
+            services.AddSingleton<ConfigPersistenceCoordinator>();
+            services.AddSingleton<IConfigPersistenceCoordinator>(sp =>
+                sp.GetRequiredService<ConfigPersistenceCoordinator>());
+            services.AddSingleton<IConfigurationService>(sp => new ConfigurationService(
+                sp.GetRequiredService<IConfigPersistenceCoordinator>(),
+                sp.GetRequiredService<ILoggingService>()));
+            services.AddSingleton<IConfigWatcherService, ConfigWatcherService>();
+            services.AddSingleton<ILegacyMigrationService, LegacyMigrationService>();
+            services.AddSingleton<ILogRetentionService, LogRetentionService>();
+            return services;
+        }
 
-    public static IServiceCollection AddState(this IServiceCollection services)
-    {
-        services.AddSingleton<IStateService, StateService>();
-        return services;
-    }
+        public IServiceCollection AddState()
+        {
+            services.AddSingleton<IStateService, StateService>();
+            return services;
+        }
 
-    public static IServiceCollection AddBusinessLogic(this IServiceCollection services)
-    {
-        services.AddSingleton<IGameDetectionService, GameDetectionService>();
-        services.AddSingleton<IPluginValidationService, PluginValidationService>();
-        services.AddSingleton<IPluginLoadingService, PluginLoadingService>();
-        services.AddSingleton<IPluginIssueApproximationService, PluginIssueApproximationService>();
-        services.AddSingleton<IPluginRefreshCapabilityPolicy, PluginRefreshCapabilityPolicy>();
-        services.AddSingleton<IPluginRefreshCoordinator, PluginRefreshCoordinator>();
-        services.AddSingleton<IPidStorePathProvider, DefaultPidStorePathProvider>();
-        services.AddSingleton<IProcessSessionIdProvider, ProcessSessionIdProvider>();
-        services.AddSingleton<IPidStore, JsonPidStore>();
-        services.AddSingleton<IProcessExitWaiter, ProcessExitWaiter>();
-        services.AddSingleton<IProcessExecutionService, ProcessExecutionService>();
-        services.AddSingleton<IMo2ValidationService, Mo2ValidationService>();
-        services.AddSingleton<IMo2InstanceService, Mo2InstanceService>();
-        services.AddSingleton<IXEditCommandBuilder, XEditCommandBuilder>();
-        services.AddSingleton<IXEditOutputParser, XEditOutputParser>();
-        services.AddSingleton<IXEditLogFileService, XEditLogFileService>();
-        services.AddSingleton<ICleaningService, CleaningService>();
-        services.AddSingleton<IBackupFileCopier, BackupFileCopier>();
-        services.AddSingleton<IBackupSessionDeleter, DirectoryBackupSessionDeleter>();
-        services.AddSingleton<IBackupService, BackupService>();
-        services.AddSingleton<IHangDetectionService, HangDetectionService>();
-        services.AddSingleton<ICleaningPreflight, CleaningPreflight>();
-        services.AddSingleton<IBackupSessionCoordinator, BackupSessionCoordinator>();
-        services.AddSingleton<ICleaningTerminationCoordinator, CleaningTerminationCoordinator>();
-        services.AddSingleton<IPluginCleaningRunner, PluginCleaningRunner>();
-        services.AddSingleton<IPluginResultFinalizer, PluginResultFinalizer>();
-        services.AddSingleton<ICleaningOrchestrator, CleaningOrchestrator>();
-        return services;
-    }
+        public IServiceCollection AddBusinessLogic()
+        {
+            services.AddSingleton<IGameDetectionService, GameDetectionService>();
+            services.AddSingleton<IPluginValidationService, PluginValidationService>();
+            services.AddSingleton<IPluginLoadingService, PluginLoadingService>();
+            services.AddSingleton<IPluginIssueApproximationService, PluginIssueApproximationService>();
+            services.AddSingleton<IPluginRefreshCapabilityPolicy, PluginRefreshCapabilityPolicy>();
+            services.AddSingleton<IPluginRefreshCoordinator, PluginRefreshCoordinator>();
+            services.AddSingleton<IPidStorePathProvider, DefaultPidStorePathProvider>();
+            services.AddSingleton<IProcessSessionIdProvider, ProcessSessionIdProvider>();
+            services.AddSingleton<IPidStore, JsonPidStore>();
+            services.AddSingleton<IProcessExitWaiter, ProcessExitWaiter>();
+            services.AddSingleton<IProcessExecutionService, ProcessExecutionService>();
+            services.AddSingleton<IMo2ValidationService, Mo2ValidationService>();
+            services.AddSingleton<IMo2InstanceService, Mo2InstanceService>();
+            services.AddSingleton<IXEditCommandBuilder, XEditCommandBuilder>();
+            services.AddSingleton<IXEditOutputParser, XEditOutputParser>();
+            services.AddSingleton<IXEditLogFileService, XEditLogFileService>();
+            services.AddSingleton<ICleaningService, CleaningService>();
+            services.AddSingleton<IBackupFileCopier, BackupFileCopier>();
+            services.AddSingleton<IBackupSessionDeleter, DirectoryBackupSessionDeleter>();
+            services.AddSingleton<IBackupService, BackupService>();
+            services.AddSingleton<IHangDetectionService, HangDetectionService>();
+            services.AddSingleton<ICleaningPreflight, CleaningPreflight>();
+            services.AddSingleton<IBackupSessionCoordinator, BackupSessionCoordinator>();
+            services.AddSingleton<ICleaningTerminationCoordinator, CleaningTerminationCoordinator>();
+            services.AddSingleton<IPluginCleaningRunner, PluginCleaningRunner>();
+            services.AddSingleton<IPluginResultFinalizer, PluginResultFinalizer>();
+            services.AddSingleton<ICleaningOrchestrator, CleaningOrchestrator>();
+            return services;
+        }
 
-    public static IServiceCollection AddUiServices(this IServiceCollection services,
-        DispatcherQueue? dispatcherQueue = null)
-    {
-        services.AddSingleton<IAppLifetime, WinAppLifetime>();
-        services.AddSingleton<IUiFrameworkVersionProvider, WinUiFrameworkVersionProvider>();
-        services.AddSingleton<IUiDispatcher>(_ => new WinUiDispatcher(dispatcherQueue));
-        services.AddSingleton<IWindowContextProvider, WindowContextProvider>();
-        services.AddSingleton<FileDialogService>();
-        services.AddSingleton<IFileDialogService>(sp => sp.GetRequiredService<FileDialogService>());
-        services.AddSingleton<MessageDialogService>();
-        services.AddSingleton<IMessageDialogService>(sp => sp.GetRequiredService<MessageDialogService>());
-        return services;
-    }
+        public IServiceCollection AddUiServices(DispatcherQueue? dispatcherQueue = null)
+        {
+            services.AddSingleton<IAppLifetime, WinAppLifetime>();
+            services.AddSingleton<IUiFrameworkVersionProvider, WinUiFrameworkVersionProvider>();
+            services.AddSingleton<IUiDispatcher>(_ => new WinUiDispatcher(dispatcherQueue));
+            services.AddSingleton<IWindowContextProvider, WindowContextProvider>();
+            services.AddSingleton<FileDialogService>();
+            services.AddSingleton<IFileDialogService>(sp => sp.GetRequiredService<FileDialogService>());
+            services.AddSingleton<MessageDialogService>();
+            services.AddSingleton<IMessageDialogService>(sp => sp.GetRequiredService<MessageDialogService>());
+            return services;
+        }
 
-    public static IServiceCollection AddViewModels(this IServiceCollection services)
-    {
-        services.AddSingleton<MainWindowViewModel>();
-        services.AddTransient<ProgressViewModel>();
-        services.AddTransient<PartialFormsWarningViewModel>();
-        services.AddTransient<SettingsViewModel>();
-        services.AddTransient<RestoreViewModel>();
-        services.AddTransient<MessageDialogViewModel>();
-        return services;
-    }
+        public IServiceCollection AddViewModels()
+        {
+            services.AddSingleton<MainWindowViewModel>();
+            services.AddTransient<ProgressViewModel>();
+            services.AddTransient<PartialFormsWarningViewModel>();
+            services.AddTransient<SettingsViewModel>();
+            services.AddTransient<RestoreViewModel>();
+            services.AddTransient<MessageDialogViewModel>();
+            return services;
+        }
 
-    public static IServiceCollection AddViews(this IServiceCollection services)
-    {
-        services.AddTransient<MainWindow>();
-        services.AddTransient<ProgressWindow>();
-        services.AddTransient<PartialFormsWarningDialog>();
-        services.AddTransient<SettingsWindow>();
-        services.AddTransient<RestoreWindow>();
-        return services;
+        public IServiceCollection AddViews()
+        {
+            services.AddTransient<MainWindow>();
+            services.AddTransient<ProgressWindow>();
+            services.AddTransient<PartialFormsWarningDialog>();
+            services.AddTransient<SettingsWindow>();
+            services.AddTransient<RestoreWindow>();
+            return services;
+        }
     }
 }

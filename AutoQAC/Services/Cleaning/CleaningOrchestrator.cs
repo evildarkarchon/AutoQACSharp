@@ -76,7 +76,8 @@ public sealed class CleaningOrchestrator(
             stateService.UpdateState(s => s with { CurrentGameType = context1.GameType });
             stateService.StartCleaning(pluginsToClean);
 
-            backupSessionDir = await backupCoordinator.BeginSessionAsync(preflightPlan, cts.Token).ConfigureAwait(false);
+            backupSessionDir =
+                await backupCoordinator.BeginSessionAsync(preflightPlan, cts.Token).ConfigureAwait(false);
 
             // Gap CR-01 fix: if the user requested Stop during orphan cleanup, preflight, state
             // initialization, or backup session begin, bail out cleanly before launching xEdit.
@@ -92,7 +93,8 @@ public sealed class CleaningOrchestrator(
                     break;
                 }
 
-                var pluginDecision = await ProcessPluginAsync(plugin, preflightPlan, backupSessionDir, backupEntries, onTimeout,
+                var pluginDecision = await ProcessPluginAsync(plugin, preflightPlan, backupSessionDir, backupEntries,
+                        onTimeout,
                         onBackupFailure, maxRetryAttempts, context, cts.Token)
                     .ConfigureAwait(false);
 
@@ -128,7 +130,8 @@ public sealed class CleaningOrchestrator(
             if (backupSessionDir is not null && backupEntries.Count > 0)
             {
                 await backupCoordinator
-                    .WritePartialMetadataAsync(backupSessionDir, context.GameType, backupEntries, CancellationToken.None)
+                    .WritePartialMetadataAsync(backupSessionDir, context.GameType, backupEntries,
+                        CancellationToken.None)
                     .ConfigureAwait(false);
             }
 
@@ -148,7 +151,10 @@ public sealed class CleaningOrchestrator(
             ExitSession();
         }
 
-        async Task<PluginLoopDecision> ProcessPluginAsync(PluginInfo plugin, CleaningPreflightPlan plan, string? sessionDir,
+        return;
+
+        async Task<PluginLoopDecision> ProcessPluginAsync(PluginInfo plugin, CleaningPreflightPlan plan,
+            string? sessionDir,
             List<BackupPluginEntry> backupPluginEntries, TimeoutRetryCallback? timeoutRetryCallback,
             BackupFailureCallback? backupFailureCallback,
             int retryLimit, SessionContext contextSnapshot, CancellationToken cancellationToken)

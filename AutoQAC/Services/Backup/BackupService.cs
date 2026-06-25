@@ -29,7 +29,9 @@ public sealed class BackupService : IBackupService
     /// </summary>
     /// <param name="fileCopier">Copy service used for cancellable backup and atomic restore work.</param>
     /// <param name="logger">Logger for technical diagnostics that should not be exposed in user-facing result rows.</param>
-    public BackupService(IBackupFileCopier fileCopier, ILoggingService logger, IBackupSessionDeleter? sessionDeleter = null)
+    /// <param name="sessionDeleter">Optional session deletion service used by delete and retention cleanup operations.</param>
+    public BackupService(IBackupFileCopier fileCopier, ILoggingService logger,
+        IBackupSessionDeleter? sessionDeleter = null)
     {
         _fileCopier = fileCopier;
         _sessionDeleter = sessionDeleter ?? new DirectoryBackupSessionDeleter();
@@ -80,7 +82,8 @@ public sealed class BackupService : IBackupService
 
             if (!ValidateBackupDestination(plugin, sessionDir, out var destPath))
             {
-                _logger.Warning("Rejected unsafe backup file name for {Plugin}: {FileName}", plugin.FullPath, plugin.FileName);
+                _logger.Warning("Rejected unsafe backup file name for {Plugin}: {FileName}", plugin.FullPath,
+                    plugin.FileName);
                 return BackupResult.Failure("Invalid plugin file name for backup.");
             }
 
@@ -124,20 +127,25 @@ public sealed class BackupService : IBackupService
         {
             Directory.CreateDirectory(sessionDir);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException
+                                       or NotSupportedException)
         {
-            _logger.Warning("Failed to create backup session directory for {Plugin}: {Error}", plugin.FileName, ex.Message);
+            _logger.Warning("Failed to create backup session directory for {Plugin}: {Error}", plugin.FileName,
+                ex.Message);
             return new BackupCreateResult(
                 BackupOperationStatus.Failed,
                 plugin.FileName,
                 BytesCopied: 0,
                 TotalBytes: null,
-                ex is UnauthorizedAccessException ? BackupFailureReason.AccessDenied : BackupFailureReason.TargetFolderCreationFailed);
+                ex is UnauthorizedAccessException
+                    ? BackupFailureReason.AccessDenied
+                    : BackupFailureReason.TargetFolderCreationFailed);
         }
 
         if (!ValidateBackupDestination(plugin, sessionDir, out var destinationPath))
         {
-            _logger.Warning("Rejected unsafe async backup file name for {Plugin}: {FileName}", plugin.FullPath, plugin.FileName);
+            _logger.Warning("Rejected unsafe async backup file name for {Plugin}: {FileName}", plugin.FullPath,
+                plugin.FileName);
             return new BackupCreateResult(
                 BackupOperationStatus.Failed,
                 plugin.FileName,
@@ -161,7 +169,8 @@ public sealed class BackupService : IBackupService
             copyResult.FailureReason);
     }
 
-    public async Task WriteSessionMetadataAsync(string sessionDir, BackupSession session, CancellationToken ct = default)
+    public async Task WriteSessionMetadataAsync(string sessionDir, BackupSession session,
+        CancellationToken ct = default)
     {
         var metadataPath = Path.Combine(sessionDir, "session.json");
 
@@ -251,7 +260,8 @@ public sealed class BackupService : IBackupService
         IProgress<BackupCopyProgress>? progress = null,
         CancellationToken ct = default)
     {
-        var row = await RestorePluginRowAsync(entry, sessionDir, trustedRestoreRoot, progress, ct).ConfigureAwait(false);
+        var row = await RestorePluginRowAsync(entry, sessionDir, trustedRestoreRoot, progress, ct)
+            .ConfigureAwait(false);
         var status = row.Status switch
         {
             BackupRestoreRowStatus.Restored => BackupOperationStatus.Complete,
@@ -260,14 +270,6 @@ public sealed class BackupService : IBackupService
         };
 
         return new BackupRestoreResult(status, [row]);
-    }
-
-    public void RestoreSession(BackupSession session, string? trustedRestoreRoot)
-    {
-        foreach (var entry in session.Plugins)
-        {
-            RestorePlugin(entry, session.SessionDirectory, trustedRestoreRoot);
-        }
     }
 
     public async Task<BackupRestoreResult> RestoreSessionAsync(
@@ -282,11 +284,13 @@ public sealed class BackupService : IBackupService
         {
             if (ct.IsCancellationRequested)
             {
-                rows.Add(new BackupRestoreRowResult(entry.FileName, BackupRestoreRowStatus.Canceled, BackupFailureReason.Canceled, 0, entry.FileSizeBytes));
+                rows.Add(new BackupRestoreRowResult(entry.FileName, BackupRestoreRowStatus.Canceled,
+                    BackupFailureReason.Canceled, 0, entry.FileSizeBytes));
                 continue;
             }
 
-            rows.Add(await RestorePluginRowAsync(entry, session.SessionDirectory, trustedRestoreRoot, progress, ct).ConfigureAwait(false));
+            rows.Add(await RestorePluginRowAsync(entry, session.SessionDirectory, trustedRestoreRoot, progress, ct)
+                .ConfigureAwait(false));
         }
 
         return new BackupRestoreResult(GetRestoreStatus(rows), rows);
@@ -311,7 +315,8 @@ public sealed class BackupService : IBackupService
         {
             // Never delete the current session directory
             if (currentSessionDir != null &&
-                string.Equals(Path.GetFullPath(dir), Path.GetFullPath(currentSessionDir), StringComparison.OrdinalIgnoreCase))
+                string.Equals(Path.GetFullPath(dir), Path.GetFullPath(currentSessionDir),
+                    StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
@@ -382,7 +387,8 @@ public sealed class BackupService : IBackupService
                 ReportRetentionProgress(progress, session.Directory, rows.Count, retentionTotal);
             }
 
-            var currentSession = validSessions.FirstOrDefault(session => IsSamePath(session.Directory, currentSessionFullPath));
+            var currentSession =
+                validSessions.FirstOrDefault(session => IsSamePath(session.Directory, currentSessionFullPath));
             if (currentSession is not null)
             {
                 rows.Add(new BackupRetentionRowResult(currentSession.Directory, BackupRetentionRowStatus.Kept, null));
@@ -397,7 +403,10 @@ public sealed class BackupService : IBackupService
                 ReportRetentionProgress(progress, session.Directory, rows.Count, retentionTotal);
                 if (deleteResult.Canceled)
                 {
-                    AddRemainingRetentionRows(validNonCurrent.Skip(keepNonCurrent).Where(candidate => candidate.Directory != session.Directory), rows, currentSessionFullPath);
+                    AddRemainingRetentionRows(
+                        validNonCurrent.Skip(keepNonCurrent)
+                            .Where(candidate => candidate.Directory != session.Directory), rows,
+                        currentSessionFullPath);
                     ReportRetentionProgress(progress, session.Directory, rows.Count, rows.Count);
                     return new BackupRetentionCleanupResult(BackupOperationStatus.Canceled, rows);
                 }
@@ -488,14 +497,17 @@ public sealed class BackupService : IBackupService
         IProgress<BackupCopyProgress>? progress,
         CancellationToken ct)
     {
-        if (!ValidateRestoreEntry(entry, sessionDir, trustedRestoreRoot, out var backupPath, out var targetPath, out var failureReason))
+        if (!ValidateRestoreEntry(entry, sessionDir, trustedRestoreRoot, out var backupPath, out var targetPath,
+                out var failureReason))
         {
-            return new BackupRestoreRowResult(entry.FileName, BackupRestoreRowStatus.Failed, failureReason, 0, entry.FileSizeBytes);
+            return new BackupRestoreRowResult(entry.FileName, BackupRestoreRowStatus.Failed, failureReason, 0,
+                entry.FileSizeBytes);
         }
 
         if (!File.Exists(backupPath))
         {
-            return new BackupRestoreRowResult(entry.FileName, BackupRestoreRowStatus.Failed, BackupFailureReason.MissingBackupFile, 0, entry.FileSizeBytes);
+            return new BackupRestoreRowResult(entry.FileName, BackupRestoreRowStatus.Failed,
+                BackupFailureReason.MissingBackupFile, 0, entry.FileSizeBytes);
         }
 
         var targetDir = Path.GetDirectoryName(targetPath);
@@ -506,10 +518,13 @@ public sealed class BackupService : IBackupService
                 Directory.CreateDirectory(targetDir);
             }
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException
+                                       or NotSupportedException)
         {
-            _logger.Warning("Failed to create restore target directory for {Plugin}: {Error}", entry.FileName, ex.Message);
-            return new BackupRestoreRowResult(entry.FileName, BackupRestoreRowStatus.Failed, BackupFailureReason.TargetFolderCreationFailed, 0, entry.FileSizeBytes);
+            _logger.Warning("Failed to create restore target directory for {Plugin}: {Error}", entry.FileName,
+                ex.Message);
+            return new BackupRestoreRowResult(entry.FileName, BackupRestoreRowStatus.Failed,
+                BackupFailureReason.TargetFolderCreationFailed, 0, entry.FileSizeBytes);
         }
 
         var copyResult = await _fileCopier.CopyAsync(
@@ -521,9 +536,13 @@ public sealed class BackupService : IBackupService
 
         return copyResult.Status switch
         {
-            BackupOperationStatus.Complete => new BackupRestoreRowResult(entry.FileName, BackupRestoreRowStatus.Restored, null, copyResult.BytesCopied, copyResult.TotalBytes),
-            BackupOperationStatus.Canceled => new BackupRestoreRowResult(entry.FileName, BackupRestoreRowStatus.Canceled, BackupFailureReason.Canceled, copyResult.BytesCopied, copyResult.TotalBytes),
-            _ => new BackupRestoreRowResult(entry.FileName, BackupRestoreRowStatus.Failed, MapRestoreFailure(copyResult.FailureReason), copyResult.BytesCopied, copyResult.TotalBytes)
+            BackupOperationStatus.Complete => new BackupRestoreRowResult(entry.FileName,
+                BackupRestoreRowStatus.Restored, null, copyResult.BytesCopied, copyResult.TotalBytes),
+            BackupOperationStatus.Canceled => new BackupRestoreRowResult(entry.FileName,
+                BackupRestoreRowStatus.Canceled, BackupFailureReason.Canceled, copyResult.BytesCopied,
+                copyResult.TotalBytes),
+            _ => new BackupRestoreRowResult(entry.FileName, BackupRestoreRowStatus.Failed,
+                MapRestoreFailure(copyResult.FailureReason), copyResult.BytesCopied, copyResult.TotalBytes)
         };
     }
 
@@ -563,7 +582,8 @@ public sealed class BackupService : IBackupService
             destinationPath = resolvedDestinationPath;
             return true;
         }
-        catch (Exception ex) when (ex is ArgumentException or IOException or NotSupportedException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is ArgumentException or IOException or NotSupportedException
+                                       or UnauthorizedAccessException)
         {
             return false;
         }
@@ -640,7 +660,8 @@ public sealed class BackupService : IBackupService
 
             backupPath = resolvedBackupPath;
         }
-        catch (Exception ex) when (ex is ArgumentException or IOException or NotSupportedException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is ArgumentException or IOException or NotSupportedException
+                                       or UnauthorizedAccessException)
         {
             failureReason = BackupFailureReason.MissingBackupFile;
             return false;
@@ -666,7 +687,8 @@ public sealed class BackupService : IBackupService
             failureReason = default;
             return true;
         }
-        catch (Exception ex) when (ex is ArgumentException or IOException or NotSupportedException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is ArgumentException or IOException or NotSupportedException
+                                       or UnauthorizedAccessException)
         {
             failureReason = BackupFailureReason.TargetFolderCreationFailed;
             return false;
@@ -777,7 +799,8 @@ public sealed class BackupService : IBackupService
             try
             {
                 await using var stream = new FileStream(metadataPath, FileMode.Open, FileAccess.Read, FileShare.Read);
-                var session = await JsonSerializer.DeserializeAsync<BackupSession>(stream, cancellationToken: ct).ConfigureAwait(false);
+                var session = await JsonSerializer.DeserializeAsync<BackupSession>(stream, cancellationToken: ct)
+                    .ConfigureAwait(false);
                 if (session is null)
                 {
                     rows.Add(new BackupRetentionRowResult(dir, BackupRetentionRowStatus.Kept, null));
@@ -796,40 +819,52 @@ public sealed class BackupService : IBackupService
         return candidates;
     }
 
-    private async Task<(BackupRetentionRowResult Row, bool Canceled)> DeleteRetentionCandidateAsync(string sessionDirectory, CancellationToken ct)
+    private async Task<(BackupRetentionRowResult Row, bool Canceled)> DeleteRetentionCandidateAsync(
+        string sessionDirectory, CancellationToken ct)
     {
         try
         {
             await _sessionDeleter.DeleteAsync(sessionDirectory, ct).ConfigureAwait(false);
             _logger.Information("Deleted old backup session: {Dir}", sessionDirectory);
-            return (new BackupRetentionRowResult(sessionDirectory, BackupRetentionRowStatus.Deleted, null), Canceled: false);
+            return (new BackupRetentionRowResult(sessionDirectory, BackupRetentionRowStatus.Deleted, null),
+                Canceled: false);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            _logger.Warning("Retrying old backup session deletion after transient failure for {Dir}: {Error}", sessionDirectory, ex.Message);
+            _logger.Warning("Retrying old backup session deletion after transient failure for {Dir}: {Error}",
+                sessionDirectory, ex.Message);
             try
             {
                 // Windows antivirus or Explorer can briefly hold a directory handle; one short delay avoids false warnings.
                 await Task.Delay(TimeSpan.FromMilliseconds(250), ct).ConfigureAwait(false);
                 await _sessionDeleter.DeleteAsync(sessionDirectory, ct).ConfigureAwait(false);
                 _logger.Information("Deleted old backup session after retry: {Dir}", sessionDirectory);
-                return (new BackupRetentionRowResult(sessionDirectory, BackupRetentionRowStatus.Deleted, null), Canceled: false);
+                return (new BackupRetentionRowResult(sessionDirectory, BackupRetentionRowStatus.Deleted, null),
+                    Canceled: false);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
-                _logger.Information("Backup retention cleanup canceled before retrying deletion of {Dir}", sessionDirectory);
-                return (new BackupRetentionRowResult(sessionDirectory, BackupRetentionRowStatus.Kept, BackupFailureReason.Canceled), Canceled: true);
+                _logger.Information("Backup retention cleanup canceled before retrying deletion of {Dir}",
+                    sessionDirectory);
+                return (
+                    new BackupRetentionRowResult(sessionDirectory, BackupRetentionRowStatus.Kept,
+                        BackupFailureReason.Canceled), Canceled: true);
             }
             catch (Exception retryEx) when (retryEx is IOException or UnauthorizedAccessException)
             {
-                _logger.Warning("Failed to delete old backup session {Dir} after retry: {Error}", sessionDirectory, retryEx.Message);
-                return (new BackupRetentionRowResult(sessionDirectory, BackupRetentionRowStatus.Failed, BackupFailureReason.CleanupDeletionFailed), Canceled: false);
+                _logger.Warning("Failed to delete old backup session {Dir} after retry: {Error}", sessionDirectory,
+                    retryEx.Message);
+                return (
+                    new BackupRetentionRowResult(sessionDirectory, BackupRetentionRowStatus.Failed,
+                        BackupFailureReason.CleanupDeletionFailed), Canceled: false);
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             _logger.Information("Backup retention cleanup canceled while deleting {Dir}", sessionDirectory);
-            return (new BackupRetentionRowResult(sessionDirectory, BackupRetentionRowStatus.Kept, BackupFailureReason.Canceled), Canceled: true);
+            return (
+                new BackupRetentionRowResult(sessionDirectory, BackupRetentionRowStatus.Kept,
+                    BackupFailureReason.Canceled), Canceled: true);
         }
     }
 
@@ -845,12 +880,15 @@ public sealed class BackupService : IBackupService
                 continue;
             }
 
-            var reason = IsSamePath(candidate.Directory, currentSessionFullPath) ? (BackupFailureReason?)null : BackupFailureReason.Canceled;
+            var reason = IsSamePath(candidate.Directory, currentSessionFullPath)
+                ? (BackupFailureReason?)null
+                : BackupFailureReason.Canceled;
             rows.Add(new BackupRetentionRowResult(candidate.Directory, BackupRetentionRowStatus.Kept, reason));
         }
     }
 
-    private static void AddDirectoryRowsAsRemaining(IEnumerable<string> directories, ICollection<BackupRetentionRowResult> rows)
+    private static void AddDirectoryRowsAsRemaining(IEnumerable<string> directories,
+        ICollection<BackupRetentionRowResult> rows)
     {
         foreach (var directory in directories)
         {
@@ -859,7 +897,8 @@ public sealed class BackupService : IBackupService
                 continue;
             }
 
-            rows.Add(new BackupRetentionRowResult(directory, BackupRetentionRowStatus.Kept, BackupFailureReason.Canceled));
+            rows.Add(new BackupRetentionRowResult(directory, BackupRetentionRowStatus.Kept,
+                BackupFailureReason.Canceled));
         }
     }
 

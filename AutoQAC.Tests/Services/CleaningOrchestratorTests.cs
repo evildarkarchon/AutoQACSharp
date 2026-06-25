@@ -332,15 +332,15 @@ public sealed class CleaningOrchestratorTests : IDisposable
         _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>())
             .Returns(true);
 
-        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<CancellationToken>(), Arg.Any<Action<System.Diagnostics.Process>?>())
+        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<System.Diagnostics.Process>?>(), Arg.Any<CancellationToken>())
             .Returns(new CleaningResult { Status = CleaningStatus.Cleaned });
 
         // Act
         await _orchestrator.StartCleaningAsync();
 
         // Assert
-        await _cleaningServiceMock.Received(1).CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Plugin1.esp"), Arg.Any<CancellationToken>(), Arg.Any<Action<System.Diagnostics.Process>?>());
-        await _cleaningServiceMock.Received(1).CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Plugin2.esp"), Arg.Any<CancellationToken>(), Arg.Any<Action<System.Diagnostics.Process>?>());
+        await _cleaningServiceMock.Received(1).CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Plugin1.esp"), Arg.Any<Action<System.Diagnostics.Process>?>(), Arg.Any<CancellationToken>());
+        await _cleaningServiceMock.Received(1).CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Plugin2.esp"), Arg.Any<Action<System.Diagnostics.Process>?>(), Arg.Any<CancellationToken>());
         _stateServiceMock.Received(1).StartCleaning(Arg.Any<List<PluginInfo>>());
         _stateServiceMock.Received(1).FinishCleaningWithResults(Arg.Any<CleaningSessionResult>());
     }
@@ -426,8 +426,8 @@ public sealed class CleaningOrchestratorTests : IDisposable
 
         _cleaningServiceMock.CleanPluginAsync(
                 Arg.Any<PluginInfo>(),
-                Arg.Any<CancellationToken>(),
-                Arg.Any<Action<System.Diagnostics.Process>?>())
+                Arg.Any<Action<System.Diagnostics.Process>?>(),
+                Arg.Any<CancellationToken>())
             .Returns(new CleaningResult { Status = CleaningStatus.Cleaned, Success = true });
 
         // Act
@@ -437,8 +437,8 @@ public sealed class CleaningOrchestratorTests : IDisposable
         await act.Should().NotThrowAsync();
         await _cleaningServiceMock.Received(1).CleanPluginAsync(
             Arg.Any<PluginInfo>(),
-            Arg.Any<CancellationToken>(),
-            Arg.Any<Action<System.Diagnostics.Process>?>());
+            Arg.Any<Action<System.Diagnostics.Process>?>(),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -471,8 +471,8 @@ public sealed class CleaningOrchestratorTests : IDisposable
         await act.Should().ThrowAsync<InvalidOperationException>();
         await _cleaningServiceMock.DidNotReceive().CleanPluginAsync(
             Arg.Any<PluginInfo>(),
-            Arg.Any<CancellationToken>(),
-            Arg.Any<Action<System.Diagnostics.Process>?>());
+            Arg.Any<Action<System.Diagnostics.Process>?>(),
+            Arg.Any<CancellationToken>());
     }
 
     #region Robustness and Cancellation Tests
@@ -515,7 +515,7 @@ public sealed class CleaningOrchestratorTests : IDisposable
         var cts = new CancellationTokenSource();
 
         // After cleaning 2 plugins, request cancellation
-        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<CancellationToken>(), Arg.Any<Action<System.Diagnostics.Process>?>())
+        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<System.Diagnostics.Process>?>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 cleanedCount++;
@@ -581,8 +581,8 @@ public sealed class CleaningOrchestratorTests : IDisposable
         // Configure cleaning results: BadPlugin fails, others succeed
         _cleaningServiceMock.CleanPluginAsync(
             Arg.Is<PluginInfo>(p => p.FileName == "BadPlugin.esp"),
-            Arg.Any<CancellationToken>(),
-            Arg.Any<Action<System.Diagnostics.Process>?>())
+            Arg.Any<Action<System.Diagnostics.Process>?>(),
+            Arg.Any<CancellationToken>())
             .Returns(new CleaningResult
             {
                 Status = CleaningStatus.Failed,
@@ -592,8 +592,8 @@ public sealed class CleaningOrchestratorTests : IDisposable
 
         _cleaningServiceMock.CleanPluginAsync(
             Arg.Is<PluginInfo>(p => p.FileName != "BadPlugin.esp"),
-            Arg.Any<CancellationToken>(),
-            Arg.Any<Action<System.Diagnostics.Process>?>())
+            Arg.Any<Action<System.Diagnostics.Process>?>(),
+            Arg.Any<CancellationToken>())
             .Returns(new CleaningResult
             {
                 Status = CleaningStatus.Cleaned,
@@ -605,7 +605,7 @@ public sealed class CleaningOrchestratorTests : IDisposable
 
         // Assert
         // All 5 plugins should have been processed
-        await _cleaningServiceMock.Received(5).CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<CancellationToken>(), Arg.Any<Action<System.Diagnostics.Process>?>());
+        await _cleaningServiceMock.Received(5).CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<System.Diagnostics.Process>?>(), Arg.Any<CancellationToken>());
 
         // State should have been updated for all plugins via AddDetailedCleaningResult
         _stateServiceMock.Received(1).AddDetailedCleaningResult(Arg.Is<PluginCleaningResult>(r => r.PluginName == "BadPlugin.esp" && r.Status == CleaningStatus.Failed));
@@ -648,7 +648,7 @@ public sealed class CleaningOrchestratorTests : IDisposable
         var currentlyExecuting = 0;
         var maxConcurrent = 0;
 
-        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<CancellationToken>(), Arg.Any<Action<System.Diagnostics.Process>?>())
+        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<System.Diagnostics.Process>?>(), Arg.Any<CancellationToken>())
             .Returns(callInfo =>
             {
                 var plugin = callInfo.Arg<PluginInfo>();
@@ -728,7 +728,7 @@ public sealed class CleaningOrchestratorTests : IDisposable
         var cleanedPlugins = new List<string>();
         var cleaningStartedEvent = CreateSignal();
 
-        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<CancellationToken>(), Arg.Any<Action<System.Diagnostics.Process>?>())
+        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<System.Diagnostics.Process>?>(), Arg.Any<CancellationToken>())
             .Returns(async callInfo =>
             {
                 var plugin = callInfo.Arg<PluginInfo>();
@@ -819,8 +819,8 @@ public sealed class CleaningOrchestratorTests : IDisposable
 
         await _cleaningServiceMock.DidNotReceive().CleanPluginAsync(
             Arg.Any<PluginInfo>(),
-            Arg.Any<CancellationToken>(),
-            Arg.Any<Action<Process>?>());
+            Arg.Any<Action<Process>?>(),
+            Arg.Any<CancellationToken>());
         capturedToken.IsCancellationRequested.Should().BeTrue("Stop must cancel the in-flight preflight token");
         _stateServiceMock.Received().FinishCleaningWithResults(Arg.Is<CleaningSessionResult>(s => s.WasCancelled));
     }
@@ -874,8 +874,8 @@ public sealed class CleaningOrchestratorTests : IDisposable
 
         await _cleaningServiceMock.DidNotReceive().CleanPluginAsync(
             Arg.Any<PluginInfo>(),
-            Arg.Any<CancellationToken>(),
-            Arg.Any<Action<Process>?>());
+            Arg.Any<Action<Process>?>(),
+            Arg.Any<CancellationToken>());
         capturedToken.IsCancellationRequested.Should().BeTrue("Stop must cancel the in-flight orphan-cleanup token");
         _stateServiceMock.Received().FinishCleaningWithResults(Arg.Is<CleaningSessionResult>(s => s.WasCancelled));
     }
@@ -903,8 +903,8 @@ public sealed class CleaningOrchestratorTests : IDisposable
         var cleanCalls = 0;
         _cleaningServiceMock.CleanPluginAsync(
                 Arg.Any<PluginInfo>(),
-                Arg.Do<CancellationToken>(token => firstSessionToken = token),
-                Arg.Any<Action<Process>?>())
+                Arg.Any<Action<Process>?>(),
+                Arg.Do<CancellationToken>(token => firstSessionToken = token))
             .Returns(async _ =>
             {
                 cleanCalls++;
@@ -928,8 +928,8 @@ public sealed class CleaningOrchestratorTests : IDisposable
         _stateServiceMock.Received(1).StartCleaning(Arg.Any<List<PluginInfo>>());
         await _cleaningServiceMock.Received(1).CleanPluginAsync(
             Arg.Any<PluginInfo>(),
-            Arg.Any<CancellationToken>(),
-            Arg.Any<Action<Process>?>());
+            Arg.Any<Action<Process>?>(),
+            Arg.Any<CancellationToken>());
 
         await _orchestrator.StopCleaningAsync();
         await WaitForCancellationAsync(firstSessionToken);
@@ -970,11 +970,11 @@ public sealed class CleaningOrchestratorTests : IDisposable
 
             _cleaningServiceMock.CleanPluginAsync(
                     Arg.Any<PluginInfo>(),
-                    Arg.Any<CancellationToken>(),
-                    Arg.Any<Action<Process>?>())
+                    Arg.Any<Action<Process>?>(),
+                    Arg.Any<CancellationToken>())
                 .Returns(async callInfo =>
                 {
-                    callInfo.ArgAt<Action<Process>?>(2)?.Invoke(sleeper);
+                    callInfo.ArgAt<Action<Process>?>(1)?.Invoke(sleeper);
                     processStarted.TrySetResult(true);
 
                     await releasePlugin.Task;
@@ -1033,14 +1033,14 @@ public sealed class CleaningOrchestratorTests : IDisposable
 
             _cleaningServiceMock.CleanPluginAsync(
                     Arg.Any<PluginInfo>(),
-                    Arg.Any<CancellationToken>(),
-                    Arg.Any<Action<Process>?>())
+                    Arg.Any<Action<Process>?>(),
+                    Arg.Any<CancellationToken>())
                 .Returns(async callInfo =>
                 {
-                    callInfo.ArgAt<Action<Process>?>(2)?.Invoke(sleeper);
+                    callInfo.ArgAt<Action<Process>?>(1)?.Invoke(sleeper);
                     processStarted.TrySetResult(true);
 
-                    await WaitForCancellationAsync(callInfo.ArgAt<CancellationToken>(1));
+                    await WaitForCancellationAsync(callInfo.ArgAt<CancellationToken>(2));
                     return new CleaningResult
                     {
                         Status = CleaningStatus.Failed,
@@ -1100,11 +1100,11 @@ public sealed class CleaningOrchestratorTests : IDisposable
 
             _cleaningServiceMock.CleanPluginAsync(
                     Arg.Any<PluginInfo>(),
-                    Arg.Any<CancellationToken>(),
-                    Arg.Any<Action<Process>?>())
+                    Arg.Any<Action<Process>?>(),
+                    Arg.Any<CancellationToken>())
                 .Returns(async callInfo =>
                 {
-                    callInfo.ArgAt<Action<Process>?>(2)?.Invoke(sleeper);
+                    callInfo.ArgAt<Action<Process>?>(1)?.Invoke(sleeper);
                     processStarted.TrySetResult(true);
 
                     await releasePlugin.Task;
@@ -1164,14 +1164,14 @@ public sealed class CleaningOrchestratorTests : IDisposable
 
             _cleaningServiceMock.CleanPluginAsync(
                     Arg.Any<PluginInfo>(),
-                    Arg.Any<CancellationToken>(),
-                    Arg.Any<Action<Process>?>())
+                    Arg.Any<Action<Process>?>(),
+                    Arg.Any<CancellationToken>())
                 .Returns(async callInfo =>
                 {
-                    callInfo.ArgAt<Action<Process>?>(2)?.Invoke(sleeper);
+                    callInfo.ArgAt<Action<Process>?>(1)?.Invoke(sleeper);
                     processStarted.TrySetResult(true);
 
-                    var ct = callInfo.ArgAt<CancellationToken>(1);
+                    var ct = callInfo.ArgAt<CancellationToken>(2);
                     await WaitForCancellationAndThrowAsync(ct);
                     return new CleaningResult { Status = CleaningStatus.Cleaned, Success = true };
                 });
@@ -1221,11 +1221,11 @@ public sealed class CleaningOrchestratorTests : IDisposable
 
         _cleaningServiceMock.CleanPluginAsync(
                 Arg.Any<PluginInfo>(),
-                Arg.Any<CancellationToken>(),
-                Arg.Any<Action<Process>?>())
+                Arg.Any<Action<Process>?>(),
+                Arg.Any<CancellationToken>())
             .Returns(async callInfo =>
             {
-                callInfo.ArgAt<Action<Process>?>(2)?.Invoke(Process.GetCurrentProcess());
+                callInfo.ArgAt<Action<Process>?>(1)?.Invoke(Process.GetCurrentProcess());
                 processStarted.TrySetResult(true);
 
                 await releasePlugin.Task;
@@ -1265,8 +1265,8 @@ public sealed class CleaningOrchestratorTests : IDisposable
         var attempts = 0;
         _cleaningServiceMock.CleanPluginAsync(
                 Arg.Any<PluginInfo>(),
-                Arg.Any<CancellationToken>(),
-                Arg.Any<Action<Process>?>())
+                Arg.Any<Action<Process>?>(),
+                Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 attempts++;
@@ -1332,8 +1332,8 @@ public sealed class CleaningOrchestratorTests : IDisposable
 
         _cleaningServiceMock.CleanPluginAsync(
                 Arg.Any<PluginInfo>(),
-                Arg.Any<CancellationToken>(),
-                Arg.Any<Action<Process>?>())
+                Arg.Any<Action<Process>?>(),
+                Arg.Any<CancellationToken>())
             .Returns(new CleaningResult
             {
                 Status = CleaningStatus.Failed,
@@ -1355,7 +1355,7 @@ public sealed class CleaningOrchestratorTests : IDisposable
         // Assert
         callbackCalls.Should().Be(1);
         await _cleaningServiceMock.Received(1)
-            .CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<CancellationToken>(), Arg.Any<Action<Process>?>());
+            .CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>());
 
         _stateServiceMock.Received(1)
             .AddDetailedCleaningResult(Arg.Is<PluginCleaningResult>(r =>
@@ -1391,11 +1391,11 @@ public sealed class CleaningOrchestratorTests : IDisposable
 
         _cleaningServiceMock.CleanPluginAsync(
                 Arg.Any<PluginInfo>(),
-                Arg.Any<CancellationToken>(),
-                Arg.Any<Action<Process>?>())
+                Arg.Any<Action<Process>?>(),
+                Arg.Any<CancellationToken>())
             .Returns(async callInfo =>
             {
-                callInfo.ArgAt<Action<Process>?>(2)?.Invoke(Process.GetCurrentProcess());
+                callInfo.ArgAt<Action<Process>?>(1)?.Invoke(Process.GetCurrentProcess());
                 processStarted.TrySetResult(true);
                 await releasePlugin.Task;
                 return new CleaningResult { Status = CleaningStatus.Cleaned, Success = true };
@@ -1454,7 +1454,7 @@ public sealed class CleaningOrchestratorTests : IDisposable
 
         // Assert
         // No cleaning should have been attempted
-        await _cleaningServiceMock.DidNotReceive().CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<CancellationToken>(), Arg.Any<Action<System.Diagnostics.Process>?>());
+        await _cleaningServiceMock.DidNotReceive().CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<System.Diagnostics.Process>?>(), Arg.Any<CancellationToken>());
 
         // But state lifecycle should still be complete
         _stateServiceMock.Received(1).StartCleaning(Arg.Any<List<PluginInfo>>());
@@ -1486,7 +1486,7 @@ public sealed class CleaningOrchestratorTests : IDisposable
         _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>())
             .Returns(true);
 
-        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<CancellationToken>(), Arg.Any<Action<System.Diagnostics.Process>?>())
+        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<System.Diagnostics.Process>?>(), Arg.Any<CancellationToken>())
             .Returns(new CleaningResult { Status = CleaningStatus.Cleaned });
 
         // Act
@@ -1530,7 +1530,7 @@ public sealed class CleaningOrchestratorTests : IDisposable
         _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>())
             .Returns(true);
 
-        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<CancellationToken>(), Arg.Any<Action<System.Diagnostics.Process>?>())
+        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<System.Diagnostics.Process>?>(), Arg.Any<CancellationToken>())
             .Returns(new CleaningResult { Status = CleaningStatus.Cleaned });
 
         // Skip list contains base game ESMs
@@ -1552,9 +1552,9 @@ public sealed class CleaningOrchestratorTests : IDisposable
         await _orchestrator.StartCleaningAsync();
 
         // Assert - ALL 3 plugins should be cleaned, including those in skip list
-        await _cleaningServiceMock.Received(1).CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Skyrim.esm"), Arg.Any<CancellationToken>(), Arg.Any<Action<System.Diagnostics.Process>?>());
-        await _cleaningServiceMock.Received(1).CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Update.esm"), Arg.Any<CancellationToken>(), Arg.Any<Action<System.Diagnostics.Process>?>());
-        await _cleaningServiceMock.Received(1).CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "UserMod.esp"), Arg.Any<CancellationToken>(), Arg.Any<Action<System.Diagnostics.Process>?>());
+        await _cleaningServiceMock.Received(1).CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Skyrim.esm"), Arg.Any<Action<System.Diagnostics.Process>?>(), Arg.Any<CancellationToken>());
+        await _cleaningServiceMock.Received(1).CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Update.esm"), Arg.Any<Action<System.Diagnostics.Process>?>(), Arg.Any<CancellationToken>());
+        await _cleaningServiceMock.Received(1).CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "UserMod.esp"), Arg.Any<Action<System.Diagnostics.Process>?>(), Arg.Any<CancellationToken>());
     }
 
     /// <summary>
@@ -1583,7 +1583,7 @@ public sealed class CleaningOrchestratorTests : IDisposable
         _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>())
             .Returns(true);
 
-        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<CancellationToken>(), Arg.Any<Action<System.Diagnostics.Process>?>())
+        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<System.Diagnostics.Process>?>(), Arg.Any<CancellationToken>())
             .Returns(new CleaningResult { Status = CleaningStatus.Cleaned });
 
         // Skip list contains base game ESMs
@@ -1605,9 +1605,9 @@ public sealed class CleaningOrchestratorTests : IDisposable
         await _orchestrator.StartCleaningAsync();
 
         // Assert - Only UserMod.esp should be cleaned
-        await _cleaningServiceMock.DidNotReceive().CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Skyrim.esm"), Arg.Any<CancellationToken>(), Arg.Any<Action<System.Diagnostics.Process>?>());
-        await _cleaningServiceMock.DidNotReceive().CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Update.esm"), Arg.Any<CancellationToken>(), Arg.Any<Action<System.Diagnostics.Process>?>());
-        await _cleaningServiceMock.Received(1).CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "UserMod.esp"), Arg.Any<CancellationToken>(), Arg.Any<Action<System.Diagnostics.Process>?>());
+        await _cleaningServiceMock.DidNotReceive().CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Skyrim.esm"), Arg.Any<Action<System.Diagnostics.Process>?>(), Arg.Any<CancellationToken>());
+        await _cleaningServiceMock.DidNotReceive().CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Update.esm"), Arg.Any<Action<System.Diagnostics.Process>?>(), Arg.Any<CancellationToken>());
+        await _cleaningServiceMock.Received(1).CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "UserMod.esp"), Arg.Any<Action<System.Diagnostics.Process>?>(), Arg.Any<CancellationToken>());
     }
 
     #endregion
@@ -1690,7 +1690,7 @@ public sealed class CleaningOrchestratorTests : IDisposable
             _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>())
                 .Returns(true);
 
-            _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<CancellationToken>(), Arg.Any<Action<System.Diagnostics.Process>?>())
+            _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<System.Diagnostics.Process>?>(), Arg.Any<CancellationToken>())
                 .Returns(new CleaningResult { Status = CleaningStatus.Cleaned });
 
             // MO2 mode enabled in user config
@@ -1742,7 +1742,7 @@ public sealed class CleaningOrchestratorTests : IDisposable
         _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>())
             .Returns(true);
 
-        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<CancellationToken>(), Arg.Any<Action<System.Diagnostics.Process>?>())
+        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<System.Diagnostics.Process>?>(), Arg.Any<CancellationToken>())
             .Returns(new CleaningResult { Status = CleaningStatus.Cleaned });
 
         // MO2 mode disabled in user config
@@ -1766,7 +1766,7 @@ public sealed class CleaningOrchestratorTests : IDisposable
         _pluginServiceMock.Received().ValidatePluginFile(Arg.Any<PluginInfo>());
 
         // Missing.esp should NOT be cleaned (removed from list)
-        await _cleaningServiceMock.DidNotReceive().CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Missing.esp"), Arg.Any<CancellationToken>(), Arg.Any<Action<System.Diagnostics.Process>?>());
+        await _cleaningServiceMock.DidNotReceive().CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Missing.esp"), Arg.Any<Action<System.Diagnostics.Process>?>(), Arg.Any<CancellationToken>());
     }
 
     /// <summary>
@@ -1806,7 +1806,7 @@ public sealed class CleaningOrchestratorTests : IDisposable
                 Arg.Any<IProgress<BackupCopyProgress>?>(),
                 Arg.Any<CancellationToken>())
             .Returns(new BackupCreateResult(BackupOperationStatus.Complete, "Next.esp", 100, 100, null));
-        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<CancellationToken>(), Arg.Any<Action<Process>?>())
+        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>())
             .Returns(new CleaningResult { Status = CleaningStatus.Cleaned, Success = true });
         _backupServiceMock.CleanupOldSessionsAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<IProgress<BackupCopyProgress>?>(), Arg.Any<CancellationToken>())
             .Returns(new BackupRetentionCleanupResult(BackupOperationStatus.Complete, Array.Empty<BackupRetentionRowResult>()));
@@ -1815,8 +1815,8 @@ public sealed class CleaningOrchestratorTests : IDisposable
         await _orchestrator.StartCleaningAsync();
 
         // Assert
-        await _cleaningServiceMock.DidNotReceive().CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Canceled.esp"), Arg.Any<CancellationToken>(), Arg.Any<Action<Process>?>());
-        await _cleaningServiceMock.Received(1).CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Next.esp"), Arg.Any<CancellationToken>(), Arg.Any<Action<Process>?>());
+        await _cleaningServiceMock.DidNotReceive().CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Canceled.esp"), Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>());
+        await _cleaningServiceMock.Received(1).CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Next.esp"), Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>());
         _stateServiceMock.Received(1).AddDetailedCleaningResult(Arg.Is<PluginCleaningResult>(r =>
             r.PluginName == "Canceled.esp" &&
             r.Status == CleaningStatus.Skipped &&
@@ -1842,10 +1842,10 @@ public sealed class CleaningOrchestratorTests : IDisposable
 
         var processStarted = CreateSignal();
         var releasePlugin = CreateSignal();
-        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<CancellationToken>(), Arg.Any<Action<Process>?>())
+        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>())
             .Returns(async callInfo =>
             {
-                callInfo.ArgAt<Action<Process>?>(2)?.Invoke(Process.GetCurrentProcess());
+                callInfo.ArgAt<Action<Process>?>(1)?.Invoke(Process.GetCurrentProcess());
                 processStarted.TrySetResult(true);
                 await releasePlugin.Task;
                 return new CleaningResult { Status = CleaningStatus.Cleaned, Success = true };
@@ -1891,7 +1891,7 @@ public sealed class CleaningOrchestratorTests : IDisposable
             callbackErrors.Add(error);
             return Task.FromResult(BackupFailureChoice.ContinueWithoutBackup);
         };
-        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<CancellationToken>(), Arg.Any<Action<Process>?>())
+        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>())
             .Returns(new CleaningResult { Status = CleaningStatus.Cleaned, Success = true });
 
         // Act
@@ -1899,7 +1899,7 @@ public sealed class CleaningOrchestratorTests : IDisposable
 
         // Assert
         callbackErrors.Should().ContainSingle().Which.Should().Be("Access denied");
-        await _cleaningServiceMock.Received(1).CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Failure.esp"), Arg.Any<CancellationToken>(), Arg.Any<Action<Process>?>());
+        await _cleaningServiceMock.Received(1).CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Failure.esp"), Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>());
     }
 
     /// <summary>
@@ -1937,8 +1937,8 @@ public sealed class CleaningOrchestratorTests : IDisposable
         // Assert
         await _cleaningServiceMock.DidNotReceive().CleanPluginAsync(
             Arg.Is<PluginInfo>(p => p.FileName == "BackupFails.esp"),
-            Arg.Any<CancellationToken>(),
-            Arg.Any<Action<Process>?>());
+            Arg.Any<Action<Process>?>(),
+            Arg.Any<CancellationToken>());
         _stateServiceMock.Received(1).AddDetailedCleaningResult(Arg.Is<PluginCleaningResult>(r =>
             r.PluginName == "BackupFails.esp" &&
             r.Status == CleaningStatus.Skipped &&
@@ -1992,8 +1992,8 @@ public sealed class CleaningOrchestratorTests : IDisposable
             .Returns(Task.CompletedTask);
         _cleaningServiceMock.CleanPluginAsync(
                 Arg.Is<PluginInfo>(p => p.FileName == "AlreadyCleaned.esp"),
-                Arg.Any<CancellationToken>(),
-                Arg.Any<Action<Process>?>())
+                Arg.Any<Action<Process>?>(),
+                Arg.Any<CancellationToken>())
             .Returns(new CleaningResult { Status = CleaningStatus.Cleaned, Success = true, Message = "Cleaned" });
 
         BackupFailureCallback callback = (_, _) => Task.FromResult(BackupFailureChoice.AbortSession);
@@ -2004,12 +2004,12 @@ public sealed class CleaningOrchestratorTests : IDisposable
         // Assert
         await _cleaningServiceMock.Received(1).CleanPluginAsync(
             Arg.Is<PluginInfo>(p => p.FileName == "AlreadyCleaned.esp"),
-            Arg.Any<CancellationToken>(),
-            Arg.Any<Action<Process>?>());
+            Arg.Any<Action<Process>?>(),
+            Arg.Any<CancellationToken>());
         await _cleaningServiceMock.DidNotReceive().CleanPluginAsync(
             Arg.Is<PluginInfo>(p => p.FileName == "BackupFails.esp"),
-            Arg.Any<CancellationToken>(),
-            Arg.Any<Action<Process>?>());
+            Arg.Any<Action<Process>?>(),
+            Arg.Any<CancellationToken>());
         _stateServiceMock.Received(1).FinishCleaningWithResults(Arg.Is<CleaningSessionResult>(session =>
             session.WasCancelled &&
             session.PluginResults.Count == 1 &&
@@ -2046,7 +2046,7 @@ public sealed class CleaningOrchestratorTests : IDisposable
                     Backup = new BackupSettings { Enabled = true, MaxSessions = 3 },
                     Settings = new AutoQacSettings { Mo2Mode = true }
                 });
-            _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<CancellationToken>(), Arg.Any<Action<Process>?>())
+            _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>())
                 .Returns(new CleaningResult { Status = CleaningStatus.Cleaned, Success = true });
 
             // Act
@@ -2176,8 +2176,8 @@ public sealed class CleaningOrchestratorTests : IDisposable
 
         _cleaningServiceMock.CleanPluginAsync(
                 Arg.Any<PluginInfo>(),
-                Arg.Any<CancellationToken>(),
-                Arg.Any<Action<Process>?>())
+                Arg.Any<Action<Process>?>(),
+                Arg.Any<CancellationToken>())
             .Returns(new CleaningResult { Success = true, Status = CleaningStatus.Cleaned });
 
         var logLines = new List<string> { "Removing: [ARMO:00012345]", "Undeleting: [NPC_:00067890]" };
@@ -2225,8 +2225,8 @@ public sealed class CleaningOrchestratorTests : IDisposable
 
         _cleaningServiceMock.CleanPluginAsync(
                 Arg.Any<PluginInfo>(),
-                Arg.Any<CancellationToken>(),
-                Arg.Any<Action<Process>?>())
+                Arg.Any<Action<Process>?>(),
+                Arg.Any<CancellationToken>())
             .Returns(new CleaningResult { Success = true, Status = CleaningStatus.Cleaned });
 
         var logLines = new List<string> { "Done." };
@@ -2272,8 +2272,8 @@ public sealed class CleaningOrchestratorTests : IDisposable
 
         _cleaningServiceMock.CleanPluginAsync(
                 Arg.Any<PluginInfo>(),
-                Arg.Any<CancellationToken>(),
-                Arg.Any<Action<Process>?>())
+                Arg.Any<Action<Process>?>(),
+                Arg.Any<CancellationToken>())
             .Returns(new CleaningResult { Success = true, Status = CleaningStatus.Cleaned });
 
         _logFileServiceMock.ReadLogContentAsync(
@@ -2321,8 +2321,8 @@ public sealed class CleaningOrchestratorTests : IDisposable
 
         _cleaningServiceMock.CleanPluginAsync(
                 Arg.Any<PluginInfo>(),
-                Arg.Any<CancellationToken>(),
-                Arg.Any<Action<Process>?>())
+                Arg.Any<Action<Process>?>(),
+                Arg.Any<CancellationToken>())
             .Returns(new CleaningResult
             {
                 Success = false,
@@ -2374,11 +2374,11 @@ public sealed class CleaningOrchestratorTests : IDisposable
 
             _cleaningServiceMock.CleanPluginAsync(
                     Arg.Any<PluginInfo>(),
-                    Arg.Any<CancellationToken>(),
-                    Arg.Any<Action<Process>?>())
+                    Arg.Any<Action<Process>?>(),
+                    Arg.Any<CancellationToken>())
                 .Returns(async callInfo =>
                 {
-                    callInfo.ArgAt<Action<Process>?>(2)?.Invoke(sleeper);
+                    callInfo.ArgAt<Action<Process>?>(1)?.Invoke(sleeper);
                     processStarted.TrySetResult(true);
                     await releasePlugin.Task;
                     return new CleaningResult { Status = CleaningStatus.Cleaned, Success = true };
@@ -2427,7 +2427,7 @@ public sealed class CleaningOrchestratorTests : IDisposable
             .Returns(new BackupRetentionCleanupResult(
                 BackupOperationStatus.Warning,
                 new[] { new BackupRetentionRowResult(@"C:\Games\AutoQAC Backups\old", BackupRetentionRowStatus.Failed, BackupFailureReason.CleanupDeletionFailed) }));
-        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<CancellationToken>(), Arg.Any<Action<Process>?>())
+        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>())
             .Returns(new CleaningResult { Status = CleaningStatus.Cleaned, Success = true });
 
         // Act
@@ -2464,7 +2464,7 @@ public sealed class CleaningOrchestratorTests : IDisposable
             .Returns(new BackupRetentionCleanupResult(
                 BackupOperationStatus.Canceled,
                 new[] { new BackupRetentionRowResult(@"C:\Games\AutoQAC Backups\old", BackupRetentionRowStatus.Kept, BackupFailureReason.Canceled) }));
-        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<CancellationToken>(), Arg.Any<Action<Process>?>())
+        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>())
             .Returns(new CleaningResult { Status = CleaningStatus.Cleaned, Success = true });
 
         // Act
@@ -2506,7 +2506,7 @@ public sealed class CleaningOrchestratorTests : IDisposable
             .Returns(PluginWarningKind.ZeroByte);
         _pluginServiceMock.ValidatePluginFile(Arg.Is<PluginInfo>(p => p.FileName != "Zero.esp"))
             .Returns(PluginWarningKind.None);
-        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<CancellationToken>(), Arg.Any<Action<Process>?>())
+        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>())
             .Returns(new CleaningResult { Status = CleaningStatus.Cleaned, Success = true });
 
         // Act
@@ -2561,15 +2561,15 @@ public sealed class CleaningOrchestratorTests : IDisposable
                 Arg.Any<CancellationToken>())
             .Returns(new BackupCreateResult(BackupOperationStatus.Complete, "BackedUp.esp", 100, 100, null));
         BackupFailureCallback callback = (_, _) => Task.FromResult(BackupFailureChoice.ContinueWithoutBackup);
-        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<CancellationToken>(), Arg.Any<Action<Process>?>())
+        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>())
             .Returns(new CleaningResult { Status = CleaningStatus.Cleaned, Success = true });
 
         // Act
         await _orchestrator.StartCleaningAsync(null, callback);
 
         // Assert
-        await _cleaningServiceMock.Received(1).CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Failure.esp"), Arg.Any<CancellationToken>(), Arg.Any<Action<Process>?>());
-        await _cleaningServiceMock.Received(1).CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "BackedUp.esp"), Arg.Any<CancellationToken>(), Arg.Any<Action<Process>?>());
+        await _cleaningServiceMock.Received(1).CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Failure.esp"), Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>());
+        await _cleaningServiceMock.Received(1).CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "BackedUp.esp"), Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>());
         await _backupServiceMock.Received(1).WriteSessionMetadataAsync(
             Arg.Any<string>(),
             Arg.Is<BackupSession>(session =>
@@ -2624,11 +2624,11 @@ public sealed class CleaningOrchestratorTests : IDisposable
 
             _cleaningServiceMock.CleanPluginAsync(
                     Arg.Any<PluginInfo>(),
-                    Arg.Any<CancellationToken>(),
-                    Arg.Any<Action<Process>?>())
+                    Arg.Any<Action<Process>?>(),
+                    Arg.Any<CancellationToken>())
                 .Returns(async callInfo =>
                 {
-                    callInfo.ArgAt<Action<Process>?>(2)?.Invoke(sleeper);
+                    callInfo.ArgAt<Action<Process>?>(1)?.Invoke(sleeper);
                     processStarted.TrySetResult(true);
                     await releasePlugin.Task;
                     return new CleaningResult { Status = CleaningStatus.Cleaned, Success = true };
@@ -2694,11 +2694,11 @@ public sealed class CleaningOrchestratorTests : IDisposable
 
             _cleaningServiceMock.CleanPluginAsync(
                     Arg.Any<PluginInfo>(),
-                    Arg.Any<CancellationToken>(),
-                    Arg.Any<Action<Process>?>())
+                    Arg.Any<Action<Process>?>(),
+                    Arg.Any<CancellationToken>())
                 .Returns(async callInfo =>
                 {
-                    callInfo.ArgAt<Action<Process>?>(2)?.Invoke(sleeper);
+                    callInfo.ArgAt<Action<Process>?>(1)?.Invoke(sleeper);
                     processStarted.TrySetResult(true);
                     await releasePlugin.Task;
                     return new CleaningResult { Status = CleaningStatus.Cleaned, Success = true };
@@ -2724,8 +2724,8 @@ public sealed class CleaningOrchestratorTests : IDisposable
             TerminationResult? capturedAtStart = TerminationResult.GracePeriodExpired;
             _cleaningServiceMock.CleanPluginAsync(
                     Arg.Any<PluginInfo>(),
-                    Arg.Any<CancellationToken>(),
-                    Arg.Any<Action<Process>?>())
+                    Arg.Any<Action<Process>?>(),
+                    Arg.Any<CancellationToken>())
                 .Returns(_ =>
                 {
                     // Sample LastTerminationResult on the very first plugin of session 2.
@@ -2773,11 +2773,11 @@ public sealed class CleaningOrchestratorTests : IDisposable
 
             _cleaningServiceMock.CleanPluginAsync(
                     Arg.Any<PluginInfo>(),
-                    Arg.Any<CancellationToken>(),
-                    Arg.Any<Action<Process>?>())
+                    Arg.Any<Action<Process>?>(),
+                    Arg.Any<CancellationToken>())
                 .Returns(async callInfo =>
                 {
-                    callInfo.ArgAt<Action<Process>?>(2)?.Invoke(sleeper);
+                    callInfo.ArgAt<Action<Process>?>(1)?.Invoke(sleeper);
                     processStarted.TrySetResult(true);
                     await releasePlugin.Task;
                     return new CleaningResult { Status = CleaningStatus.Cleaned, Success = true };
@@ -2801,8 +2801,8 @@ public sealed class CleaningOrchestratorTests : IDisposable
             TerminationResult? capturedAtStart = null;
             _cleaningServiceMock.CleanPluginAsync(
                     Arg.Any<PluginInfo>(),
-                    Arg.Any<CancellationToken>(),
-                    Arg.Any<Action<Process>?>())
+                    Arg.Any<Action<Process>?>(),
+                    Arg.Any<CancellationToken>())
                 .Returns(ci =>
                 {
                     // Sample LastTerminationResult on the very first plugin of session 2.

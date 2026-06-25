@@ -54,23 +54,23 @@ public sealed class UserConfiguration
                 ? new Dictionary<string, List<string>>(StringComparer.Ordinal)
                 : source.ToDictionary(
                     kvp => kvp.Key,
-                    kvp => kvp.Value?.ToList() ?? new List<string>(),
+                    kvp => kvp.Value?.ToList() ?? [],
                     StringComparer.Ordinal);
 
         return new UserConfiguration
         {
             SelectedGame = SelectedGame,
-            LoadOrder = (LoadOrder ?? new LoadOrderConfig()).Copy(),
+            LoadOrder = LoadOrder?.Copy() ?? new LoadOrderConfig(),
             LoadOrderFileOverrides = CopyDictionary(LoadOrderFileOverrides),
-            ModOrganizer = (ModOrganizer ?? new ModOrganizerConfig()).Copy(),
-            XEdit = (XEdit ?? new XEditConfig()).Copy(),
-            Settings = (Settings ?? new AutoQacSettings()).Copy(),
+            ModOrganizer = ModOrganizer?.Copy() ?? new ModOrganizerConfig(),
+            XEdit = XEdit?.Copy() ?? new XEditConfig(),
+            Settings = Settings?.Copy() ?? new AutoQacSettings(),
             SkipLists = CopySkipLists(SkipLists),
             GameDataFolderOverrides = CopyDictionary(GameDataFolderOverrides),
             Mo2InstanceOverrides = CopyDictionary(Mo2InstanceOverrides),
             Mo2ProfileSelections = CopyDictionary(Mo2ProfileSelections),
-            LogRetention = (LogRetention ?? new RetentionSettings()).Copy(),
-            Backup = (Backup ?? new BackupSettings()).Copy()
+            LogRetention = LogRetention?.Copy() ?? new RetentionSettings(),
+            Backup = Backup?.Copy() ?? new BackupSettings()
         };
     }
 }
