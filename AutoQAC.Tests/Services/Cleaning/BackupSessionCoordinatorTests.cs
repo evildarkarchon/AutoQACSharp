@@ -6,14 +6,13 @@ using AutoQAC.Services.State;
 using FluentAssertions;
 using NSubstitute;
 
-namespace AutoQAC.Tests.Services;
+namespace AutoQAC.Tests.Services.Cleaning;
 
 public sealed class BackupSessionCoordinatorTests : IDisposable
 {
     private readonly string _testRoot;
     private readonly IBackupService _backupMock;
     private readonly IStateService _stateMock;
-    private readonly ILoggingService _loggerMock;
     private readonly IBackupSessionCoordinator _sut;
 
     public BackupSessionCoordinatorTests()
@@ -22,17 +21,14 @@ public sealed class BackupSessionCoordinatorTests : IDisposable
         Directory.CreateDirectory(_testRoot);
         _backupMock = Substitute.For<IBackupService>();
         _stateMock = Substitute.For<IStateService>();
-        _loggerMock = Substitute.For<ILoggingService>();
-        _sut = new BackupSessionCoordinator(_backupMock, _stateMock, _loggerMock);
+        _sut = new BackupSessionCoordinator(_backupMock, _stateMock, Substitute.For<ILoggingService>());
     }
 
     public void Dispose()
     {
-        if (Directory.Exists(_testRoot))
-        {
-            try { Directory.Delete(_testRoot, recursive: true); }
-            catch { /* Best-effort cleanup */ }
-        }
+        if (!Directory.Exists(_testRoot)) return;
+        try { Directory.Delete(_testRoot, recursive: true); }
+        catch { /* Best-effort cleanup */ }
     }
 
     [Fact]
@@ -93,10 +89,10 @@ public sealed class BackupSessionCoordinatorTests : IDisposable
         var plugin = CreatePlugin("Skip.esp");
         _backupMock.BackupPluginAsync(plugin, Arg.Any<string>(), Arg.Any<IProgress<BackupCopyProgress>?>(), Arg.Any<CancellationToken>())
             .Returns(new BackupCreateResult(BackupOperationStatus.Failed, plugin.FileName, 0, null, BackupFailureReason.TargetWriteFailed));
-        BackupFailureCallback callback = (_, _) => Task.FromResult(BackupFailureChoice.SkipPlugin);
+        Task<BackupFailureChoice> Callback(string s, string s1) => Task.FromResult(BackupFailureChoice.SkipPlugin);
 
         // Act
-        var outcome = await _sut.RunPluginBackupAsync(plugin, _testRoot, callback, CancellationToken.None);
+        var outcome = await _sut.RunPluginBackupAsync(plugin, _testRoot, Callback, CancellationToken.None);
 
         // Assert
         outcome.Kind.Should().Be(PluginBackupOutcomeKind.UserSkipped);
@@ -112,10 +108,10 @@ public sealed class BackupSessionCoordinatorTests : IDisposable
         var plugin = CreatePlugin("Abort.esp");
         _backupMock.BackupPluginAsync(plugin, Arg.Any<string>(), Arg.Any<IProgress<BackupCopyProgress>?>(), Arg.Any<CancellationToken>())
             .Returns(new BackupCreateResult(BackupOperationStatus.Failed, plugin.FileName, 0, null, BackupFailureReason.AccessDenied));
-        BackupFailureCallback callback = (_, _) => Task.FromResult(BackupFailureChoice.AbortSession);
+        Task<BackupFailureChoice> Callback(string s, string s1) => Task.FromResult(BackupFailureChoice.AbortSession);
 
         // Act
-        var outcome = await _sut.RunPluginBackupAsync(plugin, _testRoot, callback, CancellationToken.None);
+        var outcome = await _sut.RunPluginBackupAsync(plugin, _testRoot, Callback, CancellationToken.None);
 
         // Assert
         outcome.Kind.Should().Be(PluginBackupOutcomeKind.AbortSession);
@@ -129,10 +125,10 @@ public sealed class BackupSessionCoordinatorTests : IDisposable
         var plugin = CreatePlugin("Continue.esp");
         _backupMock.BackupPluginAsync(plugin, Arg.Any<string>(), Arg.Any<IProgress<BackupCopyProgress>?>(), Arg.Any<CancellationToken>())
             .Returns(new BackupCreateResult(BackupOperationStatus.Failed, plugin.FileName, 0, null, BackupFailureReason.AccessDenied));
-        BackupFailureCallback callback = (_, _) => Task.FromResult(BackupFailureChoice.ContinueWithoutBackup);
+        Task<BackupFailureChoice> Callback(string s, string s1) => Task.FromResult(BackupFailureChoice.ContinueWithoutBackup);
 
         // Act
-        var outcome = await _sut.RunPluginBackupAsync(plugin, _testRoot, callback, CancellationToken.None);
+        var outcome = await _sut.RunPluginBackupAsync(plugin, _testRoot, Callback, CancellationToken.None);
 
         // Assert
         outcome.Kind.Should().Be(PluginBackupOutcomeKind.ContinueWithoutBackup);
@@ -144,7 +140,7 @@ public sealed class BackupSessionCoordinatorTests : IDisposable
     {
         // Arrange
         var entries = new[] { CreateEntry("Warn.esp") };
-        var retentionResult = new BackupRetentionCleanupResult(BackupOperationStatus.Warning, Array.Empty<BackupRetentionRowResult>());
+        var retentionResult = new BackupRetentionCleanupResult(BackupOperationStatus.Warning, []);
         _backupMock.CleanupOldSessionsAsync(Arg.Any<string>(), 3, _testRoot, Arg.Any<IProgress<BackupCopyProgress>?>(), Arg.Any<CancellationToken>())
             .Returns(retentionResult);
 
@@ -184,7 +180,7 @@ public sealed class BackupSessionCoordinatorTests : IDisposable
     {
         DetectedGameType = GameType.SkyrimSe,
         DetectedGameVariant = GameVariant.None,
-        PluginRows = new[] { new PreflightPluginRow(CreatePlugin("Plugin.esp"), PreflightDecision.Clean, SkipReason: null) },
+        PluginRows = [new PreflightPluginRow(CreatePlugin("Plugin.esp"), PreflightDecision.Clean, SkipReason: null)],
         IsMo2ModeActive = isMo2Mode,
         BackupSkippedByPolicy = isMo2Mode,
         FileValidationSkippedByPolicy = false,

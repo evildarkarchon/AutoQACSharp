@@ -29,7 +29,8 @@ internal sealed class FakeUserConfigFileStore : IUserConfigFileStore
 
     public int WriteCount => CallLog.Count(c => c == "Write");
 
-    public string SettingsFilePath { get; } = Path.Combine(Path.GetTempPath(), "AutoQAC-tests", Guid.NewGuid().ToString(), "AutoQAC Settings.yaml");
+    public string SettingsFilePath { get; } = Path.Combine(Path.GetTempPath(), "AutoQAC-tests",
+        Guid.NewGuid().ToString(), "AutoQAC Settings.yaml");
 
     public Task<UserConfigReadResult> ReadAsync(CancellationToken ct)
     {
@@ -73,10 +74,11 @@ internal sealed class FakeUserConfigFileStore : IUserConfigFileStore
             throw HashFailure;
         }
 
-        return Task.FromResult(FileMissing ? null : CurrentHash ?? (CurrentContent == null ? null : ComputeHash(CurrentContent)));
+        return Task.FromResult(FileMissing
+            ? null
+            : CurrentHash ?? (CurrentContent == null ? null : ComputeHash(CurrentContent)));
     }
 
-    public void SimulateWriteSequence(params string[] entries) => CallLog.AddRange(entries);
-
-    public static string ComputeHash(string content) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content)));
+    public static string ComputeHash(string content) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content)));
 }

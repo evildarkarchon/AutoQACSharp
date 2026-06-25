@@ -27,8 +27,10 @@ public sealed class BackupOperationResultTests
         var rows = new[]
         {
             new BackupRestoreRowResult("Restored.esp", BackupRestoreRowStatus.Restored, null, 128, 128),
-            new BackupRestoreRowResult("Failed.esp", BackupRestoreRowStatus.Failed, BackupFailureReason.AccessDenied, 0, 128),
-            new BackupRestoreRowResult("Canceled.esp", BackupRestoreRowStatus.Canceled, BackupFailureReason.Canceled, 64, 128)
+            new BackupRestoreRowResult("Failed.esp", BackupRestoreRowStatus.Failed, BackupFailureReason.AccessDenied, 0,
+                128),
+            new BackupRestoreRowResult("Canceled.esp", BackupRestoreRowStatus.Canceled, BackupFailureReason.Canceled,
+                64, 128)
         };
 
         var result = new BackupRestoreResult(BackupOperationStatus.Partial, rows);
@@ -45,7 +47,8 @@ public sealed class BackupOperationResultTests
         {
             new BackupRetentionRowResult("old", BackupRetentionRowStatus.Deleted, null),
             new BackupRetentionRowResult("current", BackupRetentionRowStatus.Kept, null),
-            new BackupRetentionRowResult("locked", BackupRetentionRowStatus.Failed, BackupFailureReason.CleanupDeletionFailed)
+            new BackupRetentionRowResult("locked", BackupRetentionRowStatus.Failed,
+                BackupFailureReason.CleanupDeletionFailed)
         };
 
         var result = new BackupRetentionCleanupResult(BackupOperationStatus.Warning, rows);

@@ -170,7 +170,7 @@ public sealed class PluginResultFinalizerTests
                 Arg.Any<CancellationToken>())
             .Returns(new LogReadResult
             {
-                LogLines = new List<string>(),
+                LogLines = [],
                 ExceptionContent = "EAccessViolation: invalid pointer operation at 0x00401234"
             });
 
@@ -218,7 +218,7 @@ public sealed class PluginResultFinalizerTests
                 runnerOutput.MainLogOffset,
                 runnerOutput.ExceptionLogOffset,
                 Arg.Any<CancellationToken>())
-            .Returns(new LogReadResult { LogLines = new List<string>() });
+            .Returns(new LogReadResult { LogLines = [] });
 
         // Act
         var result = await _sut.FinalizeAsync(
@@ -249,7 +249,7 @@ public sealed class PluginResultFinalizerTests
                 Arg.Any<CancellationToken>())
             .Returns(new LogReadResult
             {
-                LogLines = new List<string>(),
+                LogLines = [],
                 ExceptionContent = @"EAccessViolation at C:\Games\Skyrim\Data\Plugin.esp"
             });
 
@@ -403,7 +403,7 @@ public sealed class PluginResultFinalizerTests
                 runnerOutput.MainLogOffset,
                 runnerOutput.ExceptionLogOffset,
                 Arg.Any<CancellationToken>())
-            .Returns(new LogReadResult { LogLines = new List<string>() });
+            .Returns(new LogReadResult { LogLines = [] });
 
         // Act
         var result = await _sut.FinalizeAsync(

@@ -513,7 +513,8 @@ public sealed class CleaningSessionResultTests
                 {
                     PluginName = "Fail.esp",
                     Status = CleaningStatus.Failed,
-                    Message = @"System.InvalidOperationException at C:\Users\Alice\Tools\SSEEdit.exe -QAC at AutoQAC.Services.Cleaning"
+                    Message =
+                        @"System.InvalidOperationException at C:\Users\Alice\Tools\SSEEdit.exe -QAC at AutoQAC.Services.Cleaning"
                 }
             }
         };
@@ -531,10 +532,10 @@ public sealed class CleaningSessionResultTests
     public void GenerateReport_WhenPluginNamesContainUnsafeDisplayCharacters_ShouldUseSafePluginNames()
     {
         // Arrange
-        var cleanedPluginName = "C:\\Users\\Alice\\Unsafe\"Plugin\there.esp";
-        var alreadyCleanPluginName = "C:\\Users\\Alice\\Already`Clean|-autoload.esp";
-        var skippedPluginName = "C:\\Users\\Alice\\Skipped&Plugin<QAC>.esp";
-        var failedPluginName = "C:\\Users\\Alice\\Failed>Plugin`-QAC.esp";
+        const string cleanedPluginName = "C:\\Users\\Alice\\Unsafe\"Plugin\there.esp\"";
+        const string alreadyCleanPluginName = @"C:\Users\Alice\Already`Clean|-autoload.esp";
+        const string skippedPluginName = @"C:\Users\Alice\Skipped&Plugin<QAC>.esp";
+        const string failedPluginName = @"C:\Users\Alice\Failed>Plugin`-QAC.esp";
         var result = new CleaningSessionResult
         {
             PluginResults = new List<PluginCleaningResult>
@@ -597,7 +598,8 @@ public sealed class CleaningSessionResultTests
         {
             PluginName = "Fail.esp",
             Status = CleaningStatus.Failed,
-            Message = @"System.InvalidOperationException at C:\Users\Alice\Tools\SSEEdit.exe -QAC at AutoQAC.Services.Cleaning"
+            Message =
+                @"System.InvalidOperationException at C:\Users\Alice\Tools\SSEEdit.exe -QAC at AutoQAC.Services.Cleaning"
         };
 
         // Act
@@ -634,7 +636,7 @@ public sealed class CleaningSessionResultTests
         // Arrange
         var result = new CleaningSessionResult
         {
-            PluginResults = Array.Empty<PluginCleaningResult>()
+            PluginResults = []
         };
 
         // Assert
@@ -654,7 +656,7 @@ public sealed class CleaningSessionResultTests
     #endregion
 
     private static int CountOccurrences(string text, string value) =>
-        text.Split(value, StringSplitOptions.None).Length - 1;
+        text.Split(value).Length - 1;
 
     private static void AssertSafeReportBoundary(string text)
     {

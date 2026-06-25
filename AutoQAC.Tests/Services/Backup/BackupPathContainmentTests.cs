@@ -1,5 +1,3 @@
-using System;
-using System.IO;
 using AutoQAC.Services.Backup;
 using FluentAssertions;
 

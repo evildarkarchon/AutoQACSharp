@@ -33,8 +33,10 @@ public sealed class UserConfigurationCopyTests
         copy.SkipLists["SSE"].Add("d.esp");
 
         copy.SkipLists.Should().NotBeSameAs(source.SkipLists, because: "D-45 deep-copies mutable dictionaries");
-        copy.SkipLists["SSE"].Should().NotBeSameAs(source.SkipLists["SSE"], because: "D-45 deep-copies nested mutable list values, including string lists inside SkipLists");
-        source.SkipLists["SSE"].Should().Equal(["a.esp", "b.esp", "c.esp"], because: "D-45 copy mutation must not alter source SkipLists entries");
+        copy.SkipLists["SSE"].Should().NotBeSameAs(source.SkipLists["SSE"],
+            because: "D-45 deep-copies nested mutable list values, including string lists inside SkipLists");
+        source.SkipLists["SSE"].Should().Equal(["a.esp", "b.esp", "c.esp"],
+            because: "D-45 copy mutation must not alter source SkipLists entries");
     }
 
     [Fact]
@@ -48,8 +50,10 @@ public sealed class UserConfigurationCopyTests
         var copy = source.Copy();
         copy.LoadOrderFileOverrides["SSE"] = @"C:\bar";
 
-        copy.LoadOrderFileOverrides.Should().NotBeSameAs(source.LoadOrderFileOverrides, because: "D-45 dictionary containers must be independent");
-        source.LoadOrderFileOverrides["SSE"].Should().Be(@"C:\foo", because: "D-45 copy mutation must not mutate source dictionary values");
+        copy.LoadOrderFileOverrides.Should().NotBeSameAs(source.LoadOrderFileOverrides,
+            because: "D-45 dictionary containers must be independent");
+        source.LoadOrderFileOverrides["SSE"].Should().Be(@"C:\foo",
+            because: "D-45 copy mutation must not mutate source dictionary values");
     }
 
     [Fact]
@@ -63,8 +67,10 @@ public sealed class UserConfigurationCopyTests
         var copy = source.Copy();
         copy.GameDataFolderOverrides["FO4"] = @"D:\Data";
 
-        copy.GameDataFolderOverrides.Should().NotBeSameAs(source.GameDataFolderOverrides, because: "D-45 dictionary containers must be independent");
-        source.GameDataFolderOverrides["FO4"].Should().Be(@"C:\Data", because: "D-45 copy mutation must not mutate source dictionary values");
+        copy.GameDataFolderOverrides.Should().NotBeSameAs(source.GameDataFolderOverrides,
+            because: "D-45 dictionary containers must be independent");
+        source.GameDataFolderOverrides["FO4"].Should().Be(@"C:\Data",
+            because: "D-45 copy mutation must not mutate source dictionary values");
     }
 
     [Fact]
@@ -76,7 +82,8 @@ public sealed class UserConfigurationCopyTests
         copy.LoadOrder.File = "x";
 
         copy.LoadOrder.Should().NotBeSameAs(source.LoadOrder, because: "D-41 nested config models own copy behavior");
-        source.LoadOrder.File.Should().Be(@"C:\plugins.txt", because: "D-44 nested objects are independent defaults or copies");
+        source.LoadOrder.File.Should().Be(@"C:\plugins.txt",
+            because: "D-44 nested objects are independent defaults or copies");
     }
 
     [Fact]
@@ -87,8 +94,10 @@ public sealed class UserConfigurationCopyTests
         var copy = source.Copy();
         copy.ModOrganizer.Binary = "x";
 
-        copy.ModOrganizer.Should().NotBeSameAs(source.ModOrganizer, because: "D-41 nested config models own copy behavior");
-        source.ModOrganizer.Binary.Should().Be(@"C:\MO2.exe", because: "D-44 nested objects are independent defaults or copies");
+        copy.ModOrganizer.Should()
+            .NotBeSameAs(source.ModOrganizer, because: "D-41 nested config models own copy behavior");
+        source.ModOrganizer.Binary.Should()
+            .Be(@"C:\MO2.exe", because: "D-44 nested objects are independent defaults or copies");
     }
 
     [Fact]
@@ -100,7 +109,8 @@ public sealed class UserConfigurationCopyTests
         copy.XEdit.Binary = "x";
 
         copy.XEdit.Should().NotBeSameAs(source.XEdit, because: "D-41 nested config models own copy behavior");
-        source.XEdit.Binary.Should().Be(@"C:\xEdit.exe", because: "D-44 nested objects are independent defaults or copies");
+        source.XEdit.Binary.Should()
+            .Be(@"C:\xEdit.exe", because: "D-44 nested objects are independent defaults or copies");
     }
 
     [Fact]
@@ -126,7 +136,8 @@ public sealed class UserConfigurationCopyTests
         copy.Settings.CpuThreshold.Should().Be(10, because: "D-42 behavior tests pin every scalar field");
         copy.Settings.Mo2Mode.Should().BeTrue(because: "D-42 behavior tests pin every scalar field");
         copy.Settings.DisableSkipLists.Should().BeTrue(because: "D-42 behavior tests pin every scalar field");
-        source.Settings.CleaningTimeout.Should().Be(600, because: "D-44 nested objects are independent defaults or copies");
+        source.Settings.CleaningTimeout.Should()
+            .Be(600, because: "D-44 nested objects are independent defaults or copies");
     }
 
     [Fact]
@@ -140,10 +151,13 @@ public sealed class UserConfigurationCopyTests
         var copy = source.Copy();
         copy.LogRetention.MaxFileCount = 99;
 
-        copy.LogRetention.Should().NotBeSameAs(source.LogRetention, because: "D-41 nested config models own copy behavior");
-        copy.LogRetention.Mode.Should().Be(RetentionMode.CountBased, because: "D-42 behavior tests pin every scalar field");
+        copy.LogRetention.Should()
+            .NotBeSameAs(source.LogRetention, because: "D-41 nested config models own copy behavior");
+        copy.LogRetention.Mode.Should()
+            .Be(RetentionMode.CountBased, because: "D-42 behavior tests pin every scalar field");
         copy.LogRetention.MaxAgeDays.Should().Be(10, because: "D-42 behavior tests pin every scalar field");
-        source.LogRetention.MaxFileCount.Should().Be(25, because: "D-44 nested objects are independent defaults or copies");
+        source.LogRetention.MaxFileCount.Should()
+            .Be(25, because: "D-44 nested objects are independent defaults or copies");
     }
 
     [Fact]
@@ -209,7 +223,8 @@ public sealed class UserConfigurationCopyTests
 
         var copy = source.Copy();
 
-        AssertConfigurationsEquivalent(copy, roundTrip, "D-42 behavior parity replaces brittle source-regex clone guards");
+        AssertConfigurationsEquivalent(copy, roundTrip,
+            "D-42 behavior parity replaces brittle source-regex clone guards");
         AssertDeepCopyReferences(source, copy);
     }
 
@@ -222,15 +237,23 @@ public sealed class UserConfigurationCopyTests
             return;
         }
 
-        var userConfigurationSource = File.ReadAllText(Path.Combine(solutionRoot, "AutoQAC", "Models", "Configuration", "UserConfiguration.cs"));
-        var backupSettingsSource = File.ReadAllText(Path.Combine(solutionRoot, "AutoQAC", "Models", "Configuration", "BackupSettings.cs"));
-        var retentionSettingsSource = File.ReadAllText(Path.Combine(solutionRoot, "AutoQAC", "Models", "Configuration", "RetentionSettings.cs"));
+        var userConfigurationSource =
+            File.ReadAllText(Path.Combine(solutionRoot, "AutoQAC", "Models", "Configuration", "UserConfiguration.cs"));
+        var backupSettingsSource =
+            File.ReadAllText(Path.Combine(solutionRoot, "AutoQAC", "Models", "Configuration", "BackupSettings.cs"));
+        var retentionSettingsSource =
+            File.ReadAllText(Path.Combine(solutionRoot, "AutoQAC", "Models", "Configuration", "RetentionSettings.cs"));
 
         userConfigurationSource.Should().ContainAll(
-            ["Selected_Game", "Load_Order", "Load_Order_Files", "Mod_Organizer", "xEdit", "AutoQAC_Settings", "Skip_Lists", "Game_Data_Folders", "Log_Retention", "Backup"],
+            [
+                "Selected_Game", "Load_Order", "Load_Order_Files", "Mod_Organizer", "xEdit", "AutoQAC_Settings",
+                "Skip_Lists", "Game_Data_Folders", "Log_Retention", "Backup"
+            ],
             because: "D-42 protects observable YAML compatibility without reflection-based clone guards");
-        backupSettingsSource.Should().ContainAll(["enabled", "max_sessions"], because: "D-42 protects existing BackupSettings YAML aliases");
-        retentionSettingsSource.Should().ContainAll(["mode", "max_age_days", "max_file_count"], because: "D-42 protects existing RetentionSettings YAML aliases");
+        backupSettingsSource.Should().ContainAll(["enabled", "max_sessions"],
+            because: "D-42 protects existing BackupSettings YAML aliases");
+        retentionSettingsSource.Should().ContainAll(["mode", "max_age_days", "max_file_count"],
+            because: "D-42 protects existing RetentionSettings YAML aliases");
     }
 
     [Fact]
@@ -250,7 +273,8 @@ public sealed class UserConfigurationCopyTests
 
         var laterCopy = source.Copy();
 
-        AssertConfigurationsEquivalent(laterCopy, roundTrip, "D-45 copy mutation must not poison future copies from a stable source");
+        AssertConfigurationsEquivalent(laterCopy, roundTrip,
+            "D-45 copy mutation must not poison future copies from a stable source");
     }
 
     private static UserConfiguration CreateFullyPopulatedConfiguration() => new()
@@ -295,7 +319,8 @@ public sealed class UserConfigurationCopyTests
         }
     };
 
-    private static void AssertConfigurationsEquivalent(UserConfiguration actual, UserConfiguration expected, string because)
+    private static void AssertConfigurationsEquivalent(UserConfiguration actual, UserConfiguration expected,
+        string because)
     {
         actual.SelectedGame.Should().Be(expected.SelectedGame, because: because);
         actual.LoadOrder.File.Should().Be(expected.LoadOrder.File, because: because);
@@ -324,18 +349,23 @@ public sealed class UserConfigurationCopyTests
     private static void AssertDeepCopyReferences(UserConfiguration source, UserConfiguration copy)
     {
         copy.LoadOrder.Should().NotBeSameAs(source.LoadOrder, because: "D-41 nested config models own copy behavior");
-        copy.LoadOrderFileOverrides.Should().NotBeSameAs(source.LoadOrderFileOverrides, because: "D-45 mutable dictionaries are copied");
-        copy.ModOrganizer.Should().NotBeSameAs(source.ModOrganizer, because: "D-41 nested config models own copy behavior");
+        copy.LoadOrderFileOverrides.Should().NotBeSameAs(source.LoadOrderFileOverrides,
+            because: "D-45 mutable dictionaries are copied");
+        copy.ModOrganizer.Should()
+            .NotBeSameAs(source.ModOrganizer, because: "D-41 nested config models own copy behavior");
         copy.XEdit.Should().NotBeSameAs(source.XEdit, because: "D-41 nested config models own copy behavior");
         copy.Settings.Should().NotBeSameAs(source.Settings, because: "D-41 nested config models own copy behavior");
         copy.SkipLists.Should().NotBeSameAs(source.SkipLists, because: "D-45 mutable dictionaries are copied");
         foreach (var key in source.SkipLists.Keys)
         {
-            copy.SkipLists[key].Should().NotBeSameAs(source.SkipLists[key], because: "D-45 nested SkipLists lists are copied");
+            copy.SkipLists[key].Should()
+                .NotBeSameAs(source.SkipLists[key], because: "D-45 nested SkipLists lists are copied");
         }
 
-        copy.GameDataFolderOverrides.Should().NotBeSameAs(source.GameDataFolderOverrides, because: "D-45 mutable dictionaries are copied");
-        copy.LogRetention.Should().NotBeSameAs(source.LogRetention, because: "D-41 nested config models own copy behavior");
+        copy.GameDataFolderOverrides.Should().NotBeSameAs(source.GameDataFolderOverrides,
+            because: "D-45 mutable dictionaries are copied");
+        copy.LogRetention.Should()
+            .NotBeSameAs(source.LogRetention, because: "D-41 nested config models own copy behavior");
         copy.Backup.Should().NotBeSameAs(source.Backup, because: "D-41 nested config models own copy behavior");
     }
 

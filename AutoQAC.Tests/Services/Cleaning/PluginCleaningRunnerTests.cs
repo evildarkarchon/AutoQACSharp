@@ -14,18 +14,17 @@ public sealed class PluginCleaningRunnerTests
 
     private readonly ICleaningService _cleaningServiceMock;
     private readonly IXEditLogFileService _logFileServiceMock;
-    private readonly ILoggingService _loggerMock;
     private readonly IPluginCleaningRunner _sut;
 
     public PluginCleaningRunnerTests()
     {
         _cleaningServiceMock = Substitute.For<ICleaningService>();
         _logFileServiceMock = Substitute.For<IXEditLogFileService>();
-        _loggerMock = Substitute.For<ILoggingService>();
+        var loggerMock = Substitute.For<ILoggingService>();
         _logFileServiceMock.GetLogFilePath(Arg.Any<string>(), Arg.Any<GameType>()).Returns("main.log");
         _logFileServiceMock.GetExceptionLogFilePath(Arg.Any<string>(), Arg.Any<GameType>()).Returns("exception.log");
         _logFileServiceMock.CaptureOffset(Arg.Any<string>()).Returns(0L);
-        _sut = new PluginCleaningRunner(_cleaningServiceMock, _logFileServiceMock, _loggerMock);
+        _sut = new PluginCleaningRunner(_cleaningServiceMock, _logFileServiceMock, loggerMock);
     }
 
     [Fact]
@@ -37,14 +36,14 @@ public sealed class PluginCleaningRunnerTests
             .Returns(
                 new CleaningResult { Success = false, Status = CleaningStatus.Failed, Message = "Timeout", TimedOut = true },
                 new CleaningResult { Success = true, Status = CleaningStatus.Cleaned, Message = "Cleaned" });
-        TimeoutRetryCallback onTimeout = (_, _, _) => Task.FromResult(true);
+        Task<bool> OnTimeout(string s, int i, int i1) => Task.FromResult(true);
 
         // Act
         var output = await _sut.RunAsync(
             plugin,
             GameType.SkyrimSe,
             "xedit",
-            onTimeout,
+            OnTimeout,
             TimeoutSeconds,
             MaxRetryAttempts,
             _ => { },
@@ -68,14 +67,14 @@ public sealed class PluginCleaningRunnerTests
         var plugin = CreatePlugin("NoRetry.esp");
         _cleaningServiceMock.CleanPluginAsync(plugin, Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>())
             .Returns(new CleaningResult { Success = false, Status = CleaningStatus.Failed, Message = "Timeout", TimedOut = true });
-        TimeoutRetryCallback onTimeout = (_, _, _) => Task.FromResult(false);
+        Task<bool> OnTimeout(string s, int i, int i1) => Task.FromResult(false);
 
         // Act
         var output = await _sut.RunAsync(
             plugin,
             GameType.SkyrimSe,
             "xedit",
-            onTimeout,
+            OnTimeout,
             TimeoutSeconds,
             MaxRetryAttempts,
             _ => { },
@@ -131,14 +130,14 @@ public sealed class PluginCleaningRunnerTests
             .Returns(
                 new CleaningResult { Success = false, Status = CleaningStatus.Failed, Message = "Timeout", TimedOut = true },
                 new CleaningResult { Success = true, Status = CleaningStatus.Cleaned, Message = "Cleaned" });
-        TimeoutRetryCallback onTimeout = (_, _, _) => Task.FromResult(true);
+        Task<bool> OnTimeout(string s, int i, int i1) => Task.FromResult(true);
 
         // Act
         var output = await _sut.RunAsync(
             plugin,
             GameType.SkyrimSe,
             "xedit",
-            onTimeout,
+            OnTimeout,
             TimeoutSeconds,
             MaxRetryAttempts,
             _ => { },

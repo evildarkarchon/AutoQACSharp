@@ -177,9 +177,9 @@ public sealed class ConfigPersistenceCoordinatorTests
     public async Task Watcher_AfterCleaningEnds_AppliesLatestDeferredOnly()
     {
         var subject = new Subject<AppState>();
-        var state = new AppState { IsCleaning = true };
+        var stateSource = new TestAppStateSource(new AppState { IsCleaning = true });
         var store = new FakeUserConfigFileStore { CurrentContent = Serializer.Serialize(NewConfig(55)) };
-        var coordinator = CreateCoordinator(store, () => state, subject);
+        var coordinator = CreateCoordinator(store, stateSource.GetCurrent, subject);
         await coordinator.StartAsync();
         coordinator.NotifySettingsFileChanged(ConfigFileSignalKind.Changed);
         await PumpUntilQuiescentAsync(coordinator);
@@ -187,8 +187,8 @@ public sealed class ConfigPersistenceCoordinatorTests
         store.CurrentHash = FakeUserConfigFileStore.ComputeHash(store.CurrentContent);
         coordinator.NotifySettingsFileChanged(ConfigFileSignalKind.Changed);
         await PumpUntilQuiescentAsync(coordinator);
-        state = state with { IsCleaning = false };
-        subject.OnNext(state);
+        stateSource.Current = stateSource.Current with { IsCleaning = false };
+        subject.OnNext(stateSource.Current);
         await PumpUntilQuiescentAsync(coordinator);
         (await coordinator.LoadCurrentAsync()).Settings.CleaningTimeout.Should().Be(56);
     }
@@ -197,9 +197,9 @@ public sealed class ConfigPersistenceCoordinatorTests
     public async Task Save_DuringCleaning_SupersedesDeferredExternalReload()
     {
         var subject = new Subject<AppState>();
-        var state = new AppState { IsCleaning = true };
+        var stateSource = new TestAppStateSource(new AppState { IsCleaning = true });
         var store = new FakeUserConfigFileStore { CurrentContent = Serializer.Serialize(NewConfig(55)) };
-        var coordinator = CreateCoordinator(store, () => state, subject);
+        var coordinator = CreateCoordinator(store, stateSource.GetCurrent, subject);
         await coordinator.StartAsync();
 
         coordinator.NotifySettingsFileChanged(ConfigFileSignalKind.Changed);
@@ -207,8 +207,8 @@ public sealed class ConfigPersistenceCoordinatorTests
         await coordinator.SaveUserConfigAsync(NewConfig(99));
         await coordinator.FlushPendingSavesAsync();
 
-        state = state with { IsCleaning = false };
-        subject.OnNext(state);
+        stateSource.Current = stateSource.Current with { IsCleaning = false };
+        subject.OnNext(stateSource.Current);
         await PumpUntilQuiescentAsync(coordinator);
 
         (await coordinator.LoadCurrentAsync()).Settings.CleaningTimeout.Should().Be(99,
@@ -219,16 +219,16 @@ public sealed class ConfigPersistenceCoordinatorTests
     public async Task Watcher_DeferredInvalidYaml_RejectsAndKeepsCurrent_DoesNotApplyEarlierValid()
     {
         var subject = new Subject<AppState>();
-        var state = new AppState { IsCleaning = true };
+        var stateSource = new TestAppStateSource(new AppState { IsCleaning = true });
         var store = new FakeUserConfigFileStore { CurrentContent = "<>not yaml:\nbad: : :" };
         var failures = new List<ConfigPersistenceFailure>();
-        var coordinator = CreateCoordinator(store, () => state, subject);
+        var coordinator = CreateCoordinator(store, stateSource.GetCurrent, subject);
         using var sub = coordinator.Failures.Subscribe(failures.Add);
         await coordinator.StartAsync();
         coordinator.NotifySettingsFileChanged(ConfigFileSignalKind.Changed);
         await PumpUntilQuiescentAsync(coordinator);
-        state = state with { IsCleaning = false };
-        subject.OnNext(state);
+        stateSource.Current = stateSource.Current with { IsCleaning = false };
+        subject.OnNext(stateSource.Current);
         await PumpUntilQuiescentAsync(coordinator);
         failures.Should().Contain(f => f.Kind == ConfigPersistenceFailureKind.InvalidExternalYaml && !f.SafeSummary.Contains("Exception"));
     }
@@ -544,4 +544,11 @@ public sealed class ConfigPersistenceCoordinatorTests
         Settings = new AutoQacSettings { CleaningTimeout = timeout },
         XEdit = new XEditConfig { Binary = $@"C:\Tools\xEdit-{timeout}.exe" }
     };
+
+    private sealed class TestAppStateSource(AppState current)
+    {
+        public AppState Current { get; set; } = current;
+
+        public AppState GetCurrent() => Current;
+    }
 }

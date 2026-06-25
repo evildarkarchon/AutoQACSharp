@@ -66,7 +66,7 @@ public sealed class GameSelectionIntegrationTests
     public async Task ConfigurationService_ShouldPersistAndLoadSelectedGame()
     {
         // Arrange
-        var tempDir = Path.Combine(Path.GetTempPath(), $"AutoQAC_Test_{System.Guid.NewGuid()}");
+        var tempDir = Path.Combine(Path.GetTempPath(), $"AutoQAC_Test_{Guid.NewGuid()}");
         Directory.CreateDirectory(tempDir);
 
         try
@@ -112,19 +112,18 @@ public sealed class GameSelectionIntegrationTests
     public async Task PluginLoadingService_ShouldLoadPluginsFromFile()
     {
         // Arrange
-        var tempDir = Path.Combine(Path.GetTempPath(), $"AutoQAC_Test_{System.Guid.NewGuid()}");
+        var tempDir = Path.Combine(Path.GetTempPath(), $"AutoQAC_Test_{Guid.NewGuid()}");
         Directory.CreateDirectory(tempDir);
 
         try
         {
             var loadOrderPath = Path.Combine(tempDir, "plugins.txt");
-            await File.WriteAllLinesAsync(loadOrderPath, new[]
-            {
+            await File.WriteAllLinesAsync(loadOrderPath, [
                 "# Comment line",
                 "*Skyrim.esm",
                 "*Update.esm",
                 "TestMod.esp"
-            });
+            ]);
 
             var services = new ServiceCollection();
             services.AddInfrastructure();

@@ -9,12 +9,7 @@ using AutoQAC.Services.UI;
 using AutoQAC.ViewModels;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Reflection;
-using System.Reactive.Linq;
-using System.Threading;
 
 namespace AutoQAC.Tests.Integration;
 
@@ -35,7 +30,8 @@ public sealed class DependencyInjectionTests
         // Assert
         appSource.Should().NotContain("xEdit Path: {XEditPath}");
         appSource.Should().Contain("DiagnosticTextFormatter.SafeFileIdentifier(\"xEdit Path\"");
-        appSource.Should().Contain("Some legacy settings could not be migrated. See the latest AutoQAC log for technical details.");
+        appSource.Should()
+            .Contain("Some legacy settings could not be migrated. See the latest AutoQAC log for technical details.");
         appSource.Should().Contain("DiagnosticTextFormatter.SafeFailureSummary(result.WarningMessage");
         appSource.Should().NotContain("Legacy config migration failed unexpectedly: {ex.Message}");
         appSource.Should().NotContain("ShowMigrationWarning($\"Legacy config migration failed unexpectedly");
@@ -47,7 +43,7 @@ public sealed class DependencyInjectionTests
     {
         // Arrange
         var services = new ServiceCollection();
-        
+
         services.AddInfrastructure();
         services.AddConfiguration();
         services.AddState();
@@ -59,12 +55,12 @@ public sealed class DependencyInjectionTests
         var provider = services.BuildServiceProvider();
 
         // Act & Assert - Verify key services resolve
-        
+
         // Infrastructure
         provider.GetService<IConfigurationService>().Should().NotBeNull();
         provider.GetService<IConfigWatcherService>().Should().NotBeNull();
         provider.GetService<IStateService>().Should().NotBeNull();
-        
+
         // Business Logic
         provider.GetService<IGameDetectionService>().Should().NotBeNull();
         provider.GetService<IPluginValidationService>().Should().NotBeNull();
@@ -76,19 +72,19 @@ public sealed class DependencyInjectionTests
         provider.GetService<IXEditOutputParser>().Should().NotBeNull();
         provider.GetService<ICleaningService>().Should().NotBeNull();
         provider.GetService<ICleaningOrchestrator>().Should().NotBeNull();
-        
+
         // UI Services
         provider.GetService<IFileDialogService>().Should().NotBeNull();
-        
+
         // ViewModels
         provider.GetService<MainWindowViewModel>().Should().NotBeNull();
         provider.GetService<ProgressViewModel>().Should().NotBeNull();
-        
+
         // Verify Scopes (Singleton vs Transient)
         var state1 = provider.GetRequiredService<IStateService>();
         var state2 = provider.GetRequiredService<IStateService>();
         state1.Should().BeSameAs(state2); // Singleton
-        
+
         var vm1 = provider.GetRequiredService<MainWindowViewModel>();
         var vm2 = provider.GetRequiredService<MainWindowViewModel>();
         vm1.Should().BeSameAs(vm2); // Singleton
@@ -119,7 +115,7 @@ public sealed class DependencyInjectionTests
         services.AddViewModels();
         services.AddViews();
 
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         var configuration = provider.GetRequiredService<IConfigurationService>();
         var watcher = provider.GetRequiredService<IConfigWatcherService>();
         var sharedCoordinator = provider.GetRequiredService<IConfigPersistenceCoordinator>();
@@ -137,9 +133,12 @@ public sealed class DependencyInjectionTests
         configurationCoordinator.Should().BeSameAs(sharedCoordinator);
         watcherCoordinator.Should().BeSameAs(sharedCoordinator);
         results.Any(r =>
-            r.Operation == ConfigPersistenceOperationKind.Watcher &&
-            r.Status == ConfigPersistenceStatusKind.Failed &&
-            r.Failure is { Kind: ConfigPersistenceFailureKind.ReadFailed })
+                r is
+                {
+                    Operation: ConfigPersistenceOperationKind.Watcher,
+                    Status: ConfigPersistenceStatusKind.Failed,
+                    Failure.Kind: ConfigPersistenceFailureKind.ReadFailed
+                })
             .Should().BeTrue("watcher errors must flow through the configuration facade result stream");
     }
 
@@ -150,7 +149,7 @@ public sealed class DependencyInjectionTests
     {
         var field = instance.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic);
         field.Should().NotBeNull($"{instance.GetType().Name} should store {fieldName} from DI");
-        return field!.GetValue(instance).Should().BeAssignableTo<T>().Subject;
+        return field.GetValue(instance).Should().BeAssignableTo<T>().Subject;
     }
 
     /// <summary>

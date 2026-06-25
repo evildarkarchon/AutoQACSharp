@@ -42,7 +42,7 @@ public sealed class CleaningPreflightTests
                 Arg.Any<GameType>(),
                 Arg.Any<GameVariant>(),
                 Arg.Any<CancellationToken>())
-            .Returns(new List<string>());
+            .Returns([]);
         _configMock.LoadUserConfigAsync(Arg.Any<CancellationToken>())
             .Returns(new UserConfiguration());
         _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>())
@@ -105,7 +105,8 @@ public sealed class CleaningPreflightTests
         {
             _mo2InstanceMock.GetLoadOrderPath(Arg.Any<Mo2InstanceInfo>(), Arg.Any<string>())
                 .Returns(tempLoadOrderPath);
-            _stateMock.CurrentState.Returns(CreateState(mo2Mode: true, mo2ExecutablePath: tempMo2Path, mo2Profile: "Default"));
+            _stateMock.CurrentState.Returns(CreateState(mo2Mode: true, mo2ExecutablePath: tempMo2Path,
+                mo2Profile: "Default"));
             _configMock.LoadUserConfigAsync(Arg.Any<CancellationToken>())
                 .Returns(new UserConfiguration
                 {
@@ -271,13 +272,13 @@ public sealed class CleaningPreflightTests
             .ThrowAsync<ConfigPersistenceFailureException>(
                 "D-26 and success criterion #2 prevent any xEdit launch path on flush failure");
         _gameDetectionMock.DidNotReceive().DetectFromExecutable(Arg.Any<string>());
-        await _gameDetectionMock.DidNotReceiveWithAnyArgs().DetectFromLoadOrderAsync(default!, default);
+        await _gameDetectionMock.DidNotReceiveWithAnyArgs().DetectFromLoadOrderAsync(null!, CancellationToken.None);
         _gameDetectionMock.DidNotReceive().DetectVariant(Arg.Any<GameType>(), Arg.Any<IReadOnlyList<string>?>());
         _validationMock.DidNotReceive().ValidatePluginFile(Arg.Any<PluginInfo>());
-        await _mo2ValidationMock.DidNotReceiveWithAnyArgs().ValidateMo2ExecutableAsync(default!);
+        await _mo2ValidationMock.DidNotReceiveWithAnyArgs().ValidateMo2ExecutableAsync(null!);
         await _cleaningServiceMock.DidNotReceive().ValidateEnvironmentAsync(Arg.Any<CancellationToken>());
-        await _cleaningServiceMock.DidNotReceiveWithAnyArgs().CleanPluginAsync(default!, default, default);
-        await _configMock.DidNotReceiveWithAnyArgs().LoadUserConfigAsync(default);
+        await _cleaningServiceMock.DidNotReceiveWithAnyArgs().CleanPluginAsync(null!);
+        await _configMock.DidNotReceiveWithAnyArgs().LoadUserConfigAsync();
         await _configMock.Received(1).FlushPendingSavesAsync(Arg.Any<CancellationToken>());
     }
 

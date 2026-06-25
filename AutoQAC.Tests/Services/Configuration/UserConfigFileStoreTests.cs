@@ -50,7 +50,8 @@ public sealed class UserConfigFileStoreTests : IDisposable
         await store.WriteAsync(NewConfig(123), CancellationToken.None);
 
         File.Exists(store.SettingsFilePath).Should().BeTrue();
-        File.ReadAllText(store.SettingsFilePath).Should().Contain("Cleaning_Timeout: 123");
+        var contents = await File.ReadAllTextAsync(store.SettingsFilePath);
+        contents.Should().Contain("Cleaning_Timeout: 123");
         Directory.EnumerateFiles(_testDirectory, "*.tmp").Should().BeEmpty();
         moved.Should().BeTrue("new settings files should be created by moving the temp file into place");
     }
@@ -73,7 +74,8 @@ public sealed class UserConfigFileStoreTests : IDisposable
 
         await store.WriteAsync(NewConfig(456), CancellationToken.None);
 
-        File.ReadAllText(path).Should().Contain("Cleaning_Timeout: 456");
+        var contents = await File.ReadAllTextAsync(path);
+        contents.Should().Contain("Cleaning_Timeout: 456");
         Directory.EnumerateFiles(_testDirectory, "*.tmp").Should().BeEmpty();
         replaced.Should().BeTrue("existing settings files should use File.Replace semantics");
     }
@@ -103,8 +105,9 @@ public sealed class UserConfigFileStoreTests : IDisposable
         var store = new UserConfigFileStore(Substitute.For<ILoggingService>(), _testDirectory);
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
+        var token = cts.Token;
 
-        await FluentActions.Awaiting(() => store.WriteAsync(NewConfig(321), cts.Token))
+        await FluentActions.Awaiting(() => store.WriteAsync(NewConfig(321), token))
             .Should().ThrowAsync<OperationCanceledException>();
 
         Directory.EnumerateFiles(_testDirectory, "*.tmp").Should().BeEmpty();

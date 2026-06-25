@@ -16,7 +16,7 @@ public sealed class AppStateTests
     /// </summary>
     [Theory]
     [InlineData("plugins.txt", true)]
-    [InlineData("C:\\Games\\plugins.txt", true)]
+    [InlineData(@"C:\Games\plugins.txt", true)]
     [InlineData("/home/user/plugins.txt", true)]
     [InlineData("", false)]
     [InlineData(null, false)]
@@ -35,7 +35,7 @@ public sealed class AppStateTests
     /// </summary>
     [Theory]
     [InlineData("ModOrganizer.exe", true)]
-    [InlineData("C:\\MO2\\ModOrganizer.exe", true)]
+    [InlineData(@"C:\MO2\ModOrganizer.exe", true)]
     [InlineData("", false)]
     [InlineData(null, false)]
     public void IsMo2Configured_ShouldReturnCorrectValue(string? path, bool expected)
@@ -53,7 +53,7 @@ public sealed class AppStateTests
     /// </summary>
     [Theory]
     [InlineData("SSEEdit.exe", true)]
-    [InlineData("C:\\xEdit\\SSEEdit64.exe", true)]
+    [InlineData(@"C:\xEdit\SSEEdit64.exe", true)]
     [InlineData("", false)]
     [InlineData(null, false)]
     public void IsXEditConfigured_ShouldReturnCorrectValue(string? path, bool expected)
@@ -191,13 +191,19 @@ public sealed class AppStateTests
                 ExcludedPluginPaths = new HashSet<string>()
             };
         var state2 = new AppState { Progress = 5, LoadOrderPath = "test.txt" }
-            with { CleanedPlugins = state1.CleanedPlugins, SkippedPlugins = state1.SkippedPlugins,
-                   FailedPlugins = state1.FailedPlugins, PluginsToClean = state1.PluginsToClean,
-                   ExcludedPluginPaths = state1.ExcludedPluginPaths };
+            with
+            {
+                CleanedPlugins = state1.CleanedPlugins, SkippedPlugins = state1.SkippedPlugins,
+                FailedPlugins = state1.FailedPlugins, PluginsToClean = state1.PluginsToClean,
+                ExcludedPluginPaths = state1.ExcludedPluginPaths
+            };
         var state3 = new AppState { Progress = 10, LoadOrderPath = "test.txt" }
-            with { CleanedPlugins = state1.CleanedPlugins, SkippedPlugins = state1.SkippedPlugins,
-                   FailedPlugins = state1.FailedPlugins, PluginsToClean = state1.PluginsToClean,
-                   ExcludedPluginPaths = state1.ExcludedPluginPaths };
+            with
+            {
+                CleanedPlugins = state1.CleanedPlugins, SkippedPlugins = state1.SkippedPlugins,
+                FailedPlugins = state1.FailedPlugins, PluginsToClean = state1.PluginsToClean,
+                ExcludedPluginPaths = state1.ExcludedPluginPaths
+            };
 
         // Assert
         state1.Should().Be(state2, "same property values and shared collection references should be equal");
@@ -205,29 +211,44 @@ public sealed class AppStateTests
     }
 
     /// <summary>
-    /// Verifies that collections in AppState are properly compared.
+    /// Verifies that record equality compares collections by reference, not by contents.
     /// </summary>
     [Fact]
-    public void Equality_ShouldConsiderCollectionContents()
+    public void Equality_ShouldCompareCollectionsByReference()
     {
         // Arrange
-        var plugins1 = new List<PluginInfo> 
-        { 
-            new() { FileName = "a.esp", FullPath = "a.esp" }, 
-            new() { FileName = "b.esp", FullPath = "b.esp" } 
+        var plugins1 = new List<PluginInfo>
+        {
+            new() { FileName = "a.esp", FullPath = "a.esp" },
+            new() { FileName = "b.esp", FullPath = "b.esp" }
         };
-        var plugins2 = new List<PluginInfo> 
-        { 
-            new() { FileName = "a.esp", FullPath = "a.esp" }, 
-            new() { FileName = "b.esp", FullPath = "b.esp" } 
+        var plugins2 = new List<PluginInfo>
+        {
+            new() { FileName = "a.esp", FullPath = "a.esp" },
+            new() { FileName = "b.esp", FullPath = "b.esp" }
         };
 
         var state1 = new AppState { PluginsToClean = plugins1 };
-        var state2 = new AppState { PluginsToClean = plugins2 };
+        var state2 = new AppState { PluginsToClean = plugins2 }
+            with
+            {
+                CleanedPlugins = state1.CleanedPlugins,
+                SkippedPlugins = state1.SkippedPlugins,
+                FailedPlugins = state1.FailedPlugins,
+                ExcludedPluginPaths = state1.ExcludedPluginPaths
+            };
+        var state3 = new AppState
+        {
+            PluginsToClean = state1.PluginsToClean,
+            CleanedPlugins = state1.CleanedPlugins,
+            SkippedPlugins = state1.SkippedPlugins,
+            FailedPlugins = state1.FailedPlugins,
+            ExcludedPluginPaths = state1.ExcludedPluginPaths
+        };
 
-        // Note: Record equality for collections depends on reference equality by default
-        // So this test documents the actual behavior
-        // For value-based collection comparison, custom equality logic would be needed
+        // Assert
+        state1.Should().NotBe(state2, "records compare collection references, not equivalent collection contents");
+        state1.Should().Be(state3, "records should be equal when collection references are shared");
     }
 
     #endregion
@@ -241,7 +262,8 @@ public sealed class AppStateTests
     public void HashSetProperties_ShouldPreventDuplicates()
     {
         // Arrange
-        var cleaned = new HashSet<string> { "plugin.esp", "plugin.esp", "PLUGIN.ESP" };
+        var cleaned = new HashSet<string> { "plugin.esp", "PLUGIN.ESP" };
+        cleaned.Add("plugin.esp").Should().BeFalse("HashSet should reject an exact duplicate entry");
 
         var state = new AppState { CleanedPlugins = cleaned };
 

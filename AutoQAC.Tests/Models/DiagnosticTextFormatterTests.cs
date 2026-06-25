@@ -169,7 +169,8 @@ public sealed class DiagnosticTextFormatterTests
     [InlineData("Exception: boom")]
     [InlineData("boom at AutoQAC.Services.Cleaning.CleaningService")]
     [InlineData("   at AutoQAC.Services.Cleaning.CleaningService.Start()")]
-    public void SafeFailureSummary_WhenCandidateMatchesUnsafeCaseInsensitivePatterns_ReturnsFallback(string unsafeCandidate)
+    public void SafeFailureSummary_WhenCandidateMatchesUnsafeCaseInsensitivePatterns_ReturnsFallback(
+        string unsafeCandidate)
     {
         var message = DiagnosticTextFormatter.SafeFailureSummary(unsafeCandidate, CleaningFallback);
 
@@ -179,7 +180,8 @@ public sealed class DiagnosticTextFormatterTests
     [Fact]
     public void SafeFailureSummary_WhenCandidateIsSafe_ReturnsTrimmedCandidate()
     {
-        var message = DiagnosticTextFormatter.SafeFailureSummary("  Cleaning timed out after 2 attempts.  ", CleaningFallback);
+        var message =
+            DiagnosticTextFormatter.SafeFailureSummary("  Cleaning timed out after 2 attempts.  ", CleaningFallback);
 
         message.Should().Be("Cleaning timed out after 2 attempts.");
     }

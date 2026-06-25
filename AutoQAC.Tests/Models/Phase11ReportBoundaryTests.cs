@@ -39,7 +39,8 @@ public sealed class Phase11ReportBoundaryTests
 
         // Assert
         report.Should().Contain(DiagnosticTextFormatter.ReportDisclaimer);
-        report.Should().Contain("Technical details are intentionally kept in AutoQAC logs and are not repeated in this report.");
+        report.Should()
+            .Contain("Technical details are intentionally kept in AutoQAC logs and are not repeated in this report.");
         report.Should().Contain("Sentinel.esp: Cleaning failed. See the latest AutoQAC log.");
         foreach (var sentinel in DiagnosticSentinels.UnsafeDiagnosticSentinels)
         {
@@ -84,5 +85,5 @@ public sealed class Phase11ReportBoundaryTests
     }
 
     private static int CountOccurrences(string text, string value) =>
-        text.Split(value, StringSplitOptions.None).Length - 1;
+        text.Split(value).Length - 1;
 }

@@ -10,14 +10,13 @@ using AutoQAC.Services.UI;
 using FluentAssertions;
 using NSubstitute;
 
-namespace AutoQAC.Tests.Services;
+namespace AutoQAC.Tests.Services.Cleaning;
 
 public sealed class CleaningTerminationCoordinatorTests : IDisposable
 {
     private readonly IProcessExecutionService _processMock;
     private readonly IHangDetectionService _hangMock;
     private readonly IStateService _stateMock;
-    private readonly ILoggingService _loggerMock;
     private readonly ICleaningTerminationCoordinator _sut;
     private readonly List<Process> _startedProcesses = [];
 
@@ -26,8 +25,8 @@ public sealed class CleaningTerminationCoordinatorTests : IDisposable
         _processMock = Substitute.For<IProcessExecutionService>();
         _hangMock = Substitute.For<IHangDetectionService>();
         _stateMock = Substitute.For<IStateService>();
-        _loggerMock = Substitute.For<ILoggingService>();
-        _sut = new CleaningTerminationCoordinator(_processMock, _hangMock, _stateMock, _loggerMock);
+        var loggerMock = Substitute.For<ILoggingService>();
+        _sut = new CleaningTerminationCoordinator(_processMock, _hangMock, _stateMock, loggerMock);
     }
 
     public void Dispose()
@@ -390,8 +389,8 @@ public sealed class CleaningTerminationCoordinatorTests : IDisposable
         });
 
         process.Should().NotBeNull("a real external process is needed to exercise termination paths safely");
-        _startedProcesses.Add(process!);
-        return process!;
+        _startedProcesses.Add(process);
+        return process;
     }
 
     /// <summary>
@@ -408,8 +407,8 @@ public sealed class CleaningTerminationCoordinatorTests : IDisposable
         });
 
         process.Should().NotBeNull("a real external process is needed to exercise pending target identity safely");
-        _startedProcesses.Add(process!);
-        return process!;
+        _startedProcesses.Add(process);
+        return process;
     }
 
     private Process StartShortLivedProcess()
