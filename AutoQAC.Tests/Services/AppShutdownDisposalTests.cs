@@ -48,14 +48,18 @@ public sealed class AppShutdownDisposalTests : IDisposable
             Settings = new AutoQacSettings { CleaningTimeout = 777 }
         });
 
-        // Act
-        ((IDisposable)provider).Dispose();
+        // Act — exercise the synchronous disposal cascade, mirroring App.Shutdown
+        // which calls provider.Dispose() (not DisposeAsync()).
+        // ReSharper disable once MethodHasAsyncOverload - intentionally testing the sync Dispose() path.
+        provider.Dispose();
 
         // Assert: disposed service should no longer accept calls
         await FluentActions.Awaiting(() => configService.LoadUserConfigAsync())
             .Should().ThrowAsync<ObjectDisposedException>();
 
-        // Assert: pending save was flushed during disposal cascade
+        // Assert: pending save was flushed during disposal cascade.
+        // This short-lived instance only reads config back; sync disposal is sufficient here.
+        // ReSharper disable once UseAwaitUsing - verification helper; async disposal adds no value.
         using var reloadedService = new ConfigurationService(logger, _testDirectory);
         var reloaded = await reloadedService.LoadUserConfigAsync();
         reloaded.Settings.CleaningTimeout.Should().Be(777);

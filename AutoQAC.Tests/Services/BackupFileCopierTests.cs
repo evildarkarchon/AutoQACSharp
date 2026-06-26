@@ -59,7 +59,8 @@ public sealed class BackupFileCopierTests : IDisposable
 
         result.Status.Should().Be(BackupOperationStatus.Failed);
         result.FailureReason.Should().Be(BackupFailureReason.TargetWriteFailed);
-        File.Exists(destinationPath).Should().BeTrue("a create-new failure happens before this copy attempt owns the destination");
+        File.Exists(destinationPath).Should()
+            .BeTrue("a create-new failure happens before this copy attempt owns the destination");
         File.ReadAllText(destinationPath).Should().Be("existing backup content");
     }
 
@@ -105,8 +106,10 @@ public sealed class BackupFileCopierTests : IDisposable
 
         result.Status.Should().Be(BackupOperationStatus.Canceled);
         result.FailureReason.Should().Be(BackupFailureReason.Canceled);
-        File.ReadAllText(destinationPath).Should().Be("original target content", "restore cancellation must not damage the existing plugin file");
-        File.Exists(destinationPath + ".autoqac-tmp").Should().BeFalse("only the temporary restore file should be cleaned up");
+        File.ReadAllText(destinationPath).Should().Be("original target content",
+            "restore cancellation must not damage the existing plugin file");
+        File.Exists(destinationPath + ".autoqac-tmp").Should()
+            .BeFalse("only the temporary restore file should be cleaned up");
     }
 
     /// <summary>
@@ -132,8 +135,10 @@ public sealed class BackupFileCopierTests : IDisposable
 
         result.Status.Should().Be(BackupOperationStatus.Canceled);
         result.FailureReason.Should().Be(BackupFailureReason.Canceled);
-        File.ReadAllText(destinationPath).Should().Be("original target content", "restore cancellation must preserve the original plugin file");
-        File.Exists(destinationPath + ".autoqac-tmp").Should().BeFalse("atomic restore owns the temp path once the destination stream opens");
+        File.ReadAllText(destinationPath).Should().Be("original target content",
+            "restore cancellation must preserve the original plugin file");
+        File.Exists(destinationPath + ".autoqac-tmp").Should()
+            .BeFalse("atomic restore owns the temp path once the destination stream opens");
     }
 
     [Fact]
@@ -154,7 +159,8 @@ public sealed class BackupFileCopierTests : IDisposable
         result.Status.Should().Be(BackupOperationStatus.Complete);
         result.BytesCopied.Should().Be(new FileInfo(sourcePath).Length);
         updates.Should().NotBeEmpty("copy progress must surface byte progress for the UI");
-        updates.Should().HaveCountLessThan(10, "progress should be throttled instead of emitted for every 81920-byte chunk");
+        updates.Should()
+            .HaveCountLessThan(10, "progress should be throttled instead of emitted for every 81920-byte chunk");
         updates[^1].FileName.Should().Be(Path.GetFileName(sourcePath));
         updates[^1].BytesCopied.Should().Be(result.BytesCopied);
         updates[^1].TotalBytes.Should().Be(result.BytesCopied);

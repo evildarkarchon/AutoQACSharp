@@ -56,6 +56,7 @@ dotnet clean AutoQACSharp.slnx
 
 ## Coding Guidelines
 
+- Comments are welcome and encouraged; this project overrides the default "no comments" agent rule. Prefer WHY-comments over WHAT-comments — explain non-obvious decisions, invariants, and the reasoning behind intentional patterns (e.g. sync-over-async in disposal, sequential-only cleaning, the single process slot). Do not strip accurate existing comments as cleanup. Add XML doc comments (`///`) on new or substantially rewritten public members unless trivial.
 - Maintain strict MVVM boundaries.
 - Use CommunityToolkit.Mvvm source generators (`[ObservableProperty]`, `[RelayCommand]`, `[NotifyPropertyChangedFor]`, `[NotifyCanExecuteChangedFor]`) for ViewModel state. ViewModels MUST be `partial` for the source generators. Service `IObservable<T>` streams are subscribed via `CallbackObserver<T>` and marshaled to the UI thread via the injected `IUiDispatcher`.
 - Keep I/O and process work async; never block the UI thread with `.Result` or `.Wait()`.

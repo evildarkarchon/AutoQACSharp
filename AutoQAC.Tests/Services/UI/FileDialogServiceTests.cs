@@ -19,7 +19,7 @@ public sealed class FileDialogServiceTests
     public void ParseFilter_ShouldParseStandardFormat()
     {
         // Arrange
-        var filter = "Text Files (*.txt)|*.txt|All Files (*.*)|*.*";
+        const string filter = "Text Files (*.txt)|*.txt|All Files (*.*)|*.*";
 
         // Act
         var result = InvokeParseFilter(filter);
@@ -41,7 +41,7 @@ public sealed class FileDialogServiceTests
     public void ParseFilter_ShouldHandleMultiplePatterns()
     {
         // Arrange
-        var filter = "Image Files (*.jpg;*.png;*.gif)|*.jpg;*.png;*.gif";
+        const string filter = "Image Files (*.jpg;*.png;*.gif)|*.jpg;*.png;*.gif";
 
         // Act
         var result = InvokeParseFilter(filter);
@@ -61,7 +61,7 @@ public sealed class FileDialogServiceTests
     public void ParseFilter_ShouldHandleEmptyString()
     {
         // Arrange
-        var filter = "";
+        const string filter = "";
 
         // Act
         var result = InvokeParseFilter(filter);
@@ -77,7 +77,7 @@ public sealed class FileDialogServiceTests
     public void ParseFilter_ShouldHandleMalformedFilter_OddParts()
     {
         // Arrange
-        var filter = "Text Files|*.txt|Orphan Part";
+        const string filter = "Text Files|*.txt|Orphan Part";
 
         // Act
         var result = InvokeParseFilter(filter);
@@ -96,7 +96,7 @@ public sealed class FileDialogServiceTests
     public void ParseFilter_ShouldHandleSingleFilter()
     {
         // Arrange
-        var filter = "Executables (*.exe)|*.exe";
+        const string filter = "Executables (*.exe)|*.exe";
 
         // Act
         var result = InvokeParseFilter(filter);
@@ -114,7 +114,7 @@ public sealed class FileDialogServiceTests
     public void ParseFilter_ShouldHandleSpecialCharactersInName()
     {
         // Arrange
-        var filter = "C# Source (*.cs)|*.cs";
+        const string filter = "C# Source (*.cs)|*.cs";
 
         // Act
         var result = InvokeParseFilter(filter);
@@ -132,7 +132,7 @@ public sealed class FileDialogServiceTests
     public void ParseFilter_ShouldHandleXEditFilter()
     {
         // Arrange
-        var filter = "Executables (*.exe)|*.exe|All Files (*.*)|*.*";
+        const string filter = "Executables (*.exe)|*.exe|All Files (*.*)|*.*";
 
         // Act
         var result = InvokeParseFilter(filter);
@@ -147,7 +147,7 @@ public sealed class FileDialogServiceTests
     public void BuildExtensionList_ShouldNormalizePickerExtensions()
     {
         // Arrange
-        var filter = "Executables (*.exe)|*.exe|All Files (*.*)|*.*";
+        const string filter = "Executables (*.exe)|*.exe|All Files (*.*)|*.*";
 
         // Act
         var result = FileDialogFilterMapper.BuildExtensionList(filter);
@@ -160,7 +160,7 @@ public sealed class FileDialogServiceTests
     public void BuildFileTypeChoices_ShouldPreserveFilterNamesAndNormalizePatterns()
     {
         // Arrange
-        var filter = "Images (*.jpg;*.png)|*.jpg;*.png|All Files (*.*)|*.*";
+        const string filter = "Images (*.jpg;*.png)|*.jpg;*.png|All Files (*.*)|*.*";
 
         // Act
         var result = FileDialogFilterMapper.BuildFileTypeChoices(filter);
