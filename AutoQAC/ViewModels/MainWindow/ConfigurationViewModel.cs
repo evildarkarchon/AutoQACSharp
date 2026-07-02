@@ -31,7 +31,6 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
     private readonly IPluginLoadingService _pluginLoadingService;
     private readonly IPluginRefreshCoordinator _pluginRefreshCoordinator;
     private readonly IPluginValidationService _pluginService;
-    private readonly IMo2InstanceService _mo2InstanceService;
     private readonly IStateService _stateService;
     private readonly IDisposable _skipListChangedSubscription;
     private readonly IDisposable _pluginRefreshStatusSubscription;
@@ -133,14 +132,15 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         _messageDialog = messageDialog;
         _pluginService = pluginService;
         _pluginLoadingService = pluginLoadingService;
-        _mo2InstanceService = mo2InstanceService ?? new Mo2InstanceService(logger);
+        var effectiveGameDetectionService = gameDetectionService ?? new GameDetectionService(logger);
         _pluginRefreshCoordinator = pluginRefreshCoordinator ?? new PluginRefreshCoordinator(
             pluginLoadingService,
             pluginIssueApproximationService ?? NoOpPluginIssueApproximationService.Instance,
             stateService,
             new PluginRefreshCapabilityPolicy(pluginLoadingService),
-            gameDetectionService ?? new GameDetectionService(logger),
             configService,
+            new SkipListPolicy(configService, effectiveGameDetectionService),
+            mo2InstanceService ?? new Mo2InstanceService(logger),
             logger);
         var dispatcher = uiDispatcher ?? new SynchronousFallbackDispatcher();
 
@@ -328,13 +328,10 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        _stateService.UpdateConfigurationPaths(path, Mo2Path, XEditPath);
-
         try
         {
-            LoadOrderPath = path;
-            await _pluginRefreshCoordinator.RefreshForGameAsync(
-                new PluginRefreshRequest(SelectedGame, GameDataFolder, path));
+            var projection = await _pluginRefreshCoordinator.RefreshForGameAsync(SelectedGame, path);
+            ApplyRefreshProjection(projection);
         }
         catch (FileNotFoundException ex)
         {
@@ -651,90 +648,27 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
 
     private async Task RefreshPluginsForGameAsync(GameType gameType)
     {
-        var customDataFolder = gameType == GameType.Unknown
-            ? null
-            : await _configService.GetGameDataFolderOverrideAsync(gameType);
-        HasGameDataFolderOverride = !string.IsNullOrWhiteSpace(customDataFolder);
-        GameDataFolder = gameType == GameType.Unknown
-            ? null
-            : _pluginLoadingService.GetGameDataFolder(gameType, customDataFolder);
+        var projection = await _pluginRefreshCoordinator.RefreshForGameAsync(gameType);
+        ApplyRefreshProjection(projection);
+    }
 
-        if (Mo2ModeEnabled && gameType != GameType.Unknown)
+    private void ApplyRefreshProjection(PluginRefreshProjection projection)
+    {
+        LoadOrderPath = projection.LoadOrderPath;
+        GameDataFolder = projection.GameDataFolder;
+        HasGameDataFolderOverride = projection.HasGameDataFolderOverride;
+
+        if (Mo2ModeEnabled && projection.GameType != GameType.Unknown)
         {
-            await RefreshMo2PluginsForGameAsync(gameType);
+            Mo2InstancePath = projection.Mo2InstancePath;
+            IsMo2InstanceOverride = projection.IsMo2InstanceOverride;
+            IsMo2InstanceValid = projection.IsMo2InstanceValid;
+            SetAvailableProfiles(projection.Profiles);
+            SetSelectedProfileWithoutPersistence(projection.SelectedProfile);
             return;
         }
 
         ClearMo2ProfileState();
-
-        LoadOrderPath = _pluginLoadingService.IsGameSupportedByMutagen(gameType)
-            ? null
-            : await ResolveLoadOrderPathAsync(gameType);
-
-        _stateService.UpdateConfigurationPaths(LoadOrderPath, Mo2Path, XEditPath, null);
-        await _pluginRefreshCoordinator.RefreshForGameAsync(
-            new PluginRefreshRequest(
-                gameType,
-                GameDataFolder,
-                LoadOrderPath,
-                DisableSkipLists: DisableSkipListsEnabled));
-    }
-
-    private async Task RefreshMo2PluginsForGameAsync(GameType gameType)
-    {
-        LoadOrderPath = null;
-        var instanceOverride = await _configService.GetMo2InstanceOverrideAsync(gameType);
-        IsMo2InstanceOverride = !string.IsNullOrWhiteSpace(instanceOverride);
-
-        var instance = await _mo2InstanceService.ResolveInstanceAsync(gameType, Mo2Path, instanceOverride);
-        if (instance is null)
-        {
-            Mo2InstancePath = instanceOverride;
-            IsMo2InstanceValid = string.IsNullOrWhiteSpace(Mo2InstancePath) ? null : Directory.Exists(Mo2InstancePath);
-            ClearAvailableProfiles();
-            SetSelectedProfileWithoutPersistence(null);
-            _stateService.UpdateConfigurationPaths(null, Mo2Path, XEditPath, null);
-            _stateService.SetPluginsToClean([]);
-            StatusText = $"No MO2 instance found for {gameType}. Browse to the instance folder.";
-            return;
-        }
-
-        Mo2InstancePath = instance.BaseDirectory;
-        IsMo2InstanceValid = Directory.Exists(instance.BaseDirectory);
-
-        var profiles = await Task.Run(() => _mo2InstanceService.GetProfiles(instance));
-        SetAvailableProfiles(profiles);
-
-        var persistedProfile = await _configService.GetMo2ProfileAsync(gameType);
-        var profile = _mo2InstanceService.ChooseProfile(instance, profiles, persistedProfile);
-        SetSelectedProfileWithoutPersistence(profile);
-        _stateService.UpdateConfigurationPaths(null, Mo2Path, XEditPath, profile);
-
-        if (string.IsNullOrWhiteSpace(profile))
-        {
-            _stateService.SetPluginsToClean([]);
-            StatusText = $"No MO2 profiles with loadorder.txt were found for {gameType}.";
-            return;
-        }
-
-        var mo2LoadOrderPath = _mo2InstanceService.GetLoadOrderPath(instance, profile);
-        if (string.IsNullOrWhiteSpace(mo2LoadOrderPath) || !File.Exists(mo2LoadOrderPath))
-        {
-            _stateService.SetPluginsToClean([]);
-            StatusText = $"MO2 profile '{profile}' does not contain a loadorder.txt.";
-            return;
-        }
-
-        var pathMap = await Task.Run(() => _mo2InstanceService.BuildPluginPathMap(instance, profile, GameDataFolder));
-        await _pluginRefreshCoordinator.RefreshForGameAsync(
-            new PluginRefreshRequest(
-                gameType,
-                GameDataFolder,
-                DisableSkipLists: DisableSkipListsEnabled,
-                Mo2Mode: true,
-                Mo2LoadOrderPath: mo2LoadOrderPath,
-                Mo2PathMap: pathMap,
-                Mo2BaseDataFolder: GameDataFolder));
     }
 
     private void SetAvailableProfiles(IReadOnlyList<string> profiles)
@@ -770,32 +704,6 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         {
             _suppressSelectedProfileChanged = false;
         }
-    }
-
-    private async Task<string?> ResolveLoadOrderPathAsync(GameType gameType)
-    {
-        if (gameType == GameType.Unknown)
-        {
-            return null;
-        }
-
-        var configuredPath = await _configService.GetGameLoadOrderOverrideAsync(gameType);
-        if (!string.IsNullOrWhiteSpace(configuredPath))
-        {
-            return configuredPath;
-        }
-
-        configuredPath = _pluginLoadingService.GetDefaultLoadOrderPath(gameType);
-        if (!string.IsNullOrWhiteSpace(configuredPath))
-        {
-            await _configService.SetGameLoadOrderOverrideAsync(gameType, configuredPath);
-            _logger.Information(
-                "Auto-detected load order path for {GameType}: {ConfiguredPath}",
-                gameType,
-                configuredPath);
-        }
-
-        return configuredPath;
     }
 
     /// <summary>

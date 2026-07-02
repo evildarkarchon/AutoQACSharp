@@ -286,7 +286,11 @@ public sealed class MainWindowViewModelTests
             await vm.Configuration.ConfigureLoadOrderCommand.ExecuteAsync(null);
 
             // Assert
-            _stateServiceMock.Received(1).UpdateConfigurationPaths(tempFile, Arg.Any<string>(), Arg.Any<string>());
+            _stateServiceMock.Received(1).UpdateConfigurationPaths(
+                tempFile,
+                Arg.Any<string?>(),
+                Arg.Any<string?>(),
+                Arg.Any<string?>());
             _stateServiceMock.Received(1).SetPluginsToClean(Arg.Is<List<PluginInfo>>(l => l.Count == 2 && l[0].FileName == "Update.esm"));
             await _configServiceMock.Received().SetGameLoadOrderOverrideAsync(Arg.Any<GameType>(), tempFile, Arg.Any<CancellationToken>());
         }
@@ -1006,11 +1010,14 @@ public sealed class MainWindowViewModelTests
             });
 
         refreshCoordinator.StatusChanged.Returns(Observable.Never<PluginRefreshStatus>());
-        refreshCoordinator.RefreshForGameAsync(Arg.Any<PluginRefreshRequest>(), Arg.Any<CancellationToken>())
+        refreshCoordinator.RefreshForGameAsync(
+                Arg.Any<GameType>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 refreshObserved.TrySetResult(true);
-                return Task.CompletedTask;
+                return Task.FromResult(new PluginRefreshProjection(GameType.Unknown, AvailableProfiles: []));
             });
 
         var vm = new ConfigurationViewModel(

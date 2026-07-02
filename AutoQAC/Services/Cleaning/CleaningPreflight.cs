@@ -26,7 +26,8 @@ public sealed class CleaningPreflight(
     ICleaningService cleaningService,
     IStateService stateService,
     ILoggingService logger,
-    IMo2InstanceService? mo2InstanceService = null)
+    IMo2InstanceService? mo2InstanceService = null,
+    ISkipListPolicy? skipListPolicy = null)
     : ICleaningPreflight
 {
     /// <inheritdoc />
@@ -101,15 +102,7 @@ public sealed class CleaningPreflight(
             throw new InvalidOperationException("Configuration is invalid");
         }
 
-        // 3b. Detect game variant for skip list handling
-        var pluginNames = allPlugins.Select(p => p.FileName).ToList();
-        var gameVariant = gameDetection.DetectVariant(gameType, pluginNames);
-        if (gameVariant != GameVariant.None)
-        {
-            logger.Information("Detected game variant: {Variant}", gameVariant);
-        }
-
-        // 4. Apply skip list filtering (respecting DisableSkipLists setting)
+        // 4. Read settings that drive policy checks. The required disk flush already ran above.
         var userConfig = await configService.LoadUserConfigAsync(ct).ConfigureAwait(false);
         var disableSkipLists = userConfig.Settings.DisableSkipLists;
         var isMo2Mode = userConfig.Settings.Mo2Mode;
@@ -165,31 +158,32 @@ public sealed class CleaningPreflight(
 
         var excluded = config.ExcludedPluginPaths;
         var rows = new List<PreflightPluginRow>();
-        HashSet<string>? skipSet = null;
-        if (!disableSkipLists)
+        var effectiveSkipListPolicy = skipListPolicy ?? new SkipListPolicy(configService, gameDetection);
+        var skipEvaluation = await effectiveSkipListPolicy.EvaluateAsync(
+                gameType,
+                allPlugins,
+                disableSkipLists,
+                ct)
+            .ConfigureAwait(false);
+        var gameVariant = skipEvaluation.Variant;
+        if (gameVariant != GameVariant.None)
         {
-            var skipList = await configService.GetSkipListAsync(gameType, gameVariant, ct)
-                .ConfigureAwait(false);
-            skipSet = new HashSet<string>(skipList, StringComparer.OrdinalIgnoreCase);
+            logger.Information("Detected game variant: {Variant}", gameVariant);
         }
 
-        foreach (var plugin in allPlugins)
+        foreach (var decision in skipEvaluation.Decisions)
         {
             ct.ThrowIfCancellationRequested();
-            var enrichedPlugin = plugin with
-            {
-                IsInSkipList = skipSet?.Contains(plugin.FileName) ?? plugin.IsInSkipList,
-                DetectedGameType = gameType
-            };
+            var enrichedPlugin = decision.Plugin;
 
-            if (excluded.Contains(plugin.FullPath))
+            if (excluded.Contains(enrichedPlugin.FullPath))
             {
                 rows.Add(
                     new PreflightPluginRow(enrichedPlugin, PreflightDecision.Skip, PreflightSkipReason.NotSelected));
                 continue;
             }
 
-            if (skipSet != null && skipSet.Contains(plugin.FileName))
+            if (decision.ShouldSkipByPolicy)
             {
                 rows.Add(new PreflightPluginRow(enrichedPlugin, PreflightDecision.Skip,
                     PreflightSkipReason.InSkipList));

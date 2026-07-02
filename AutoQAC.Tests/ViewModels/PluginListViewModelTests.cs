@@ -492,10 +492,13 @@ public sealed class PluginListViewModelTests
 
         public IObservable<PluginRefreshStatus> StatusChanged => _statusChanged;
 
-        public Task RefreshForGameAsync(PluginRefreshRequest request, CancellationToken ct = default) => Task.CompletedTask;
+        public Task<PluginRefreshProjection> RefreshForGameAsync(
+            GameType gameType,
+            string? selectedLoadOrderPath = null,
+            CancellationToken ct = default) =>
+            Task.FromResult(new PluginRefreshProjection(gameType, AvailableProfiles: []));
 
         public async Task RefreshSelectedApproximationsAsync(
-            PluginRefreshRequest request,
             IReadOnlyList<PluginRefreshTarget> selectedTargets,
             CancellationToken ct = default)
         {

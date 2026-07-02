@@ -1,6 +1,8 @@
 using AutoQAC.Models;
+using AutoQAC.Models.Configuration;
 using AutoQAC.Services.Configuration;
 using AutoQAC.Services.GameDetection;
+using AutoQAC.Services.MO2;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Services.State;
 using FluentAssertions;
@@ -15,9 +17,8 @@ public sealed class PluginRefreshCoordinatorTests
     {
         var stateService = new StateService();
         var sut = CreateCoordinator(stateService);
-        var request = new PluginRefreshRequest(GameType.SkyrimSe, @"C:\Game\Data");
 
-        await sut.RefreshForGameAsync(request, CancellationToken.None);
+        await sut.RefreshForGameAsync(GameType.SkyrimSe, ct: CancellationToken.None);
 
         stateService.CurrentState.PluginsToClean.Should().NotBeEmpty(
             "rows must be published before the coordinator starts approximation analysis");
@@ -30,14 +31,14 @@ public sealed class PluginRefreshCoordinatorTests
     public async Task RefreshSelectedApproximationsAsync_UsesSnapshotAndDoesNotAnalyzeDeselectedRows()
     {
         var stateService = new StateService();
+        stateService.UpdateState(s => s with { CurrentGameType = GameType.SkyrimSe });
         var sut = CreateCoordinator(stateService);
-        var request = new PluginRefreshRequest(GameType.SkyrimSe, @"C:\Game\Data");
         var selectedTargets = new List<PluginRefreshTarget>
         {
             new("Selected.esp", @"C:\Game\Data\Selected.esp")
         };
 
-        await sut.RefreshSelectedApproximationsAsync(request, selectedTargets, CancellationToken.None);
+        await sut.RefreshSelectedApproximationsAsync(selectedTargets, CancellationToken.None);
         selectedTargets.Add(new PluginRefreshTarget("LateSelection.esp", @"C:\Game\Data\LateSelection.esp"));
 
         stateService.CurrentState.PluginsToClean.Should().Contain(plugin =>
@@ -51,8 +52,8 @@ public sealed class PluginRefreshCoordinatorTests
     public async Task RefreshSelectedApproximationsAsync_ShouldPreserveNonSelectedPluginRows()
     {
         var stateService = new StateService();
+        stateService.UpdateState(s => s with { CurrentGameType = GameType.SkyrimSe });
         var sut = CreateCoordinator(stateService);
-        var request = new PluginRefreshRequest(GameType.SkyrimSe, @"C:\Game\Data");
         var originalUnselectedApproximation = PluginIssueApproximation.Available(9, 8, 7);
         stateService.SetPluginsToClean([
             new PluginInfo
@@ -72,7 +73,6 @@ public sealed class PluginRefreshCoordinatorTests
         ]);
 
         await sut.RefreshSelectedApproximationsAsync(
-            request,
             [new PluginRefreshTarget("Selected.esp", @"C:\Game\Data\Selected.esp")],
             CancellationToken.None);
 
@@ -86,19 +86,39 @@ public sealed class PluginRefreshCoordinatorTests
     }
 
     [Fact]
+    public async Task RefreshSelectedApproximationsAsync_RebuildsContextForSameGameConfigurationChanges()
+    {
+        var stateService = new StateService();
+        var configurationService = CreateConfigurationService();
+        configurationService.GetGameDataFolderOverrideAsync(GameType.SkyrimSe, Arg.Any<CancellationToken>())
+            .Returns(@"C:\Initial\Data", @"C:\Updated\Data");
+        var approximationService = new RecordingPluginIssueApproximationService();
+        var sut = CreateCoordinator(
+            stateService,
+            configurationService,
+            approximationService: approximationService);
+
+        await sut.RefreshForGameAsync(GameType.SkyrimSe, ct: CancellationToken.None);
+        await sut.RefreshSelectedApproximationsAsync(
+            [new PluginRefreshTarget("Selected.esp", @"C:\Updated\Data\Selected.esp")],
+            CancellationToken.None);
+
+        approximationService.DirectDataFolders.Should().EndWith(
+            @"C:\Updated\Data",
+            "selected refresh must rebuild same-game context after path-affecting configuration changes");
+    }
+
+    [Fact]
     public async Task RefreshForGameAsync_WhenDisableSkipListsTrue_ShouldNotMarkSkipListedPluginsAsInSkipList()
     {
         var stateService = new StateService();
         var configurationService = CreateConfigurationServiceWithSkipList(
             GameType.SkyrimSe,
-            ["Completed.esp"]);
+            ["Completed.esp"],
+            disableSkipLists: true);
         var sut = CreateCoordinator(stateService, configurationService);
-        var request = new PluginRefreshRequest(
-            GameType.SkyrimSe,
-            @"C:\Game\Data",
-            DisableSkipLists: true);
 
-        await sut.RefreshForGameAsync(request, CancellationToken.None);
+        await sut.RefreshForGameAsync(GameType.SkyrimSe, ct: CancellationToken.None);
 
         stateService.CurrentState.PluginsToClean
             .Should().Contain(plugin =>
@@ -114,12 +134,8 @@ public sealed class PluginRefreshCoordinatorTests
             GameType.SkyrimSe,
             ["Completed.esp"]);
         var sut = CreateCoordinator(stateService, configurationService);
-        var request = new PluginRefreshRequest(
-            GameType.SkyrimSe,
-            @"C:\Game\Data",
-            DisableSkipLists: false);
 
-        await sut.RefreshForGameAsync(request, CancellationToken.None);
+        await sut.RefreshForGameAsync(GameType.SkyrimSe, ct: CancellationToken.None);
 
         stateService.CurrentState.PluginsToClean
             .Should().Contain(plugin =>
@@ -136,7 +152,6 @@ public sealed class PluginRefreshCoordinatorTests
         using var subscription = sut.StatusChanged.Subscribe(statuses.Add);
 
         await sut.RefreshSelectedApproximationsAsync(
-            new PluginRefreshRequest(GameType.SkyrimSe, @"C:\Game\Data"),
             [],
             CancellationToken.None);
 
@@ -155,8 +170,8 @@ public sealed class PluginRefreshCoordinatorTests
         using var subscription = sut.StatusChanged.Subscribe(statuses.Add);
 
         await sut.RefreshForGameAsync(
-            new PluginRefreshRequest(GameType.SkyrimSe, @"C:\Game\Data"),
-            CancellationToken.None);
+            GameType.SkyrimSe,
+            ct: CancellationToken.None);
 
         statuses.Should().Contain(status =>
             status.Kind == PluginRefreshStatusKind.FullRefreshCompleted &&
@@ -171,8 +186,8 @@ public sealed class PluginRefreshCoordinatorTests
         var stateService = new StateService();
         var sut = CreateCoordinator(stateService);
 
-        var firstRefresh = sut.RefreshForGameAsync(new PluginRefreshRequest(GameType.SkyrimSe, @"C:\OldGame\Data"), CancellationToken.None);
-        await sut.RefreshForGameAsync(new PluginRefreshRequest(GameType.Fallout4, @"C:\NewGame\Data"), CancellationToken.None);
+        var firstRefresh = sut.RefreshForGameAsync(GameType.SkyrimSe, ct: CancellationToken.None);
+        await sut.RefreshForGameAsync(GameType.Fallout4, ct: CancellationToken.None);
         await firstRefresh;
 
         stateService.CurrentState.PluginsToClean.Should().OnlyContain(plugin =>
@@ -184,12 +199,12 @@ public sealed class PluginRefreshCoordinatorTests
     public async Task CancelActiveRefresh_ManualCancelKeepsCompletedResultsAndPublishesCanceledStatus()
     {
         var stateService = new StateService();
+        stateService.UpdateState(s => s with { CurrentGameType = GameType.SkyrimSe });
         var sut = CreateCoordinator(stateService);
         var statuses = new List<PluginRefreshStatus>();
         using var subscription = sut.StatusChanged.Subscribe(statuses.Add);
 
         var refresh = sut.RefreshSelectedApproximationsAsync(
-            new PluginRefreshRequest(GameType.SkyrimSe, @"C:\Game\Data"),
             [
                 new PluginRefreshTarget("Completed.esp", @"C:\Game\Data\Completed.esp"),
                 new PluginRefreshTarget("NotStarted.esp", @"C:\Game\Data\NotStarted.esp")
@@ -220,7 +235,7 @@ public sealed class PluginRefreshCoordinatorTests
         var statuses = new List<PluginRefreshStatus>();
         using var subscription = sut.StatusChanged.Subscribe(statuses.Add);
 
-        var refresh = sut.RefreshForGameAsync(new PluginRefreshRequest(GameType.SkyrimSe, @"C:\Game\Data"), CancellationToken.None);
+        var refresh = sut.RefreshForGameAsync(GameType.SkyrimSe, ct: CancellationToken.None);
         await loadingService.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
         sut.CancelActiveRefresh(PluginRefreshCancelReason.Manual);
@@ -241,10 +256,10 @@ public sealed class PluginRefreshCoordinatorTests
         var loadingService = new DelayedPluginLoadingService(delayOnlyFirstCall: true);
         var sut = CreateCoordinator(stateService, pluginLoadingService: loadingService);
 
-        var firstRefresh = sut.RefreshForGameAsync(new PluginRefreshRequest(GameType.SkyrimSe, @"C:\OldGame\Data"), CancellationToken.None);
+        var firstRefresh = sut.RefreshForGameAsync(GameType.SkyrimSe, ct: CancellationToken.None);
         await loadingService.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
-        await sut.RefreshForGameAsync(new PluginRefreshRequest(GameType.Fallout4, @"C:\NewGame\Data"), CancellationToken.None);
+        await sut.RefreshForGameAsync(GameType.Fallout4, ct: CancellationToken.None);
         var act = async () => await firstRefresh.WaitAsync(TimeSpan.FromSeconds(5));
 
         await act.Should().NotThrowAsync<ObjectDisposedException>(
@@ -266,7 +281,7 @@ public sealed class PluginRefreshCoordinatorTests
         var statuses = new List<PluginRefreshStatus>();
         using var subscription = sut.StatusChanged.Subscribe(statuses.Add);
 
-        var refresh = sut.RefreshForGameAsync(new PluginRefreshRequest(GameType.SkyrimSe, @"C:\Game\Data"), CancellationToken.None);
+        var refresh = sut.RefreshForGameAsync(GameType.SkyrimSe, ct: CancellationToken.None);
         await loadingService.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
         sut.CancelActiveRefresh(PluginRefreshCancelReason.CleaningStarted);
@@ -289,7 +304,7 @@ public sealed class PluginRefreshCoordinatorTests
         var statuses = new List<PluginRefreshStatus>();
         using var subscription = sut.StatusChanged.Subscribe(statuses.Add);
 
-        await sut.RefreshForGameAsync(new PluginRefreshRequest(GameType.SkyrimSe, @"C:\Game\Data"), CancellationToken.None);
+        await sut.RefreshForGameAsync(GameType.SkyrimSe, ct: CancellationToken.None);
 
         stateService.CurrentState.PluginsToClean.Should().OnlyContain(plugin =>
             plugin.Approximation.Status == PluginIssueApproximationStatus.Unavailable,
@@ -317,7 +332,7 @@ public sealed class PluginRefreshCoordinatorTests
             ["Completed.esp"]);
         var sut = CreateCoordinator(stateService, configurationService, gameDetectionService: gameDetectionService);
 
-        await sut.RefreshForGameAsync(new PluginRefreshRequest(GameType.SkyrimSe, @"C:\Game\Data"), CancellationToken.None);
+        await sut.RefreshForGameAsync(GameType.SkyrimSe, ct: CancellationToken.None);
 
         await configurationService.Received(1)
             .GetSkipListAsync(GameType.SkyrimSe, GameVariant.Enderal, Arg.Any<CancellationToken>());
@@ -343,7 +358,7 @@ public sealed class PluginRefreshCoordinatorTests
             ["Completed.esp"]);
         var sut = CreateCoordinator(stateService, configurationService, gameDetectionService: gameDetectionService);
 
-        await sut.RefreshForGameAsync(new PluginRefreshRequest(GameType.FalloutNewVegas, @"C:\Game\Data"), CancellationToken.None);
+        await sut.RefreshForGameAsync(GameType.FalloutNewVegas, ct: CancellationToken.None);
 
         await configurationService.Received(1)
             .GetSkipListAsync(GameType.FalloutNewVegas, GameVariant.Ttw, Arg.Any<CancellationToken>());
@@ -358,12 +373,16 @@ public sealed class PluginRefreshCoordinatorTests
         IPluginIssueApproximationService? approximationService = null,
         IGameDetectionService? gameDetectionService = null)
     {
+        gameDetectionService ??= CreateDefaultGameDetectionService();
+        var configurationService = CreateConfigurationService();
         return new PluginRefreshCoordinator(
             pluginLoadingService ?? new TestPluginLoadingService(),
             approximationService ?? new TestPluginIssueApproximationService(),
             stateService,
             new TestPluginRefreshCapabilityPolicy(),
-            gameDetectionService ?? CreateDefaultGameDetectionService());
+            configurationService,
+            new SkipListPolicy(configurationService, gameDetectionService),
+            Substitute.For<IMo2InstanceService>());
     }
 
     private static PluginRefreshCoordinator CreateCoordinator(
@@ -372,25 +391,61 @@ public sealed class PluginRefreshCoordinatorTests
         IPluginLoadingService? pluginLoadingService = null,
         IPluginIssueApproximationService? approximationService = null,
         IGameDetectionService? gameDetectionService = null) =>
+        CreateCoordinatorWithConfiguration(
+            stateService,
+            configurationService,
+            pluginLoadingService,
+            approximationService,
+            gameDetectionService ?? CreateDefaultGameDetectionService());
+
+    private static PluginRefreshCoordinator CreateCoordinatorWithConfiguration(
+        IStateService stateService,
+        IConfigurationService configurationService,
+        IPluginLoadingService? pluginLoadingService,
+        IPluginIssueApproximationService? approximationService,
+        IGameDetectionService gameDetectionService) =>
         new(
             pluginLoadingService ?? new TestPluginLoadingService(),
             approximationService ?? new TestPluginIssueApproximationService(),
             stateService,
             new TestPluginRefreshCapabilityPolicy(),
-            gameDetectionService ?? CreateDefaultGameDetectionService(),
-            configurationService);
+            configurationService,
+            new SkipListPolicy(configurationService, gameDetectionService),
+            Substitute.For<IMo2InstanceService>());
+
+    private static IConfigurationService CreateConfigurationService(bool disableSkipLists = false)
+    {
+        var configurationService = Substitute.For<IConfigurationService>();
+        configurationService.LoadUserConfigAsync(Arg.Any<CancellationToken>())
+            .Returns(new UserConfiguration
+            {
+                Settings = new AutoQacSettings { DisableSkipLists = disableSkipLists }
+            });
+        configurationService.GetGameDataFolderOverrideAsync(Arg.Any<GameType>(), Arg.Any<CancellationToken>())
+            .Returns(@"C:\Game\Data");
+        configurationService.GetGameLoadOrderOverrideAsync(Arg.Any<GameType>(), Arg.Any<CancellationToken>())
+            .Returns((string?)null);
+        configurationService.GetSkipListAsync(
+                Arg.Any<GameType>(),
+                Arg.Any<GameVariant>(),
+                Arg.Any<CancellationToken>())
+            .Returns([]);
+        return configurationService;
+    }
 
     private static IConfigurationService CreateConfigurationServiceWithSkipList(
         GameType gameType,
-        IReadOnlyList<string> skipList) =>
-        CreateConfigurationServiceWithSkipList(gameType, GameVariant.None, skipList);
+        IReadOnlyList<string> skipList,
+        bool disableSkipLists = false) =>
+        CreateConfigurationServiceWithSkipList(gameType, GameVariant.None, skipList, disableSkipLists);
 
     private static IConfigurationService CreateConfigurationServiceWithSkipList(
         GameType gameType,
         GameVariant variant,
-        IReadOnlyList<string> skipList)
+        IReadOnlyList<string> skipList,
+        bool disableSkipLists = false)
     {
-        var configurationService = Substitute.For<IConfigurationService>();
+        var configurationService = CreateConfigurationService(disableSkipLists);
         // GetSkipListAsync has an optional GameVariant parameter; matching it explicitly keeps
         // NSubstitute bound to the same call shape used by the coordinator's named ct argument.
         configurationService
@@ -513,6 +568,55 @@ public sealed class PluginRefreshCoordinatorTests
             }
 
             return results;
+        }
+
+        private static PluginIssueApproximationResult CreateResult(string dataFolder, string fileName) =>
+            new()
+            {
+                FileName = fileName,
+                FullPath = $@"{dataFolder}\{fileName}",
+                Approximation = PluginIssueApproximation.Available(1, 2, 3)
+            };
+    }
+
+    private sealed class RecordingPluginIssueApproximationService : IPluginIssueApproximationService
+    {
+        public List<string> DirectDataFolders { get; } = [];
+
+        public Task<IReadOnlyList<PluginIssueApproximationResult>> GetApproximationsAsync(
+            GameType gameType,
+            string dataFolder,
+            Action<PluginIssueApproximationResult>? onApproximationReady = null,
+            CancellationToken ct = default)
+        {
+            DirectDataFolders.Add(dataFolder);
+            var result = CreateResult(dataFolder, "Selected.esp");
+            onApproximationReady?.Invoke(result);
+            return Task.FromResult<IReadOnlyList<PluginIssueApproximationResult>>([result]);
+        }
+
+        public Task<IReadOnlyList<PluginIssueApproximationResult>> GetApproximationsAsync(
+            GameType gameType,
+            string baseDataFolder,
+            IReadOnlyList<string> orderedPluginNames,
+            Func<Mutagen.Bethesda.Plugins.ModKey, string?> pathResolver,
+            Action<PluginIssueApproximationResult>? onApproximationReady = null,
+            CancellationToken ct = default)
+        {
+            var results = orderedPluginNames
+                .Select(name => new PluginIssueApproximationResult
+                {
+                    FileName = name,
+                    FullPath = pathResolver(Mutagen.Bethesda.Plugins.ModKey.FromFileName(name)) ?? name,
+                    Approximation = PluginIssueApproximation.Available(1, 2, 3)
+                })
+                .ToList();
+            foreach (var result in results)
+            {
+                onApproximationReady?.Invoke(result);
+            }
+
+            return Task.FromResult<IReadOnlyList<PluginIssueApproximationResult>>(results);
         }
 
         private static PluginIssueApproximationResult CreateResult(string dataFolder, string fileName) =>

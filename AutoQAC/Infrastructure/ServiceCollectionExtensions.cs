@@ -55,6 +55,7 @@ public static class ServiceCollectionExtensions
             services.AddSingleton<IPluginLoadingService, PluginLoadingService>();
             services.AddSingleton<IPluginIssueApproximationService, PluginIssueApproximationService>();
             services.AddSingleton<IPluginRefreshCapabilityPolicy, PluginRefreshCapabilityPolicy>();
+            services.AddSingleton<ISkipListPolicy, SkipListPolicy>();
             services.AddSingleton<IPluginRefreshCoordinator, PluginRefreshCoordinator>();
             services.AddSingleton<IPidStorePathProvider, DefaultPidStorePathProvider>();
             services.AddSingleton<IProcessSessionIdProvider, ProcessSessionIdProvider>();

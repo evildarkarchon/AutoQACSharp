@@ -57,6 +57,13 @@ public sealed class ErrorDialogTests
         // Default setup for SkipListChanged observable
         _configServiceMock.SkipListChanged
             .Returns(Observable.Never<GameType>());
+        _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>())
+            .Returns(new UserConfiguration { LoadOrder = new(), XEdit = new(), ModOrganizer = new(), Settings = new() });
+        _configServiceMock.GetSkipListAsync(
+                Arg.Any<GameType>(),
+                Arg.Any<GameVariant>(),
+                Arg.Any<CancellationToken>())
+            .Returns([]);
     }
 
     private MainWindowViewModel CreateViewModel()
