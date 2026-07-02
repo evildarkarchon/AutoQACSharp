@@ -24,7 +24,7 @@ public sealed class ErrorDialogTests
 {
     private readonly IConfigurationService _configServiceMock;
     private readonly IStateService _stateServiceMock;
-    private readonly ICleaningOrchestrator _orchestratorMock;
+    private readonly ICleaningSession _cleaningSessionMock;
     private readonly ILoggingService _loggerMock;
     private readonly IFileDialogService _fileDialogMock;
     private readonly IMessageDialogService _messageDialogMock;
@@ -36,7 +36,7 @@ public sealed class ErrorDialogTests
     {
         _configServiceMock = Substitute.For<IConfigurationService>();
         _stateServiceMock = Substitute.For<IStateService>();
-        _orchestratorMock = Substitute.For<ICleaningOrchestrator>();
+        _cleaningSessionMock = Substitute.For<ICleaningSession>();
         _loggerMock = Substitute.For<ILoggingService>();
         _fileDialogMock = Substitute.For<IFileDialogService>();
         _messageDialogMock = Substitute.For<IMessageDialogService>();
@@ -68,7 +68,7 @@ public sealed class ErrorDialogTests
         return new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
@@ -98,7 +98,7 @@ public sealed class ErrorDialogTests
         return new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
@@ -128,7 +128,7 @@ public sealed class ErrorDialogTests
         await _messageDialogMock.DidNotReceive().ShowErrorAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>());
 
         // Orchestrator should NOT be called
-        await _orchestratorMock.DidNotReceive().StartCleaningAsync(Arg.Any<TimeoutRetryCallback>(), Arg.Any<BackupFailureCallback>(), Arg.Any<CancellationToken>());
+        await _cleaningSessionMock.DidNotReceive().StartAsync(Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -165,7 +165,7 @@ public sealed class ErrorDialogTests
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
@@ -179,10 +179,7 @@ public sealed class ErrorDialogTests
         // Assert
         vm.Commands.HasValidationErrors.Should().BeTrue();
         vm.Commands.ValidationErrors.Should().ContainSingle(e => e.Title == "xEdit not configured");
-        await _orchestratorMock.DidNotReceive().StartCleaningAsync(
-            Arg.Any<TimeoutRetryCallback>(),
-            Arg.Any<BackupFailureCallback>(),
-            Arg.Any<CancellationToken>());
+        await _cleaningSessionMock.DidNotReceive().StartAsync(Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -205,7 +202,7 @@ public sealed class ErrorDialogTests
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
@@ -247,7 +244,7 @@ public sealed class ErrorDialogTests
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
@@ -293,7 +290,7 @@ public sealed class ErrorDialogTests
             var vm = new MainWindowViewModel(
                 _configServiceMock,
                 _stateServiceMock,
-                _orchestratorMock,
+                _cleaningSessionMock,
                 _loggerMock,
                 _fileDialogMock,
                 _messageDialogMock,
@@ -307,10 +304,7 @@ public sealed class ErrorDialogTests
             // Assert
             vm.Commands.HasValidationErrors.Should().BeTrue();
             vm.Commands.ValidationErrors.Should().Contain(e => e.Title == "Load order not configured");
-            await _orchestratorMock.DidNotReceive().StartCleaningAsync(
-                Arg.Any<TimeoutRetryCallback>(),
-                Arg.Any<BackupFailureCallback>(),
-                Arg.Any<CancellationToken>());
+            await _cleaningSessionMock.DidNotReceive().StartAsync(Arg.Any<CancellationToken>());
         }
         finally
         {
@@ -429,7 +423,7 @@ public sealed class ErrorDialogTests
             using var _ = vm.ShowProgressInteraction.RegisterHandler(_ => Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
             vm.Configuration.XEditPath = tempFile;
 
-            _orchestratorMock.StartCleaningAsync(Arg.Any<TimeoutRetryCallback>(), Arg.Any<BackupFailureCallback>(), Arg.Any<CancellationToken>())
+            _cleaningSessionMock.StartAsync(Arg.Any<CancellationToken>())
                 .ThrowsAsync(new InvalidOperationException("Configuration is invalid"));
 
             // Act
@@ -462,7 +456,7 @@ public sealed class ErrorDialogTests
             using var _ = vm.ShowProgressInteraction.RegisterHandler(_ => Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
             vm.Configuration.XEditPath = tempFile;
 
-            _orchestratorMock.StartCleaningAsync(Arg.Any<TimeoutRetryCallback>(), Arg.Any<BackupFailureCallback>(), Arg.Any<CancellationToken>())
+            _cleaningSessionMock.StartAsync(Arg.Any<CancellationToken>())
                 .ThrowsAsync(new Exception("Unexpected error"));
 
             // Act
@@ -507,7 +501,7 @@ public sealed class ErrorDialogTests
             var vm = new MainWindowViewModel(
                 _configServiceMock,
                 _stateServiceMock,
-                _orchestratorMock,
+                _cleaningSessionMock,
                 _loggerMock,
                 _fileDialogMock,
                 _messageDialogMock,
@@ -556,7 +550,7 @@ public sealed class ErrorDialogTests
             var vm = new MainWindowViewModel(
                 _configServiceMock,
                 _stateServiceMock,
-                _orchestratorMock,
+                _cleaningSessionMock,
                 _loggerMock,
                 _fileDialogMock,
                 _messageDialogMock,
@@ -601,7 +595,7 @@ public sealed class ErrorDialogTests
             var vm = new MainWindowViewModel(
                 _configServiceMock,
                 _stateServiceMock,
-                _orchestratorMock,
+                _cleaningSessionMock,
                 _loggerMock,
                 _fileDialogMock,
                 _messageDialogMock,
@@ -649,7 +643,7 @@ public sealed class ErrorDialogTests
             var vm = new MainWindowViewModel(
                 _configServiceMock,
                 _stateServiceMock,
-                _orchestratorMock,
+                _cleaningSessionMock,
                 _loggerMock,
                 _fileDialogMock,
                 _messageDialogMock,
@@ -665,10 +659,7 @@ public sealed class ErrorDialogTests
             error.Title.Should().Be("MO2 not found");
             error.Message.Should().Be("MO2 Path (ModOrganizer.exe) is missing. Choose ModOrganizer.exe or disable MO2 Mode.");
             AssertValidationErrorDoesNotContainFullPath(error, @"C:\Users\Alice");
-            await _orchestratorMock.DidNotReceive().StartCleaningAsync(
-                Arg.Any<TimeoutRetryCallback>(),
-                Arg.Any<BackupFailureCallback>(),
-                Arg.Any<CancellationToken>());
+            await _cleaningSessionMock.DidNotReceive().StartAsync(Arg.Any<CancellationToken>());
         }
         finally
         {
@@ -678,7 +669,7 @@ public sealed class ErrorDialogTests
     }
 
     [Fact]
-    public async Task StartCleaningAsync_WhenUnexpectedError_ShouldShowSafeDiagnosticCopy()
+    public async Task StartCommand_WhenUnexpectedError_ShouldShowSafeDiagnosticCopy()
     {
         // Arrange - the exception contains representative path, command, exception, and stack-like sentinels.
         var tempFile = Path.GetTempFileName();
@@ -689,10 +680,7 @@ public sealed class ErrorDialogTests
             using var _ = vm.ShowProgressInteraction.RegisterHandler(_ => Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
             vm.Configuration.XEditPath = tempFile;
 
-            _orchestratorMock.StartCleaningAsync(
-                    Arg.Any<TimeoutRetryCallback>(),
-                    Arg.Any<BackupFailureCallback>(),
-                    Arg.Any<CancellationToken>())
+            _cleaningSessionMock.StartAsync(Arg.Any<CancellationToken>())
                 .ThrowsAsync(new Exception(unsafeSentinel));
 
             // Act
@@ -730,7 +718,7 @@ public sealed class ErrorDialogTests
             var vm = CreateViewModelWithValidState(tempFile);
             vm.Configuration.XEditPath = tempFile;
 
-            _orchestratorMock.RunDryRunAsync(Arg.Any<CancellationToken>())
+            _cleaningSessionMock.PreviewAsync(Arg.Any<CancellationToken>())
                 .ThrowsAsync(new Exception(unsafeSentinel));
 
             // Act
@@ -790,171 +778,4 @@ public sealed class ErrorDialogTests
 
     #endregion
 
-    #region Timeout Retry Tests
-
-    [Fact]
-    public async Task StartCleaningCommand_ShouldPassTimeoutCallback_ToOrchestrator()
-    {
-        // Arrange - use valid state so ValidatePreClean passes
-        var tempFile = Path.GetTempFileName();
-        try
-        {
-            var vm = CreateViewModelWithValidState(tempFile);
-            using var _ = vm.ShowProgressInteraction.RegisterHandler(_ => Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
-            vm.Configuration.XEditPath = tempFile;
-
-            TimeoutRetryCallback? capturedCallback = null;
-            _orchestratorMock.StartCleaningAsync(
-                    Arg.Do<TimeoutRetryCallback?>(cb => capturedCallback = cb),
-                    Arg.Any<BackupFailureCallback?>(),
-                    Arg.Any<CancellationToken>())
-                .Returns(Task.CompletedTask);
-
-            // Act
-            await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
-
-            // Assert
-            capturedCallback.Should().NotBeNull("Timeout callback should be passed to orchestrator");
-        }
-        finally
-        {
-            if (File.Exists(tempFile))
-                File.Delete(tempFile);
-        }
-    }
-
-    [Fact]
-    public async Task TimeoutCallback_ShouldCallShowRetryAsync()
-    {
-        // Arrange - use valid state so ValidatePreClean passes
-        var tempFile = Path.GetTempFileName();
-        try
-        {
-            var vm = CreateViewModelWithValidState(tempFile);
-            using var _ = vm.ShowProgressInteraction.RegisterHandler(_ => Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
-            vm.Configuration.XEditPath = tempFile;
-
-            TimeoutRetryCallback? capturedCallback = null;
-            _orchestratorMock.StartCleaningAsync(
-                    Arg.Do<TimeoutRetryCallback?>(cb => capturedCallback = cb),
-                    Arg.Any<BackupFailureCallback?>(),
-                    Arg.Any<CancellationToken>())
-                .Returns(Task.CompletedTask);
-
-            _messageDialogMock.ShowRetryAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>())
-                .Returns(true);
-
-            await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
-
-            // Act - simulate timeout callback being invoked
-            capturedCallback.Should().NotBeNull();
-            var result = await capturedCallback!("TestPlugin.esp", 300, 1);
-
-            // Assert
-            await _messageDialogMock.Received(1).ShowRetryAsync(
-                    "Plugin Timeout",
-                    Arg.Is<string>(s => s.Contains("TestPlugin.esp")),
-                    Arg.Any<string?>());
-
-            result.Should().BeTrue("ShowRetryAsync returned true");
-        }
-        finally
-        {
-            if (File.Exists(tempFile))
-                File.Delete(tempFile);
-        }
-    }
-
-    /// <summary>
-    /// Verifies timeout retry callback data is projected to safe dialog copy before it crosses the user-facing D-07 boundary.
-    /// </summary>
-    [Fact]
-    public async Task TimeoutCallback_WhenPluginNameContainsUnsafeDetails_ShouldShowSanitizedPluginName()
-    {
-        // Arrange - use valid state so ValidatePreClean passes
-        var tempFile = Path.GetTempFileName();
-        try
-        {
-            var vm = CreateViewModelWithValidState(tempFile);
-            using var _ = vm.ShowProgressInteraction.RegisterHandler(_ => Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
-            vm.Configuration.XEditPath = tempFile;
-
-            TimeoutRetryCallback? capturedCallback = null;
-            _orchestratorMock.StartCleaningAsync(
-                    Arg.Do<TimeoutRetryCallback?>(cb => capturedCallback = cb),
-                    Arg.Any<BackupFailureCallback?>(),
-                    Arg.Any<CancellationToken>())
-                .Returns(Task.CompletedTask);
-
-            _messageDialogMock.ShowRetryAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>())
-                .Returns(true);
-
-            await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
-
-            // Act - simulate a callback payload with path, command, quote, and backtick detail.
-            capturedCallback.Should().NotBeNull();
-            var result = await capturedCallback!("C:\\Users\\Alice\\Mods\\Bad\"Plugin` -QAC.esp", 300, 1);
-
-            // Assert
-            result.Should().BeTrue("ShowRetryAsync returned true");
-            var dialogCall = _messageDialogMock.ReceivedCalls()
-                .Single(call => call.GetMethodInfo().Name == nameof(IMessageDialogService.ShowRetryAsync));
-            var message = (string)dialogCall.GetArguments()[1]!;
-
-            message.Should().Contain("BadPlugin.esp", "D-07 requires safe plugin display copy in timeout dialogs");
-            message.Should().NotContain(@"C:\Users\Alice");
-            message.Should().NotContain("-QAC");
-            message.Should().NotContain("\"");
-            message.Should().NotContain("`");
-            foreach (var sentinel in DiagnosticSentinels.UnsafeDiagnosticSentinels)
-            {
-                message.Should().NotContain(sentinel);
-            }
-        }
-        finally
-        {
-            if (File.Exists(tempFile))
-                File.Delete(tempFile);
-        }
-    }
-
-    [Fact]
-    public async Task TimeoutCallback_ShouldReturnFalse_WhenUserCancels()
-    {
-        // Arrange - use valid state so ValidatePreClean passes
-        var tempFile = Path.GetTempFileName();
-        try
-        {
-            var vm = CreateViewModelWithValidState(tempFile);
-            using var _ = vm.ShowProgressInteraction.RegisterHandler(_ => Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
-            vm.Configuration.XEditPath = tempFile;
-
-            TimeoutRetryCallback? capturedCallback = null;
-            _orchestratorMock.StartCleaningAsync(
-                    Arg.Do<TimeoutRetryCallback?>(cb => capturedCallback = cb),
-                    Arg.Any<BackupFailureCallback?>(),
-                    Arg.Any<CancellationToken>())
-                .Returns(Task.CompletedTask);
-
-            // User cancels retry
-            _messageDialogMock.ShowRetryAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>())
-                .Returns(false);
-
-            await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
-
-            // Act
-            capturedCallback.Should().NotBeNull();
-            var result = await capturedCallback!("TestPlugin.esp", 300, 1);
-
-            // Assert
-            result.Should().BeFalse("User cancelled the retry");
-        }
-        finally
-        {
-            if (File.Exists(tempFile))
-                File.Delete(tempFile);
-        }
-    }
-
-    #endregion
 }

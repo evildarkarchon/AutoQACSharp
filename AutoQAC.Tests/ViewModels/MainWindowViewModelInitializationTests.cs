@@ -18,7 +18,7 @@ public sealed class MainWindowViewModelInitializationTests
 {
     private readonly IConfigurationService _configServiceMock;
     private readonly IStateService _stateServiceMock;
-    private readonly ICleaningOrchestrator _orchestratorMock;
+    private readonly ICleaningSession _cleaningSessionMock;
     private readonly ILoggingService _loggerMock;
     private readonly IFileDialogService _fileDialogMock;
     private readonly IMessageDialogService _messageDialogMock;
@@ -30,7 +30,7 @@ public sealed class MainWindowViewModelInitializationTests
     {
         _configServiceMock = Substitute.For<IConfigurationService>();
         _stateServiceMock = Substitute.For<IStateService>();
-        _orchestratorMock = Substitute.For<ICleaningOrchestrator>();
+        _cleaningSessionMock = Substitute.For<ICleaningSession>();
         _loggerMock = Substitute.For<ILoggingService>();
         _fileDialogMock = Substitute.For<IFileDialogService>();
         _messageDialogMock = Substitute.For<IMessageDialogService>();
@@ -89,7 +89,7 @@ public sealed class MainWindowViewModelInitializationTests
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,

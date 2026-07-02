@@ -18,7 +18,7 @@ public sealed class PluginCleaningRunner(
         PluginInfo plugin,
         GameType gameType,
         string xEditDir,
-        TimeoutRetryCallback? onTimeout,
+        ICleaningSessionDecisionAdapter decisions,
         int timeoutSeconds,
         int maxRetryAttempts,
         Action<System.Diagnostics.Process> attachProcess,
@@ -54,10 +54,12 @@ public sealed class PluginCleaningRunner(
                     onProcessStarted: attachProcess,
                     ct: ct).ConfigureAwait(false);
 
-                // If timed out and callback provided, ask user if they want to retry
-                if (result.TimedOut && onTimeout != null && attemptNumber < maxRetryAttempts)
+                // If timed out, ask the session decision adapter whether to retry before the retry ceiling.
+                if (result.TimedOut && attemptNumber < maxRetryAttempts)
                 {
-                    var shouldRetry = await onTimeout(plugin.FileName, timeoutSeconds, attemptNumber)
+                    var shouldRetry = await decisions
+                        .ShouldRetryTimedOutPluginAsync(plugin.FileName, timeoutSeconds, attemptNumber,
+                            maxRetryAttempts, ct)
                         .ConfigureAwait(false);
 
                     if (!shouldRetry)
@@ -70,14 +72,14 @@ public sealed class PluginCleaningRunner(
                 }
                 else
                 {
-                    break; // No timeout or no callback or max attempts reached
+                    break; // No timeout or max attempts reached.
                 }
             } while (true);
         }
         finally
         {
             // R-02 contract: detach exactly once per plugin AFTER the retry loop (matches
-            // CleaningOrchestrator once-per-plugin behavior — outside the do-while). The Process
+            // CleaningSession once-per-plugin behavior — outside the do-while). The Process
             // object is refreshed per attempt by CleanPluginAsync; the previous attempt's Process
             // has already exited by the time the loop iterates, so a single trailing detach
             // correctly mirrors current behavior.

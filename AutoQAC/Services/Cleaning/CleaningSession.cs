@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -7,41 +6,34 @@ using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.Process;
-using AutoQAC.Services.State;
 
 namespace AutoQAC.Services.Cleaning;
 
-public sealed class CleaningOrchestrator(
+/// <summary>
+/// Owns the full Cleaning session lifecycle: preflight, backup policy, sequential xEdit launches,
+/// cancellation, user decisions, and final state publication.
+/// </summary>
+public sealed class CleaningSession(
     ICleaningPreflight preflight,
     IBackupSessionCoordinator backupCoordinator,
     ICleaningTerminationCoordinator terminationCoordinator,
     IPluginCleaningRunner runner,
     IPluginResultFinalizer finalizer,
-    IStateService stateService,
+    ICleaningSessionStatePublisher statePublisher,
+    ICleaningSessionDecisionAdapter decisions,
     ILoggingService logger,
     IProcessExecutionService processService)
-    : ICleaningOrchestrator, IDisposable
+    : ICleaningSession, IDisposable
 {
     private readonly Lock _ctsLock = new();
     private CancellationTokenSource? _cleaningCts;
     private int _sessionActive;
 
     /// <inheritdoc />
-    public TerminationResult? LastTerminationResult => terminationCoordinator.LastTerminationResult;
-
-    /// <inheritdoc />
     public IObservable<bool> HangDetected => terminationCoordinator.HangDetected;
 
     /// <inheritdoc />
-    public Task StartCleaningAsync(CancellationToken ct = default) => StartCleaningAsync(null, null, ct);
-
-    /// <inheritdoc />
-    public Task StartCleaningAsync(TimeoutRetryCallback? onTimeout, CancellationToken ct = default) =>
-        StartCleaningAsync(onTimeout, null, ct);
-
-    /// <inheritdoc />
-    public async Task StartCleaningAsync(TimeoutRetryCallback? onTimeout, BackupFailureCallback? onBackupFailure,
-        CancellationToken ct = default)
+    public async Task StartAsync(CancellationToken ct = default)
     {
         EnterSessionOrThrow();
         const int maxRetryAttempts = 3;
@@ -56,10 +48,7 @@ public sealed class CleaningOrchestrator(
         {
             logger.Information("Starting cleaning workflow");
 
-            // Gap CR-01 fix: create the session CTS BEFORE any cancellable startup work so that
-            // StopCleaningAsync (which calls CancelSessionCts) can cancel orphan cleanup / preflight.
-            // Previously the CTS was created only after preflight returned, so a stop click during
-            // preflight was a no-op and xEdit could still launch.
+            // Create the session CTS before cancellable startup work so stop can cancel orphan cleanup / preflight.
             var cts = CreateSessionCts(ct);
 
             // Clean orphaned processes before starting.
@@ -71,16 +60,14 @@ public sealed class CleaningOrchestrator(
                 .Select(r => r.Plugin).ToList();
             ThrowIfNoValidPluginsAfterFileValidation(preflightPlan);
 
-            // D-14: real cleaning mode applies detected game state; dry-run does not.
-            var context1 = context;
-            stateService.UpdateState(s => s with { CurrentGameType = context1.GameType });
-            stateService.StartCleaning(pluginsToClean);
+            // Real cleaning mode applies detected game state; dry-run does not.
+            statePublisher.PublishDetectedGame(context.GameType);
+            statePublisher.PublishStarted(pluginsToClean);
 
             backupSessionDir =
                 await backupCoordinator.BeginSessionAsync(preflightPlan, cts.Token).ConfigureAwait(false);
 
-            // Gap CR-01 fix: if the user requested Stop during orphan cleanup, preflight, state
-            // initialization, or backup session begin, bail out cleanly before launching xEdit.
+            // If the user requested Stop during startup or backup session begin, bail out before launching xEdit.
             cts.Token.ThrowIfCancellationRequested();
 
             // Process plugins SEQUENTIALLY (CRITICAL!) -- xEdit must never run in parallel.
@@ -94,8 +81,7 @@ public sealed class CleaningOrchestrator(
                 }
 
                 var pluginDecision = await ProcessPluginAsync(plugin, preflightPlan, backupSessionDir, backupEntries,
-                        onTimeout,
-                        onBackupFailure, maxRetryAttempts, context, cts.Token)
+                        maxRetryAttempts, context, cts.Token)
                     .ConfigureAwait(false);
 
                 if (pluginDecision == PluginLoopDecision.ReturnedEarly)
@@ -155,18 +141,17 @@ public sealed class CleaningOrchestrator(
 
         async Task<PluginLoopDecision> ProcessPluginAsync(PluginInfo plugin, CleaningPreflightPlan plan,
             string? sessionDir,
-            List<BackupPluginEntry> backupPluginEntries, TimeoutRetryCallback? timeoutRetryCallback,
-            BackupFailureCallback? backupFailureCallback,
+            List<BackupPluginEntry> backupPluginEntries,
             int retryLimit, SessionContext contextSnapshot, CancellationToken cancellationToken)
         {
             logger.Information("Processing plugin: {Plugin}", plugin.FileName);
-            stateService.UpdateState(s => s with { CurrentPlugin = plugin.FileName });
+            statePublisher.PublishCurrentPlugin(plugin.FileName);
 
             if (sessionDir is not null)
             {
                 var backupResult =
-                    await HandleBackupOutcomeAsync(plugin, sessionDir, backupPluginEntries, backupFailureCallback,
-                        contextSnapshot, cancellationToken).ConfigureAwait(false);
+                    await HandleBackupOutcomeAsync(plugin, sessionDir, backupPluginEntries, contextSnapshot,
+                        cancellationToken).ConfigureAwait(false);
                 switch (backupResult)
                 {
                     case PluginLoopDecision.SkipPlugin:
@@ -182,15 +167,13 @@ public sealed class CleaningOrchestrator(
             }
 
             // RunPluginBackupAsync is handled above via HandleBackupOutcomeAsync; keep backup before runner.RunAsync.
-            // R-01: maxRetryAttempts = 3 matches the original retry ceiling defined for this method.
-            // R-08: runner and finalizer both consume plan.XEditDirectory; the facade does not re-derive it.
             var runnerOutput = await runner.RunAsync(
-                plugin, plan.DetectedGameType, plan.XEditDirectory, timeoutRetryCallback,
+                plugin, plan.DetectedGameType, plan.XEditDirectory, decisions,
                 plan.CleaningTimeoutSeconds, retryLimit,
                 attachProcess: terminationCoordinator.AttachProcess,
                 detachProcess: terminationCoordinator.DetachProcess, cancellationToken).ConfigureAwait(false);
 
-            // Snapshot termination context AFTER detach so ProcessMayStillBeRunning reflects final state (Research Open Question #3).
+            // Snapshot termination context after detach so ProcessMayStillBeRunning reflects final state.
             var terminationContext = new TerminationFinalizeContext(terminationCoordinator.ProcessMayStillBeRunning,
                 terminationCoordinator.IsStopRequested);
             var result = await finalizer.FinalizeAsync(plugin, plan.DetectedGameType,
@@ -198,18 +181,18 @@ public sealed class CleaningOrchestrator(
                 .ConfigureAwait(false);
 
             contextSnapshot.Results.Add(result);
-            stateService.AddDetailedCleaningResult(result);
+            statePublisher.PublishPluginResult(result);
             logger.Information("Plugin {Plugin} processed: {Status} - {Message}", plugin.FileName, result.Status,
                 result.Message);
             return PluginLoopDecision.Continue;
         }
 
         async Task<PluginLoopDecision> HandleBackupOutcomeAsync(PluginInfo plugin, string sessionDir,
-            List<BackupPluginEntry> backupPluginEntries, BackupFailureCallback? backupFailureCallback,
+            List<BackupPluginEntry> backupPluginEntries,
             SessionContext contextSnapshot,
             CancellationToken cancellationToken)
         {
-            var outcome = await backupCoordinator.RunPluginBackupAsync(plugin, sessionDir, backupFailureCallback,
+            var outcome = await backupCoordinator.RunPluginBackupAsync(plugin, sessionDir, decisions,
                     cancellationToken)
                 .ConfigureAwait(false);
             switch (outcome.Kind)
@@ -219,17 +202,12 @@ public sealed class CleaningOrchestrator(
                     if (outcome.SkippedResult is not null)
                     {
                         contextSnapshot.Results.Add(outcome.SkippedResult);
-                        stateService.AddDetailedCleaningResult(outcome.SkippedResult);
+                        statePublisher.PublishPluginResult(outcome.SkippedResult);
                     }
 
                     if (outcome.Kind == PluginBackupOutcomeKind.UserSkipped)
                     {
-                        stateService.UpdateState(s => s with
-                        {
-                            SkippedPlugins =
-                            new HashSet<string>(s.SkippedPlugins) { plugin.FileName }.ToFrozenSet(StringComparer
-                                .Ordinal)
-                        });
+                        statePublisher.PublishSkippedPlugin(plugin.FileName);
                     }
 
                     return cancellationToken.IsCancellationRequested
@@ -237,16 +215,12 @@ public sealed class CleaningOrchestrator(
                         : PluginLoopDecision.SkipPlugin;
 
                 case PluginBackupOutcomeKind.AbortSession:
-                    // R-09: full AbortSession branch -- verbatim from CleaningOrchestrator.cs:333-362.
-                    // Step 1: best-effort partial metadata write so the abandoned session has a manifest.
+                    // Best-effort partial metadata write so the abandoned session has a manifest.
                     await backupCoordinator
                         .WritePartialMetadataAsync(sessionDir, contextSnapshot.GameType, backupPluginEntries,
                             CancellationToken.None).ConfigureAwait(false);
-                    // Step 2: mark the session as cancelled so finalization classifies correctly.
                     var abortedContext = contextSnapshot with { WasCancelled = true };
-                    // Steps 3-5: build CleaningSessionResult, publish to state, then log the legacy summary.
                     FinishSession(abortedContext);
-                    // Step 6: exit the StartCleaningAsync method.
                     return PluginLoopDecision.ReturnedEarly;
 
                 case PluginBackupOutcomeKind.Succeeded:
@@ -263,36 +237,21 @@ public sealed class CleaningOrchestrator(
     }
 
     /// <inheritdoc />
-    public async Task CancelBackupOperationAsync()
+    public async Task<CleaningSessionControlResult> ControlAsync(
+        CleaningSessionControl control,
+        CancellationToken ct = default)
     {
-        if (terminationCoordinator.HasActiveProcess)
+        return control switch
         {
-            logger.Information("CancelBackupOperationAsync ignored: xEdit is active");
-            return;
-        }
-
-        await backupCoordinator.CancelActiveOperationAsync().ConfigureAwait(false);
+            CleaningSessionControl.RequestStop => await RequestStopAsync(ct).ConfigureAwait(false),
+            CleaningSessionControl.ForceStop => await ForceStopAsync().ConfigureAwait(false),
+            CleaningSessionControl.CancelBackupOperation => await HandleCancelBackupOperationAsync().ConfigureAwait(false),
+            _ => throw new ArgumentOutOfRangeException(nameof(control), control, "Unknown Cleaning session control.")
+        };
     }
 
     /// <inheritdoc />
-    public async Task<StopCleaningResult> StopCleaningAsync()
-    {
-        CancelSessionCts();
-        return await terminationCoordinator.StopAsync().ConfigureAwait(false);
-    }
-
-    /// <inheritdoc />
-    public async Task<StopCleaningResult> ForceStopCleaningAsync()
-    {
-        CancelSessionCts();
-        return await terminationCoordinator.ForceStopAsync().ConfigureAwait(false);
-    }
-
-    /// <inheritdoc />
-    public StopCleaningResult MarkLeftRunningByUser() => terminationCoordinator.MarkLeftRunningByUser();
-
-    /// <inheritdoc />
-    public async Task<List<DryRunResult>> RunDryRunAsync(CancellationToken ct = default)
+    public async Task<IReadOnlyList<DryRunResult>> PreviewAsync(CancellationToken ct = default)
     {
         logger.Information("Starting dry-run preview");
         var preflightPlan = await preflight.PrepareAsync(ct).ConfigureAwait(false);
@@ -303,7 +262,7 @@ public sealed class CleaningOrchestrator(
         return results;
     }
 
-    /// <summary>Creates the session CTS linked to the caller token and publishes it under the facade lock.</summary>
+    /// <summary>Creates the session CTS linked to the caller token and publishes it under the session lock.</summary>
     private CancellationTokenSource CreateSessionCts(CancellationToken ct)
     {
         lock (_ctsLock)
@@ -315,7 +274,7 @@ public sealed class CleaningOrchestrator(
 
     /// <summary>
     /// Enters the single active cleaning session slot without blocking competing callers.
-    /// This protects _cleaningCts ownership and preserves sequential orchestration before startup work mutates session state.
+    /// This protects CTS ownership and preserves sequential orchestration before startup work mutates session state.
     /// </summary>
     private void EnterSessionOrThrow()
     {
@@ -327,7 +286,7 @@ public sealed class CleaningOrchestrator(
 
     /// <summary>
     /// Releases the active cleaning session slot after CTS disposal and termination reset complete.
-    /// The volatile write makes subsequent StartCleaningAsync calls observe the facade as idle only after cleanup finishes.
+    /// The volatile write makes subsequent StartAsync calls observe the session as idle only after cleanup finishes.
     /// </summary>
     private void ExitSession()
     {
@@ -349,11 +308,11 @@ public sealed class CleaningOrchestrator(
         }
         catch (ObjectDisposedException)
         {
-            // Already disposed -- fine
+            // Already disposed -- fine.
         }
     }
 
-    /// <summary>Disposes and clears the session CTS owned by the facade.</summary>
+    /// <summary>Disposes and clears the session CTS owned by the session module.</summary>
     private void DisposeSessionCts()
     {
         lock (_ctsLock)
@@ -363,6 +322,124 @@ public sealed class CleaningOrchestrator(
         }
     }
 
+    /// <summary>Requests graceful stop and resolves grace-period expiry through the decision adapter.</summary>
+    private async Task<CleaningSessionControlResult> RequestStopAsync(CancellationToken ct)
+    {
+        if (!HasControllableSession())
+        {
+            return new CleaningSessionControlResult(
+                CleaningSessionControl.RequestStop,
+                CleaningSessionControlStatus.NoActiveSession);
+        }
+
+        CancelSessionCts();
+        var stopResult = await terminationCoordinator.StopAsync().ConfigureAwait(false);
+        var terminationResult = stopResult.TerminationResult ?? terminationCoordinator.LastTerminationResult;
+
+        if (terminationResult != TerminationResult.GracePeriodExpired)
+        {
+            return new CleaningSessionControlResult(
+                CleaningSessionControl.RequestStop,
+                MapRequestStopStatus(terminationResult),
+                terminationResult);
+        }
+
+        var decision = await decisions.ChooseAfterGracePeriodExpiredAsync(terminationResult.Value, ct)
+            .ConfigureAwait(false);
+        if (decision == CleaningSessionStopDecision.ForceTerminate)
+        {
+            var forceResult = await ForceStopAsync().ConfigureAwait(false);
+            return new CleaningSessionControlResult(
+                CleaningSessionControl.RequestStop,
+                forceResult.Status,
+                forceResult.TerminationResult);
+        }
+
+        var leftRunningResult = terminationCoordinator.MarkLeftRunningByUser();
+        return new CleaningSessionControlResult(
+            CleaningSessionControl.RequestStop,
+            CleaningSessionControlStatus.LeftRunningByUser,
+            leftRunningResult.TerminationResult);
+    }
+
+    /// <summary>Requests immediate force termination for the active or pending xEdit process.</summary>
+    private async Task<CleaningSessionControlResult> ForceStopAsync()
+    {
+        if (!HasControllableSession())
+        {
+            return new CleaningSessionControlResult(
+                CleaningSessionControl.ForceStop,
+                CleaningSessionControlStatus.NoActiveSession);
+        }
+
+        CancelSessionCts();
+        var forceResult = await terminationCoordinator.ForceStopAsync().ConfigureAwait(false);
+        var terminationResult = forceResult.TerminationResult ?? terminationCoordinator.LastTerminationResult;
+        return new CleaningSessionControlResult(
+            CleaningSessionControl.ForceStop,
+            MapForceStopStatus(terminationResult),
+            terminationResult);
+    }
+
+    /// <summary>Cancels active backup or retention file work without terminating xEdit.</summary>
+    private async Task<CleaningSessionControlResult> HandleCancelBackupOperationAsync()
+    {
+        if (!IsSessionActive())
+        {
+            return new CleaningSessionControlResult(
+                CleaningSessionControl.CancelBackupOperation,
+                CleaningSessionControlStatus.NoActiveBackupOperation);
+        }
+
+        if (terminationCoordinator.HasActiveProcess)
+        {
+            logger.Information("CancelBackupOperationAsync ignored: xEdit is active");
+            return new CleaningSessionControlResult(
+                CleaningSessionControl.CancelBackupOperation,
+                CleaningSessionControlStatus.NoActiveBackupOperation);
+        }
+
+        await backupCoordinator.CancelActiveOperationAsync().ConfigureAwait(false);
+        return new CleaningSessionControlResult(
+            CleaningSessionControl.CancelBackupOperation,
+            CleaningSessionControlStatus.BackupCancellationRequested);
+    }
+
+    /// <summary>True while a real Cleaning session is active.</summary>
+    private bool IsSessionActive() => Volatile.Read(ref _sessionActive) == 1;
+
+    /// <summary>
+    /// True when a control request can still affect session or retained termination state.
+    /// GracePeriodExpired may outlive session finalization until the user resolves it.
+    /// </summary>
+    private bool HasControllableSession() =>
+        IsSessionActive() ||
+        terminationCoordinator.HasActiveProcess ||
+        terminationCoordinator.LastTerminationResult == TerminationResult.GracePeriodExpired;
+
+    /// <summary>Maps a graceful stop path to caller-facing control status.</summary>
+    private static CleaningSessionControlStatus MapRequestStopStatus(TerminationResult? terminationResult) =>
+        terminationResult switch
+        {
+            null => CleaningSessionControlStatus.StopRequested,
+            TerminationResult.AlreadyExited or TerminationResult.GracefulExit =>
+                CleaningSessionControlStatus.GracefullyStopped,
+            TerminationResult.ForceKilled => CleaningSessionControlStatus.ForceStopped,
+            TerminationResult.ForceKillFailed => CleaningSessionControlStatus.ForceKillFailed,
+            TerminationResult.LeftRunningByUser => CleaningSessionControlStatus.LeftRunningByUser,
+            TerminationResult.GracePeriodExpired => CleaningSessionControlStatus.StopRequested,
+            _ => CleaningSessionControlStatus.StopRequested
+        };
+
+    /// <summary>Maps a force stop path to caller-facing control status.</summary>
+    private static CleaningSessionControlStatus MapForceStopStatus(TerminationResult? terminationResult) =>
+        terminationResult switch
+        {
+            TerminationResult.ForceKillFailed => CleaningSessionControlStatus.ForceKillFailed,
+            null => CleaningSessionControlStatus.StopRequested,
+            _ => CleaningSessionControlStatus.ForceStopped
+        };
+
     /// <summary>Builds the final session result, publishes it, and logs the legacy session summary.</summary>
     private void FinishSession(SessionContext context)
     {
@@ -371,7 +448,7 @@ public sealed class CleaningOrchestrator(
             StartTime = context.StartTime, EndTime = DateTime.Now, GameType = context.GameType,
             WasCancelled = context.WasCancelled, PluginResults = context.Results, BackupCleanup = context.BackupCleanup
         };
-        stateService.FinishCleaningWithResults(session);
+        statePublisher.PublishCompleted(session);
         LogSessionSummary(session);
     }
 

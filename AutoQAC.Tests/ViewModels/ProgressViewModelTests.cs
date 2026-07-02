@@ -21,7 +21,7 @@ namespace AutoQAC.Tests.ViewModels;
 public sealed class ProgressViewModelTests
 {
     private readonly IStateService _stateServiceMock;
-    private readonly ICleaningOrchestrator _orchestratorMock;
+    private readonly ICleaningSession _cleaningSessionMock;
     private readonly BehaviorSubject<AppState> _stateSubject;
     private readonly Subject<(string plugin, CleaningStatus status)> _pluginProcessedSubject;
     private readonly Subject<PluginCleaningResult> _detailedPluginResultSubject;
@@ -53,8 +53,8 @@ public sealed class ProgressViewModelTests
         _stateServiceMock.IsTerminatingChanged.Returns(_isTerminatingSubject);
         _stateServiceMock.CurrentState.Returns(new AppState());
 
-        _orchestratorMock = Substitute.For<ICleaningOrchestrator>();
-        _orchestratorMock.HangDetected.Returns(_hangDetectedSubject);
+        _cleaningSessionMock = Substitute.For<ICleaningSession>();
+        _cleaningSessionMock.HangDetected.Returns(_hangDetectedSubject);
 
         _messageDialogMock = Substitute.For<IMessageDialogService>();
         _loggerMock = Substitute.For<ILoggingService>();
@@ -65,7 +65,7 @@ public sealed class ProgressViewModelTests
     /// </summary>
     private ProgressViewModel CreateViewModel()
     {
-        return new ProgressViewModel(_stateServiceMock, _orchestratorMock, _messageDialogMock, _loggerMock, _uiDispatcher);
+        return new ProgressViewModel(_stateServiceMock, _cleaningSessionMock, _messageDialogMock, _loggerMock, _uiDispatcher);
     }
 
     [Fact]
@@ -91,10 +91,13 @@ public sealed class ProgressViewModelTests
     }
 
     [Fact]
-    public async Task StopCommand_ShouldCallOrchestratorStop()
+    public async Task StopCommand_ShouldRequestSessionStop()
     {
         // Arrange
-        _orchestratorMock.StopCleaningAsync().Returns(new StopCleaningResult(null, false));
+        _cleaningSessionMock.ControlAsync(CleaningSessionControl.RequestStop, Arg.Any<CancellationToken>())
+            .Returns(new CleaningSessionControlResult(
+                CleaningSessionControl.RequestStop,
+                CleaningSessionControlStatus.StopRequested));
         var vm = CreateViewModel();
         // Activate IsCleaning so the StopCommand CanExecute is true.
         _stateSubject.OnNext(new AppState { IsCleaning = true });
@@ -103,62 +106,19 @@ public sealed class ProgressViewModelTests
         await vm.StopCommand.ExecuteAsync(null);
 
         // Assert
-        await _orchestratorMock.Received(1).StopCleaningAsync();
+        await _cleaningSessionMock.Received(1)
+            .ControlAsync(CleaningSessionControl.RequestStop, Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task StopCommand_WhenGracePeriodExpires_ShouldPromptBeforeForceStop()
+    public async Task StopCommand_WhenForceStopped_ShouldNotPromptInViewModel()
     {
         // Arrange
-        var choiceCompletion = new TaskCompletionSource<MessageDialogResult>();
-        _orchestratorMock.StopCleaningAsync()
-            .Returns(new StopCleaningResult(TerminationResult.GracePeriodExpired, true));
-        _orchestratorMock.ForceStopCleaningAsync()
-            .Returns(new StopCleaningResult(TerminationResult.ForceKilled, false));
-        _messageDialogMock.ShowChoiceAsync(
-                StopTerminationDialogContent.ConfirmationTitle,
-                StopTerminationDialogContent.ConfirmationMessage,
-                StopTerminationDialogContent.ForceTerminateButton,
-                StopTerminationDialogContent.LeaveRunningButton,
-                MessageDialogIcon.Question,
-                Arg.Any<string?>())
-            .Returns(choiceCompletion.Task);
-
-        var vm = CreateViewModel();
-        _stateSubject.OnNext(new AppState { IsCleaning = true });
-
-        // Act
-        var stopTask = vm.StopCommand.ExecuteAsync(null);
-
-        // Assert
-        await _messageDialogMock.Received(1).ShowChoiceAsync(
-            StopTerminationDialogContent.ConfirmationTitle,
-            StopTerminationDialogContent.ConfirmationMessage,
-            StopTerminationDialogContent.ForceTerminateButton,
-            StopTerminationDialogContent.LeaveRunningButton,
-            MessageDialogIcon.Question,
-            Arg.Any<string?>());
-        await _orchestratorMock.DidNotReceive().ForceStopCleaningAsync();
-
-        choiceCompletion.SetResult(MessageDialogResult.Yes);
-        await stopTask;
-        await _orchestratorMock.Received(1).ForceStopCleaningAsync();
-    }
-
-    [Fact]
-    public async Task StopCommand_WhenForceTerminationDeclined_ShouldMarkLeftRunningAndPersistWarning()
-    {
-        // Arrange
-        _orchestratorMock.StopCleaningAsync()
-            .Returns(new StopCleaningResult(TerminationResult.GracePeriodExpired, true));
-        _messageDialogMock.ShowChoiceAsync(
-                StopTerminationDialogContent.ConfirmationTitle,
-                StopTerminationDialogContent.ConfirmationMessage,
-                StopTerminationDialogContent.ForceTerminateButton,
-                StopTerminationDialogContent.LeaveRunningButton,
-                MessageDialogIcon.Question,
-                Arg.Any<string?>())
-            .Returns(MessageDialogResult.No);
+        _cleaningSessionMock.ControlAsync(CleaningSessionControl.RequestStop, Arg.Any<CancellationToken>())
+            .Returns(new CleaningSessionControlResult(
+                CleaningSessionControl.RequestStop,
+                CleaningSessionControlStatus.ForceStopped,
+                TerminationResult.ForceKilled));
 
         var vm = CreateViewModel();
         _stateSubject.OnNext(new AppState { IsCleaning = true });
@@ -167,8 +127,36 @@ public sealed class ProgressViewModelTests
         await vm.StopCommand.ExecuteAsync(null);
 
         // Assert
-        _orchestratorMock.Received(1).MarkLeftRunningByUser();
-        await _orchestratorMock.DidNotReceive().ForceStopCleaningAsync();
+        await _cleaningSessionMock.Received(1)
+            .ControlAsync(CleaningSessionControl.RequestStop, Arg.Any<CancellationToken>());
+        await _messageDialogMock.DidNotReceive().ShowChoiceAsync(
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Any<MessageDialogIcon>(),
+            Arg.Any<string?>());
+    }
+
+    [Fact]
+    public async Task StopCommand_WhenForceTerminationDeclined_ShouldMarkLeftRunningAndPersistWarning()
+    {
+        // Arrange
+        _cleaningSessionMock.ControlAsync(CleaningSessionControl.RequestStop, Arg.Any<CancellationToken>())
+            .Returns(new CleaningSessionControlResult(
+                CleaningSessionControl.RequestStop,
+                CleaningSessionControlStatus.LeftRunningByUser,
+                TerminationResult.GracePeriodExpired));
+
+        var vm = CreateViewModel();
+        _stateSubject.OnNext(new AppState { IsCleaning = true });
+
+        // Act
+        await vm.StopCommand.ExecuteAsync(null);
+
+        // Assert
+        await _cleaningSessionMock.Received(1)
+            .ControlAsync(CleaningSessionControl.RequestStop, Arg.Any<CancellationToken>());
         vm.StopOutcomeWarningText.Should().Be(StopTerminationDialogContent.LeftRunningMessage);
         vm.HasStopOutcomeWarning.Should().BeTrue();
     }
@@ -177,18 +165,11 @@ public sealed class ProgressViewModelTests
     public async Task StopCommand_WhenConfirmedDetachedForceTerminationFails_ShouldShowSharedFailureAndPersistWarning()
     {
         // Arrange
-        _orchestratorMock.StopCleaningAsync()
-            .Returns(new StopCleaningResult(TerminationResult.GracePeriodExpired, true));
-        _orchestratorMock.ForceStopCleaningAsync()
-            .Returns(new StopCleaningResult(TerminationResult.ForceKillFailed, true));
-        _messageDialogMock.ShowChoiceAsync(
-                StopTerminationDialogContent.ConfirmationTitle,
-                StopTerminationDialogContent.ConfirmationMessage,
-                StopTerminationDialogContent.ForceTerminateButton,
-                StopTerminationDialogContent.LeaveRunningButton,
-                MessageDialogIcon.Question,
-                Arg.Any<string?>())
-            .Returns(MessageDialogResult.Yes);
+        _cleaningSessionMock.ControlAsync(CleaningSessionControl.RequestStop, Arg.Any<CancellationToken>())
+            .Returns(new CleaningSessionControlResult(
+                CleaningSessionControl.RequestStop,
+                CleaningSessionControlStatus.ForceKillFailed,
+                TerminationResult.ForceKillFailed));
 
         var vm = CreateViewModel();
         _stateSubject.OnNext(new AppState { IsCleaning = true });
@@ -197,7 +178,8 @@ public sealed class ProgressViewModelTests
         await vm.StopCommand.ExecuteAsync(null);
 
         // Assert
-        await _orchestratorMock.Received(1).ForceStopCleaningAsync();
+        await _cleaningSessionMock.Received(1)
+            .ControlAsync(CleaningSessionControl.RequestStop, Arg.Any<CancellationToken>());
         await _messageDialogMock.Received(1).ShowErrorAsync(
             StopTerminationDialogContent.ForceFailureTitle,
             StopTerminationDialogContent.ForceFailureMessage,
@@ -210,7 +192,7 @@ public sealed class ProgressViewModelTests
     public async Task StopCommand_WhenStopThrows_ShouldPersistFailureWarningAndShowSharedFailure()
     {
         // Arrange
-        _orchestratorMock.StopCleaningAsync()
+        _cleaningSessionMock.ControlAsync(CleaningSessionControl.RequestStop, Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("stop failed"));
         _messageDialogMock.ShowErrorAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>())
             .Returns(Task.CompletedTask);
@@ -235,18 +217,11 @@ public sealed class ProgressViewModelTests
     public async Task StopCommand_WhenFailureDialogThrows_ShouldPersistWarningAndComplete()
     {
         // Arrange
-        _orchestratorMock.StopCleaningAsync()
-            .Returns(new StopCleaningResult(TerminationResult.GracePeriodExpired, true));
-        _orchestratorMock.ForceStopCleaningAsync()
-            .Returns(new StopCleaningResult(TerminationResult.ForceKillFailed, true));
-        _messageDialogMock.ShowChoiceAsync(
-                StopTerminationDialogContent.ConfirmationTitle,
-                StopTerminationDialogContent.ConfirmationMessage,
-                StopTerminationDialogContent.ForceTerminateButton,
-                StopTerminationDialogContent.LeaveRunningButton,
-                MessageDialogIcon.Question,
-                Arg.Any<string?>())
-            .Returns(MessageDialogResult.Yes);
+        _cleaningSessionMock.ControlAsync(CleaningSessionControl.RequestStop, Arg.Any<CancellationToken>())
+            .Returns(new CleaningSessionControlResult(
+                CleaningSessionControl.RequestStop,
+                CleaningSessionControlStatus.ForceKillFailed,
+                TerminationResult.ForceKillFailed));
         _messageDialogMock.ShowErrorAsync(
                 StopTerminationDialogContent.ForceFailureTitle,
                 StopTerminationDialogContent.ForceFailureMessage,
@@ -856,7 +831,7 @@ public sealed class ProgressViewModelTests
     }
 
     [Fact]
-    public async Task CancelBackupOperationCommand_CallsOrchestratorOnce()
+    public async Task CancelBackupOperationCommand_SendsSessionControlOnce()
     {
         // Arrange
         var vm = CreateViewModel();
@@ -876,7 +851,8 @@ public sealed class ProgressViewModelTests
         await vm.CancelBackupOperationCommand.ExecuteAsync(null);
 
         // Assert
-        await _orchestratorMock.Received(1).CancelBackupOperationAsync();
+        await _cleaningSessionMock.Received(1)
+            .ControlAsync(CleaningSessionControl.CancelBackupOperation, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -976,8 +952,11 @@ public sealed class ProgressViewModelTests
     public async Task KillHungProcessCommand_ShouldForceStopDirectlyWithoutConfirmation()
     {
         // Arrange
-        _orchestratorMock.ForceStopCleaningAsync()
-            .Returns(new StopCleaningResult(TerminationResult.ForceKilled, false));
+        _cleaningSessionMock.ControlAsync(CleaningSessionControl.ForceStop, Arg.Any<CancellationToken>())
+            .Returns(new CleaningSessionControlResult(
+                CleaningSessionControl.ForceStop,
+                CleaningSessionControlStatus.ForceStopped,
+                TerminationResult.ForceKilled));
         var vm = CreateViewModel();
         vm.IsHangWarningVisible = true;
 
@@ -985,7 +964,8 @@ public sealed class ProgressViewModelTests
         await vm.KillHungProcessCommand.ExecuteAsync(null);
 
         // Assert
-        await _orchestratorMock.Received(1).ForceStopCleaningAsync();
+        await _cleaningSessionMock.Received(1)
+            .ControlAsync(CleaningSessionControl.ForceStop, Arg.Any<CancellationToken>());
         await _messageDialogMock.DidNotReceive().ShowChoiceAsync(
             Arg.Any<string>(),
             Arg.Any<string>(),
@@ -1000,8 +980,11 @@ public sealed class ProgressViewModelTests
     public async Task KillHungProcessCommand_WhenForceKillFails_ShouldShowSharedFailureAndPersistWarning()
     {
         // Arrange
-        _orchestratorMock.ForceStopCleaningAsync()
-            .Returns(new StopCleaningResult(TerminationResult.ForceKillFailed, true));
+        _cleaningSessionMock.ControlAsync(CleaningSessionControl.ForceStop, Arg.Any<CancellationToken>())
+            .Returns(new CleaningSessionControlResult(
+                CleaningSessionControl.ForceStop,
+                CleaningSessionControlStatus.ForceKillFailed,
+                TerminationResult.ForceKillFailed));
         var vm = CreateViewModel();
         vm.IsHangWarningVisible = true;
 
@@ -1021,7 +1004,7 @@ public sealed class ProgressViewModelTests
     public async Task KillHungProcessCommand_WhenForceStopThrows_ShouldPersistFailureWarningAndShowSharedFailure()
     {
         // Arrange
-        _orchestratorMock.ForceStopCleaningAsync()
+        _cleaningSessionMock.ControlAsync(CleaningSessionControl.ForceStop, Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("force stop failed"));
         _messageDialogMock.ShowErrorAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>())
             .Returns(Task.CompletedTask);
@@ -1046,8 +1029,11 @@ public sealed class ProgressViewModelTests
     public async Task KillHungProcessCommand_WhenFailureDialogThrows_ShouldLogAndPersistWarning()
     {
         // Arrange
-        _orchestratorMock.ForceStopCleaningAsync()
-            .Returns(new StopCleaningResult(TerminationResult.ForceKillFailed, true));
+        _cleaningSessionMock.ControlAsync(CleaningSessionControl.ForceStop, Arg.Any<CancellationToken>())
+            .Returns(new CleaningSessionControlResult(
+                CleaningSessionControl.ForceStop,
+                CleaningSessionControlStatus.ForceKillFailed,
+                TerminationResult.ForceKillFailed));
         _messageDialogMock.ShowErrorAsync(
                 StopTerminationDialogContent.ForceFailureTitle,
                 StopTerminationDialogContent.ForceFailureMessage,
@@ -1070,8 +1056,11 @@ public sealed class ProgressViewModelTests
     public async Task KillHungProcessCommand_WhenForceKillSucceeds_ShouldNotSetSuccessWarningCopy()
     {
         // Arrange
-        _orchestratorMock.ForceStopCleaningAsync()
-            .Returns(new StopCleaningResult(TerminationResult.ForceKilled, false));
+        _cleaningSessionMock.ControlAsync(CleaningSessionControl.ForceStop, Arg.Any<CancellationToken>())
+            .Returns(new CleaningSessionControlResult(
+                CleaningSessionControl.ForceStop,
+                CleaningSessionControlStatus.ForceStopped,
+                TerminationResult.ForceKilled));
         var vm = CreateViewModel();
         vm.IsHangWarningVisible = true;
 
@@ -1114,7 +1103,7 @@ public sealed class ProgressViewModelTests
         _stateServiceMock.StateChanged.Returns(stateSubject);
 
         // Act
-        var vm = new ProgressViewModel(_stateServiceMock, _orchestratorMock, _messageDialogMock, _loggerMock, _uiDispatcher);
+        var vm = new ProgressViewModel(_stateServiceMock, _cleaningSessionMock, _messageDialogMock, _loggerMock, _uiDispatcher);
 
         // Assert
         vm.Progress.Should().Be(3);

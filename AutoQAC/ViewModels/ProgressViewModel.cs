@@ -15,7 +15,7 @@ namespace AutoQAC.ViewModels;
 
 public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
 {
-    private readonly ICleaningOrchestrator _orchestrator;
+    private readonly ICleaningSession _cleaningSession;
     private readonly IMessageDialogService _messageDialog;
     private readonly ILoggingService _logger;
     private readonly List<IDisposable> _subscriptions = [];
@@ -142,10 +142,10 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
     /// <summary>Event raised when the window should close.</summary>
     public event EventHandler? CloseRequested;
 
-    public ProgressViewModel(IStateService stateService, ICleaningOrchestrator orchestrator,
+    public ProgressViewModel(IStateService stateService, ICleaningSession cleaningSession,
         IMessageDialogService messageDialog, ILoggingService logger, IUiDispatcher uiDispatcher)
     {
-        _orchestrator = orchestrator;
+        _cleaningSession = cleaningSession;
         _messageDialog = messageDialog;
         _logger = logger;
 
@@ -159,7 +159,7 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
             new CallbackObserver<CleaningSessionResult>(session =>
                 uiDispatcher.Post(() => OnCleaningCompleted(session)))));
 
-        _subscriptions.Add(_orchestrator.HangDetected.Subscribe(
+        _subscriptions.Add(_cleaningSession.HangDetected.Subscribe(
             new CallbackObserver<bool>(isHung => uiDispatcher.Post(() => OnHangDetected(isHung)))));
 
         _subscriptions.Add(stateService.IsTerminatingChanged.Subscribe(
@@ -193,29 +193,8 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
     {
         try
         {
-            var stopResult = await _orchestrator.StopCleaningAsync();
-            var terminationResult = stopResult.TerminationResult ?? _orchestrator.LastTerminationResult;
-
-            if (terminationResult != TerminationResult.GracePeriodExpired)
-            {
-                return;
-            }
-
-            var choice = await _messageDialog.ShowChoiceAsync(StopTerminationDialogContent.ConfirmationTitle,
-                StopTerminationDialogContent.ConfirmationMessage,
-                StopTerminationDialogContent.ForceTerminateButton,
-                StopTerminationDialogContent.LeaveRunningButton);
-
-            if (choice == MessageDialogResult.Yes)
-            {
-                var forceResult = await _orchestrator.ForceStopCleaningAsync();
-                await ReportForceStopFailureIfNeededAsync(forceResult.TerminationResult ??
-                                                          _orchestrator.LastTerminationResult);
-                return;
-            }
-
-            _orchestrator.MarkLeftRunningByUser();
-            StopOutcomeWarningText = StopTerminationDialogContent.LeftRunningMessage;
+            var result = await _cleaningSession.ControlAsync(CleaningSessionControl.RequestStop);
+            await ReportControlWarningIfNeededAsync(result);
         }
         catch (Exception ex)
         {
@@ -240,9 +219,8 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
         try
         {
             IsHangWarningVisible = false;
-            var forceResult = await _orchestrator.ForceStopCleaningAsync();
-            await ReportForceStopFailureIfNeededAsync(forceResult.TerminationResult ??
-                                                      _orchestrator.LastTerminationResult);
+            var forceResult = await _cleaningSession.ControlAsync(CleaningSessionControl.ForceStop);
+            await ReportControlWarningIfNeededAsync(forceResult);
         }
         catch (Exception ex)
         {
@@ -253,17 +231,20 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>
-    /// Reports force-stop failures through the shared safe dialog copy and persistent Progress summary warning.
+    /// Reports control outcomes through the shared safe dialog copy and persistent Progress summary warning.
     /// </summary>
-    /// <param name="terminationResult">The latest termination result returned by the orchestrator or cached by it.</param>
-    private async Task ReportForceStopFailureIfNeededAsync(TerminationResult? terminationResult)
+    /// <param name="result">The structured control result returned by the Cleaning session.</param>
+    private async Task ReportControlWarningIfNeededAsync(CleaningSessionControlResult result)
     {
-        if (terminationResult != TerminationResult.ForceKillFailed)
+        if (result.Status == CleaningSessionControlStatus.LeftRunningByUser)
         {
-            return;
+            StopOutcomeWarningText = StopTerminationDialogContent.LeftRunningMessage;
         }
 
-        await ShowForceFailureDialogSafelyAsync();
+        if (result.Status == CleaningSessionControlStatus.ForceKillFailed)
+        {
+            await ShowForceFailureDialogSafelyAsync();
+        }
     }
 
     /// <summary>
@@ -290,7 +271,7 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanCancelBackupOperation))]
     private async Task CancelBackupOperationAsync() =>
-        await _orchestrator.CancelBackupOperationAsync();
+        await _cleaningSession.ControlAsync(CleaningSessionControl.CancelBackupOperation);
 
     private void OnStateChanged(AppState state)
     {

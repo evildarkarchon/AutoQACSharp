@@ -22,31 +22,28 @@ public sealed class CleaningCommandsViewModelTests
     /// Ensures approximation refresh cancellation happens before progress display and before xEdit cleaning starts.
     /// </summary>
     [Fact]
-    public async Task StartCleaningAsync_ShouldCancelActiveRefreshBeforeProgressAndOrchestratorStart()
+    public async Task StartCommand_ShouldCancelActiveRefreshBeforeProgressAndSessionStart()
     {
         var tempXEditPath = Path.Combine(Path.GetTempPath(), $"AutoQAC-{Guid.NewGuid():N}.exe");
         await File.WriteAllTextAsync(tempXEditPath, string.Empty);
 
         var stateService = new StateService();
-        var orchestrator = Substitute.For<ICleaningOrchestrator>();
+        var cleaningSession = Substitute.For<ICleaningSession>();
         var pluginLoadingService = Substitute.For<IPluginLoadingService>();
         var coordinator = Substitute.For<IPluginRefreshCoordinator>();
         coordinator.StatusChanged.Returns(Observable.Never<PluginRefreshStatus>());
         var callOrder = new List<string>();
 
-        orchestrator.StartCleaningAsync(
-                Arg.Any<TimeoutRetryCallback>(),
-                Arg.Any<BackupFailureCallback>(),
-                Arg.Any<CancellationToken>())
+        cleaningSession.StartAsync(Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
-                callOrder.Add("orchestrator");
+                callOrder.Add("session");
                 return Task.CompletedTask;
             });
         coordinator.When(c => c.CancelActiveRefresh(PluginRefreshCancelReason.CleaningStarted))
             .Do(_ => callOrder.Add("cancel"));
 
-        var progressInteraction = new Interaction<Unit, Unit>();
+        var progressInteraction = new Interaction<ICleaningSession, Unit>();
         using var progressRegistration = progressInteraction.RegisterHandler(_ =>
         {
             callOrder.Add("progress");
@@ -55,7 +52,7 @@ public sealed class CleaningCommandsViewModelTests
 
         var viewModel = new CleaningCommandsViewModel(
             stateService,
-            orchestrator,
+            cleaningSession,
             Substitute.For<IConfigurationService>(),
             pluginLoadingService,
             coordinator,
@@ -79,7 +76,7 @@ public sealed class CleaningCommandsViewModelTests
 
             await viewModel.StartCleaningCommand.ExecuteAsync(null);
 
-            callOrder.Should().Equal("cancel", "progress", "orchestrator");
+            callOrder.Should().Equal("cancel", "progress", "session");
             coordinator.Received(1).CancelActiveRefresh(PluginRefreshCancelReason.CleaningStarted);
         }
         finally
@@ -96,14 +93,14 @@ public sealed class CleaningCommandsViewModelTests
         var appLifetime = Substitute.For<IAppLifetime>();
         var viewModel = new CleaningCommandsViewModel(
             Substitute.For<IStateService>(),
-            Substitute.For<ICleaningOrchestrator>(),
+            Substitute.For<ICleaningSession>(),
             Substitute.For<IConfigurationService>(),
             Substitute.For<IPluginLoadingService>(),
             Substitute.For<IPluginRefreshCoordinator>(),
             Substitute.For<ILoggingService>(),
             Substitute.For<IMessageDialogService>(),
             appLifetime,
-            new Interaction<Unit, Unit>(),
+            new Interaction<ICleaningSession, Unit>(),
             new Interaction<List<DryRunResult>, Unit>(),
             new Interaction<Unit, bool>(),
             new Interaction<Unit, bool>(),

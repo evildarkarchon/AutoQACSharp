@@ -73,7 +73,7 @@ public sealed class BackupSessionCoordinatorTests : IDisposable
             .Returns(new BackupCreateResult(BackupOperationStatus.Canceled, plugin.FileName, 10, 100, BackupFailureReason.Canceled));
 
         // Act
-        var outcome = await _sut.RunPluginBackupAsync(plugin, _testRoot, onBackupFailure: null, CancellationToken.None);
+        var outcome = await _sut.RunPluginBackupAsync(plugin, _testRoot, CreateDecisionAdapter(), CancellationToken.None);
 
         // Assert
         outcome.Kind.Should().Be(PluginBackupOutcomeKind.Canceled);
@@ -89,10 +89,10 @@ public sealed class BackupSessionCoordinatorTests : IDisposable
         var plugin = CreatePlugin("Skip.esp");
         _backupMock.BackupPluginAsync(plugin, Arg.Any<string>(), Arg.Any<IProgress<BackupCopyProgress>?>(), Arg.Any<CancellationToken>())
             .Returns(new BackupCreateResult(BackupOperationStatus.Failed, plugin.FileName, 0, null, BackupFailureReason.TargetWriteFailed));
-        Task<BackupFailureChoice> Callback(string s, string s1) => Task.FromResult(BackupFailureChoice.SkipPlugin);
 
         // Act
-        var outcome = await _sut.RunPluginBackupAsync(plugin, _testRoot, Callback, CancellationToken.None);
+        var outcome = await _sut.RunPluginBackupAsync(plugin, _testRoot,
+            CreateDecisionAdapter(BackupFailureChoice.SkipPlugin), CancellationToken.None);
 
         // Assert
         outcome.Kind.Should().Be(PluginBackupOutcomeKind.UserSkipped);
@@ -108,10 +108,10 @@ public sealed class BackupSessionCoordinatorTests : IDisposable
         var plugin = CreatePlugin("Abort.esp");
         _backupMock.BackupPluginAsync(plugin, Arg.Any<string>(), Arg.Any<IProgress<BackupCopyProgress>?>(), Arg.Any<CancellationToken>())
             .Returns(new BackupCreateResult(BackupOperationStatus.Failed, plugin.FileName, 0, null, BackupFailureReason.AccessDenied));
-        Task<BackupFailureChoice> Callback(string s, string s1) => Task.FromResult(BackupFailureChoice.AbortSession);
 
         // Act
-        var outcome = await _sut.RunPluginBackupAsync(plugin, _testRoot, Callback, CancellationToken.None);
+        var outcome = await _sut.RunPluginBackupAsync(plugin, _testRoot,
+            CreateDecisionAdapter(BackupFailureChoice.AbortSession), CancellationToken.None);
 
         // Assert
         outcome.Kind.Should().Be(PluginBackupOutcomeKind.AbortSession);
@@ -125,10 +125,10 @@ public sealed class BackupSessionCoordinatorTests : IDisposable
         var plugin = CreatePlugin("Continue.esp");
         _backupMock.BackupPluginAsync(plugin, Arg.Any<string>(), Arg.Any<IProgress<BackupCopyProgress>?>(), Arg.Any<CancellationToken>())
             .Returns(new BackupCreateResult(BackupOperationStatus.Failed, plugin.FileName, 0, null, BackupFailureReason.AccessDenied));
-        Task<BackupFailureChoice> Callback(string s, string s1) => Task.FromResult(BackupFailureChoice.ContinueWithoutBackup);
 
         // Act
-        var outcome = await _sut.RunPluginBackupAsync(plugin, _testRoot, Callback, CancellationToken.None);
+        var outcome = await _sut.RunPluginBackupAsync(plugin, _testRoot,
+            CreateDecisionAdapter(BackupFailureChoice.ContinueWithoutBackup), CancellationToken.None);
 
         // Assert
         outcome.Kind.Should().Be(PluginBackupOutcomeKind.ContinueWithoutBackup);
@@ -164,7 +164,7 @@ public sealed class BackupSessionCoordinatorTests : IDisposable
             .Returns(new BackupCreateResult(BackupOperationStatus.Complete, plugin.FileName, 100, 100, null));
 
         // Act
-        var outcome = await _sut.RunPluginBackupAsync(plugin, _testRoot, onBackupFailure: null, CancellationToken.None);
+        var outcome = await _sut.RunPluginBackupAsync(plugin, _testRoot, CreateDecisionAdapter(), CancellationToken.None);
 
         // Assert
         outcome.Kind.Should().Be(PluginBackupOutcomeKind.Succeeded);
@@ -203,4 +203,16 @@ public sealed class BackupSessionCoordinatorTests : IDisposable
         OriginalPath = $@"C:\Games\Data\{fileName}",
         FileSizeBytes = 42
     };
+
+    private static ICleaningSessionDecisionAdapter CreateDecisionAdapter(
+        BackupFailureChoice choice = BackupFailureChoice.ContinueWithoutBackup)
+    {
+        var decisions = Substitute.For<ICleaningSessionDecisionAdapter>();
+        decisions.ChooseBackupFailureAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>())
+            .Returns(choice);
+        return decisions;
+    }
 }

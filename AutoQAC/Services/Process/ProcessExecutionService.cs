@@ -98,7 +98,7 @@ public sealed class ProcessExecutionService(
                 logger.Warning("[Orphan] Failed to track process PID {Pid}: {Error}", processId, ex.Message);
             }
 
-            // Notify caller of the started process (for CleaningOrchestrator to hold a reference)
+            // Notify caller of the started process (for CleaningSession to hold a reference)
             onProcessStarted?.Invoke(process);
 
             // Wait with timeout and cancellation

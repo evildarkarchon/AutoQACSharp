@@ -21,7 +21,7 @@ public sealed class MainWindowViewModelTests
 {
     private readonly IConfigurationService _configServiceMock;
     private readonly IStateService _stateServiceMock;
-    private readonly ICleaningOrchestrator _orchestratorMock;
+    private readonly ICleaningSession _cleaningSessionMock;
     private readonly ILoggingService _loggerMock;
     private readonly IFileDialogService _fileDialogMock;
     private readonly IMessageDialogService _messageDialogMock;
@@ -33,7 +33,7 @@ public sealed class MainWindowViewModelTests
     {
         _configServiceMock = Substitute.For<IConfigurationService>();
         _stateServiceMock = Substitute.For<IStateService>();
-        _orchestratorMock = Substitute.For<ICleaningOrchestrator>();
+        _cleaningSessionMock = Substitute.For<ICleaningSession>();
         _loggerMock = Substitute.For<ILoggingService>();
         _fileDialogMock = Substitute.For<IFileDialogService>();
         _messageDialogMock = Substitute.For<IMessageDialogService>();
@@ -91,7 +91,7 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
-    public async Task StartCleaningCommand_ShouldCallOrchestrator_WhenCanStart()
+    public async Task StartCleaningCommand_ShouldCallSession_WhenCanStart()
     {
         // Arrange - create temp file to satisfy File.Exists check in ValidatePreClean
         var tempFile = Path.GetTempFileName();
@@ -112,7 +112,7 @@ public sealed class MainWindowViewModelTests
             var vm = new MainWindowViewModel(
                 _configServiceMock,
                 _stateServiceMock,
-                _orchestratorMock,
+                _cleaningSessionMock,
                 _loggerMock,
                 _fileDialogMock,
                 _messageDialogMock,
@@ -128,9 +128,7 @@ public sealed class MainWindowViewModelTests
             // Act
             await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
 
-            // Assert - verify the 3-param overload with timeout and backup failure callbacks is called
-            await _orchestratorMock.Received(1)
-                .StartCleaningAsync(Arg.Any<TimeoutRetryCallback>(), Arg.Any<BackupFailureCallback>(), Arg.Any<CancellationToken>());
+            await _cleaningSessionMock.Received(1).StartAsync(Arg.Any<CancellationToken>());
         }
         finally
         {
@@ -162,7 +160,7 @@ public sealed class MainWindowViewModelTests
             var vm = new MainWindowViewModel(
                 _configServiceMock,
                 _stateServiceMock,
-                _orchestratorMock,
+                _cleaningSessionMock,
                 _loggerMock,
                 _fileDialogMock,
                 _messageDialogMock,
@@ -173,13 +171,12 @@ public sealed class MainWindowViewModelTests
 
             await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
 
-            await _orchestratorMock.DidNotReceive()
-                .StartCleaningAsync(Arg.Any<TimeoutRetryCallback>(), Arg.Any<BackupFailureCallback>(), Arg.Any<CancellationToken>());
+            await _cleaningSessionMock.DidNotReceive().StartAsync(Arg.Any<CancellationToken>());
             await _messageDialogMock.Received(1).ShowErrorAsync(
                 "Cleaning Failed",
                 Arg.Any<string>(),
                 Arg.Any<string?>());
-            _loggerMock.Received().Error(Arg.Any<ApplicationException>(), "StartCleaningAsync failed");
+            _loggerMock.Received().Error(Arg.Any<ApplicationException>(), "StartAsync failed");
         }
         finally
         {
@@ -205,7 +202,7 @@ public sealed class MainWindowViewModelTests
             var stateSubject = new BehaviorSubject<AppState>(stateWithPlugins);
             _stateServiceMock.StateChanged.Returns(stateSubject);
             _stateServiceMock.CurrentState.Returns(stateWithPlugins);
-            _orchestratorMock.RunDryRunAsync(Arg.Any<CancellationToken>())
+            _cleaningSessionMock.PreviewAsync(Arg.Any<CancellationToken>())
                 .Returns(new List<DryRunResult>());
             _messageDialogMock.ShowErrorAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>())
                 .Returns(Task.CompletedTask);
@@ -213,7 +210,7 @@ public sealed class MainWindowViewModelTests
             var vm = new MainWindowViewModel(
                 _configServiceMock,
                 _stateServiceMock,
-                _orchestratorMock,
+                _cleaningSessionMock,
                 _loggerMock,
                 _fileDialogMock,
                 _messageDialogMock,
@@ -252,7 +249,7 @@ public sealed class MainWindowViewModelTests
             var vm = new MainWindowViewModel(
                 _configServiceMock,
                 _stateServiceMock,
-                _orchestratorMock,
+                _cleaningSessionMock,
                 _loggerMock,
                 _fileDialogMock,
                 _messageDialogMock,
@@ -335,7 +332,7 @@ public sealed class MainWindowViewModelTests
             var vm = new MainWindowViewModel(
                 _configServiceMock,
                 _stateServiceMock,
-                _orchestratorMock,
+                _cleaningSessionMock,
                 _loggerMock,
                 _fileDialogMock,
                 _messageDialogMock,
@@ -350,8 +347,7 @@ public sealed class MainWindowViewModelTests
             vm.Configuration.LoadOrderPath = "plugins.txt";
             vm.Configuration.XEditPath = tempFile;
 
-            // Configure orchestrator to throw exception (use the 3-param overload)
-            _orchestratorMock.StartCleaningAsync(Arg.Any<TimeoutRetryCallback>(), Arg.Any<BackupFailureCallback>(), Arg.Any<CancellationToken>())
+            _cleaningSessionMock.StartAsync(Arg.Any<CancellationToken>())
                 .ThrowsAsync(new InvalidOperationException("Configuration is invalid"));
 
             // Act
@@ -367,7 +363,7 @@ public sealed class MainWindowViewModelTests
             await _messageDialogMock.DidNotReceive()
                 .ShowErrorAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>());
 
-            // Verify that the StartCleaningAsync error was logged
+            // Verify that the StartAsync error was logged
             _loggerMock.Received().Error(Arg.Any<Exception>(), Arg.Is<string>(s => s.Contains("validation") || s.Contains("failed")));
         }
         finally
@@ -391,7 +387,7 @@ public sealed class MainWindowViewModelTests
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
@@ -441,7 +437,7 @@ public sealed class MainWindowViewModelTests
             var vm = new MainWindowViewModel(
                 _configServiceMock,
                 _stateServiceMock,
-                _orchestratorMock,
+                _cleaningSessionMock,
                 _loggerMock,
                 _fileDialogMock,
                 _messageDialogMock,
@@ -501,7 +497,7 @@ public sealed class MainWindowViewModelTests
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
@@ -533,7 +529,7 @@ public sealed class MainWindowViewModelTests
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
@@ -556,23 +552,25 @@ public sealed class MainWindowViewModelTests
     }
 
     /// <summary>
-    /// Verifies that StopCleaningCommand calls orchestrator's StopCleaningAsync.
+    /// Verifies that StopCleaningCommand sends a stop control request to the active session.
     /// </summary>
     [Fact]
-    public async Task StopCleaningCommand_ShouldCallOrchestratorStop()
+    public async Task StopCleaningCommand_ShouldRequestSessionStop()
     {
         // Arrange
         var stateSubject = new BehaviorSubject<AppState>(new AppState { IsCleaning = true });
         _stateServiceMock.StateChanged.Returns(stateSubject);
         _stateServiceMock.CurrentState.Returns(new AppState { IsCleaning = true });
 
-        _orchestratorMock.StopCleaningAsync().Returns(new StopCleaningResult(null, false));
-        _orchestratorMock.LastTerminationResult.Returns((TerminationResult?)null);
+        _cleaningSessionMock.ControlAsync(CleaningSessionControl.RequestStop, Arg.Any<CancellationToken>())
+            .Returns(new CleaningSessionControlResult(
+                CleaningSessionControl.RequestStop,
+                CleaningSessionControlStatus.StopRequested));
 
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
@@ -584,13 +582,11 @@ public sealed class MainWindowViewModelTests
         await vm.Commands.StopCleaningCommand.ExecuteAsync(null);
 
         // Assert
-        await _orchestratorMock.Received(1).StopCleaningAsync();
+        await _cleaningSessionMock.Received(1)
+            .ControlAsync(CleaningSessionControl.RequestStop, Arg.Any<CancellationToken>());
         vm.Commands.StatusText.Should().Contain("Stopping");
     }
 
-    /// <summary>
-    /// When grace period expires and user confirms, ForceStopCleaningAsync should be called.
-    /// </summary>
     [Fact]
     public void StopTerminationDialogContent_ShouldExposeSharedStopCopyContract()
     {
@@ -616,29 +612,23 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
-    public async Task StopCleaningCommand_GracePeriodExpired_UserConfirms_ShouldForceStop()
+    public async Task StopCleaningCommand_ForceStoppedStatus_ShouldNotPromptInViewModel()
     {
         // Arrange
         var stateSubject = new BehaviorSubject<AppState>(new AppState { IsCleaning = true });
         _stateServiceMock.StateChanged.Returns(stateSubject);
         _stateServiceMock.CurrentState.Returns(new AppState { IsCleaning = true });
 
-        _orchestratorMock.StopCleaningAsync().Returns(new StopCleaningResult(TerminationResult.GracePeriodExpired, true));
-        _orchestratorMock.LastTerminationResult.Returns(TerminationResult.GracePeriodExpired);
-        _orchestratorMock.ForceStopCleaningAsync().Returns(new StopCleaningResult(TerminationResult.ForceKilled, false));
-        _messageDialogMock.ShowChoiceAsync(
-                Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<MessageDialogIcon>(),
-                Arg.Any<string?>())
-            .Returns(MessageDialogResult.Yes);
+        _cleaningSessionMock.ControlAsync(CleaningSessionControl.RequestStop, Arg.Any<CancellationToken>())
+            .Returns(new CleaningSessionControlResult(
+                CleaningSessionControl.RequestStop,
+                CleaningSessionControlStatus.ForceStopped,
+                TerminationResult.ForceKilled));
 
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
@@ -650,42 +640,35 @@ public sealed class MainWindowViewModelTests
         await vm.Commands.StopCleaningCommand.ExecuteAsync(null);
 
         // Assert
-        await _orchestratorMock.Received(1).ForceStopCleaningAsync();
-        await _messageDialogMock.Received(1).ShowChoiceAsync(
-            StopTerminationDialogContent.ConfirmationTitle,
-            StopTerminationDialogContent.ConfirmationMessage,
-            StopTerminationDialogContent.ForceTerminateButton,
-            StopTerminationDialogContent.LeaveRunningButton,
-            MessageDialogIcon.Question,
-            null);
+        await _cleaningSessionMock.Received(1)
+            .ControlAsync(CleaningSessionControl.RequestStop, Arg.Any<CancellationToken>());
+        await _messageDialogMock.DidNotReceive().ShowChoiceAsync(
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Any<MessageDialogIcon>(),
+            Arg.Any<string?>());
     }
 
-    /// <summary>
-    /// When grace period expires and user declines, ForceStopCleaningAsync should NOT be called.
-    /// </summary>
     [Fact]
-    public async Task StopCleaningCommand_GracePeriodExpired_UserDeclines_ShouldNotForceStop()
+    public async Task StopCleaningCommand_LeftRunningByUserStatus_ShouldShowWarning()
     {
         // Arrange
         var stateSubject = new BehaviorSubject<AppState>(new AppState { IsCleaning = true });
         _stateServiceMock.StateChanged.Returns(stateSubject);
         _stateServiceMock.CurrentState.Returns(new AppState { IsCleaning = true });
 
-        _orchestratorMock.StopCleaningAsync().Returns(new StopCleaningResult(TerminationResult.GracePeriodExpired, true));
-        _orchestratorMock.LastTerminationResult.Returns(TerminationResult.GracePeriodExpired);
-        _messageDialogMock.ShowChoiceAsync(
-                Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<MessageDialogIcon>(),
-                Arg.Any<string?>())
-            .Returns(MessageDialogResult.No);
+        _cleaningSessionMock.ControlAsync(CleaningSessionControl.RequestStop, Arg.Any<CancellationToken>())
+            .Returns(new CleaningSessionControlResult(
+                CleaningSessionControl.RequestStop,
+                CleaningSessionControlStatus.LeftRunningByUser,
+                TerminationResult.GracePeriodExpired));
 
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
@@ -697,15 +680,8 @@ public sealed class MainWindowViewModelTests
         await vm.Commands.StopCleaningCommand.ExecuteAsync(null);
 
         // Assert
-        await _orchestratorMock.DidNotReceive().ForceStopCleaningAsync();
-        _orchestratorMock.Received(1).MarkLeftRunningByUser();
-        await _messageDialogMock.Received(1).ShowChoiceAsync(
-            StopTerminationDialogContent.ConfirmationTitle,
-            StopTerminationDialogContent.ConfirmationMessage,
-            StopTerminationDialogContent.ForceTerminateButton,
-            StopTerminationDialogContent.LeaveRunningButton,
-            MessageDialogIcon.Question,
-            null);
+        await _cleaningSessionMock.Received(1)
+            .ControlAsync(CleaningSessionControl.RequestStop, Arg.Any<CancellationToken>());
         await _messageDialogMock.Received(1).ShowWarningAsync(
             StopTerminationDialogContent.LeftRunningTitle,
             StopTerminationDialogContent.LeftRunningMessage,
@@ -718,15 +694,11 @@ public sealed class MainWindowViewModelTests
         var stateSubject = new BehaviorSubject<AppState>(new AppState { IsCleaning = true });
         _stateServiceMock.StateChanged.Returns(stateSubject);
         _stateServiceMock.CurrentState.Returns(new AppState { IsCleaning = true });
-        _orchestratorMock.StopCleaningAsync().Returns(new StopCleaningResult(TerminationResult.GracePeriodExpired, true));
-        _messageDialogMock.ShowChoiceAsync(
-                Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<MessageDialogIcon>(),
-                Arg.Any<string?>())
-            .Returns(MessageDialogResult.No);
+        _cleaningSessionMock.ControlAsync(CleaningSessionControl.RequestStop, Arg.Any<CancellationToken>())
+            .Returns(new CleaningSessionControlResult(
+                CleaningSessionControl.RequestStop,
+                CleaningSessionControlStatus.LeftRunningByUser,
+                TerminationResult.GracePeriodExpired));
         _messageDialogMock.ShowWarningAsync(
                 StopTerminationDialogContent.LeftRunningTitle,
                 StopTerminationDialogContent.LeftRunningMessage,
@@ -736,7 +708,7 @@ public sealed class MainWindowViewModelTests
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
@@ -746,8 +718,8 @@ public sealed class MainWindowViewModelTests
 
         await vm.Commands.StopCleaningCommand.ExecuteAsync(null);
 
-        _orchestratorMock.Received(1).MarkLeftRunningByUser();
-        await _orchestratorMock.DidNotReceive().ForceStopCleaningAsync();
+        await _cleaningSessionMock.Received(1)
+            .ControlAsync(CleaningSessionControl.RequestStop, Arg.Any<CancellationToken>());
         await _messageDialogMock.DidNotReceive().ShowErrorAsync(
             StopTerminationDialogContent.ForceFailureTitle,
             StopTerminationDialogContent.ForceFailureMessage,
@@ -793,7 +765,7 @@ public sealed class MainWindowViewModelTests
             var vm = new MainWindowViewModel(
                 _configServiceMock,
                 _stateServiceMock,
-                _orchestratorMock,
+                _cleaningSessionMock,
                 _loggerMock,
                 _fileDialogMock,
                 _messageDialogMock,
@@ -844,7 +816,7 @@ public sealed class MainWindowViewModelTests
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
@@ -869,21 +841,16 @@ public sealed class MainWindowViewModelTests
         var stateSubject = new BehaviorSubject<AppState>(new AppState { IsCleaning = true });
         _stateServiceMock.StateChanged.Returns(stateSubject);
         _stateServiceMock.CurrentState.Returns(new AppState { IsCleaning = true });
-        _orchestratorMock.StopCleaningAsync().Returns(new StopCleaningResult(TerminationResult.GracePeriodExpired, true));
-        _orchestratorMock.ForceStopCleaningAsync().Returns(new StopCleaningResult(TerminationResult.ForceKillFailed, true));
-        _messageDialogMock.ShowChoiceAsync(
-                Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<MessageDialogIcon>(),
-                Arg.Any<string?>())
-            .Returns(MessageDialogResult.Yes);
+        _cleaningSessionMock.ControlAsync(CleaningSessionControl.RequestStop, Arg.Any<CancellationToken>())
+            .Returns(new CleaningSessionControlResult(
+                CleaningSessionControl.RequestStop,
+                CleaningSessionControlStatus.ForceKillFailed,
+                TerminationResult.ForceKillFailed));
 
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
@@ -897,6 +864,13 @@ public sealed class MainWindowViewModelTests
             StopTerminationDialogContent.ForceFailureTitle,
             StopTerminationDialogContent.ForceFailureMessage,
             null);
+        await _messageDialogMock.DidNotReceive().ShowChoiceAsync(
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Any<MessageDialogIcon>(),
+            Arg.Any<string?>());
     }
 
     [Fact]
@@ -905,14 +879,15 @@ public sealed class MainWindowViewModelTests
         var stateSubject = new BehaviorSubject<AppState>(new AppState { IsCleaning = true });
         _stateServiceMock.StateChanged.Returns(stateSubject);
         _stateServiceMock.CurrentState.Returns(new AppState { IsCleaning = true });
-        _orchestratorMock.StopCleaningAsync().ThrowsAsync(new InvalidOperationException("stop failed"));
+        _cleaningSessionMock.ControlAsync(CleaningSessionControl.RequestStop, Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("stop failed"));
         _messageDialogMock.ShowErrorAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>())
             .Returns(Task.CompletedTask);
 
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
@@ -935,16 +910,11 @@ public sealed class MainWindowViewModelTests
         var stateSubject = new BehaviorSubject<AppState>(new AppState { IsCleaning = true });
         _stateServiceMock.StateChanged.Returns(stateSubject);
         _stateServiceMock.CurrentState.Returns(new AppState { IsCleaning = true });
-        _orchestratorMock.StopCleaningAsync().Returns(new StopCleaningResult(TerminationResult.GracePeriodExpired, true));
-        _orchestratorMock.ForceStopCleaningAsync().Returns(new StopCleaningResult(TerminationResult.ForceKillFailed, true));
-        _messageDialogMock.ShowChoiceAsync(
-                Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<MessageDialogIcon>(),
-                Arg.Any<string?>())
-            .Returns(MessageDialogResult.Yes);
+        _cleaningSessionMock.ControlAsync(CleaningSessionControl.RequestStop, Arg.Any<CancellationToken>())
+            .Returns(new CleaningSessionControlResult(
+                CleaningSessionControl.RequestStop,
+                CleaningSessionControlStatus.ForceKillFailed,
+                TerminationResult.ForceKillFailed));
         _messageDialogMock.ShowErrorAsync(
                 StopTerminationDialogContent.ForceFailureTitle,
                 StopTerminationDialogContent.ForceFailureMessage,
@@ -954,7 +924,7 @@ public sealed class MainWindowViewModelTests
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
@@ -986,7 +956,7 @@ public sealed class MainWindowViewModelTests
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
@@ -1138,7 +1108,7 @@ public sealed class MainWindowViewModelTests
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
@@ -1169,7 +1139,7 @@ public sealed class MainWindowViewModelTests
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
@@ -1215,7 +1185,7 @@ public sealed class MainWindowViewModelTests
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
@@ -1282,7 +1252,7 @@ public sealed class MainWindowViewModelTests
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
@@ -1387,7 +1357,7 @@ public sealed class MainWindowViewModelTests
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
@@ -1478,7 +1448,7 @@ public sealed class MainWindowViewModelTests
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
@@ -1558,7 +1528,7 @@ public sealed class MainWindowViewModelTests
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
@@ -1628,7 +1598,7 @@ public sealed class MainWindowViewModelTests
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
@@ -1727,7 +1697,7 @@ public sealed class MainWindowViewModelTests
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
@@ -1779,7 +1749,7 @@ public sealed class MainWindowViewModelTests
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
@@ -1833,7 +1803,7 @@ public sealed class MainWindowViewModelTests
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
@@ -1868,7 +1838,7 @@ public sealed class MainWindowViewModelTests
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,

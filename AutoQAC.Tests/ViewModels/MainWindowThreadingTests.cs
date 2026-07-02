@@ -53,7 +53,7 @@ public sealed class MainWindowThreadingTests
         var viewModel = new MainWindowViewModel(
             configService,
             stateService,
-            Substitute.For<ICleaningOrchestrator>(),
+            Substitute.For<ICleaningSession>(),
             Substitute.For<ILoggingService>(),
             Substitute.For<IFileDialogService>(),
             Substitute.For<IMessageDialogService>(),
@@ -96,14 +96,14 @@ public sealed class MainWindowThreadingTests
         var pluginLoadingService = Substitute.For<IPluginLoadingService>();
         var viewModel = new CleaningCommandsViewModel(
             Substitute.For<IStateService>(),
-            Substitute.For<ICleaningOrchestrator>(),
+            Substitute.For<ICleaningSession>(),
             Substitute.For<IConfigurationService>(),
             pluginLoadingService,
             Substitute.For<IPluginRefreshCoordinator>(),
             Substitute.For<ILoggingService>(),
             Substitute.For<IMessageDialogService>(),
             Substitute.For<IAppLifetime>(),
-            new Interaction<Unit, Unit>(),
+            new Interaction<ICleaningSession, Unit>(),
             new Interaction<List<DryRunResult>, Unit>(),
             new Interaction<Unit, bool>(),
             new Interaction<Unit, bool>(),
@@ -210,7 +210,7 @@ public sealed class MainWindowThreadingTests
         var viewModel = new MainWindowViewModel(
             configService,
             stateService,
-            Substitute.For<ICleaningOrchestrator>(),
+            Substitute.For<ICleaningSession>(),
             Substitute.For<ILoggingService>(),
             Substitute.For<IFileDialogService>(),
             Substitute.For<IMessageDialogService>(),

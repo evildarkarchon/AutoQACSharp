@@ -25,7 +25,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
     public PluginListViewModel PluginList { get; }
     public CleaningCommandsViewModel Commands { get; }
 
-    public Interaction<Unit, Unit> ShowProgressInteraction { get; } = new();
+    public Interaction<ICleaningSession, Unit> ShowProgressInteraction { get; } = new();
     public Interaction<List<DryRunResult>, Unit> ShowPreviewInteraction { get; } = new();
     public Interaction<CleaningSessionResult, Unit> ShowCleaningResultsInteraction { get; } = new();
     public Interaction<Unit, bool> ShowSettingsInteraction { get; } = new();
@@ -36,7 +36,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
     public MainWindowViewModel(
         IConfigurationService configService,
         IStateService stateService,
-        ICleaningOrchestrator orchestrator,
+        ICleaningSession cleaningSession,
         ILoggingService logger,
         IFileDialogService fileDialog,
         IMessageDialogService messageDialog,
@@ -58,7 +58,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
             uiDispatcher);
 
         Commands = new CleaningCommandsViewModel(
-            stateService, orchestrator, configService, pluginLoadingService,
+            stateService, cleaningSession, configService, pluginLoadingService,
             pluginRefreshCoordinator,
             logger, messageDialog, appLifetime ?? NoOpAppLifetime.Instance,
             ShowProgressInteraction, ShowPreviewInteraction,

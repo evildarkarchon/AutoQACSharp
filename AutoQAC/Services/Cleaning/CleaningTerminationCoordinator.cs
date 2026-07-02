@@ -28,7 +28,7 @@ public sealed partial class CleaningTerminationCoordinator : ICleaningTerminatio
     private readonly Subject<bool> _hangDetected = new();
     private readonly Lock _processLock = new();
 
-    // State owned by this coordinator (lifted from CleaningOrchestrator.cs Phase 5 locks).
+    // State owned by this coordinator (lifted from the old orchestration seam's Phase 5 locks).
     private int _isStopRequested;
     private DiagnosticsProcess? _currentProcess;
     private PendingForceTarget? _pendingForceEscalationTarget;

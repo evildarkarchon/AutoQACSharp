@@ -1,5 +1,3 @@
-using System.Threading.Tasks;
-
 namespace AutoQAC.Models;
 
 /// <summary>
@@ -48,11 +46,3 @@ public enum BackupFailureChoice
     /// <summary>Continue cleaning this plugin without a backup.</summary>
     ContinueWithoutBackup
 }
-
-/// <summary>
-/// Callback delegate invoked when a plugin backup fails during a cleaning session.
-/// </summary>
-/// <param name="pluginName">Name of the plugin that failed to back up.</param>
-/// <param name="errorMessage">Description of the backup failure.</param>
-/// <returns>The user's choice for how to proceed.</returns>
-public delegate Task<BackupFailureChoice> BackupFailureCallback(string pluginName, string errorMessage);

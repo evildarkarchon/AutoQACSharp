@@ -71,7 +71,7 @@ public sealed class DependencyInjectionTests
         provider.GetService<IXEditCommandBuilder>().Should().NotBeNull();
         provider.GetService<IXEditOutputParser>().Should().NotBeNull();
         provider.GetService<ICleaningService>().Should().NotBeNull();
-        provider.GetService<ICleaningOrchestrator>().Should().NotBeNull();
+        provider.GetService<ICleaningSession>().Should().NotBeNull();
 
         // UI Services
         provider.GetService<IFileDialogService>().Should().NotBeNull();

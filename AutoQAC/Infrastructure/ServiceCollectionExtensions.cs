@@ -76,7 +76,9 @@ public static class ServiceCollectionExtensions
             services.AddSingleton<ICleaningTerminationCoordinator, CleaningTerminationCoordinator>();
             services.AddSingleton<IPluginCleaningRunner, PluginCleaningRunner>();
             services.AddSingleton<IPluginResultFinalizer, PluginResultFinalizer>();
-            services.AddSingleton<ICleaningOrchestrator, CleaningOrchestrator>();
+            services.AddSingleton<ICleaningSessionStatePublisher, StateServiceCleaningSessionStatePublisher>();
+            services.AddSingleton<ICleaningSessionDecisionAdapter, CleaningSessionDialogDecisionAdapter>();
+            services.AddSingleton<ICleaningSession, CleaningSession>();
             return services;
         }
 

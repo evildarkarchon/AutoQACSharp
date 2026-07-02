@@ -19,11 +19,11 @@ using NSubstitute;
 namespace AutoQAC.Tests.Services;
 
 /// <summary>
-/// Unit tests for <see cref="ProcessExecutionService"/> and orchestrator-level
+/// Unit tests for <see cref="ProcessExecutionService"/> and cleaning-session-level
 /// process termination/orphan cleanup behavior.
 ///
 /// IMPORTANT: These tests do NOT spawn real processes (no cmd.exe). Tests for
-/// termination and orphan cleanup are done at the orchestrator level via
+/// termination and orphan cleanup are done at the cleaning session level via
 /// Mock&lt;IProcessExecutionService&gt;. Direct ProcessExecutionService tests
 /// are limited to paths that do NOT require a running process (startup failure,
 /// disposal).
@@ -351,13 +351,13 @@ public sealed class ProcessExecutionServiceTests : IDisposable
         tracked.Should().ContainSingle(p => p.Pid == current.Id && p.SessionId == "current-session");
     }
 
-    #region Orchestrator-Level Termination Tests (via IProcessExecutionService substitute)
+    #region Cleaning Session-Level Termination Tests (via IProcessExecutionService substitute)
 
     /// <summary>
-    /// Creates a CleaningOrchestrator with mocked dependencies for testing
+    /// Creates a CleaningSession with mocked dependencies for testing
     /// process termination and orphan cleanup behavior.
     /// </summary>
-    private (CleaningOrchestrator orchestrator, IProcessExecutionService processServiceMock) CreateOrchestrator()
+    private (CleaningSession session, IProcessExecutionService processServiceMock) CreateCleaningSession()
     {
         var cleaningServiceMock = Substitute.For<ICleaningService>();
         var pluginServiceMock = Substitute.For<IPluginValidationService>();
@@ -371,6 +371,7 @@ public sealed class ProcessExecutionServiceTests : IDisposable
         var backupServiceMock = Substitute.For<IBackupService>();
         var hangDetectionMock = Substitute.For<IHangDetectionService>();
         var mo2ValidationMock = Substitute.For<IMo2ValidationService>();
+        var decisionsMock = Substitute.For<ICleaningSessionDecisionAdapter>();
 
         configServiceMock.FlushPendingSavesAsync(Arg.Any<CancellationToken>())
             .Returns(new ConfigPersistenceResult(
@@ -465,17 +466,18 @@ public sealed class ProcessExecutionServiceTests : IDisposable
         gameDetectionServiceMock.DetectVariant(Arg.Any<GameType>(), Arg.Any<List<string>>())
             .Returns(GameVariant.None);
 
-        var orchestrator = new CleaningOrchestrator(
+        var session = new CleaningSession(
             preflight,
             new BackupSessionCoordinator(backupServiceMock, stateServiceMock, loggerMock),
             new CleaningTerminationCoordinator(processServiceMock, hangDetectionMock, stateServiceMock, loggerMock),
             new PluginCleaningRunner(cleaningServiceMock, logFileServiceMock, loggerMock),
             new PluginResultFinalizer(logFileServiceMock, outputParserMock, loggerMock),
-            stateServiceMock,
+            new StateServiceCleaningSessionStatePublisher(stateServiceMock),
+            decisionsMock,
             loggerMock,
             processServiceMock);
 
-        return (orchestrator, processServiceMock);
+        return (session, processServiceMock);
     }
 
     private static string DotNetHostPath => RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "dotnet.exe" : "dotnet";
@@ -522,32 +524,32 @@ public sealed class ProcessExecutionServiceTests : IDisposable
     }
 
     /// <summary>
-    /// Verifies that the orchestrator calls CleanOrphanedProcessesAsync
+    /// Verifies that the cleaning session calls CleanOrphanedProcessesAsync
     /// at the start of each cleaning run (before processing plugins).
     /// </summary>
     [Fact]
-    public async Task Orchestrator_StartCleaning_CallsCleanOrphanedProcessesAsync()
+    public async Task CleaningSession_Start_CallsCleanOrphanedProcessesAsync()
     {
         // Arrange
-        var (orchestrator, processServiceMock) = CreateOrchestrator();
+        var (session, processServiceMock) = CreateCleaningSession();
 
         // Act
-        await orchestrator.StartCleaningAsync();
+        await session.StartAsync();
 
         // Assert
         await processServiceMock.Received(1)
             .CleanOrphanedProcessesAsync(Arg.Any<CancellationToken>());
 
-        orchestrator.Dispose();
+        session.Dispose();
     }
 
     /// <summary>
-    /// Verifies that StopCleaningAsync cancels the CTS which propagates cancellation
+    /// Verifies that ControlAsync(RequestStop) cancels the CTS which propagates cancellation
     /// to the cleaning loop. When CleanPluginAsync throws OperationCanceledException,
-    /// the orchestrator catches it and records WasCancelled = true.
+    /// the cleaning session catches it and records WasCancelled = true.
     /// </summary>
     [Fact]
-    public async Task Orchestrator_StopCleaning_CancelsCts()
+    public async Task CleaningSession_RequestStop_CancelsCts()
     {
         // Arrange
         var cleaningStarted = new TaskCompletionSource<bool>();
@@ -564,13 +566,13 @@ public sealed class ProcessExecutionServiceTests : IDisposable
             {
                 cleaningStarted.TrySetResult(true);
                 // Block until cancellation -- let the exception propagate so the
-                // orchestrator's catch(OperationCanceledException) sets WasCancelled
+                // cleaning session's catch(OperationCanceledException) sets WasCancelled
                 var ct = callInfo.ArgAt<CancellationToken>(2);
                 await WaitForCancellationAndThrowAsync(ct);
                 return new CleaningResult { Status = CleaningStatus.Failed, Message = "Cancelled" };
             });
 
-        // Build orchestrator with blocking mock
+        // Build cleaning session with blocking mock
         var stateServiceMock = Substitute.For<IStateService>();
         var configServiceMock = Substitute.For<IConfigurationService>();
         var logFileServiceMock = Substitute.For<IXEditLogFileService>();
@@ -579,6 +581,7 @@ public sealed class ProcessExecutionServiceTests : IDisposable
         var hangDetectionMock = Substitute.For<IHangDetectionService>();
         var processServiceMock = Substitute.For<IProcessExecutionService>();
         var mo2ValidationMock = Substitute.For<IMo2ValidationService>();
+        var decisionsMock = Substitute.For<ICleaningSessionDecisionAdapter>();
 
         configServiceMock.FlushPendingSavesAsync(Arg.Any<CancellationToken>())
             .Returns(new ConfigPersistenceResult(
@@ -647,44 +650,45 @@ public sealed class ProcessExecutionServiceTests : IDisposable
             stateServiceMock,
             Substitute.For<ILoggingService>());
 
-        var orch = new CleaningOrchestrator(
+        var session = new CleaningSession(
             preflight,
             new BackupSessionCoordinator(backupServiceMock, stateServiceMock, Substitute.For<ILoggingService>()),
             new CleaningTerminationCoordinator(processServiceMock, hangDetectionMock, stateServiceMock, Substitute.For<ILoggingService>()),
             new PluginCleaningRunner(cleaningServiceMock, logFileServiceMock, Substitute.For<ILoggingService>()),
             new PluginResultFinalizer(logFileServiceMock, Substitute.For<IXEditOutputParser>(), Substitute.For<ILoggingService>()),
-            stateServiceMock,
+            new StateServiceCleaningSessionStatePublisher(stateServiceMock),
+            decisionsMock,
             Substitute.For<ILoggingService>(),
             processServiceMock);
 
         // Act
-        var cleaningTask = orch.StartCleaningAsync();
+        var cleaningTask = session.StartAsync();
         await cleaningStarted.Task; // Wait for cleaning to start
 
-        await orch.StopCleaningAsync(); // Request stop (cancels CTS)
+        await session.ControlAsync(CleaningSessionControl.RequestStop); // Request stop (cancels CTS)
         await cleaningTask; // Wait for cleaning to complete
 
         // Assert -- The cleaning was cancelled successfully
         stateServiceMock.Received(1)
             .FinishCleaningWithResults(Arg.Is<CleaningSessionResult>(r => r.WasCancelled));
 
-        orch.Dispose();
+        session.Dispose();
     }
 
     /// <summary>
-    /// Verifies that ForceStopCleaningAsync calls TerminateProcessAsync with
+    /// Verifies that ControlAsync(ForceStop) calls TerminateProcessAsync with
     /// forceKill=true for immediate process tree kill.
     /// </summary>
     [Fact]
-    public async Task Orchestrator_ForceStop_ShouldCallTerminateWithForceKill()
+    public async Task CleaningSession_ForceStop_ShouldCallTerminateWithForceKill()
     {
         // Arrange
-        var (orchestrator, processServiceMock) = CreateOrchestrator();
+        var (session, processServiceMock) = CreateCleaningSession();
 
-        // ForceStopCleaningAsync reads _currentProcess which is null when no
+        // ForceStop control reads _currentProcess which is null when no
         // cleaning is active, so it just cancels the CTS and returns.
         // This test verifies the method doesn't throw when called in isolation.
-        await orchestrator.ForceStopCleaningAsync();
+        await session.ControlAsync(CleaningSessionControl.ForceStop);
 
         // Since _currentProcess is null (no active cleaning), TerminateProcessAsync
         // should not be called. This verifies the null-check path.
@@ -694,34 +698,34 @@ public sealed class ProcessExecutionServiceTests : IDisposable
                 Arg.Any<bool>(),
                 Arg.Any<CancellationToken>());
 
-        orchestrator.Dispose();
+        session.Dispose();
     }
 
     /// <summary>
-    /// Verifies that calling StopCleaningAsync twice quickly (Path B) invokes
-    /// ForceStopCleaningAsync for immediate escalation.
+    /// Verifies that calling ControlAsync(RequestStop) twice quickly (Path B) invokes
+    /// force stop behavior for immediate escalation.
     /// </summary>
     [Fact]
-    public async Task Orchestrator_DoubleStop_EscalatesToForceKill()
+    public async Task CleaningSession_DoubleStop_EscalatesToForceKill()
     {
         // Arrange
-        var (orchestrator, processServiceMock) = CreateOrchestrator();
+        var (session, processServiceMock) = CreateCleaningSession();
 
         // First stop sets _isStopRequested = true
-        await orchestrator.StopCleaningAsync();
+        await session.ControlAsync(CleaningSessionControl.RequestStop);
 
         // Second stop should take Path B (force kill path)
-        await orchestrator.StopCleaningAsync();
+        await session.ControlAsync(CleaningSessionControl.RequestStop);
 
         // With no active process, neither call should invoke TerminateProcessAsync.
-        // But the code path through ForceStopCleaningAsync was exercised.
+        // But the code path through force stop behavior was exercised.
         await processServiceMock.DidNotReceive()
             .TerminateProcessAsync(
                 Arg.Any<Process>(),
                 Arg.Any<bool>(),
                 Arg.Any<CancellationToken>());
 
-        orchestrator.Dispose();
+        session.Dispose();
     }
 
     #endregion

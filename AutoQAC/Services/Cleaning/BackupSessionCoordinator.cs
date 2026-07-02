@@ -77,7 +77,7 @@ public sealed class BackupSessionCoordinator : IBackupSessionCoordinator
     public async Task<PluginBackupOutcome> RunPluginBackupAsync(
         PluginInfo plugin,
         string sessionDir,
-        BackupFailureCallback? onBackupFailure,
+        ICleaningSessionDecisionAdapter decisions,
         CancellationToken sessionToken)
     {
         var backupResult = await BackupPluginAsync(plugin, sessionDir, sessionToken).ConfigureAwait(false);
@@ -114,18 +114,8 @@ public sealed class BackupSessionCoordinator : IBackupSessionCoordinator
             };
         }
 
-        if (onBackupFailure is null)
-        {
-            _logger.Warning("Backup failed for {Plugin}: {Reason}. No callback, continuing without backup.",
-                plugin.FileName, reasonText);
-            return new PluginBackupOutcome
-            {
-                Kind = PluginBackupOutcomeKind.ContinueWithoutBackup,
-                FailureReasonText = reasonText
-            };
-        }
-
-        var choice = await onBackupFailure(plugin.FileName, reasonText).ConfigureAwait(false);
+        var choice = await decisions.ChooseBackupFailureAsync(plugin.FileName, reasonText, sessionToken)
+            .ConfigureAwait(false);
         switch (choice)
         {
             case BackupFailureChoice.SkipPlugin:

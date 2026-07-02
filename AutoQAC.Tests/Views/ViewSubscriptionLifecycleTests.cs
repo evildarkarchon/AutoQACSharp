@@ -31,9 +31,9 @@ public sealed class ViewSubscriptionLifecycleTests
         // Assert
         source.Should().Contain("ContentDialogPresenter.ShowBooleanAsync",
             "SkipListWindow should use the shared serialized ContentDialog flow");
-        source.Should().Contain("handler => _viewModel.CloseRequested += handler",
+        Regex.IsMatch(source, @"handler\s*=>\s*\w+\.CloseRequested\s*\+=\s*handler").Should().BeTrue(
             "window should pass a ViewModel CloseRequested subscription delegate");
-        source.Should().Contain("handler => _viewModel.CloseRequested -= handler",
+        Regex.IsMatch(source, @"handler\s*=>\s*\w+\.CloseRequested\s*-=\s*handler").Should().BeTrue(
             "window must pass an unsubscribe delegate to avoid leaking the ViewModel after close");
         presenterSource.Should().Contain("unsubscribeCloseRequested(OnCloseRequested);",
             "ContentDialogPresenter should execute the unsubscribe delegate when the dialog closes");

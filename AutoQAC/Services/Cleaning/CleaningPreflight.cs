@@ -15,8 +15,8 @@ using AutoQAC.Services.State;
 namespace AutoQAC.Services.Cleaning;
 
 /// <summary>
-/// Shared preflight/selection pipeline (D-13). Consumed by both StartCleaningAsync and
-/// RunDryRunAsync. No cleaning state mutation, no process launch, no backup, no CTS creation (D-14).
+/// Shared preflight/selection pipeline (D-13). Consumed by both StartAsync and
+/// PreviewAsync. No cleaning state mutation, no process launch, no backup, no CTS creation (D-14).
 /// </summary>
 public sealed class CleaningPreflight(
     IConfigurationService configService,

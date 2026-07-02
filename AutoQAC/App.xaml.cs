@@ -48,7 +48,7 @@ public sealed partial class App
         var fileDialog = Services.GetRequiredService<IFileDialogService>();
         var configService = Services.GetRequiredService<IConfigurationService>();
         var stateService = Services.GetRequiredService<IStateService>();
-        var orchestrator = Services.GetRequiredService<ICleaningOrchestrator>();
+        var cleaningSession = Services.GetRequiredService<ICleaningSession>();
         var backupService = Services.GetRequiredService<IBackupService>();
         var messageDialog = Services.GetRequiredService<IMessageDialogService>();
         var uiDispatcher = Services.GetRequiredService<IUiDispatcher>();
@@ -56,7 +56,7 @@ public sealed partial class App
         var windowContextProvider = Services.GetRequiredService<IWindowContextProvider>();
 
         _mainWindow = new MainWindow(viewModel, logger, fileDialog, configService, stateService,
-            orchestrator, backupService, messageDialog, uiDispatcher, uiFrameworkVersionProvider,
+            cleaningSession, backupService, messageDialog, uiDispatcher, uiFrameworkVersionProvider,
             windowContextProvider);
 
         LogStartupInfo(logger, stateService);

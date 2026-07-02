@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 namespace AutoQAC.Services.Cleaning;
 
 /// <summary>
-/// Runs the shared preflight pipeline used by both StartCleaningAsync and RunDryRunAsync (D-13).
+/// Runs the shared preflight pipeline used by both StartAsync and PreviewAsync (D-13).
 /// Flushes pending config, validates environment, detects game/variant, applies skip lists and
 /// exclusions, validates MO2 path (when active), and validates plugin files (when not in MO2 mode).
 /// </summary>

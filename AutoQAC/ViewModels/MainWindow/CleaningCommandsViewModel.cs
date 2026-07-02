@@ -25,14 +25,14 @@ namespace AutoQAC.ViewModels.MainWindow;
 /// </summary>
 public sealed partial class CleaningCommandsViewModel(
     IStateService stateService,
-    ICleaningOrchestrator orchestrator,
+    ICleaningSession cleaningSession,
     IConfigurationService configService,
     IPluginLoadingService pluginLoadingService,
     IPluginRefreshCoordinator? pluginRefreshCoordinator,
     ILoggingService logger,
     IMessageDialogService messageDialog,
     IAppLifetime appLifetime,
-    Interaction<Unit, Unit> showProgressInteraction,
+    Interaction<ICleaningSession, Unit> showProgressInteraction,
     Interaction<List<DryRunResult>, Unit> showPreviewInteraction,
     Interaction<Unit, bool> showSettingsInteraction,
     Interaction<Unit, bool> showSkipListInteraction,
@@ -100,10 +100,10 @@ public sealed partial class CleaningCommandsViewModel(
         try
         {
             _pluginRefreshCoordinator.CancelActiveRefresh(PluginRefreshCancelReason.CleaningStarted);
-            await showProgressInteraction.Handle(Unit.Default);
+            await showProgressInteraction.Handle(cleaningSession);
 
             StatusText = "Cleaning started...";
-            await orchestrator.StartCleaningAsync(HandleTimeoutRetryAsync, HandleBackupFailureAsync);
+            await cleaningSession.StartAsync();
             StatusText = "Cleaning completed.";
         }
         catch (InvalidOperationException ex)
@@ -120,7 +120,7 @@ public sealed partial class CleaningCommandsViewModel(
         }
         catch (Exception ex)
         {
-            logger.Error(ex, "StartCleaningAsync failed");
+            logger.Error(ex, "StartAsync failed");
             var message = DiagnosticTextFormatter.OperationFailed("Cleaning");
             StatusText = message;
             await messageDialog.ShowErrorAsync(
@@ -148,9 +148,9 @@ public sealed partial class CleaningCommandsViewModel(
         try
         {
             StatusText = "Running preview...";
-            var results = await orchestrator.RunDryRunAsync();
+            var results = await cleaningSession.PreviewAsync();
 
-            await showPreviewInteraction.Handle(results);
+            await showPreviewInteraction.Handle(results.ToList());
 
             StatusText = "Preview complete";
         }
@@ -186,37 +186,32 @@ public sealed partial class CleaningCommandsViewModel(
         try
         {
             StatusText = "Stopping...";
-            var stopResult = await orchestrator.StopCleaningAsync();
-            var terminationResult = stopResult.TerminationResult ?? orchestrator.LastTerminationResult;
-
-            if (terminationResult == TerminationResult.GracePeriodExpired)
-            {
-                var choice = await messageDialog.ShowChoiceAsync(StopTerminationDialogContent.ConfirmationTitle,
-                    StopTerminationDialogContent.ConfirmationMessage,
-                    StopTerminationDialogContent.ForceTerminateButton,
-                    StopTerminationDialogContent.LeaveRunningButton);
-
-                if (choice == MessageDialogResult.Yes)
-                {
-                    var forceResult = await orchestrator.ForceStopCleaningAsync();
-                    if (forceResult.TerminationResult == TerminationResult.ForceKillFailed)
-                    {
-                        await ShowStopFailureDialogSafelyAsync();
-                    }
-                }
-                else
-                {
-                    orchestrator.MarkLeftRunningByUser();
-                    StatusText = "Cleaning stopped; xEdit left running.";
-                    await ShowLeftRunningWarningSafelyAsync();
-                }
-            }
+            var result = await cleaningSession.ControlAsync(CleaningSessionControl.RequestStop);
+            await ProjectStopControlResultAsync(result);
         }
         catch (Exception ex)
         {
             logger.Error(ex, "StopCleaningAsync failed");
             StatusText = StopTerminationDialogContent.ForceFailureTitle;
             await ShowStopFailureDialogSafelyAsync();
+        }
+    }
+
+    /// <summary>
+    /// Projects the session-owned stop decision outcome without reimplementing stop escalation policy.
+    /// </summary>
+    private async Task ProjectStopControlResultAsync(CleaningSessionControlResult result)
+    {
+        switch (result.Status)
+        {
+            case CleaningSessionControlStatus.LeftRunningByUser:
+                StatusText = "Cleaning stopped; xEdit left running.";
+                await ShowLeftRunningWarningSafelyAsync();
+                break;
+            case CleaningSessionControlStatus.ForceKillFailed:
+                StatusText = StopTerminationDialogContent.ForceFailureTitle;
+                await ShowStopFailureDialogSafelyAsync();
+                break;
         }
     }
 
@@ -458,32 +453,6 @@ public sealed partial class CleaningCommandsViewModel(
 
     private static string MissingLoadOrderMessage(string? path) =>
         $"{DiagnosticTextFormatter.SafeFileIdentifier("Load Order File", path, "load order file")} is missing. Choose the current plugins.txt or loadorder.txt file.";
-
-    private async Task<bool> HandleTimeoutRetryAsync(string pluginName, int timeoutSeconds, int attemptNumber)
-    {
-        var safePluginName = DiagnosticTextFormatter.SafePluginName(pluginName);
-        var message = $"Cleaning of '{safePluginName}' timed out after {timeoutSeconds} seconds.\n\n" +
-                      $"Attempt {attemptNumber} of 3 failed.\n\n" +
-                      "Would you like to retry cleaning this plugin?";
-
-        const string details = "Possible causes:\n" +
-                               "- The plugin is very large\n" +
-                               "- xEdit is processing slowly\n" +
-                               "- The system is under heavy load\n\n" +
-                               "You can increase the timeout in Edit > Settings if plugins regularly time out.";
-
-        return await messageDialog.ShowRetryAsync("Plugin Timeout", message, details);
-    }
-
-    private async Task<BackupFailureChoice> HandleBackupFailureAsync(string pluginName, string errorMessage)
-    {
-        var safePluginName = DiagnosticTextFormatter.SafePluginName(pluginName);
-        var safeErrorMessage = DiagnosticTextFormatter.SafeFailureSummary(
-            errorMessage,
-            DiagnosticTextFormatter.CleaningFailedForPlugin(pluginName));
-
-        return await messageDialog.ShowBackupFailureDialogAsync(safePluginName, safeErrorMessage);
-    }
 
     public void Dispose()
     {

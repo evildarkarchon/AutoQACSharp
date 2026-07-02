@@ -23,7 +23,7 @@ public sealed partial class MainWindow : Window
     private IFileDialogService? _fileDialog;
     private IConfigurationService? _configService;
     private IStateService? _stateService;
-    private ICleaningOrchestrator? _orchestrator;
+    private ICleaningSession? _cleaningSession;
     private IBackupService? _backupService;
     private IMessageDialogService? _messageDialog;
     private IUiDispatcher? _uiDispatcher;
@@ -43,7 +43,7 @@ public sealed partial class MainWindow : Window
         IFileDialogService fileDialog,
         IConfigurationService configService,
         IStateService stateService,
-        ICleaningOrchestrator orchestrator,
+        ICleaningSession cleaningSession,
         IBackupService backupService,
         IMessageDialogService messageDialog,
         IUiDispatcher uiDispatcher,
@@ -55,7 +55,7 @@ public sealed partial class MainWindow : Window
         _fileDialog = fileDialog;
         _configService = configService;
         _stateService = stateService;
-        _orchestrator = orchestrator;
+        _cleaningSession = cleaningSession;
         _backupService = backupService;
         _messageDialog = messageDialog;
         _uiDispatcher = uiDispatcher;
@@ -165,16 +165,16 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private Task<Unit> ShowProgressAsync(Unit input)
+    private Task<Unit> ShowProgressAsync(ICleaningSession input)
     {
-        if (_stateService is null || _orchestrator is null || _messageDialog is null || _logger is null ||
+        if (_stateService is null || _messageDialog is null || _logger is null ||
             _uiDispatcher is null)
         {
             return Task.FromResult(Unit.Default);
         }
 
         var progressViewModel =
-            new ProgressViewModel(_stateService, _orchestrator, _messageDialog, _logger, _uiDispatcher);
+            new ProgressViewModel(_stateService, input, _messageDialog, _logger, _uiDispatcher);
         var progressWindow = new ProgressWindow(progressViewModel);
 
         // Defense in depth: ProgressWindow subscribes to CloseRequested and disposes
@@ -201,14 +201,14 @@ public sealed partial class MainWindow : Window
 
     private Task<Unit> ShowPreviewAsync(List<DryRunResult> input)
     {
-        if (_stateService is null || _orchestrator is null || _messageDialog is null || _logger is null ||
+        if (_stateService is null || _cleaningSession is null || _messageDialog is null || _logger is null ||
             _uiDispatcher is null)
         {
             return Task.FromResult(Unit.Default);
         }
 
         var progressViewModel =
-            new ProgressViewModel(_stateService, _orchestrator, _messageDialog, _logger, _uiDispatcher);
+            new ProgressViewModel(_stateService, _cleaningSession, _messageDialog, _logger, _uiDispatcher);
         progressViewModel.LoadDryRunResults(input);
 
         var progressWindow = new ProgressWindow(progressViewModel)

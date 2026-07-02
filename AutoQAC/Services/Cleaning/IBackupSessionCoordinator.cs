@@ -26,14 +26,14 @@ public interface IBackupSessionCoordinator
     /// </summary>
     /// <param name="plugin">Plugin that is about to be cleaned by xEdit.</param>
     /// <param name="sessionDir">Backup session directory returned by <see cref="BeginSessionAsync"/>.</param>
-    /// <param name="onBackupFailure">Optional user-choice callback for expected backup failures.</param>
+    /// <param name="decisions">Decision adapter used for expected backup failures.</param>
     /// <param name="sessionToken">Cleaning-session cancellation token; a linked operation CTS is created internally.</param>
     /// <returns>Structured outcome that tells the facade whether to launch xEdit, skip the plugin, or abort the session.</returns>
     /// <exception cref="OperationCanceledException">May be thrown for unexpected cancellation outside expected backup-result cancellation.</exception>
     Task<PluginBackupOutcome> RunPluginBackupAsync(
         PluginInfo plugin,
         string sessionDir,
-        BackupFailureCallback? onBackupFailure,
+        ICleaningSessionDecisionAdapter decisions,
         CancellationToken sessionToken);
 
     /// <summary>
