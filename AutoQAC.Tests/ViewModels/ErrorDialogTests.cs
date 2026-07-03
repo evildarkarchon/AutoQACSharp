@@ -66,6 +66,46 @@ public sealed class ErrorDialogTests
             .Returns([]);
     }
 
+    private IPluginRefreshCoordinator CreateRefreshCoordinator()
+    {
+        var gameDetectionService = Substitute.For<AutoQAC.Services.GameDetection.IGameDetectionService>();
+        gameDetectionService
+            .DetectVariant(Arg.Any<GameType>(), Arg.Any<IReadOnlyList<string>>())
+            .Returns(GameVariant.None);
+        return new PluginRefreshCoordinator(
+            _pluginLoadingServiceMock,
+            new NoOpPluginIssueApproximationService(),
+            _stateServiceMock,
+            new StateServicePluginRefreshPublication(_stateServiceMock),
+            CreateCapabilityPolicy(),
+            _configServiceMock,
+            new SkipListPolicy(_configServiceMock, gameDetectionService),
+            Substitute.For<AutoQAC.Services.MO2.IMo2InstanceService>(),
+            _loggerMock);
+    }
+
+    private IPluginRefreshCapabilityPolicy CreateCapabilityPolicy() =>
+        new PluginRefreshCapabilityPolicy(_pluginLoadingServiceMock);
+
+    private sealed class NoOpPluginIssueApproximationService : IPluginIssueApproximationService
+    {
+        public Task<IReadOnlyList<PluginIssueApproximationResult>> GetApproximationsAsync(
+            GameType gameType,
+            string dataFolder,
+            Action<PluginIssueApproximationResult>? onApproximationReady = null,
+            CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<PluginIssueApproximationResult>>([]);
+
+        public Task<IReadOnlyList<PluginIssueApproximationResult>> GetApproximationsAsync(
+            GameType gameType,
+            string baseDataFolder,
+            IReadOnlyList<string> orderedPluginNames,
+            Func<Mutagen.Bethesda.Plugins.ModKey, string?> pathResolver,
+            Action<PluginIssueApproximationResult>? onApproximationReady = null,
+            CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<PluginIssueApproximationResult>>([]);
+    }
+
     private MainWindowViewModel CreateViewModel()
     {
         var stateSubject = new BehaviorSubject<AppState>(new AppState());
@@ -81,7 +121,9 @@ public sealed class ErrorDialogTests
             _messageDialogMock,
             _pluginServiceMock,
             _pluginLoadingServiceMock,
-            _uiDispatcher);
+            _uiDispatcher,
+            CreateRefreshCoordinator(),
+            CreateCapabilityPolicy());
     }
 
     /// <summary>
@@ -111,7 +153,9 @@ public sealed class ErrorDialogTests
             _messageDialogMock,
             _pluginServiceMock,
             _pluginLoadingServiceMock,
-            _uiDispatcher);
+            _uiDispatcher,
+            CreateRefreshCoordinator(),
+            CreateCapabilityPolicy());
     }
 
     #region xEdit Validation Tests (Inline Validation Panel)
@@ -178,7 +222,9 @@ public sealed class ErrorDialogTests
             _messageDialogMock,
             _pluginServiceMock,
             _pluginLoadingServiceMock,
-            _uiDispatcher);
+            _uiDispatcher,
+            CreateRefreshCoordinator(),
+            CreateCapabilityPolicy());
 
         // Act
         await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
@@ -215,7 +261,9 @@ public sealed class ErrorDialogTests
             _messageDialogMock,
             _pluginServiceMock,
             _pluginLoadingServiceMock,
-            _uiDispatcher);
+            _uiDispatcher,
+            CreateRefreshCoordinator(),
+            CreateCapabilityPolicy());
 
         vm.Configuration.XEditPath = nonExistentPath;
 
@@ -257,7 +305,9 @@ public sealed class ErrorDialogTests
             _messageDialogMock,
             _pluginServiceMock,
             _pluginLoadingServiceMock,
-            _uiDispatcher);
+            _uiDispatcher,
+            CreateRefreshCoordinator(),
+            CreateCapabilityPolicy());
 
         // Act
         await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
@@ -303,7 +353,9 @@ public sealed class ErrorDialogTests
                 _messageDialogMock,
                 _pluginServiceMock,
                 _pluginLoadingServiceMock,
-                _uiDispatcher);
+                _uiDispatcher,
+                CreateRefreshCoordinator(),
+                CreateCapabilityPolicy());
 
             // Act
             await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
@@ -516,7 +568,9 @@ public sealed class ErrorDialogTests
                 _messageDialogMock,
                 _pluginServiceMock,
                 _pluginLoadingServiceMock,
-                _uiDispatcher);
+                _uiDispatcher,
+                CreateRefreshCoordinator(),
+                CreateCapabilityPolicy());
 
             // Act
             await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
@@ -565,7 +619,9 @@ public sealed class ErrorDialogTests
                 _messageDialogMock,
                 _pluginServiceMock,
                 _pluginLoadingServiceMock,
-                _uiDispatcher);
+                _uiDispatcher,
+                CreateRefreshCoordinator(),
+                CreateCapabilityPolicy());
 
             // Act
             await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
@@ -610,7 +666,9 @@ public sealed class ErrorDialogTests
                 _messageDialogMock,
                 _pluginServiceMock,
                 _pluginLoadingServiceMock,
-                _uiDispatcher);
+                _uiDispatcher,
+                CreateRefreshCoordinator(),
+                CreateCapabilityPolicy());
 
             // Act
             await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
@@ -658,7 +716,9 @@ public sealed class ErrorDialogTests
                 _messageDialogMock,
                 _pluginServiceMock,
                 _pluginLoadingServiceMock,
-                _uiDispatcher);
+                _uiDispatcher,
+                CreateRefreshCoordinator(),
+                CreateCapabilityPolicy());
 
             // Act
             await vm.Commands.StartCleaningCommand.ExecuteAsync(null);

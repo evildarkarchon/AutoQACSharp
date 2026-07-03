@@ -2,8 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Reactive.Linq;
-using System.Reactive.Subjects;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
@@ -16,22 +14,21 @@ using AutoQAC.Services.State;
 namespace AutoQAC.Services.Plugin;
 
 /// <summary>
-/// Coordinates Plugin refresh context assembly, row publication, generation cancellation, and issue approximation updates.
+/// Coordinates Plugin refresh context assembly, generation cancellation, plugin loading, and issue approximation invocation.
 /// </summary>
 public sealed partial class PluginRefreshCoordinator : IPluginRefreshCoordinator, IDisposable
 {
     private readonly IPluginLoadingService _pluginLoadingService;
     private readonly IPluginIssueApproximationService _pluginIssueApproximationService;
     private readonly IStateService _stateService;
+    private readonly IPluginRefreshPublication _pluginRefreshPublication;
     private readonly IPluginRefreshCapabilityPolicy _capabilityPolicy;
     private readonly IConfigurationService _configurationService;
     private readonly ISkipListPolicy _skipListPolicy;
     private readonly IMo2InstanceService _mo2InstanceService;
     private readonly ILoggingService? _logger;
-    private readonly Subject<PluginRefreshStatus> _statusChanged = new();
     private CancellationTokenSource? _activeRefreshCts;
     private PluginRefreshContext? _lastSuccessfulContext;
-    private int _refreshGeneration;
 
     /// <summary>
     /// Initializes a new refresh coordinator with the services needed to assemble refresh context and publish rows.
@@ -40,6 +37,7 @@ public sealed partial class PluginRefreshCoordinator : IPluginRefreshCoordinator
         IPluginLoadingService pluginLoadingService,
         IPluginIssueApproximationService pluginIssueApproximationService,
         IStateService stateService,
+        IPluginRefreshPublication pluginRefreshPublication,
         IPluginRefreshCapabilityPolicy capabilityPolicy,
         IConfigurationService configurationService,
         ISkipListPolicy skipListPolicy,
@@ -49,6 +47,7 @@ public sealed partial class PluginRefreshCoordinator : IPluginRefreshCoordinator
         _pluginLoadingService = pluginLoadingService;
         _pluginIssueApproximationService = pluginIssueApproximationService;
         _stateService = stateService;
+        _pluginRefreshPublication = pluginRefreshPublication;
         _capabilityPolicy = capabilityPolicy;
         _configurationService = configurationService;
         _skipListPolicy = skipListPolicy;
@@ -57,7 +56,7 @@ public sealed partial class PluginRefreshCoordinator : IPluginRefreshCoordinator
     }
 
     /// <inheritdoc />
-    public IObservable<PluginRefreshStatus> StatusChanged => _statusChanged.AsObservable();
+    public IObservable<PluginRefreshStatus> StatusChanged => _pluginRefreshPublication.StatusChanged;
 
     /// <inheritdoc />
     public async Task<PluginRefreshProjection> RefreshForGameAsync(
@@ -65,20 +64,18 @@ public sealed partial class PluginRefreshCoordinator : IPluginRefreshCoordinator
         string? selectedLoadOrderPath = null,
         CancellationToken ct = default)
     {
-        var generation = Interlocked.Increment(ref _refreshGeneration);
         using var linkedCts = CreateAndActivateGeneration(ct);
         var token = linkedCts.Token;
+        using var publicationScope = _pluginRefreshPublication.BeginRefresh(token);
         var projection = EmptyProjection(gameType);
 
         try
         {
             if (gameType == GameType.Unknown)
             {
-                if (!IsCurrent(generation, token)) return projection;
+                if (!publicationScope.IsVisible) return projection;
                 _lastSuccessfulContext = null;
-                _stateService.UpdateState(s => s with { CurrentGameType = GameType.Unknown });
-                _stateService.SetPluginsToClean([]);
-                Publish(new PluginRefreshStatus(PluginRefreshStatusKind.Idle, Message: "No game selected"));
+                publicationScope.PublishNoGameSelected();
                 return projection;
             }
 
@@ -86,15 +83,16 @@ public sealed partial class PluginRefreshCoordinator : IPluginRefreshCoordinator
             var contextResult = await CreateContextAsync(gameType, selectedLoadOrderPath, userConfig, token)
                 .ConfigureAwait(false);
             projection = contextResult.Projection;
-            if (!IsCurrent(generation, token)) return projection;
+            if (!publicationScope.IsVisible) return projection;
 
-            PublishConfigurationState(projection, userConfig, contextResult.Context);
+            publicationScope.PublishConfiguration(
+                projection,
+                CreatePublicationSnapshot(userConfig, projection, contextResult.Context));
 
             if (contextResult.Context is null)
             {
                 _lastSuccessfulContext = null;
-                _stateService.SetPluginsToClean([]);
-                Publish(contextResult.Status ?? new PluginRefreshStatus(
+                publicationScope.PublishNoRefreshContext(contextResult.Status ?? new PluginRefreshStatus(
                     PluginRefreshStatusKind.Idle,
                     Message: GetNoPluginsFoundMessage(gameType)));
                 return projection;
@@ -102,15 +100,15 @@ public sealed partial class PluginRefreshCoordinator : IPluginRefreshCoordinator
 
             var context = contextResult.Context;
             _lastSuccessfulContext = context;
-            Publish(new PluginRefreshStatus(PluginRefreshStatusKind.LoadingPlugins));
+            publicationScope.PublishLoadingPlugins();
 
             var loadedPlugins = await LoadPluginsAsync(context, token).ConfigureAwait(false);
-            if (!IsCurrent(generation, token)) return projection;
+            if (!publicationScope.IsVisible) return projection;
 
             if (loadedPlugins.Count == 0)
             {
-                _stateService.SetPluginsToClean([]);
-                Publish(new PluginRefreshStatus(PluginRefreshStatusKind.Idle,
+                publicationScope.PublishNoRefreshContext(new PluginRefreshStatus(
+                    PluginRefreshStatusKind.Idle,
                     Message: GetNoPluginsFoundMessage(context.GameType)));
                 return projection;
             }
@@ -121,7 +119,7 @@ public sealed partial class PluginRefreshCoordinator : IPluginRefreshCoordinator
                     context.DisableSkipLists,
                     token)
                 .ConfigureAwait(false);
-            if (!IsCurrent(generation, token)) return projection;
+            if (!publicationScope.IsVisible) return projection;
 
             var initialApproximation = _capabilityPolicy.SupportsIssueApproximation(context.GameType)
                 ? PluginIssueApproximation.Pending
@@ -130,11 +128,11 @@ public sealed partial class PluginRefreshCoordinator : IPluginRefreshCoordinator
             {
                 Approximation = initialApproximation
             }).ToList();
-            _stateService.SetPluginsToClean(rows);
+            publicationScope.PublishPluginRows(rows);
 
             if (!_capabilityPolicy.SupportsIssueApproximation(context.GameType))
             {
-                Publish(new PluginRefreshStatus(PluginRefreshStatusKind.ApproximationUnavailable));
+                publicationScope.PublishApproximationUnavailable();
                 return projection;
             }
 
@@ -148,34 +146,17 @@ public sealed partial class PluginRefreshCoordinator : IPluginRefreshCoordinator
 
             try
             {
-                var updated = await AnalyzeTargetsAsync(context, dataFolder, targets, generation, token)
+                var approximationPublication = publicationScope.BeginFullApproximationRefresh(targets);
+                await AnalyzeTargetsAsync(context, dataFolder, targets, approximationPublication, token)
                     .ConfigureAwait(false);
-                if (IsCurrent(generation, token))
-                {
-                    // Publish terminal status so PluginListViewModel can clear IsApproximationRefreshRunning
-                    // and the cancel-refresh affordance disables. Superseded generations stay silent.
-                    Publish(PluginRefreshStatus.FullRefreshCompleted(updated));
-                }
+                // Publish terminal status so PluginListViewModel can clear IsApproximationRefreshRunning
+                // and the cancel-refresh affordance disables. Superseded generations stay silent in publication.
+                approximationPublication.PublishCompleted();
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 _logger?.Error(ex, "Failed to refresh plugin issue approximations");
-                foreach (var target in targets)
-                {
-                    if (!IsCurrent(generation, token)) return projection;
-                    _stateService.MergePluginApproximation(new PluginIssueApproximationResult
-                    {
-                        FileName = target.FileName,
-                        FullPath = target.FullPath,
-                        Approximation = PluginIssueApproximation.Unavailable
-                    });
-                }
-
-                if (IsCurrent(generation, token))
-                {
-                    Publish(new PluginRefreshStatus(PluginRefreshStatusKind.Idle,
-                        Message: "Approximation refresh failed."));
-                }
+                publicationScope.PublishApproximationFailure(targets);
             }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
@@ -198,71 +179,34 @@ public sealed partial class PluginRefreshCoordinator : IPluginRefreshCoordinator
         var snapshot = selectedTargets.ToList();
         if (snapshot.Count == 0)
         {
-            Publish(new PluginRefreshStatus(PluginRefreshStatusKind.SelectPlugins));
+            _pluginRefreshPublication.PublishSelectPlugins();
             return;
         }
 
-        var generation = Interlocked.Increment(ref _refreshGeneration);
         using var linkedCts = CreateAndActivateGeneration(ct);
         var token = linkedCts.Token;
+        using var publicationScope = _pluginRefreshPublication.BeginRefresh(token);
 
         try
         {
             var context = await GetContextForSelectedRefreshAsync(token).ConfigureAwait(false);
             if (context is null)
             {
-                Publish(new PluginRefreshStatus(PluginRefreshStatusKind.ApproximationUnavailable));
+                publicationScope.PublishApproximationUnavailable();
                 return;
             }
 
             if (!_capabilityPolicy.SupportsIssueApproximation(context.GameType))
             {
-                Publish(new PluginRefreshStatus(PluginRefreshStatusKind.ApproximationUnavailable));
+                publicationScope.PublishApproximationUnavailable();
                 return;
             }
 
-            var pendingRows = snapshot.Select(target => new PluginInfo
-            {
-                FileName = target.FileName,
-                FullPath = target.FullPath,
-                DetectedGameType = context.GameType,
-                Approximation = PluginIssueApproximation.Pending
-            }).ToList();
-            if (IsCurrent(generation, token))
-            {
-                var targetPaths = snapshot.Select(target => target.FullPath)
-                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
-                var targetNames = snapshot.Select(target => target.FileName)
-                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
-                _stateService.UpdateState(s =>
-                {
-                    if (s.PluginsToClean.Count == 0)
-                    {
-                        return s with { PluginsToClean = pendingRows.AsReadOnly() };
-                    }
-
-                    var rows = s.PluginsToClean.Select(plugin =>
-                    {
-                        // Prefer path matching; fall back to name only when the row has no path.
-                        var isTarget = !string.IsNullOrWhiteSpace(plugin.FullPath)
-                            ? targetPaths.Contains(plugin.FullPath)
-                            : targetNames.Contains(plugin.FileName);
-                        return isTarget
-                            ? plugin with { Approximation = PluginIssueApproximation.Pending }
-                            : plugin;
-                    }).ToList();
-
-                    return s with { PluginsToClean = rows.AsReadOnly() };
-                });
-            }
-
-            var dataFolder = ResolveDataFolder(context, pendingRows);
-            var updated = await AnalyzeTargetsAsync(context, dataFolder, snapshot, generation, token)
+            var approximationPublication = publicationScope.BeginSelectedApproximationRefresh(context.GameType, snapshot);
+            var dataFolder = ResolveDataFolder(context, CreateRowsFromTargets(context.GameType, snapshot));
+            await AnalyzeTargetsAsync(context, dataFolder, snapshot, approximationPublication, token)
                 .ConfigureAwait(false);
-            if (IsCurrent(generation, token))
-            {
-                Publish(PluginRefreshStatus.SelectedRefreshCompleted(updated));
-            }
+            approximationPublication.PublishCompleted();
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
@@ -294,7 +238,7 @@ public sealed partial class PluginRefreshCoordinator : IPluginRefreshCoordinator
 
         if (reason == PluginRefreshCancelReason.Manual)
         {
-            Publish(new PluginRefreshStatus(PluginRefreshStatusKind.Canceled));
+            _pluginRefreshPublication.PublishManualCancellation();
         }
     }
 
@@ -306,7 +250,6 @@ public sealed partial class PluginRefreshCoordinator : IPluginRefreshCoordinator
         var cts = Interlocked.Exchange(ref _activeRefreshCts, null);
         cts?.Cancel();
         cts?.Dispose();
-        _statusChanged.Dispose();
     }
 
     private CancellationTokenSource CreateAndActivateGeneration(CancellationToken externalToken)
@@ -326,9 +269,6 @@ public sealed partial class PluginRefreshCoordinator : IPluginRefreshCoordinator
             cts.Dispose();
         }
     }
-
-    private bool IsCurrent(int generation, CancellationToken token) =>
-        !token.IsCancellationRequested && generation == Volatile.Read(ref _refreshGeneration);
 
     private async Task<PluginRefreshContext?> GetContextForSelectedRefreshAsync(CancellationToken ct)
     {
@@ -511,23 +451,17 @@ public sealed partial class PluginRefreshCoordinator : IPluginRefreshCoordinator
         return new PluginRefreshContextResult(context, baseProjection, null);
     }
 
-    private void PublishConfigurationState(
-        PluginRefreshProjection projection,
+    private static PluginRefreshPublicationSnapshot CreatePublicationSnapshot(
         UserConfiguration userConfig,
-        PluginRefreshContext? context)
-    {
-        _stateService.UpdateConfigurationPaths(
+        PluginRefreshProjection projection,
+        PluginRefreshContext? context) =>
+        new(
             context is { Mo2Mode: false } ? projection.LoadOrderPath : null,
             userConfig.ModOrganizer.Binary,
             userConfig.XEdit.Binary,
-            projection.SelectedProfile);
-        _stateService.UpdateState(s => s with
-        {
-            CurrentGameType = projection.GameType,
-            Mo2ModeEnabled = userConfig.Settings.Mo2Mode,
-            CleaningTimeout = userConfig.Settings.CleaningTimeout
-        });
-    }
+            projection.SelectedProfile,
+            userConfig.Settings.Mo2Mode,
+            userConfig.Settings.CleaningTimeout);
 
     private async Task<IReadOnlyList<PluginInfo>> LoadPluginsAsync(PluginRefreshContext context, CancellationToken ct)
     {
@@ -573,34 +507,19 @@ public sealed partial class PluginRefreshCoordinator : IPluginRefreshCoordinator
             : [];
     }
 
-    private async Task<int> AnalyzeTargetsAsync(
+    private async Task AnalyzeTargetsAsync(
         PluginRefreshContext context,
         string? dataFolder,
         IReadOnlyList<PluginRefreshTarget> targets,
-        int generation,
+        IPluginRefreshApproximationPublication publication,
         CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(dataFolder) || targets.Count == 0)
         {
-            return 0;
+            return;
         }
 
-        var targetPaths = targets.Select(target => target.FullPath).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var targetNames = targets.Select(target => target.FileName).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var updated = 0;
-        var total = targets.Count;
-
-        var callback = new Action<PluginIssueApproximationResult>(approximation =>
-        {
-            if (!IsCurrent(generation, ct) || !IsTarget(approximation, targetPaths, targetNames))
-            {
-                return;
-            }
-
-            updated++;
-            Publish(PluginRefreshStatus.AnalyzingSelected(updated, total));
-            _stateService.MergePluginApproximation(approximation);
-        });
+        var callback = new Action<PluginIssueApproximationResult>(publication.PublishResult);
 
         if (context.Mo2Mode)
         {
@@ -626,21 +545,6 @@ public sealed partial class PluginRefreshCoordinator : IPluginRefreshCoordinator
                 callback,
                 ct).ConfigureAwait(false);
         }
-
-        return updated;
-    }
-
-    private static bool IsTarget(
-        PluginIssueApproximationResult approximation,
-        IReadOnlySet<string> targetPaths,
-        IReadOnlySet<string> targetNames)
-    {
-        // Prefer full path when the approximation has one.
-        if (!string.IsNullOrWhiteSpace(approximation.FullPath) && targetPaths.Contains(approximation.FullPath))
-            return true;
-
-        // Fall back to file name only when the approximation has no usable path.
-        return string.IsNullOrWhiteSpace(approximation.FullPath) && targetNames.Contains(approximation.FileName);
     }
 
     private static string? ResolveDataFolder(PluginRefreshContext context, IReadOnlyList<PluginInfo> rows)
@@ -659,6 +563,17 @@ public sealed partial class PluginRefreshCoordinator : IPluginRefreshCoordinator
         return string.IsNullOrWhiteSpace(firstPath) ? null : Path.GetDirectoryName(firstPath);
     }
 
+    private static IReadOnlyList<PluginInfo> CreateRowsFromTargets(
+        GameType gameType,
+        IReadOnlyList<PluginRefreshTarget> targets) =>
+        targets.Select(target => new PluginInfo
+        {
+            FileName = target.FileName,
+            FullPath = target.FullPath,
+            DetectedGameType = gameType,
+            Approximation = PluginIssueApproximation.Pending
+        }).ToList();
+
     private string GetNoPluginsFoundMessage(GameType gameType) =>
         _pluginLoadingService.IsGameSupportedByMutagen(gameType)
             ? $"No plugins discovered via Mutagen for {gameType}."
@@ -666,8 +581,6 @@ public sealed partial class PluginRefreshCoordinator : IPluginRefreshCoordinator
 
     private static PluginRefreshProjection EmptyProjection(GameType gameType) =>
         new(gameType, AvailableProfiles: []);
-
-    private void Publish(PluginRefreshStatus status) => _statusChanged.OnNext(status);
 
     private sealed record PluginRefreshContext(
         GameType GameType,

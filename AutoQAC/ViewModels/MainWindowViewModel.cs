@@ -43,16 +43,15 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         IPluginValidationService pluginService,
         IPluginLoadingService pluginLoadingService,
         IUiDispatcher uiDispatcher,
-        IPluginIssueApproximationService? pluginIssueApproximationService = null,
-        IPluginRefreshCoordinator? pluginRefreshCoordinator = null,
-        IPluginRefreshCapabilityPolicy? pluginRefreshCapabilityPolicy = null,
+        IPluginRefreshCoordinator pluginRefreshCoordinator,
+        IPluginRefreshCapabilityPolicy pluginRefreshCapabilityPolicy,
         IAppLifetime? appLifetime = null)
     {
         Configuration = new ConfigurationViewModel(
             configService, stateService, logger, fileDialog,
-            messageDialog, pluginService, pluginLoadingService, pluginIssueApproximationService,
+            messageDialog, pluginService, pluginLoadingService,
             pluginRefreshCoordinator,
-            null, uiDispatcher);
+            uiDispatcher);
 
         PluginList = new PluginListViewModel(stateService, pluginRefreshCoordinator, pluginRefreshCapabilityPolicy,
             uiDispatcher);

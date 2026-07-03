@@ -60,6 +60,12 @@ public sealed class Phase11DiagnosticsBoundaryTests
             configService.SkipListChanged.Returns(Observable.Never<GameType>());
             pluginLoading.GetAvailableGames().Returns([GameType.SkyrimSe]);
             pluginLoading.IsGameSupportedByMutagen(Arg.Any<GameType>()).Returns(true);
+            var refreshCoordinator = Substitute.For<IPluginRefreshCoordinator>();
+            refreshCoordinator.StatusChanged.Returns(Observable.Never<PluginRefreshStatus>());
+            var capabilityPolicy = Substitute.For<IPluginRefreshCapabilityPolicy>();
+            capabilityPolicy.SupportsPluginLoading(Arg.Any<GameType>()).Returns(true);
+            capabilityPolicy.SupportsIssueApproximation(Arg.Any<GameType>()).Returns(false);
+            capabilityPolicy.RequiresLoadOrderFile(Arg.Any<GameType>()).Returns(false);
             cleaningSession.StartAsync(Arg.Any<CancellationToken>())
                 .ThrowsAsync(new Exception(DiagnosticSentinels.CreateUnsafePayload()));
 
@@ -72,7 +78,9 @@ public sealed class Phase11DiagnosticsBoundaryTests
                 messageDialog,
                 pluginValidation,
                 pluginLoading,
-                uiDispatcher);
+                uiDispatcher,
+                refreshCoordinator,
+                capabilityPolicy);
             using var _ = viewModel.ShowProgressInteraction.RegisterHandler(_ => Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
 
             // Act

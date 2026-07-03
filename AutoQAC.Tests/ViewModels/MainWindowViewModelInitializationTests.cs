@@ -84,6 +84,19 @@ public sealed class MainWindowViewModelInitializationTests
 
         _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>())
             .Returns(config);
+        var refreshCoordinator = Substitute.For<IPluginRefreshCoordinator>();
+        refreshCoordinator.StatusChanged.Returns(Observable.Never<PluginRefreshStatus>());
+        refreshCoordinator.RefreshForGameAsync(
+                Arg.Any<GameType>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(callInfo => Task.FromResult(new PluginRefreshProjection(
+                callInfo.ArgAt<GameType>(0),
+                AvailableProfiles: [])));
+        var capabilityPolicy = Substitute.For<IPluginRefreshCapabilityPolicy>();
+        capabilityPolicy.SupportsPluginLoading(Arg.Any<GameType>()).Returns(true);
+        capabilityPolicy.SupportsIssueApproximation(Arg.Any<GameType>()).Returns(false);
+        capabilityPolicy.RequiresLoadOrderFile(Arg.Any<GameType>()).Returns(false);
 
         // Act
         var vm = new MainWindowViewModel(
@@ -95,7 +108,9 @@ public sealed class MainWindowViewModelInitializationTests
             _messageDialogMock,
             _pluginServiceMock,
             _pluginLoadingServiceMock,
-            _uiDispatcher);
+            _uiDispatcher,
+            refreshCoordinator,
+            capabilityPolicy);
 
         await WaitForSignalAsync(initializationApplied);
 

@@ -8,8 +8,6 @@ using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Models.Diagnostics;
 using AutoQAC.Services.Configuration;
-using AutoQAC.Services.GameDetection;
-using AutoQAC.Services.MO2;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Services.State;
 using AutoQAC.Services.UI;
@@ -118,11 +116,8 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         IMessageDialogService messageDialog,
         IPluginValidationService pluginService,
         IPluginLoadingService pluginLoadingService,
-        IPluginIssueApproximationService? pluginIssueApproximationService = null,
-        IPluginRefreshCoordinator? pluginRefreshCoordinator = null,
-        IGameDetectionService? gameDetectionService = null,
-        IUiDispatcher? uiDispatcher = null,
-        IMo2InstanceService? mo2InstanceService = null)
+        IPluginRefreshCoordinator pluginRefreshCoordinator,
+        IUiDispatcher uiDispatcher)
     {
         _configService = configService;
         _stateService = stateService;
@@ -130,17 +125,7 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         _fileDialog = fileDialog;
         _messageDialog = messageDialog;
         _pluginLoadingService = pluginLoadingService;
-        var effectiveGameDetectionService = gameDetectionService ?? new GameDetectionService(logger);
-        _pluginRefreshCoordinator = pluginRefreshCoordinator ?? new PluginRefreshCoordinator(
-            pluginLoadingService,
-            pluginIssueApproximationService ?? NoOpPluginIssueApproximationService.Instance,
-            stateService,
-            new PluginRefreshCapabilityPolicy(pluginLoadingService),
-            configService,
-            new SkipListPolicy(configService, effectiveGameDetectionService),
-            mo2InstanceService ?? new Mo2InstanceService(logger),
-            logger);
-        var dispatcher = uiDispatcher ?? new SynchronousFallbackDispatcher();
+        _pluginRefreshCoordinator = pluginRefreshCoordinator;
 
         AvailableGames = _pluginLoadingService.GetAvailableGames();
 
@@ -148,7 +133,7 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
             new CallbackObserver<GameType>(OnSkipListChanged));
         _pluginRefreshStatusSubscription = _pluginRefreshCoordinator.StatusChanged.Subscribe(
             new CallbackObserver<PluginRefreshStatus>(status =>
-                dispatcher.Post(() => OnPluginRefreshStatusChanged(status))));
+                uiDispatcher.Post(() => OnPluginRefreshStatusChanged(status))));
     }
 
     private void OnPluginRefreshStatusChanged(PluginRefreshStatus status)
@@ -709,35 +694,5 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         _pluginRefreshCoordinator.CancelActiveRefresh(PluginRefreshCancelReason.Disposed);
         _pluginRefreshStatusSubscription.Dispose();
         _skipListChangedSubscription.Dispose();
-    }
-
-    private sealed class SynchronousFallbackDispatcher : IUiDispatcher
-    {
-        public void Post(Action action) => action();
-
-        public Task InvokeAsync(Func<Task> action) => action();
-    }
-
-    private sealed class NoOpPluginIssueApproximationService : IPluginIssueApproximationService
-    {
-        public static NoOpPluginIssueApproximationService Instance { get; } = new();
-
-        public Task<IReadOnlyList<PluginIssueApproximationResult>> GetApproximationsAsync(
-            GameType gameType,
-            string dataFolder,
-            Action<PluginIssueApproximationResult>? onApproximationReady = null,
-            CancellationToken ct = default) =>
-            Task.FromResult<IReadOnlyList<PluginIssueApproximationResult>>(
-                []);
-
-        public Task<IReadOnlyList<PluginIssueApproximationResult>> GetApproximationsAsync(
-            GameType gameType,
-            string baseDataFolder,
-            IReadOnlyList<string> orderedPluginNames,
-            Func<Mutagen.Bethesda.Plugins.ModKey, string?> pathResolver,
-            Action<PluginIssueApproximationResult>? onApproximationReady = null,
-            CancellationToken ct = default) =>
-            Task.FromResult<IReadOnlyList<PluginIssueApproximationResult>>(
-                []);
     }
 }

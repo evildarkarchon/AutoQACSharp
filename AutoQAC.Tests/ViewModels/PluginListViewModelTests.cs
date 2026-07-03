@@ -3,6 +3,7 @@ using System.Reactive.Subjects;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Models;
 using AutoQAC.Services.State;
+using AutoQAC.Tests.TestInfrastructure;
 using AutoQAC.ViewModels.MainWindow;
 using FluentAssertions;
 using NSubstitute;
@@ -36,7 +37,8 @@ public sealed class PluginListViewModelTests
         var vm = new PluginListViewModel(
             stateService,
             coordinator,
-            new FixedPluginRefreshCapabilityPolicy(supportsApproximation: true));
+            new FixedPluginRefreshCapabilityPolicy(supportsApproximation: true),
+            new SynchronousUiDispatcher());
         try
         {
             vm.OnStateChanged(stateService.CurrentState);
@@ -64,7 +66,8 @@ public sealed class PluginListViewModelTests
         var vm = new PluginListViewModel(
             stateService,
             coordinator,
-            new FixedPluginRefreshCapabilityPolicy(supportsApproximation: false));
+            new FixedPluginRefreshCapabilityPolicy(supportsApproximation: false),
+            new SynchronousUiDispatcher());
         try
         {
             vm.OnStateChanged(stateService.CurrentState);
@@ -93,7 +96,8 @@ public sealed class PluginListViewModelTests
         var vm = new PluginListViewModel(
             stateService,
             coordinator,
-            new FixedPluginRefreshCapabilityPolicy(supportsApproximation: true));
+            new FixedPluginRefreshCapabilityPolicy(supportsApproximation: true),
+            new SynchronousUiDispatcher());
         try
         {
             vm.OnStateChanged(stateService.CurrentState);
@@ -138,7 +142,8 @@ public sealed class PluginListViewModelTests
         var vm = new PluginListViewModel(
             stateService,
             coordinator,
-            new FixedPluginRefreshCapabilityPolicy(supportsApproximation: true));
+            new FixedPluginRefreshCapabilityPolicy(supportsApproximation: true),
+            new SynchronousUiDispatcher());
         try
         {
             vm.OnStateChanged(stateService.CurrentState);
@@ -169,7 +174,8 @@ public sealed class PluginListViewModelTests
         var vm = new PluginListViewModel(
             stateService,
             coordinator,
-            new FixedPluginRefreshCapabilityPolicy(supportsApproximation: true));
+            new FixedPluginRefreshCapabilityPolicy(supportsApproximation: true),
+            new SynchronousUiDispatcher());
         try
         {
             coordinator.PublishStatus(PluginRefreshStatus.AnalyzingSelected(1, 2));
@@ -194,7 +200,8 @@ public sealed class PluginListViewModelTests
         var vm = new PluginListViewModel(
             stateService,
             coordinator,
-            new FixedPluginRefreshCapabilityPolicy(supportsApproximation: true));
+            new FixedPluginRefreshCapabilityPolicy(supportsApproximation: true),
+            new SynchronousUiDispatcher());
         try
         {
             // Simulate a full-list refresh in progress.
@@ -226,7 +233,8 @@ public sealed class PluginListViewModelTests
         var vm = new PluginListViewModel(
             stateService,
             coordinator,
-            new FixedPluginRefreshCapabilityPolicy(supportsApproximation: true));
+            new FixedPluginRefreshCapabilityPolicy(supportsApproximation: true),
+            new SynchronousUiDispatcher());
         try
         {
             // Simulate a full-list refresh in progress before a recoverable coordinator failure.
@@ -260,7 +268,11 @@ public sealed class PluginListViewModelTests
             new PluginInfo { FileName = "B.esp", FullPath = @"C:\B.esp" }
         ]);
 
-        var vm = new PluginListViewModel(stateService);
+        var vm = new PluginListViewModel(
+            stateService,
+            new RecordingPluginRefreshCoordinator(),
+            new FixedPluginRefreshCapabilityPolicy(supportsApproximation: true),
+            new SynchronousUiDispatcher());
         try
         {
             vm.OnStateChanged(stateService.CurrentState);
@@ -291,7 +303,11 @@ public sealed class PluginListViewModelTests
         stateService.UpdateExcludedPlugins(_ =>
             new HashSet<string>(StringComparer.OrdinalIgnoreCase) { @"C:\A.esp", @"C:\B.esp" });
 
-        var vm = new PluginListViewModel(stateService);
+        var vm = new PluginListViewModel(
+            stateService,
+            new RecordingPluginRefreshCoordinator(),
+            new FixedPluginRefreshCapabilityPolicy(supportsApproximation: true),
+            new SynchronousUiDispatcher());
         try
         {
             vm.OnStateChanged(stateService.CurrentState);
@@ -318,7 +334,11 @@ public sealed class PluginListViewModelTests
             new PluginInfo { FileName = "A.esp", FullPath = @"C:\A.esp" }
         ]);
 
-        var vm = new PluginListViewModel(stateService);
+        var vm = new PluginListViewModel(
+            stateService,
+            new RecordingPluginRefreshCoordinator(),
+            new FixedPluginRefreshCapabilityPolicy(supportsApproximation: true),
+            new SynchronousUiDispatcher());
         try
         {
             vm.OnStateChanged(stateService.CurrentState);
@@ -356,7 +376,11 @@ public sealed class PluginListViewModelTests
             }
         ]);
 
-        var vm = new PluginListViewModel(stateService);
+        var vm = new PluginListViewModel(
+            stateService,
+            new RecordingPluginRefreshCoordinator(),
+            new FixedPluginRefreshCapabilityPolicy(supportsApproximation: true),
+            new SynchronousUiDispatcher());
         try
         {
             vm.OnStateChanged(stateService.CurrentState);
@@ -401,7 +425,11 @@ public sealed class PluginListViewModelTests
         };
         stateService.CurrentState.Returns(initialState);
 
-        var vm = new PluginListViewModel(stateService);
+        var vm = new PluginListViewModel(
+            stateService,
+            new RecordingPluginRefreshCoordinator(),
+            new FixedPluginRefreshCapabilityPolicy(supportsApproximation: true),
+            new SynchronousUiDispatcher());
         try
         {
             vm.OnStateChanged(initialState);
@@ -439,7 +467,11 @@ public sealed class PluginListViewModelTests
             new PluginInfo { FileName = "A.esp", FullPath = @"C:\GameA\Data\A.esp" }
         ]);
 
-        var vm = new PluginListViewModel(stateService);
+        var vm = new PluginListViewModel(
+            stateService,
+            new RecordingPluginRefreshCoordinator(),
+            new FixedPluginRefreshCapabilityPolicy(supportsApproximation: true),
+            new SynchronousUiDispatcher());
         try
         {
             vm.OnStateChanged(stateService.CurrentState);

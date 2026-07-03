@@ -49,6 +49,8 @@ public sealed class MainWindowThreadingTests
             .Returns(GameType.Unknown);
         pluginLoadingService.GetAvailableGames()
             .Returns(new List<GameType> { GameType.Fallout4 });
+        var refreshCoordinator = CreateRefreshCoordinator();
+        var capabilityPolicy = CreateCapabilityPolicy();
 
         var viewModel = new MainWindowViewModel(
             configService,
@@ -59,7 +61,9 @@ public sealed class MainWindowThreadingTests
             Substitute.For<IMessageDialogService>(),
             Substitute.For<IPluginValidationService>(),
             pluginLoadingService,
-            captureDispatcher);
+            captureDispatcher,
+            refreshCoordinator,
+            capabilityPolicy);
 
         try
         {
@@ -153,7 +157,11 @@ public sealed class MainWindowThreadingTests
         stateService.StateChanged.Returns(stateSubject);
         stateService.CurrentState.Returns(_ => currentState);
 
-        var viewModel = new PluginListViewModel(stateService);
+        var viewModel = new PluginListViewModel(
+            stateService,
+            CreateRefreshCoordinator(),
+            CreateCapabilityPolicy(),
+            new SynchronousUiDispatcher());
 
         try
         {
@@ -206,6 +214,7 @@ public sealed class MainWindowThreadingTests
         pluginLoadingService.GetAvailableGames()
             .Returns(new List<GameType> { GameType.Fallout4 });
         refreshCoordinator.StatusChanged.Returns(refreshStatusSubject);
+        var capabilityPolicy = CreateCapabilityPolicy();
 
         var viewModel = new MainWindowViewModel(
             configService,
@@ -217,7 +226,8 @@ public sealed class MainWindowThreadingTests
             Substitute.For<IPluginValidationService>(),
             pluginLoadingService,
             captureDispatcher,
-            pluginRefreshCoordinator: refreshCoordinator);
+            pluginRefreshCoordinator: refreshCoordinator,
+            pluginRefreshCapabilityPolicy: capabilityPolicy);
 
         try
         {
@@ -244,7 +254,11 @@ public sealed class MainWindowThreadingTests
         var stateService = Substitute.For<IStateService>();
         stateService.StateChanged.Returns(Observable.Never<AppState>());
         stateService.CurrentState.Returns(new AppState());
-        var viewModel = new PluginListViewModel(stateService);
+        var viewModel = new PluginListViewModel(
+            stateService,
+            CreateRefreshCoordinator(),
+            CreateCapabilityPolicy(),
+            new SynchronousUiDispatcher());
 
         try
         {
@@ -292,6 +306,30 @@ public sealed class MainWindowThreadingTests
         {
             viewModel.Dispose();
         }
+    }
+
+    private static IPluginRefreshCoordinator CreateRefreshCoordinator(
+        IObservable<PluginRefreshStatus>? statuses = null)
+    {
+        var refreshCoordinator = Substitute.For<IPluginRefreshCoordinator>();
+        refreshCoordinator.StatusChanged.Returns(statuses ?? Observable.Never<PluginRefreshStatus>());
+        refreshCoordinator.RefreshForGameAsync(
+                Arg.Any<GameType>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(callInfo => Task.FromResult(new PluginRefreshProjection(
+                callInfo.ArgAt<GameType>(0),
+                AvailableProfiles: [])));
+        return refreshCoordinator;
+    }
+
+    private static IPluginRefreshCapabilityPolicy CreateCapabilityPolicy()
+    {
+        var capabilityPolicy = Substitute.For<IPluginRefreshCapabilityPolicy>();
+        capabilityPolicy.SupportsPluginLoading(Arg.Any<GameType>()).Returns(true);
+        capabilityPolicy.SupportsIssueApproximation(Arg.Any<GameType>()).Returns(true);
+        capabilityPolicy.RequiresLoadOrderFile(Arg.Any<GameType>()).Returns(false);
+        return capabilityPolicy;
     }
 
     /// <summary>

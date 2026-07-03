@@ -1,3 +1,4 @@
+using System.Reactive.Subjects;
 using AutoQAC.Models;
 using AutoQAC.Models.Configuration;
 using AutoQAC.Services.Configuration;
@@ -25,6 +26,27 @@ public sealed class PluginRefreshCoordinatorTests
         stateService.CurrentState.PluginsToClean.Should().OnlyContain(plugin =>
             plugin.Approximation.Status == PluginIssueApproximationStatus.Pending ||
             plugin.Approximation.Status == PluginIssueApproximationStatus.Available);
+    }
+
+    [Fact]
+    public async Task RefreshForGameAsync_ShouldPublishNamedPhasesThroughPublicationSeam()
+    {
+        var stateService = new StateService();
+        var publication = new RecordingPluginRefreshPublication();
+        var sut = CreateCoordinator(stateService, publication: publication);
+
+        await sut.RefreshForGameAsync(GameType.SkyrimSe, ct: CancellationToken.None);
+
+        publication.Phases.Should().ContainInOrder(
+            "BeginRefresh",
+            "PublishConfiguration:SkyrimSe",
+            "PublishLoadingPlugins",
+            "PublishPluginRows:3",
+            "BeginFullApproximationRefresh:3",
+            "PublishResult:Completed.esp",
+            "PublishResult:Selected.esp",
+            "PublishResult:NotStarted.esp",
+            "PublishFullCompleted");
     }
 
     [Fact]
@@ -410,7 +432,8 @@ public sealed class PluginRefreshCoordinatorTests
         IStateService stateService,
         IPluginLoadingService? pluginLoadingService = null,
         IPluginIssueApproximationService? approximationService = null,
-        IGameDetectionService? gameDetectionService = null)
+        IGameDetectionService? gameDetectionService = null,
+        IPluginRefreshPublication? publication = null)
     {
         gameDetectionService ??= CreateDefaultGameDetectionService();
         var configurationService = CreateConfigurationService();
@@ -418,6 +441,7 @@ public sealed class PluginRefreshCoordinatorTests
             pluginLoadingService ?? new TestPluginLoadingService(),
             approximationService ?? new TestPluginIssueApproximationService(),
             stateService,
+            publication ?? new StateServicePluginRefreshPublication(stateService),
             new TestPluginRefreshCapabilityPolicy(),
             configurationService,
             new SkipListPolicy(configurationService, gameDetectionService),
@@ -429,24 +453,28 @@ public sealed class PluginRefreshCoordinatorTests
         IConfigurationService configurationService,
         IPluginLoadingService? pluginLoadingService = null,
         IPluginIssueApproximationService? approximationService = null,
-        IGameDetectionService? gameDetectionService = null) =>
+        IGameDetectionService? gameDetectionService = null,
+        IPluginRefreshPublication? publication = null) =>
         CreateCoordinatorWithConfiguration(
             stateService,
             configurationService,
             pluginLoadingService,
             approximationService,
-            gameDetectionService ?? CreateDefaultGameDetectionService());
+            gameDetectionService ?? CreateDefaultGameDetectionService(),
+            publication);
 
     private static PluginRefreshCoordinator CreateCoordinatorWithConfiguration(
         IStateService stateService,
         IConfigurationService configurationService,
         IPluginLoadingService? pluginLoadingService,
         IPluginIssueApproximationService? approximationService,
-        IGameDetectionService gameDetectionService) =>
+        IGameDetectionService gameDetectionService,
+        IPluginRefreshPublication? publication = null) =>
         new(
             pluginLoadingService ?? new TestPluginLoadingService(),
             approximationService ?? new TestPluginIssueApproximationService(),
             stateService,
+            publication ?? new StateServicePluginRefreshPublication(stateService),
             new TestPluginRefreshCapabilityPolicy(),
             configurationService,
             new SkipListPolicy(configurationService, gameDetectionService),
@@ -503,6 +531,108 @@ public sealed class PluginRefreshCoordinatorTests
             .DetectVariant(Arg.Any<GameType>(), Arg.Any<IReadOnlyList<string>>())
             .Returns(GameVariant.None);
         return gameDetectionService;
+    }
+
+    private sealed class RecordingPluginRefreshPublication : IPluginRefreshPublication
+    {
+        private readonly Subject<PluginRefreshStatus> _statusChanged = new();
+
+        public List<string> Phases { get; } = [];
+
+        public IObservable<PluginRefreshStatus> StatusChanged => _statusChanged;
+
+        public IPluginRefreshPublicationScope BeginRefresh(CancellationToken cancellationToken = default)
+        {
+            Phases.Add("BeginRefresh");
+            return new Scope(this, cancellationToken);
+        }
+
+        public void PublishSelectPlugins()
+        {
+            Phases.Add("PublishSelectPlugins");
+            _statusChanged.OnNext(new PluginRefreshStatus(PluginRefreshStatusKind.SelectPlugins));
+        }
+
+        public void PublishManualCancellation()
+        {
+            Phases.Add("PublishManualCancellation");
+            _statusChanged.OnNext(new PluginRefreshStatus(PluginRefreshStatusKind.Canceled));
+        }
+
+        public void Dispose() => _statusChanged.Dispose();
+
+        private sealed class Scope : IPluginRefreshPublicationScope
+        {
+            private readonly RecordingPluginRefreshPublication _owner;
+            private readonly CancellationToken _cancellationToken;
+
+            public Scope(RecordingPluginRefreshPublication owner, CancellationToken cancellationToken)
+            {
+                _owner = owner;
+                _cancellationToken = cancellationToken;
+            }
+
+            public bool IsVisible => !_cancellationToken.IsCancellationRequested;
+
+            public void PublishNoGameSelected() => _owner.Phases.Add("PublishNoGameSelected");
+
+            public void PublishConfiguration(
+                PluginRefreshProjection projection,
+                PluginRefreshPublicationSnapshot snapshot) =>
+                _owner.Phases.Add($"PublishConfiguration:{projection.GameType}");
+
+            public void PublishNoRefreshContext(PluginRefreshStatus status) =>
+                _owner.Phases.Add($"PublishNoRefreshContext:{status.Kind}");
+
+            public void PublishLoadingPlugins() => _owner.Phases.Add("PublishLoadingPlugins");
+
+            public void PublishPluginRows(IReadOnlyList<PluginInfo> rows) =>
+                _owner.Phases.Add($"PublishPluginRows:{rows.Count}");
+
+            public void PublishApproximationUnavailable() => _owner.Phases.Add("PublishApproximationUnavailable");
+
+            public IPluginRefreshApproximationPublication BeginFullApproximationRefresh(
+                IReadOnlyList<PluginRefreshTarget> targets)
+            {
+                _owner.Phases.Add($"BeginFullApproximationRefresh:{targets.Count}");
+                return new ApproximationPublication(_owner, isFullRefresh: true);
+            }
+
+            public IPluginRefreshApproximationPublication BeginSelectedApproximationRefresh(
+                GameType gameType,
+                IReadOnlyList<PluginRefreshTarget> targets)
+            {
+                _owner.Phases.Add($"BeginSelectedApproximationRefresh:{targets.Count}");
+                return new ApproximationPublication(_owner, isFullRefresh: false);
+            }
+
+            public void PublishApproximationFailure(
+                IReadOnlyList<PluginRefreshTarget> targets,
+                string message = "Approximation refresh failed.") =>
+                _owner.Phases.Add($"PublishApproximationFailure:{targets.Count}");
+
+            public void Dispose()
+            {
+            }
+        }
+
+        private sealed class ApproximationPublication : IPluginRefreshApproximationPublication
+        {
+            private readonly RecordingPluginRefreshPublication _owner;
+            private readonly bool _isFullRefresh;
+
+            public ApproximationPublication(RecordingPluginRefreshPublication owner, bool isFullRefresh)
+            {
+                _owner = owner;
+                _isFullRefresh = isFullRefresh;
+            }
+
+            public void PublishResult(PluginIssueApproximationResult result) =>
+                _owner.Phases.Add($"PublishResult:{result.FileName}");
+
+            public void PublishCompleted() =>
+                _owner.Phases.Add(_isFullRefresh ? "PublishFullCompleted" : "PublishSelectedCompleted");
+        }
     }
 
     private sealed class TestPluginLoadingService : IPluginLoadingService

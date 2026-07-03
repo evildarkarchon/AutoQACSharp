@@ -28,7 +28,7 @@ public sealed partial class CleaningCommandsViewModel(
     ICleaningSession cleaningSession,
     IConfigurationService configService,
     IPluginLoadingService pluginLoadingService,
-    IPluginRefreshCoordinator? pluginRefreshCoordinator,
+    IPluginRefreshCoordinator pluginRefreshCoordinator,
     ILoggingService logger,
     IMessageDialogService messageDialog,
     IAppLifetime appLifetime,
@@ -40,8 +40,7 @@ public sealed partial class CleaningCommandsViewModel(
     Interaction<Unit, Unit> showAboutInteraction)
     : ViewModelBase, IDisposable
 {
-    private readonly IPluginRefreshCoordinator _pluginRefreshCoordinator =
-        pluginRefreshCoordinator ?? NoOpPluginRefreshCoordinator.Instance;
+    private readonly IPluginRefreshCoordinator _pluginRefreshCoordinator = pluginRefreshCoordinator;
 
     [ObservableProperty] public partial string StatusText { get; set; } = "Ready";
 
@@ -456,27 +455,5 @@ public sealed partial class CleaningCommandsViewModel(
 
     public void Dispose()
     {
-    }
-
-    private sealed class NoOpPluginRefreshCoordinator : IPluginRefreshCoordinator
-    {
-        public static NoOpPluginRefreshCoordinator Instance { get; } = new();
-
-        public IObservable<PluginRefreshStatus> StatusChanged =>
-            System.Reactive.Linq.Observable.Never<PluginRefreshStatus>();
-
-        public Task<PluginRefreshProjection> RefreshForGameAsync(
-            GameType gameType,
-            string? selectedLoadOrderPath = null,
-            CancellationToken ct = default) =>
-            Task.FromResult(new PluginRefreshProjection(gameType, AvailableProfiles: []));
-
-        public Task RefreshSelectedApproximationsAsync(
-            IReadOnlyList<PluginRefreshTarget> selectedTargets,
-            CancellationToken ct = default) => Task.CompletedTask;
-
-        public void CancelActiveRefresh(PluginRefreshCancelReason reason)
-        {
-        }
     }
 }

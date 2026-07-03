@@ -60,17 +60,16 @@ public sealed partial class PluginListViewModel : ViewModelBase, IDisposable
 
     public PluginListViewModel(
         IStateService stateService,
-        IPluginRefreshCoordinator? pluginRefreshCoordinator = null,
-        IPluginRefreshCapabilityPolicy? refreshCapabilityPolicy = null,
-        IUiDispatcher? uiDispatcher = null)
+        IPluginRefreshCoordinator pluginRefreshCoordinator,
+        IPluginRefreshCapabilityPolicy refreshCapabilityPolicy,
+        IUiDispatcher uiDispatcher)
     {
         _stateService = stateService;
-        _pluginRefreshCoordinator = pluginRefreshCoordinator ?? NoOpPluginRefreshCoordinator.Instance;
-        _refreshCapabilityPolicy = refreshCapabilityPolicy ?? NoApproximationRefreshCapabilityPolicy.Instance;
-        var dispatcher = uiDispatcher ?? new SynchronousFallbackDispatcher();
+        _pluginRefreshCoordinator = pluginRefreshCoordinator;
+        _refreshCapabilityPolicy = refreshCapabilityPolicy;
         _pluginRefreshStatusSubscription = _pluginRefreshCoordinator.StatusChanged.Subscribe(
             new CallbackObserver<PluginRefreshStatus>(status =>
-                dispatcher.Post(() => OnPluginRefreshStatusChanged(status))));
+                uiDispatcher.Post(() => OnPluginRefreshStatusChanged(status))));
         // No subscription here — the parent VM dispatches OnStateChanged on the UI thread.
         // Initial pull from current state so commands reflect reality before first change event.
         var initial = stateService.CurrentState;
@@ -305,45 +304,5 @@ public sealed partial class PluginListViewModel : ViewModelBase, IDisposable
         {
             DetachItem(item);
         }
-    }
-
-    private sealed class SynchronousFallbackDispatcher : IUiDispatcher
-    {
-        public void Post(Action action) => action();
-
-        public Task InvokeAsync(Func<Task> action) => action();
-    }
-
-    private sealed class NoOpPluginRefreshCoordinator : IPluginRefreshCoordinator
-    {
-        public static NoOpPluginRefreshCoordinator Instance { get; } = new();
-
-        public IObservable<PluginRefreshStatus> StatusChanged =>
-            System.Reactive.Linq.Observable.Never<PluginRefreshStatus>();
-
-        public Task<PluginRefreshProjection> RefreshForGameAsync(
-            GameType gameType,
-            string? selectedLoadOrderPath = null,
-            CancellationToken ct = default) =>
-            Task.FromResult(new PluginRefreshProjection(gameType, AvailableProfiles: []));
-
-        public Task RefreshSelectedApproximationsAsync(
-            IReadOnlyList<PluginRefreshTarget> selectedTargets,
-            CancellationToken ct = default) => Task.CompletedTask;
-
-        public void CancelActiveRefresh(PluginRefreshCancelReason reason)
-        {
-        }
-    }
-
-    private sealed class NoApproximationRefreshCapabilityPolicy : IPluginRefreshCapabilityPolicy
-    {
-        public static NoApproximationRefreshCapabilityPolicy Instance { get; } = new();
-
-        public bool SupportsPluginLoading(GameType gameType) => gameType != GameType.Unknown;
-
-        public bool SupportsIssueApproximation(GameType gameType) => false;
-
-        public bool RequiresLoadOrderFile(GameType gameType) => false;
     }
 }
