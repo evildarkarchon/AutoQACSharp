@@ -29,7 +29,7 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
     private readonly IMessageDialogService _messageDialog;
     private readonly IPluginLoadingService _pluginLoadingService;
     private readonly IPluginRefreshModule _pluginRefreshModule;
-    private readonly IGameCapabilityProvider _gameCapabilityProvider;
+    private readonly IPluginRefreshDiscoveryPlanner _discoveryPlanner;
     private readonly IStateService _stateService;
     private readonly IDisposable _skipListChangedSubscription;
 
@@ -98,12 +98,10 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
 
     public IReadOnlyList<GameType> AvailableGames { get; }
 
-    public bool IsMutagenSupported => _gameCapabilityProvider.Get(SelectedGame).SupportsAutomaticPluginDiscovery;
+    public bool IsMutagenSupported => _discoveryPlanner.GetAffordance(SelectedGame, Mo2ModeEnabled).IsMutagenSupported;
     public bool IsGameSelected => SelectedGame != GameType.Unknown;
 
-    public bool RequiresLoadOrderFile =>
-        SelectedGame != GameType.Unknown && !Mo2ModeEnabled &&
-        _gameCapabilityProvider.Get(SelectedGame).RequiresLoadOrderFile;
+    public bool RequiresLoadOrderFile => _discoveryPlanner.GetAffordance(SelectedGame, Mo2ModeEnabled).RequiresLoadOrderFile;
 
     public bool IsLoadOrderConfigured => !string.IsNullOrWhiteSpace(LoadOrderPath);
     public bool ShowMo2Config => Mo2ModeEnabled && IsGameSelected;
@@ -118,7 +116,7 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         IPluginValidationService pluginService,
         IPluginLoadingService pluginLoadingService,
         IPluginRefreshModule pluginRefreshModule,
-        IGameCapabilityProvider gameCapabilityProvider)
+        IPluginRefreshDiscoveryPlanner discoveryPlanner)
     {
         _configService = configService;
         _stateService = stateService;
@@ -127,9 +125,9 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         _messageDialog = messageDialog;
         _pluginLoadingService = pluginLoadingService;
         _pluginRefreshModule = pluginRefreshModule;
-        _gameCapabilityProvider = gameCapabilityProvider;
+        _discoveryPlanner = discoveryPlanner;
 
-        AvailableGames = _gameCapabilityProvider.GetAvailableGames();
+        AvailableGames = _discoveryPlanner.GetAvailableGames();
 
         _skipListChangedSubscription = _configService.SkipListChanged.Subscribe(
             new CallbackObserver<GameType>(OnSkipListChanged));

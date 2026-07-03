@@ -8,10 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
-using AutoQAC.Models.Configuration;
-using AutoQAC.Services.Configuration;
 using AutoQAC.Services.GameCapability;
-using AutoQAC.Services.MO2;
 using AutoQAC.Services.State;
 
 namespace AutoQAC.Services.Plugin;
@@ -24,13 +21,10 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
     private static readonly PluginRefreshActivity IdleActivity = new(false, false);
     private static readonly PluginRefreshCommandAvailability EmptyCommands = new(false, false, false, false);
 
-    private readonly IPluginLoadingService _pluginLoadingService;
+    private readonly IPluginRefreshDiscoveryPlanner _discoveryPlanner;
     private readonly IPluginIssueApproximationService _pluginIssueApproximationService;
     private readonly IStateService _stateService;
-    private readonly IGameCapabilityProvider _gameCapabilityProvider;
-    private readonly IConfigurationService _configurationService;
     private readonly ISkipListPolicy _skipListPolicy;
-    private readonly IMo2InstanceService _mo2InstanceService;
     private readonly ILoggingService? _logger;
     private readonly BehaviorSubject<PluginRefreshSnapshot> _snapshots;
     private readonly IDisposable _stateSubscription;
@@ -46,22 +40,16 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
     /// Initializes a Plugin refresh module with the adapters needed for context assembly, publication, and AppState compatibility.
     /// </summary>
     public PluginRefreshModule(
-        IPluginLoadingService pluginLoadingService,
+        IPluginRefreshDiscoveryPlanner discoveryPlanner,
         IPluginIssueApproximationService pluginIssueApproximationService,
         IStateService stateService,
-        IGameCapabilityProvider gameCapabilityProvider,
-        IConfigurationService configurationService,
         ISkipListPolicy skipListPolicy,
-        IMo2InstanceService mo2InstanceService,
         ILoggingService? logger = null)
     {
-        _pluginLoadingService = pluginLoadingService;
+        _discoveryPlanner = discoveryPlanner;
         _pluginIssueApproximationService = pluginIssueApproximationService;
         _stateService = stateService;
-        _gameCapabilityProvider = gameCapabilityProvider;
-        _configurationService = configurationService;
         _skipListPolicy = skipListPolicy;
-        _mo2InstanceService = mo2InstanceService;
         _logger = logger;
 
         _lastIsCleaning = _stateService.CurrentState.IsCleaning;
@@ -129,13 +117,14 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                 return GetCurrentSnapshot();
             }
 
-            var userConfig = await _configurationService.LoadUserConfigAsync(token).ConfigureAwait(false);
-            var contextResult = await CreateContextAsync(gameType, selectedLoadOrderPath, userConfig, token)
+            var planResult = await _discoveryPlanner.CreatePlanAsync(
+                    new PluginRefreshDiscoveryPlanRequest(gameType, selectedLoadOrderPath),
+                    token)
                 .ConfigureAwait(false);
-            configuration = contextResult.Configuration;
+            configuration = planResult.Configuration;
             if (!IsVisible(generation, token)) return GetCurrentSnapshot();
 
-            PublishRuntimeConfiguration(userConfig, configuration, contextResult.Context, gameType);
+            PublishRuntimeConfiguration(configuration, gameType);
             PublishSnapshotFromState(
                 generation,
                 gameType,
@@ -143,7 +132,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                 new PluginRefreshActivity(IsPluginRefreshRunning: true, IsIssueApproximationRefreshRunning: false),
                 $"Loading plugins for {gameType}...");
 
-            if (contextResult.Context is null)
+            if (planResult.Plan is null)
             {
                 _stateService.SetPluginsToClean([]);
                 PublishSnapshotFromState(
@@ -151,15 +140,15 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                     gameType,
                     configuration,
                     IdleActivity,
-                    contextResult.StatusText ?? GetNoPluginsFoundMessage(gameType));
+                    GetPlanStatusText(planResult, gameType));
                 return GetCurrentSnapshot();
             }
 
-            var context = contextResult.Context;
-            var loadedPlugins = await LoadPluginsAsync(context, token).ConfigureAwait(false);
+            var plan = planResult.Plan;
+            var loadedPlugins = await _discoveryPlanner.LoadPluginsAsync(plan, token).ConfigureAwait(false);
             if (!IsVisible(generation, token)) return GetCurrentSnapshot();
 
-            if (loadedPlugins.Count == 0)
+            if (loadedPlugins.Plugins.Count == 0)
             {
                 _stateService.SetPluginsToClean([]);
                 PublishSnapshotFromState(
@@ -167,20 +156,19 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                     gameType,
                     configuration,
                     IdleActivity,
-                    GetNoPluginsFoundMessage(context.GameType));
+                    GetNoPluginsFoundMessage(plan));
                 return GetCurrentSnapshot();
             }
 
             var skipEvaluation = await _skipListPolicy.EvaluateAsync(
-                    context.GameType,
-                    loadedPlugins,
-                    context.DisableSkipLists,
+                    plan.GameType,
+                    loadedPlugins.Plugins,
+                    plan.DisableSkipLists,
                     token)
                 .ConfigureAwait(false);
             if (!IsVisible(generation, token)) return GetCurrentSnapshot();
 
-            var capability = _gameCapabilityProvider.Get(context.GameType);
-            var initialApproximation = capability.SupportsIssueApproximation
+            var initialApproximation = plan.CanAttemptIssueApproximation
                 ? PluginIssueApproximation.Pending
                 : PluginIssueApproximation.Unavailable;
             var rows = skipEvaluation.Decisions.Select(decision => decision.Plugin with
@@ -191,23 +179,23 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             _stateService.SetPluginsToClean(rows);
             PublishSnapshotFromState(
                 generation,
-                context.GameType,
+                plan.GameType,
                 configuration,
                 new PluginRefreshActivity(IsPluginRefreshRunning: true, IsIssueApproximationRefreshRunning: false),
-                $"Loading plugins for {context.GameType}...");
+                $"Loading plugins for {plan.GameType}...");
 
-            if (!capability.SupportsIssueApproximation)
+            if (!plan.CanAttemptIssueApproximation)
             {
                 PublishSnapshotFromState(
                     generation,
-                    context.GameType,
+                    plan.GameType,
                     configuration,
                     IdleActivity,
                     "Approximation refresh is not available for this game.");
                 return GetCurrentSnapshot();
             }
 
-            var dataFolder = ResolveDataFolder(context, rows);
+            var dataFolder = ResolveDataFolder(plan, rows);
             var targets = skipEvaluation.Decisions
                 .Where(decision => !decision.ShouldSkipByPolicy)
                 .Select(decision => new PluginRefreshRowKey(
@@ -219,7 +207,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                 IsIssueApproximationRefreshRunning: true);
             PublishSnapshotFromState(
                 generation,
-                context.GameType,
+                plan.GameType,
                 configuration,
                 issueActivity,
                 targets.Count == 0 ? "Refreshed 0 plugin approximations." : $"Analyzing 0 of {targets.Count} selected plugins.");
@@ -228,13 +216,13 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             {
                 var updatedCount = 0;
                 await AnalyzeTargetsAsync(
-                        context,
+                        plan,
                         dataFolder,
                         targets,
                         result => PublishApproximationResult(
                             generation,
                             token,
-                            context.GameType,
+                            plan.GameType,
                             configuration,
                             issueActivity,
                             targets,
@@ -247,7 +235,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                 {
                     PublishSnapshotFromState(
                         generation,
-                        context.GameType,
+                        plan.GameType,
                         configuration,
                         IdleActivity,
                         $"Refreshed {Volatile.Read(ref updatedCount)} plugin approximations.");
@@ -259,7 +247,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                 PublishApproximationFailure(
                     generation,
                     token,
-                    context.GameType,
+                    plan.GameType,
                     configuration,
                     targets,
                     "Approximation refresh failed.");
@@ -299,53 +287,55 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
 
         try
         {
-            var contextResult = await GetContextForSelectedRefreshAsync(token).ConfigureAwait(false);
-            if (contextResult.Context is null)
+            var planResult = await GetPlanForSelectedRefreshAsync(token).ConfigureAwait(false);
+            if (planResult.Plan is null)
             {
                 PublishSnapshot(acceptedSnapshot with
                 {
                     Generation = generation,
                     Activity = IdleActivity,
-                    Configuration = contextResult.Configuration,
-                    StatusText = contextResult.StatusText ?? "Approximation refresh is not available for this game."
+                    Configuration = planResult.Configuration,
+                    StatusText = planResult.Status == PluginRefreshDiscoveryPlanStatus.NoGameSelected
+                        ? "Approximation refresh is not available for this game."
+                        : GetPlanStatusText(planResult, _stateService.CurrentState.CurrentGameType)
                 });
                 return GetCurrentSnapshot();
             }
 
-            var context = contextResult.Context;
-            var configuration = contextResult.Configuration;
-            if (!_gameCapabilityProvider.Get(context.GameType).SupportsIssueApproximation)
+            var plan = planResult.Plan;
+            var configuration = planResult.Configuration;
+            if (!plan.CanAttemptIssueApproximation)
             {
                 PublishSnapshotFromState(
                     generation,
-                    context.GameType,
+                    plan.GameType,
                     configuration,
                     IdleActivity,
                     "Approximation refresh is not available for this game.");
                 return GetCurrentSnapshot();
             }
 
-            MarkTargetsPending(context.GameType, selectedTargets);
+            MarkTargetsPending(plan.GameType, selectedTargets);
             var issueActivity = new PluginRefreshActivity(
                 IsPluginRefreshRunning: false,
                 IsIssueApproximationRefreshRunning: true);
             PublishSnapshotFromState(
                 generation,
-                context.GameType,
+                plan.GameType,
                 configuration,
                 issueActivity,
                 $"Analyzing 0 of {selectedTargets.Count} selected plugins.");
 
-            var dataFolder = ResolveDataFolder(context, CreateRowsFromTargets(context.GameType, selectedTargets));
+            var dataFolder = ResolveDataFolder(plan, CreateRowsFromTargets(plan.GameType, selectedTargets));
             var updatedCount = 0;
             await AnalyzeTargetsAsync(
-                    context,
+                    plan,
                     dataFolder,
                     selectedTargets,
                     result => PublishApproximationResult(
                         generation,
                         token,
-                        context.GameType,
+                        plan.GameType,
                         configuration,
                         issueActivity,
                         selectedTargets,
@@ -358,7 +348,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             {
                 PublishSnapshotFromState(
                     generation,
-                    context.GameType,
+                    plan.GameType,
                     configuration,
                     IdleActivity,
                     $"Updated {Volatile.Read(ref updatedCount)} selected plugin approximations.");
@@ -542,258 +532,43 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
     private bool IsVisible(long generation, CancellationToken cancellationToken) =>
         !cancellationToken.IsCancellationRequested && generation == Volatile.Read(ref _activeGeneration);
 
-    private async Task<PluginRefreshContextResult> GetContextForSelectedRefreshAsync(CancellationToken ct)
+    private async Task<PluginRefreshDiscoveryPlanResult> GetPlanForSelectedRefreshAsync(CancellationToken ct)
     {
         var currentGame = _stateService.CurrentState.CurrentGameType;
         if (currentGame == GameType.Unknown)
         {
-            return new PluginRefreshContextResult(
+            return new PluginRefreshDiscoveryPlanResult(
+                PluginRefreshDiscoveryPlanStatus.NoGameSelected,
                 null,
-                GetCurrentSnapshot().Configuration,
-                "Approximation refresh is not available for this game.");
+                GetCurrentSnapshot().Configuration);
         }
 
-        var userConfig = await _configurationService.LoadUserConfigAsync(ct).ConfigureAwait(false);
-        var contextResult = await CreateContextAsync(
-                currentGame,
-                _stateService.CurrentState.LoadOrderPath,
-                userConfig,
+        // Selected refreshes rebuild the plan so same-game MO2/profile/path changes are never cached stale.
+        return await _discoveryPlanner.CreatePlanAsync(
+                new PluginRefreshDiscoveryPlanRequest(currentGame, _stateService.CurrentState.LoadOrderPath),
                 ct)
             .ConfigureAwait(false);
-
-        // Selected refreshes rebuild context so same-game MO2/profile/path changes are never cached stale.
-        return contextResult;
-    }
-
-    private async Task<PluginRefreshContextResult> CreateContextAsync(
-        GameType gameType,
-        string? selectedLoadOrderPath,
-        UserConfiguration userConfig,
-        CancellationToken ct)
-    {
-        if (userConfig.Settings.Mo2Mode && gameType != GameType.Unknown)
-        {
-            return await CreateMo2ContextAsync(gameType, userConfig, ct).ConfigureAwait(false);
-        }
-
-        return await CreateDirectContextAsync(gameType, selectedLoadOrderPath, userConfig, ct)
-            .ConfigureAwait(false);
-    }
-
-    private async Task<PluginRefreshContextResult> CreateDirectContextAsync(
-        GameType gameType,
-        string? selectedLoadOrderPath,
-        UserConfiguration userConfig,
-        CancellationToken ct)
-    {
-        var customDataFolder = gameType == GameType.Unknown
-            ? null
-            : await _configurationService.GetGameDataFolderOverrideAsync(gameType, ct).ConfigureAwait(false);
-        var dataFolder = gameType == GameType.Unknown
-            ? null
-            : _pluginLoadingService.GetGameDataFolder(gameType, customDataFolder);
-        var hasDataFolderOverride = !string.IsNullOrWhiteSpace(customDataFolder);
-        var loadOrderPath = string.IsNullOrWhiteSpace(selectedLoadOrderPath)
-            ? null
-            : selectedLoadOrderPath;
-
-        var capability = _gameCapabilityProvider.Get(gameType);
-        if (string.IsNullOrWhiteSpace(loadOrderPath) && capability.RequiresLoadOrderFile)
-        {
-            loadOrderPath = await _configurationService.GetGameLoadOrderOverrideAsync(gameType, ct)
-                                .ConfigureAwait(false)
-                            ?? _pluginLoadingService.GetDefaultLoadOrderPath(gameType);
-        }
-
-        var configuration = new PluginRefreshConfigurationProjection(
-            LoadOrderPath: loadOrderPath,
-            GameDataFolder: dataFolder,
-            HasGameDataFolderOverride: hasDataFolderOverride,
-            XEditPath: userConfig.XEdit.Binary,
-            Mo2Path: userConfig.ModOrganizer.Binary,
-            Mo2ModeEnabled: userConfig.Settings.Mo2Mode,
-            Mo2InstancePath: null,
-            IsMo2InstanceOverride: false,
-            IsMo2InstanceValid: null,
-            AvailableProfiles: [],
-            SelectedProfile: null,
-            CleaningTimeout: userConfig.Settings.CleaningTimeout);
-
-        if (capability.RequiresLoadOrderFile && string.IsNullOrWhiteSpace(loadOrderPath))
-        {
-            return new PluginRefreshContextResult(
-                null,
-                configuration,
-                $"No load order file found for {gameType}. Browse to plugins.txt or loadorder.txt.");
-        }
-
-        var context = new PluginRefreshContext(
-            gameType,
-            dataFolder,
-            loadOrderPath,
-            userConfig.Settings.DisableSkipLists,
-            Mo2Mode: false,
-            Mo2LoadOrderPath: null,
-            Mo2PathMap: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
-            Mo2BaseDataFolder: null);
-        return new PluginRefreshContextResult(context, configuration, null);
-    }
-
-    private async Task<PluginRefreshContextResult> CreateMo2ContextAsync(
-        GameType gameType,
-        UserConfiguration userConfig,
-        CancellationToken ct)
-    {
-        var customDataFolder = await _configurationService.GetGameDataFolderOverrideAsync(gameType, ct)
-            .ConfigureAwait(false);
-        var dataFolder = _pluginLoadingService.GetGameDataFolder(gameType, customDataFolder);
-        var hasDataFolderOverride = !string.IsNullOrWhiteSpace(customDataFolder);
-        var instanceOverride = await _configurationService.GetMo2InstanceOverrideAsync(gameType, ct)
-            .ConfigureAwait(false);
-        var isInstanceOverride = !string.IsNullOrWhiteSpace(instanceOverride);
-
-        var instance = await _mo2InstanceService.ResolveInstanceAsync(
-                gameType,
-                userConfig.ModOrganizer.Binary,
-                instanceOverride,
-                ct)
-            .ConfigureAwait(false);
-        if (instance is null)
-        {
-            var configuration = new PluginRefreshConfigurationProjection(
-                LoadOrderPath: null,
-                GameDataFolder: dataFolder,
-                HasGameDataFolderOverride: hasDataFolderOverride,
-                XEditPath: userConfig.XEdit.Binary,
-                Mo2Path: userConfig.ModOrganizer.Binary,
-                Mo2ModeEnabled: userConfig.Settings.Mo2Mode,
-                Mo2InstancePath: instanceOverride,
-                IsMo2InstanceOverride: isInstanceOverride,
-                IsMo2InstanceValid: string.IsNullOrWhiteSpace(instanceOverride) ? null : Directory.Exists(instanceOverride),
-                AvailableProfiles: [],
-                SelectedProfile: null,
-                CleaningTimeout: userConfig.Settings.CleaningTimeout);
-            return new PluginRefreshContextResult(
-                null,
-                configuration,
-                $"No MO2 instance found for {gameType}. Browse to the instance folder.");
-        }
-
-        var profiles = await Task.Run(() => _mo2InstanceService.GetProfiles(instance), ct).ConfigureAwait(false);
-        var persistedProfile = await _configurationService.GetMo2ProfileAsync(gameType, ct).ConfigureAwait(false);
-        var profile = _mo2InstanceService.ChooseProfile(instance, profiles, persistedProfile);
-        var baseConfiguration = new PluginRefreshConfigurationProjection(
-            LoadOrderPath: null,
-            GameDataFolder: dataFolder,
-            HasGameDataFolderOverride: hasDataFolderOverride,
-            XEditPath: userConfig.XEdit.Binary,
-            Mo2Path: userConfig.ModOrganizer.Binary,
-            Mo2ModeEnabled: userConfig.Settings.Mo2Mode,
-            Mo2InstancePath: instance.BaseDirectory,
-            IsMo2InstanceOverride: isInstanceOverride,
-            IsMo2InstanceValid: Directory.Exists(instance.BaseDirectory),
-            AvailableProfiles: profiles,
-            SelectedProfile: profile,
-            CleaningTimeout: userConfig.Settings.CleaningTimeout);
-
-        if (string.IsNullOrWhiteSpace(profile))
-        {
-            return new PluginRefreshContextResult(
-                null,
-                baseConfiguration,
-                $"No MO2 profiles with loadorder.txt were found for {gameType}.");
-        }
-
-        var mo2LoadOrderPath = _mo2InstanceService.GetLoadOrderPath(instance, profile);
-        if (string.IsNullOrWhiteSpace(mo2LoadOrderPath) || !File.Exists(mo2LoadOrderPath))
-        {
-            return new PluginRefreshContextResult(
-                null,
-                baseConfiguration,
-                $"MO2 profile '{profile}' does not contain a loadorder.txt.");
-        }
-
-        var pathMap = await Task.Run(
-                () => _mo2InstanceService.BuildPluginPathMap(instance, profile, dataFolder),
-                ct)
-            .ConfigureAwait(false);
-        var context = new PluginRefreshContext(
-            gameType,
-            dataFolder,
-            LoadOrderPath: null,
-            userConfig.Settings.DisableSkipLists,
-            Mo2Mode: true,
-            Mo2LoadOrderPath: mo2LoadOrderPath,
-            Mo2PathMap: pathMap,
-            Mo2BaseDataFolder: dataFolder);
-        return new PluginRefreshContextResult(context, baseConfiguration, null);
     }
 
     private void PublishRuntimeConfiguration(
-        UserConfiguration userConfig,
         PluginRefreshConfigurationProjection configuration,
-        PluginRefreshContext? context,
         GameType gameType)
     {
         _stateService.UpdateConfigurationPaths(
-            context is { Mo2Mode: false } ? configuration.LoadOrderPath : null,
-            userConfig.ModOrganizer.Binary,
-            userConfig.XEdit.Binary,
+            configuration.Mo2ModeEnabled ? null : configuration.LoadOrderPath,
+            configuration.Mo2Path,
+            configuration.XEditPath,
             configuration.SelectedProfile);
         _stateService.UpdateState(state => state with
         {
             CurrentGameType = gameType,
-            Mo2ModeEnabled = userConfig.Settings.Mo2Mode,
-            CleaningTimeout = userConfig.Settings.CleaningTimeout
+            Mo2ModeEnabled = configuration.Mo2ModeEnabled,
+            CleaningTimeout = configuration.CleaningTimeout
         });
     }
 
-    private async Task<IReadOnlyList<PluginInfo>> LoadPluginsAsync(PluginRefreshContext context, CancellationToken ct)
-    {
-        if (context.Mo2Mode)
-        {
-            if (string.IsNullOrWhiteSpace(context.Mo2LoadOrderPath))
-            {
-                return [];
-            }
-
-            var plugins = await _pluginLoadingService.GetPluginsFromFileAsync(context.Mo2LoadOrderPath, null, ct)
-                .ConfigureAwait(false);
-            if (context.Mo2PathMap.Count == 0)
-            {
-                return plugins;
-            }
-
-            return plugins.Select(plugin => context.Mo2PathMap.TryGetValue(plugin.FileName, out var fullPath)
-                    ? plugin with { FullPath = fullPath }
-                    : plugin)
-                .ToList();
-        }
-
-        if (!string.IsNullOrWhiteSpace(context.LoadOrderPath))
-        {
-            return await _pluginLoadingService
-                .GetPluginsFromFileAsync(context.LoadOrderPath, context.DataFolderPath, ct)
-                .ConfigureAwait(false);
-        }
-
-        if (!_gameCapabilityProvider.Get(context.GameType).SupportsAutomaticPluginDiscovery)
-        {
-            return [];
-        }
-
-        var loadResult = await _pluginLoadingService.TryGetPluginsAsync(
-                context.GameType,
-                context.DataFolderPath,
-                ct)
-            .ConfigureAwait(false);
-        return loadResult.Status == PluginLoadingStatus.Success
-            ? loadResult.Plugins
-            : [];
-    }
-
     private async Task AnalyzeTargetsAsync(
-        PluginRefreshContext context,
+        PluginRefreshDiscoveryPlan plan,
         string? dataFolder,
         IReadOnlyList<PluginRefreshRowKey> targets,
         Action<PluginIssueApproximationResult> onApproximationReady,
@@ -804,15 +579,15 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             return;
         }
 
-        if (context.Mo2Mode)
+        if (plan.Mode == PluginRefreshDiscoveryMode.Mo2LoadOrderFile)
         {
             await _pluginIssueApproximationService.GetApproximationsAsync(
                 new PluginIssueApproximationRequest(
-                    context.GameType,
+                    plan.GameType,
                     new PluginIssueApproximationSource.ResolvedLoadOrder(
                         dataFolder,
                         targets.Select(target => target.FileName).ToList(),
-                        context.Mo2PathMap)),
+                        plan.Mo2PathMap)),
                 onApproximationReady,
                 ct).ConfigureAwait(false);
         }
@@ -820,7 +595,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         {
             await _pluginIssueApproximationService.GetApproximationsAsync(
                 new PluginIssueApproximationRequest(
-                    context.GameType,
+                    plan.GameType,
                     new PluginIssueApproximationSource.DirectDataFolder(dataFolder)),
                 onApproximationReady,
                 ct).ConfigureAwait(false);
@@ -998,11 +773,12 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         var hasRows = rows.Count > 0;
         var isRunning = activity.IsPluginRefreshRunning || activity.IsIssueApproximationRefreshRunning;
         var canUseRows = hasRows && !state.IsCleaning;
+        var affordance = _discoveryPlanner.GetAffordance(gameType, state.Mo2ModeEnabled);
         var canRefreshApproximations = canUseRows &&
                                       !isRunning &&
                                       rows.Any(row => row.IsSelected) &&
                                       gameType != GameType.Unknown &&
-                                      _gameCapabilityProvider.Get(gameType).SupportsIssueApproximation;
+                                      affordance.CanAttemptIssueApproximation;
 
         return new PluginRefreshCommandAvailability(
             CanSelectAll: canUseRows,
@@ -1071,16 +847,16 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         PublishSnapshot(next, state);
     }
 
-    private static string? ResolveDataFolder(PluginRefreshContext context, IReadOnlyList<PluginInfo> rows)
+    private static string? ResolveDataFolder(PluginRefreshDiscoveryPlan plan, IReadOnlyList<PluginInfo> rows)
     {
-        if (context.Mo2Mode)
+        if (plan.Mode == PluginRefreshDiscoveryMode.Mo2LoadOrderFile)
         {
-            return context.Mo2BaseDataFolder;
+            return plan.Mo2BaseDataFolder;
         }
 
-        if (!string.IsNullOrWhiteSpace(context.DataFolderPath))
+        if (!string.IsNullOrWhiteSpace(plan.DataFolderPath))
         {
-            return context.DataFolderPath;
+            return plan.DataFolderPath;
         }
 
         var firstPath = rows.FirstOrDefault()?.FullPath;
@@ -1098,9 +874,24 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             Approximation = PluginIssueApproximation.Pending
         }).ToList();
 
-    private string GetNoPluginsFoundMessage(GameType gameType) =>
-        _gameCapabilityProvider.Get(gameType).SupportsAutomaticPluginDiscovery
-            ? $"No plugins discovered via Mutagen for {gameType}."
+    private static string GetPlanStatusText(PluginRefreshDiscoveryPlanResult result, GameType gameType) =>
+        result.Status switch
+        {
+            PluginRefreshDiscoveryPlanStatus.NoGameSelected => "No game selected",
+            PluginRefreshDiscoveryPlanStatus.MissingLoadOrderFile =>
+                $"No load order file found for {gameType}. Browse to plugins.txt or loadorder.txt.",
+            PluginRefreshDiscoveryPlanStatus.MissingMo2Instance =>
+                $"No MO2 instance found for {gameType}. Browse to the instance folder.",
+            PluginRefreshDiscoveryPlanStatus.MissingMo2Profile =>
+                $"No MO2 profiles with loadorder.txt were found for {gameType}.",
+            PluginRefreshDiscoveryPlanStatus.MissingMo2ProfileLoadOrder =>
+                $"MO2 profile '{result.Configuration.SelectedProfile}' does not contain a loadorder.txt.",
+            _ => "No plugins found in the selected load order."
+        };
+
+    private static string GetNoPluginsFoundMessage(PluginRefreshDiscoveryPlan plan) =>
+        plan.Mode == PluginRefreshDiscoveryMode.DirectAutomatic
+            ? $"No plugins discovered via Mutagen for {plan.GameType}."
             : "No plugins found in the selected load order.";
 
     private static bool IsMatch(PluginInfo plugin, PluginRefreshRowKey target)
@@ -1144,21 +935,6 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
     }
 
     private static bool HasUsablePath(string? path) => !string.IsNullOrWhiteSpace(path);
-
-    private sealed record PluginRefreshContext(
-        GameType GameType,
-        string? DataFolderPath,
-        string? LoadOrderPath,
-        bool DisableSkipLists,
-        bool Mo2Mode,
-        string? Mo2LoadOrderPath,
-        IReadOnlyDictionary<string, string> Mo2PathMap,
-        string? Mo2BaseDataFolder);
-
-    private sealed record PluginRefreshContextResult(
-        PluginRefreshContext? Context,
-        PluginRefreshConfigurationProjection Configuration,
-        string? StatusText);
 
     private sealed class StateChangedObserver(Action<AppState> onNext) : IObserver<AppState>
     {

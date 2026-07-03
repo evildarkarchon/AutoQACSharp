@@ -59,6 +59,7 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<ILoggingService>(),
                 gameCapabilityProvider: sp.GetRequiredService<IGameCapabilityProvider>()));
             services.AddSingleton<ISkipListPolicy, SkipListPolicy>();
+            services.AddSingleton<IPluginRefreshDiscoveryPlanner, PluginRefreshDiscoveryPlanner>();
             services.AddSingleton<IPluginRefreshModule, PluginRefreshModule>();
             services.AddSingleton<IPidStorePathProvider, DefaultPidStorePathProvider>();
             services.AddSingleton<IProcessSessionIdProvider, ProcessSessionIdProvider>();

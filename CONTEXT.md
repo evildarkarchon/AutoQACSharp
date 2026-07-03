@@ -15,6 +15,10 @@ A user-visible update of plugin rows for the current game context, including ski
 The point at which a Plugin refresh becomes visible to the user, including the current game context, plugin rows, and issue approximation status.
 _Avoid_: State update, app state mutation, row sync
 
+**Plugin refresh discovery plan**:
+The resolved plan for how a Plugin refresh will find plugin rows in the current game context, including whether discovery uses the game data folder, a load-order file, or an MO2 profile view. It is prepared before Plugin refresh publication and is not a Cleaning session.
+_Avoid_: Discovery context, plugin loading plan, game capability plan
+
 **Plugin selection**:
 The user's current inclusion or exclusion choice among Plugin refresh rows available for a Cleaning session or selected Issue approximation refresh.
 _Avoid_: Excluded plugin paths, row checkbox state

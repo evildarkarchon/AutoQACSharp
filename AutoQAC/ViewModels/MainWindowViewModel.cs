@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.Cleaning;
@@ -47,13 +49,14 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         IUiDispatcher uiDispatcher,
         IPluginRefreshModule pluginRefreshModule,
         IGameCapabilityProvider gameCapabilityProvider,
+        IPluginRefreshDiscoveryPlanner? discoveryPlanner = null,
         IAppLifetime? appLifetime = null)
     {
         Configuration = new ConfigurationViewModel(
             configService, stateService, logger, fileDialog,
             messageDialog, pluginService, pluginLoadingService,
             pluginRefreshModule,
-            gameCapabilityProvider);
+            discoveryPlanner ?? new CapabilityOnlyDiscoveryPlanner(gameCapabilityProvider));
 
         PluginList = new PluginListViewModel(pluginRefreshModule);
 
@@ -111,5 +114,31 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         public void Shutdown()
         {
         }
+    }
+
+    private sealed class CapabilityOnlyDiscoveryPlanner(IGameCapabilityProvider gameCapabilityProvider)
+        : IPluginRefreshDiscoveryPlanner
+    {
+        public IReadOnlyList<GameType> GetAvailableGames() => gameCapabilityProvider.GetAvailableGames();
+
+        public PluginRefreshGameAffordance GetAffordance(GameType gameType, bool mo2ModeEnabled)
+        {
+            var capability = gameCapabilityProvider.Get(gameType);
+            return new PluginRefreshGameAffordance(
+                gameType,
+                capability.SupportsAutomaticPluginDiscovery,
+                gameType != GameType.Unknown && !mo2ModeEnabled && capability.RequiresLoadOrderFile,
+                capability.SupportsIssueApproximation);
+        }
+
+        public Task<PluginRefreshDiscoveryPlanResult> CreatePlanAsync(
+            PluginRefreshDiscoveryPlanRequest request,
+            CancellationToken ct = default) =>
+            throw new InvalidOperationException("Capability-only planner cannot create Plugin refresh discovery plans.");
+
+        public Task<PluginRefreshDiscoveredPlugins> LoadPluginsAsync(
+            PluginRefreshDiscoveryPlan plan,
+            CancellationToken ct = default) =>
+            throw new InvalidOperationException("Capability-only planner cannot load Plugin refresh rows.");
     }
 }

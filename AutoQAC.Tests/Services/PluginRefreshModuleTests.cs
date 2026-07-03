@@ -282,15 +282,18 @@ public sealed class PluginRefreshModuleTests
         IGameDetectionService? gameDetectionService = null)
     {
         configurationService ??= CreateConfigurationService();
+        pluginLoadingService ??= new TestPluginLoadingService();
         gameDetectionService ??= CreateDefaultGameDetectionService();
+        var discoveryPlanner = new PluginRefreshDiscoveryPlanner(
+            configurationService,
+            pluginLoadingService,
+            Substitute.For<IMo2InstanceService>(),
+            new GameCapabilityProvider());
         return new PluginRefreshModule(
-            pluginLoadingService ?? new TestPluginLoadingService(),
+            discoveryPlanner,
             approximationService ?? new ResultIssueApproximationService(CreateDefaultResults()),
             stateService,
-            new GameCapabilityProvider(),
-            configurationService,
-            new SkipListPolicy(configurationService, gameDetectionService),
-            Substitute.For<IMo2InstanceService>());
+            new SkipListPolicy(configurationService, gameDetectionService));
     }
 
     private static StateService CreateStateWithRows(params PluginInfo[] rows)

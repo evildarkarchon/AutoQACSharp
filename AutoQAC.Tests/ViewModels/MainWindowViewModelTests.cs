@@ -31,6 +31,7 @@ public sealed class MainWindowViewModelTests
     private readonly IUiDispatcher _uiDispatcher;
     private readonly RecordingPluginRefreshModule _pluginRefreshModule;
     private readonly IGameCapabilityProvider _gameCapabilityProvider;
+    private readonly IPluginRefreshDiscoveryPlanner _discoveryPlanner;
 
     public MainWindowViewModelTests()
     {
@@ -44,6 +45,11 @@ public sealed class MainWindowViewModelTests
         _pluginLoadingServiceMock = Substitute.For<IPluginLoadingService>();
         _uiDispatcher = new SynchronousUiDispatcher();
         _gameCapabilityProvider = new GameCapabilityProvider();
+        _discoveryPlanner = new PluginRefreshDiscoveryPlanner(
+            _configServiceMock,
+            _pluginLoadingServiceMock,
+            Substitute.For<AutoQAC.Services.MO2.IMo2InstanceService>(),
+            _gameCapabilityProvider);
         _pluginRefreshModule = new RecordingPluginRefreshModule();
 
         // Default setup for CleaningCompleted observable
@@ -86,14 +92,16 @@ public sealed class MainWindowViewModelTests
         gameDetectionService
             .DetectVariant(Arg.Any<GameType>(), Arg.Any<IReadOnlyList<string>>())
             .Returns(GameVariant.None);
-        return new PluginRefreshModule(
+        var discoveryPlanner = new PluginRefreshDiscoveryPlanner(
+            _configServiceMock,
             _pluginLoadingServiceMock,
+            Substitute.For<AutoQAC.Services.MO2.IMo2InstanceService>(),
+            _gameCapabilityProvider);
+        return new PluginRefreshModule(
+            discoveryPlanner,
             approximationService,
             effectiveStateService,
-            _gameCapabilityProvider,
-            _configServiceMock,
             new SkipListPolicy(_configServiceMock, gameDetectionService),
-            Substitute.For<AutoQAC.Services.MO2.IMo2InstanceService>(),
             _loggerMock);
     }
 
@@ -1098,7 +1106,7 @@ public sealed class MainWindowViewModelTests
             _pluginServiceMock,
             _pluginLoadingServiceMock,
             pluginRefreshModule: refreshModule,
-            gameCapabilityProvider: _gameCapabilityProvider);
+            discoveryPlanner: _discoveryPlanner);
 
         try
         {
@@ -1142,7 +1150,7 @@ public sealed class MainWindowViewModelTests
             _pluginServiceMock,
             _pluginLoadingServiceMock,
             pluginRefreshModule: refreshModule,
-            gameCapabilityProvider: _gameCapabilityProvider);
+            discoveryPlanner: _discoveryPlanner);
 
         try
         {
@@ -1191,7 +1199,7 @@ public sealed class MainWindowViewModelTests
                 _pluginServiceMock,
                 _pluginLoadingServiceMock,
                 pluginRefreshModule: refreshModule,
-                gameCapabilityProvider: _gameCapabilityProvider);
+                discoveryPlanner: _discoveryPlanner);
 
             await vm.InitializeAsync();
 
@@ -1777,7 +1785,7 @@ public sealed class MainWindowViewModelTests
                 _pluginServiceMock,
                 _pluginLoadingServiceMock,
                 refreshModule,
-                _gameCapabilityProvider);
+                _discoveryPlanner);
             await vm.InitializeAsync();
 
             // Act
