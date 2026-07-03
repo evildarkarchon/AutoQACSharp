@@ -366,6 +366,7 @@ public sealed class ErrorDialogTests
             // Return empty list from the coordinator-backed load-order path.
             _pluginLoadingServiceMock.GetPluginsFromFileAsync(tempFile, Arg.Any<string?>(), Arg.Any<CancellationToken>())
                 .Returns(new List<PluginInfo>());
+            vm.Configuration.SelectedGame = GameType.FalloutNewVegas;
 
             // Act
             await vm.Configuration.ConfigureLoadOrderCommand.ExecuteAsync(null);
@@ -398,6 +399,7 @@ public sealed class ErrorDialogTests
             // Throw IOException from the coordinator-backed load-order path.
             _pluginLoadingServiceMock.GetPluginsFromFileAsync(tempFile, Arg.Any<string?>(), Arg.Any<CancellationToken>())
                 .ThrowsAsync(new IOException("File in use"));
+            vm.Configuration.SelectedGame = GameType.FalloutNewVegas;
 
             // Act
             await vm.Configuration.ConfigureLoadOrderCommand.ExecuteAsync(null);

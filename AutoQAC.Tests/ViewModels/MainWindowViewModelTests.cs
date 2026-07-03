@@ -281,6 +281,7 @@ public sealed class MainWindowViewModelTests
                     Arg.Any<GameVariant>(),
                     Arg.Any<CancellationToken>())
                 .Returns(new List<string>());
+            vm.Configuration.SelectedGame = GameType.FalloutNewVegas;
 
             // Act
             await vm.Configuration.ConfigureLoadOrderCommand.ExecuteAsync(null);
@@ -292,7 +293,7 @@ public sealed class MainWindowViewModelTests
                 Arg.Any<string?>(),
                 Arg.Any<string?>());
             _stateServiceMock.Received(1).SetPluginsToClean(Arg.Is<List<PluginInfo>>(l => l.Count == 2 && l[0].FileName == "Update.esm"));
-            await _configServiceMock.Received().SetGameLoadOrderOverrideAsync(Arg.Any<GameType>(), tempFile, Arg.Any<CancellationToken>());
+            await _configServiceMock.Received().SetGameLoadOrderOverrideAsync(GameType.FalloutNewVegas, tempFile, Arg.Any<CancellationToken>());
         }
         finally
         {
@@ -460,6 +461,7 @@ public sealed class MainWindowViewModelTests
             // Plugin service throws exception for the corrupted file path
             _pluginLoadingServiceMock.GetPluginsFromFileAsync(tempFile, Arg.Any<string?>(), Arg.Any<CancellationToken>())
                 .ThrowsAsync(new InvalidOperationException("Failed to parse load order"));
+            vm.Configuration.SelectedGame = GameType.FalloutNewVegas;
 
             // Act
             await vm.Configuration.ConfigureLoadOrderCommand.ExecuteAsync(null);
@@ -776,6 +778,7 @@ public sealed class MainWindowViewModelTests
                 _pluginServiceMock,
                 _pluginLoadingServiceMock,
                 _uiDispatcher);
+            vm.Configuration.SelectedGame = GameType.FalloutNewVegas;
 
             // Act
             await vm.Configuration.ConfigureLoadOrderCommand.ExecuteAsync(null);
@@ -1089,6 +1092,64 @@ public sealed class MainWindowViewModelTests
         finally
         {
             vm.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task InitializeAsync_WhenSavedGameUnknownWithSavedLoadOrder_ShouldUsePluginRefreshSeam()
+    {
+        var tempFile = Path.GetTempFileName();
+        try
+        {
+            using var stateService = new StateService();
+            var configService = Substitute.For<IConfigurationService>();
+            var refreshCoordinator = Substitute.For<IPluginRefreshCoordinator>();
+
+            configService.SkipListChanged.Returns(Observable.Never<GameType>());
+            configService.LoadUserConfigAsync(Arg.Any<CancellationToken>())
+                .Returns(_ => new UserConfiguration
+                {
+                    LoadOrder = new LoadOrderConfig { File = tempFile },
+                    XEdit = new XEditConfig(),
+                    ModOrganizer = new ModOrganizerConfig(),
+                    Settings = new AutoQacSettings()
+                });
+            configService.GetSelectedGameAsync(Arg.Any<CancellationToken>())
+                .Returns(GameType.Unknown);
+            refreshCoordinator.StatusChanged.Returns(Observable.Never<PluginRefreshStatus>());
+            refreshCoordinator.RefreshForGameAsync(
+                    GameType.Unknown,
+                    Arg.Any<string?>(),
+                    Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult(new PluginRefreshProjection(GameType.Unknown, AvailableProfiles: [])));
+
+            var vm = new ConfigurationViewModel(
+                configService,
+                stateService,
+                _loggerMock,
+                _fileDialogMock,
+                _messageDialogMock,
+                _pluginServiceMock,
+                _pluginLoadingServiceMock,
+                pluginRefreshCoordinator: refreshCoordinator);
+
+            await vm.InitializeAsync();
+
+            await refreshCoordinator.Received(1).RefreshForGameAsync(
+                GameType.Unknown,
+                null,
+                Arg.Any<CancellationToken>());
+            await _pluginServiceMock.DidNotReceive().GetPluginsFromLoadOrderAsync(
+                Arg.Any<string>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>());
+            stateService.CurrentState.PluginsToClean.Should().BeEmpty(
+                "no-game startup must not publish stale load-order rows outside Plugin refresh");
+        }
+        finally
+        {
+            if (File.Exists(tempFile))
+                File.Delete(tempFile);
         }
     }
 
@@ -1468,7 +1529,8 @@ public sealed class MainWindowViewModelTests
         await WaitForSignalAsync(pluginsLoaded);
         await WaitForSignalAsync(unavailableMerged);
 
-        _stateServiceMock.Received(1).SetPluginsToClean(Arg.Any<List<PluginInfo>>());
+        _stateServiceMock.Received(1).SetPluginsToClean(Arg.Is<List<PluginInfo>>(list =>
+            list.Count == 1 && list[0].FileName == "Plugin1.esp"));
         _stateServiceMock.Received(1).MergePluginApproximation(Arg.Is<PluginIssueApproximationResult>(result =>
             result.Approximation.Status == PluginIssueApproximationStatus.Unavailable));
     }

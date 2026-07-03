@@ -72,7 +72,7 @@ public sealed partial class PluginRefreshCoordinator : IPluginRefreshCoordinator
 
         try
         {
-            if (gameType == GameType.Unknown && string.IsNullOrWhiteSpace(selectedLoadOrderPath))
+            if (gameType == GameType.Unknown)
             {
                 if (!IsCurrent(generation, token)) return projection;
                 _lastSuccessfulContext = null;

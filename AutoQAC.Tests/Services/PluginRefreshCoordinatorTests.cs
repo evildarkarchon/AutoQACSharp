@@ -162,6 +162,45 @@ public sealed class PluginRefreshCoordinatorTests
     }
 
     [Fact]
+    public async Task RefreshForGameAsync_WhenGameUnknownWithSelectedLoadOrder_ClearsRowsWithoutLoading()
+    {
+        var stateService = new StateService();
+        stateService.UpdateState(s => s with { CurrentGameType = GameType.SkyrimSe });
+        stateService.SetPluginsToClean([
+            new PluginInfo
+            {
+                FileName = "Stale.esp",
+                FullPath = @"C:\Game\Data\Stale.esp",
+                DetectedGameType = GameType.SkyrimSe
+            }
+        ]);
+        var loadingService = Substitute.For<IPluginLoadingService>();
+        var sut = CreateCoordinator(stateService, pluginLoadingService: loadingService);
+        var statuses = new List<PluginRefreshStatus>();
+        using var subscription = sut.StatusChanged.Subscribe(statuses.Add);
+
+        await sut.RefreshForGameAsync(
+            GameType.Unknown,
+            @"C:\Game\plugins.txt",
+            CancellationToken.None);
+
+        stateService.CurrentState.CurrentGameType.Should().Be(GameType.Unknown);
+        stateService.CurrentState.PluginsToClean.Should().BeEmpty(
+            "Plugin refresh must not publish rows when no game is selected");
+        await loadingService.DidNotReceive().GetPluginsFromFileAsync(
+            Arg.Any<string>(),
+            Arg.Any<string?>(),
+            Arg.Any<CancellationToken>());
+        await loadingService.DidNotReceive().TryGetPluginsAsync(
+            Arg.Any<GameType>(),
+            Arg.Any<string?>(),
+            Arg.Any<CancellationToken>());
+        statuses.Should().Contain(status =>
+            status.Kind == PluginRefreshStatusKind.Idle &&
+            status.Message == "No game selected");
+    }
+
+    [Fact]
     public async Task RefreshForGameAsync_WhenAnalysisCompletes_PublishesFullRefreshCompletedStatus()
     {
         var stateService = new StateService();

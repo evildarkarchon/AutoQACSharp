@@ -30,7 +30,6 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
     private readonly IMessageDialogService _messageDialog;
     private readonly IPluginLoadingService _pluginLoadingService;
     private readonly IPluginRefreshCoordinator _pluginRefreshCoordinator;
-    private readonly IPluginValidationService _pluginService;
     private readonly IStateService _stateService;
     private readonly IDisposable _skipListChangedSubscription;
     private readonly IDisposable _pluginRefreshStatusSubscription;
@@ -130,7 +129,6 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         _logger = logger;
         _fileDialog = fileDialog;
         _messageDialog = messageDialog;
-        _pluginService = pluginService;
         _pluginLoadingService = pluginLoadingService;
         var effectiveGameDetectionService = gameDetectionService ?? new GameDetectionService(logger);
         _pluginRefreshCoordinator = pluginRefreshCoordinator ?? new PluginRefreshCoordinator(
@@ -587,23 +585,13 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
             _initialized = true;
 
             var savedGame = await _configService.GetSelectedGameAsync();
-            SelectedGame = savedGame;
-
-            if (savedGame == GameType.Unknown &&
-                !string.IsNullOrEmpty(config.LoadOrder.File) &&
-                File.Exists(config.LoadOrder.File))
+            if (SelectedGame == savedGame)
             {
-                try
-                {
-                    var plugins = await _pluginService.GetPluginsFromLoadOrderAsync(config.LoadOrder.File);
-                    _stateService.SetPluginsToClean(plugins);
-                    StatusText = "Configuration loaded";
-                }
-                catch (Exception ex)
-                {
-                    _logger.Error(ex, "Failed to parse saved load order on startup");
-                    StatusText = "Configuration loaded (Load Order parse error)";
-                }
+                await RefreshPluginsForGameAsync(savedGame);
+            }
+            else
+            {
+                SelectedGame = savedGame;
             }
         }
         catch (Exception ex)

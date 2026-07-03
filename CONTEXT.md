@@ -11,6 +11,10 @@ _Avoid_: Cleaning workflow, cleaning transaction, cleaning run
 **Plugin refresh**:
 A user-visible update of plugin rows for the current game context, including skip-list status and issue approximation preparation.
 
+**Plugin refresh publication**:
+The point at which a Plugin refresh becomes visible to the user, including the current game context, plugin rows, and issue approximation status.
+_Avoid_: State update, app state mutation, row sync
+
 **Skip list**:
 A game-specific set of plugin names that AutoQAC should not select for cleaning by default.
 
