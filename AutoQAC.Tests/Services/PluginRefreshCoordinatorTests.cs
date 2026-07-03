@@ -2,6 +2,7 @@ using System.Reactive.Subjects;
 using AutoQAC.Models;
 using AutoQAC.Models.Configuration;
 using AutoQAC.Services.Configuration;
+using AutoQAC.Services.GameCapability;
 using AutoQAC.Services.GameDetection;
 using AutoQAC.Services.MO2;
 using AutoQAC.Services.Plugin;
@@ -442,7 +443,7 @@ public sealed class PluginRefreshCoordinatorTests
             approximationService ?? new TestPluginIssueApproximationService(),
             stateService,
             publication ?? new StateServicePluginRefreshPublication(stateService),
-            new TestPluginRefreshCapabilityPolicy(),
+            new GameCapabilityProvider(),
             configurationService,
             new SkipListPolicy(configurationService, gameDetectionService),
             Substitute.For<IMo2InstanceService>());
@@ -475,7 +476,7 @@ public sealed class PluginRefreshCoordinatorTests
             approximationService ?? new TestPluginIssueApproximationService(),
             stateService,
             publication ?? new StateServicePluginRefreshPublication(stateService),
-            new TestPluginRefreshCapabilityPolicy(),
+            new GameCapabilityProvider(),
             configurationService,
             new SkipListPolicy(configurationService, gameDetectionService),
             Substitute.For<IMo2InstanceService>());
@@ -660,12 +661,6 @@ public sealed class PluginRefreshCoordinatorTests
             CancellationToken ct = default) =>
             Task.FromResult(CreatePlugins(GameType.FalloutNewVegas, dataFolderPath).ToList());
 
-        public bool IsGameSupportedByMutagen(GameType gameType) =>
-            gameType is GameType.SkyrimSe or GameType.Fallout4;
-
-        public IReadOnlyList<GameType> GetAvailableGames() =>
-            [GameType.SkyrimSe, GameType.Fallout4, GameType.FalloutNewVegas];
-
         public string? GetGameDataFolder(GameType gameType, string? customDataFolderOverride = null) =>
             customDataFolderOverride ?? $@"C:\{gameType}\Data";
 
@@ -687,11 +682,32 @@ public sealed class PluginRefreshCoordinatorTests
     private sealed class TestPluginIssueApproximationService : IPluginIssueApproximationService
     {
         public async Task<IReadOnlyList<PluginIssueApproximationResult>> GetApproximationsAsync(
-            GameType gameType,
-            string dataFolder,
+            PluginIssueApproximationRequest request,
             Action<PluginIssueApproximationResult>? onApproximationReady = null,
             CancellationToken ct = default)
         {
+            if (request.Source is PluginIssueApproximationSource.ResolvedLoadOrder resolved)
+            {
+                var resolvedResults = resolved.OrderedPluginNames
+                    .Select(name => new PluginIssueApproximationResult
+                    {
+                        FileName = name,
+                        FullPath = resolved.PathsByFileName.TryGetValue(name, out var path) ? path : name,
+                        Approximation = PluginIssueApproximation.Available(1, 2, 3)
+                    })
+                    .ToList();
+
+                foreach (var result in resolvedResults)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    onApproximationReady?.Invoke(result);
+                    await Task.Delay(25, ct);
+                }
+
+                return resolvedResults;
+            }
+
+            var dataFolder = ((PluginIssueApproximationSource.DirectDataFolder)request.Source).DataFolder;
             var results = new List<PluginIssueApproximationResult>
             {
                 CreateResult(dataFolder, "Completed.esp"),
@@ -712,33 +728,6 @@ public sealed class PluginRefreshCoordinatorTests
             return results;
         }
 
-        public async Task<IReadOnlyList<PluginIssueApproximationResult>> GetApproximationsAsync(
-            GameType gameType,
-            string baseDataFolder,
-            IReadOnlyList<string> orderedPluginNames,
-            Func<Mutagen.Bethesda.Plugins.ModKey, string?> pathResolver,
-            Action<PluginIssueApproximationResult>? onApproximationReady = null,
-            CancellationToken ct = default)
-        {
-            var results = orderedPluginNames
-                .Select(name => new PluginIssueApproximationResult
-                {
-                    FileName = name,
-                    FullPath = pathResolver(Mutagen.Bethesda.Plugins.ModKey.FromFileName(name)) ?? name,
-                    Approximation = PluginIssueApproximation.Available(1, 2, 3)
-                })
-                .ToList();
-
-            foreach (var result in results)
-            {
-                ct.ThrowIfCancellationRequested();
-                onApproximationReady?.Invoke(result);
-                await Task.Delay(25, ct);
-            }
-
-            return results;
-        }
-
         private static PluginIssueApproximationResult CreateResult(string dataFolder, string fileName) =>
             new()
             {
@@ -753,39 +742,33 @@ public sealed class PluginRefreshCoordinatorTests
         public List<string> DirectDataFolders { get; } = [];
 
         public Task<IReadOnlyList<PluginIssueApproximationResult>> GetApproximationsAsync(
-            GameType gameType,
-            string dataFolder,
+            PluginIssueApproximationRequest request,
             Action<PluginIssueApproximationResult>? onApproximationReady = null,
             CancellationToken ct = default)
         {
+            if (request.Source is PluginIssueApproximationSource.ResolvedLoadOrder resolved)
+            {
+                var resolvedResults = resolved.OrderedPluginNames
+                    .Select(name => new PluginIssueApproximationResult
+                    {
+                        FileName = name,
+                        FullPath = resolved.PathsByFileName.TryGetValue(name, out var path) ? path : name,
+                        Approximation = PluginIssueApproximation.Available(1, 2, 3)
+                    })
+                    .ToList();
+                foreach (var resolvedResult in resolvedResults)
+                {
+                    onApproximationReady?.Invoke(resolvedResult);
+                }
+
+                return Task.FromResult<IReadOnlyList<PluginIssueApproximationResult>>(resolvedResults);
+            }
+
+            var dataFolder = ((PluginIssueApproximationSource.DirectDataFolder)request.Source).DataFolder;
             DirectDataFolders.Add(dataFolder);
             var result = CreateResult(dataFolder, "Selected.esp");
             onApproximationReady?.Invoke(result);
             return Task.FromResult<IReadOnlyList<PluginIssueApproximationResult>>([result]);
-        }
-
-        public Task<IReadOnlyList<PluginIssueApproximationResult>> GetApproximationsAsync(
-            GameType gameType,
-            string baseDataFolder,
-            IReadOnlyList<string> orderedPluginNames,
-            Func<Mutagen.Bethesda.Plugins.ModKey, string?> pathResolver,
-            Action<PluginIssueApproximationResult>? onApproximationReady = null,
-            CancellationToken ct = default)
-        {
-            var results = orderedPluginNames
-                .Select(name => new PluginIssueApproximationResult
-                {
-                    FileName = name,
-                    FullPath = pathResolver(Mutagen.Bethesda.Plugins.ModKey.FromFileName(name)) ?? name,
-                    Approximation = PluginIssueApproximation.Available(1, 2, 3)
-                })
-                .ToList();
-            foreach (var result in results)
-            {
-                onApproximationReady?.Invoke(result);
-            }
-
-            return Task.FromResult<IReadOnlyList<PluginIssueApproximationResult>>(results);
         }
 
         private static PluginIssueApproximationResult CreateResult(string dataFolder, string fileName) =>
@@ -841,10 +824,6 @@ public sealed class PluginRefreshCoordinatorTests
             CancellationToken ct = default) =>
             Task.FromResult(CreatePlugins(GameType.FalloutNewVegas, dataFolderPath).ToList());
 
-        public bool IsGameSupportedByMutagen(GameType gameType) => true;
-
-        public IReadOnlyList<GameType> GetAvailableGames() => [GameType.SkyrimSe, GameType.Fallout4];
-
         public string? GetGameDataFolder(GameType gameType, string? customDataFolderOverride = null) =>
             customDataFolderOverride ?? $@"C:\{gameType}\Data";
 
@@ -865,29 +844,9 @@ public sealed class PluginRefreshCoordinatorTests
     private sealed class ThrowingPluginIssueApproximationService : IPluginIssueApproximationService
     {
         public Task<IReadOnlyList<PluginIssueApproximationResult>> GetApproximationsAsync(
-            GameType gameType,
-            string dataFolder,
+            PluginIssueApproximationRequest request,
             Action<PluginIssueApproximationResult>? onApproximationReady = null,
             CancellationToken ct = default) =>
             throw new InvalidOperationException("Synthetic approximation failure");
-
-        public Task<IReadOnlyList<PluginIssueApproximationResult>> GetApproximationsAsync(
-            GameType gameType,
-            string baseDataFolder,
-            IReadOnlyList<string> orderedPluginNames,
-            Func<Mutagen.Bethesda.Plugins.ModKey, string?> pathResolver,
-            Action<PluginIssueApproximationResult>? onApproximationReady = null,
-            CancellationToken ct = default) =>
-            throw new InvalidOperationException("Synthetic approximation failure");
-    }
-
-    private sealed class TestPluginRefreshCapabilityPolicy : IPluginRefreshCapabilityPolicy
-    {
-        public bool SupportsPluginLoading(GameType gameType) => gameType != GameType.Unknown;
-
-        public bool SupportsIssueApproximation(GameType gameType) =>
-            gameType is GameType.SkyrimSe or GameType.Fallout4;
-
-        public bool RequiresLoadOrderFile(GameType gameType) => gameType == GameType.FalloutNewVegas;
     }
 }

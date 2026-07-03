@@ -2,6 +2,7 @@ using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Services.Backup;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
+using AutoQAC.Services.GameCapability;
 using AutoQAC.Services.GameDetection;
 using AutoQAC.Services.MO2;
 using AutoQAC.Services.Monitoring;
@@ -51,10 +52,12 @@ public static class ServiceCollectionExtensions
         public IServiceCollection AddBusinessLogic()
         {
             services.AddSingleton<IGameDetectionService, GameDetectionService>();
+            services.AddSingleton<IGameCapabilityProvider, GameCapabilityProvider>();
             services.AddSingleton<IPluginValidationService, PluginValidationService>();
             services.AddSingleton<IPluginLoadingService, PluginLoadingService>();
-            services.AddSingleton<IPluginIssueApproximationService, PluginIssueApproximationService>();
-            services.AddSingleton<IPluginRefreshCapabilityPolicy, PluginRefreshCapabilityPolicy>();
+            services.AddSingleton<IPluginIssueApproximationService>(sp => new PluginIssueApproximationService(
+                sp.GetRequiredService<ILoggingService>(),
+                gameCapabilityProvider: sp.GetRequiredService<IGameCapabilityProvider>()));
             services.AddSingleton<ISkipListPolicy, SkipListPolicy>();
             services.AddSingleton<IPluginRefreshPublication, StateServicePluginRefreshPublication>();
             services.AddSingleton<IPluginRefreshCoordinator, PluginRefreshCoordinator>();

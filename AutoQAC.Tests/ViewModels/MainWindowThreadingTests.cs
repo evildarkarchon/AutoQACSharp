@@ -4,6 +4,7 @@ using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
+using AutoQAC.Services.GameCapability;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Services.State;
 using AutoQAC.Services.UI;
@@ -47,10 +48,8 @@ public sealed class MainWindowThreadingTests
             });
         configService.GetSelectedGameAsync(Arg.Any<CancellationToken>())
             .Returns(GameType.Unknown);
-        pluginLoadingService.GetAvailableGames()
-            .Returns(new List<GameType> { GameType.Fallout4 });
         var refreshCoordinator = CreateRefreshCoordinator();
-        var capabilityPolicy = CreateCapabilityPolicy();
+        var gameCapabilityProvider = CreateGameCapabilityProvider();
 
         var viewModel = new MainWindowViewModel(
             configService,
@@ -63,7 +62,7 @@ public sealed class MainWindowThreadingTests
             pluginLoadingService,
             captureDispatcher,
             refreshCoordinator,
-            capabilityPolicy);
+            gameCapabilityProvider);
 
         try
         {
@@ -97,12 +96,11 @@ public sealed class MainWindowThreadingTests
     [Fact]
     public void CleaningCommandsViewModel_OnStateChanged_ShouldApplyStateSynchronously()
     {
-        var pluginLoadingService = Substitute.For<IPluginLoadingService>();
         var viewModel = new CleaningCommandsViewModel(
             Substitute.For<IStateService>(),
             Substitute.For<ICleaningSession>(),
             Substitute.For<IConfigurationService>(),
-            pluginLoadingService,
+            CreateGameCapabilityProvider(),
             Substitute.For<IPluginRefreshCoordinator>(),
             Substitute.For<ILoggingService>(),
             Substitute.For<IMessageDialogService>(),
@@ -160,7 +158,7 @@ public sealed class MainWindowThreadingTests
         var viewModel = new PluginListViewModel(
             stateService,
             CreateRefreshCoordinator(),
-            CreateCapabilityPolicy(),
+            CreateGameCapabilityProvider(),
             new SynchronousUiDispatcher());
 
         try
@@ -211,10 +209,8 @@ public sealed class MainWindowThreadingTests
             });
         configService.GetSelectedGameAsync(Arg.Any<CancellationToken>())
             .Returns(GameType.Unknown);
-        pluginLoadingService.GetAvailableGames()
-            .Returns(new List<GameType> { GameType.Fallout4 });
         refreshCoordinator.StatusChanged.Returns(refreshStatusSubject);
-        var capabilityPolicy = CreateCapabilityPolicy();
+        var gameCapabilityProvider = CreateGameCapabilityProvider();
 
         var viewModel = new MainWindowViewModel(
             configService,
@@ -227,7 +223,7 @@ public sealed class MainWindowThreadingTests
             pluginLoadingService,
             captureDispatcher,
             pluginRefreshCoordinator: refreshCoordinator,
-            pluginRefreshCapabilityPolicy: capabilityPolicy);
+            gameCapabilityProvider: gameCapabilityProvider);
 
         try
         {
@@ -257,7 +253,7 @@ public sealed class MainWindowThreadingTests
         var viewModel = new PluginListViewModel(
             stateService,
             CreateRefreshCoordinator(),
-            CreateCapabilityPolicy(),
+            CreateGameCapabilityProvider(),
             new SynchronousUiDispatcher());
 
         try
@@ -323,14 +319,7 @@ public sealed class MainWindowThreadingTests
         return refreshCoordinator;
     }
 
-    private static IPluginRefreshCapabilityPolicy CreateCapabilityPolicy()
-    {
-        var capabilityPolicy = Substitute.For<IPluginRefreshCapabilityPolicy>();
-        capabilityPolicy.SupportsPluginLoading(Arg.Any<GameType>()).Returns(true);
-        capabilityPolicy.SupportsIssueApproximation(Arg.Any<GameType>()).Returns(true);
-        capabilityPolicy.RequiresLoadOrderFile(Arg.Any<GameType>()).Returns(false);
-        return capabilityPolicy;
-    }
+    private static IGameCapabilityProvider CreateGameCapabilityProvider() => new GameCapabilityProvider();
 
     /// <summary>
     /// Test double <see cref="IUiDispatcher"/> that runs callbacks synchronously while

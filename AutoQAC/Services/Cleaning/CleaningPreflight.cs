@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.Configuration;
+using AutoQAC.Services.GameCapability;
 using AutoQAC.Services.GameDetection;
 using AutoQAC.Services.MO2;
 using AutoQAC.Services.Plugin;
@@ -27,9 +28,12 @@ public sealed class CleaningPreflight(
     IStateService stateService,
     ILoggingService logger,
     IMo2InstanceService? mo2InstanceService = null,
-    ISkipListPolicy? skipListPolicy = null)
+    ISkipListPolicy? skipListPolicy = null,
+    IGameCapabilityProvider? gameCapabilityProvider = null)
     : ICleaningPreflight
 {
+    private readonly IGameCapabilityProvider _gameCapabilityProvider = gameCapabilityProvider ?? new GameCapabilityProvider();
+
     /// <inheritdoc />
     public async Task<CleaningPreflightPlan> PrepareAsync(CancellationToken ct = default)
     {
@@ -295,7 +299,7 @@ public sealed class CleaningPreflight(
             return false;
         }
 
-        if (RequiresFileLoadOrder(config.CurrentGameType))
+        if (_gameCapabilityProvider.Get(config.CurrentGameType).RequiresLoadOrderFile)
         {
             if (string.IsNullOrWhiteSpace(config.LoadOrderPath) ||
                 !File.Exists(config.LoadOrderPath))
@@ -311,9 +315,9 @@ public sealed class CleaningPreflight(
     /// Validates file-load-order requirements after executable/load-order detection finalizes the game type.
     /// This second check is required because CurrentGameType can start as Unknown and resolve to FO3, FNV, or Oblivion only after initial validation has already run.
     /// </summary>
-    private static bool ValidateDetectedLoadOrderPath(GameType gameType, string? loadOrderPath)
+    private bool ValidateDetectedLoadOrderPath(GameType gameType, string? loadOrderPath)
     {
-        if (!RequiresFileLoadOrder(gameType))
+        if (!_gameCapabilityProvider.Get(gameType).RequiresLoadOrderFile)
         {
             return true;
         }
@@ -321,19 +325,4 @@ public sealed class CleaningPreflight(
         return !string.IsNullOrWhiteSpace(loadOrderPath) && File.Exists(loadOrderPath);
     }
 
-    /// <summary>
-    /// True for game types that require file-based load-order parsing (Oblivion, FO3, FNV)
-    /// rather than Mutagen-backed plugin discovery.
-    /// </summary>
-    /// <remarks>
-    /// Duplicated in CleaningService, CleaningCommandsViewModel, ConfigurationViewModel, and
-    /// PluginLoadingService. Consolidating those copies is REF-02 (Phase 9), NOT Phase 8 (D-11).
-    /// </remarks>
-    private static bool RequiresFileLoadOrder(GameType gameType) => gameType switch
-    {
-        GameType.Fallout3 => true,
-        GameType.FalloutNewVegas => true,
-        GameType.Oblivion => true,
-        _ => false
-    };
 }

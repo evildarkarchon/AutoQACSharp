@@ -1,6 +1,7 @@
 using System.Reflection;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
+using AutoQAC.Services.GameCapability;
 using AutoQAC.Services.Plugin;
 using FluentAssertions;
 using NSubstitute;
@@ -17,64 +18,8 @@ public sealed class PluginLoadingServiceTests
     {
         _mockPluginValidation = Substitute.For<IPluginValidationService>();
         _mockLogger = Substitute.For<ILoggingService>();
-        _sut = new PluginLoadingService(_mockPluginValidation, _mockLogger, _ => null);
+        _sut = new PluginLoadingService(_mockPluginValidation, _mockLogger, new GameCapabilityProvider(), _ => null);
     }
-
-    #region IsGameSupportedByMutagen Tests
-
-    [Theory]
-    [InlineData(GameType.SkyrimLe, true)]
-    [InlineData(GameType.SkyrimSe, true)]
-    [InlineData(GameType.SkyrimVr, true)]
-    [InlineData(GameType.Fallout4, true)]
-    [InlineData(GameType.Fallout4Vr, true)]
-    [InlineData(GameType.Fallout3, false)]
-    [InlineData(GameType.FalloutNewVegas, false)]
-    [InlineData(GameType.Oblivion, false)]
-    [InlineData(GameType.Unknown, false)]
-    public void IsGameSupportedByMutagen_ShouldReturnCorrectValue(GameType gameType, bool expected)
-    {
-        // Act
-        var result = _sut.IsGameSupportedByMutagen(gameType);
-
-        // Assert
-        result.Should().Be(expected);
-    }
-
-    #endregion
-
-    #region GetAvailableGames Tests
-
-    [Fact]
-    public void GetAvailableGames_ShouldReturnAllGamesExceptUnknown()
-    {
-        // Act
-        var result = _sut.GetAvailableGames();
-
-        // Assert
-        result.Should().NotContain(GameType.Unknown);
-        result.Should().Contain(GameType.SkyrimSe);
-        result.Should().Contain(GameType.SkyrimLe);
-        result.Should().Contain(GameType.SkyrimVr);
-        result.Should().Contain(GameType.Fallout3);
-        result.Should().Contain(GameType.FalloutNewVegas);
-        result.Should().Contain(GameType.Fallout4);
-        result.Should().Contain(GameType.Fallout4Vr);
-        result.Should().Contain(GameType.Oblivion);
-    }
-
-    [Fact]
-    public void GetAvailableGames_ShouldReturnSortedList()
-    {
-        // Act
-        var result = _sut.GetAvailableGames();
-
-        // Assert
-        var sorted = result.OrderBy(g => g.ToString()).ToList();
-        result.Should().BeEquivalentTo(sorted, options => options.WithStrictOrdering());
-    }
-
-    #endregion
 
     #region GetPluginsFromFileAsync Tests
 
@@ -113,6 +58,7 @@ public sealed class PluginLoadingServiceTests
         var sut = new PluginLoadingService(
             _mockPluginValidation,
             _mockLogger,
+            new GameCapabilityProvider(),
             _ => null,
             (_, _, _) =>
             (
@@ -159,6 +105,7 @@ public sealed class PluginLoadingServiceTests
         var sut = new PluginLoadingService(
             _mockPluginValidation,
             _mockLogger,
+            new GameCapabilityProvider(),
             _ => null,
             (_, _, _) => (null, (IReadOnlyList<string>)new List<string>()));
 
@@ -178,6 +125,7 @@ public sealed class PluginLoadingServiceTests
         var sut = new PluginLoadingService(
             _mockPluginValidation,
             _mockLogger,
+            new GameCapabilityProvider(),
             _ => null,
             (_, _, _) => (dataFolder, (IReadOnlyList<string>)new List<string>()));
 
@@ -197,6 +145,7 @@ public sealed class PluginLoadingServiceTests
         var sut = new PluginLoadingService(
             _mockPluginValidation,
             _mockLogger,
+            new GameCapabilityProvider(),
             _ => null,
             (_, _, _) => throw new InvalidOperationException("Mutagen failure"));
 
@@ -220,6 +169,7 @@ public sealed class PluginLoadingServiceTests
         var sut = new PluginLoadingService(
             _mockPluginValidation,
             _mockLogger,
+            new GameCapabilityProvider(),
             _ => null,
             (_, _, ct) =>
             {
@@ -320,7 +270,7 @@ public sealed class PluginLoadingServiceTests
     {
         // Arrange
         var expectedPath = @"C:\Games\Detected\Data";
-        var sut = new PluginLoadingService(_mockPluginValidation, _mockLogger,
+        var sut = new PluginLoadingService(_mockPluginValidation, _mockLogger, new GameCapabilityProvider(),
             g => g == gameType ? expectedPath : null);
 
         // Act

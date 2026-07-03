@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Models;
+using AutoQAC.Services.GameCapability;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Services.State;
 using AutoQAC.Services.UI;
@@ -23,7 +24,7 @@ public sealed partial class PluginListViewModel : ViewModelBase, IDisposable
 {
     private readonly IStateService _stateService;
     private readonly IPluginRefreshCoordinator _pluginRefreshCoordinator;
-    private readonly IPluginRefreshCapabilityPolicy _refreshCapabilityPolicy;
+    private readonly IGameCapabilityProvider _gameCapabilityProvider;
     private readonly IDisposable _pluginRefreshStatusSubscription;
 
     public ObservableCollection<PluginListItem> PluginsToClean { get; } = [];
@@ -56,17 +57,17 @@ public sealed partial class PluginListViewModel : ViewModelBase, IDisposable
     public partial bool IsApproximationRefreshRunning { get; set; }
 
     public bool CanRefreshApproximations =>
-        CurrentGameType != GameType.Unknown && _refreshCapabilityPolicy.SupportsIssueApproximation(CurrentGameType);
+        CurrentGameType != GameType.Unknown && _gameCapabilityProvider.Get(CurrentGameType).SupportsIssueApproximation;
 
     public PluginListViewModel(
         IStateService stateService,
         IPluginRefreshCoordinator pluginRefreshCoordinator,
-        IPluginRefreshCapabilityPolicy refreshCapabilityPolicy,
+        IGameCapabilityProvider gameCapabilityProvider,
         IUiDispatcher uiDispatcher)
     {
         _stateService = stateService;
         _pluginRefreshCoordinator = pluginRefreshCoordinator;
-        _refreshCapabilityPolicy = refreshCapabilityPolicy;
+        _gameCapabilityProvider = gameCapabilityProvider;
         _pluginRefreshStatusSubscription = _pluginRefreshCoordinator.StatusChanged.Subscribe(
             new CallbackObserver<PluginRefreshStatus>(status =>
                 uiDispatcher.Post(() => OnPluginRefreshStatusChanged(status))));

@@ -8,6 +8,7 @@ using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Models.Configuration;
 using AutoQAC.Services.Configuration;
+using AutoQAC.Services.GameCapability;
 using AutoQAC.Services.MO2;
 using AutoQAC.Services.State;
 
@@ -22,7 +23,7 @@ public sealed partial class PluginRefreshCoordinator : IPluginRefreshCoordinator
     private readonly IPluginIssueApproximationService _pluginIssueApproximationService;
     private readonly IStateService _stateService;
     private readonly IPluginRefreshPublication _pluginRefreshPublication;
-    private readonly IPluginRefreshCapabilityPolicy _capabilityPolicy;
+    private readonly IGameCapabilityProvider _gameCapabilityProvider;
     private readonly IConfigurationService _configurationService;
     private readonly ISkipListPolicy _skipListPolicy;
     private readonly IMo2InstanceService _mo2InstanceService;
@@ -37,7 +38,7 @@ public sealed partial class PluginRefreshCoordinator : IPluginRefreshCoordinator
         IPluginIssueApproximationService pluginIssueApproximationService,
         IStateService stateService,
         IPluginRefreshPublication pluginRefreshPublication,
-        IPluginRefreshCapabilityPolicy capabilityPolicy,
+        IGameCapabilityProvider gameCapabilityProvider,
         IConfigurationService configurationService,
         ISkipListPolicy skipListPolicy,
         IMo2InstanceService mo2InstanceService,
@@ -47,7 +48,7 @@ public sealed partial class PluginRefreshCoordinator : IPluginRefreshCoordinator
         _pluginIssueApproximationService = pluginIssueApproximationService;
         _stateService = stateService;
         _pluginRefreshPublication = pluginRefreshPublication;
-        _capabilityPolicy = capabilityPolicy;
+        _gameCapabilityProvider = gameCapabilityProvider;
         _configurationService = configurationService;
         _skipListPolicy = skipListPolicy;
         _mo2InstanceService = mo2InstanceService;
@@ -117,7 +118,8 @@ public sealed partial class PluginRefreshCoordinator : IPluginRefreshCoordinator
                 .ConfigureAwait(false);
             if (!publicationScope.IsVisible) return projection;
 
-            var initialApproximation = _capabilityPolicy.SupportsIssueApproximation(context.GameType)
+            var capability = _gameCapabilityProvider.Get(context.GameType);
+            var initialApproximation = capability.SupportsIssueApproximation
                 ? PluginIssueApproximation.Pending
                 : PluginIssueApproximation.Unavailable;
             var rows = skipEvaluation.Decisions.Select(decision => decision.Plugin with
@@ -126,7 +128,7 @@ public sealed partial class PluginRefreshCoordinator : IPluginRefreshCoordinator
             }).ToList();
             publicationScope.PublishPluginRows(rows);
 
-            if (!_capabilityPolicy.SupportsIssueApproximation(context.GameType))
+            if (!capability.SupportsIssueApproximation)
             {
                 publicationScope.PublishApproximationUnavailable();
                 return projection;
@@ -192,7 +194,7 @@ public sealed partial class PluginRefreshCoordinator : IPluginRefreshCoordinator
                 return;
             }
 
-            if (!_capabilityPolicy.SupportsIssueApproximation(context.GameType))
+            if (!_gameCapabilityProvider.Get(context.GameType).SupportsIssueApproximation)
             {
                 publicationScope.PublishApproximationUnavailable();
                 return;
@@ -319,7 +321,8 @@ public sealed partial class PluginRefreshCoordinator : IPluginRefreshCoordinator
             ? null
             : selectedLoadOrderPath;
 
-        if (string.IsNullOrWhiteSpace(loadOrderPath) && _capabilityPolicy.RequiresLoadOrderFile(gameType))
+        var capability = _gameCapabilityProvider.Get(gameType);
+        if (string.IsNullOrWhiteSpace(loadOrderPath) && capability.RequiresLoadOrderFile)
         {
             loadOrderPath = await _configurationService.GetGameLoadOrderOverrideAsync(gameType, ct)
                                 .ConfigureAwait(false)
@@ -333,7 +336,7 @@ public sealed partial class PluginRefreshCoordinator : IPluginRefreshCoordinator
             HasGameDataFolderOverride: hasDataFolderOverride,
             AvailableProfiles: []);
 
-        if (_capabilityPolicy.RequiresLoadOrderFile(gameType) && string.IsNullOrWhiteSpace(loadOrderPath))
+        if (capability.RequiresLoadOrderFile && string.IsNullOrWhiteSpace(loadOrderPath))
         {
             return new PluginRefreshContextResult(
                 null,
@@ -486,7 +489,7 @@ public sealed partial class PluginRefreshCoordinator : IPluginRefreshCoordinator
                 .ConfigureAwait(false);
         }
 
-        if (!_capabilityPolicy.SupportsPluginLoading(context.GameType))
+        if (!_gameCapabilityProvider.Get(context.GameType).SupportsAutomaticPluginDiscovery)
         {
             return [];
         }
@@ -518,24 +521,21 @@ public sealed partial class PluginRefreshCoordinator : IPluginRefreshCoordinator
         if (context.Mo2Mode)
         {
             await _pluginIssueApproximationService.GetApproximationsAsync(
-                context.GameType,
-                dataFolder,
-                targets.Select(target => target.FileName).ToList(),
-                modKey =>
-                {
-                    var fileName = modKey.FileName.String;
-                    return context.Mo2PathMap.TryGetValue(fileName, out var path)
-                        ? path
-                        : null;
-                },
+                new PluginIssueApproximationRequest(
+                    context.GameType,
+                    new PluginIssueApproximationSource.ResolvedLoadOrder(
+                        dataFolder,
+                        targets.Select(target => target.FileName).ToList(),
+                        context.Mo2PathMap)),
                 callback,
                 ct).ConfigureAwait(false);
         }
         else
         {
             await _pluginIssueApproximationService.GetApproximationsAsync(
-                context.GameType,
-                dataFolder,
+                new PluginIssueApproximationRequest(
+                    context.GameType,
+                    new PluginIssueApproximationSource.DirectDataFolder(dataFolder)),
                 callback,
                 ct).ConfigureAwait(false);
         }
@@ -569,7 +569,7 @@ public sealed partial class PluginRefreshCoordinator : IPluginRefreshCoordinator
         }).ToList();
 
     private string GetNoPluginsFoundMessage(GameType gameType) =>
-        _pluginLoadingService.IsGameSupportedByMutagen(gameType)
+        _gameCapabilityProvider.Get(gameType).SupportsAutomaticPluginDiscovery
             ? $"No plugins discovered via Mutagen for {gameType}."
             : "No plugins found in the selected load order.";
 

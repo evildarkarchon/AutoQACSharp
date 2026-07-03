@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
+using AutoQAC.Services.GameCapability;
 using Microsoft.Win32;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Installs;
@@ -22,24 +23,12 @@ public sealed class PluginLoadingService : IPluginLoadingService
 {
     private readonly IPluginValidationService _pluginValidation;
     private readonly ILoggingService _logger;
+    private readonly IGameCapabilityProvider _gameCapabilityProvider;
     private readonly Func<GameType, string?> _registryDataFolderResolver;
 
     private readonly Func<GameType, string?, CancellationToken, (string? DataFolder, IReadOnlyList<string>
             PluginFileNames)>
         _mutagenListingProvider;
-
-    /// <summary>
-    /// Games supported by Mutagen for load order detection.
-    /// Note: Fallout 3, Fallout NV, and Oblivion are not supported by Mutagen.
-    /// </summary>
-    private static readonly HashSet<GameType> MutagenSupportedGames =
-    [
-        GameType.SkyrimLe,
-        GameType.SkyrimSe,
-        GameType.SkyrimVr,
-        GameType.Fallout4,
-        GameType.Fallout4Vr
-    ];
 
     /// <summary>
     /// Maps GameType to My Games folder names for non-Mutagen games.
@@ -61,12 +50,14 @@ public sealed class PluginLoadingService : IPluginLoadingService
     public PluginLoadingService(
         IPluginValidationService pluginValidation,
         ILoggingService logger,
+        IGameCapabilityProvider gameCapabilityProvider,
         Func<GameType, string?>? registryDataFolderResolver = null,
         Func<GameType, string?, CancellationToken, (string? DataFolder, IReadOnlyList<string> PluginFileNames)>?
             mutagenListingProvider = null)
     {
         _pluginValidation = pluginValidation;
         _logger = logger;
+        _gameCapabilityProvider = gameCapabilityProvider;
         _registryDataFolderResolver = registryDataFolderResolver ?? ResolveDataFolderFromRegistry;
         _mutagenListingProvider = mutagenListingProvider ?? LoadMutagenListings;
     }
@@ -89,10 +80,10 @@ public sealed class PluginLoadingService : IPluginLoadingService
         string? customDataFolder = null,
         CancellationToken ct = default)
     {
-        if (gameType == GameType.Unknown || !IsGameSupportedByMutagen(gameType))
+        if (!_gameCapabilityProvider.Get(gameType).SupportsAutomaticPluginDiscovery)
         {
             _logger.Information(
-                "Game {GameType} is not supported by Mutagen, use GetPluginsFromFileAsync instead",
+                "Game {GameType} does not support automatic plugin discovery; use GetPluginsFromFileAsync instead",
                 gameType);
             return new PluginLoadingResult
             {
@@ -171,21 +162,6 @@ public sealed class PluginLoadingService : IPluginLoadingService
     }
 
     /// <inheritdoc />
-    public bool IsGameSupportedByMutagen(GameType gameType)
-    {
-        return MutagenSupportedGames.Contains(gameType);
-    }
-
-    /// <inheritdoc />
-    public IReadOnlyList<GameType> GetAvailableGames()
-    {
-        return Enum.GetValues<GameType>()
-            .Where(g => g != GameType.Unknown)
-            .OrderBy(g => g.ToString())
-            .ToList();
-    }
-
-    /// <inheritdoc />
     public string? GetGameDataFolder(GameType gameType, string? customDataFolderOverride = null)
     {
         // Return override if provided
@@ -194,7 +170,7 @@ public sealed class PluginLoadingService : IPluginLoadingService
             return customDataFolderOverride;
         }
 
-        if (IsGameSupportedByMutagen(gameType))
+        if (_gameCapabilityProvider.Get(gameType).SupportsAutomaticPluginDiscovery)
         {
             try
             {

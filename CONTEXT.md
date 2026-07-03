@@ -20,3 +20,7 @@ A game-specific set of plugin names that AutoQAC should not select for cleaning 
 
 **Issue approximation**:
 A pre-cleaning estimate of known plugin issues shown before a Cleaning session.
+
+**Game capability**:
+The set of AutoQAC behaviors available for a selected game, including how plugins can be discovered, whether a load-order file is required, and whether Issue approximation can be shown.
+_Avoid_: Mutagen support, supported game

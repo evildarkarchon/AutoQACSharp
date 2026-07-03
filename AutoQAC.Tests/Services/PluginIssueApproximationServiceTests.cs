@@ -40,7 +40,7 @@ public sealed class PluginIssueApproximationServiceTests
                 cache,
                 [new PluginIssueApproximationService.AnalysisTarget("Plugin.esp", @"C:\Game\Data\Plugin.esp", plugin)]));
 
-        var results = await sut.GetApproximationsAsync(GameType.SkyrimSe, @"C:\Game\Data");
+        var results = await sut.GetApproximationsAsync(DirectRequest(GameType.SkyrimSe, @"C:\Game\Data"));
 
         results.Should().ContainSingle();
         results[0].Approximation.Status.Should().Be(PluginIssueApproximationStatus.Available);
@@ -57,7 +57,7 @@ public sealed class PluginIssueApproximationServiceTests
             _queryService,
             (_, _, _) => throw new InvalidOperationException("Should not be called"));
 
-        var results = await sut.GetApproximationsAsync(GameType.Fallout3, @"C:\Game\Data");
+        var results = await sut.GetApproximationsAsync(DirectRequest(GameType.Fallout3, @"C:\Game\Data"));
 
         results.Should().BeEmpty();
         _queryService.DidNotReceiveWithAnyArgs().Analyse(default!, default!, default, default);
@@ -74,7 +74,7 @@ public sealed class PluginIssueApproximationServiceTests
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
-        var act = () => sut.GetApproximationsAsync(GameType.SkyrimSe, @"C:\Game\Data", ct: cts.Token);
+        var act = () => sut.GetApproximationsAsync(DirectRequest(GameType.SkyrimSe, @"C:\Game\Data"), ct: cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
         _queryService.DidNotReceiveWithAnyArgs().Analyse(default!, default!, default, default);
@@ -97,7 +97,7 @@ public sealed class PluginIssueApproximationServiceTests
                     []);
             });
 
-        var act = () => sut.GetApproximationsAsync(GameType.SkyrimSe, @"C:\Game\Data", ct: cts.Token);
+        var act = () => sut.GetApproximationsAsync(DirectRequest(GameType.SkyrimSe, @"C:\Game\Data"), ct: cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
         _queryService.DidNotReceiveWithAnyArgs().Analyse(default!, default!, default, default);
@@ -126,7 +126,7 @@ public sealed class PluginIssueApproximationServiceTests
                     new PluginIssueApproximationService.AnalysisTarget("Two.esp", @"C:\Game\Data\Two.esp", plugin2)
                 ]));
 
-        var results = await sut.GetApproximationsAsync(GameType.SkyrimSe, @"C:\Game\Data");
+        var results = await sut.GetApproximationsAsync(DirectRequest(GameType.SkyrimSe, @"C:\Game\Data"));
 
         results.Should().HaveCount(2);
         results.Single(r => r.FileName == "One.esp").Approximation.Status.Should().Be(PluginIssueApproximationStatus.Available);
@@ -158,8 +158,7 @@ public sealed class PluginIssueApproximationServiceTests
                 ]));
 
         var results = await sut.GetApproximationsAsync(
-            GameType.SkyrimSe,
-            @"C:\Game\Data",
+            DirectRequest(GameType.SkyrimSe, @"C:\Game\Data"),
             reported.Add,
             CancellationToken.None);
 
@@ -188,8 +187,7 @@ public sealed class PluginIssueApproximationServiceTests
                 [new PluginIssueApproximationService.AnalysisTarget("Broken.esp", @"C:\Game\Data\Broken.esp", plugin)]));
 
         var results = await sut.GetApproximationsAsync(
-            GameType.SkyrimSe,
-            @"C:\Game\Data",
+            DirectRequest(GameType.SkyrimSe, @"C:\Game\Data"),
             reported.Add,
             CancellationToken.None);
 
@@ -223,12 +221,47 @@ public sealed class PluginIssueApproximationServiceTests
                 [new PluginIssueApproximationService.AnalysisTarget("Canceled.esp", @"C:\Game\Data\Canceled.esp", plugin)]));
 
         var act = () => sut.GetApproximationsAsync(
-            GameType.SkyrimSe,
-            @"C:\Game\Data",
+            DirectRequest(GameType.SkyrimSe, @"C:\Game\Data"),
             reported.Add,
             cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
         reported.Should().BeEmpty();
     }
+
+    [Fact]
+    public async Task GetApproximationsAsync_WithResolvedLoadOrderAndMissingPath_ShouldReturnUnavailable()
+    {
+        var tempDataFolder = Path.Combine(Path.GetTempPath(), "AutoQAC_Approximation_" + Guid.NewGuid());
+        Directory.CreateDirectory(tempDataFolder);
+        var sut = new PluginIssueApproximationService(
+            _logger,
+            _queryService,
+            (_, _, _) => throw new InvalidOperationException("Direct context should not be used"));
+        var reported = new List<PluginIssueApproximationResult>();
+        var request = new PluginIssueApproximationRequest(
+            GameType.SkyrimSe,
+            new PluginIssueApproximationSource.ResolvedLoadOrder(
+                tempDataFolder,
+                ["Missing.esp"],
+                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)));
+
+        try
+        {
+            var results = await sut.GetApproximationsAsync(request, reported.Add, CancellationToken.None);
+
+            results.Should().ContainSingle(result =>
+                result.FileName == "Missing.esp" &&
+                result.Approximation.Status == PluginIssueApproximationStatus.Unavailable);
+            reported.Should().ContainSingle(result => result.FileName == "Missing.esp");
+            _queryService.DidNotReceiveWithAnyArgs().Analyse(default!, default!, default, default);
+        }
+        finally
+        {
+            Directory.Delete(tempDataFolder, recursive: true);
+        }
+    }
+
+    private static PluginIssueApproximationRequest DirectRequest(GameType gameType, string dataFolder) =>
+        new(gameType, new PluginIssueApproximationSource.DirectDataFolder(dataFolder));
 }

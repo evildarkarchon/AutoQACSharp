@@ -10,6 +10,7 @@ using AutoQAC.Models;
 using AutoQAC.Models.Diagnostics;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
+using AutoQAC.Services.GameCapability;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Services.State;
 using AutoQAC.Services.UI;
@@ -27,7 +28,7 @@ public sealed partial class CleaningCommandsViewModel(
     IStateService stateService,
     ICleaningSession cleaningSession,
     IConfigurationService configService,
-    IPluginLoadingService pluginLoadingService,
+    IGameCapabilityProvider gameCapabilityProvider,
     IPluginRefreshCoordinator pluginRefreshCoordinator,
     ILoggingService logger,
     IMessageDialogService messageDialog,
@@ -368,8 +369,8 @@ public sealed partial class CleaningCommandsViewModel(
         }
 
         var requiresLoadOrder = state.CurrentGameType != GameType.Unknown &&
-                                !state.Mo2ModeEnabled &&
-                                !pluginLoadingService.IsGameSupportedByMutagen(state.CurrentGameType);
+                                 !state.Mo2ModeEnabled &&
+                                 gameCapabilityProvider.Get(state.CurrentGameType).RequiresLoadOrderFile;
 
         if (requiresLoadOrder)
         {

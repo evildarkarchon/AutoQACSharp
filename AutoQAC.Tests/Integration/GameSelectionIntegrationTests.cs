@@ -1,6 +1,7 @@
 using AutoQAC.Infrastructure;
 using AutoQAC.Models;
 using AutoQAC.Services.Configuration;
+using AutoQAC.Services.GameCapability;
 using AutoQAC.Services.Plugin;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -8,12 +9,12 @@ using Microsoft.Extensions.DependencyInjection;
 namespace AutoQAC.Tests.Integration;
 
 /// <summary>
-/// Integration tests for the game selection feature with Mutagen support.
+/// Integration tests for game selection and Game capability.
 /// </summary>
 public sealed class GameSelectionIntegrationTests
 {
     [Fact]
-    public void PluginLoadingService_ShouldReportCorrectMutagenSupport()
+    public void GameCapabilityProvider_ShouldReportCorrectAutomaticDiscoverySupport()
     {
         // Arrange
         var services = new ServiceCollection();
@@ -22,24 +23,24 @@ public sealed class GameSelectionIntegrationTests
         services.AddBusinessLogic();
         var provider = services.BuildServiceProvider();
 
-        var pluginLoadingService = provider.GetRequiredService<IPluginLoadingService>();
+        var gameCapabilityProvider = provider.GetRequiredService<IGameCapabilityProvider>();
 
-        // Act & Assert - Mutagen supported games
-        pluginLoadingService.IsGameSupportedByMutagen(GameType.SkyrimSe).Should().BeTrue();
-        pluginLoadingService.IsGameSupportedByMutagen(GameType.SkyrimLe).Should().BeTrue();
-        pluginLoadingService.IsGameSupportedByMutagen(GameType.SkyrimVr).Should().BeTrue();
-        pluginLoadingService.IsGameSupportedByMutagen(GameType.Fallout4).Should().BeTrue();
-        pluginLoadingService.IsGameSupportedByMutagen(GameType.Fallout4Vr).Should().BeTrue();
+        // Act & Assert - automatic discovery games
+        gameCapabilityProvider.Get(GameType.SkyrimSe).SupportsAutomaticPluginDiscovery.Should().BeTrue();
+        gameCapabilityProvider.Get(GameType.SkyrimLe).SupportsAutomaticPluginDiscovery.Should().BeTrue();
+        gameCapabilityProvider.Get(GameType.SkyrimVr).SupportsAutomaticPluginDiscovery.Should().BeTrue();
+        gameCapabilityProvider.Get(GameType.Fallout4).SupportsAutomaticPluginDiscovery.Should().BeTrue();
+        gameCapabilityProvider.Get(GameType.Fallout4Vr).SupportsAutomaticPluginDiscovery.Should().BeTrue();
 
-        // Not supported by Mutagen
-        pluginLoadingService.IsGameSupportedByMutagen(GameType.Fallout3).Should().BeFalse();
-        pluginLoadingService.IsGameSupportedByMutagen(GameType.FalloutNewVegas).Should().BeFalse();
-        pluginLoadingService.IsGameSupportedByMutagen(GameType.Oblivion).Should().BeFalse();
-        pluginLoadingService.IsGameSupportedByMutagen(GameType.Unknown).Should().BeFalse();
+        // File-load-order or unsupported games
+        gameCapabilityProvider.Get(GameType.Fallout3).SupportsAutomaticPluginDiscovery.Should().BeFalse();
+        gameCapabilityProvider.Get(GameType.FalloutNewVegas).SupportsAutomaticPluginDiscovery.Should().BeFalse();
+        gameCapabilityProvider.Get(GameType.Oblivion).SupportsAutomaticPluginDiscovery.Should().BeFalse();
+        gameCapabilityProvider.Get(GameType.Unknown).SupportsAutomaticPluginDiscovery.Should().BeFalse();
     }
 
     [Fact]
-    public void PluginLoadingService_ShouldReturnAllAvailableGames()
+    public void GameCapabilityProvider_ShouldReturnAllAvailableGames()
     {
         // Arrange
         var services = new ServiceCollection();
@@ -48,10 +49,10 @@ public sealed class GameSelectionIntegrationTests
         services.AddBusinessLogic();
         var provider = services.BuildServiceProvider();
 
-        var pluginLoadingService = provider.GetRequiredService<IPluginLoadingService>();
+        var gameCapabilityProvider = provider.GetRequiredService<IGameCapabilityProvider>();
 
         // Act
-        var availableGames = pluginLoadingService.GetAvailableGames();
+        var availableGames = gameCapabilityProvider.GetAvailableGames();
 
         // Assert
         availableGames.Should().NotBeEmpty();

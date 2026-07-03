@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Models.Diagnostics;
+using AutoQAC.Services.GameCapability;
 using AutoQAC.Services.GameDetection;
 using AutoQAC.Services.Process;
 using AutoQAC.Services.State;
@@ -17,9 +18,12 @@ public sealed class CleaningService(
     IStateService stateService,
     ILoggingService logger,
     IProcessExecutionService processService,
-    IXEditCommandBuilder commandBuilder)
+    IXEditCommandBuilder commandBuilder,
+    IGameCapabilityProvider? gameCapabilityProvider = null)
     : ICleaningService
 {
+    private readonly IGameCapabilityProvider _gameCapabilityProvider = gameCapabilityProvider ?? new GameCapabilityProvider();
+
     public async Task<CleaningResult> CleanPluginAsync(
         PluginInfo plugin,
         Action<System.Diagnostics.Process>? onProcessStarted = null,
@@ -189,7 +193,7 @@ public sealed class CleaningService(
             return Task.FromResult(false);
         }
 
-        if (RequiresFileLoadOrder(config.CurrentGameType))
+        if (_gameCapabilityProvider.Get(config.CurrentGameType).RequiresLoadOrderFile)
         {
             if (string.IsNullOrWhiteSpace(config.LoadOrderPath) || !File.Exists(config.LoadOrderPath))
             {
@@ -199,14 +203,6 @@ public sealed class CleaningService(
 
         return Task.FromResult(true);
     }
-
-    private static bool RequiresFileLoadOrder(GameType gameType) => gameType switch
-    {
-        GameType.Fallout3 => true,
-        GameType.FalloutNewVegas => true,
-        GameType.Oblivion => true,
-        _ => false
-    };
 
     /// <summary>
     /// Counts the launch arguments without reconstructing or logging the command payload.

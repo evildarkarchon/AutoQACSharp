@@ -4,6 +4,7 @@ using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
+using AutoQAC.Services.GameCapability;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Services.State;
 using AutoQAC.Services.UI;
@@ -44,20 +45,21 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         IPluginLoadingService pluginLoadingService,
         IUiDispatcher uiDispatcher,
         IPluginRefreshCoordinator pluginRefreshCoordinator,
-        IPluginRefreshCapabilityPolicy pluginRefreshCapabilityPolicy,
+        IGameCapabilityProvider gameCapabilityProvider,
         IAppLifetime? appLifetime = null)
     {
         Configuration = new ConfigurationViewModel(
             configService, stateService, logger, fileDialog,
             messageDialog, pluginService, pluginLoadingService,
             pluginRefreshCoordinator,
+            gameCapabilityProvider,
             uiDispatcher);
 
-        PluginList = new PluginListViewModel(stateService, pluginRefreshCoordinator, pluginRefreshCapabilityPolicy,
+        PluginList = new PluginListViewModel(stateService, pluginRefreshCoordinator, gameCapabilityProvider,
             uiDispatcher);
 
         Commands = new CleaningCommandsViewModel(
-            stateService, cleaningSession, configService, pluginLoadingService,
+            stateService, cleaningSession, configService, gameCapabilityProvider,
             pluginRefreshCoordinator,
             logger, messageDialog, appLifetime ?? NoOpAppLifetime.Instance,
             ShowProgressInteraction, ShowPreviewInteraction,

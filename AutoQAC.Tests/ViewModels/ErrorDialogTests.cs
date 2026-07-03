@@ -5,6 +5,7 @@ using AutoQAC.Models;
 using AutoQAC.Models.Configuration;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
+using AutoQAC.Services.GameCapability;
 using AutoQAC.Services.State;
 using AutoQAC.Services.UI;
 using AutoQAC.Services.Plugin;
@@ -31,6 +32,7 @@ public sealed class ErrorDialogTests
     private readonly IPluginValidationService _pluginServiceMock;
     private readonly IPluginLoadingService _pluginLoadingServiceMock;
     private readonly IUiDispatcher _uiDispatcher;
+    private readonly IGameCapabilityProvider _gameCapabilityProvider;
 
     public ErrorDialogTests()
     {
@@ -43,12 +45,7 @@ public sealed class ErrorDialogTests
         _pluginServiceMock = Substitute.For<IPluginValidationService>();
         _pluginLoadingServiceMock = Substitute.For<IPluginLoadingService>();
         _uiDispatcher = new SynchronousUiDispatcher();
-
-        // Default setup for plugin loading service
-        _pluginLoadingServiceMock.GetAvailableGames()
-            .Returns(new List<GameType> { GameType.SkyrimSe, GameType.Fallout4 });
-        _pluginLoadingServiceMock.IsGameSupportedByMutagen(Arg.Any<GameType>())
-            .Returns(false);
+        _gameCapabilityProvider = new GameCapabilityProvider();
 
         // Default setup for CleaningCompleted observable
         _stateServiceMock.CleaningCompleted
@@ -77,30 +74,17 @@ public sealed class ErrorDialogTests
             new NoOpPluginIssueApproximationService(),
             _stateServiceMock,
             new StateServicePluginRefreshPublication(_stateServiceMock),
-            CreateCapabilityPolicy(),
+            _gameCapabilityProvider,
             _configServiceMock,
             new SkipListPolicy(_configServiceMock, gameDetectionService),
             Substitute.For<AutoQAC.Services.MO2.IMo2InstanceService>(),
             _loggerMock);
     }
 
-    private IPluginRefreshCapabilityPolicy CreateCapabilityPolicy() =>
-        new PluginRefreshCapabilityPolicy(_pluginLoadingServiceMock);
-
     private sealed class NoOpPluginIssueApproximationService : IPluginIssueApproximationService
     {
         public Task<IReadOnlyList<PluginIssueApproximationResult>> GetApproximationsAsync(
-            GameType gameType,
-            string dataFolder,
-            Action<PluginIssueApproximationResult>? onApproximationReady = null,
-            CancellationToken ct = default) =>
-            Task.FromResult<IReadOnlyList<PluginIssueApproximationResult>>([]);
-
-        public Task<IReadOnlyList<PluginIssueApproximationResult>> GetApproximationsAsync(
-            GameType gameType,
-            string baseDataFolder,
-            IReadOnlyList<string> orderedPluginNames,
-            Func<Mutagen.Bethesda.Plugins.ModKey, string?> pathResolver,
+            PluginIssueApproximationRequest request,
             Action<PluginIssueApproximationResult>? onApproximationReady = null,
             CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<PluginIssueApproximationResult>>([]);
@@ -123,7 +107,7 @@ public sealed class ErrorDialogTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             CreateRefreshCoordinator(),
-            CreateCapabilityPolicy());
+            _gameCapabilityProvider);
     }
 
     /// <summary>
@@ -155,7 +139,7 @@ public sealed class ErrorDialogTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             CreateRefreshCoordinator(),
-            CreateCapabilityPolicy());
+            _gameCapabilityProvider);
     }
 
     #region xEdit Validation Tests (Inline Validation Panel)
@@ -224,7 +208,7 @@ public sealed class ErrorDialogTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             CreateRefreshCoordinator(),
-            CreateCapabilityPolicy());
+            _gameCapabilityProvider);
 
         // Act
         await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
@@ -263,7 +247,7 @@ public sealed class ErrorDialogTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             CreateRefreshCoordinator(),
-            CreateCapabilityPolicy());
+            _gameCapabilityProvider);
 
         vm.Configuration.XEditPath = nonExistentPath;
 
@@ -307,7 +291,7 @@ public sealed class ErrorDialogTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             CreateRefreshCoordinator(),
-            CreateCapabilityPolicy());
+            _gameCapabilityProvider);
 
         // Act
         await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
@@ -355,7 +339,7 @@ public sealed class ErrorDialogTests
                 _pluginLoadingServiceMock,
                 _uiDispatcher,
                 CreateRefreshCoordinator(),
-                CreateCapabilityPolicy());
+                _gameCapabilityProvider);
 
             // Act
             await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
@@ -570,7 +554,7 @@ public sealed class ErrorDialogTests
                 _pluginLoadingServiceMock,
                 _uiDispatcher,
                 CreateRefreshCoordinator(),
-                CreateCapabilityPolicy());
+                _gameCapabilityProvider);
 
             // Act
             await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
@@ -590,11 +574,10 @@ public sealed class ErrorDialogTests
     [Fact]
     public async Task StartCleaningCommand_ShouldNotValidateLoadOrder_WhenMutagenGameHasMissingLoadOrderFile()
     {
-        // Arrange - Skyrim SE is Mutagen-supported, so the load-order file branch must not produce a false positive.
+        // Arrange - Skyrim SE supports automatic plugin discovery, so the load-order file branch must not produce a false positive.
         var tempXEdit = Path.GetTempFileName();
         try
         {
-            _pluginLoadingServiceMock.IsGameSupportedByMutagen(GameType.SkyrimSe).Returns(true);
             var state = new AppState
             {
                 CurrentGameType = GameType.SkyrimSe,
@@ -621,7 +604,7 @@ public sealed class ErrorDialogTests
                 _pluginLoadingServiceMock,
                 _uiDispatcher,
                 CreateRefreshCoordinator(),
-                CreateCapabilityPolicy());
+                _gameCapabilityProvider);
 
             // Act
             await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
@@ -668,7 +651,7 @@ public sealed class ErrorDialogTests
                 _pluginLoadingServiceMock,
                 _uiDispatcher,
                 CreateRefreshCoordinator(),
-                CreateCapabilityPolicy());
+                _gameCapabilityProvider);
 
             // Act
             await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
@@ -718,7 +701,7 @@ public sealed class ErrorDialogTests
                 _pluginLoadingServiceMock,
                 _uiDispatcher,
                 CreateRefreshCoordinator(),
-                CreateCapabilityPolicy());
+                _gameCapabilityProvider);
 
             // Act
             await vm.Commands.StartCleaningCommand.ExecuteAsync(null);

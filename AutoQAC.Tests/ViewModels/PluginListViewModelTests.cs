@@ -1,5 +1,6 @@
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
+using AutoQAC.Services.GameCapability;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Models;
 using AutoQAC.Services.State;
@@ -37,7 +38,7 @@ public sealed class PluginListViewModelTests
         var vm = new PluginListViewModel(
             stateService,
             coordinator,
-            new FixedPluginRefreshCapabilityPolicy(supportsApproximation: true),
+            new FixedGameCapabilityProvider(supportsApproximation: true),
             new SynchronousUiDispatcher());
         try
         {
@@ -66,7 +67,7 @@ public sealed class PluginListViewModelTests
         var vm = new PluginListViewModel(
             stateService,
             coordinator,
-            new FixedPluginRefreshCapabilityPolicy(supportsApproximation: false),
+            new FixedGameCapabilityProvider(supportsApproximation: false),
             new SynchronousUiDispatcher());
         try
         {
@@ -96,7 +97,7 @@ public sealed class PluginListViewModelTests
         var vm = new PluginListViewModel(
             stateService,
             coordinator,
-            new FixedPluginRefreshCapabilityPolicy(supportsApproximation: true),
+            new FixedGameCapabilityProvider(supportsApproximation: true),
             new SynchronousUiDispatcher());
         try
         {
@@ -142,7 +143,7 @@ public sealed class PluginListViewModelTests
         var vm = new PluginListViewModel(
             stateService,
             coordinator,
-            new FixedPluginRefreshCapabilityPolicy(supportsApproximation: true),
+            new FixedGameCapabilityProvider(supportsApproximation: true),
             new SynchronousUiDispatcher());
         try
         {
@@ -174,7 +175,7 @@ public sealed class PluginListViewModelTests
         var vm = new PluginListViewModel(
             stateService,
             coordinator,
-            new FixedPluginRefreshCapabilityPolicy(supportsApproximation: true),
+            new FixedGameCapabilityProvider(supportsApproximation: true),
             new SynchronousUiDispatcher());
         try
         {
@@ -200,7 +201,7 @@ public sealed class PluginListViewModelTests
         var vm = new PluginListViewModel(
             stateService,
             coordinator,
-            new FixedPluginRefreshCapabilityPolicy(supportsApproximation: true),
+            new FixedGameCapabilityProvider(supportsApproximation: true),
             new SynchronousUiDispatcher());
         try
         {
@@ -233,7 +234,7 @@ public sealed class PluginListViewModelTests
         var vm = new PluginListViewModel(
             stateService,
             coordinator,
-            new FixedPluginRefreshCapabilityPolicy(supportsApproximation: true),
+            new FixedGameCapabilityProvider(supportsApproximation: true),
             new SynchronousUiDispatcher());
         try
         {
@@ -271,7 +272,7 @@ public sealed class PluginListViewModelTests
         var vm = new PluginListViewModel(
             stateService,
             new RecordingPluginRefreshCoordinator(),
-            new FixedPluginRefreshCapabilityPolicy(supportsApproximation: true),
+            new FixedGameCapabilityProvider(supportsApproximation: true),
             new SynchronousUiDispatcher());
         try
         {
@@ -306,7 +307,7 @@ public sealed class PluginListViewModelTests
         var vm = new PluginListViewModel(
             stateService,
             new RecordingPluginRefreshCoordinator(),
-            new FixedPluginRefreshCapabilityPolicy(supportsApproximation: true),
+            new FixedGameCapabilityProvider(supportsApproximation: true),
             new SynchronousUiDispatcher());
         try
         {
@@ -337,7 +338,7 @@ public sealed class PluginListViewModelTests
         var vm = new PluginListViewModel(
             stateService,
             new RecordingPluginRefreshCoordinator(),
-            new FixedPluginRefreshCapabilityPolicy(supportsApproximation: true),
+            new FixedGameCapabilityProvider(supportsApproximation: true),
             new SynchronousUiDispatcher());
         try
         {
@@ -379,7 +380,7 @@ public sealed class PluginListViewModelTests
         var vm = new PluginListViewModel(
             stateService,
             new RecordingPluginRefreshCoordinator(),
-            new FixedPluginRefreshCapabilityPolicy(supportsApproximation: true),
+            new FixedGameCapabilityProvider(supportsApproximation: true),
             new SynchronousUiDispatcher());
         try
         {
@@ -428,7 +429,7 @@ public sealed class PluginListViewModelTests
         var vm = new PluginListViewModel(
             stateService,
             new RecordingPluginRefreshCoordinator(),
-            new FixedPluginRefreshCapabilityPolicy(supportsApproximation: true),
+            new FixedGameCapabilityProvider(supportsApproximation: true),
             new SynchronousUiDispatcher());
         try
         {
@@ -470,7 +471,7 @@ public sealed class PluginListViewModelTests
         var vm = new PluginListViewModel(
             stateService,
             new RecordingPluginRefreshCoordinator(),
-            new FixedPluginRefreshCapabilityPolicy(supportsApproximation: true),
+            new FixedGameCapabilityProvider(supportsApproximation: true),
             new SynchronousUiDispatcher());
         try
         {
@@ -555,19 +556,20 @@ public sealed class PluginListViewModelTests
         public void Dispose() => _statusChanged.Dispose();
     }
 
-    private sealed class FixedPluginRefreshCapabilityPolicy : IPluginRefreshCapabilityPolicy
+    private sealed class FixedGameCapabilityProvider : IGameCapabilityProvider
     {
         private readonly bool _supportsApproximation;
 
-        public FixedPluginRefreshCapabilityPolicy(bool supportsApproximation)
+        public FixedGameCapabilityProvider(bool supportsApproximation)
         {
             _supportsApproximation = supportsApproximation;
         }
 
-        public bool SupportsPluginLoading(GameType gameType) => true;
+        public GameCapability Get(GameType gameType) => new(
+            gameType,
+            gameType == GameType.Unknown ? PluginDiscoveryMode.None : PluginDiscoveryMode.Automatic,
+            _supportsApproximation && gameType != GameType.Unknown);
 
-        public bool SupportsIssueApproximation(GameType gameType) => _supportsApproximation;
-
-        public bool RequiresLoadOrderFile(GameType gameType) => false;
+        public IReadOnlyList<GameType> GetAvailableGames() => [GameType.SkyrimSe];
     }
 }

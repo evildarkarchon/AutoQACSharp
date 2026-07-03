@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
+using AutoQAC.Services.GameCapability;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Fallout4;
 using Mutagen.Bethesda.Plugins;
@@ -21,7 +22,8 @@ namespace AutoQAC.Services.Plugin;
 public sealed class PluginIssueApproximationService(
     ILoggingService logger,
     IPluginQueryService? pluginQueryService = null,
-    Func<GameType, string, CancellationToken, PluginIssueApproximationService.AnalysisContext>? contextFactory = null)
+    Func<GameType, string, CancellationToken, PluginIssueApproximationService.AnalysisContext>? contextFactory = null,
+    IGameCapabilityProvider? gameCapabilityProvider = null)
     : IPluginIssueApproximationService
 {
     public sealed record AnalysisTarget(string FileName, string FullPath, IModGetter? Plugin);
@@ -33,41 +35,42 @@ public sealed class PluginIssueApproximationService(
 
     private readonly IPluginQueryService _pluginQueryService = pluginQueryService ?? PluginQueryService.Default;
 
+    private readonly IGameCapabilityProvider _gameCapabilityProvider = gameCapabilityProvider ?? new GameCapabilityProvider();
+
     private readonly Func<GameType, string, CancellationToken, AnalysisContext> _contextFactory =
         contextFactory ?? CreateAnalysisContext;
 
     public async Task<IReadOnlyList<PluginIssueApproximationResult>> GetApproximationsAsync(
-        GameType gameType,
-        string dataFolder,
+        PluginIssueApproximationRequest request,
         Action<PluginIssueApproximationResult>? onApproximationReady = null,
         CancellationToken ct = default)
     {
-        if (!IsSupportedGame(gameType) || string.IsNullOrWhiteSpace(dataFolder))
+        if (!_gameCapabilityProvider.Get(request.GameType).SupportsIssueApproximation)
         {
             return [];
         }
 
-        return await Task.Run(() => AnalyzePlugins(gameType, dataFolder, onApproximationReady, ct), ct)
-            .ConfigureAwait(false);
-    }
-
-    public async Task<IReadOnlyList<PluginIssueApproximationResult>> GetApproximationsAsync(
-        GameType gameType,
-        string baseDataFolder,
-        IReadOnlyList<string> orderedPluginNames,
-        Func<ModKey, string?> pathResolver,
-        Action<PluginIssueApproximationResult>? onApproximationReady = null,
-        CancellationToken ct = default)
-    {
-        if (!IsSupportedGame(gameType) || string.IsNullOrWhiteSpace(baseDataFolder) || orderedPluginNames.Count == 0)
+        return request.Source switch
         {
-            return [];
-        }
-
-        return await Task.Run(
-            () => AnalyzePluginsFromResolvedPaths(gameType, baseDataFolder, orderedPluginNames, pathResolver,
-                onApproximationReady, ct),
-            ct).ConfigureAwait(false);
+            PluginIssueApproximationSource.DirectDataFolder direct when !string.IsNullOrWhiteSpace(direct.DataFolder) =>
+                await Task.Run(
+                        () => AnalyzePlugins(request.GameType, direct.DataFolder, onApproximationReady, ct),
+                        ct)
+                    .ConfigureAwait(false),
+            PluginIssueApproximationSource.ResolvedLoadOrder resolved when
+                !string.IsNullOrWhiteSpace(resolved.BaseDataFolder) && resolved.OrderedPluginNames.Count > 0 =>
+                await Task.Run(
+                        () => AnalyzePluginsFromResolvedPaths(
+                            request.GameType,
+                            resolved.BaseDataFolder,
+                            resolved.OrderedPluginNames,
+                            resolved.PathsByFileName,
+                            onApproximationReady,
+                            ct),
+                        ct)
+                    .ConfigureAwait(false),
+            _ => []
+        };
     }
 
     private IReadOnlyList<PluginIssueApproximationResult> AnalyzePlugins(
@@ -82,12 +85,6 @@ public sealed class PluginIssueApproximationService(
         ct.ThrowIfCancellationRequested();
 
         return AnalyzeContext(context, onApproximationReady, ct);
-    }
-
-    private static bool IsSupportedGame(GameType gameType)
-    {
-        return gameType is GameType.SkyrimLe or GameType.SkyrimSe or GameType.SkyrimVr or GameType.Fallout4
-            or GameType.Fallout4Vr;
     }
 
     private static PluginIssueApproximationResult CreateUnavailableResult(AnalysisTarget target)
@@ -123,7 +120,7 @@ public sealed class PluginIssueApproximationService(
         GameType gameType,
         string baseDataFolder,
         IReadOnlyList<string> orderedPluginNames,
-        Func<ModKey, string?> pathResolver,
+        IReadOnlyDictionary<string, string> pathsByFileName,
         Action<PluginIssueApproximationResult>? onApproximationReady,
         CancellationToken ct)
     {
@@ -136,7 +133,7 @@ public sealed class PluginIssueApproximationService(
         {
             ct.ThrowIfCancellationRequested();
             var modKey = ModKey.FromFileName(pluginName);
-            var fullPath = pathResolver(modKey);
+            var fullPath = ResolvePath(pathsByFileName, modKey.FileName.String);
             if (string.IsNullOrWhiteSpace(fullPath) || !File.Exists(fullPath))
             {
                 unresolved.Add(new AnalysisTarget(pluginName, fullPath ?? pluginName, null));
@@ -166,6 +163,24 @@ public sealed class PluginIssueApproximationService(
         }
 
         return results;
+    }
+
+    private static string? ResolvePath(IReadOnlyDictionary<string, string> pathsByFileName, string fileName)
+    {
+        if (pathsByFileName.TryGetValue(fileName, out var path))
+        {
+            return path;
+        }
+
+        foreach (var pair in pathsByFileName)
+        {
+            if (string.Equals(pair.Key, fileName, StringComparison.OrdinalIgnoreCase))
+            {
+                return pair.Value;
+            }
+        }
+
+        return null;
     }
 
     private static AnalysisContext CreateSkyrimContext(

@@ -3,6 +3,7 @@ using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
+using AutoQAC.Services.GameCapability;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Services.State;
 using AutoQAC.Services.UI;
@@ -29,7 +30,6 @@ public sealed class CleaningCommandsViewModelTests
 
         var stateService = new StateService();
         var cleaningSession = Substitute.For<ICleaningSession>();
-        var pluginLoadingService = Substitute.For<IPluginLoadingService>();
         var coordinator = Substitute.For<IPluginRefreshCoordinator>();
         coordinator.StatusChanged.Returns(Observable.Never<PluginRefreshStatus>());
         var callOrder = new List<string>();
@@ -54,7 +54,7 @@ public sealed class CleaningCommandsViewModelTests
             stateService,
             cleaningSession,
             Substitute.For<IConfigurationService>(),
-            pluginLoadingService,
+            new GameCapabilityProvider(),
             coordinator,
             Substitute.For<ILoggingService>(),
             Substitute.For<IMessageDialogService>(),
@@ -95,7 +95,7 @@ public sealed class CleaningCommandsViewModelTests
             Substitute.For<IStateService>(),
             Substitute.For<ICleaningSession>(),
             Substitute.For<IConfigurationService>(),
-            Substitute.For<IPluginLoadingService>(),
+            new GameCapabilityProvider(),
             Substitute.For<IPluginRefreshCoordinator>(),
             Substitute.For<ILoggingService>(),
             Substitute.For<IMessageDialogService>(),

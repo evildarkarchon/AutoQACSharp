@@ -5,6 +5,7 @@ using AutoQAC.Models;
 using AutoQAC.Models.Configuration;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
+using AutoQAC.Services.GameCapability;
 using AutoQAC.Services.State;
 using AutoQAC.Services.UI;
 using AutoQAC.Services.Plugin;
@@ -37,12 +38,6 @@ public sealed class MainWindowViewModelInitializationTests
         _pluginServiceMock = Substitute.For<IPluginValidationService>();
         _pluginLoadingServiceMock = Substitute.For<IPluginLoadingService>();
         _uiDispatcher = new SynchronousUiDispatcher();
-
-        // Default setup for plugin loading service
-        _pluginLoadingServiceMock.GetAvailableGames()
-            .Returns(new List<GameType> { GameType.SkyrimSe, GameType.Fallout4 });
-        _pluginLoadingServiceMock.IsGameSupportedByMutagen(Arg.Any<GameType>())
-            .Returns(false);
 
         // Default setup for CleaningCompleted observable
         _stateServiceMock.CleaningCompleted
@@ -93,10 +88,7 @@ public sealed class MainWindowViewModelInitializationTests
             .Returns(callInfo => Task.FromResult(new PluginRefreshProjection(
                 callInfo.ArgAt<GameType>(0),
                 AvailableProfiles: [])));
-        var capabilityPolicy = Substitute.For<IPluginRefreshCapabilityPolicy>();
-        capabilityPolicy.SupportsPluginLoading(Arg.Any<GameType>()).Returns(true);
-        capabilityPolicy.SupportsIssueApproximation(Arg.Any<GameType>()).Returns(false);
-        capabilityPolicy.RequiresLoadOrderFile(Arg.Any<GameType>()).Returns(false);
+        var gameCapabilityProvider = new GameCapabilityProvider();
 
         // Act
         var vm = new MainWindowViewModel(
@@ -110,7 +102,7 @@ public sealed class MainWindowViewModelInitializationTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             refreshCoordinator,
-            capabilityPolicy);
+            gameCapabilityProvider);
 
         await WaitForSignalAsync(initializationApplied);
 

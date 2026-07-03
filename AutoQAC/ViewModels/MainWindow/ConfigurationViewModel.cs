@@ -8,6 +8,7 @@ using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Models.Diagnostics;
 using AutoQAC.Services.Configuration;
+using AutoQAC.Services.GameCapability;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Services.State;
 using AutoQAC.Services.UI;
@@ -28,6 +29,7 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
     private readonly IMessageDialogService _messageDialog;
     private readonly IPluginLoadingService _pluginLoadingService;
     private readonly IPluginRefreshCoordinator _pluginRefreshCoordinator;
+    private readonly IGameCapabilityProvider _gameCapabilityProvider;
     private readonly IStateService _stateService;
     private readonly IDisposable _skipListChangedSubscription;
     private readonly IDisposable _pluginRefreshStatusSubscription;
@@ -97,12 +99,12 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
 
     public IReadOnlyList<GameType> AvailableGames { get; }
 
-    public bool IsMutagenSupported => _pluginLoadingService.IsGameSupportedByMutagen(SelectedGame);
+    public bool IsMutagenSupported => _gameCapabilityProvider.Get(SelectedGame).SupportsAutomaticPluginDiscovery;
     public bool IsGameSelected => SelectedGame != GameType.Unknown;
 
     public bool RequiresLoadOrderFile =>
         SelectedGame != GameType.Unknown && !Mo2ModeEnabled &&
-        !_pluginLoadingService.IsGameSupportedByMutagen(SelectedGame);
+        _gameCapabilityProvider.Get(SelectedGame).RequiresLoadOrderFile;
 
     public bool IsLoadOrderConfigured => !string.IsNullOrWhiteSpace(LoadOrderPath);
     public bool ShowMo2Config => Mo2ModeEnabled && IsGameSelected;
@@ -117,6 +119,7 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         IPluginValidationService pluginService,
         IPluginLoadingService pluginLoadingService,
         IPluginRefreshCoordinator pluginRefreshCoordinator,
+        IGameCapabilityProvider gameCapabilityProvider,
         IUiDispatcher uiDispatcher)
     {
         _configService = configService;
@@ -126,8 +129,9 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         _messageDialog = messageDialog;
         _pluginLoadingService = pluginLoadingService;
         _pluginRefreshCoordinator = pluginRefreshCoordinator;
+        _gameCapabilityProvider = gameCapabilityProvider;
 
-        AvailableGames = _pluginLoadingService.GetAvailableGames();
+        AvailableGames = _gameCapabilityProvider.GetAvailableGames();
 
         _skipListChangedSubscription = _configService.SkipListChanged.Subscribe(
             new CallbackObserver<GameType>(OnSkipListChanged));

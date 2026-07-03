@@ -5,6 +5,7 @@ using AutoQAC.Models;
 using AutoQAC.Models.Configuration;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
+using AutoQAC.Services.GameCapability;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Services.State;
 using AutoQAC.Services.UI;
@@ -58,14 +59,9 @@ public sealed class Phase11DiagnosticsBoundaryTests
             stateService.CurrentState.Returns(appState);
             stateService.CleaningCompleted.Returns(Observable.Never<CleaningSessionResult>());
             configService.SkipListChanged.Returns(Observable.Never<GameType>());
-            pluginLoading.GetAvailableGames().Returns([GameType.SkyrimSe]);
-            pluginLoading.IsGameSupportedByMutagen(Arg.Any<GameType>()).Returns(true);
             var refreshCoordinator = Substitute.For<IPluginRefreshCoordinator>();
             refreshCoordinator.StatusChanged.Returns(Observable.Never<PluginRefreshStatus>());
-            var capabilityPolicy = Substitute.For<IPluginRefreshCapabilityPolicy>();
-            capabilityPolicy.SupportsPluginLoading(Arg.Any<GameType>()).Returns(true);
-            capabilityPolicy.SupportsIssueApproximation(Arg.Any<GameType>()).Returns(false);
-            capabilityPolicy.RequiresLoadOrderFile(Arg.Any<GameType>()).Returns(false);
+            var gameCapabilityProvider = new GameCapabilityProvider();
             cleaningSession.StartAsync(Arg.Any<CancellationToken>())
                 .ThrowsAsync(new Exception(DiagnosticSentinels.CreateUnsafePayload()));
 
@@ -80,7 +76,7 @@ public sealed class Phase11DiagnosticsBoundaryTests
                 pluginLoading,
                 uiDispatcher,
                 refreshCoordinator,
-                capabilityPolicy);
+                gameCapabilityProvider);
             using var _ = viewModel.ShowProgressInteraction.RegisterHandler(_ => Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
 
             // Act
