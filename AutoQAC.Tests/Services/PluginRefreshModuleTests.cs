@@ -235,6 +235,24 @@ public sealed class PluginRefreshModuleTests
     }
 
     [Fact]
+    public async Task RefreshGame_DifferentGame_ClearsAppStateRowsBeforeDiscoveryCompletes()
+    {
+        var stateService = CreateStateWithRows(Plugin("OldSkyrim.esp"));
+        var loadingService = new DelayedPluginLoadingService();
+        using var sut = CreateModule(stateService, pluginLoadingService: loadingService);
+
+        var refresh = sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.Fallout4));
+        await loadingService.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        stateService.CurrentState.CurrentGameType.Should().Be(GameType.Fallout4);
+        stateService.CurrentState.PluginsToClean.Should().BeEmpty(
+            "Start/Preview must not see the previous game's rows while the new game is still loading");
+
+        await sut.ExecuteAsync(new PluginRefreshIntent.Cancel(PluginRefreshCancelReason.Manual));
+        await refresh.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
     public async Task RecoverableApproximationFailure_MarksTargetsUnavailableAndPublishesNonRunningSnapshot()
     {
         var stateService = new StateService();

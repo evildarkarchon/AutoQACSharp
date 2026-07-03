@@ -98,12 +98,18 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
     {
         using var linkedCts = CreateAndActivateGeneration(cancellationToken, out var generation);
         var token = linkedCts.Token;
-        var configuration = GetCurrentSnapshot().Configuration;
+        var acceptedSnapshot = GetCurrentSnapshot();
+        var configuration = acceptedSnapshot.Configuration;
+        var keepExistingRows = gameType != GameType.Unknown && gameType == acceptedSnapshot.GameType;
+        if (!keepExistingRows)
+        {
+            ClearStaleRowsForRefreshStart(gameType);
+        }
 
         PublishSnapshot(new PluginRefreshSnapshot(
             generation,
             gameType,
-            gameType == GetCurrentSnapshot().GameType ? GetCurrentSnapshot().Rows : [],
+            keepExistingRows ? acceptedSnapshot.Rows : [],
             configuration,
             new PluginRefreshActivity(IsPluginRefreshRunning: true, IsIssueApproximationRefreshRunning: false),
             EmptyCommands,
@@ -202,6 +208,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                     decision.Plugin.FileName,
                     decision.Plugin.FullPath))
                 .ToList();
+            var targetLookup = PluginRefreshTargetLookup.Create(targets);
             var issueActivity = new PluginRefreshActivity(
                 IsPluginRefreshRunning: true,
                 IsIssueApproximationRefreshRunning: true);
@@ -225,7 +232,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                             plan.GameType,
                             configuration,
                             issueActivity,
-                            targets,
+                            targetLookup,
                             result,
                             ref updatedCount),
                         token)
@@ -249,7 +256,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                     token,
                     plan.GameType,
                     configuration,
-                    targets,
+                    targetLookup,
                     "Approximation refresh failed.");
             }
         }
@@ -315,7 +322,8 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                 return GetCurrentSnapshot();
             }
 
-            MarkTargetsPending(plan.GameType, selectedTargets);
+            var targetLookup = PluginRefreshTargetLookup.Create(selectedTargets);
+            MarkTargetsPending(plan.GameType, selectedTargets, targetLookup);
             var issueActivity = new PluginRefreshActivity(
                 IsPluginRefreshRunning: false,
                 IsIssueApproximationRefreshRunning: true);
@@ -338,7 +346,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                         plan.GameType,
                         configuration,
                         issueActivity,
-                        selectedTargets,
+                        targetLookup,
                         result,
                         ref updatedCount),
                     token)
@@ -367,7 +375,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                 token,
                 snapshot.GameType,
                 snapshot.Configuration,
-                selectedTargets,
+                PluginRefreshTargetLookup.Create(selectedTargets),
                 "Approximation refresh failed.");
         }
         finally
@@ -511,6 +519,17 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             "No game selected");
     }
 
+    private void ClearStaleRowsForRefreshStart(GameType gameType)
+    {
+        // Start/Preview gates read AppState, so clear stale rows before async discovery can be canceled.
+        _stateService.UpdateState(state => state with
+        {
+            CurrentGameType = gameType,
+            PluginsToClean = Array.Empty<PluginInfo>().ToList().AsReadOnly(),
+            ExcludedPluginPaths = Array.Empty<string>().ToFrozenSet(StringComparer.OrdinalIgnoreCase)
+        });
+    }
+
     private CancellationTokenSource CreateAndActivateGeneration(
         CancellationToken externalToken,
         out long generation)
@@ -608,11 +627,11 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         GameType gameType,
         PluginRefreshConfigurationProjection configuration,
         PluginRefreshActivity activity,
-        IReadOnlyList<PluginRefreshRowKey> targets,
+        PluginRefreshTargetLookup targetLookup,
         PluginIssueApproximationResult result,
         ref int updatedCount)
     {
-        if (!IsVisible(generation, token) || !targets.Any(target => IsMatch(target, result)))
+        if (!IsVisible(generation, token) || !targetLookup.Contains(result))
         {
             return;
         }
@@ -650,7 +669,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             gameType,
             configuration,
             activity,
-            $"Analyzing {updated} of {targets.Count} selected plugins.");
+            $"Analyzing {updated} of {targetLookup.Count} selected plugins.");
     }
 
     private void PublishApproximationFailure(
@@ -658,7 +677,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         CancellationToken token,
         GameType gameType,
         PluginRefreshConfigurationProjection configuration,
-        IReadOnlyList<PluginRefreshRowKey> targets,
+        PluginRefreshTargetLookup targetLookup,
         string message)
     {
         if (!IsVisible(generation, token))
@@ -666,7 +685,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             return;
         }
 
-        MarkTargetsUnavailable(targets, generation, token);
+        MarkTargetsUnavailable(targetLookup, generation, token);
         PublishSnapshotFromState(
             generation,
             gameType,
@@ -675,7 +694,10 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             message);
     }
 
-    private void MarkTargetsPending(GameType gameType, IReadOnlyList<PluginRefreshRowKey> targets)
+    private void MarkTargetsPending(
+        GameType gameType,
+        IReadOnlyList<PluginRefreshRowKey> targets,
+        PluginRefreshTargetLookup targetLookup)
     {
         _stateService.UpdateState(state =>
         {
@@ -686,7 +708,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             }
 
             var rows = state.PluginsToClean.Select(plugin =>
-                targets.Any(target => IsMatch(plugin, target))
+                targetLookup.Contains(plugin)
                     ? plugin with { Approximation = PluginIssueApproximation.Pending }
                     : plugin).ToList();
 
@@ -695,7 +717,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
     }
 
     private void MarkTargetsUnavailable(
-        IReadOnlyList<PluginRefreshRowKey> targets,
+        PluginRefreshTargetLookup targetLookup,
         long generation,
         CancellationToken token)
     {
@@ -707,7 +729,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             }
 
             var rows = state.PluginsToClean.Select(plugin =>
-                targets.Any(target => IsMatch(plugin, target))
+                targetLookup.Contains(plugin)
                     ? plugin with { Approximation = PluginIssueApproximation.Unavailable }
                     : plugin).ToList();
 
@@ -894,16 +916,6 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             ? $"No plugins discovered via Mutagen for {plan.GameType}."
             : "No plugins found in the selected load order.";
 
-    private static bool IsMatch(PluginInfo plugin, PluginRefreshRowKey target)
-    {
-        if (HasUsablePath(plugin.FullPath) && HasUsablePath(target.FullPath))
-        {
-            return string.Equals(plugin.FullPath, target.FullPath, StringComparison.OrdinalIgnoreCase);
-        }
-
-        return string.Equals(plugin.FileName, target.FileName, StringComparison.OrdinalIgnoreCase);
-    }
-
     private static bool IsMatch(PluginRefreshRow row, PluginRefreshRowKey target)
     {
         if (HasUsablePath(row.FullPath) && HasUsablePath(target.FullPath))
@@ -924,17 +936,49 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         return string.Equals(plugin.FileName, result.FileName, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool IsMatch(PluginRefreshRowKey target, PluginIssueApproximationResult result)
+    private static bool HasUsablePath(string? path) => !string.IsNullOrWhiteSpace(path);
+
+    private sealed class PluginRefreshTargetLookup
     {
-        if (HasUsablePath(target.FullPath) && HasUsablePath(result.FullPath))
+        private readonly IReadOnlySet<string> _fullPaths;
+        private readonly IReadOnlySet<string> _fileNames;
+        private readonly IReadOnlySet<string> _pathlessFileNames;
+
+        private PluginRefreshTargetLookup(
+            IReadOnlySet<string> fullPaths,
+            IReadOnlySet<string> fileNames,
+            IReadOnlySet<string> pathlessFileNames,
+            int count)
         {
-            return string.Equals(target.FullPath, result.FullPath, StringComparison.OrdinalIgnoreCase);
+            _fullPaths = fullPaths;
+            _fileNames = fileNames;
+            _pathlessFileNames = pathlessFileNames;
+            Count = count;
         }
 
-        return string.Equals(target.FileName, result.FileName, StringComparison.OrdinalIgnoreCase);
-    }
+        public int Count { get; }
 
-    private static bool HasUsablePath(string? path) => !string.IsNullOrWhiteSpace(path);
+        public static PluginRefreshTargetLookup Create(IReadOnlyList<PluginRefreshRowKey> targets) =>
+            new(
+                targets.Where(target => HasUsablePath(target.FullPath))
+                    .Select(target => target.FullPath)
+                    .ToFrozenSet(StringComparer.OrdinalIgnoreCase),
+                targets.Select(target => target.FileName)
+                    .ToFrozenSet(StringComparer.OrdinalIgnoreCase),
+                targets.Where(target => !HasUsablePath(target.FullPath))
+                    .Select(target => target.FileName)
+                    .ToFrozenSet(StringComparer.OrdinalIgnoreCase),
+                targets.Count);
+
+        public bool Contains(PluginInfo plugin) => Contains(plugin.FileName, plugin.FullPath);
+
+        public bool Contains(PluginIssueApproximationResult result) => Contains(result.FileName, result.FullPath);
+
+        private bool Contains(string fileName, string? fullPath) =>
+            HasUsablePath(fullPath)
+                ? _fullPaths.Contains(fullPath!) || _pathlessFileNames.Contains(fileName)
+                : _fileNames.Contains(fileName);
+    }
 
     private sealed class StateChangedObserver(Action<AppState> onNext) : IObserver<AppState>
     {
