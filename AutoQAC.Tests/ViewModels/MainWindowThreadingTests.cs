@@ -48,7 +48,7 @@ public sealed class MainWindowThreadingTests
             });
         configService.GetSelectedGameAsync(Arg.Any<CancellationToken>())
             .Returns(GameType.Unknown);
-        var refreshCoordinator = CreateRefreshCoordinator();
+        using var refreshModule = new RecordingPluginRefreshModule();
         var gameCapabilityProvider = CreateGameCapabilityProvider();
 
         var viewModel = new MainWindowViewModel(
@@ -61,7 +61,7 @@ public sealed class MainWindowThreadingTests
             Substitute.For<IPluginValidationService>(),
             pluginLoadingService,
             captureDispatcher,
-            refreshCoordinator,
+            refreshModule,
             gameCapabilityProvider);
 
         try
@@ -101,7 +101,7 @@ public sealed class MainWindowThreadingTests
             Substitute.For<ICleaningSession>(),
             Substitute.For<IConfigurationService>(),
             CreateGameCapabilityProvider(),
-            Substitute.For<IPluginRefreshCoordinator>(),
+            new RecordingPluginRefreshModule(),
             Substitute.For<ILoggingService>(),
             Substitute.For<IMessageDialogService>(),
             Substitute.For<IAppLifetime>(),
@@ -135,48 +135,26 @@ public sealed class MainWindowThreadingTests
     }
 
     [Fact]
-    public async Task PluginListViewModel_ShouldUpdateOnStateChanges_ThroughUiDispatcherFlow()
+    public void PluginListViewModel_ShouldUpdateOnSnapshots()
     {
-        // Originally this test verified that ReactiveCommand.CanExecute marshaled
-        // updates to RxApp.MainThreadScheduler. With CommunityToolkit.Mvvm there is no
-        // separate scheduler -- IRelayCommand.CanExecute returns synchronously and the
-        // parent VM dispatches OnStateChanged through IUiDispatcher. This test verifies
-        // the equivalent contract: when the parent dispatches OnStateChanged, the
-        // PluginListViewModel responds and command CanExecute reflects the new state.
-        var currentState = new AppState
-        {
-            PluginsToClean =
-            [
-                new PluginInfo { FileName = "Test.esp", FullPath = "Test.esp" }
-            ]
-        };
-        var stateSubject = new BehaviorSubject<AppState>(currentState);
-        var stateService = Substitute.For<IStateService>();
-        stateService.StateChanged.Returns(stateSubject);
-        stateService.CurrentState.Returns(_ => currentState);
-
-        var viewModel = new PluginListViewModel(
-            stateService,
-            CreateRefreshCoordinator(),
-            CreateGameCapabilityProvider(),
-            new SynchronousUiDispatcher());
+        var viewModel = new PluginListViewModel(new RecordingPluginRefreshModule());
 
         try
         {
-            // Initially HasPlugins=true and IsCleaning=false → command CanExecute true.
+            viewModel.OnPluginRefreshSnapshot(RecordingPluginRefreshModule.CreateSnapshot(
+                gameType: GameType.SkyrimSe,
+                rows: [CreateRow("Test.esp")],
+                commands: new PluginRefreshCommandAvailability(true, true, true, false)));
+
             viewModel.SelectAllCommand.CanExecute(null).Should().BeTrue();
 
-            // Simulate the parent VM dispatching state changes (this is what IUiDispatcher
-            // would call inline in the SynchronousUiDispatcher test setup).
-            await Task.Run(() =>
-            {
-                currentState = currentState with { IsCleaning = true };
-            });
-            viewModel.OnStateChanged(currentState);
+            viewModel.OnPluginRefreshSnapshot(RecordingPluginRefreshModule.CreateSnapshot(
+                gameType: GameType.SkyrimSe,
+                rows: [CreateRow("Test.esp")],
+                commands: new PluginRefreshCommandAvailability(false, false, false, false)));
 
-            viewModel.IsCleaning.Should().BeTrue();
             viewModel.SelectAllCommand.CanExecute(null).Should().BeFalse(
-                "command should be disabled while cleaning");
+                "command availability comes from the Plugin refresh snapshot");
         }
         finally
         {
@@ -185,16 +163,15 @@ public sealed class MainWindowThreadingTests
     }
 
     [Fact]
-    public async Task MainWindowViewModel_ShouldPostRefreshStatusChangesThroughIUiDispatcher()
+    public async Task MainWindowViewModel_ShouldPostRefreshSnapshotsThroughIUiDispatcher()
     {
         using var captureDispatcher = new ThreadCapturingUiDispatcher();
         var currentState = new AppState();
         var stateSubject = new BehaviorSubject<AppState>(currentState);
-        var refreshStatusSubject = new Subject<PluginRefreshStatus>();
         var configService = Substitute.For<IConfigurationService>();
         var stateService = Substitute.For<IStateService>();
         var pluginLoadingService = Substitute.For<IPluginLoadingService>();
-        var refreshCoordinator = Substitute.For<IPluginRefreshCoordinator>();
+        using var refreshModule = new RecordingPluginRefreshModule();
         stateService.StateChanged.Returns(stateSubject);
         stateService.CurrentState.Returns(_ => currentState);
         stateService.CleaningCompleted.Returns(Observable.Never<CleaningSessionResult>());
@@ -209,7 +186,6 @@ public sealed class MainWindowThreadingTests
             });
         configService.GetSelectedGameAsync(Arg.Any<CancellationToken>())
             .Returns(GameType.Unknown);
-        refreshCoordinator.StatusChanged.Returns(refreshStatusSubject);
         var gameCapabilityProvider = CreateGameCapabilityProvider();
 
         var viewModel = new MainWindowViewModel(
@@ -222,77 +198,59 @@ public sealed class MainWindowThreadingTests
             Substitute.For<IPluginValidationService>(),
             pluginLoadingService,
             captureDispatcher,
-            pluginRefreshCoordinator: refreshCoordinator,
+            pluginRefreshModule: refreshModule,
             gameCapabilityProvider: gameCapabilityProvider);
 
         try
         {
             captureDispatcher.Reset();
 
-            await Task.Run(() => refreshStatusSubject.OnNext(PluginRefreshStatus.AnalyzingSelected(1, 2)));
-            await captureDispatcher.WaitForPostCountAsync(2);
+            await Task.Run(() => refreshModule.Publish(RecordingPluginRefreshModule.CreateSnapshot(
+                gameType: GameType.SkyrimSe,
+                rows: [CreateRow("A.esp")],
+                activity: new PluginRefreshActivity(false, true),
+                commands: new PluginRefreshCommandAvailability(false, false, false, true),
+                statusText: "Analyzing 1 of 2 selected plugins.")));
+            await captureDispatcher.WaitForNextPostAsync();
 
-            captureDispatcher.PostCount.Should().BeGreaterThanOrEqualTo(2,
-                "both refresh-status subscribers must marshal UI-bound mutations through IUiDispatcher");
+            captureDispatcher.PostCount.Should().BeGreaterThanOrEqualTo(1,
+                "Plugin refresh snapshots must marshal UI-bound mutations through IUiDispatcher");
             viewModel.Configuration.StatusText.Should().Be("Analyzing 1 of 2 selected plugins.");
             viewModel.PluginList.IsApproximationRefreshRunning.Should().BeTrue();
         }
         finally
         {
             viewModel.Dispose();
-            refreshStatusSubject.Dispose();
         }
     }
 
     [Fact]
     public void PluginListViewModel_OnStateChanged_ShouldKeepUnchangedRows_WhenOneApproximationUpdates()
     {
-        var stateService = Substitute.For<IStateService>();
-        stateService.StateChanged.Returns(Observable.Never<AppState>());
-        stateService.CurrentState.Returns(new AppState());
-        var viewModel = new PluginListViewModel(
-            stateService,
-            CreateRefreshCoordinator(),
-            CreateGameCapabilityProvider(),
-            new SynchronousUiDispatcher());
+        var viewModel = new PluginListViewModel(new RecordingPluginRefreshModule());
 
         try
         {
-            var initialState = new AppState
+            var initialRows = new[]
             {
-                PluginsToClean =
-                [
-                    new PluginInfo
-                    {
-                        FileName = "One.esp",
-                        FullPath = @"C:\Data\One.esp",
-                        Approximation = PluginIssueApproximation.Pending
-                    },
-                    new PluginInfo
-                    {
-                        FileName = "Two.esp",
-                        FullPath = @"C:\Data\Two.esp",
-                        Approximation = PluginIssueApproximation.Pending
-                    }
-                ]
+                CreateRow("One.esp", @"C:\Data\One.esp", PluginIssueApproximation.Pending),
+                CreateRow("Two.esp", @"C:\Data\Two.esp", PluginIssueApproximation.Pending)
             };
 
-            viewModel.OnStateChanged(initialState);
+            viewModel.OnPluginRefreshSnapshot(RecordingPluginRefreshModule.CreateSnapshot(
+                gameType: GameType.SkyrimSe,
+                rows: initialRows));
             var unchangedRow = viewModel.PluginsToClean[1];
 
-            var updatedState = initialState with
+            var updatedRows = new[]
             {
-                PluginsToClean =
-                [
-                    initialState.PluginsToClean[0] with
-                    {
-                        Approximation = PluginIssueApproximation.Available(2, 1, 0)
-                    },
-                    initialState.PluginsToClean[1]
-                ]
+                initialRows[0] with { Approximation = PluginIssueApproximation.Available(2, 1, 0) },
+                initialRows[1]
             };
 
-            viewModel.OnStateChanged(updatedState);
+            viewModel.OnPluginRefreshSnapshot(RecordingPluginRefreshModule.CreateSnapshot(
+                gameType: GameType.SkyrimSe,
+                rows: updatedRows));
 
             viewModel.PluginsToClean.Should().HaveCount(2);
             viewModel.PluginsToClean[1].Should().BeSameAs(unchangedRow);
@@ -304,20 +262,17 @@ public sealed class MainWindowThreadingTests
         }
     }
 
-    private static IPluginRefreshCoordinator CreateRefreshCoordinator(
-        IObservable<PluginRefreshStatus>? statuses = null)
-    {
-        var refreshCoordinator = Substitute.For<IPluginRefreshCoordinator>();
-        refreshCoordinator.StatusChanged.Returns(statuses ?? Observable.Never<PluginRefreshStatus>());
-        refreshCoordinator.RefreshForGameAsync(
-                Arg.Any<GameType>(),
-                Arg.Any<string?>(),
-                Arg.Any<CancellationToken>())
-            .Returns(callInfo => Task.FromResult(new PluginRefreshProjection(
-                callInfo.ArgAt<GameType>(0),
-                AvailableProfiles: [])));
-        return refreshCoordinator;
-    }
+    private static PluginRefreshRow CreateRow(
+        string fileName,
+        string? fullPath = null,
+        PluginIssueApproximation? approximation = null) =>
+        new(
+            fileName,
+            fullPath ?? fileName,
+            GameType.SkyrimSe,
+            IsSelected: true,
+            IsInSkipList: false,
+            approximation ?? PluginIssueApproximation.Unavailable);
 
     private static IGameCapabilityProvider CreateGameCapabilityProvider() => new GameCapabilityProvider();
 

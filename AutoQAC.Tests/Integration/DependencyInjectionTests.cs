@@ -67,7 +67,7 @@ public sealed class DependencyInjectionTests
         provider.GetService<IGameCapabilityProvider>().Should().NotBeNull();
         provider.GetService<IPluginValidationService>().Should().NotBeNull();
         provider.GetService<IPluginLoadingService>().Should().NotBeNull();
-        provider.GetService<IPluginRefreshCoordinator>().Should().NotBeNull();
+        provider.GetService<IPluginRefreshModule>().Should().NotBeNull();
         provider.GetService<IProcessExecutionService>().Should().NotBeNull();
         provider.GetService<IXEditCommandBuilder>().Should().NotBeNull();
         provider.GetService<IXEditOutputParser>().Should().NotBeNull();
@@ -90,13 +90,13 @@ public sealed class DependencyInjectionTests
         var vm2 = provider.GetRequiredService<MainWindowViewModel>();
         vm1.Should().BeSameAs(vm2); // Singleton
 
-        var sharedCoordinator = provider.GetRequiredService<IPluginRefreshCoordinator>();
-        GetPrivateField<IPluginRefreshCoordinator>(vm1.Configuration, "_pluginRefreshCoordinator")
-            .Should().BeSameAs(sharedCoordinator);
-        GetPrivateField<IPluginRefreshCoordinator>(vm1.PluginList, "_pluginRefreshCoordinator")
-            .Should().BeSameAs(sharedCoordinator);
-        GetPrivateField<IPluginRefreshCoordinator>(vm1.Commands, "_pluginRefreshCoordinator")
-            .Should().BeSameAs(sharedCoordinator);
+        var sharedRefreshModule = provider.GetRequiredService<IPluginRefreshModule>();
+        GetPrivateField<IPluginRefreshModule>(vm1.Configuration, "_pluginRefreshModule")
+            .Should().BeSameAs(sharedRefreshModule);
+        GetPrivateField<IPluginRefreshModule>(vm1.PluginList, "_pluginRefreshModule")
+            .Should().BeSameAs(sharedRefreshModule);
+        GetPrivateField<IPluginRefreshModule>(vm1.Commands, "_pluginRefreshModule")
+            .Should().BeSameAs(sharedRefreshModule);
     }
 
     /// <summary>

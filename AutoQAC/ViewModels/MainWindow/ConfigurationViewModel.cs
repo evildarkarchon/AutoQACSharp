@@ -28,11 +28,10 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
     private readonly ILoggingService _logger;
     private readonly IMessageDialogService _messageDialog;
     private readonly IPluginLoadingService _pluginLoadingService;
-    private readonly IPluginRefreshCoordinator _pluginRefreshCoordinator;
+    private readonly IPluginRefreshModule _pluginRefreshModule;
     private readonly IGameCapabilityProvider _gameCapabilityProvider;
     private readonly IStateService _stateService;
     private readonly IDisposable _skipListChangedSubscription;
-    private readonly IDisposable _pluginRefreshStatusSubscription;
 
     private bool _initialized;
     private bool _suppressSelectedProfileChanged;
@@ -118,9 +117,8 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         IMessageDialogService messageDialog,
         IPluginValidationService pluginService,
         IPluginLoadingService pluginLoadingService,
-        IPluginRefreshCoordinator pluginRefreshCoordinator,
-        IGameCapabilityProvider gameCapabilityProvider,
-        IUiDispatcher uiDispatcher)
+        IPluginRefreshModule pluginRefreshModule,
+        IGameCapabilityProvider gameCapabilityProvider)
     {
         _configService = configService;
         _stateService = stateService;
@@ -128,32 +126,13 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         _fileDialog = fileDialog;
         _messageDialog = messageDialog;
         _pluginLoadingService = pluginLoadingService;
-        _pluginRefreshCoordinator = pluginRefreshCoordinator;
+        _pluginRefreshModule = pluginRefreshModule;
         _gameCapabilityProvider = gameCapabilityProvider;
 
         AvailableGames = _gameCapabilityProvider.GetAvailableGames();
 
         _skipListChangedSubscription = _configService.SkipListChanged.Subscribe(
             new CallbackObserver<GameType>(OnSkipListChanged));
-        _pluginRefreshStatusSubscription = _pluginRefreshCoordinator.StatusChanged.Subscribe(
-            new CallbackObserver<PluginRefreshStatus>(status =>
-                uiDispatcher.Post(() => OnPluginRefreshStatusChanged(status))));
-    }
-
-    private void OnPluginRefreshStatusChanged(PluginRefreshStatus status)
-    {
-        StatusText = status.Kind switch
-        {
-            PluginRefreshStatusKind.SelectPlugins => "Select plugins to refresh.",
-            PluginRefreshStatusKind.Canceled => "Approximation refresh canceled.",
-            PluginRefreshStatusKind.AnalyzingSelected =>
-                $"Analyzing {status.Current} of {status.Total} selected plugins.",
-            PluginRefreshStatusKind.SelectedRefreshCompleted =>
-                $"Updated {status.UpdatedCount} selected plugin approximations.",
-            PluginRefreshStatusKind.ApproximationUnavailable => "Approximation refresh is not available for this game.",
-            PluginRefreshStatusKind.LoadingPlugins => $"Loading plugins for {SelectedGame}...",
-            _ => status.Message ?? StatusText
-        };
     }
 
     private void OnSkipListChanged(GameType changedGame)
@@ -317,8 +296,9 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
 
         try
         {
-            var projection = await _pluginRefreshCoordinator.RefreshForGameAsync(SelectedGame, path);
-            ApplyRefreshProjection(projection);
+            var snapshot = await _pluginRefreshModule.ExecuteAsync(
+                new PluginRefreshIntent.RefreshGame(SelectedGame, path));
+            OnPluginRefreshSnapshot(snapshot);
         }
         catch (FileNotFoundException ex)
         {
@@ -511,7 +491,8 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         try
         {
             StatusText = "Resetting settings to defaults...";
-            _pluginRefreshCoordinator.CancelActiveRefresh(PluginRefreshCancelReason.Reset);
+            await _pluginRefreshModule.ExecuteAsync(
+                new PluginRefreshIntent.Cancel(PluginRefreshCancelReason.Reset));
             await _configService.ResetToDefaultsAsync();
 
             var config = await _configService.LoadUserConfigAsync();
@@ -604,6 +585,16 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>
+    /// Applies visible configuration and status fields published by the Plugin refresh module.
+    /// </summary>
+    /// <param name="snapshot">Whole Plugin refresh publication snapshot.</param>
+    public void OnPluginRefreshSnapshot(PluginRefreshSnapshot snapshot)
+    {
+        ApplyRefreshConfiguration(snapshot.Configuration);
+        StatusText = snapshot.StatusText;
+    }
+
+    /// <summary>
     /// Saves the current main-window configuration values, optionally forcing the
     /// debounced configuration write to disk before returning for explicit Browse saves.
     /// </summary>
@@ -625,22 +616,22 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
 
     private async Task RefreshPluginsForGameAsync(GameType gameType)
     {
-        var projection = await _pluginRefreshCoordinator.RefreshForGameAsync(gameType);
-        ApplyRefreshProjection(projection);
+        var snapshot = await _pluginRefreshModule.ExecuteAsync(new PluginRefreshIntent.RefreshGame(gameType));
+        OnPluginRefreshSnapshot(snapshot);
     }
 
-    private void ApplyRefreshProjection(PluginRefreshProjection projection)
+    private void ApplyRefreshConfiguration(PluginRefreshConfigurationProjection projection)
     {
         LoadOrderPath = projection.LoadOrderPath;
         GameDataFolder = projection.GameDataFolder;
         HasGameDataFolderOverride = projection.HasGameDataFolderOverride;
 
-        if (Mo2ModeEnabled && projection.GameType != GameType.Unknown)
+        if (Mo2ModeEnabled && SelectedGame != GameType.Unknown)
         {
             Mo2InstancePath = projection.Mo2InstancePath;
             IsMo2InstanceOverride = projection.IsMo2InstanceOverride;
             IsMo2InstanceValid = projection.IsMo2InstanceValid;
-            SetAvailableProfiles(projection.Profiles);
+            SetAvailableProfiles(projection.AvailableProfiles);
             SetSelectedProfileWithoutPersistence(projection.SelectedProfile);
             return;
         }
@@ -695,8 +686,7 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
-        _pluginRefreshCoordinator.CancelActiveRefresh(PluginRefreshCancelReason.Disposed);
-        _pluginRefreshStatusSubscription.Dispose();
+        _ = _pluginRefreshModule.ExecuteAsync(new PluginRefreshIntent.Cancel(PluginRefreshCancelReason.Disposed));
         _skipListChangedSubscription.Dispose();
     }
 }

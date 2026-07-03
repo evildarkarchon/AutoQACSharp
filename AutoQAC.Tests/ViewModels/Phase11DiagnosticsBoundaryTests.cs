@@ -59,8 +59,7 @@ public sealed class Phase11DiagnosticsBoundaryTests
             stateService.CurrentState.Returns(appState);
             stateService.CleaningCompleted.Returns(Observable.Never<CleaningSessionResult>());
             configService.SkipListChanged.Returns(Observable.Never<GameType>());
-            var refreshCoordinator = Substitute.For<IPluginRefreshCoordinator>();
-            refreshCoordinator.StatusChanged.Returns(Observable.Never<PluginRefreshStatus>());
+            using var refreshModule = new RecordingPluginRefreshModule();
             var gameCapabilityProvider = new GameCapabilityProvider();
             cleaningSession.StartAsync(Arg.Any<CancellationToken>())
                 .ThrowsAsync(new Exception(DiagnosticSentinels.CreateUnsafePayload()));
@@ -75,7 +74,7 @@ public sealed class Phase11DiagnosticsBoundaryTests
                 pluginValidation,
                 pluginLoading,
                 uiDispatcher,
-                refreshCoordinator,
+                refreshModule,
                 gameCapabilityProvider);
             using var _ = viewModel.ShowProgressInteraction.RegisterHandler(_ => Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
 

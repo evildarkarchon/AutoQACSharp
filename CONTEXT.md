@@ -15,6 +15,10 @@ A user-visible update of plugin rows for the current game context, including ski
 The point at which a Plugin refresh becomes visible to the user, including the current game context, plugin rows, and issue approximation status.
 _Avoid_: State update, app state mutation, row sync
 
+**Plugin selection**:
+The user's current inclusion or exclusion choice among Plugin refresh rows available for a Cleaning session or selected Issue approximation refresh.
+_Avoid_: Excluded plugin paths, row checkbox state
+
 **Skip list**:
 A game-specific set of plugin names that AutoQAC should not select for cleaning by default.
 

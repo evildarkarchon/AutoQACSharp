@@ -21,6 +21,7 @@ namespace AutoQAC.ViewModels;
 public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
 {
     private readonly IDisposable _stateSubscription;
+    private readonly IDisposable _pluginRefreshSnapshotSubscription;
 
     public ConfigurationViewModel Configuration { get; }
     public PluginListViewModel PluginList { get; }
@@ -44,27 +45,29 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         IPluginValidationService pluginService,
         IPluginLoadingService pluginLoadingService,
         IUiDispatcher uiDispatcher,
-        IPluginRefreshCoordinator pluginRefreshCoordinator,
+        IPluginRefreshModule pluginRefreshModule,
         IGameCapabilityProvider gameCapabilityProvider,
         IAppLifetime? appLifetime = null)
     {
         Configuration = new ConfigurationViewModel(
             configService, stateService, logger, fileDialog,
             messageDialog, pluginService, pluginLoadingService,
-            pluginRefreshCoordinator,
-            gameCapabilityProvider,
-            uiDispatcher);
+            pluginRefreshModule,
+            gameCapabilityProvider);
 
-        PluginList = new PluginListViewModel(stateService, pluginRefreshCoordinator, gameCapabilityProvider,
-            uiDispatcher);
+        PluginList = new PluginListViewModel(pluginRefreshModule);
 
         Commands = new CleaningCommandsViewModel(
             stateService, cleaningSession, configService, gameCapabilityProvider,
-            pluginRefreshCoordinator,
+            pluginRefreshModule,
             logger, messageDialog, appLifetime ?? NoOpAppLifetime.Instance,
             ShowProgressInteraction, ShowPreviewInteraction,
             ShowSettingsInteraction, ShowSkipListInteraction,
             ShowRestoreInteraction, ShowAboutInteraction);
+
+        _pluginRefreshSnapshotSubscription = pluginRefreshModule.Snapshots.Subscribe(
+            new CallbackObserver<PluginRefreshSnapshot>(snapshot =>
+                uiDispatcher.Post(() => OnPluginRefreshSnapshot(snapshot))));
 
         _stateSubscription = stateService.StateChanged.Subscribe(
             new CallbackObserver<AppState>(state => uiDispatcher.Post(() => OnStateChanged(state))));
@@ -77,8 +80,13 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
     private void OnStateChanged(AppState state)
     {
         Configuration.OnStateChanged(state);
-        PluginList.OnStateChanged(state);
         Commands.OnStateChanged(state);
+    }
+
+    private void OnPluginRefreshSnapshot(PluginRefreshSnapshot snapshot)
+    {
+        Configuration.OnPluginRefreshSnapshot(snapshot);
+        PluginList.OnPluginRefreshSnapshot(snapshot);
     }
 
     /// <summary>
@@ -89,6 +97,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
+        _pluginRefreshSnapshotSubscription.Dispose();
         _stateSubscription.Dispose();
         Configuration.Dispose();
         PluginList.Dispose();

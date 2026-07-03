@@ -63,34 +63,9 @@ public sealed class ErrorDialogTests
             .Returns([]);
     }
 
-    private IPluginRefreshCoordinator CreateRefreshCoordinator()
-    {
-        var gameDetectionService = Substitute.For<AutoQAC.Services.GameDetection.IGameDetectionService>();
-        gameDetectionService
-            .DetectVariant(Arg.Any<GameType>(), Arg.Any<IReadOnlyList<string>>())
-            .Returns(GameVariant.None);
-        return new PluginRefreshCoordinator(
-            _pluginLoadingServiceMock,
-            new NoOpPluginIssueApproximationService(),
-            _stateServiceMock,
-            new StateServicePluginRefreshPublication(_stateServiceMock),
-            _gameCapabilityProvider,
-            _configServiceMock,
-            new SkipListPolicy(_configServiceMock, gameDetectionService),
-            Substitute.For<AutoQAC.Services.MO2.IMo2InstanceService>(),
-            _loggerMock);
-    }
+    private static IPluginRefreshModule CreateRefreshModule() => new RecordingPluginRefreshModule();
 
-    private sealed class NoOpPluginIssueApproximationService : IPluginIssueApproximationService
-    {
-        public Task<IReadOnlyList<PluginIssueApproximationResult>> GetApproximationsAsync(
-            PluginIssueApproximationRequest request,
-            Action<PluginIssueApproximationResult>? onApproximationReady = null,
-            CancellationToken ct = default) =>
-            Task.FromResult<IReadOnlyList<PluginIssueApproximationResult>>([]);
-    }
-
-    private MainWindowViewModel CreateViewModel()
+    private MainWindowViewModel CreateViewModel(IPluginRefreshModule? refreshModule = null)
     {
         var stateSubject = new BehaviorSubject<AppState>(new AppState());
         _stateServiceMock.StateChanged.Returns(stateSubject);
@@ -106,7 +81,7 @@ public sealed class ErrorDialogTests
             _pluginServiceMock,
             _pluginLoadingServiceMock,
             _uiDispatcher,
-            CreateRefreshCoordinator(),
+            refreshModule ?? CreateRefreshModule(),
             _gameCapabilityProvider);
     }
 
@@ -138,7 +113,7 @@ public sealed class ErrorDialogTests
             _pluginServiceMock,
             _pluginLoadingServiceMock,
             _uiDispatcher,
-            CreateRefreshCoordinator(),
+            CreateRefreshModule(),
             _gameCapabilityProvider);
     }
 
@@ -207,7 +182,7 @@ public sealed class ErrorDialogTests
             _pluginServiceMock,
             _pluginLoadingServiceMock,
             _uiDispatcher,
-            CreateRefreshCoordinator(),
+            CreateRefreshModule(),
             _gameCapabilityProvider);
 
         // Act
@@ -246,7 +221,7 @@ public sealed class ErrorDialogTests
             _pluginServiceMock,
             _pluginLoadingServiceMock,
             _uiDispatcher,
-            CreateRefreshCoordinator(),
+            CreateRefreshModule(),
             _gameCapabilityProvider);
 
         vm.Configuration.XEditPath = nonExistentPath;
@@ -290,7 +265,7 @@ public sealed class ErrorDialogTests
             _pluginServiceMock,
             _pluginLoadingServiceMock,
             _uiDispatcher,
-            CreateRefreshCoordinator(),
+            CreateRefreshModule(),
             _gameCapabilityProvider);
 
         // Act
@@ -338,7 +313,7 @@ public sealed class ErrorDialogTests
                 _pluginServiceMock,
                 _pluginLoadingServiceMock,
                 _uiDispatcher,
-                CreateRefreshCoordinator(),
+                CreateRefreshModule(),
                 _gameCapabilityProvider);
 
             // Act
@@ -388,7 +363,12 @@ public sealed class ErrorDialogTests
         var tempFile = Path.GetTempFileName();
         try
         {
-            var vm = CreateViewModel();
+            using var refreshModule = new RecordingPluginRefreshModule();
+            refreshModule.ExecuteHandler = (_, _) => Task.FromResult(
+                RecordingPluginRefreshModule.CreateSnapshot(
+                    gameType: GameType.FalloutNewVegas,
+                    statusText: "No plugins found in the selected load order."));
+            var vm = CreateViewModel(refreshModule);
 
             _fileDialogMock.OpenFileDialogAsync(
                     Arg.Any<string>(),
@@ -424,7 +404,9 @@ public sealed class ErrorDialogTests
         var tempFile = Path.GetTempFileName();
         try
         {
-            var vm = CreateViewModel();
+            using var refreshModule = new RecordingPluginRefreshModule();
+            refreshModule.ExecuteHandler = (_, _) => throw new IOException("File in use");
+            var vm = CreateViewModel(refreshModule);
 
             _fileDialogMock.OpenFileDialogAsync(
                     Arg.Any<string>(),
@@ -553,7 +535,7 @@ public sealed class ErrorDialogTests
                 _pluginServiceMock,
                 _pluginLoadingServiceMock,
                 _uiDispatcher,
-                CreateRefreshCoordinator(),
+                CreateRefreshModule(),
                 _gameCapabilityProvider);
 
             // Act
@@ -603,7 +585,7 @@ public sealed class ErrorDialogTests
                 _pluginServiceMock,
                 _pluginLoadingServiceMock,
                 _uiDispatcher,
-                CreateRefreshCoordinator(),
+                CreateRefreshModule(),
                 _gameCapabilityProvider);
 
             // Act
@@ -650,7 +632,7 @@ public sealed class ErrorDialogTests
                 _pluginServiceMock,
                 _pluginLoadingServiceMock,
                 _uiDispatcher,
-                CreateRefreshCoordinator(),
+                CreateRefreshModule(),
                 _gameCapabilityProvider);
 
             // Act
@@ -700,7 +682,7 @@ public sealed class ErrorDialogTests
                 _pluginServiceMock,
                 _pluginLoadingServiceMock,
                 _uiDispatcher,
-                CreateRefreshCoordinator(),
+                CreateRefreshModule(),
                 _gameCapabilityProvider);
 
             // Act

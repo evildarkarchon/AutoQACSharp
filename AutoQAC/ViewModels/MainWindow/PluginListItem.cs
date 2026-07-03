@@ -1,37 +1,36 @@
 using System;
 using AutoQAC.Models;
+using AutoQAC.Services.Plugin;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace AutoQAC.ViewModels.MainWindow;
 
 /// <summary>
-/// Per-row UI wrapper around an immutable <see cref="PluginInfo"/>. Owns the
+/// Per-row UI wrapper around an immutable <see cref="PluginRefreshRow"/>. Owns the
 /// mutable <c>IsSelected</c> state with proper INotifyPropertyChanged plumbing so
 /// the checkbox stays in sync with batch select/deselect operations and survives
-/// rapid <c>state.PluginsToClean</c> replacements driven by background approximation
-/// updates. Selection toggles bubble up to the owning view model via
-/// <see cref="SelectionToggled"/>; the parent persists the change to the
-/// <c>IStateService</c> excluded-plugin set, which is the source of truth the
-/// cleaning orchestrator filters against.
+/// rapid snapshot replacements driven by background approximation updates.
+/// Selection toggles bubble up to the owning view model via <see cref="SelectionToggled"/>.
 /// </summary>
 public sealed partial class PluginListItem : ObservableObject
 {
     private bool _suppressSelectionCallback;
 
-    public PluginListItem(PluginInfo info, bool isSelected)
+    public PluginListItem(PluginRefreshRow info, bool isSelected)
     {
         Info = info;
         IsSelected = isSelected;
     }
 
     [ObservableProperty]
-    public partial PluginInfo Info { get; set; }
+    public partial PluginRefreshRow Info { get; set; }
 
     [ObservableProperty]
     public partial bool IsSelected { get; set; }
 
     public string FileName => Info.FileName;
     public string FullPath => Info.FullPath;
+    public PluginRefreshRowKey Key => Info.Key;
     public string ApproximationDisplayText => Info.ApproximationDisplayText;
     public bool IsApproximationPending => Info.IsApproximationPending;
     public bool HasApproximationPreview => Info.HasApproximationPreview;
@@ -45,15 +44,16 @@ public sealed partial class PluginListItem : ObservableObject
     public event Action<PluginListItem, bool>? SelectionToggled;
 
     /// <summary>
-    /// Replaces the underlying plugin record without firing
+    /// Replaces the underlying plugin refresh row without firing
     /// <see cref="SelectionToggled"/>. Used by the parent view model when state
-    /// updates produce a new <see cref="PluginInfo"/> instance for the same row.
+    /// updates produce a new <see cref="PluginRefreshRow"/> instance for the same row.
     /// </summary>
-    public void UpdateInfo(PluginInfo newInfo)
+    public void UpdateInfo(PluginRefreshRow newInfo)
     {
         Info = newInfo;
         OnPropertyChanged(nameof(FileName));
         OnPropertyChanged(nameof(FullPath));
+        OnPropertyChanged(nameof(Key));
         OnPropertyChanged(nameof(ApproximationDisplayText));
         OnPropertyChanged(nameof(IsApproximationPending));
         OnPropertyChanged(nameof(HasApproximationPreview));

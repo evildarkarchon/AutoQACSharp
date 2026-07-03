@@ -1,4 +1,3 @@
-using System.Reactive.Linq;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.Cleaning;
@@ -8,6 +7,7 @@ using AutoQAC.Services.Plugin;
 using AutoQAC.Services.State;
 using AutoQAC.Services.UI;
 using AutoQAC.Services.UI.Interactions;
+using AutoQAC.Tests.TestInfrastructure;
 using AutoQAC.ViewModels.MainWindow;
 using FluentAssertions;
 using NSubstitute;
@@ -30,8 +30,7 @@ public sealed class CleaningCommandsViewModelTests
 
         var stateService = new StateService();
         var cleaningSession = Substitute.For<ICleaningSession>();
-        var coordinator = Substitute.For<IPluginRefreshCoordinator>();
-        coordinator.StatusChanged.Returns(Observable.Never<PluginRefreshStatus>());
+        using var refreshModule = new RecordingPluginRefreshModule();
         var callOrder = new List<string>();
 
         cleaningSession.StartAsync(Arg.Any<CancellationToken>())
@@ -40,8 +39,15 @@ public sealed class CleaningCommandsViewModelTests
                 callOrder.Add("session");
                 return Task.CompletedTask;
             });
-        coordinator.When(c => c.CancelActiveRefresh(PluginRefreshCancelReason.CleaningStarted))
-            .Do(_ => callOrder.Add("cancel"));
+        refreshModule.ExecuteHandler = (intent, _) =>
+        {
+            if (intent is PluginRefreshIntent.Cancel { Reason: PluginRefreshCancelReason.CleaningStarted })
+            {
+                callOrder.Add("cancel");
+            }
+
+            return Task.FromResult(refreshModule.CurrentSnapshot);
+        };
 
         var progressInteraction = new Interaction<ICleaningSession, Unit>();
         using var progressRegistration = progressInteraction.RegisterHandler(_ =>
@@ -55,7 +61,7 @@ public sealed class CleaningCommandsViewModelTests
             cleaningSession,
             Substitute.For<IConfigurationService>(),
             new GameCapabilityProvider(),
-            coordinator,
+            refreshModule,
             Substitute.For<ILoggingService>(),
             Substitute.For<IMessageDialogService>(),
             Substitute.For<IAppLifetime>(),
@@ -77,7 +83,8 @@ public sealed class CleaningCommandsViewModelTests
             await viewModel.StartCleaningCommand.ExecuteAsync(null);
 
             callOrder.Should().Equal("cancel", "progress", "session");
-            coordinator.Received(1).CancelActiveRefresh(PluginRefreshCancelReason.CleaningStarted);
+            refreshModule.Intents.OfType<PluginRefreshIntent.Cancel>()
+                .Should().ContainSingle(cancel => cancel.Reason == PluginRefreshCancelReason.CleaningStarted);
         }
         finally
         {
@@ -96,7 +103,7 @@ public sealed class CleaningCommandsViewModelTests
             Substitute.For<ICleaningSession>(),
             Substitute.For<IConfigurationService>(),
             new GameCapabilityProvider(),
-            Substitute.For<IPluginRefreshCoordinator>(),
+            new RecordingPluginRefreshModule(),
             Substitute.For<ILoggingService>(),
             Substitute.For<IMessageDialogService>(),
             appLifetime,

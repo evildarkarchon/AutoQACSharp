@@ -1,575 +1,262 @@
-using System.Reactive.Linq;
 using System.Reactive.Subjects;
-using AutoQAC.Services.GameCapability;
-using AutoQAC.Services.Plugin;
 using AutoQAC.Models;
-using AutoQAC.Services.State;
-using AutoQAC.Tests.TestInfrastructure;
+using AutoQAC.Services.Plugin;
 using AutoQAC.ViewModels.MainWindow;
 using FluentAssertions;
-using NSubstitute;
 
 namespace AutoQAC.Tests.ViewModels;
 
-/// <summary>
-/// Regression coverage for the selection model. Bug history: <c>IsSelected</c> used
-/// to live on the <c>PluginInfo</c> record; batch select/deselect mutated those
-/// records in place without raising <c>INotifyPropertyChanged</c>, so the UI never
-/// repainted, and rapid background <c>MergePluginApproximation</c> calls created
-/// new records via <c>with</c> that overwrote the user's selection. The tests
-/// below exercise the new flow: selection lives in <c>AppState.ExcludedPluginPaths</c>,
-/// PluginListItem owns the INPC checkbox state, and toggles round-trip through
-/// IStateService so they survive plugin record replacement.
-/// </summary>
 public sealed class PluginListViewModelTests
 {
     [Fact]
-    public void RefreshSelectedApproximationsCommand_WhenNoRowsSelected_ShouldBeDisabled()
+    public void OnPluginRefreshSnapshot_ShouldApplyRowsAndCommandAvailability()
     {
-        var stateService = new StateService();
-        stateService.UpdateState(s => s with { CurrentGameType = GameType.SkyrimSe });
-        stateService.SetPluginsToClean([
-            new PluginInfo { FileName = "A.esp", FullPath = @"C:\Game\Data\A.esp" }
-        ]);
-        stateService.UpdateExcludedPlugins(_ =>
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { @"C:\Game\Data\A.esp" });
-
-        var coordinator = new RecordingPluginRefreshCoordinator();
-        var vm = new PluginListViewModel(
-            stateService,
-            coordinator,
-            new FixedGameCapabilityProvider(supportsApproximation: true),
-            new SynchronousUiDispatcher());
+        var module = new RecordingPluginRefreshModule();
+        var vm = new PluginListViewModel(module);
         try
         {
-            vm.OnStateChanged(stateService.CurrentState);
+            vm.OnPluginRefreshSnapshot(Snapshot(
+                rows: [Row("A.esp", isSelected: true)],
+                commands: new PluginRefreshCommandAvailability(
+                    CanSelectAll: true,
+                    CanDeselectAll: true,
+                    CanRefreshSelectedIssueApproximations: true,
+                    CanCancelRefresh: false)));
 
-            vm.RefreshSelectedApproximationsCommand.CanExecute(null).Should().BeFalse();
+            vm.PluginsToClean.Should().ContainSingle(item =>
+                item.FileName == "A.esp" && item.IsSelected);
+            vm.SelectAllCommand.CanExecute(null).Should().BeTrue();
+            vm.DeselectAllCommand.CanExecute(null).Should().BeTrue();
+            vm.RefreshSelectedApproximationsCommand.CanExecute(null).Should().BeTrue();
+            vm.CancelApproximationRefreshCommand.CanExecute(null).Should().BeFalse();
         }
         finally
         {
             vm.Dispose();
-            stateService.Dispose();
-            coordinator.Dispose();
+            module.Dispose();
         }
     }
 
     [Fact]
-    public void RefreshSelectedApproximationsCommand_WhenUnsupportedGame_ShouldBeDisabled()
+    public void OnPluginRefreshSnapshot_ShouldUseSnapshotRunningFlags()
     {
-        var stateService = new StateService();
-        stateService.UpdateState(s => s with { CurrentGameType = GameType.Oblivion });
-        stateService.SetPluginsToClean([
-            new PluginInfo { FileName = "A.esp", FullPath = @"C:\Game\Data\A.esp" }
-        ]);
-
-        var coordinator = new RecordingPluginRefreshCoordinator();
-        var vm = new PluginListViewModel(
-            stateService,
-            coordinator,
-            new FixedGameCapabilityProvider(supportsApproximation: false),
-            new SynchronousUiDispatcher());
+        var module = new RecordingPluginRefreshModule();
+        var vm = new PluginListViewModel(module);
         try
         {
-            vm.OnStateChanged(stateService.CurrentState);
+            vm.OnPluginRefreshSnapshot(Snapshot(
+                rows: [Row("A.esp")],
+                activity: new PluginRefreshActivity(
+                    IsPluginRefreshRunning: false,
+                    IsIssueApproximationRefreshRunning: true),
+                commands: new PluginRefreshCommandAvailability(false, false, false, true)));
 
-            vm.RefreshSelectedApproximationsCommand.CanExecute(null).Should().BeFalse();
+            vm.IsApproximationRefreshRunning.Should().BeTrue();
+            vm.CancelApproximationRefreshCommand.CanExecute(null).Should().BeTrue();
+
+            vm.OnPluginRefreshSnapshot(Snapshot(
+                rows: [Row("A.esp")],
+                activity: new PluginRefreshActivity(false, false),
+                commands: new PluginRefreshCommandAvailability(true, true, true, false)));
+
+            vm.IsApproximationRefreshRunning.Should().BeFalse();
+            vm.CancelApproximationRefreshCommand.CanExecute(null).Should().BeFalse();
         }
         finally
         {
             vm.Dispose();
-            stateService.Dispose();
-            coordinator.Dispose();
+            module.Dispose();
         }
     }
 
     [Fact]
-    public async Task RefreshSelectedApproximationsCommand_ShouldSnapshotCheckedVisibleRows()
+    public async Task SelectionCommands_ShouldSendSelectionIntents()
     {
-        var stateService = new StateService();
-        stateService.UpdateState(s => s with { CurrentGameType = GameType.SkyrimSe });
-        stateService.SetPluginsToClean([
-            new PluginInfo { FileName = "A.esp", FullPath = @"C:\Game\Data\A.esp" },
-            new PluginInfo { FileName = "B.esp", FullPath = @"C:\Game\Data\B.esp" }
-        ]);
-
-        var coordinator = new RecordingPluginRefreshCoordinator(delayUntilReleased: true);
-        var vm = new PluginListViewModel(
-            stateService,
-            coordinator,
-            new FixedGameCapabilityProvider(supportsApproximation: true),
-            new SynchronousUiDispatcher());
+        var module = new RecordingPluginRefreshModule();
+        var vm = new PluginListViewModel(module);
         try
         {
-            vm.OnStateChanged(stateService.CurrentState);
+            vm.OnPluginRefreshSnapshot(Snapshot(
+                rows: [Row("A.esp")],
+                commands: new PluginRefreshCommandAvailability(true, true, false, false)));
 
-            var refreshTask = vm.RefreshSelectedApproximationsCommand.ExecuteAsync(null);
-            await coordinator.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await vm.SelectAllCommand.ExecuteAsync(null);
+            await vm.DeselectAllCommand.ExecuteAsync(null);
 
-            vm.PluginsToClean.Single(p => p.FileName == "B.esp").IsSelected = false;
-
-            coordinator.CapturedTargets.Should().BeEquivalentTo([
-                new PluginRefreshTarget("A.esp", @"C:\Game\Data\A.esp"),
-                new PluginRefreshTarget("B.esp", @"C:\Game\Data\B.esp")
-            ], options => options.WithStrictOrdering());
-
-            coordinator.Release();
-            await refreshTask;
+            var changes = module.Intents.OfType<PluginRefreshIntent.ChangeSelection>()
+                .Select(intent => intent.Change)
+                .ToList();
+            changes.Should().HaveCount(2);
+            changes[0].Should().BeOfType<PluginSelectionChange.SelectAllVisible>();
+            changes[1].Should().BeOfType<PluginSelectionChange.DeselectAllVisible>();
         }
         finally
         {
             vm.Dispose();
-            stateService.Dispose();
-            coordinator.Dispose();
+            module.Dispose();
         }
     }
 
-    /// <summary>
-    /// Verifies that ListBox focus selection never defines the approximation refresh target set.
-    /// </summary>
     [Fact]
-    public async Task RefreshSelectedApproximationsCommand_ShouldIgnoreFocusedSelectedPluginAndUseCheckedRows()
+    public void RowToggle_ShouldSendSetOneIntent()
     {
-        var stateService = new StateService();
-        stateService.UpdateState(s => s with { CurrentGameType = GameType.SkyrimSe });
-        stateService.SetPluginsToClean([
-            new PluginInfo { FileName = "Checked.esp", FullPath = @"C:\Game\Data\Checked.esp" },
-            new PluginInfo { FileName = "FocusedOnly.esp", FullPath = @"C:\Game\Data\FocusedOnly.esp" }
-        ]);
-        stateService.UpdateExcludedPlugins(_ =>
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { @"C:\Game\Data\FocusedOnly.esp" });
-
-        var coordinator = new RecordingPluginRefreshCoordinator();
-        var vm = new PluginListViewModel(
-            stateService,
-            coordinator,
-            new FixedGameCapabilityProvider(supportsApproximation: true),
-            new SynchronousUiDispatcher());
+        var module = new RecordingPluginRefreshModule();
+        var vm = new PluginListViewModel(module);
         try
         {
-            vm.OnStateChanged(stateService.CurrentState);
-            vm.SelectedPlugin = vm.PluginsToClean.Single(plugin => plugin.FileName == "FocusedOnly.esp");
+            vm.OnPluginRefreshSnapshot(Snapshot(rows: [Row("A.esp", @"C:\Game\Data\A.esp", true)]));
+
+            vm.PluginsToClean.Single().IsSelected = false;
+
+            var setOne = module.Intents.OfType<PluginRefreshIntent.ChangeSelection>()
+                .Select(intent => intent.Change)
+                .OfType<PluginSelectionChange.SetOne>()
+                .Should().ContainSingle().Which;
+            setOne.Row.FileName.Should().Be("A.esp");
+            setOne.Row.FullPath.Should().Be(@"C:\Game\Data\A.esp");
+            setOne.IsSelected.Should().BeFalse();
+        }
+        finally
+        {
+            vm.Dispose();
+            module.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task RefreshSelectedApproximationsCommand_ShouldSendTargetlessRefreshIntent()
+    {
+        var module = new RecordingPluginRefreshModule();
+        var vm = new PluginListViewModel(module);
+        try
+        {
+            vm.OnPluginRefreshSnapshot(Snapshot(
+                rows: [Row("A.esp")],
+                commands: new PluginRefreshCommandAvailability(false, false, true, false)));
 
             await vm.RefreshSelectedApproximationsCommand.ExecuteAsync(null);
 
-            coordinator.CapturedTargets.Should().BeEquivalentTo([
-                new PluginRefreshTarget("Checked.esp", @"C:\Game\Data\Checked.esp")
-            ], options => options.WithStrictOrdering());
+            module.Intents.OfType<PluginRefreshIntent.RefreshSelectedIssueApproximations>()
+                .Should().ContainSingle();
         }
         finally
         {
             vm.Dispose();
-            stateService.Dispose();
-            coordinator.Dispose();
-        }
-    }
-
-    /// <summary>
-    /// Ensures the cancel button maps directly to the coordinator's manual cancellation reason.
-    /// </summary>
-    [Fact]
-    public void CancelApproximationRefreshCommand_ShouldRequestManualCoordinatorCancellation()
-    {
-        var stateService = new StateService();
-        var coordinator = new RecordingPluginRefreshCoordinator();
-        var vm = new PluginListViewModel(
-            stateService,
-            coordinator,
-            new FixedGameCapabilityProvider(supportsApproximation: true),
-            new SynchronousUiDispatcher());
-        try
-        {
-            coordinator.PublishStatus(PluginRefreshStatus.AnalyzingSelected(1, 2));
-
-            vm.CancelApproximationRefreshCommand.Execute(null);
-
-            coordinator.CancelReasons.Should().Equal(PluginRefreshCancelReason.Manual);
-        }
-        finally
-        {
-            vm.Dispose();
-            stateService.Dispose();
-            coordinator.Dispose();
+            module.Dispose();
         }
     }
 
     [Fact]
-    public void OnPluginRefreshStatusChanged_WhenFullRefreshCompletedPublished_ClearsRunningFlag()
+    public async Task CancelApproximationRefreshCommand_ShouldSendManualCancelIntent()
     {
-        var stateService = new StateService();
-        var coordinator = new RecordingPluginRefreshCoordinator();
-        var vm = new PluginListViewModel(
-            stateService,
-            coordinator,
-            new FixedGameCapabilityProvider(supportsApproximation: true),
-            new SynchronousUiDispatcher());
+        var module = new RecordingPluginRefreshModule();
+        var vm = new PluginListViewModel(module);
         try
         {
-            // Simulate a full-list refresh in progress.
-            coordinator.PublishStatus(new PluginRefreshStatus(PluginRefreshStatusKind.LoadingPlugins));
-            vm.IsApproximationRefreshRunning.Should().BeTrue(
-                "LoadingPlugins is part of the running set");
+            vm.OnPluginRefreshSnapshot(Snapshot(
+                rows: [Row("A.esp")],
+                commands: new PluginRefreshCommandAvailability(false, false, false, true)));
 
-            // Coordinator now publishes the new terminal status.
-            coordinator.PublishStatus(PluginRefreshStatus.FullRefreshCompleted(count: 5));
+            await vm.CancelApproximationRefreshCommand.ExecuteAsync(null);
 
-            vm.IsApproximationRefreshRunning.Should().BeFalse(
-                "FullRefreshCompleted is a terminal status and must clear the running flag");
-            vm.CancelApproximationRefreshCommand.CanExecute(null).Should().BeFalse(
-                "the cancel-refresh affordance must disable once the terminal status arrives");
+            module.Intents.OfType<PluginRefreshIntent.Cancel>()
+                .Should().ContainSingle(cancel => cancel.Reason == PluginRefreshCancelReason.Manual);
         }
         finally
         {
             vm.Dispose();
-            stateService.Dispose();
-            coordinator.Dispose();
+            module.Dispose();
         }
     }
 
     [Fact]
-    public void OnPluginRefreshStatusChanged_WhenFailureTerminalStatusPublished_ClearsRunningFlag()
+    public void SnapshotRowUpdates_ShouldPreserveSelectionFromSnapshotAfterApproximationMerge()
     {
-        var stateService = new StateService();
-        var coordinator = new RecordingPluginRefreshCoordinator();
-        var vm = new PluginListViewModel(
-            stateService,
-            coordinator,
-            new FixedGameCapabilityProvider(supportsApproximation: true),
-            new SynchronousUiDispatcher());
+        var module = new RecordingPluginRefreshModule();
+        var vm = new PluginListViewModel(module);
         try
         {
-            // Simulate a full-list refresh in progress before a recoverable coordinator failure.
-            coordinator.PublishStatus(new PluginRefreshStatus(PluginRefreshStatusKind.LoadingPlugins));
-            vm.IsApproximationRefreshRunning.Should().BeTrue(
-                "LoadingPlugins is part of the running set");
+            vm.OnPluginRefreshSnapshot(Snapshot(rows: [Row("A.esp", isSelected: false)]));
 
-            coordinator.PublishStatus(new PluginRefreshStatus(
-                PluginRefreshStatusKind.Idle,
-                Message: "Approximation refresh failed."));
+            vm.OnPluginRefreshSnapshot(Snapshot(rows:
+            [
+                Row("A.esp", isSelected: false, approximation: PluginIssueApproximation.Available(3, 1, 0))
+            ]));
 
-            vm.IsApproximationRefreshRunning.Should().BeFalse(
-                "the failure status is terminal and must clear the running flag");
-            vm.CancelApproximationRefreshCommand.CanExecute(null).Should().BeFalse(
-                "the cancel-refresh affordance must disable once the terminal failure status arrives");
+            vm.PluginsToClean.Should().ContainSingle(item =>
+                item.FileName == "A.esp" &&
+                !item.IsSelected &&
+                item.Approximation.Status == PluginIssueApproximationStatus.Available);
         }
         finally
         {
             vm.Dispose();
-            stateService.Dispose();
-            coordinator.Dispose();
+            module.Dispose();
         }
     }
 
-    [Fact]
-    public void DeselectAllCommand_ShouldExcludeEveryVisiblePluginInState()
+    private static PluginRefreshSnapshot Snapshot(
+        IReadOnlyList<PluginRefreshRow>? rows = null,
+        PluginRefreshActivity? activity = null,
+        PluginRefreshCommandAvailability? commands = null,
+        string statusText = "Ready") =>
+        new(
+            Generation: 1,
+            GameType: GameType.SkyrimSe,
+            Rows: rows ?? [],
+            Configuration: new PluginRefreshConfigurationProjection(
+                LoadOrderPath: null,
+                GameDataFolder: @"C:\Game\Data",
+                HasGameDataFolderOverride: false,
+                XEditPath: null,
+                Mo2Path: null,
+                Mo2ModeEnabled: false,
+                Mo2InstancePath: null,
+                IsMo2InstanceOverride: false,
+                IsMo2InstanceValid: null,
+                AvailableProfiles: [],
+                SelectedProfile: null,
+                CleaningTimeout: 300),
+            Activity: activity ?? new PluginRefreshActivity(false, false),
+            Commands: commands ?? new PluginRefreshCommandAvailability(true, true, true, false),
+            StatusText: statusText);
+
+    private static PluginRefreshRow Row(
+        string fileName,
+        string? fullPath = null,
+        bool isSelected = true,
+        PluginIssueApproximation? approximation = null) =>
+        new(
+            fileName,
+            fullPath ?? $@"C:\Game\Data\{fileName}",
+            GameType.SkyrimSe,
+            isSelected,
+            IsInSkipList: false,
+            approximation ?? PluginIssueApproximation.Unavailable);
+
+    private sealed class RecordingPluginRefreshModule : IPluginRefreshModule, IDisposable
     {
-        var stateService = new StateService();
-        stateService.SetPluginsToClean([
-            new PluginInfo { FileName = "A.esp", FullPath = @"C:\A.esp" },
-            new PluginInfo { FileName = "B.esp", FullPath = @"C:\B.esp" }
-        ]);
+        private readonly Subject<PluginRefreshSnapshot> _snapshots = new();
+        private PluginRefreshSnapshot _lastSnapshot = Snapshot();
 
-        var vm = new PluginListViewModel(
-            stateService,
-            new RecordingPluginRefreshCoordinator(),
-            new FixedGameCapabilityProvider(supportsApproximation: true),
-            new SynchronousUiDispatcher());
-        try
+        public List<PluginRefreshIntent> Intents { get; } = [];
+
+        public IObservable<PluginRefreshSnapshot> Snapshots => _snapshots;
+
+        public Task<PluginRefreshSnapshot> ExecuteAsync(
+            PluginRefreshIntent intent,
+            CancellationToken cancellationToken = default)
         {
-            vm.OnStateChanged(stateService.CurrentState);
-
-            vm.DeselectAllCommand.Execute(null);
-
-            stateService.CurrentState.ExcludedPluginPaths.Should()
-                .BeEquivalentTo(new[] { @"C:\A.esp", @"C:\B.esp" });
-            // Sync state -> VM (the parent dispatches this on the UI thread in production).
-            vm.OnStateChanged(stateService.CurrentState);
-            vm.PluginsToClean.Should().AllSatisfy(item => item.IsSelected.Should().BeFalse());
-        }
-        finally
-        {
-            vm.Dispose();
-            stateService.Dispose();
-        }
-    }
-
-    [Fact]
-    public void SelectAllCommand_ShouldClearExclusionsForVisiblePlugins()
-    {
-        var stateService = new StateService();
-        stateService.SetPluginsToClean([
-            new PluginInfo { FileName = "A.esp", FullPath = @"C:\A.esp" },
-            new PluginInfo { FileName = "B.esp", FullPath = @"C:\B.esp" }
-        ]);
-        stateService.UpdateExcludedPlugins(_ =>
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { @"C:\A.esp", @"C:\B.esp" });
-
-        var vm = new PluginListViewModel(
-            stateService,
-            new RecordingPluginRefreshCoordinator(),
-            new FixedGameCapabilityProvider(supportsApproximation: true),
-            new SynchronousUiDispatcher());
-        try
-        {
-            vm.OnStateChanged(stateService.CurrentState);
-            vm.PluginsToClean.Should().AllSatisfy(item => item.IsSelected.Should().BeFalse());
-
-            vm.SelectAllCommand.Execute(null);
-
-            stateService.CurrentState.ExcludedPluginPaths.Should().BeEmpty();
-            vm.OnStateChanged(stateService.CurrentState);
-            vm.PluginsToClean.Should().AllSatisfy(item => item.IsSelected.Should().BeTrue());
-        }
-        finally
-        {
-            vm.Dispose();
-            stateService.Dispose();
-        }
-    }
-
-    [Fact]
-    public void TogglingPluginListItemIsSelected_ShouldUpdateExcludedPluginsInState()
-    {
-        var stateService = new StateService();
-        stateService.SetPluginsToClean([
-            new PluginInfo { FileName = "A.esp", FullPath = @"C:\A.esp" }
-        ]);
-
-        var vm = new PluginListViewModel(
-            stateService,
-            new RecordingPluginRefreshCoordinator(),
-            new FixedGameCapabilityProvider(supportsApproximation: true),
-            new SynchronousUiDispatcher());
-        try
-        {
-            vm.OnStateChanged(stateService.CurrentState);
-            var row = vm.PluginsToClean.Single();
-
-            row.IsSelected = false;
-
-            stateService.CurrentState.ExcludedPluginPaths.Should().Contain(@"C:\A.esp");
-
-            row.IsSelected = true;
-
-            stateService.CurrentState.ExcludedPluginPaths.Should().NotContain(@"C:\A.esp");
-        }
-        finally
-        {
-            vm.Dispose();
-            stateService.Dispose();
-        }
-    }
-
-    [Fact]
-    public void Selection_ShouldSurviveApproximationMerge()
-    {
-        // Pins down the original bug: rapid MergePluginApproximation calls used to
-        // replace PluginInfo records and clobber a user's IsSelected. Selection now
-        // lives in AppState.ExcludedPluginPaths, so it must remain stable across
-        // approximation updates.
-        var stateService = new StateService();
-        stateService.SetPluginsToClean([
-            new PluginInfo
-            {
-                FileName = "A.esp",
-                FullPath = @"C:\A.esp",
-                Approximation = PluginIssueApproximation.Pending
-            }
-        ]);
-
-        var vm = new PluginListViewModel(
-            stateService,
-            new RecordingPluginRefreshCoordinator(),
-            new FixedGameCapabilityProvider(supportsApproximation: true),
-            new SynchronousUiDispatcher());
-        try
-        {
-            vm.OnStateChanged(stateService.CurrentState);
-            var row = vm.PluginsToClean.Single();
-
-            // User unchecks the box.
-            row.IsSelected = false;
-            stateService.CurrentState.ExcludedPluginPaths.Should().Contain(@"C:\A.esp");
-
-            // Simulate a streaming approximation update — replaces the PluginInfo record.
-            stateService.MergePluginApproximation(new PluginIssueApproximationResult
-            {
-                FileName = "A.esp",
-                FullPath = @"C:\A.esp",
-                Approximation = PluginIssueApproximation.Available(3, 1, 0)
-            });
-
-            stateService.CurrentState.ExcludedPluginPaths.Should().Contain(@"C:\A.esp");
-            vm.OnStateChanged(stateService.CurrentState);
-            vm.PluginsToClean.Single().IsSelected.Should().BeFalse(
-                "the user's deselection must survive PluginInfo record replacement");
-        }
-        finally
-        {
-            vm.Dispose();
-            stateService.Dispose();
-        }
-    }
-
-    [Fact]
-    public void OnStateChanged_ShouldNotEchoSelectionTogglesBackToState()
-    {
-        // When state pushes a new ExcludedPluginPaths set into the VM, the wrapper's
-        // IsSelected updates via SetSelectedFromState, which must NOT re-fire
-        // SelectionToggled — otherwise we'd bounce the change back into state and
-        // mask race conditions.
-        var stateService = Substitute.For<IStateService>();
-        stateService.StateChanged.Returns(Observable.Never<AppState>());
-        var initialState = new AppState
-        {
-            PluginsToClean = [new PluginInfo { FileName = "A.esp", FullPath = @"C:\A.esp" }]
-        };
-        stateService.CurrentState.Returns(initialState);
-
-        var vm = new PluginListViewModel(
-            stateService,
-            new RecordingPluginRefreshCoordinator(),
-            new FixedGameCapabilityProvider(supportsApproximation: true),
-            new SynchronousUiDispatcher());
-        try
-        {
-            vm.OnStateChanged(initialState);
-
-            stateService.ClearReceivedCalls();
-
-            var nextState = initialState with
-            {
-                ExcludedPluginPaths =
-                    new HashSet<string>(StringComparer.OrdinalIgnoreCase) { @"C:\A.esp" }
-            };
-            vm.OnStateChanged(nextState);
-
-            vm.PluginsToClean.Single().IsSelected.Should().BeFalse();
-            stateService.DidNotReceiveWithAnyArgs()
-                .UpdateExcludedPlugins(default!);
-        }
-        finally
-        {
-            vm.Dispose();
-        }
-    }
-
-    /// <summary>
-    /// Regression for the Codex-flagged bleed: the user deselects A.esp under one
-    /// game, then a different game is loaded that also has a file named A.esp at a
-    /// different path. The new row must render selected and the old exclusion must
-    /// be pruned by SetPluginsToClean, since exclusions are keyed by full path.
-    /// </summary>
-    [Fact]
-    public void Selection_ShouldNotLeakAcrossPluginListReplacement_WhenFileNamesCollide()
-    {
-        var stateService = new StateService();
-        stateService.SetPluginsToClean([
-            new PluginInfo { FileName = "A.esp", FullPath = @"C:\GameA\Data\A.esp" }
-        ]);
-
-        var vm = new PluginListViewModel(
-            stateService,
-            new RecordingPluginRefreshCoordinator(),
-            new FixedGameCapabilityProvider(supportsApproximation: true),
-            new SynchronousUiDispatcher());
-        try
-        {
-            vm.OnStateChanged(stateService.CurrentState);
-
-            // User deselects A.esp under Game A.
-            vm.PluginsToClean.Single().IsSelected = false;
-            stateService.CurrentState.ExcludedPluginPaths.Should()
-                .Contain(@"C:\GameA\Data\A.esp");
-
-            // Switch to Game B — different load order, same file name at a different path.
-            stateService.SetPluginsToClean([
-                new PluginInfo { FileName = "A.esp", FullPath = @"C:\GameB\Data\A.esp" }
-            ]);
-            vm.OnStateChanged(stateService.CurrentState);
-
-            stateService.CurrentState.ExcludedPluginPaths.Should()
-                .NotContain(@"C:\GameA\Data\A.esp",
-                    "the Game A path is no longer in the visible list and must be pruned");
-            stateService.CurrentState.ExcludedPluginPaths.Should()
-                .NotContain(@"C:\GameB\Data\A.esp",
-                    "the user never deselected the Game B plugin");
-            vm.PluginsToClean.Single().IsSelected.Should().BeTrue(
-                "the freshly loaded Game B A.esp must default to selected — the Game A deselection must not bleed across");
-        }
-        finally
-        {
-            vm.Dispose();
-            stateService.Dispose();
-        }
-    }
-
-    private sealed class RecordingPluginRefreshCoordinator : IPluginRefreshCoordinator, IDisposable
-    {
-        private readonly Subject<PluginRefreshStatus> _statusChanged = new();
-        private readonly bool _delayUntilReleased;
-        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        public RecordingPluginRefreshCoordinator(bool delayUntilReleased = false)
-        {
-            _delayUntilReleased = delayUntilReleased;
+            Intents.Add(intent);
+            return Task.FromResult(_lastSnapshot);
         }
 
-        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        public IReadOnlyList<PluginRefreshTarget> CapturedTargets { get; private set; } = [];
-
-        public IReadOnlyList<PluginRefreshCancelReason> CancelReasons => _cancelReasons;
-
-        private readonly List<PluginRefreshCancelReason> _cancelReasons = [];
-
-        public IObservable<PluginRefreshStatus> StatusChanged => _statusChanged;
-
-        public Task<PluginRefreshProjection> RefreshForGameAsync(
-            GameType gameType,
-            string? selectedLoadOrderPath = null,
-            CancellationToken ct = default) =>
-            Task.FromResult(new PluginRefreshProjection(gameType, AvailableProfiles: []));
-
-        public async Task RefreshSelectedApproximationsAsync(
-            IReadOnlyList<PluginRefreshTarget> selectedTargets,
-            CancellationToken ct = default)
+        public void Publish(PluginRefreshSnapshot snapshot)
         {
-            CapturedTargets = selectedTargets.ToList();
-            Started.TrySetResult();
-            if (_delayUntilReleased)
-            {
-                await _release.Task.WaitAsync(ct);
-            }
+            _lastSnapshot = snapshot;
+            _snapshots.OnNext(snapshot);
         }
 
-        public void CancelActiveRefresh(PluginRefreshCancelReason reason)
-        {
-            _cancelReasons.Add(reason);
-            _statusChanged.OnNext(new PluginRefreshStatus(PluginRefreshStatusKind.Canceled));
-        }
-
-        public void PublishStatus(PluginRefreshStatus status) => _statusChanged.OnNext(status);
-
-        public void Release() => _release.TrySetResult();
-
-        public void Dispose() => _statusChanged.Dispose();
-    }
-
-    private sealed class FixedGameCapabilityProvider : IGameCapabilityProvider
-    {
-        private readonly bool _supportsApproximation;
-
-        public FixedGameCapabilityProvider(bool supportsApproximation)
-        {
-            _supportsApproximation = supportsApproximation;
-        }
-
-        public GameCapability Get(GameType gameType) => new(
-            gameType,
-            gameType == GameType.Unknown ? PluginDiscoveryMode.None : PluginDiscoveryMode.Automatic,
-            _supportsApproximation && gameType != GameType.Unknown);
-
-        public IReadOnlyList<GameType> GetAvailableGames() => [GameType.SkyrimSe];
+        public void Dispose() => _snapshots.Dispose();
     }
 }

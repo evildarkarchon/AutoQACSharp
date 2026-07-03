@@ -79,15 +79,11 @@ public sealed class MainWindowViewModelInitializationTests
 
         _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>())
             .Returns(config);
-        var refreshCoordinator = Substitute.For<IPluginRefreshCoordinator>();
-        refreshCoordinator.StatusChanged.Returns(Observable.Never<PluginRefreshStatus>());
-        refreshCoordinator.RefreshForGameAsync(
-                Arg.Any<GameType>(),
-                Arg.Any<string?>(),
-                Arg.Any<CancellationToken>())
-            .Returns(callInfo => Task.FromResult(new PluginRefreshProjection(
-                callInfo.ArgAt<GameType>(0),
-                AvailableProfiles: [])));
+        using var refreshModule = new RecordingPluginRefreshModule();
+        refreshModule.ExecuteHandler = (intent, _) => Task.FromResult(
+            intent is PluginRefreshIntent.RefreshGame refresh
+                ? RecordingPluginRefreshModule.CreateSnapshot(gameType: refresh.GameType)
+                : refreshModule.CurrentSnapshot);
         var gameCapabilityProvider = new GameCapabilityProvider();
 
         // Act
@@ -101,7 +97,7 @@ public sealed class MainWindowViewModelInitializationTests
             _pluginServiceMock,
             _pluginLoadingServiceMock,
             _uiDispatcher,
-            refreshCoordinator,
+            refreshModule,
             gameCapabilityProvider);
 
         await WaitForSignalAsync(initializationApplied);

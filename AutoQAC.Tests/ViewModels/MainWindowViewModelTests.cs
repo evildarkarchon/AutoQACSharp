@@ -29,7 +29,7 @@ public sealed class MainWindowViewModelTests
     private readonly IPluginValidationService _pluginServiceMock;
     private readonly IPluginLoadingService _pluginLoadingServiceMock;
     private readonly IUiDispatcher _uiDispatcher;
-    private readonly IPluginRefreshCoordinator _pluginRefreshCoordinator;
+    private readonly RecordingPluginRefreshModule _pluginRefreshModule;
     private readonly IGameCapabilityProvider _gameCapabilityProvider;
 
     public MainWindowViewModelTests()
@@ -44,20 +44,7 @@ public sealed class MainWindowViewModelTests
         _pluginLoadingServiceMock = Substitute.For<IPluginLoadingService>();
         _uiDispatcher = new SynchronousUiDispatcher();
         _gameCapabilityProvider = new GameCapabilityProvider();
-        var gameDetectionService = Substitute.For<AutoQAC.Services.GameDetection.IGameDetectionService>();
-        gameDetectionService
-            .DetectVariant(Arg.Any<GameType>(), Arg.Any<IReadOnlyList<string>>())
-            .Returns(GameVariant.None);
-        _pluginRefreshCoordinator = new PluginRefreshCoordinator(
-            _pluginLoadingServiceMock,
-            new NoOpPluginIssueApproximationService(),
-            _stateServiceMock,
-            new StateServicePluginRefreshPublication(_stateServiceMock),
-            _gameCapabilityProvider,
-            _configServiceMock,
-            new SkipListPolicy(_configServiceMock, gameDetectionService),
-            Substitute.For<AutoQAC.Services.MO2.IMo2InstanceService>(),
-            _loggerMock);
+        _pluginRefreshModule = new RecordingPluginRefreshModule();
 
         // Default setup for CleaningCompleted observable
         _stateServiceMock.CleaningCompleted
@@ -90,16 +77,7 @@ public sealed class MainWindowViewModelTests
         return new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 
-    private sealed class NoOpPluginIssueApproximationService : IPluginIssueApproximationService
-    {
-        public Task<IReadOnlyList<PluginIssueApproximationResult>> GetApproximationsAsync(
-            PluginIssueApproximationRequest request,
-            Action<PluginIssueApproximationResult>? onApproximationReady = null,
-            CancellationToken ct = default) =>
-            Task.FromResult<IReadOnlyList<PluginIssueApproximationResult>>([]);
-    }
-
-    private IPluginRefreshCoordinator CreatePluginRefreshCoordinator(
+    private PluginRefreshModule CreatePluginRefreshModule(
         IPluginIssueApproximationService approximationService,
         IStateService? stateService = null)
     {
@@ -108,11 +86,10 @@ public sealed class MainWindowViewModelTests
         gameDetectionService
             .DetectVariant(Arg.Any<GameType>(), Arg.Any<IReadOnlyList<string>>())
             .Returns(GameVariant.None);
-        return new PluginRefreshCoordinator(
+        return new PluginRefreshModule(
             _pluginLoadingServiceMock,
             approximationService,
             effectiveStateService,
-            new StateServicePluginRefreshPublication(effectiveStateService),
             _gameCapabilityProvider,
             _configServiceMock,
             new SkipListPolicy(_configServiceMock, gameDetectionService),
@@ -169,7 +146,7 @@ public sealed class MainWindowViewModelTests
                 _pluginServiceMock,
                 _pluginLoadingServiceMock,
                 _uiDispatcher,
-                _pluginRefreshCoordinator,
+                _pluginRefreshModule,
                 _gameCapabilityProvider);
             using var _ = vm.ShowProgressInteraction.RegisterHandler(_ => Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
 
@@ -219,7 +196,7 @@ public sealed class MainWindowViewModelTests
                 _pluginServiceMock,
                 _pluginLoadingServiceMock,
                 _uiDispatcher,
-                _pluginRefreshCoordinator,
+                _pluginRefreshModule,
                 _gameCapabilityProvider);
             using var _ = vm.ShowProgressInteraction.RegisterHandler(_ => throw new ApplicationException("Progress window failed"));
 
@@ -271,7 +248,7 @@ public sealed class MainWindowViewModelTests
                 _pluginServiceMock,
                 _pluginLoadingServiceMock,
                 _uiDispatcher,
-                _pluginRefreshCoordinator,
+                _pluginRefreshModule,
                 _gameCapabilityProvider);
             using var _ = vm.ShowPreviewInteraction.RegisterHandler(_ => throw new ApplicationException("Preview window failed"));
 
@@ -312,7 +289,7 @@ public sealed class MainWindowViewModelTests
                 _pluginServiceMock,
                 _pluginLoadingServiceMock,
                 _uiDispatcher,
-                _pluginRefreshCoordinator,
+                _pluginRefreshModule,
                 _gameCapabilityProvider);
 
             _fileDialogMock.OpenFileDialogAsync(
@@ -340,17 +317,15 @@ public sealed class MainWindowViewModelTests
                     Arg.Any<CancellationToken>())
                 .Returns(new List<string>());
             vm.Configuration.SelectedGame = GameType.FalloutNewVegas;
+            _pluginRefreshModule.Intents.Clear();
 
             // Act
             await vm.Configuration.ConfigureLoadOrderCommand.ExecuteAsync(null);
 
             // Assert
-            _stateServiceMock.Received(1).UpdateConfigurationPaths(
-                tempFile,
-                Arg.Any<string?>(),
-                Arg.Any<string?>(),
-                Arg.Any<string?>());
-            _stateServiceMock.Received(1).SetPluginsToClean(Arg.Is<List<PluginInfo>>(l => l.Count == 2 && l[0].FileName == "Update.esm"));
+            _pluginRefreshModule.Intents.OfType<PluginRefreshIntent.RefreshGame>()
+                .Should().ContainSingle(refresh =>
+                    refresh.GameType == GameType.FalloutNewVegas && refresh.SelectedLoadOrderPath == tempFile);
             await _configServiceMock.Received().SetGameLoadOrderOverrideAsync(GameType.FalloutNewVegas, tempFile, Arg.Any<CancellationToken>());
         }
         finally
@@ -402,7 +377,7 @@ public sealed class MainWindowViewModelTests
                 _pluginServiceMock,
                 _pluginLoadingServiceMock,
                 _uiDispatcher,
-                _pluginRefreshCoordinator,
+                _pluginRefreshModule,
                 _gameCapabilityProvider);
             using var _ = vm.ShowProgressInteraction.RegisterHandler(_ => Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
 
@@ -459,7 +434,7 @@ public sealed class MainWindowViewModelTests
             _pluginServiceMock,
             _pluginLoadingServiceMock,
             _uiDispatcher,
-            _pluginRefreshCoordinator,
+            _pluginRefreshModule,
             _gameCapabilityProvider);
 
         // Configure dialog to return null (user cancelled)
@@ -511,7 +486,7 @@ public sealed class MainWindowViewModelTests
                 _pluginServiceMock,
                 _pluginLoadingServiceMock,
                 _uiDispatcher,
-                _pluginRefreshCoordinator,
+                _pluginRefreshModule,
                 _gameCapabilityProvider);
 
             await WaitForSignalAsync(initializationApplied);
@@ -525,6 +500,8 @@ public sealed class MainWindowViewModelTests
             // Plugin service throws exception for the corrupted file path
             _pluginLoadingServiceMock.GetPluginsFromFileAsync(tempFile, Arg.Any<string?>(), Arg.Any<CancellationToken>())
                 .ThrowsAsync(new InvalidOperationException("Failed to parse load order"));
+            _pluginRefreshModule.ExecuteHandler = (_, _) =>
+                throw new InvalidOperationException("Failed to parse load order");
             vm.Configuration.SelectedGame = GameType.FalloutNewVegas;
 
             // Act
@@ -574,7 +551,7 @@ public sealed class MainWindowViewModelTests
             _pluginServiceMock,
             _pluginLoadingServiceMock,
             _uiDispatcher,
-            _pluginRefreshCoordinator,
+            _pluginRefreshModule,
             _gameCapabilityProvider);
 
         // Act - set properties on Configuration sub-VM (these don't affect CanStartCleaning
@@ -608,7 +585,7 @@ public sealed class MainWindowViewModelTests
             _pluginServiceMock,
             _pluginLoadingServiceMock,
             _uiDispatcher,
-            _pluginRefreshCoordinator,
+            _pluginRefreshModule,
             _gameCapabilityProvider);
 
         // Set valid paths on Configuration sub-VM
@@ -651,7 +628,7 @@ public sealed class MainWindowViewModelTests
             _pluginServiceMock,
             _pluginLoadingServiceMock,
             _uiDispatcher,
-            _pluginRefreshCoordinator,
+            _pluginRefreshModule,
             _gameCapabilityProvider);
 
         // Act
@@ -711,7 +688,7 @@ public sealed class MainWindowViewModelTests
             _pluginServiceMock,
             _pluginLoadingServiceMock,
             _uiDispatcher,
-            _pluginRefreshCoordinator,
+            _pluginRefreshModule,
             _gameCapabilityProvider);
 
         // Act
@@ -753,7 +730,7 @@ public sealed class MainWindowViewModelTests
             _pluginServiceMock,
             _pluginLoadingServiceMock,
             _uiDispatcher,
-            _pluginRefreshCoordinator,
+            _pluginRefreshModule,
             _gameCapabilityProvider);
 
         // Act
@@ -795,7 +772,7 @@ public sealed class MainWindowViewModelTests
             _pluginServiceMock,
             _pluginLoadingServiceMock,
             _uiDispatcher,
-            _pluginRefreshCoordinator,
+            _pluginRefreshModule,
             _gameCapabilityProvider);
 
         await vm.Commands.StopCleaningCommand.ExecuteAsync(null);
@@ -831,6 +808,8 @@ public sealed class MainWindowViewModelTests
             .Returns(selectedPath);
         _pluginLoadingServiceMock.GetPluginsFromFileAsync(selectedPath, Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("Access denied reading C:\\Users\\Alice\\AppData\\Local\\Skyrim Special Edition\\plugins.txt"));
+        _pluginRefreshModule.ExecuteHandler = (_, _) =>
+            throw new InvalidOperationException("Access denied reading C:\\Users\\Alice\\AppData\\Local\\Skyrim Special Edition\\plugins.txt");
         _messageDialogMock.ShowErrorAsync(
                 Arg.Any<string>(),
                 Arg.Any<string>(),
@@ -854,7 +833,7 @@ public sealed class MainWindowViewModelTests
                 _pluginServiceMock,
                 _pluginLoadingServiceMock,
                 _uiDispatcher,
-                _pluginRefreshCoordinator,
+                _pluginRefreshModule,
                 _gameCapabilityProvider);
             vm.Configuration.SelectedGame = GameType.FalloutNewVegas;
 
@@ -908,7 +887,7 @@ public sealed class MainWindowViewModelTests
             _pluginServiceMock,
             _pluginLoadingServiceMock,
             _uiDispatcher,
-            _pluginRefreshCoordinator,
+            _pluginRefreshModule,
             _gameCapabilityProvider);
         vm.Configuration.SelectedGame = GameType.SkyrimSe;
 
@@ -944,7 +923,7 @@ public sealed class MainWindowViewModelTests
             _pluginServiceMock,
             _pluginLoadingServiceMock,
             _uiDispatcher,
-            _pluginRefreshCoordinator,
+            _pluginRefreshModule,
             _gameCapabilityProvider);
 
         await vm.Commands.StopCleaningCommand.ExecuteAsync(null);
@@ -983,7 +962,7 @@ public sealed class MainWindowViewModelTests
             _pluginServiceMock,
             _pluginLoadingServiceMock,
             _uiDispatcher,
-            _pluginRefreshCoordinator,
+            _pluginRefreshModule,
             _gameCapabilityProvider);
 
         await vm.Commands.StopCleaningCommand.ExecuteAsync(null);
@@ -1022,7 +1001,7 @@ public sealed class MainWindowViewModelTests
             _pluginServiceMock,
             _pluginLoadingServiceMock,
             _uiDispatcher,
-            _pluginRefreshCoordinator,
+            _pluginRefreshModule,
             _gameCapabilityProvider);
 
         await vm.Commands.StopCleaningCommand.ExecuteAsync(null);
@@ -1056,7 +1035,7 @@ public sealed class MainWindowViewModelTests
             _pluginServiceMock,
             _pluginLoadingServiceMock,
             _uiDispatcher,
-            _pluginRefreshCoordinator,
+            _pluginRefreshModule,
             _gameCapabilityProvider);
 
         // Act
@@ -1084,7 +1063,7 @@ public sealed class MainWindowViewModelTests
         // Arrange
         using var stateService = new StateService();
         var configService = Substitute.For<IConfigurationService>();
-        var refreshCoordinator = Substitute.For<IPluginRefreshCoordinator>();
+        using var refreshModule = new RecordingPluginRefreshModule();
         var refreshObserved = CreateSignal();
         UserConfiguration? savedConfig = null;
 
@@ -1100,16 +1079,15 @@ public sealed class MainWindowViewModelTests
                 return Task.CompletedTask;
             });
 
-        refreshCoordinator.StatusChanged.Returns(Observable.Never<PluginRefreshStatus>());
-        refreshCoordinator.RefreshForGameAsync(
-                Arg.Any<GameType>(),
-                Arg.Any<string?>(),
-                Arg.Any<CancellationToken>())
-            .Returns(_ =>
+        refreshModule.ExecuteHandler = (intent, _) =>
+        {
+            if (intent is PluginRefreshIntent.RefreshGame)
             {
                 refreshObserved.TrySetResult(true);
-                return Task.FromResult(new PluginRefreshProjection(GameType.Unknown, AvailableProfiles: []));
-            });
+            }
+
+            return Task.FromResult(refreshModule.CurrentSnapshot);
+        };
 
         var vm = new ConfigurationViewModel(
             configService,
@@ -1119,9 +1097,8 @@ public sealed class MainWindowViewModelTests
             _messageDialogMock,
             _pluginServiceMock,
             _pluginLoadingServiceMock,
-            pluginRefreshCoordinator: refreshCoordinator,
-            gameCapabilityProvider: _gameCapabilityProvider,
-            uiDispatcher: _uiDispatcher);
+            pluginRefreshModule: refreshModule,
+            gameCapabilityProvider: _gameCapabilityProvider);
 
         try
         {
@@ -1149,15 +1126,13 @@ public sealed class MainWindowViewModelTests
         // Arrange
         using var stateService = new StateService();
         var configService = Substitute.For<IConfigurationService>();
-        var refreshCoordinator = Substitute.For<IPluginRefreshCoordinator>();
+        using var refreshModule = new RecordingPluginRefreshModule();
 
         configService.SkipListChanged.Returns(Observable.Never<GameType>());
         configService.LoadUserConfigAsync(Arg.Any<CancellationToken>())
             .Returns(_ => new UserConfiguration { LoadOrder = new(), XEdit = new(), ModOrganizer = new(), Settings = new() });
         configService.GetSelectedGameAsync(Arg.Any<CancellationToken>())
             .Returns(GameType.Unknown);
-        refreshCoordinator.StatusChanged.Returns(Observable.Never<PluginRefreshStatus>());
-
         var vm = new ConfigurationViewModel(
             configService,
             stateService,
@@ -1166,9 +1141,8 @@ public sealed class MainWindowViewModelTests
             _messageDialogMock,
             _pluginServiceMock,
             _pluginLoadingServiceMock,
-            pluginRefreshCoordinator: refreshCoordinator,
-            gameCapabilityProvider: _gameCapabilityProvider,
-            uiDispatcher: _uiDispatcher);
+            pluginRefreshModule: refreshModule,
+            gameCapabilityProvider: _gameCapabilityProvider);
 
         try
         {
@@ -1195,7 +1169,7 @@ public sealed class MainWindowViewModelTests
         {
             using var stateService = new StateService();
             var configService = Substitute.For<IConfigurationService>();
-            var refreshCoordinator = Substitute.For<IPluginRefreshCoordinator>();
+            using var refreshModule = new RecordingPluginRefreshModule();
 
             configService.SkipListChanged.Returns(Observable.Never<GameType>());
             configService.LoadUserConfigAsync(Arg.Any<CancellationToken>())
@@ -1208,13 +1182,6 @@ public sealed class MainWindowViewModelTests
                 });
             configService.GetSelectedGameAsync(Arg.Any<CancellationToken>())
                 .Returns(GameType.Unknown);
-            refreshCoordinator.StatusChanged.Returns(Observable.Never<PluginRefreshStatus>());
-            refreshCoordinator.RefreshForGameAsync(
-                    GameType.Unknown,
-                    Arg.Any<string?>(),
-                    Arg.Any<CancellationToken>())
-                .Returns(Task.FromResult(new PluginRefreshProjection(GameType.Unknown, AvailableProfiles: [])));
-
             var vm = new ConfigurationViewModel(
                 configService,
                 stateService,
@@ -1223,16 +1190,14 @@ public sealed class MainWindowViewModelTests
                 _messageDialogMock,
                 _pluginServiceMock,
                 _pluginLoadingServiceMock,
-                pluginRefreshCoordinator: refreshCoordinator,
-                gameCapabilityProvider: _gameCapabilityProvider,
-                uiDispatcher: _uiDispatcher);
+                pluginRefreshModule: refreshModule,
+                gameCapabilityProvider: _gameCapabilityProvider);
 
             await vm.InitializeAsync();
 
-            await refreshCoordinator.Received(1).RefreshForGameAsync(
-                GameType.Unknown,
-                null,
-                Arg.Any<CancellationToken>());
+            refreshModule.Intents.OfType<PluginRefreshIntent.RefreshGame>()
+                .Should().ContainSingle(refresh =>
+                    refresh.GameType == GameType.Unknown && refresh.SelectedLoadOrderPath == null);
             await _pluginServiceMock.DidNotReceive().GetPluginsFromLoadOrderAsync(
                 Arg.Any<string>(),
                 Arg.Any<string?>(),
@@ -1275,7 +1240,7 @@ public sealed class MainWindowViewModelTests
             _pluginServiceMock,
             _pluginLoadingServiceMock,
             _uiDispatcher,
-            _pluginRefreshCoordinator,
+            _pluginRefreshModule,
             _gameCapabilityProvider);
 
         // Assert - AvailableGames is now on Configuration sub-VM
@@ -1302,7 +1267,7 @@ public sealed class MainWindowViewModelTests
             _pluginServiceMock,
             _pluginLoadingServiceMock,
             _uiDispatcher,
-            _pluginRefreshCoordinator,
+            _pluginRefreshModule,
             _gameCapabilityProvider);
 
         // Act & Assert - Default is Unknown (not supported)
@@ -1350,7 +1315,7 @@ public sealed class MainWindowViewModelTests
             _pluginServiceMock,
             _pluginLoadingServiceMock,
             _uiDispatcher,
-            _pluginRefreshCoordinator,
+            _pluginRefreshModule,
             _gameCapabilityProvider);
 
         // Act
@@ -1406,6 +1371,13 @@ public sealed class MainWindowViewModelTests
                     pluginsLoaded.TrySetResult(true);
                 }
             });
+        var approximationService = Substitute.For<IPluginIssueApproximationService>();
+        approximationService.GetApproximationsAsync(
+                Arg.Any<PluginIssueApproximationRequest>(),
+                Arg.Any<Action<PluginIssueApproximationResult>?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<PluginIssueApproximationResult>>([]));
+        using var refreshModule = CreatePluginRefreshModule(approximationService);
 
         var vm = new MainWindowViewModel(
             _configServiceMock,
@@ -1417,7 +1389,7 @@ public sealed class MainWindowViewModelTests
             _pluginServiceMock,
             _pluginLoadingServiceMock,
             _uiDispatcher,
-            _pluginRefreshCoordinator,
+            refreshModule,
             _gameCapabilityProvider);
 
         // Act
@@ -1520,7 +1492,7 @@ public sealed class MainWindowViewModelTests
             _pluginServiceMock,
             _pluginLoadingServiceMock,
             _uiDispatcher,
-            CreatePluginRefreshCoordinator(approximationServiceMock, stateService),
+            CreatePluginRefreshModule(approximationServiceMock, stateService),
             _gameCapabilityProvider);
 
         vm.Configuration.SelectedGame = GameType.SkyrimSe;
@@ -1599,7 +1571,7 @@ public sealed class MainWindowViewModelTests
             _pluginServiceMock,
             _pluginLoadingServiceMock,
             _uiDispatcher,
-            CreatePluginRefreshCoordinator(approximationServiceMock, stateService),
+            CreatePluginRefreshModule(approximationServiceMock, stateService),
             _gameCapabilityProvider);
 
         vm.Configuration.SelectedGame = GameType.SkyrimSe;
@@ -1682,7 +1654,7 @@ public sealed class MainWindowViewModelTests
             _pluginServiceMock,
             _pluginLoadingServiceMock,
             _uiDispatcher,
-            CreatePluginRefreshCoordinator(approximationServiceMock),
+            CreatePluginRefreshModule(approximationServiceMock),
             _gameCapabilityProvider);
 
         vm.Configuration.SelectedGame = GameType.SkyrimSe;
@@ -1756,7 +1728,7 @@ public sealed class MainWindowViewModelTests
             _pluginServiceMock,
             _pluginLoadingServiceMock,
             _uiDispatcher,
-            _pluginRefreshCoordinator,
+            _pluginRefreshModule,
             _gameCapabilityProvider);
 
         // Act
@@ -1795,15 +1767,7 @@ public sealed class MainWindowViewModelTests
                 .Returns(newPath);
 
             var stateService = new StateService();
-            var refreshCoordinator = Substitute.For<IPluginRefreshCoordinator>();
-            refreshCoordinator.StatusChanged.Returns(Observable.Never<PluginRefreshStatus>());
-            refreshCoordinator.RefreshForGameAsync(
-                    Arg.Any<GameType>(),
-                    Arg.Any<string?>(),
-                    Arg.Any<CancellationToken>())
-                .Returns(callInfo => Task.FromResult(new PluginRefreshProjection(
-                    callInfo.ArgAt<GameType>(0),
-                    AvailableProfiles: [])));
+            using var refreshModule = new RecordingPluginRefreshModule();
             var vm = new ConfigurationViewModel(
                 configService,
                 stateService,
@@ -1812,9 +1776,8 @@ public sealed class MainWindowViewModelTests
                 _messageDialogMock,
                 _pluginServiceMock,
                 _pluginLoadingServiceMock,
-                refreshCoordinator,
-                _gameCapabilityProvider,
-                _uiDispatcher);
+                refreshModule,
+                _gameCapabilityProvider);
             await vm.InitializeAsync();
 
             // Act
@@ -1869,7 +1832,7 @@ public sealed class MainWindowViewModelTests
             _pluginServiceMock,
             _pluginLoadingServiceMock,
             _uiDispatcher,
-            _pluginRefreshCoordinator,
+            _pluginRefreshModule,
             _gameCapabilityProvider);
         using var _ = vm.ShowSettingsInteraction.RegisterHandler(_ => Task.FromResult(true));
         _stateServiceMock.ClearReceivedCalls();
@@ -1923,7 +1886,7 @@ public sealed class MainWindowViewModelTests
             _pluginServiceMock,
             _pluginLoadingServiceMock,
             _uiDispatcher,
-            _pluginRefreshCoordinator,
+            _pluginRefreshModule,
             _gameCapabilityProvider);
 
         // Act
@@ -1966,6 +1929,13 @@ public sealed class MainWindowViewModelTests
                     emptyPluginListPublished.TrySetResult(true);
                 }
             });
+        var approximationService = Substitute.For<IPluginIssueApproximationService>();
+        approximationService.GetApproximationsAsync(
+                Arg.Any<PluginIssueApproximationRequest>(),
+                Arg.Any<Action<PluginIssueApproximationResult>?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<PluginIssueApproximationResult>>([]));
+        using var refreshModule = CreatePluginRefreshModule(approximationService);
 
         var vm = new MainWindowViewModel(
             _configServiceMock,
@@ -1977,7 +1947,7 @@ public sealed class MainWindowViewModelTests
             _pluginServiceMock,
             _pluginLoadingServiceMock,
             _uiDispatcher,
-            _pluginRefreshCoordinator,
+            refreshModule,
             _gameCapabilityProvider);
 
         // Act
@@ -2014,7 +1984,7 @@ public sealed class MainWindowViewModelTests
             _pluginServiceMock,
             _pluginLoadingServiceMock,
             _uiDispatcher,
-            _pluginRefreshCoordinator,
+            _pluginRefreshModule,
             _gameCapabilityProvider);
 
         // Act & Assert

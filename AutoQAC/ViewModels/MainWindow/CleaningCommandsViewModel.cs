@@ -29,7 +29,7 @@ public sealed partial class CleaningCommandsViewModel(
     ICleaningSession cleaningSession,
     IConfigurationService configService,
     IGameCapabilityProvider gameCapabilityProvider,
-    IPluginRefreshCoordinator pluginRefreshCoordinator,
+    IPluginRefreshModule pluginRefreshModule,
     ILoggingService logger,
     IMessageDialogService messageDialog,
     IAppLifetime appLifetime,
@@ -41,7 +41,7 @@ public sealed partial class CleaningCommandsViewModel(
     Interaction<Unit, Unit> showAboutInteraction)
     : ViewModelBase, IDisposable
 {
-    private readonly IPluginRefreshCoordinator _pluginRefreshCoordinator = pluginRefreshCoordinator;
+    private readonly IPluginRefreshModule _pluginRefreshModule = pluginRefreshModule;
 
     [ObservableProperty] public partial string StatusText { get; set; } = "Ready";
 
@@ -99,7 +99,8 @@ public sealed partial class CleaningCommandsViewModel(
 
         try
         {
-            _pluginRefreshCoordinator.CancelActiveRefresh(PluginRefreshCancelReason.CleaningStarted);
+            await _pluginRefreshModule.ExecuteAsync(
+                new PluginRefreshIntent.Cancel(PluginRefreshCancelReason.CleaningStarted));
             await showProgressInteraction.Handle(cleaningSession);
 
             StatusText = "Cleaning started...";
