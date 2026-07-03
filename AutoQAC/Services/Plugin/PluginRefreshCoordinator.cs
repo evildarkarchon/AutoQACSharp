@@ -28,7 +28,6 @@ public sealed partial class PluginRefreshCoordinator : IPluginRefreshCoordinator
     private readonly IMo2InstanceService _mo2InstanceService;
     private readonly ILoggingService? _logger;
     private CancellationTokenSource? _activeRefreshCts;
-    private PluginRefreshContext? _lastSuccessfulContext;
 
     /// <summary>
     /// Initializes a new refresh coordinator with the services needed to assemble refresh context and publish rows.
@@ -74,7 +73,6 @@ public sealed partial class PluginRefreshCoordinator : IPluginRefreshCoordinator
             if (gameType == GameType.Unknown)
             {
                 if (!publicationScope.IsVisible) return projection;
-                _lastSuccessfulContext = null;
                 publicationScope.PublishNoGameSelected();
                 return projection;
             }
@@ -91,7 +89,6 @@ public sealed partial class PluginRefreshCoordinator : IPluginRefreshCoordinator
 
             if (contextResult.Context is null)
             {
-                _lastSuccessfulContext = null;
                 publicationScope.PublishNoRefreshContext(contextResult.Status ?? new PluginRefreshStatus(
                     PluginRefreshStatusKind.Idle,
                     Message: GetNoPluginsFoundMessage(gameType)));
@@ -99,7 +96,6 @@ public sealed partial class PluginRefreshCoordinator : IPluginRefreshCoordinator
             }
 
             var context = contextResult.Context;
-            _lastSuccessfulContext = context;
             publicationScope.PublishLoadingPlugins();
 
             var loadedPlugins = await LoadPluginsAsync(context, token).ConfigureAwait(false);
@@ -288,8 +284,6 @@ public sealed partial class PluginRefreshCoordinator : IPluginRefreshCoordinator
 
         // Selected refreshes must reflect current same-game settings such as MO2 mode,
         // profile, load-order path, and data-folder overrides; a game-only cache key is stale.
-        _lastSuccessfulContext = contextResult.Context;
-
         return contextResult.Context;
     }
 
