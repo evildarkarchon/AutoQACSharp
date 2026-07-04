@@ -12,6 +12,7 @@ public sealed class PluginRefreshDiscoveryFreshnessToken
 {
     private readonly GameType _gameType;
     private readonly bool _mo2ModeEnabled;
+    private readonly string? _mo2ExecutablePath;
     private readonly string? _loadOrderPath;
     private readonly string? _gameDataFolderOverride;
     private readonly string? _mo2InstancePath;
@@ -22,6 +23,7 @@ public sealed class PluginRefreshDiscoveryFreshnessToken
     internal PluginRefreshDiscoveryFreshnessToken(
         GameType gameType,
         bool mo2ModeEnabled,
+        string? mo2ExecutablePath,
         string? loadOrderPath,
         string? gameDataFolderOverride,
         string? mo2InstancePath,
@@ -31,6 +33,7 @@ public sealed class PluginRefreshDiscoveryFreshnessToken
     {
         _gameType = gameType;
         _mo2ModeEnabled = mo2ModeEnabled;
+        _mo2ExecutablePath = mo2ExecutablePath;
         _loadOrderPath = loadOrderPath;
         _gameDataFolderOverride = gameDataFolderOverride;
         _mo2InstancePath = mo2InstancePath;
@@ -51,6 +54,11 @@ public sealed class PluginRefreshDiscoveryFreshnessToken
         if (current._mo2ModeEnabled != _mo2ModeEnabled)
         {
             return new PluginRefreshFreshness(false, PluginRefreshStalenessReason.Mo2ModeChanged);
+        }
+
+        if (!StringComparer.OrdinalIgnoreCase.Equals(current._mo2ExecutablePath, _mo2ExecutablePath))
+        {
+            return new PluginRefreshFreshness(false, PluginRefreshStalenessReason.Mo2ExecutablePathChanged);
         }
 
         if (!StringComparer.OrdinalIgnoreCase.Equals(current._loadOrderPath, _loadOrderPath))

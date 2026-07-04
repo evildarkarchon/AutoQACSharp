@@ -80,6 +80,7 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<IConfigurationService>(),
                 sp.GetRequiredService<IPluginValidationService>(),
                 sp.GetRequiredService<IPluginRefreshModule>(),
+                sp.GetRequiredService<IMo2ValidationService>(),
                 sp.GetRequiredService<IStateService>(),
                 sp.GetRequiredService<ILoggingService>()));
             services.AddSingleton<IBackupSessionCoordinator, BackupSessionCoordinator>();

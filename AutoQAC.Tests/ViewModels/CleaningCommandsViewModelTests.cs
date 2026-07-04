@@ -95,6 +95,67 @@ public sealed class CleaningCommandsViewModelTests
     }
 
     [Fact]
+    public async Task StartCommand_WhenConfigPersistenceFails_ShouldProjectSpecificValidationError()
+    {
+        var tempXEditPath = Path.Combine(Path.GetTempPath(), $"AutoQAC-{Guid.NewGuid():N}.exe");
+        await File.WriteAllTextAsync(tempXEditPath, string.Empty);
+
+        var stateService = new StateService();
+        var cleaningSession = Substitute.For<ICleaningSession>();
+        using var refreshModule = new RecordingPluginRefreshModule();
+        var failure = new ConfigPersistenceFailure(
+            ConfigPersistenceOperationKind.Flush,
+            ConfigPersistenceFailureKind.WriteFailed,
+            "Could not write settings file (write_failed)",
+            LogReference: null,
+            Generation: 1);
+        cleaningSession.StartAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromException(new ConfigPersistenceFailureException(failure, failure.SafeSummary)));
+
+        var progressInteraction = new Interaction<ICleaningSession, Unit>();
+        using var progressRegistration = progressInteraction.RegisterHandler(_ => Task.FromResult(Unit.Default));
+
+        var viewModel = new CleaningCommandsViewModel(
+            stateService,
+            cleaningSession,
+            Substitute.For<IConfigurationService>(),
+            new GameCapabilityProvider(),
+            refreshModule,
+            Substitute.For<ILoggingService>(),
+            Substitute.For<IMessageDialogService>(),
+            Substitute.For<IAppLifetime>(),
+            progressInteraction,
+            new Interaction<List<DryRunResult>, Unit>(),
+            new Interaction<Unit, bool>(),
+            new Interaction<Unit, bool>(),
+            new Interaction<Unit, Unit>(),
+            new Interaction<Unit, Unit>());
+
+        try
+        {
+            stateService.UpdateConfigurationPaths(null, null, tempXEditPath);
+            stateService.SetPluginsToClean([
+                new PluginInfo { FileName = "NeedsCleaning.esp", FullPath = @"C:\Game\Data\NeedsCleaning.esp" }
+            ]);
+            viewModel.OnStateChanged(stateService.CurrentState);
+
+            await viewModel.StartCleaningCommand.ExecuteAsync(null);
+
+            viewModel.StatusText.Should().Be("Configuration error");
+            var error = viewModel.ValidationErrors.Should().ContainSingle().Subject;
+            error.Title.Should().Be("Configuration save failed");
+            error.Message.Should().Be(failure.SafeSummary);
+            error.FixStep.Should().Be("Check the latest configuration save error and try again.");
+        }
+        finally
+        {
+            viewModel.Dispose();
+            stateService.Dispose();
+            File.Delete(tempXEditPath);
+        }
+    }
+
+    [Fact]
     public void ExitCommand_ShouldRequestApplicationShutdown()
     {
         var appLifetime = Substitute.For<IAppLifetime>();

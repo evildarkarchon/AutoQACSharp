@@ -115,6 +115,11 @@ public sealed partial class CleaningCommandsViewModel(
             logger.Error(ex, "Cleaning preflight failed before cleaning");
             ProjectPreflightFailure(ex.Failure);
         }
+        catch (ConfigPersistenceFailureException ex)
+        {
+            logger.Error(ex, "Configuration persistence failed before cleaning");
+            ProjectPreflightFailure(ToPreflightFailure(ex));
+        }
         catch (InvalidOperationException ex)
         {
             logger.Error(ex, "Configuration validation failed before cleaning");
@@ -170,6 +175,11 @@ public sealed partial class CleaningCommandsViewModel(
         {
             logger.Error(ex, "Cleaning preflight failed before preview");
             ProjectPreflightFailure(ex.Failure);
+        }
+        catch (ConfigPersistenceFailureException ex)
+        {
+            logger.Error(ex, "Configuration persistence failed before preview");
+            ProjectPreflightFailure(ToPreflightFailure(ex));
         }
         catch (InvalidOperationException ex)
         {
@@ -461,6 +471,11 @@ public sealed partial class CleaningCommandsViewModel(
 
     private static string MissingLoadOrderMessage(string? path) =>
         $"{DiagnosticTextFormatter.SafeFileIdentifier("Load Order File", path, "load order file")} is missing. Choose the current plugins.txt or loadorder.txt file.";
+
+    private static CleaningPreflightFailure ToPreflightFailure(ConfigPersistenceFailureException ex) =>
+        new(
+            CleaningPreflightFailureKind.ConfigPersistenceFailed,
+            ex.Failure.SafeSummary);
 
     private void ProjectPreflightFailure(CleaningPreflightFailure failure)
     {

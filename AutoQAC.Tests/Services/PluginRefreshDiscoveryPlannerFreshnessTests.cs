@@ -58,6 +58,21 @@ public sealed class PluginRefreshDiscoveryPlannerFreshnessTests
     }
 
     [Fact]
+    public async Task CheckFreshnessAsync_ReturnsMo2ExecutablePathChanged_WhenMo2BinaryChanges()
+    {
+        var userConfig = CreateUserConfig(mo2Binary: @"C:\MO2\ModOrganizer.exe");
+        var gameDataFolderOverride = @"C:\Overrides\Skyrim\Data";
+        var sut = CreateSut(userConfig, () => gameDataFolderOverride);
+        var plan = CreateMo2Plan(userConfig.ModOrganizer.Binary);
+        var accepted = await sut.CreateFreshnessTokenAsync(plan);
+        userConfig.ModOrganizer.Binary = @"D:\MO2\ModOrganizer.exe";
+
+        var freshness = await sut.CheckFreshnessAsync(accepted, CreateMatchingContext(plan));
+
+        freshness.Should().Be(new PluginRefreshFreshness(false, PluginRefreshStalenessReason.Mo2ExecutablePathChanged));
+    }
+
+    [Fact]
     public async Task CheckFreshnessAsync_ReturnsLoadOrderPathChanged_WhenDirectLoadOrderPathChanges()
     {
         var userConfig = CreateUserConfig();
@@ -168,10 +183,12 @@ public sealed class PluginRefreshDiscoveryPlannerFreshnessTests
 
     private static UserConfiguration CreateUserConfig(
         bool disableSkipLists = false,
-        string? mo2InstanceOverride = null)
+        string? mo2InstanceOverride = null,
+        string? mo2Binary = @"C:\MO2\ModOrganizer.exe")
     {
         var userConfig = new UserConfiguration
         {
+            ModOrganizer = new ModOrganizerConfig { Binary = mo2Binary },
             Settings = new AutoQacSettings { DisableSkipLists = disableSkipLists },
             SkipLists = new Dictionary<string, List<string>>
             {
@@ -195,25 +212,27 @@ public sealed class PluginRefreshDiscoveryPlannerFreshnessTests
             loadOrderPath: @"C:\Skyrim\Profiles\Default\plugins.txt",
             selectedProfile: null);
 
-    private static PluginRefreshDiscoveryPlan CreateMo2Plan() =>
+    private static PluginRefreshDiscoveryPlan CreateMo2Plan(string? mo2Path = @"C:\MO2\ModOrganizer.exe") =>
         CreatePlan(
             PluginRefreshDiscoveryMode.Mo2LoadOrderFile,
             mo2ModeEnabled: true,
             loadOrderPath: null,
-            selectedProfile: "Default");
+            selectedProfile: "Default",
+            mo2Path);
 
     private static PluginRefreshDiscoveryPlan CreatePlan(
         PluginRefreshDiscoveryMode mode,
         bool mo2ModeEnabled,
         string? loadOrderPath,
-        string? selectedProfile)
+        string? selectedProfile,
+        string? mo2Path = null)
     {
         var configuration = new PluginRefreshConfigurationProjection(
             LoadOrderPath: loadOrderPath,
             GameDataFolder: @"C:\Skyrim\Data",
             HasGameDataFolderOverride: true,
             XEditPath: null,
-            Mo2Path: null,
+            Mo2Path: mo2ModeEnabled ? mo2Path : null,
             Mo2ModeEnabled: mo2ModeEnabled,
             Mo2InstancePath: mo2ModeEnabled ? @"C:\MO2\Skyrim" : null,
             IsMo2InstanceOverride: mo2ModeEnabled,

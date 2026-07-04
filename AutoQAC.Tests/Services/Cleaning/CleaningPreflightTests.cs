@@ -3,6 +3,7 @@ using AutoQAC.Models;
 using AutoQAC.Models.Configuration;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
+using AutoQAC.Services.GameCapability;
 using AutoQAC.Services.GameDetection;
 using AutoQAC.Services.MO2;
 using AutoQAC.Services.Plugin;
@@ -362,6 +363,7 @@ public sealed class CleaningPreflightTests
             config,
             Substitute.For<IPluginValidationService>(),
             refresh,
+            Substitute.For<IMo2ValidationService>(),
             state,
             Substitute.For<ILoggingService>());
 
@@ -430,7 +432,13 @@ public sealed class CleaningPreflightTests
                 new PluginRefreshActivity(false, false),
                 new PluginRefreshCommandAvailability(false, false, false, false),
                 StatusText: "Ready");
-            var sut = new CleaningPreflight(config, validation, refresh, state, Substitute.For<ILoggingService>());
+            var sut = new CleaningPreflight(
+                config,
+                validation,
+                refresh,
+                Substitute.For<IMo2ValidationService>(),
+                state,
+                Substitute.For<ILoggingService>());
 
             var result = await sut.PrepareAsync(CancellationToken.None);
 
@@ -442,6 +450,87 @@ public sealed class CleaningPreflightTests
         finally
         {
             File.Delete(xEditPath);
+        }
+    }
+
+    [Fact]
+    public async Task PrepareAsync_Mo2PublicationWithInvalidExecutable_ThrowsTypedMo2Failure()
+    {
+        var xEditPath = Path.GetTempFileName();
+        var mo2Path = Path.GetTempFileName();
+        var loadOrderPath = Path.GetTempFileName();
+        var instanceDirectory = Directory.CreateTempSubdirectory();
+        try
+        {
+            var config = Substitute.For<IConfigurationService>();
+            config.FlushPendingSavesAsync(Arg.Any<CancellationToken>())
+                .Returns(CreateFlushResult(ConfigPersistenceStatusKind.NoOp));
+            var state = Substitute.For<IStateService>();
+            state.CurrentState.Returns(CreateState(mo2Mode: true, mo2ExecutablePath: mo2Path, mo2Profile: "Default") with
+            {
+                XEditExecutablePath = xEditPath
+            });
+            var mo2Validation = Substitute.For<IMo2ValidationService>();
+            mo2Validation.ValidateMo2ExecutableAsync(mo2Path).Returns(false);
+            var configuration = new PluginRefreshConfigurationProjection(
+                LoadOrderPath: null,
+                GameDataFolder: null,
+                HasGameDataFolderOverride: false,
+                XEditPath: xEditPath,
+                Mo2Path: mo2Path,
+                Mo2ModeEnabled: true,
+                Mo2InstancePath: instanceDirectory.FullName,
+                IsMo2InstanceOverride: true,
+                IsMo2InstanceValid: true,
+                AvailableProfiles: ["Default"],
+                SelectedProfile: "Default",
+                CleaningTimeout: 300);
+            var plan = new PluginRefreshDiscoveryPlan(
+                GameType.SkyrimSe,
+                PluginRefreshDiscoveryMode.Mo2LoadOrderFile,
+                configuration,
+                DisableSkipLists: false,
+                CanAttemptIssueApproximation: true,
+                DataFolderPath: null,
+                LoadOrderPath: null,
+                Mo2LoadOrderPath: loadOrderPath,
+                Mo2PathMap: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+                Mo2BaseDataFolder: null);
+            var plugin = CreatePlugin("NeedsCleaning.esp");
+            using var refresh = new RecordingPluginRefreshModule();
+            refresh.CurrentPublication = RecordingPluginRefreshModule.CreatePublication(
+                RecordingPluginRefreshModule.CreateSnapshot(GameType.SkyrimSe, configuration: configuration),
+                rows:
+                [
+                    new PluginRefreshPublishedRow(
+                        plugin,
+                        IsVisible: true,
+                        IsSelected: true,
+                        IsSkippedByPolicy: false,
+                        new PluginRefreshRowKey(plugin.FileName, plugin.FullPath))
+                ],
+                freshness: PluginRefreshFreshness.Fresh,
+                discoveryPlan: plan);
+            var sut = new CleaningPreflight(
+                config,
+                Substitute.For<IPluginValidationService>(),
+                refresh,
+                mo2Validation,
+                state,
+                Substitute.For<ILoggingService>());
+
+            var act = () => sut.PrepareAsync(CancellationToken.None);
+
+            var thrown = await act.Should().ThrowAsync<CleaningPreflightException>();
+            thrown.Which.Failure.Kind.Should().Be(CleaningPreflightFailureKind.Mo2NotFound);
+            await mo2Validation.Received(1).ValidateMo2ExecutableAsync(mo2Path);
+        }
+        finally
+        {
+            File.Delete(xEditPath);
+            File.Delete(mo2Path);
+            File.Delete(loadOrderPath);
+            instanceDirectory.Delete(recursive: true);
         }
     }
 

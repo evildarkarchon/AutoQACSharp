@@ -23,6 +23,7 @@ public sealed class CleaningPreflight(
     IConfigurationService configService,
     IPluginValidationService pluginValidation,
     IPluginRefreshModule pluginRefreshModule,
+    IMo2ValidationService mo2Validation,
     IStateService stateService,
     ILoggingService logger,
     bool trustLegacyEnvironmentValidation = false,
@@ -46,6 +47,7 @@ public sealed class CleaningPreflight(
             configService,
             pluginValidation,
             new StateBackedPluginRefreshModule(stateService, gameDetection, configService),
+            mo2Validation,
             stateService,
             logger,
             trustLegacyEnvironmentValidation: true,
@@ -86,7 +88,7 @@ public sealed class CleaningPreflight(
         var config = stateService.CurrentState;
         if (!trustLegacyEnvironmentValidation)
         {
-            ValidateLaunchReadiness(publication, config);
+            await ValidateLaunchReadinessAsync(publication, config).ConfigureAwait(false);
         }
         else if (legacyCleaningService is not null && !await legacyCleaningService.ValidateEnvironmentAsync(ct).ConfigureAwait(false))
         {
@@ -94,7 +96,7 @@ public sealed class CleaningPreflight(
         }
         else if (config.Mo2ModeEnabled)
         {
-            ValidateLegacyMo2Readiness(config);
+            await ValidateLegacyMo2ReadinessAsync(config).ConfigureAwait(false);
         }
 
         // Read settings that drive Cleaning session policy. Discovery-affecting settings were already
@@ -227,7 +229,7 @@ public sealed class CleaningPreflight(
         }
     }
 
-    private static void ValidateLaunchReadiness(PluginRefreshPublication publication, AppState state)
+    private async Task ValidateLaunchReadinessAsync(PluginRefreshPublication publication, AppState state)
     {
         if (string.IsNullOrWhiteSpace(state.XEditExecutablePath))
         {
@@ -270,7 +272,8 @@ public sealed class CleaningPreflight(
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(state.Mo2ExecutablePath))
+        var mo2Path = state.Mo2ExecutablePath;
+        if (string.IsNullOrWhiteSpace(mo2Path))
         {
             ThrowFailure(
                 CleaningPreflightFailureKind.Mo2NotConfigured,
@@ -278,7 +281,7 @@ public sealed class CleaningPreflight(
                 "Choose ModOrganizer.exe or disable MO2 Mode.");
         }
 
-        if (!File.Exists(state.Mo2ExecutablePath))
+        if (!File.Exists(mo2Path) || !await mo2Validation.ValidateMo2ExecutableAsync(mo2Path).ConfigureAwait(false))
         {
             ThrowFailure(
                 CleaningPreflightFailureKind.Mo2NotFound,
@@ -312,15 +315,16 @@ public sealed class CleaningPreflight(
         }
     }
 
-    private static void ValidateLegacyMo2Readiness(AppState state)
+    private async Task ValidateLegacyMo2ReadinessAsync(AppState state)
     {
-        if (string.IsNullOrWhiteSpace(state.Mo2ExecutablePath))
+        var mo2Path = state.Mo2ExecutablePath;
+        if (string.IsNullOrWhiteSpace(mo2Path))
         {
             throw new InvalidOperationException(
                 "MO2 mode is enabled but no MO2 executable path is configured. Check MO2 executable path in Settings, or disable MO2 mode if not using Mod Organizer 2.");
         }
 
-        if (!File.Exists(state.Mo2ExecutablePath))
+        if (!File.Exists(mo2Path) || !await mo2Validation.ValidateMo2ExecutableAsync(mo2Path).ConfigureAwait(false))
         {
             throw new InvalidOperationException(
                 "MO2 mode is enabled but MO2 executable was not found. Check MO2 executable path in Settings, or disable MO2 mode if not using Mod Organizer 2.");

@@ -91,6 +91,7 @@ public sealed class PluginRefreshDiscoveryPlanner : IPluginRefreshDiscoveryPlann
         return new PluginRefreshDiscoveryFreshnessToken(
             plan.GameType,
             plan.Configuration.Mo2ModeEnabled,
+            NormalizePath(plan.Configuration.Mo2ModeEnabled ? plan.Configuration.Mo2Path : null),
             NormalizePath(plan.Configuration.Mo2ModeEnabled ? null : plan.Configuration.LoadOrderPath),
             NormalizePath(gameDataFolderOverride),
             NormalizePath(mo2Instance),
@@ -188,6 +189,7 @@ public sealed class PluginRefreshDiscoveryPlanner : IPluginRefreshDiscoveryPlann
         return new PluginRefreshDiscoveryFreshnessToken(
             current.CurrentGameType,
             current.Mo2ModeEnabled,
+            NormalizePath(current.Mo2ModeEnabled ? userConfig.ModOrganizer.Binary : null),
             NormalizePath(current.Mo2ModeEnabled ? null : current.LoadOrderPath),
             NormalizePath(gameDataFolderOverride),
             NormalizePath(current.Mo2ModeEnabled ? GetConfiguredMo2InstancePath(userConfig, publicationGameType) : null),

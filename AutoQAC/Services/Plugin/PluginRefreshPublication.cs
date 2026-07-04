@@ -53,6 +53,7 @@ public enum PluginRefreshStalenessReason
     MissingPublication,
     SelectedGameChanged,
     Mo2ModeChanged,
+    Mo2ExecutablePathChanged,
     LoadOrderPathChanged,
     GameDataFolderOverrideChanged,
     Mo2InstanceChanged,
