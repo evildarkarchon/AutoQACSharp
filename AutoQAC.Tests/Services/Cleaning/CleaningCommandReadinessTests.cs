@@ -208,7 +208,7 @@ public sealed class CleaningCommandReadinessTests
     public async Task EvaluateAsync_Mo2ModeWithConfiguredPathsAndProfileLoadOrder_IsReady()
     {
         var xEditPath = await CreateTempFileAsync();
-        var mo2Path = await CreateTempFileAsync();
+        var mo2Path = await CreateTempMo2ExecutableAsync();
         var loadOrderPath = await CreateTempFileAsync();
         var instanceDirectory = Directory.CreateTempSubdirectory();
         try
@@ -242,7 +242,7 @@ public sealed class CleaningCommandReadinessTests
         finally
         {
             File.Delete(xEditPath);
-            File.Delete(mo2Path);
+            DeleteTempMo2Executable(mo2Path);
             File.Delete(loadOrderPath);
             instanceDirectory.Delete(recursive: true);
         }
@@ -295,10 +295,55 @@ public sealed class CleaningCommandReadinessTests
     }
 
     [Fact]
-    public async Task EvaluateAsync_Mo2ModeWithoutSelectedProfile_ReturnsProfileMissingFailure()
+    public async Task EvaluateAsync_Mo2ModeWithWrongExecutableName_ReturnsMo2NotFoundFailure()
     {
         var xEditPath = await CreateTempFileAsync();
         var mo2Path = await CreateTempFileAsync();
+        var loadOrderPath = await CreateTempFileAsync();
+        var instanceDirectory = Directory.CreateTempSubdirectory();
+        try
+        {
+            var configuration = RecordingPluginRefreshModule.CreateConfiguration(
+                xEditPath: xEditPath,
+                mo2Path: mo2Path,
+                mo2ModeEnabled: true,
+                mo2InstancePath: instanceDirectory.FullName,
+                selectedProfile: "Default");
+            var plan = RecordingPluginRefreshModule.CreateDiscoveryPlan(
+                mode: PluginRefreshDiscoveryMode.Mo2LoadOrderFile,
+                configuration: configuration,
+                mo2LoadOrderPath: loadOrderPath);
+            var stateService = CreateState(
+                xEditPath: xEditPath,
+                mo2Mode: true,
+                mo2Path: mo2Path,
+                mo2Profile: "Default");
+            using var refresh = new RecordingPluginRefreshModule();
+            refresh.CurrentPublication = RecordingPluginRefreshModule.CreateFreshPublication(
+                discoveryPlan: plan,
+                configuration: configuration);
+            var sut = new CleaningCommandReadiness(refresh, stateService);
+
+            var result = await sut.EvaluateAsync();
+
+            result.CanStartOrPreview.Should().BeFalse();
+            result.Failure!.Kind.Should().Be(CleaningPreflightFailureKind.Mo2NotFound);
+            result.Failure.ActionHint.Should().Contain("ModOrganizer.exe");
+        }
+        finally
+        {
+            File.Delete(xEditPath);
+            File.Delete(mo2Path);
+            File.Delete(loadOrderPath);
+            instanceDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_Mo2ModeWithoutSelectedProfile_ReturnsProfileMissingFailure()
+    {
+        var xEditPath = await CreateTempFileAsync();
+        var mo2Path = await CreateTempMo2ExecutableAsync();
         var loadOrderPath = await CreateTempFileAsync();
         var instanceDirectory = Directory.CreateTempSubdirectory();
         try
@@ -332,7 +377,7 @@ public sealed class CleaningCommandReadinessTests
         finally
         {
             File.Delete(xEditPath);
-            File.Delete(mo2Path);
+            DeleteTempMo2Executable(mo2Path);
             File.Delete(loadOrderPath);
             instanceDirectory.Delete(recursive: true);
         }
@@ -342,7 +387,7 @@ public sealed class CleaningCommandReadinessTests
     public async Task EvaluateAsync_Mo2ModeWithMissingProfileLoadOrder_ReturnsProfileLoadOrderMissingFailure()
     {
         var xEditPath = await CreateTempFileAsync();
-        var mo2Path = await CreateTempFileAsync();
+        var mo2Path = await CreateTempMo2ExecutableAsync();
         var instanceDirectory = Directory.CreateTempSubdirectory();
         try
         {
@@ -375,7 +420,7 @@ public sealed class CleaningCommandReadinessTests
         finally
         {
             File.Delete(xEditPath);
-            File.Delete(mo2Path);
+            DeleteTempMo2Executable(mo2Path);
             instanceDirectory.Delete(recursive: true);
         }
     }
@@ -413,5 +458,23 @@ public sealed class CleaningCommandReadinessTests
         var path = Path.Combine(Path.GetTempPath(), $"AutoQAC-{Guid.NewGuid():N}.tmp");
         await File.WriteAllTextAsync(path, string.Empty);
         return path;
+    }
+
+    private static async Task<string> CreateTempMo2ExecutableAsync()
+    {
+        var directory = Directory.CreateTempSubdirectory("AutoQAC-MO2-");
+        var path = Path.Combine(directory.FullName, "ModOrganizer.exe");
+        await File.WriteAllTextAsync(path, string.Empty);
+        return path;
+    }
+
+    private static void DeleteTempMo2Executable(string path)
+    {
+        File.Delete(path);
+        var directory = Path.GetDirectoryName(path);
+        if (!string.IsNullOrWhiteSpace(directory) && Directory.Exists(directory))
+        {
+            Directory.Delete(directory, recursive: true);
+        }
     }
 }

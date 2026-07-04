@@ -40,7 +40,7 @@ public sealed class CleaningPreflightTests
     public async Task PrepareAsync_Mo2Mode_ReportsBackupSkippedAndFileValidationSkippedPolicyFacts()
     {
         var xEditPath = await CreateTempFileAsync();
-        var mo2Path = await CreateTempFileAsync();
+        var mo2Path = await CreateTempMo2ExecutableAsync();
         var loadOrderPath = await CreateTempFileAsync();
         var instanceDirectory = Directory.CreateTempSubdirectory();
         try
@@ -75,7 +75,7 @@ public sealed class CleaningPreflightTests
         finally
         {
             File.Delete(xEditPath);
-            File.Delete(mo2Path);
+            DeleteTempMo2Executable(mo2Path);
             File.Delete(loadOrderPath);
             instanceDirectory.Delete(recursive: true);
         }
@@ -273,6 +273,27 @@ public sealed class CleaningPreflightTests
     }
 
     [Fact]
+    public async Task SharedLaunchFailure_XEditNotFound_UsesSameFailureForReadinessAndPreflight()
+    {
+        using var refresh = new RecordingPluginRefreshModule();
+        refresh.CurrentPublication = CreateFreshPublication(CreatePlugin("Update.esm"));
+        var state = CreateState(xEditPath: @"C:\Users\Alice\Tools\SSEEdit.exe");
+        var stateService = Substitute.For<IStateService>();
+        stateService.CurrentState.Returns(state);
+        var readiness = new CleaningCommandReadiness(refresh, stateService);
+        var preflight = CreateSut(state, refresh, stateService: stateService);
+
+        var readinessResult = await readiness.EvaluateAsync(CancellationToken.None);
+        var act = () => preflight.PrepareAsync(CancellationToken.None);
+
+        var thrown = await act.Should().ThrowAsync<CleaningPreflightException>();
+        readinessResult.Failure.Should().NotBeNull();
+        thrown.Which.Failure.Should().BeEquivalentTo(readinessResult.Failure);
+        readinessResult.Failure!.SafeMessage.Should()
+            .Be("xEdit Path (SSEEdit.exe) is missing. Choose the correct xEdit executable in Settings.");
+    }
+
+    [Fact]
     public async Task PrepareAsync_DirectLoadOrderWithoutPath_ThrowsLoadOrderNotConfigured()
     {
         var xEditPath = await CreateTempFileAsync();
@@ -335,7 +356,7 @@ public sealed class CleaningPreflightTests
     public async Task PrepareAsync_Mo2PublicationWithInvalidExecutable_ThrowsTypedMo2Failure()
     {
         var xEditPath = await CreateTempFileAsync();
-        var mo2Path = await CreateTempFileAsync();
+        var mo2Path = await CreateTempMo2ExecutableAsync();
         var loadOrderPath = await CreateTempFileAsync();
         var instanceDirectory = Directory.CreateTempSubdirectory();
         try
@@ -363,7 +384,7 @@ public sealed class CleaningPreflightTests
         finally
         {
             File.Delete(xEditPath);
-            File.Delete(mo2Path);
+            DeleteTempMo2Executable(mo2Path);
             File.Delete(loadOrderPath);
             instanceDirectory.Delete(recursive: true);
         }
@@ -602,5 +623,23 @@ public sealed class CleaningPreflightTests
         var path = Path.Combine(Path.GetTempPath(), $"AutoQAC-{Guid.NewGuid():N}.tmp");
         await File.WriteAllTextAsync(path, string.Empty);
         return path;
+    }
+
+    private static async Task<string> CreateTempMo2ExecutableAsync()
+    {
+        var directory = Directory.CreateTempSubdirectory("AutoQAC-MO2-");
+        var path = Path.Combine(directory.FullName, "ModOrganizer.exe");
+        await File.WriteAllTextAsync(path, string.Empty);
+        return path;
+    }
+
+    private static void DeleteTempMo2Executable(string path)
+    {
+        File.Delete(path);
+        var directory = Path.GetDirectoryName(path);
+        if (!string.IsNullOrWhiteSpace(directory) && Directory.Exists(directory))
+        {
+            Directory.Delete(directory, recursive: true);
+        }
     }
 }

@@ -55,32 +55,26 @@ public sealed class CleaningPreflight(
         }
 
         var publication = await pluginRefreshModule.GetCurrentPublicationAsync(ct).ConfigureAwait(false);
-        ValidatePublication(publication);
+        if (CleaningLaunchBlockerValidator.TryValidatePublication(publication, out var failure))
+        {
+            ThrowFailure(failure);
+        }
 
         var config = stateService.CurrentState;
-        await ValidateLaunchReadinessAsync(publication, config).ConfigureAwait(false);
+        if (CleaningLaunchBlockerValidator.TryValidateLaunchReadiness(publication, config, out failure))
+        {
+            ThrowFailure(failure);
+        }
+
+        await ValidateMo2ExecutableSemanticsAsync(publication, config).ConfigureAwait(false);
 
         // Read settings that drive Cleaning session policy. Discovery-affecting settings were already
         // checked through publication freshness above.
         var userConfig = await configService.LoadUserConfigAsync(ct).ConfigureAwait(false);
         var rows = new List<PreflightPluginRow>();
-        if (publication.Rows.Count == 0)
+        if (CleaningLaunchBlockerValidator.TryValidateSelection(publication, out failure))
         {
-            ThrowFailure(
-                CleaningPreflightFailureKind.NoPluginsLoaded,
-                "No plugins are available for cleaning.",
-                "Refresh plugins for the selected game.");
-        }
-
-        var selectedCleanableRows = publication.Rows
-            .Where(row => row.IsSelected && !row.IsSkippedByPolicy)
-            .ToList();
-        if (selectedCleanableRows.Count == 0)
-        {
-            ThrowFailure(
-                CleaningPreflightFailureKind.NoPluginsSelected,
-                "No plugins are selected for cleaning.",
-                "Select at least one plugin to clean, or check Skip list settings.");
+            ThrowFailure(failure);
         }
 
         var isMo2Mode = publication.Configuration.Mo2ModeEnabled;
@@ -157,77 +151,9 @@ public sealed class CleaningPreflight(
         };
     }
 
-    private static void ValidatePublication(PluginRefreshPublication publication)
+    private async Task ValidateMo2ExecutableSemanticsAsync(PluginRefreshPublication publication, AppState state)
     {
-        if (publication.GameType == GameType.Unknown)
-        {
-            ThrowFailure(
-                CleaningPreflightFailureKind.NoGameSelected,
-                "No game type is selected for cleaning.",
-                "Select a game before cleaning.");
-        }
-
-        if (!publication.Freshness.IsFresh)
-        {
-            var kind = publication.Freshness.StalenessReason == PluginRefreshStalenessReason.MissingPublication
-                ? CleaningPreflightFailureKind.MissingPluginRefreshPublication
-                : CleaningPreflightFailureKind.StalePluginRefreshPublication;
-            var message = kind == CleaningPreflightFailureKind.MissingPluginRefreshPublication
-                ? "Plugins have not been refreshed for the selected game."
-                : "Plugins need to be refreshed after Discovery-affecting settings changed.";
-            var hint = kind == CleaningPreflightFailureKind.MissingPluginRefreshPublication
-                ? "Select a game and refresh plugins before cleaning."
-                : "Refresh plugins after changing game, load order, MO2, or Skip list settings.";
-            ThrowFailure(kind, message, hint);
-        }
-
-        if (publication.DiscoveryPlan is null)
-        {
-            ThrowFailure(
-                CleaningPreflightFailureKind.MissingPluginRefreshPublication,
-                "Plugins have not been refreshed for the selected game.",
-                "Select a game and refresh plugins before cleaning.");
-        }
-    }
-
-    private async Task ValidateLaunchReadinessAsync(PluginRefreshPublication publication, AppState state)
-    {
-        if (string.IsNullOrWhiteSpace(state.XEditExecutablePath))
-        {
-            ThrowFailure(
-                CleaningPreflightFailureKind.XEditNotConfigured,
-                "xEdit is not configured.",
-                "Choose the correct xEdit executable in Settings.");
-        }
-
-        if (!File.Exists(state.XEditExecutablePath))
-        {
-            ThrowFailure(
-                CleaningPreflightFailureKind.XEditNotFound,
-                "xEdit was not found.",
-                "Choose the correct xEdit executable in Settings.");
-        }
-
         var plan = publication.DiscoveryPlan!;
-        if (plan.Mode == PluginRefreshDiscoveryMode.DirectLoadOrderFile)
-        {
-            if (string.IsNullOrWhiteSpace(plan.LoadOrderPath))
-            {
-                ThrowFailure(
-                    CleaningPreflightFailureKind.LoadOrderNotConfigured,
-                    "Load order is not configured.",
-                    "Choose the current plugins.txt or loadorder.txt file.");
-            }
-
-            if (!File.Exists(plan.LoadOrderPath))
-            {
-                ThrowFailure(
-                    CleaningPreflightFailureKind.LoadOrderNotFound,
-                    "Load order was not found.",
-                    "Choose the current plugins.txt or loadorder.txt file.");
-            }
-        }
-
         if (plan.Mode != PluginRefreshDiscoveryMode.Mo2LoadOrderFile)
         {
             return;
@@ -236,51 +162,17 @@ public sealed class CleaningPreflight(
         var mo2Path = state.Mo2ExecutablePath;
         if (string.IsNullOrWhiteSpace(mo2Path))
         {
-            ThrowFailure(
-                CleaningPreflightFailureKind.Mo2NotConfigured,
-                "MO2 is not configured.",
-                "Choose ModOrganizer.exe or disable MO2 Mode.");
+            return;
         }
 
-        if (!File.Exists(mo2Path) || !await mo2Validation.ValidateMo2ExecutableAsync(mo2Path).ConfigureAwait(false))
+        if (!await mo2Validation.ValidateMo2ExecutableAsync(mo2Path).ConfigureAwait(false))
         {
-            ThrowFailure(
-                CleaningPreflightFailureKind.Mo2NotFound,
-                "MO2 was not found.",
-                "Choose ModOrganizer.exe or disable MO2 Mode.");
-        }
-
-        if (string.IsNullOrWhiteSpace(publication.Configuration.Mo2InstancePath) ||
-            !Directory.Exists(publication.Configuration.Mo2InstancePath))
-        {
-            ThrowFailure(
-                CleaningPreflightFailureKind.Mo2InstanceMissing,
-                "MO2 instance is missing.",
-                "Choose the MO2 instance folder or disable MO2 Mode.");
-        }
-
-        if (string.IsNullOrWhiteSpace(publication.Configuration.SelectedProfile))
-        {
-            ThrowFailure(
-                CleaningPreflightFailureKind.Mo2ProfileMissing,
-                "MO2 profile is not selected.",
-                "Select a game and MO2 profile before cleaning.");
-        }
-
-        if (string.IsNullOrWhiteSpace(plan.Mo2LoadOrderPath) || !File.Exists(plan.Mo2LoadOrderPath))
-        {
-            ThrowFailure(
-                CleaningPreflightFailureKind.Mo2ProfileLoadOrderMissing,
-                "MO2 profile load order is missing.",
-                "Select a profile with a valid loadorder.txt before cleaning.");
+            ThrowFailure(CleaningLaunchBlockerValidator.CreateMo2NotFoundFailure(mo2Path));
         }
     }
 
-    private static void ThrowFailure(
-        CleaningPreflightFailureKind kind,
-        string safeMessage,
-        string? actionHint = null) =>
-        throw new CleaningPreflightException(new CleaningPreflightFailure(kind, safeMessage, actionHint));
+    private static void ThrowFailure(CleaningPreflightFailure failure) =>
+        throw new CleaningPreflightException(failure);
 
     /// <summary>
     /// Maps a PluginWarningKind validation result to a PreflightSkipReason.

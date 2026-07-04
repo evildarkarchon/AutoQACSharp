@@ -1,4 +1,3 @@
-using System.IO;
 using System.Threading.Tasks;
 
 namespace AutoQAC.Services.MO2;
@@ -23,11 +22,7 @@ public sealed class Mo2ValidationService : IMo2ValidationService
 
     public Task<bool> ValidateMo2ExecutableAsync(string mo2Path)
     {
-        if (!File.Exists(mo2Path))
-            return Task.FromResult(false);
-
-        var fileName = Path.GetFileName(mo2Path).ToLowerInvariant();
-        return Task.FromResult(fileName == "modorganizer.exe");
+        return Task.FromResult(Mo2ExecutablePathValidator.IsValidExecutablePath(mo2Path));
     }
 
     public string GetMo2RunningWarning()

@@ -182,6 +182,24 @@ public sealed class CleaningSessionTests : IDisposable
         _pluginRefreshModule.Dispose();
     }
 
+    private static string CreateTempMo2Executable()
+    {
+        var directory = Directory.CreateTempSubdirectory("AutoQAC-MO2-");
+        var path = Path.Combine(directory.FullName, "ModOrganizer.exe");
+        File.WriteAllText(path, string.Empty);
+        return path;
+    }
+
+    private static void DeleteTempMo2Executable(string path)
+    {
+        File.Delete(path);
+        var directory = Path.GetDirectoryName(path);
+        if (!string.IsNullOrWhiteSpace(directory) && Directory.Exists(directory))
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     private async Task<PluginRefreshPublication> CreatePublicationFromCurrentStateAsync(CancellationToken ct)
     {
         var state = _stateServiceMock.CurrentState;
@@ -1804,7 +1822,7 @@ public sealed class CleaningSessionTests : IDisposable
     public async Task StartCleaningAsync_MO2Mode_ShouldSkipFileValidation()
     {
         // Arrange - create a temp file to represent the MO2 binary
-        var tempMo2 = Path.GetTempFileName();
+        var tempMo2 = CreateTempMo2Executable();
         try
         {
             var plugins = new List<PluginInfo>
@@ -1848,7 +1866,7 @@ public sealed class CleaningSessionTests : IDisposable
         }
         finally
         {
-            File.Delete(tempMo2);
+            DeleteTempMo2Executable(tempMo2);
         }
     }
 
@@ -2174,7 +2192,7 @@ public sealed class CleaningSessionTests : IDisposable
     public async Task Mo2Mode_DoesNotCallBackupPluginAsync()
     {
         // Arrange
-        var tempMo2 = Path.GetTempFileName();
+        var tempMo2 = CreateTempMo2Executable();
         try
         {
             var plugin = new PluginInfo { FileName = "Mo2.esp", FullPath = "Path/Mo2.esp" };
@@ -2207,7 +2225,7 @@ public sealed class CleaningSessionTests : IDisposable
         }
         finally
         {
-            File.Delete(tempMo2);
+            DeleteTempMo2Executable(tempMo2);
         }
     }
 
