@@ -32,6 +32,7 @@ public sealed class MainWindowViewModelTests
     private readonly RecordingPluginRefreshModule _pluginRefreshModule;
     private readonly IGameCapabilityProvider _gameCapabilityProvider;
     private readonly IPluginRefreshDiscoveryPlanner _discoveryPlanner;
+    private readonly ICleaningCommandReadiness _cleaningCommandReadiness;
 
     public MainWindowViewModelTests()
     {
@@ -51,6 +52,8 @@ public sealed class MainWindowViewModelTests
             Substitute.For<AutoQAC.Services.MO2.IMo2InstanceService>(),
             _gameCapabilityProvider);
         _pluginRefreshModule = new RecordingPluginRefreshModule();
+        _pluginRefreshModule.PublicationHandler = _ => Task.FromResult(CreatePublicationFromState(_stateServiceMock.CurrentState));
+        _cleaningCommandReadiness = new CleaningCommandReadiness(_pluginRefreshModule, _stateServiceMock);
 
         // Default setup for CleaningCompleted observable
         _stateServiceMock.CleaningCompleted
@@ -81,6 +84,42 @@ public sealed class MainWindowViewModelTests
     private static TaskCompletionSource<bool> CreateSignal()
     {
         return new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    private static PluginRefreshPublication CreatePublicationFromState(AppState state)
+    {
+        var gameType = state.CurrentGameType == GameType.Unknown ? GameType.SkyrimSe : state.CurrentGameType;
+        var configuration = RecordingPluginRefreshModule.CreateConfiguration(
+            loadOrderPath: state.LoadOrderPath,
+            xEditPath: state.XEditExecutablePath,
+            mo2Path: state.Mo2ExecutablePath,
+            mo2ModeEnabled: state.Mo2ModeEnabled,
+            mo2InstancePath: state.Mo2ModeEnabled ? Path.GetTempPath() : null,
+            selectedProfile: state.Mo2Profile);
+        var mode = state.Mo2ModeEnabled
+            ? PluginRefreshDiscoveryMode.Mo2LoadOrderFile
+            : gameType is GameType.Fallout3 or GameType.FalloutNewVegas or GameType.Oblivion
+                ? PluginRefreshDiscoveryMode.DirectLoadOrderFile
+                : PluginRefreshDiscoveryMode.DirectAutomatic;
+        var plan = RecordingPluginRefreshModule.CreateDiscoveryPlan(
+            gameType,
+            mode,
+            configuration,
+            loadOrderPath: mode == PluginRefreshDiscoveryMode.DirectLoadOrderFile ? state.LoadOrderPath : null,
+            mo2LoadOrderPath: state.Mo2ModeEnabled ? state.LoadOrderPath : null);
+        var rows = state.PluginsToClean
+            .Select(plugin => RecordingPluginRefreshModule.CreatePublishedRow(
+                plugin,
+                isVisible: !plugin.IsInSkipList,
+                isSelected: !state.ExcludedPluginPaths.Contains(plugin.FullPath),
+                isSkippedByPolicy: plugin.IsInSkipList))
+            .ToList();
+        var snapshot = RecordingPluginRefreshModule.CreateSnapshot(gameType, configuration: configuration);
+        return RecordingPluginRefreshModule.CreatePublication(
+            snapshot,
+            rows,
+            PluginRefreshFreshness.Fresh,
+            plan);
     }
 
     private PluginRefreshModule CreatePluginRefreshModule(
@@ -155,7 +194,8 @@ public sealed class MainWindowViewModelTests
                 _pluginLoadingServiceMock,
                 _uiDispatcher,
                 _pluginRefreshModule,
-                _gameCapabilityProvider);
+                _gameCapabilityProvider,
+                _cleaningCommandReadiness);
             using var _ = vm.ShowProgressInteraction.RegisterHandler(_ => Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
 
             // Manually set properties to satisfy CanExecute (use temp file path)
@@ -205,7 +245,8 @@ public sealed class MainWindowViewModelTests
                 _pluginLoadingServiceMock,
                 _uiDispatcher,
                 _pluginRefreshModule,
-                _gameCapabilityProvider);
+                _gameCapabilityProvider,
+                _cleaningCommandReadiness);
             using var _ = vm.ShowProgressInteraction.RegisterHandler(_ => throw new ApplicationException("Progress window failed"));
 
             await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
@@ -257,7 +298,8 @@ public sealed class MainWindowViewModelTests
                 _pluginLoadingServiceMock,
                 _uiDispatcher,
                 _pluginRefreshModule,
-                _gameCapabilityProvider);
+                _gameCapabilityProvider,
+                _cleaningCommandReadiness);
             using var _ = vm.ShowPreviewInteraction.RegisterHandler(_ => throw new ApplicationException("Preview window failed"));
 
             await vm.Commands.PreviewCommand.ExecuteAsync(null);
@@ -298,7 +340,8 @@ public sealed class MainWindowViewModelTests
                 _pluginLoadingServiceMock,
                 _uiDispatcher,
                 _pluginRefreshModule,
-                _gameCapabilityProvider);
+                _gameCapabilityProvider,
+                _cleaningCommandReadiness);
 
             _fileDialogMock.OpenFileDialogAsync(
                     Arg.Any<string>(),
@@ -386,7 +429,8 @@ public sealed class MainWindowViewModelTests
                 _pluginLoadingServiceMock,
                 _uiDispatcher,
                 _pluginRefreshModule,
-                _gameCapabilityProvider);
+                _gameCapabilityProvider,
+                _cleaningCommandReadiness);
             using var _ = vm.ShowProgressInteraction.RegisterHandler(_ => Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
 
             await WaitForSignalAsync(initializationApplied);
@@ -443,7 +487,8 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             _pluginRefreshModule,
-            _gameCapabilityProvider);
+            _gameCapabilityProvider,
+            _cleaningCommandReadiness);
 
         // Configure dialog to return null (user cancelled)
         _fileDialogMock.OpenFileDialogAsync(
@@ -495,7 +540,8 @@ public sealed class MainWindowViewModelTests
                 _pluginLoadingServiceMock,
                 _uiDispatcher,
                 _pluginRefreshModule,
-                _gameCapabilityProvider);
+                _gameCapabilityProvider,
+                _cleaningCommandReadiness);
 
             await WaitForSignalAsync(initializationApplied);
 
@@ -560,7 +606,8 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             _pluginRefreshModule,
-            _gameCapabilityProvider);
+            _gameCapabilityProvider,
+            _cleaningCommandReadiness);
 
         // Act - set properties on Configuration sub-VM (these don't affect CanStartCleaning
         // since it now reads from IStateService, but the state has no plugins/xEdit)
@@ -594,7 +641,8 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             _pluginRefreshModule,
-            _gameCapabilityProvider);
+            _gameCapabilityProvider,
+            _cleaningCommandReadiness);
 
         // Set valid paths on Configuration sub-VM
         vm.Configuration.LoadOrderPath = "plugins.txt";
@@ -637,7 +685,8 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             _pluginRefreshModule,
-            _gameCapabilityProvider);
+            _gameCapabilityProvider,
+            _cleaningCommandReadiness);
 
         // Act
         await vm.Commands.StopCleaningCommand.ExecuteAsync(null);
@@ -697,7 +746,8 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             _pluginRefreshModule,
-            _gameCapabilityProvider);
+            _gameCapabilityProvider,
+            _cleaningCommandReadiness);
 
         // Act
         await vm.Commands.StopCleaningCommand.ExecuteAsync(null);
@@ -739,7 +789,8 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             _pluginRefreshModule,
-            _gameCapabilityProvider);
+            _gameCapabilityProvider,
+            _cleaningCommandReadiness);
 
         // Act
         await vm.Commands.StopCleaningCommand.ExecuteAsync(null);
@@ -781,7 +832,8 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             _pluginRefreshModule,
-            _gameCapabilityProvider);
+            _gameCapabilityProvider,
+            _cleaningCommandReadiness);
 
         await vm.Commands.StopCleaningCommand.ExecuteAsync(null);
 
@@ -842,7 +894,8 @@ public sealed class MainWindowViewModelTests
                 _pluginLoadingServiceMock,
                 _uiDispatcher,
                 _pluginRefreshModule,
-                _gameCapabilityProvider);
+                _gameCapabilityProvider,
+                _cleaningCommandReadiness);
             vm.Configuration.SelectedGame = GameType.FalloutNewVegas;
 
             // Act
@@ -896,7 +949,8 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             _pluginRefreshModule,
-            _gameCapabilityProvider);
+            _gameCapabilityProvider,
+            _cleaningCommandReadiness);
         vm.Configuration.SelectedGame = GameType.SkyrimSe;
 
         // Act
@@ -932,7 +986,8 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             _pluginRefreshModule,
-            _gameCapabilityProvider);
+            _gameCapabilityProvider,
+            _cleaningCommandReadiness);
 
         await vm.Commands.StopCleaningCommand.ExecuteAsync(null);
 
@@ -971,7 +1026,8 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             _pluginRefreshModule,
-            _gameCapabilityProvider);
+            _gameCapabilityProvider,
+            _cleaningCommandReadiness);
 
         await vm.Commands.StopCleaningCommand.ExecuteAsync(null);
 
@@ -1010,7 +1066,8 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             _pluginRefreshModule,
-            _gameCapabilityProvider);
+            _gameCapabilityProvider,
+            _cleaningCommandReadiness);
 
         await vm.Commands.StopCleaningCommand.ExecuteAsync(null);
 
@@ -1044,7 +1101,8 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             _pluginRefreshModule,
-            _gameCapabilityProvider);
+            _gameCapabilityProvider,
+            _cleaningCommandReadiness);
 
         // Act
         var newState = new AppState
@@ -1249,7 +1307,8 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             _pluginRefreshModule,
-            _gameCapabilityProvider);
+            _gameCapabilityProvider,
+            _cleaningCommandReadiness);
 
         // Assert - AvailableGames is now on Configuration sub-VM
         vm.Configuration.AvailableGames.Should().BeEquivalentTo(expectedGames, options => options.WithStrictOrdering());
@@ -1276,7 +1335,8 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             _pluginRefreshModule,
-            _gameCapabilityProvider);
+            _gameCapabilityProvider,
+            _cleaningCommandReadiness);
 
         // Act & Assert - Default is Unknown (not supported)
         vm.Configuration.IsMutagenSupported.Should().BeFalse();
@@ -1324,7 +1384,8 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             _pluginRefreshModule,
-            _gameCapabilityProvider);
+            _gameCapabilityProvider,
+            _cleaningCommandReadiness);
 
         // Act
         vm.Configuration.SelectedGame = GameType.SkyrimSe;
@@ -1398,7 +1459,8 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             refreshModule,
-            _gameCapabilityProvider);
+            _gameCapabilityProvider,
+            new CleaningCommandReadiness(refreshModule, _stateServiceMock));
 
         // Act
         vm.Configuration.SelectedGame = GameType.SkyrimSe;
@@ -1490,6 +1552,8 @@ public sealed class MainWindowViewModelTests
             }
         });
 
+        using var refreshModule = CreatePluginRefreshModule(approximationServiceMock, stateService);
+
         var vm = new MainWindowViewModel(
             _configServiceMock,
             stateService,
@@ -1500,8 +1564,9 @@ public sealed class MainWindowViewModelTests
             _pluginServiceMock,
             _pluginLoadingServiceMock,
             _uiDispatcher,
-            CreatePluginRefreshModule(approximationServiceMock, stateService),
-            _gameCapabilityProvider);
+            refreshModule,
+            _gameCapabilityProvider,
+            new CleaningCommandReadiness(refreshModule, stateService));
 
         vm.Configuration.SelectedGame = GameType.SkyrimSe;
         await WaitForSignalAsync(pendingPluginsPublished);
@@ -1569,6 +1634,8 @@ public sealed class MainWindowViewModelTests
             }
         });
 
+        using var refreshModule = CreatePluginRefreshModule(approximationServiceMock, stateService);
+
         var vm = new MainWindowViewModel(
             _configServiceMock,
             stateService,
@@ -1579,8 +1646,9 @@ public sealed class MainWindowViewModelTests
             _pluginServiceMock,
             _pluginLoadingServiceMock,
             _uiDispatcher,
-            CreatePluginRefreshModule(approximationServiceMock, stateService),
-            _gameCapabilityProvider);
+            refreshModule,
+            _gameCapabilityProvider,
+            new CleaningCommandReadiness(refreshModule, stateService));
 
         vm.Configuration.SelectedGame = GameType.SkyrimSe;
         await WaitForSignalAsync(pluginsLoaded);
@@ -1652,6 +1720,8 @@ public sealed class MainWindowViewModelTests
         _stateServiceMock.StateChanged.Returns(stateSubject);
         _stateServiceMock.CurrentState.Returns(new AppState());
 
+        using var refreshModule = CreatePluginRefreshModule(approximationServiceMock);
+
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
@@ -1662,8 +1732,9 @@ public sealed class MainWindowViewModelTests
             _pluginServiceMock,
             _pluginLoadingServiceMock,
             _uiDispatcher,
-            CreatePluginRefreshModule(approximationServiceMock),
-            _gameCapabilityProvider);
+            refreshModule,
+            _gameCapabilityProvider,
+            new CleaningCommandReadiness(refreshModule, _stateServiceMock));
 
         vm.Configuration.SelectedGame = GameType.SkyrimSe;
         await WaitForSignalAsync(firstLoadStarted);
@@ -1737,7 +1808,8 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             _pluginRefreshModule,
-            _gameCapabilityProvider);
+            _gameCapabilityProvider,
+            _cleaningCommandReadiness);
 
         // Act
         await vm.Configuration.ConfigureXEditCommand.ExecuteAsync(null);
@@ -1841,7 +1913,8 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             _pluginRefreshModule,
-            _gameCapabilityProvider);
+            _gameCapabilityProvider,
+            _cleaningCommandReadiness);
         using var _ = vm.ShowSettingsInteraction.RegisterHandler(_ => Task.FromResult(true));
         _stateServiceMock.ClearReceivedCalls();
 
@@ -1895,7 +1968,8 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             _pluginRefreshModule,
-            _gameCapabilityProvider);
+            _gameCapabilityProvider,
+            _cleaningCommandReadiness);
 
         // Act
         await vm.Configuration.ConfigureMo2Command.ExecuteAsync(null);
@@ -1956,7 +2030,8 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             refreshModule,
-            _gameCapabilityProvider);
+            _gameCapabilityProvider,
+            new CleaningCommandReadiness(refreshModule, _stateServiceMock));
 
         // Act
         vm.Configuration.SelectedGame = GameType.SkyrimSe;
@@ -1993,7 +2068,8 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             _pluginRefreshModule,
-            _gameCapabilityProvider);
+            _gameCapabilityProvider,
+            _cleaningCommandReadiness);
 
         // Act & Assert
         FluentActions.Invoking(vm.Dispose)

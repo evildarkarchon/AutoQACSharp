@@ -8,7 +8,6 @@ using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.Configuration;
 using AutoQAC.Services.GameCapability;
-using AutoQAC.Services.GameDetection;
 using AutoQAC.Services.MO2;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Services.State;
@@ -25,36 +24,9 @@ public sealed class CleaningPreflight(
     IPluginRefreshModule pluginRefreshModule,
     IMo2ValidationService mo2Validation,
     IStateService stateService,
-    ILoggingService logger,
-    bool trustLegacyEnvironmentValidation = false,
-    ICleaningService? legacyCleaningService = null)
+    ILoggingService logger)
     : ICleaningPreflight
 {
-    /// <summary>
-    /// Compatibility constructor for older tests and callers. The active implementation still consumes
-    /// Plugin refresh publication facts through an adapter instead of re-evaluating Game capability.
-    /// </summary>
-    public CleaningPreflight(
-        IConfigurationService configService,
-        IGameDetectionService gameDetection,
-        IPluginValidationService pluginValidation,
-        IMo2ValidationService mo2Validation,
-        ICleaningService cleaningService,
-        IStateService stateService,
-        ILoggingService logger,
-        IMo2InstanceService? mo2InstanceService = null)
-        : this(
-            configService,
-            pluginValidation,
-            new StateBackedPluginRefreshModule(stateService, gameDetection, configService),
-            mo2Validation,
-            stateService,
-            logger,
-            trustLegacyEnvironmentValidation: true,
-            legacyCleaningService: cleaningService)
-    {
-    }
-
     /// <inheritdoc />
     public async Task<CleaningPreflightPlan> PrepareAsync(CancellationToken ct = default)
     {
@@ -86,24 +58,13 @@ public sealed class CleaningPreflight(
         ValidatePublication(publication);
 
         var config = stateService.CurrentState;
-        if (!trustLegacyEnvironmentValidation)
-        {
-            await ValidateLaunchReadinessAsync(publication, config).ConfigureAwait(false);
-        }
-        else if (legacyCleaningService is not null && !await legacyCleaningService.ValidateEnvironmentAsync(ct).ConfigureAwait(false))
-        {
-            throw new InvalidOperationException("Configuration is invalid");
-        }
-        else if (config.Mo2ModeEnabled)
-        {
-            await ValidateLegacyMo2ReadinessAsync(config).ConfigureAwait(false);
-        }
+        await ValidateLaunchReadinessAsync(publication, config).ConfigureAwait(false);
 
         // Read settings that drive Cleaning session policy. Discovery-affecting settings were already
         // checked through publication freshness above.
         var userConfig = await configService.LoadUserConfigAsync(ct).ConfigureAwait(false);
         var rows = new List<PreflightPluginRow>();
-        if (publication.Rows.Count == 0 && !trustLegacyEnvironmentValidation)
+        if (publication.Rows.Count == 0)
         {
             ThrowFailure(
                 CleaningPreflightFailureKind.NoPluginsLoaded,
@@ -114,7 +75,7 @@ public sealed class CleaningPreflight(
         var selectedCleanableRows = publication.Rows
             .Where(row => row.IsSelected && !row.IsSkippedByPolicy)
             .ToList();
-        if (selectedCleanableRows.Count == 0 && (!trustLegacyEnvironmentValidation || publication.Rows.Count > 0))
+        if (selectedCleanableRows.Count == 0)
         {
             ThrowFailure(
                 CleaningPreflightFailureKind.NoPluginsSelected,
@@ -315,187 +276,11 @@ public sealed class CleaningPreflight(
         }
     }
 
-    private async Task ValidateLegacyMo2ReadinessAsync(AppState state)
-    {
-        var mo2Path = state.Mo2ExecutablePath;
-        if (string.IsNullOrWhiteSpace(mo2Path))
-        {
-            throw new InvalidOperationException(
-                "MO2 mode is enabled but no MO2 executable path is configured. Check MO2 executable path in Settings, or disable MO2 mode if not using Mod Organizer 2.");
-        }
-
-        if (!File.Exists(mo2Path) || !await mo2Validation.ValidateMo2ExecutableAsync(mo2Path).ConfigureAwait(false))
-        {
-            throw new InvalidOperationException(
-                "MO2 mode is enabled but MO2 executable was not found. Check MO2 executable path in Settings, or disable MO2 mode if not using Mod Organizer 2.");
-        }
-    }
-
     private static void ThrowFailure(
         CleaningPreflightFailureKind kind,
         string safeMessage,
         string? actionHint = null) =>
         throw new CleaningPreflightException(new CleaningPreflightFailure(kind, safeMessage, actionHint));
-
-    private sealed class StateBackedPluginRefreshModule(
-        IStateService stateService,
-        IGameDetectionService gameDetection,
-        IConfigurationService configurationService) : IPluginRefreshModule
-    {
-        public IObservable<PluginRefreshSnapshot> Snapshots { get; } = new EmptyObservable<PluginRefreshSnapshot>();
-
-        public Task<PluginRefreshSnapshot> ExecuteAsync(
-            PluginRefreshIntent intent,
-            CancellationToken cancellationToken = default) =>
-            Task.FromResult(CreateSnapshot(stateService.CurrentState));
-
-        public async Task<PluginRefreshPublication> GetCurrentPublicationAsync(CancellationToken cancellationToken = default)
-        {
-            var state = stateService.CurrentState;
-            var gameType = state.CurrentGameType;
-            if (gameType == GameType.Unknown)
-            {
-                gameType = gameDetection.DetectFromExecutable(state.XEditExecutablePath ?? string.Empty);
-                if (gameType == GameType.Unknown && !string.IsNullOrWhiteSpace(state.LoadOrderPath))
-                {
-                    gameType = await gameDetection.DetectFromLoadOrderAsync(state.LoadOrderPath, cancellationToken)
-                        .ConfigureAwait(false);
-                }
-            }
-
-            var capability = new GameCapabilityProvider().Get(gameType);
-            if (capability.RequiresLoadOrderFile &&
-                (string.IsNullOrWhiteSpace(state.LoadOrderPath) || !File.Exists(state.LoadOrderPath)))
-            {
-                var missingPlanSnapshot = CreateSnapshot(state, gameType);
-                return CreatePublicationWithoutPlan(state, missingPlanSnapshot, gameType);
-            }
-
-            var userConfig = await configurationService.LoadUserConfigAsync(cancellationToken).ConfigureAwait(false);
-            var publicationState = state;
-            if (gameType != GameType.Unknown)
-            {
-                var skipEvaluation = await new SkipListPolicy(configurationService, gameDetection)
-                    .EvaluateAsync(gameType, state.PluginsToClean, userConfig.Settings.DisableSkipLists, cancellationToken)
-                    .ConfigureAwait(false);
-                publicationState = state with { PluginsToClean = skipEvaluation.Plugins };
-            }
-
-            var snapshot = CreateSnapshot(publicationState, gameType);
-
-            var mode = state.Mo2ModeEnabled
-                ? PluginRefreshDiscoveryMode.Mo2LoadOrderFile
-                : string.IsNullOrWhiteSpace(state.LoadOrderPath)
-                    ? PluginRefreshDiscoveryMode.DirectAutomatic
-                    : PluginRefreshDiscoveryMode.DirectLoadOrderFile;
-            var firstPath = publicationState.PluginsToClean.FirstOrDefault()?.FullPath;
-            var dataFolder = string.IsNullOrWhiteSpace(firstPath)
-                ? null
-                : Path.GetDirectoryName(firstPath);
-            var plan = gameType == GameType.Unknown
-                ? null
-                : new PluginRefreshDiscoveryPlan(
-                    gameType,
-                    mode,
-                    snapshot.Configuration,
-                    DisableSkipLists: false,
-                    CanAttemptIssueApproximation: true,
-                    dataFolder,
-                    state.Mo2ModeEnabled ? null : state.LoadOrderPath,
-                    state.Mo2ModeEnabled ? state.LoadOrderPath : null,
-                    new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
-                    Mo2BaseDataFolder: dataFolder);
-            var rows = CreatePublishedRows(publicationState);
-
-            return new PluginRefreshPublication(
-                snapshot.Generation,
-                gameType,
-                plan,
-                snapshot.Configuration,
-                plan is null ? PluginRefreshFreshness.Missing : PluginRefreshFreshness.Fresh,
-                rows,
-                snapshot.Rows,
-                snapshot.Activity,
-                snapshot.Commands,
-                snapshot.StatusText);
-        }
-
-        private static PluginRefreshPublication CreatePublicationWithoutPlan(
-            AppState state,
-            PluginRefreshSnapshot snapshot,
-            GameType gameType) =>
-            new(
-                snapshot.Generation,
-                gameType,
-                DiscoveryPlan: null,
-                snapshot.Configuration,
-                PluginRefreshFreshness.Missing,
-                CreatePublishedRows(state),
-                snapshot.Rows,
-                snapshot.Activity,
-                snapshot.Commands,
-                snapshot.StatusText);
-
-        private static IReadOnlyList<PluginRefreshPublishedRow> CreatePublishedRows(AppState state) =>
-            state.PluginsToClean.Select(plugin => new PluginRefreshPublishedRow(
-                    plugin,
-                    IsVisible: !plugin.IsInSkipList,
-                    IsSelected: !state.ExcludedPluginPaths.Contains(plugin.FullPath),
-                    IsSkippedByPolicy: plugin.IsInSkipList,
-                    new PluginRefreshRowKey(plugin.FileName, plugin.FullPath)))
-                .ToList();
-
-        private static PluginRefreshSnapshot CreateSnapshot(AppState state) => CreateSnapshot(state, state.CurrentGameType);
-
-        private static PluginRefreshSnapshot CreateSnapshot(AppState state, GameType gameType)
-        {
-            var rows = state.PluginsToClean
-                .Where(plugin => !plugin.IsInSkipList)
-                .Select(plugin => new PluginRefreshRow(
-                    plugin.FileName,
-                    plugin.FullPath,
-                    plugin.DetectedGameType == GameType.Unknown ? gameType : plugin.DetectedGameType,
-                    IsSelected: !state.ExcludedPluginPaths.Contains(plugin.FullPath),
-                    plugin.IsInSkipList,
-                    plugin.Approximation))
-                .ToList();
-            var configuration = new PluginRefreshConfigurationProjection(
-                LoadOrderPath: state.LoadOrderPath,
-                GameDataFolder: null,
-                HasGameDataFolderOverride: false,
-                XEditPath: state.XEditExecutablePath,
-                Mo2Path: state.Mo2ExecutablePath,
-                Mo2ModeEnabled: state.Mo2ModeEnabled,
-                Mo2InstancePath: null,
-                IsMo2InstanceOverride: false,
-                IsMo2InstanceValid: null,
-                AvailableProfiles: [],
-                SelectedProfile: state.Mo2Profile,
-                CleaningTimeout: state.CleaningTimeout);
-            return new PluginRefreshSnapshot(
-                Generation: 0,
-                gameType,
-                rows,
-                configuration,
-                new PluginRefreshActivity(false, false),
-                new PluginRefreshCommandAvailability(false, false, false, false),
-                "Ready");
-        }
-    }
-
-    private sealed class EmptyObservable<T> : IObservable<T>
-    {
-        public IDisposable Subscribe(IObserver<T> observer) => EmptyDisposable.Instance;
-    }
-
-    private sealed class EmptyDisposable : IDisposable
-    {
-        public static EmptyDisposable Instance { get; } = new();
-
-        public void Dispose()
-        {
-        }
-    }
 
     /// <summary>
     /// Maps a PluginWarningKind validation result to a PreflightSkipReason.

@@ -23,6 +23,10 @@ _Avoid_: Discovery context, plugin loading plan, game capability plan
 The user's current inclusion or exclusion choice among Plugin refresh rows available for a Cleaning session or selected Issue approximation refresh.
 _Avoid_: Excluded plugin paths, row checkbox state
 
+**Cleaning command readiness**:
+A user-visible assessment of whether Start and Preview can be offered before a Cleaning session, based on the current Plugin refresh publication, Plugin selection, and cheap launch-readiness checks.
+_Avoid_: Button enabled state, pre-clean validation, row count check
+
 **Skip list**:
 A game-specific set of plugin names that AutoQAC should not select for cleaning by default.
 

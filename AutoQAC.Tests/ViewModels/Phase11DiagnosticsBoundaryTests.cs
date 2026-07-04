@@ -60,6 +60,10 @@ public sealed class Phase11DiagnosticsBoundaryTests
             stateService.CleaningCompleted.Returns(Observable.Never<CleaningSessionResult>());
             configService.SkipListChanged.Returns(Observable.Never<GameType>());
             using var refreshModule = new RecordingPluginRefreshModule();
+            refreshModule.CurrentPublication = RecordingPluginRefreshModule.CreateFreshPublication(
+                rows: appState.PluginsToClean
+                    .Select(plugin => RecordingPluginRefreshModule.CreatePublishedRow(plugin))
+                    .ToList());
             var gameCapabilityProvider = new GameCapabilityProvider();
             cleaningSession.StartAsync(Arg.Any<CancellationToken>())
                 .ThrowsAsync(new Exception(DiagnosticSentinels.CreateUnsafePayload()));
@@ -75,7 +79,8 @@ public sealed class Phase11DiagnosticsBoundaryTests
                 pluginLoading,
                 uiDispatcher,
                 refreshModule,
-                gameCapabilityProvider);
+                gameCapabilityProvider,
+                new CleaningCommandReadiness(refreshModule, stateService));
             using var _ = viewModel.ShowProgressInteraction.RegisterHandler(_ => Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
 
             // Act

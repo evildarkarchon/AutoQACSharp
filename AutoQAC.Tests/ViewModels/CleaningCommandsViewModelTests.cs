@@ -2,7 +2,6 @@ using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
-using AutoQAC.Services.GameCapability;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Services.State;
 using AutoQAC.Services.UI;
@@ -31,6 +30,7 @@ public sealed class CleaningCommandsViewModelTests
         var stateService = new StateService();
         var cleaningSession = Substitute.For<ICleaningSession>();
         using var refreshModule = new RecordingPluginRefreshModule();
+        refreshModule.CurrentPublication = RecordingPluginRefreshModule.CreateFreshPublication();
         var callOrder = new List<string>();
 
         cleaningSession.StartAsync(Arg.Any<CancellationToken>())
@@ -60,7 +60,7 @@ public sealed class CleaningCommandsViewModelTests
             stateService,
             cleaningSession,
             Substitute.For<IConfigurationService>(),
-            new GameCapabilityProvider(),
+            new CleaningCommandReadiness(refreshModule, stateService),
             refreshModule,
             Substitute.For<ILoggingService>(),
             Substitute.For<IMessageDialogService>(),
@@ -75,9 +75,6 @@ public sealed class CleaningCommandsViewModelTests
         try
         {
             stateService.UpdateConfigurationPaths(null, null, tempXEditPath);
-            stateService.SetPluginsToClean([
-                new PluginInfo { FileName = "NeedsCleaning.esp", FullPath = @"C:\Game\Data\NeedsCleaning.esp" }
-            ]);
             viewModel.OnStateChanged(stateService.CurrentState);
 
             await viewModel.StartCleaningCommand.ExecuteAsync(null);
@@ -103,6 +100,7 @@ public sealed class CleaningCommandsViewModelTests
         var stateService = new StateService();
         var cleaningSession = Substitute.For<ICleaningSession>();
         using var refreshModule = new RecordingPluginRefreshModule();
+        refreshModule.CurrentPublication = RecordingPluginRefreshModule.CreateFreshPublication();
         var failure = new ConfigPersistenceFailure(
             ConfigPersistenceOperationKind.Flush,
             ConfigPersistenceFailureKind.WriteFailed,
@@ -119,7 +117,7 @@ public sealed class CleaningCommandsViewModelTests
             stateService,
             cleaningSession,
             Substitute.For<IConfigurationService>(),
-            new GameCapabilityProvider(),
+            new CleaningCommandReadiness(refreshModule, stateService),
             refreshModule,
             Substitute.For<ILoggingService>(),
             Substitute.For<IMessageDialogService>(),
@@ -134,9 +132,6 @@ public sealed class CleaningCommandsViewModelTests
         try
         {
             stateService.UpdateConfigurationPaths(null, null, tempXEditPath);
-            stateService.SetPluginsToClean([
-                new PluginInfo { FileName = "NeedsCleaning.esp", FullPath = @"C:\Game\Data\NeedsCleaning.esp" }
-            ]);
             viewModel.OnStateChanged(stateService.CurrentState);
 
             await viewModel.StartCleaningCommand.ExecuteAsync(null);
@@ -155,6 +150,62 @@ public sealed class CleaningCommandsViewModelTests
         }
     }
 
+    [Theory]
+    [InlineData(PluginRefreshStalenessReason.MissingPublication, "Plugins not refreshed")]
+    [InlineData(PluginRefreshStalenessReason.SkipListSettingsChanged, "Plugins need refresh")]
+    public async Task OnStateChanged_WhenPublicationIsMissingOrStale_ShouldProjectReadinessBanner(
+        PluginRefreshStalenessReason stalenessReason,
+        string expectedTitle)
+    {
+        var tempXEditPath = Path.Combine(Path.GetTempPath(), $"AutoQAC-{Guid.NewGuid():N}.exe");
+        await File.WriteAllTextAsync(tempXEditPath, string.Empty);
+
+        var stateService = new StateService();
+        var cleaningSession = Substitute.For<ICleaningSession>();
+        using var refreshModule = new RecordingPluginRefreshModule(
+            RecordingPluginRefreshModule.CreateSnapshot(GameType.SkyrimSe));
+        if (stalenessReason != PluginRefreshStalenessReason.MissingPublication)
+        {
+            var fresh = RecordingPluginRefreshModule.CreateFreshPublication();
+            refreshModule.CurrentPublication = fresh with
+            {
+                Freshness = new PluginRefreshFreshness(false, stalenessReason)
+            };
+        }
+
+        var viewModel = new CleaningCommandsViewModel(
+            stateService,
+            cleaningSession,
+            Substitute.For<IConfigurationService>(),
+            new CleaningCommandReadiness(refreshModule, stateService),
+            refreshModule,
+            Substitute.For<ILoggingService>(),
+            Substitute.For<IMessageDialogService>(),
+            Substitute.For<IAppLifetime>(),
+            new Interaction<ICleaningSession, Unit>(),
+            new Interaction<List<DryRunResult>, Unit>(),
+            new Interaction<Unit, bool>(),
+            new Interaction<Unit, bool>(),
+            new Interaction<Unit, Unit>(),
+            new Interaction<Unit, Unit>());
+
+        try
+        {
+            stateService.UpdateConfigurationPaths(null, null, tempXEditPath);
+            viewModel.OnStateChanged(stateService.CurrentState);
+
+            viewModel.CanStartCleaning.Should().BeFalse();
+            viewModel.HasValidationErrors.Should().BeTrue();
+            viewModel.ValidationErrors.Should().ContainSingle().Which.Title.Should().Be(expectedTitle);
+        }
+        finally
+        {
+            viewModel.Dispose();
+            stateService.Dispose();
+            File.Delete(tempXEditPath);
+        }
+    }
+
     [Fact]
     public void ExitCommand_ShouldRequestApplicationShutdown()
     {
@@ -163,7 +214,7 @@ public sealed class CleaningCommandsViewModelTests
             Substitute.For<IStateService>(),
             Substitute.For<ICleaningSession>(),
             Substitute.For<IConfigurationService>(),
-            new GameCapabilityProvider(),
+            Substitute.For<ICleaningCommandReadiness>(),
             new RecordingPluginRefreshModule(),
             Substitute.For<ILoggingService>(),
             Substitute.For<IMessageDialogService>(),

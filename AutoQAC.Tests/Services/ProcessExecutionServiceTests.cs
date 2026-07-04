@@ -6,6 +6,7 @@ using AutoQAC.Models.Configuration;
 using AutoQAC.Services.Backup;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
+using AutoQAC.Services.GameCapability;
 using AutoQAC.Services.GameDetection;
 using AutoQAC.Services.MO2;
 using AutoQAC.Services.Monitoring;
@@ -13,6 +14,7 @@ using AutoQAC.Services.Plugin;
 using AutoQAC.Services.Process;
 using AutoQAC.Services.State;
 using AutoQAC.Tests.Helpers;
+using AutoQAC.Tests.TestInfrastructure;
 using FluentAssertions;
 using NSubstitute;
 
@@ -423,11 +425,12 @@ public sealed class ProcessExecutionServiceTests : IDisposable
         {
             new() { FileName = "Test.esp", FullPath = @"C:\Data\Test.esp" }
         };
+        var xEditPath = Path.GetTempFileName();
 
         var appState = new AppState
         {
             LoadOrderPath = "plugins.txt",
-            XEditExecutablePath = "xedit.exe",
+            XEditExecutablePath = xEditPath,
             CurrentGameType = GameType.SkyrimSe,
             PluginsToClean = plugins
         };
@@ -441,12 +444,18 @@ public sealed class ProcessExecutionServiceTests : IDisposable
             .Returns(PluginWarningKind.None);
         mo2ValidationMock.ValidateMo2ExecutableAsync(Arg.Any<string>()).Returns(true);
 
+        var refreshModule = new RecordingPluginRefreshModule();
+        refreshModule.CurrentPublication = RecordingPluginRefreshModule.CreateFreshPublication(
+            rows: plugins.Select(plugin => RecordingPluginRefreshModule.CreatePublishedRow(plugin)).ToList(),
+            discoveryPlan: RecordingPluginRefreshModule.CreateDiscoveryPlan(
+                GameType.SkyrimSe,
+                PluginRefreshDiscoveryMode.DirectAutomatic,
+                RecordingPluginRefreshModule.CreateConfiguration(xEditPath: xEditPath)));
         var preflight = new CleaningPreflight(
             configServiceMock,
-            gameDetectionServiceMock,
             pluginServiceMock,
+            refreshModule,
             mo2ValidationMock,
-            cleaningServiceMock,
             stateServiceMock,
             loggerMock);
 
@@ -627,10 +636,11 @@ public sealed class ProcessExecutionServiceTests : IDisposable
         {
             new() { FileName = "Test.esp", FullPath = @"C:\Data\Test.esp" }
         };
+        var xEditPath = Path.GetTempFileName();
         var appState = new AppState
         {
             LoadOrderPath = "plugins.txt",
-            XEditExecutablePath = "xedit.exe",
+            XEditExecutablePath = xEditPath,
             CurrentGameType = GameType.SkyrimSe,
             PluginsToClean = plugins
         };
@@ -641,12 +651,18 @@ public sealed class ProcessExecutionServiceTests : IDisposable
             .Returns(PluginWarningKind.None);
         mo2ValidationMock.ValidateMo2ExecutableAsync(Arg.Any<string>()).Returns(true);
 
+        var refreshModule = new RecordingPluginRefreshModule();
+        refreshModule.CurrentPublication = RecordingPluginRefreshModule.CreateFreshPublication(
+            rows: plugins.Select(plugin => RecordingPluginRefreshModule.CreatePublishedRow(plugin)).ToList(),
+            discoveryPlan: RecordingPluginRefreshModule.CreateDiscoveryPlan(
+                GameType.SkyrimSe,
+                PluginRefreshDiscoveryMode.DirectAutomatic,
+                RecordingPluginRefreshModule.CreateConfiguration(xEditPath: xEditPath)));
         var preflight = new CleaningPreflight(
             configServiceMock,
-            gameDetectionServiceMock,
             pluginServiceMock,
+            refreshModule,
             mo2ValidationMock,
-            cleaningServiceMock,
             stateServiceMock,
             Substitute.For<ILoggingService>());
 

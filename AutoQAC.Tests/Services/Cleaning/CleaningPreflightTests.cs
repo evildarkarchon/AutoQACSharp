@@ -4,7 +4,6 @@ using AutoQAC.Models.Configuration;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
 using AutoQAC.Services.GameCapability;
-using AutoQAC.Services.GameDetection;
 using AutoQAC.Services.MO2;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Services.State;
@@ -16,111 +15,58 @@ namespace AutoQAC.Tests.Services.Cleaning;
 
 public sealed class CleaningPreflightTests
 {
-    private readonly IConfigurationService _configMock;
-    private readonly IGameDetectionService _gameDetectionMock;
-    private readonly IPluginValidationService _validationMock;
-    private readonly IMo2ValidationService _mo2ValidationMock;
-    private readonly IMo2InstanceService _mo2InstanceMock;
-    private readonly ICleaningService _cleaningServiceMock;
-    private readonly IStateService _stateMock;
-    private readonly ILoggingService _loggerMock;
-    private readonly ICleaningPreflight _sut;
-
-    public CleaningPreflightTests()
-    {
-        _configMock = Substitute.For<IConfigurationService>();
-        _gameDetectionMock = Substitute.For<IGameDetectionService>();
-        _validationMock = Substitute.For<IPluginValidationService>();
-        _mo2ValidationMock = Substitute.For<IMo2ValidationService>();
-        _mo2InstanceMock = Substitute.For<IMo2InstanceService>();
-        _cleaningServiceMock = Substitute.For<ICleaningService>();
-        _stateMock = Substitute.For<IStateService>();
-        _loggerMock = Substitute.For<ILoggingService>();
-
-        _configMock.FlushPendingSavesAsync(Arg.Any<CancellationToken>())
-            .Returns(CreateFlushResult(ConfigPersistenceStatusKind.NoOp));
-        _validationMock.ValidatePluginFile(Arg.Any<PluginInfo>()).Returns(PluginWarningKind.None);
-        _configMock.GetSkipListAsync(
-                Arg.Any<GameType>(),
-                Arg.Any<GameVariant>(),
-                Arg.Any<CancellationToken>())
-            .Returns([]);
-        _configMock.LoadUserConfigAsync(Arg.Any<CancellationToken>())
-            .Returns(new UserConfiguration());
-        _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>())
-            .Returns(true);
-        _gameDetectionMock.DetectVariant(Arg.Any<GameType>(), Arg.Any<IReadOnlyList<string>>())
-            .Returns(GameVariant.None);
-        var mo2Instance = new Mo2InstanceInfo(
-            @"C:\MO2\Instances\SSE",
-            @"C:\MO2\Instances\SSE\mods",
-            @"C:\MO2\Instances\SSE\profiles",
-            @"C:\MO2\Instances\SSE\overwrite",
-            "Default",
-            "Skyrim Special Edition",
-            true,
-            null);
-        _mo2InstanceMock.ResolveInstanceAsync(
-                Arg.Any<GameType>(),
-                Arg.Any<string?>(),
-                Arg.Any<string?>(),
-                Arg.Any<CancellationToken>())
-            .Returns(mo2Instance);
-        _mo2InstanceMock.GetProfiles(Arg.Any<Mo2InstanceInfo>()).Returns(["Default"]);
-        _mo2InstanceMock.GetLoadOrderPath(Arg.Any<Mo2InstanceInfo>(), Arg.Any<string>())
-            .Returns(@"C:\MO2\Instances\SSE\profiles\Default\loadorder.txt");
-
-        _stateMock.CurrentState.Returns(CreateState());
-        _sut = new CleaningPreflight(
-            _configMock,
-            _gameDetectionMock,
-            _validationMock,
-            _mo2ValidationMock,
-            _cleaningServiceMock,
-            _stateMock,
-            _loggerMock,
-            _mo2InstanceMock);
-    }
-
     [Fact]
-    public async Task PrepareAsync_IsIdempotent_ForIdenticalState()
+    public async Task PrepareAsync_IsIdempotent_ForIdenticalPublication()
     {
-        // Arrange
-        var state = CreateState();
-        _stateMock.CurrentState.Returns(state);
+        var xEditPath = await CreateTempFileAsync();
+        try
+        {
+            using var refresh = new RecordingPluginRefreshModule();
+            refresh.CurrentPublication = CreateFreshPublication(CreatePlugin("Update.esm"));
+            var sut = CreateSut(CreateState(xEditPath: xEditPath), refresh);
 
-        // Act
-        var first = await _sut.PrepareAsync(CancellationToken.None);
-        var second = await _sut.PrepareAsync(CancellationToken.None);
+            var first = await sut.PrepareAsync(CancellationToken.None);
+            var second = await sut.PrepareAsync(CancellationToken.None);
 
-        // Assert
-        second.PluginRows.Should().Equal(first.PluginRows);
+            second.PluginRows.Should().Equal(first.PluginRows);
+        }
+        finally
+        {
+            File.Delete(xEditPath);
+        }
     }
 
     [Fact]
     public async Task PrepareAsync_Mo2Mode_ReportsBackupSkippedAndFileValidationSkippedPolicyFacts()
     {
-        // Arrange
-        var tempMo2Path = Path.GetTempFileName();
-        var tempLoadOrderPath = Path.GetTempFileName();
+        var xEditPath = await CreateTempFileAsync();
+        var mo2Path = await CreateTempFileAsync();
+        var loadOrderPath = await CreateTempFileAsync();
+        var instanceDirectory = Directory.CreateTempSubdirectory();
         try
         {
-            _mo2InstanceMock.GetLoadOrderPath(Arg.Any<Mo2InstanceInfo>(), Arg.Any<string>())
-                .Returns(tempLoadOrderPath);
-            _stateMock.CurrentState.Returns(CreateState(mo2Mode: true, mo2ExecutablePath: tempMo2Path,
-                mo2Profile: "Default"));
-            _configMock.LoadUserConfigAsync(Arg.Any<CancellationToken>())
-                .Returns(new UserConfiguration
-                {
-                    Settings = new AutoQacSettings { Mo2Mode = true },
-                    Backup = new BackupSettings { Enabled = true }
-                });
-            _mo2ValidationMock.ValidateMo2ExecutableAsync(Arg.Any<string>()).Returns(true);
+            using var refresh = new RecordingPluginRefreshModule();
+            refresh.CurrentPublication = CreateMo2Publication(
+                xEditPath,
+                mo2Path,
+                instanceDirectory.FullName,
+                loadOrderPath,
+                selectedProfile: "Default");
+            var config = CreateConfig(new UserConfiguration
+            {
+                Backup = new BackupSettings { Enabled = true },
+                Settings = new AutoQacSettings { Mo2Mode = true }
+            });
+            var mo2Validation = Substitute.For<IMo2ValidationService>();
+            mo2Validation.ValidateMo2ExecutableAsync(mo2Path).Returns(true);
+            var sut = CreateSut(
+                CreateState(xEditPath: xEditPath, mo2Mode: true, mo2Path: mo2Path, mo2Profile: "Default"),
+                refresh,
+                config: config,
+                mo2Validation: mo2Validation);
 
-            // Act
-            var plan = await _sut.PrepareAsync(CancellationToken.None);
+            var plan = await sut.PrepareAsync(CancellationToken.None);
 
-            // Assert
             plan.IsMo2ModeActive.Should().BeTrue();
             plan.BackupSkippedByPolicy.Should().BeTrue();
             plan.FileValidationSkippedByPolicy.Should().BeTrue();
@@ -128,317 +74,130 @@ public sealed class CleaningPreflightTests
         }
         finally
         {
-            if (File.Exists(tempMo2Path))
-            {
-                File.Delete(tempMo2Path);
-            }
+            File.Delete(xEditPath);
+            File.Delete(mo2Path);
+            File.Delete(loadOrderPath);
+            instanceDirectory.Delete(recursive: true);
+        }
+    }
 
-            if (File.Exists(tempLoadOrderPath))
-            {
-                File.Delete(tempLoadOrderPath);
-            }
+    [Theory]
+    [InlineData(PluginWarningKind.NotFound, PreflightSkipReason.FileNotFound)]
+    [InlineData(PluginWarningKind.ZeroByte, PreflightSkipReason.ZeroByte)]
+    public async Task PrepareAsync_NonMo2Mode_FileValidationWarning_MapsToSkipReason(
+        PluginWarningKind warning,
+        PreflightSkipReason expectedReason)
+    {
+        var xEditPath = await CreateTempFileAsync();
+        try
+        {
+            var plugin = CreatePlugin("NeedsValidation.esp");
+            using var refresh = new RecordingPluginRefreshModule();
+            refresh.CurrentPublication = CreateFreshPublication(plugin);
+            var validation = Substitute.For<IPluginValidationService>();
+            validation.ValidatePluginFile(Arg.Is<PluginInfo>(p => p.FileName == plugin.FileName))
+                .Returns(warning);
+            var sut = CreateSut(CreateState(xEditPath: xEditPath), refresh, validation: validation);
+
+            var plan = await sut.PrepareAsync(CancellationToken.None);
+
+            plan.PluginRows.Should().ContainSingle().Which.Should().Match<PreflightPluginRow>(row =>
+                row.Decision == PreflightDecision.Skip && row.SkipReason == expectedReason);
+        }
+        finally
+        {
+            File.Delete(xEditPath);
         }
     }
 
     [Fact]
-    public async Task PrepareAsync_NonMo2Mode_FileNotFound_MapsToFileNotFoundSkipReason()
+    public async Task PrepareAsync_DoesNotMutateCleaningState()
     {
-        // Arrange
-        var missingPlugin = CreatePlugin("missing.esp");
-        _stateMock.CurrentState.Returns(CreateState([missingPlugin]));
-        _validationMock.ValidatePluginFile(Arg.Is<PluginInfo>(p => p.FileName == "missing.esp"))
-            .Returns(PluginWarningKind.NotFound);
-
-        // Act
-        var plan = await _sut.PrepareAsync(CancellationToken.None);
-
-        // Assert
-        plan.PluginRows.Should().ContainSingle().Which.Should().Match<PreflightPluginRow>(row =>
-            row.Decision == PreflightDecision.Skip && row.SkipReason == PreflightSkipReason.FileNotFound);
-    }
-
-    [Fact]
-    public async Task PrepareAsync_NonMo2Mode_ZeroByte_MapsToZeroByteSkipReason()
-    {
-        // Arrange
-        var zeroBytePlugin = CreatePlugin("empty.esp");
-        _stateMock.CurrentState.Returns(CreateState([zeroBytePlugin]));
-        _validationMock.ValidatePluginFile(Arg.Is<PluginInfo>(p => p.FileName == "empty.esp"))
-            .Returns(PluginWarningKind.ZeroByte);
-
-        // Act
-        var plan = await _sut.PrepareAsync(CancellationToken.None);
-
-        // Assert
-        plan.PluginRows.Should().ContainSingle().Which.Should().Match<PreflightPluginRow>(row =>
-            row.Decision == PreflightDecision.Skip && row.SkipReason == PreflightSkipReason.ZeroByte);
-    }
-
-    [Fact]
-    public async Task PrepareAsync_DoesNotMutateCleaningState_OverMultipleCalls()
-    {
-        // Arrange
-        _stateMock.CurrentState.Returns(CreateState());
-
-        // Act
-        await _sut.PrepareAsync(CancellationToken.None);
-        await _sut.PrepareAsync(CancellationToken.None);
-
-        // Assert
-        _stateMock.Received(0).UpdateState(Arg.Any<Func<AppState, AppState>>());
-    }
-
-    [Theory]
-    [InlineData(GameType.Fallout3, null)]
-    [InlineData(GameType.FalloutNewVegas, "")]
-    [InlineData(GameType.Oblivion, @"C:\Games\Missing\plugins.txt")]
-    public async Task PrepareAsync_UnknownGameDetectedAsFileLoadOrderGame_WithMissingLoadOrderPath_Throws(
-        GameType detectedGameType,
-        string? loadOrderPath)
-    {
-        var state = CreateState(loadOrderPath: loadOrderPath) with
+        var xEditPath = await CreateTempFileAsync();
+        try
         {
-            CurrentGameType = GameType.Unknown,
-            XEditExecutablePath = @"C:\Games\xEdit\xEdit.exe"
-        };
-        _stateMock.CurrentState.Returns(state);
-        _gameDetectionMock.DetectFromExecutable(Arg.Any<string>()).Returns(detectedGameType);
-        _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>()).Returns(true);
+            using var refresh = new RecordingPluginRefreshModule();
+            refresh.CurrentPublication = CreateFreshPublication(CreatePlugin("Update.esm"));
+            var state = Substitute.For<IStateService>();
+            state.CurrentState.Returns(CreateState(xEditPath: xEditPath));
+            var sut = CreateSut(state.CurrentState, refresh, stateService: state);
 
-        var act = () => _sut.PrepareAsync(CancellationToken.None);
+            await sut.PrepareAsync(CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>();
-        await _configMock.DidNotReceive().GetSkipListAsync(
-            Arg.Any<GameType>(),
-            Arg.Any<GameVariant>(),
-            Arg.Any<CancellationToken>());
-        _validationMock.DidNotReceive().ValidatePluginFile(Arg.Any<PluginInfo>());
-    }
-
-    [Fact]
-    public async Task PrepareAsync_UnknownGameDetectedAsMutagenSupportedGame_WithMissingLoadOrderPath_Succeeds()
-    {
-        var state = CreateState(loadOrderPath: null) with
+            state.Received(0).UpdateState(Arg.Any<Func<AppState, AppState>>());
+        }
+        finally
         {
-            CurrentGameType = GameType.Unknown,
-            XEditExecutablePath = @"C:\Games\xEdit\xEdit.exe"
-        };
-        _stateMock.CurrentState.Returns(state);
-        _gameDetectionMock.DetectFromExecutable(Arg.Any<string>()).Returns(GameType.Fallout4);
-        _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>()).Returns(true);
-
-        var plan = await _sut.PrepareAsync(CancellationToken.None);
-
-        plan.DetectedGameType.Should().Be(GameType.Fallout4);
-        plan.PluginRows.Should().ContainSingle();
-    }
-
-    /// <summary>
-    /// Verifies that Phase 10 D-26 aborts preflight with a typed persistence exception when the required flush fails.
-    /// </summary>
-    [Fact]
-    public async Task PrepareAsync_FlushFailure_ThrowsConfigPersistenceFailureException()
-    {
-        // Arrange
-        var failure = CreateFlushFailure();
-        _configMock.FlushPendingSavesAsync(Arg.Any<CancellationToken>())
-            .Returns(CreateFlushResult(ConfigPersistenceStatusKind.Failed, failure));
-
-        // Act
-        var act = () => _sut.PrepareAsync(CancellationToken.None);
-
-        // Assert
-        var thrown = await act.Should()
-            .ThrowAsync<ConfigPersistenceFailureException>(
-                "D-26 forces pre-cleaning flush failure to abort preflight with a typed exception");
-        thrown.Which.Failure.Should().BeSameAs(failure);
-        thrown.Which.Message.Should().Be(failure.SafeSummary);
-    }
-
-    /// <summary>
-    /// Proves the flush-failure branch exits before any game detection, validation, or process-launch-adjacent collaborator runs.
-    /// </summary>
-    [Fact]
-    public async Task PrepareAsync_FlushFailure_DoesNotInvokeAnyDownstreamCollaborator()
-    {
-        // Arrange
-        var failure = CreateFlushFailure();
-        _configMock.FlushPendingSavesAsync(Arg.Any<CancellationToken>())
-            .Returns(CreateFlushResult(ConfigPersistenceStatusKind.Failed, failure));
-
-        // Act
-        var act = () => _sut.PrepareAsync(CancellationToken.None);
-
-        // Assert
-        await act.Should()
-            .ThrowAsync<ConfigPersistenceFailureException>(
-                "D-26 and success criterion #2 prevent any xEdit launch path on flush failure");
-        _gameDetectionMock.DidNotReceive().DetectFromExecutable(Arg.Any<string>());
-        await _gameDetectionMock.DidNotReceiveWithAnyArgs().DetectFromLoadOrderAsync(null!, CancellationToken.None);
-        _gameDetectionMock.DidNotReceive().DetectVariant(Arg.Any<GameType>(), Arg.Any<IReadOnlyList<string>?>());
-        _validationMock.DidNotReceive().ValidatePluginFile(Arg.Any<PluginInfo>());
-        await _mo2ValidationMock.DidNotReceiveWithAnyArgs().ValidateMo2ExecutableAsync(null!);
-        await _cleaningServiceMock.DidNotReceive().ValidateEnvironmentAsync(Arg.Any<CancellationToken>());
-        await _cleaningServiceMock.DidNotReceiveWithAnyArgs().CleanPluginAsync(null!);
-        await _configMock.DidNotReceiveWithAnyArgs().LoadUserConfigAsync();
-        await _configMock.Received(1).FlushPendingSavesAsync(Arg.Any<CancellationToken>());
-    }
-
-    /// <summary>
-    /// Confirms an explicit successful flush preserves existing preflight behavior and downstream validation.
-    /// </summary>
-    [Fact]
-    public async Task PrepareAsync_FlushSuccess_ProceedsAsBefore()
-    {
-        // Arrange
-        _configMock.FlushPendingSavesAsync(Arg.Any<CancellationToken>())
-            .Returns(CreateFlushResult(ConfigPersistenceStatusKind.Success));
-
-        // Act
-        var plan = await _sut.PrepareAsync(CancellationToken.None);
-
-        // Assert
-        plan.Should().NotBeNull();
-        await _configMock.Received(1).FlushPendingSavesAsync(Arg.Any<CancellationToken>());
-        _gameDetectionMock.Received(1).DetectVariant(GameType.SkyrimSe, Arg.Any<IReadOnlyList<string>>());
-        _validationMock.Received(1).ValidatePluginFile(Arg.Any<PluginInfo>());
-    }
-
-    /// <summary>
-    /// Confirms a no-op flush, the common no-pending-save case, preserves existing preflight behavior.
-    /// </summary>
-    [Fact]
-    public async Task PrepareAsync_FlushNoOp_ProceedsAsBefore()
-    {
-        // Arrange
-        _configMock.FlushPendingSavesAsync(Arg.Any<CancellationToken>())
-            .Returns(CreateFlushResult(ConfigPersistenceStatusKind.NoOp));
-
-        // Act
-        var plan = await _sut.PrepareAsync(CancellationToken.None);
-
-        // Assert
-        plan.Should().NotBeNull();
-        await _configMock.Received(1).FlushPendingSavesAsync(Arg.Any<CancellationToken>());
-        _gameDetectionMock.Received(1).DetectVariant(GameType.SkyrimSe, Arg.Any<IReadOnlyList<string>>());
-        _validationMock.Received(1).ValidatePluginFile(Arg.Any<PluginInfo>());
-    }
-
-    /// <summary>
-    /// Ensures the preflight failure log uses the typed safe summary rather than a raw exception detail.
-    /// </summary>
-    [Fact]
-    public async Task PrepareAsync_FlushFailure_LogsErrorWithSafeSummary()
-    {
-        // Arrange
-        var failure = CreateFlushFailure();
-        _configMock.FlushPendingSavesAsync(Arg.Any<CancellationToken>())
-            .Returns(CreateFlushResult(ConfigPersistenceStatusKind.Failed, failure));
-
-        // Act
-        var act = () => _sut.PrepareAsync(CancellationToken.None);
-
-        // Assert
-        await act.Should()
-            .ThrowAsync<ConfigPersistenceFailureException>(
-                "D-28 requires the log path to carry a safe typed summary, not raw exception details");
-        _loggerMock.Received(1).Error(
-            null,
-            Arg.Any<string>(),
-            Arg.Is<object[]>(args => ContainsSafeSummary(args)));
+            File.Delete(xEditPath);
+        }
     }
 
     [Fact]
     public async Task PrepareAsync_MissingPublication_ThrowsTypedPreflightFailure()
     {
-        var config = Substitute.For<IConfigurationService>();
-        config.FlushPendingSavesAsync(Arg.Any<CancellationToken>())
-            .Returns(CreateFlushResult(ConfigPersistenceStatusKind.NoOp));
-        var state = Substitute.For<IStateService>();
-        state.CurrentState.Returns(CreateState());
-        using var refresh = new RecordingPluginRefreshModule(RecordingPluginRefreshModule.CreateSnapshot(GameType.SkyrimSe));
-        refresh.CurrentPublication = RecordingPluginRefreshModule.CreatePublication(
-            RecordingPluginRefreshModule.CreateSnapshot(GameType.SkyrimSe));
-        var sut = new CleaningPreflight(
-            config,
-            Substitute.For<IPluginValidationService>(),
-            refresh,
-            Substitute.For<IMo2ValidationService>(),
-            state,
-            Substitute.For<ILoggingService>());
+        var xEditPath = await CreateTempFileAsync();
+        try
+        {
+            using var refresh = new RecordingPluginRefreshModule(
+                RecordingPluginRefreshModule.CreateSnapshot(GameType.SkyrimSe));
+            var sut = CreateSut(CreateState(xEditPath: xEditPath), refresh);
 
-        var act = () => sut.PrepareAsync(CancellationToken.None);
+            var act = () => sut.PrepareAsync(CancellationToken.None);
 
-        var thrown = await act.Should().ThrowAsync<CleaningPreflightException>();
-        thrown.Which.Failure.Kind.Should().Be(CleaningPreflightFailureKind.MissingPluginRefreshPublication);
+            var thrown = await act.Should().ThrowAsync<CleaningPreflightException>();
+            thrown.Which.Failure.Kind.Should().Be(CleaningPreflightFailureKind.MissingPluginRefreshPublication);
+        }
+        finally
+        {
+            File.Delete(xEditPath);
+        }
+    }
+
+    [Fact]
+    public async Task PrepareAsync_StalePublication_ThrowsTypedPreflightFailure()
+    {
+        var xEditPath = await CreateTempFileAsync();
+        try
+        {
+            using var refresh = new RecordingPluginRefreshModule();
+            var fresh = CreateFreshPublication(CreatePlugin("Update.esm"));
+            refresh.CurrentPublication = fresh with
+            {
+                Freshness = new PluginRefreshFreshness(false, PluginRefreshStalenessReason.SkipListSettingsChanged)
+            };
+            var sut = CreateSut(CreateState(xEditPath: xEditPath), refresh);
+
+            var act = () => sut.PrepareAsync(CancellationToken.None);
+
+            var thrown = await act.Should().ThrowAsync<CleaningPreflightException>();
+            thrown.Which.Failure.Kind.Should().Be(CleaningPreflightFailureKind.StalePluginRefreshPublication);
+        }
+        finally
+        {
+            File.Delete(xEditPath);
+        }
     }
 
     [Fact]
     public async Task PrepareAsync_UsesPublicationSelectionAndSkipListFacts()
     {
-        var xEditPath = Path.GetTempFileName();
+        var xEditPath = await CreateTempFileAsync();
         try
         {
-            var config = Substitute.For<IConfigurationService>();
-            config.FlushPendingSavesAsync(Arg.Any<CancellationToken>())
-                .Returns(CreateFlushResult(ConfigPersistenceStatusKind.NoOp));
-            config.LoadUserConfigAsync(Arg.Any<CancellationToken>()).Returns(new UserConfiguration());
-            var state = Substitute.For<IStateService>();
-            state.CurrentState.Returns(CreateState() with { XEditExecutablePath = xEditPath });
-            var validation = Substitute.For<IPluginValidationService>();
-            validation.ValidatePluginFile(Arg.Any<PluginInfo>()).Returns(PluginWarningKind.None);
-            var configuration = new PluginRefreshConfigurationProjection(
-                LoadOrderPath: null,
-                GameDataFolder: null,
-                HasGameDataFolderOverride: false,
-                XEditPath: xEditPath,
-                Mo2Path: null,
-                Mo2ModeEnabled: false,
-                Mo2InstancePath: null,
-                IsMo2InstanceOverride: false,
-                IsMo2InstanceValid: null,
-                AvailableProfiles: [],
-                SelectedProfile: null,
-                CleaningTimeout: 300);
-            var plan = new AutoQAC.Services.GameCapability.PluginRefreshDiscoveryPlan(
-                GameType.SkyrimSe,
-                AutoQAC.Services.GameCapability.PluginRefreshDiscoveryMode.DirectAutomatic,
-                configuration,
-                DisableSkipLists: false,
-                CanAttemptIssueApproximation: true,
-                DataFolderPath: null,
-                LoadOrderPath: null,
-                Mo2LoadOrderPath: null,
-                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
-                Mo2BaseDataFolder: null);
             var clean = CreatePlugin("Clean.esp");
             var notSelected = CreatePlugin("NotSelected.esp");
             var skipped = CreatePlugin("Skipped.esp") with { IsInSkipList = true };
-            var rows = new List<PluginRefreshPublishedRow>
-            {
-                new(clean, IsVisible: true, IsSelected: true, IsSkippedByPolicy: false, new PluginRefreshRowKey(clean.FileName, clean.FullPath)),
-                new(notSelected, IsVisible: true, IsSelected: false, IsSkippedByPolicy: false, new PluginRefreshRowKey(notSelected.FileName, notSelected.FullPath)),
-                new(skipped, IsVisible: false, IsSelected: true, IsSkippedByPolicy: true, new PluginRefreshRowKey(skipped.FileName, skipped.FullPath))
-            };
             using var refresh = new RecordingPluginRefreshModule();
-            refresh.CurrentPublication = new PluginRefreshPublication(
-                Generation: 1,
-                GameType.SkyrimSe,
-                plan,
-                configuration,
-                PluginRefreshFreshness.Fresh,
-                rows,
-                VisibleRows: [],
-                new PluginRefreshActivity(false, false),
-                new PluginRefreshCommandAvailability(false, false, false, false),
-                StatusText: "Ready");
-            var sut = new CleaningPreflight(
-                config,
-                validation,
-                refresh,
-                Substitute.For<IMo2ValidationService>(),
-                state,
-                Substitute.For<ILoggingService>());
+            refresh.CurrentPublication = CreateFreshPublication(
+                RecordingPluginRefreshModule.CreatePublishedRow(clean),
+                RecordingPluginRefreshModule.CreatePublishedRow(notSelected, isSelected: false),
+                RecordingPluginRefreshModule.CreatePublishedRow(
+                    skipped,
+                    isVisible: false,
+                    isSelected: true,
+                    isSkippedByPolicy: true));
+            var config = CreateConfig();
+            var sut = CreateSut(CreateState(xEditPath: xEditPath), refresh, config: config);
 
             var result = await sut.PrepareAsync(CancellationToken.None);
 
@@ -454,70 +213,146 @@ public sealed class CleaningPreflightTests
     }
 
     [Fact]
+    public async Task PrepareAsync_EmptyPublicationRows_ThrowsNoPluginsLoaded()
+    {
+        var xEditPath = await CreateTempFileAsync();
+        try
+        {
+            using var refresh = new RecordingPluginRefreshModule();
+            refresh.CurrentPublication = RecordingPluginRefreshModule.CreateFreshPublication(rows: []);
+            var sut = CreateSut(CreateState(xEditPath: xEditPath), refresh);
+
+            var act = () => sut.PrepareAsync(CancellationToken.None);
+
+            var thrown = await act.Should().ThrowAsync<CleaningPreflightException>();
+            thrown.Which.Failure.Kind.Should().Be(CleaningPreflightFailureKind.NoPluginsLoaded);
+        }
+        finally
+        {
+            File.Delete(xEditPath);
+        }
+    }
+
+    [Fact]
+    public async Task PrepareAsync_NoSelectedCleanableRows_ThrowsNoPluginsSelected()
+    {
+        var xEditPath = await CreateTempFileAsync();
+        try
+        {
+            using var refresh = new RecordingPluginRefreshModule();
+            refresh.CurrentPublication = CreateFreshPublication(
+                RecordingPluginRefreshModule.CreatePublishedRow(CreatePlugin("Deselected.esp"), isSelected: false));
+            var sut = CreateSut(CreateState(xEditPath: xEditPath), refresh);
+
+            var act = () => sut.PrepareAsync(CancellationToken.None);
+
+            var thrown = await act.Should().ThrowAsync<CleaningPreflightException>();
+            thrown.Which.Failure.Kind.Should().Be(CleaningPreflightFailureKind.NoPluginsSelected);
+        }
+        finally
+        {
+            File.Delete(xEditPath);
+        }
+    }
+
+    [Theory]
+    [InlineData(null, CleaningPreflightFailureKind.XEditNotConfigured)]
+    [InlineData(@"C:\Missing\SSEEdit.exe", CleaningPreflightFailureKind.XEditNotFound)]
+    public async Task PrepareAsync_XEditLaunchReadinessFailure_ThrowsTypedFailure(
+        string? xEditPath,
+        CleaningPreflightFailureKind expectedKind)
+    {
+        using var refresh = new RecordingPluginRefreshModule();
+        refresh.CurrentPublication = CreateFreshPublication(CreatePlugin("Update.esm"));
+        var sut = CreateSut(CreateState(xEditPath: xEditPath), refresh);
+
+        var act = () => sut.PrepareAsync(CancellationToken.None);
+
+        var thrown = await act.Should().ThrowAsync<CleaningPreflightException>();
+        thrown.Which.Failure.Kind.Should().Be(expectedKind);
+    }
+
+    [Fact]
+    public async Task PrepareAsync_DirectLoadOrderWithoutPath_ThrowsLoadOrderNotConfigured()
+    {
+        var xEditPath = await CreateTempFileAsync();
+        try
+        {
+            var configuration = RecordingPluginRefreshModule.CreateConfiguration(xEditPath: xEditPath);
+            var plan = RecordingPluginRefreshModule.CreateDiscoveryPlan(
+                mode: PluginRefreshDiscoveryMode.DirectLoadOrderFile,
+                configuration: configuration,
+                loadOrderPath: null);
+            using var refresh = new RecordingPluginRefreshModule();
+            refresh.CurrentPublication = RecordingPluginRefreshModule.CreateFreshPublication(
+                discoveryPlan: plan,
+                configuration: configuration);
+            var sut = CreateSut(CreateState(xEditPath: xEditPath), refresh);
+
+            var act = () => sut.PrepareAsync(CancellationToken.None);
+
+            var thrown = await act.Should().ThrowAsync<CleaningPreflightException>();
+            thrown.Which.Failure.Kind.Should().Be(CleaningPreflightFailureKind.LoadOrderNotConfigured);
+        }
+        finally
+        {
+            File.Delete(xEditPath);
+        }
+    }
+
+    [Fact]
+    public async Task PrepareAsync_DirectLoadOrderWithMissingFile_ThrowsLoadOrderNotFound()
+    {
+        var xEditPath = await CreateTempFileAsync();
+        try
+        {
+            var loadOrderPath = @"C:\Missing\plugins.txt";
+            var configuration = RecordingPluginRefreshModule.CreateConfiguration(
+                loadOrderPath: loadOrderPath,
+                xEditPath: xEditPath);
+            var plan = RecordingPluginRefreshModule.CreateDiscoveryPlan(
+                mode: PluginRefreshDiscoveryMode.DirectLoadOrderFile,
+                configuration: configuration,
+                loadOrderPath: loadOrderPath);
+            using var refresh = new RecordingPluginRefreshModule();
+            refresh.CurrentPublication = RecordingPluginRefreshModule.CreateFreshPublication(
+                discoveryPlan: plan,
+                configuration: configuration);
+            var sut = CreateSut(CreateState(xEditPath: xEditPath, loadOrderPath: loadOrderPath), refresh);
+
+            var act = () => sut.PrepareAsync(CancellationToken.None);
+
+            var thrown = await act.Should().ThrowAsync<CleaningPreflightException>();
+            thrown.Which.Failure.Kind.Should().Be(CleaningPreflightFailureKind.LoadOrderNotFound);
+        }
+        finally
+        {
+            File.Delete(xEditPath);
+        }
+    }
+
+    [Fact]
     public async Task PrepareAsync_Mo2PublicationWithInvalidExecutable_ThrowsTypedMo2Failure()
     {
-        var xEditPath = Path.GetTempFileName();
-        var mo2Path = Path.GetTempFileName();
-        var loadOrderPath = Path.GetTempFileName();
+        var xEditPath = await CreateTempFileAsync();
+        var mo2Path = await CreateTempFileAsync();
+        var loadOrderPath = await CreateTempFileAsync();
         var instanceDirectory = Directory.CreateTempSubdirectory();
         try
         {
-            var config = Substitute.For<IConfigurationService>();
-            config.FlushPendingSavesAsync(Arg.Any<CancellationToken>())
-                .Returns(CreateFlushResult(ConfigPersistenceStatusKind.NoOp));
-            var state = Substitute.For<IStateService>();
-            state.CurrentState.Returns(CreateState(mo2Mode: true, mo2ExecutablePath: mo2Path, mo2Profile: "Default") with
-            {
-                XEditExecutablePath = xEditPath
-            });
+            using var refresh = new RecordingPluginRefreshModule();
+            refresh.CurrentPublication = CreateMo2Publication(
+                xEditPath,
+                mo2Path,
+                instanceDirectory.FullName,
+                loadOrderPath,
+                selectedProfile: "Default");
             var mo2Validation = Substitute.For<IMo2ValidationService>();
             mo2Validation.ValidateMo2ExecutableAsync(mo2Path).Returns(false);
-            var configuration = new PluginRefreshConfigurationProjection(
-                LoadOrderPath: null,
-                GameDataFolder: null,
-                HasGameDataFolderOverride: false,
-                XEditPath: xEditPath,
-                Mo2Path: mo2Path,
-                Mo2ModeEnabled: true,
-                Mo2InstancePath: instanceDirectory.FullName,
-                IsMo2InstanceOverride: true,
-                IsMo2InstanceValid: true,
-                AvailableProfiles: ["Default"],
-                SelectedProfile: "Default",
-                CleaningTimeout: 300);
-            var plan = new PluginRefreshDiscoveryPlan(
-                GameType.SkyrimSe,
-                PluginRefreshDiscoveryMode.Mo2LoadOrderFile,
-                configuration,
-                DisableSkipLists: false,
-                CanAttemptIssueApproximation: true,
-                DataFolderPath: null,
-                LoadOrderPath: null,
-                Mo2LoadOrderPath: loadOrderPath,
-                Mo2PathMap: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
-                Mo2BaseDataFolder: null);
-            var plugin = CreatePlugin("NeedsCleaning.esp");
-            using var refresh = new RecordingPluginRefreshModule();
-            refresh.CurrentPublication = RecordingPluginRefreshModule.CreatePublication(
-                RecordingPluginRefreshModule.CreateSnapshot(GameType.SkyrimSe, configuration: configuration),
-                rows:
-                [
-                    new PluginRefreshPublishedRow(
-                        plugin,
-                        IsVisible: true,
-                        IsSelected: true,
-                        IsSkippedByPolicy: false,
-                        new PluginRefreshRowKey(plugin.FileName, plugin.FullPath))
-                ],
-                freshness: PluginRefreshFreshness.Fresh,
-                discoveryPlan: plan);
-            var sut = new CleaningPreflight(
-                config,
-                Substitute.For<IPluginValidationService>(),
+            var sut = CreateSut(
+                CreateState(xEditPath: xEditPath, mo2Mode: true, mo2Path: mo2Path, mo2Profile: "Default"),
                 refresh,
-                mo2Validation,
-                state,
-                Substitute.For<ILoggingService>());
+                mo2Validation: mo2Validation);
 
             var act = () => sut.PrepareAsync(CancellationToken.None);
 
@@ -534,23 +369,205 @@ public sealed class CleaningPreflightTests
         }
     }
 
+    [Fact]
+    public async Task PrepareAsync_FlushFailure_ThrowsConfigPersistenceFailureException()
+    {
+        var xEditPath = await CreateTempFileAsync();
+        try
+        {
+            var failure = CreateFlushFailure();
+            var config = CreateConfig();
+            config.FlushPendingSavesAsync(Arg.Any<CancellationToken>())
+                .Returns(CreateFlushResult(ConfigPersistenceStatusKind.Failed, failure));
+            using var refresh = new RecordingPluginRefreshModule();
+            refresh.CurrentPublication = CreateFreshPublication(CreatePlugin("Update.esm"));
+            var sut = CreateSut(CreateState(xEditPath: xEditPath), refresh, config: config);
+
+            var act = () => sut.PrepareAsync(CancellationToken.None);
+
+            var thrown = await act.Should().ThrowAsync<ConfigPersistenceFailureException>();
+            thrown.Which.Failure.Should().BeSameAs(failure);
+            thrown.Which.Message.Should().Be(failure.SafeSummary);
+        }
+        finally
+        {
+            File.Delete(xEditPath);
+        }
+    }
+
+    [Fact]
+    public async Task PrepareAsync_FlushFailure_DoesNotInvokeDownstreamCollaborators()
+    {
+        var xEditPath = await CreateTempFileAsync();
+        try
+        {
+            var failure = CreateFlushFailure();
+            var config = CreateConfig();
+            config.FlushPendingSavesAsync(Arg.Any<CancellationToken>())
+                .Returns(CreateFlushResult(ConfigPersistenceStatusKind.Failed, failure));
+            var validation = Substitute.For<IPluginValidationService>();
+            var mo2Validation = Substitute.For<IMo2ValidationService>();
+            using var refresh = new RecordingPluginRefreshModule();
+            refresh.CurrentPublication = CreateFreshPublication(CreatePlugin("Update.esm"));
+            var sut = CreateSut(
+                CreateState(xEditPath: xEditPath),
+                refresh,
+                config: config,
+                validation: validation,
+                mo2Validation: mo2Validation);
+
+            var act = () => sut.PrepareAsync(CancellationToken.None);
+
+            await act.Should().ThrowAsync<ConfigPersistenceFailureException>();
+            validation.DidNotReceive().ValidatePluginFile(Arg.Any<PluginInfo>());
+            await mo2Validation.DidNotReceiveWithAnyArgs().ValidateMo2ExecutableAsync(null!);
+            await config.DidNotReceiveWithAnyArgs().LoadUserConfigAsync();
+            await config.Received(1).FlushPendingSavesAsync(Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            File.Delete(xEditPath);
+        }
+    }
+
+    [Theory]
+    [InlineData(ConfigPersistenceStatusKind.Success)]
+    [InlineData(ConfigPersistenceStatusKind.NoOp)]
+    public async Task PrepareAsync_SuccessfulFlush_ProceedsToPublicationPreflight(ConfigPersistenceStatusKind flushStatus)
+    {
+        var xEditPath = await CreateTempFileAsync();
+        try
+        {
+            var config = CreateConfig();
+            config.FlushPendingSavesAsync(Arg.Any<CancellationToken>())
+                .Returns(CreateFlushResult(flushStatus));
+            var validation = Substitute.For<IPluginValidationService>();
+            validation.ValidatePluginFile(Arg.Any<PluginInfo>()).Returns(PluginWarningKind.None);
+            using var refresh = new RecordingPluginRefreshModule();
+            refresh.CurrentPublication = CreateFreshPublication(CreatePlugin("Update.esm"));
+            var sut = CreateSut(CreateState(xEditPath: xEditPath), refresh, config: config, validation: validation);
+
+            var plan = await sut.PrepareAsync(CancellationToken.None);
+
+            plan.PluginRows.Should().ContainSingle(row => row.Decision == PreflightDecision.Clean);
+            await config.Received(1).FlushPendingSavesAsync(Arg.Any<CancellationToken>());
+            validation.Received(1).ValidatePluginFile(Arg.Any<PluginInfo>());
+        }
+        finally
+        {
+            File.Delete(xEditPath);
+        }
+    }
+
+    [Fact]
+    public async Task PrepareAsync_FlushFailure_LogsErrorWithSafeSummary()
+    {
+        var xEditPath = await CreateTempFileAsync();
+        try
+        {
+            var failure = CreateFlushFailure();
+            var config = CreateConfig();
+            config.FlushPendingSavesAsync(Arg.Any<CancellationToken>())
+                .Returns(CreateFlushResult(ConfigPersistenceStatusKind.Failed, failure));
+            var logger = Substitute.For<ILoggingService>();
+            using var refresh = new RecordingPluginRefreshModule();
+            refresh.CurrentPublication = CreateFreshPublication(CreatePlugin("Update.esm"));
+            var sut = CreateSut(CreateState(xEditPath: xEditPath), refresh, config: config, logger: logger);
+
+            var act = () => sut.PrepareAsync(CancellationToken.None);
+
+            await act.Should().ThrowAsync<ConfigPersistenceFailureException>();
+            logger.Received(1).Error(
+                null,
+                Arg.Any<string>(),
+                Arg.Is<object[]>(args => ContainsSafeSummary(args)));
+        }
+        finally
+        {
+            File.Delete(xEditPath);
+        }
+    }
+
+    private static CleaningPreflight CreateSut(
+        AppState state,
+        IPluginRefreshModule refresh,
+        IConfigurationService? config = null,
+        IPluginValidationService? validation = null,
+        IMo2ValidationService? mo2Validation = null,
+        IStateService? stateService = null,
+        ILoggingService? logger = null)
+    {
+        stateService ??= Substitute.For<IStateService>();
+        stateService.CurrentState.Returns(state);
+        if (validation is null)
+        {
+            validation = Substitute.For<IPluginValidationService>();
+            validation.ValidatePluginFile(Arg.Any<PluginInfo>()).Returns(PluginWarningKind.None);
+        }
+
+        return new CleaningPreflight(
+            config ?? CreateConfig(),
+            validation,
+            refresh,
+            mo2Validation ?? Substitute.For<IMo2ValidationService>(),
+            stateService,
+            logger ?? Substitute.For<ILoggingService>());
+    }
+
+    private static IConfigurationService CreateConfig(UserConfiguration? userConfig = null)
+    {
+        var config = Substitute.For<IConfigurationService>();
+        config.FlushPendingSavesAsync(Arg.Any<CancellationToken>())
+            .Returns(CreateFlushResult(ConfigPersistenceStatusKind.NoOp));
+        config.LoadUserConfigAsync(Arg.Any<CancellationToken>())
+            .Returns(userConfig ?? new UserConfiguration());
+        return config;
+    }
+
     private static AppState CreateState(
-        IReadOnlyList<PluginInfo>? plugins = null,
+        string? xEditPath,
         bool mo2Mode = false,
-        string mo2ExecutablePath = @"C:\MO2\ModOrganizer.exe",
+        string? mo2Path = null,
         string? mo2Profile = null,
-        string? loadOrderPath = @"C:\Games\Skyrim Special Edition\plugins.txt") =>
+        string? loadOrderPath = null) =>
         new()
         {
             CurrentGameType = GameType.SkyrimSe,
-            XEditExecutablePath = @"C:\Games\SSEEdit\SSEEdit.exe",
+            XEditExecutablePath = xEditPath,
             LoadOrderPath = loadOrderPath,
-            Mo2ExecutablePath = mo2ExecutablePath,
+            Mo2ExecutablePath = mo2Path,
             Mo2Profile = mo2Profile,
             Mo2ModeEnabled = mo2Mode,
-            CleaningTimeout = 300,
-            PluginsToClean = plugins ?? [CreatePlugin("Update.esm")]
+            CleaningTimeout = 300
         };
+
+    private static PluginRefreshPublication CreateFreshPublication(params PluginInfo[] plugins) =>
+        CreateFreshPublication(plugins.Select(plugin => RecordingPluginRefreshModule.CreatePublishedRow(plugin)).ToArray());
+
+    private static PluginRefreshPublication CreateFreshPublication(params PluginRefreshPublishedRow[] rows) =>
+        RecordingPluginRefreshModule.CreateFreshPublication(rows: rows);
+
+    private static PluginRefreshPublication CreateMo2Publication(
+        string xEditPath,
+        string mo2Path,
+        string instancePath,
+        string loadOrderPath,
+        string? selectedProfile)
+    {
+        var configuration = RecordingPluginRefreshModule.CreateConfiguration(
+            xEditPath: xEditPath,
+            mo2Path: mo2Path,
+            mo2ModeEnabled: true,
+            mo2InstancePath: instancePath,
+            selectedProfile: selectedProfile);
+        var plan = RecordingPluginRefreshModule.CreateDiscoveryPlan(
+            mode: PluginRefreshDiscoveryMode.Mo2LoadOrderFile,
+            configuration: configuration,
+            mo2LoadOrderPath: loadOrderPath);
+        return RecordingPluginRefreshModule.CreateFreshPublication(
+            discoveryPlan: plan,
+            configuration: configuration);
+    }
 
     private static PluginInfo CreatePlugin(string fileName) =>
         new()
@@ -579,4 +596,11 @@ public sealed class CleaningPreflightTests
 
     private static bool ContainsSafeSummary(object[] args) =>
         args.Length > 0 && args[0] is string summary && summary.Contains("write_failed", StringComparison.Ordinal);
+
+    private static async Task<string> CreateTempFileAsync()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"AutoQAC-{Guid.NewGuid():N}.tmp");
+        await File.WriteAllTextAsync(path, string.Empty);
+        return path;
+    }
 }

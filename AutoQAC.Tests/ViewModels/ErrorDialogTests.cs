@@ -63,7 +63,51 @@ public sealed class ErrorDialogTests
             .Returns([]);
     }
 
-    private static IPluginRefreshModule CreateRefreshModule() => new RecordingPluginRefreshModule();
+    private IPluginRefreshModule CreateRefreshModule()
+    {
+        var refreshModule = new RecordingPluginRefreshModule();
+        refreshModule.PublicationHandler = _ => Task.FromResult(CreatePublicationFromState(_stateServiceMock.CurrentState));
+        return refreshModule;
+    }
+
+    private ICleaningCommandReadiness CreateReadiness(IPluginRefreshModule refreshModule) =>
+        new CleaningCommandReadiness(refreshModule, _stateServiceMock);
+
+    private static PluginRefreshPublication CreatePublicationFromState(AppState state)
+    {
+        var gameType = state.CurrentGameType == GameType.Unknown ? GameType.SkyrimSe : state.CurrentGameType;
+        var configuration = RecordingPluginRefreshModule.CreateConfiguration(
+            loadOrderPath: state.LoadOrderPath,
+            xEditPath: state.XEditExecutablePath,
+            mo2Path: state.Mo2ExecutablePath,
+            mo2ModeEnabled: state.Mo2ModeEnabled,
+            mo2InstancePath: state.Mo2ModeEnabled ? Path.GetTempPath() : null,
+            selectedProfile: state.Mo2Profile);
+        var mode = state.Mo2ModeEnabled
+            ? PluginRefreshDiscoveryMode.Mo2LoadOrderFile
+            : gameType is GameType.Fallout3 or GameType.FalloutNewVegas or GameType.Oblivion
+                ? PluginRefreshDiscoveryMode.DirectLoadOrderFile
+                : PluginRefreshDiscoveryMode.DirectAutomatic;
+        var plan = RecordingPluginRefreshModule.CreateDiscoveryPlan(
+            gameType,
+            mode,
+            configuration,
+            loadOrderPath: mode == PluginRefreshDiscoveryMode.DirectLoadOrderFile ? state.LoadOrderPath : null,
+            mo2LoadOrderPath: state.Mo2ModeEnabled ? state.LoadOrderPath : null);
+        var rows = state.PluginsToClean
+            .Select(plugin => RecordingPluginRefreshModule.CreatePublishedRow(
+                plugin,
+                isVisible: !plugin.IsInSkipList,
+                isSelected: !state.ExcludedPluginPaths.Contains(plugin.FullPath),
+                isSkippedByPolicy: plugin.IsInSkipList))
+            .ToList();
+        var snapshot = RecordingPluginRefreshModule.CreateSnapshot(gameType, configuration: configuration);
+        return RecordingPluginRefreshModule.CreatePublication(
+            snapshot,
+            rows,
+            PluginRefreshFreshness.Fresh,
+            plan);
+    }
 
     private MainWindowViewModel CreateViewModel(IPluginRefreshModule? refreshModule = null)
     {
@@ -71,6 +115,7 @@ public sealed class ErrorDialogTests
         _stateServiceMock.StateChanged.Returns(stateSubject);
         _stateServiceMock.CurrentState.Returns(new AppState());
 
+        var effectiveRefreshModule = refreshModule ?? CreateRefreshModule();
         return new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
@@ -81,8 +126,9 @@ public sealed class ErrorDialogTests
             _pluginServiceMock,
             _pluginLoadingServiceMock,
             _uiDispatcher,
-            refreshModule ?? CreateRefreshModule(),
-            _gameCapabilityProvider);
+            effectiveRefreshModule,
+            _gameCapabilityProvider,
+            CreateReadiness(effectiveRefreshModule));
     }
 
     /// <summary>
@@ -103,6 +149,7 @@ public sealed class ErrorDialogTests
         _stateServiceMock.StateChanged.Returns(stateSubject);
         _stateServiceMock.CurrentState.Returns(validState);
 
+        var refreshModule = CreateRefreshModule();
         return new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
@@ -113,8 +160,9 @@ public sealed class ErrorDialogTests
             _pluginServiceMock,
             _pluginLoadingServiceMock,
             _uiDispatcher,
-            CreateRefreshModule(),
-            _gameCapabilityProvider);
+            refreshModule,
+            _gameCapabilityProvider,
+            CreateReadiness(refreshModule));
     }
 
     #region xEdit Validation Tests (Inline Validation Panel)
@@ -171,6 +219,7 @@ public sealed class ErrorDialogTests
         var stateSubject = new BehaviorSubject<AppState>(stateWithWhitespaceXEdit);
         _stateServiceMock.StateChanged.Returns(stateSubject);
         _stateServiceMock.CurrentState.Returns(stateWithWhitespaceXEdit);
+        var refreshModule = CreateRefreshModule();
 
         var vm = new MainWindowViewModel(
             _configServiceMock,
@@ -182,8 +231,9 @@ public sealed class ErrorDialogTests
             _pluginServiceMock,
             _pluginLoadingServiceMock,
             _uiDispatcher,
-            CreateRefreshModule(),
-            _gameCapabilityProvider);
+            refreshModule,
+            _gameCapabilityProvider,
+            CreateReadiness(refreshModule));
 
         // Act
         await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
@@ -210,6 +260,7 @@ public sealed class ErrorDialogTests
         var stateSubject = new BehaviorSubject<AppState>(stateWithBadXEdit);
         _stateServiceMock.StateChanged.Returns(stateSubject);
         _stateServiceMock.CurrentState.Returns(stateWithBadXEdit);
+        var refreshModule = CreateRefreshModule();
 
         var vm = new MainWindowViewModel(
             _configServiceMock,
@@ -221,8 +272,9 @@ public sealed class ErrorDialogTests
             _pluginServiceMock,
             _pluginLoadingServiceMock,
             _uiDispatcher,
-            CreateRefreshModule(),
-            _gameCapabilityProvider);
+            refreshModule,
+            _gameCapabilityProvider,
+            CreateReadiness(refreshModule));
 
         vm.Configuration.XEditPath = nonExistentPath;
 
@@ -254,6 +306,7 @@ public sealed class ErrorDialogTests
         var stateSubject = new BehaviorSubject<AppState>(stateWithBadXEdit);
         _stateServiceMock.StateChanged.Returns(stateSubject);
         _stateServiceMock.CurrentState.Returns(stateWithBadXEdit);
+        var refreshModule = CreateRefreshModule();
 
         var vm = new MainWindowViewModel(
             _configServiceMock,
@@ -265,8 +318,9 @@ public sealed class ErrorDialogTests
             _pluginServiceMock,
             _pluginLoadingServiceMock,
             _uiDispatcher,
-            CreateRefreshModule(),
-            _gameCapabilityProvider);
+            refreshModule,
+            _gameCapabilityProvider,
+            CreateReadiness(refreshModule));
 
         // Act
         await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
@@ -302,6 +356,7 @@ public sealed class ErrorDialogTests
             var stateSubject = new BehaviorSubject<AppState>(state);
             _stateServiceMock.StateChanged.Returns(stateSubject);
             _stateServiceMock.CurrentState.Returns(state);
+            var refreshModule = CreateRefreshModule();
 
             var vm = new MainWindowViewModel(
                 _configServiceMock,
@@ -313,8 +368,9 @@ public sealed class ErrorDialogTests
                 _pluginServiceMock,
                 _pluginLoadingServiceMock,
                 _uiDispatcher,
-                CreateRefreshModule(),
-                _gameCapabilityProvider);
+                refreshModule,
+                _gameCapabilityProvider,
+                CreateReadiness(refreshModule));
 
             // Act
             await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
@@ -524,6 +580,7 @@ public sealed class ErrorDialogTests
             var stateSubject = new BehaviorSubject<AppState>(state);
             _stateServiceMock.StateChanged.Returns(stateSubject);
             _stateServiceMock.CurrentState.Returns(state);
+            var refreshModule = CreateRefreshModule();
 
             var vm = new MainWindowViewModel(
                 _configServiceMock,
@@ -535,8 +592,9 @@ public sealed class ErrorDialogTests
                 _pluginServiceMock,
                 _pluginLoadingServiceMock,
                 _uiDispatcher,
-                CreateRefreshModule(),
-                _gameCapabilityProvider);
+                refreshModule,
+                _gameCapabilityProvider,
+                CreateReadiness(refreshModule));
 
             // Act
             await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
@@ -574,6 +632,7 @@ public sealed class ErrorDialogTests
             var stateSubject = new BehaviorSubject<AppState>(state);
             _stateServiceMock.StateChanged.Returns(stateSubject);
             _stateServiceMock.CurrentState.Returns(state);
+            var refreshModule = CreateRefreshModule();
 
             var vm = new MainWindowViewModel(
                 _configServiceMock,
@@ -585,8 +644,9 @@ public sealed class ErrorDialogTests
                 _pluginServiceMock,
                 _pluginLoadingServiceMock,
                 _uiDispatcher,
-                CreateRefreshModule(),
-                _gameCapabilityProvider);
+                refreshModule,
+                _gameCapabilityProvider,
+                CreateReadiness(refreshModule));
 
             // Act
             await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
@@ -621,6 +681,7 @@ public sealed class ErrorDialogTests
             var stateSubject = new BehaviorSubject<AppState>(state);
             _stateServiceMock.StateChanged.Returns(stateSubject);
             _stateServiceMock.CurrentState.Returns(state);
+            var refreshModule = CreateRefreshModule();
 
             var vm = new MainWindowViewModel(
                 _configServiceMock,
@@ -632,8 +693,9 @@ public sealed class ErrorDialogTests
                 _pluginServiceMock,
                 _pluginLoadingServiceMock,
                 _uiDispatcher,
-                CreateRefreshModule(),
-                _gameCapabilityProvider);
+                refreshModule,
+                _gameCapabilityProvider,
+                CreateReadiness(refreshModule));
 
             // Act
             await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
@@ -671,6 +733,7 @@ public sealed class ErrorDialogTests
             var stateSubject = new BehaviorSubject<AppState>(state);
             _stateServiceMock.StateChanged.Returns(stateSubject);
             _stateServiceMock.CurrentState.Returns(state);
+            var refreshModule = CreateRefreshModule();
 
             var vm = new MainWindowViewModel(
                 _configServiceMock,
@@ -682,8 +745,9 @@ public sealed class ErrorDialogTests
                 _pluginServiceMock,
                 _pluginLoadingServiceMock,
                 _uiDispatcher,
-                CreateRefreshModule(),
-                _gameCapabilityProvider);
+                refreshModule,
+                _gameCapabilityProvider,
+                CreateReadiness(refreshModule));
 
             // Act
             await vm.Commands.StartCleaningCommand.ExecuteAsync(null);

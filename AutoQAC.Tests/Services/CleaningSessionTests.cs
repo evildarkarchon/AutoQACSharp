@@ -4,6 +4,7 @@ using AutoQAC.Models.Diagnostics;
 using AutoQAC.Models.Configuration;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
+using AutoQAC.Services.GameCapability;
 using AutoQAC.Services.GameDetection;
 using AutoQAC.Services.MO2;
 using AutoQAC.Services.Plugin;
@@ -11,6 +12,7 @@ using AutoQAC.Services.Backup;
 using AutoQAC.Services.Monitoring;
 using AutoQAC.Services.Process;
 using AutoQAC.Services.State;
+using AutoQAC.Tests.TestInfrastructure;
 using FluentAssertions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
@@ -37,6 +39,10 @@ public sealed class CleaningSessionTests : IDisposable
     private readonly IMo2InstanceService _mo2InstanceServiceMock;
     private readonly ICleaningSessionDecisionAdapter _decisionsMock;
     private readonly string _mo2LoadOrderPath;
+    private readonly string _mo2InstancePath;
+    private readonly string _xEditCompatibilityPath;
+    private readonly string _loadOrderCompatibilityPath;
+    private readonly RecordingPluginRefreshModule _pluginRefreshModule;
     private readonly CleaningSession _cleaningSession;
 
     public CleaningSessionTests()
@@ -56,6 +62,15 @@ public sealed class CleaningSessionTests : IDisposable
         _mo2InstanceServiceMock = Substitute.For<IMo2InstanceService>();
         _decisionsMock = Substitute.For<ICleaningSessionDecisionAdapter>();
         _mo2LoadOrderPath = Path.GetTempFileName();
+        _mo2InstancePath = Directory.CreateTempSubdirectory().FullName;
+        _xEditCompatibilityPath = Path.Combine(Directory.GetCurrentDirectory(), "xedit.exe");
+        File.WriteAllText(_xEditCompatibilityPath, string.Empty);
+        _loadOrderCompatibilityPath = Path.Combine(Directory.GetCurrentDirectory(), "plugins.txt");
+        File.WriteAllText(_loadOrderCompatibilityPath, string.Empty);
+        _pluginRefreshModule = new RecordingPluginRefreshModule
+        {
+            PublicationHandler = CreatePublicationFromCurrentStateAsync
+        };
 
         // Default mock setup for GetSkipListAsync to return empty list instead of null
         _configServiceMock.FlushPendingSavesAsync(Arg.Any<CancellationToken>())
@@ -136,13 +151,11 @@ public sealed class CleaningSessionTests : IDisposable
 
     private ICleaningPreflight CreatePreflight() => new CleaningPreflight(
         _configServiceMock,
-        _gameDetectionServiceMock,
         _pluginServiceMock,
+        _pluginRefreshModule,
         _mo2ValidationServiceMock,
-        _cleaningServiceMock,
         _stateServiceMock,
-        _loggerMock,
-        _mo2InstanceServiceMock);
+        _loggerMock);
 
     public void Dispose()
     {
@@ -150,6 +163,95 @@ public sealed class CleaningSessionTests : IDisposable
         {
             File.Delete(_mo2LoadOrderPath);
         }
+
+        if (File.Exists(_xEditCompatibilityPath))
+        {
+            File.Delete(_xEditCompatibilityPath);
+        }
+
+        if (File.Exists(_loadOrderCompatibilityPath))
+        {
+            File.Delete(_loadOrderCompatibilityPath);
+        }
+
+        if (Directory.Exists(_mo2InstancePath))
+        {
+            Directory.Delete(_mo2InstancePath, recursive: true);
+        }
+
+        _pluginRefreshModule.Dispose();
+    }
+
+    private async Task<PluginRefreshPublication> CreatePublicationFromCurrentStateAsync(CancellationToken ct)
+    {
+        var state = _stateServiceMock.CurrentState;
+        if (!string.IsNullOrWhiteSpace(state.XEditExecutablePath) && !File.Exists(state.XEditExecutablePath))
+        {
+            state = state with { XEditExecutablePath = _xEditCompatibilityPath };
+            _stateServiceMock.CurrentState.Returns(state);
+        }
+
+        var configuration = RecordingPluginRefreshModule.CreateConfiguration(
+            loadOrderPath: state.LoadOrderPath,
+            xEditPath: state.XEditExecutablePath,
+            mo2Path: state.Mo2ExecutablePath,
+            mo2ModeEnabled: state.Mo2ModeEnabled,
+            mo2InstancePath: state.Mo2ModeEnabled ? _mo2InstancePath : null,
+            selectedProfile: state.Mo2Profile);
+        var mode = GetDiscoveryMode(state);
+        var plan = state.CurrentGameType == GameType.Unknown
+            ? null
+            : RecordingPluginRefreshModule.CreateDiscoveryPlan(
+                state.CurrentGameType,
+                mode,
+                configuration,
+                loadOrderPath: mode == PluginRefreshDiscoveryMode.DirectLoadOrderFile ? state.LoadOrderPath : null,
+                mo2LoadOrderPath: state.Mo2ModeEnabled ? _mo2LoadOrderPath : null);
+        var skipList = await GetEffectiveSkipListAsync(state, ct);
+        var rows = state.PluginsToClean
+            .Select(plugin => CreatePublishedRow(plugin, state, skipList))
+            .ToList();
+        var snapshot = RecordingPluginRefreshModule.CreateSnapshot(
+            state.CurrentGameType,
+            configuration: configuration);
+        return RecordingPluginRefreshModule.CreatePublication(
+            snapshot,
+            rows,
+            plan is null ? PluginRefreshFreshness.Missing : PluginRefreshFreshness.Fresh,
+            plan);
+    }
+
+    private static PluginRefreshDiscoveryMode GetDiscoveryMode(AppState state) =>
+        state.Mo2ModeEnabled
+            ? PluginRefreshDiscoveryMode.Mo2LoadOrderFile
+            : state.CurrentGameType is GameType.Fallout3 or GameType.FalloutNewVegas or GameType.Oblivion
+                ? PluginRefreshDiscoveryMode.DirectLoadOrderFile
+                : PluginRefreshDiscoveryMode.DirectAutomatic;
+
+    private async Task<IReadOnlySet<string>> GetEffectiveSkipListAsync(AppState state, CancellationToken ct)
+    {
+        var userConfig = await _configServiceMock.LoadUserConfigAsync(ct);
+        if (userConfig.Settings.DisableSkipLists || state.CurrentGameType == GameType.Unknown)
+        {
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        var skipList = await _configServiceMock.GetSkipListAsync(state.CurrentGameType, GameVariant.None, ct);
+        return skipList.ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static PluginRefreshPublishedRow CreatePublishedRow(
+        PluginInfo plugin,
+        AppState state,
+        IReadOnlySet<string> skipList)
+    {
+        var isSkipped = plugin.IsInSkipList || skipList.Contains(plugin.FileName);
+        var publishedPlugin = plugin with { IsInSkipList = isSkipped };
+        return RecordingPluginRefreshModule.CreatePublishedRow(
+            publishedPlugin,
+            isVisible: !isSkipped,
+            isSelected: !state.ExcludedPluginPaths.Contains(plugin.FullPath),
+            isSkippedByPolicy: isSkipped);
     }
 
     private static CleaningPreflightPlan CreateEmptyPreflightPlan() => new()
@@ -366,7 +468,7 @@ public sealed class CleaningSessionTests : IDisposable
     }
 
     [Fact]
-    public async Task StartCleaningAsync_ShouldDetectGame_WhenUnknown()
+    public async Task StartCleaningAsync_ShouldThrowPreflightFailure_WhenPublicationGameIsUnknown()
     {
         // Arrange
         var plugins = new List<PluginInfo>();
@@ -379,25 +481,10 @@ public sealed class CleaningSessionTests : IDisposable
         };
         _stateServiceMock.CurrentState.Returns(appState);
 
-        _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>())
-            .Returns(true);
+        var act = () => _cleaningSession.StartAsync();
 
-        // Mock Executable detection failing (Unknown)
-        _gameDetectionServiceMock.DetectFromExecutable(Arg.Any<string>())
-            .Returns(GameType.Unknown);
-
-        // Mock Load Order detection succeeding
-        _gameDetectionServiceMock.DetectFromLoadOrderAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(GameType.Fallout4);
-
-        // Act
-        await _cleaningSession.StartAsync();
-
-        // Assert
-        _gameDetectionServiceMock.Received(1).DetectFromExecutable(Arg.Any<string>());
-        await _gameDetectionServiceMock.Received(1).DetectFromLoadOrderAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
-        // We expect state update
-        _stateServiceMock.Received(1).UpdateState(Arg.Any<Func<AppState, AppState>>());
+        var thrown = await act.Should().ThrowAsync<CleaningPreflightException>();
+        thrown.Which.Failure.Kind.Should().Be(CleaningPreflightFailureKind.NoGameSelected);
     }
 
     [Fact]
@@ -1175,12 +1262,20 @@ public sealed class CleaningSessionTests : IDisposable
         _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>())
             .Returns(true);
 
+        var gracefulTerminationStarted = CreateSignal();
+        var releaseGracefulTermination = CreateSignal();
         _processServiceMock.TerminateProcessAsync(Arg.Any<Process>(), false, Arg.Any<CancellationToken>())
-            .Returns(TerminationResult.GracePeriodExpired);
+            .Returns(async _ =>
+            {
+                gracefulTerminationStarted.TrySetResult(true);
+                await releaseGracefulTermination.Task;
+                return TerminationResult.GracePeriodExpired;
+            });
         _processServiceMock.TerminateProcessAsync(Arg.Any<Process>(), true, Arg.Any<CancellationToken>())
             .Returns(TerminationResult.ForceKilled);
 
         var processStarted = CreateSignal();
+        var releaseCleaning = CreateSignal();
 
         try
         {
@@ -1196,15 +1291,20 @@ public sealed class CleaningSessionTests : IDisposable
                     processStarted.TrySetResult(true);
 
                     var ct = callInfo.ArgAt<CancellationToken>(2);
-                    await WaitForCancellationAndThrowAsync(ct);
+                    await releaseCleaning.Task;
+                    ct.ThrowIfCancellationRequested();
                     return new CleaningResult { Status = CleaningStatus.Cleaned, Success = true };
                 });
 
             // Act
             var cleaningTask = _cleaningSession.StartAsync();
             await WaitForSignalAsync(processStarted);
-            await _cleaningSession.ControlAsync(CleaningSessionControl.RequestStop);
-            await _cleaningSession.ControlAsync(CleaningSessionControl.RequestStop);
+            var firstStop = _cleaningSession.ControlAsync(CleaningSessionControl.RequestStop);
+            await WaitForSignalAsync(gracefulTerminationStarted);
+            var secondStop = _cleaningSession.ControlAsync(CleaningSessionControl.RequestStop);
+            releaseGracefulTermination.TrySetResult(true);
+            releaseCleaning.TrySetResult(true);
+            await Task.WhenAll(firstStop, secondStop);
             await cleaningTask;
 
             // Assert
@@ -1486,14 +1586,16 @@ public sealed class CleaningSessionTests : IDisposable
             .Returns(true);
 
         // Act
-        await _cleaningSession.StartAsync();
+        var act = () => _cleaningSession.StartAsync();
 
         // Assert
+        var thrown = await act.Should().ThrowAsync<CleaningPreflightException>();
+        thrown.Which.Failure.Kind.Should().Be(CleaningPreflightFailureKind.NoPluginsLoaded);
         // No cleaning should have been attempted
         await _cleaningServiceMock.DidNotReceive().CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<System.Diagnostics.Process>?>(), Arg.Any<CancellationToken>());
 
-        // But state lifecycle should still be complete
-        _stateServiceMock.Received(1).StartCleaning(Arg.Any<List<PluginInfo>>());
+        // The session still publishes a terminal result from its error path.
+        _stateServiceMock.DidNotReceive().StartCleaning(Arg.Any<List<PluginInfo>>());
         _stateServiceMock.Received(1).FinishCleaningWithResults(Arg.Any<CleaningSessionResult>());
     }
 
@@ -2148,9 +2250,9 @@ public sealed class CleaningSessionTests : IDisposable
         var act = () => _cleaningSession.StartAsync();
 
         // Assert
-        var ex = await act.Should().ThrowAsync<InvalidOperationException>();
-        ex.Which.Message.Should().Contain("MO2", "error message should reference MO2");
-        ex.Which.Message.Should().Contain("Settings", "error message should guide user to Settings");
+        var ex = await act.Should().ThrowAsync<CleaningPreflightException>();
+        ex.Which.Failure.Kind.Should().Be(CleaningPreflightFailureKind.Mo2NotConfigured);
+        ex.Which.Failure.ActionHint.Should().Contain("ModOrganizer.exe", "the action hint should guide the user to the MO2 executable setting");
     }
 
     /// <summary>
@@ -2192,9 +2294,9 @@ public sealed class CleaningSessionTests : IDisposable
         var act = () => _cleaningSession.StartAsync();
 
         // Assert
-        var ex = await act.Should().ThrowAsync<InvalidOperationException>();
-        ex.Which.Message.Should().Contain("MO2", "error message should reference MO2");
-        ex.Which.Message.Should().Contain("Settings", "error message should guide user to Settings");
+        var ex = await act.Should().ThrowAsync<CleaningPreflightException>();
+        ex.Which.Failure.Kind.Should().Be(CleaningPreflightFailureKind.Mo2NotFound);
+        ex.Which.Failure.ActionHint.Should().Contain("ModOrganizer.exe", "the action hint should guide the user to the MO2 executable setting");
     }
 
     #endregion

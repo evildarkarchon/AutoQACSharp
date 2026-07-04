@@ -1,3 +1,5 @@
+using System.Reactive.Linq;
+using System.Reactive.Subjects;
 using AutoQAC.Models;
 using AutoQAC.Models.Configuration;
 using AutoQAC.Services.Configuration;
@@ -114,13 +116,167 @@ public sealed class PluginRefreshModuleTests
         var publication = await sut.GetCurrentPublicationAsync();
 
         publication.Freshness.Should().Be(expectedFreshness);
-        await discoveryPlanner.Received(1).CheckFreshnessAsync(
+        await discoveryPlanner.Received().CheckFreshnessAsync(
             freshnessToken,
             Arg.Is<PluginRefreshDiscoveryFreshnessContext>(context =>
                 context.CurrentGameType == GameType.SkyrimSe &&
                 !context.Mo2ModeEnabled &&
                 context.LoadOrderPath == @"C:\Changed\plugins.txt" &&
                 context.Mo2Profile == "Survival"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task DiscoveryAffectingStateChange_EmitsSnapshotWithoutRefreshingRows()
+    {
+        var stateService = new StateService();
+        var configurationService = CreateConfigurationService();
+        var plan = CreateWiringPlan();
+        var tokenSourcePlanner = new PluginRefreshDiscoveryPlanner(
+            configurationService,
+            new TestPluginLoadingService(),
+            Substitute.For<IMo2InstanceService>(),
+            new GameCapabilityProvider());
+        var freshnessToken = await tokenSourcePlanner.CreateFreshnessTokenAsync(plan);
+        var discoveryPlanner = Substitute.For<IPluginRefreshDiscoveryPlanner>();
+        discoveryPlanner.GetAffordance(Arg.Any<GameType>(), Arg.Any<bool>())
+            .Returns(call => new PluginRefreshGameAffordance(call.ArgAt<GameType>(0), true, false, false));
+        discoveryPlanner.CreatePlanAsync(Arg.Any<PluginRefreshDiscoveryPlanRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new PluginRefreshDiscoveryPlanResult(PluginRefreshDiscoveryPlanStatus.Ready, plan, plan.Configuration));
+        discoveryPlanner.CreateFreshnessTokenAsync(plan, Arg.Any<CancellationToken>())
+            .Returns(freshnessToken);
+        discoveryPlanner.LoadPluginsAsync(plan, Arg.Any<CancellationToken>())
+            .Returns(new PluginRefreshDiscoveredPlugins(plan, [Plugin("Selected.esp")], null));
+        discoveryPlanner.CheckFreshnessAsync(
+                freshnessToken,
+                Arg.Any<PluginRefreshDiscoveryFreshnessContext>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new PluginRefreshFreshness(false, PluginRefreshStalenessReason.LoadOrderPathChanged));
+        using var sut = CreateModule(
+            stateService,
+            configurationService: configurationService,
+            discoveryPlanner: discoveryPlanner);
+        await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+        var rowCountBefore = stateService.CurrentState.PluginsToClean.Count;
+        var freshnessNotification = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var ignoredCurrent = false;
+        using var subscription = sut.Snapshots.Subscribe(_ =>
+        {
+            if (!ignoredCurrent)
+            {
+                ignoredCurrent = true;
+                return;
+            }
+
+            freshnessNotification.TrySetResult();
+        });
+
+        stateService.UpdateState(state => state with { LoadOrderPath = @"C:\Changed\plugins.txt" });
+
+        await freshnessNotification.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        stateService.CurrentState.PluginsToClean.Should().HaveCount(rowCountBefore,
+            "staleness publication must not auto-refresh or clear rows");
+        var publication = await sut.GetCurrentPublicationAsync();
+        publication.Freshness.StalenessReason.Should().Be(PluginRefreshStalenessReason.LoadOrderPathChanged);
+    }
+
+    [Fact]
+    public async Task UserConfigurationChanged_EmitsSnapshotWithoutRefreshingRows()
+    {
+        var stateService = new StateService();
+        var configurationService = CreateConfigurationService();
+        var userConfigurationChanged = new Subject<UserConfiguration>();
+        configurationService.UserConfigurationChanged.Returns(userConfigurationChanged);
+        var plan = CreateWiringPlan();
+        var tokenSourcePlanner = new PluginRefreshDiscoveryPlanner(
+            configurationService,
+            new TestPluginLoadingService(),
+            Substitute.For<IMo2InstanceService>(),
+            new GameCapabilityProvider());
+        var freshnessToken = await tokenSourcePlanner.CreateFreshnessTokenAsync(plan);
+        var discoveryPlanner = CreateStaleDiscoveryPlanner(
+            plan,
+            freshnessToken,
+            PluginRefreshStalenessReason.SkipListSettingsChanged);
+        using var sut = CreateModule(
+            stateService,
+            configurationService: configurationService,
+            discoveryPlanner: discoveryPlanner);
+        await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+        var rowCountBefore = stateService.CurrentState.PluginsToClean.Count;
+        var freshnessNotification = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var ignoredCurrent = false;
+        using var subscription = sut.Snapshots.Subscribe(_ =>
+        {
+            if (!ignoredCurrent)
+            {
+                ignoredCurrent = true;
+                return;
+            }
+
+            freshnessNotification.TrySetResult();
+        });
+
+        userConfigurationChanged.OnNext(new UserConfiguration());
+
+        await freshnessNotification.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        stateService.CurrentState.PluginsToClean.Should().HaveCount(rowCountBefore,
+            "configuration staleness publication must not auto-refresh or clear rows");
+        var publication = await sut.GetCurrentPublicationAsync();
+        publication.Freshness.StalenessReason.Should().Be(PluginRefreshStalenessReason.SkipListSettingsChanged);
+        await discoveryPlanner.Received().CheckFreshnessAsync(
+            freshnessToken,
+            Arg.Any<PluginRefreshDiscoveryFreshnessContext>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SkipListChanged_EmitsSnapshotWithoutRefreshingRows()
+    {
+        var stateService = new StateService();
+        var configurationService = CreateConfigurationService();
+        var skipListChanged = new Subject<GameType>();
+        configurationService.SkipListChanged.Returns(skipListChanged);
+        var plan = CreateWiringPlan();
+        var tokenSourcePlanner = new PluginRefreshDiscoveryPlanner(
+            configurationService,
+            new TestPluginLoadingService(),
+            Substitute.For<IMo2InstanceService>(),
+            new GameCapabilityProvider());
+        var freshnessToken = await tokenSourcePlanner.CreateFreshnessTokenAsync(plan);
+        var discoveryPlanner = CreateStaleDiscoveryPlanner(
+            plan,
+            freshnessToken,
+            PluginRefreshStalenessReason.SkipListSettingsChanged);
+        using var sut = CreateModule(
+            stateService,
+            configurationService: configurationService,
+            discoveryPlanner: discoveryPlanner);
+        await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+        var rowCountBefore = stateService.CurrentState.PluginsToClean.Count;
+        var freshnessNotification = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var ignoredCurrent = false;
+        using var subscription = sut.Snapshots.Subscribe(_ =>
+        {
+            if (!ignoredCurrent)
+            {
+                ignoredCurrent = true;
+                return;
+            }
+
+            freshnessNotification.TrySetResult();
+        });
+
+        skipListChanged.OnNext(GameType.SkyrimSe);
+
+        await freshnessNotification.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        stateService.CurrentState.PluginsToClean.Should().HaveCount(rowCountBefore,
+            "Skip list staleness publication must not auto-refresh or clear rows");
+        var publication = await sut.GetCurrentPublicationAsync();
+        publication.Freshness.StalenessReason.Should().Be(PluginRefreshStalenessReason.SkipListSettingsChanged);
+        await discoveryPlanner.Received().CheckFreshnessAsync(
+            freshnessToken,
+            Arg.Any<PluginRefreshDiscoveryFreshnessContext>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -415,7 +571,8 @@ public sealed class PluginRefreshModuleTests
             discoveryPlanner,
             approximationService ?? new ResultIssueApproximationService(CreateDefaultResults()),
             stateService,
-            new SkipListPolicy(configurationService, gameDetectionService));
+            new SkipListPolicy(configurationService, gameDetectionService),
+            configurationService: configurationService);
     }
 
     private static StateService CreateStateWithRows(params PluginInfo[] rows)
@@ -429,6 +586,8 @@ public sealed class PluginRefreshModuleTests
     private static IConfigurationService CreateConfigurationService(bool disableSkipLists = false)
     {
         var configurationService = Substitute.For<IConfigurationService>();
+        configurationService.UserConfigurationChanged.Returns(Observable.Never<UserConfiguration>());
+        configurationService.SkipListChanged.Returns(Observable.Never<GameType>());
         configurationService.LoadUserConfigAsync(Arg.Any<CancellationToken>())
             .Returns(new UserConfiguration
             {
@@ -508,6 +667,28 @@ public sealed class PluginRefreshModuleTests
             Mo2LoadOrderPath: null,
             Mo2PathMap: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
             Mo2BaseDataFolder: null);
+    }
+
+    private static IPluginRefreshDiscoveryPlanner CreateStaleDiscoveryPlanner(
+        PluginRefreshDiscoveryPlan plan,
+        PluginRefreshDiscoveryFreshnessToken freshnessToken,
+        PluginRefreshStalenessReason stalenessReason)
+    {
+        var discoveryPlanner = Substitute.For<IPluginRefreshDiscoveryPlanner>();
+        discoveryPlanner.GetAffordance(Arg.Any<GameType>(), Arg.Any<bool>())
+            .Returns(call => new PluginRefreshGameAffordance(call.ArgAt<GameType>(0), true, false, false));
+        discoveryPlanner.CreatePlanAsync(Arg.Any<PluginRefreshDiscoveryPlanRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new PluginRefreshDiscoveryPlanResult(PluginRefreshDiscoveryPlanStatus.Ready, plan, plan.Configuration));
+        discoveryPlanner.CreateFreshnessTokenAsync(plan, Arg.Any<CancellationToken>())
+            .Returns(freshnessToken);
+        discoveryPlanner.LoadPluginsAsync(plan, Arg.Any<CancellationToken>())
+            .Returns(new PluginRefreshDiscoveredPlugins(plan, [Plugin("Selected.esp")], null));
+        discoveryPlanner.CheckFreshnessAsync(
+                freshnessToken,
+                Arg.Any<PluginRefreshDiscoveryFreshnessContext>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new PluginRefreshFreshness(false, stalenessReason));
+        return discoveryPlanner;
     }
 
     private static PluginInfo Plugin(

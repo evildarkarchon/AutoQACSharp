@@ -8,6 +8,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
+using AutoQAC.Models.Configuration;
+using AutoQAC.Services.Configuration;
 using AutoQAC.Services.GameCapability;
 using AutoQAC.Services.State;
 
@@ -28,6 +30,8 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
     private readonly ILoggingService? _logger;
     private readonly BehaviorSubject<PluginRefreshSnapshot> _snapshots;
     private readonly IDisposable _stateSubscription;
+    private readonly IDisposable? _userConfigurationSubscription;
+    private readonly IDisposable? _skipListSubscription;
     private readonly Lock _snapshotLock = new();
 
     private PluginRefreshSnapshot _currentSnapshot;
@@ -35,6 +39,8 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
     private PluginRefreshDiscoveryFreshnessToken? _currentPublicationFreshnessToken;
     private CancellationTokenSource? _activeRefreshCts;
     private long _activeGeneration;
+    private int _freshnessRefreshVersion;
+    private DiscoveryAffectingState _lastDiscoveryAffectingState;
     private bool _lastIsCleaning;
     private bool _disposed;
 
@@ -46,7 +52,8 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         IPluginIssueApproximationService pluginIssueApproximationService,
         IStateService stateService,
         ISkipListPolicy skipListPolicy,
-        ILoggingService? logger = null)
+        ILoggingService? logger = null,
+        IConfigurationService? configurationService = null)
     {
         _discoveryPlanner = discoveryPlanner;
         _pluginIssueApproximationService = pluginIssueApproximationService;
@@ -55,17 +62,30 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         _logger = logger;
 
         _lastIsCleaning = _stateService.CurrentState.IsCleaning;
+        _lastDiscoveryAffectingState = DiscoveryAffectingState.From(_stateService.CurrentState);
         _currentSnapshot = CreateInitialSnapshot(_stateService.CurrentState);
         _currentPublication = CreateMissingPublication(_currentSnapshot);
         _snapshots = new BehaviorSubject<PluginRefreshSnapshot>(_currentSnapshot);
         _stateSubscription = _stateService.StateChanged.Subscribe(new StateChangedObserver(OnAppStateChanged));
+        if (configurationService is not null)
+        {
+            _userConfigurationSubscription = configurationService.UserConfigurationChanged.Subscribe(
+                new ConfigurationChangedObserver<UserConfiguration>(_ => OnDiscoveryAffectingSettingsChanged()));
+            _skipListSubscription = configurationService.SkipListChanged.Subscribe(
+                new ConfigurationChangedObserver<GameType>(_ => OnDiscoveryAffectingSettingsChanged()));
+        }
     }
 
     /// <inheritdoc />
     public IObservable<PluginRefreshSnapshot> Snapshots => _snapshots;
 
     /// <inheritdoc />
-    public async Task<PluginRefreshPublication> GetCurrentPublicationAsync(CancellationToken cancellationToken = default)
+    public Task<PluginRefreshPublication> GetCurrentPublicationAsync(CancellationToken cancellationToken = default) =>
+        GetCurrentPublicationWithFreshnessAsync(publishIfChanged: false, cancellationToken);
+
+    private async Task<PluginRefreshPublication> GetCurrentPublicationWithFreshnessAsync(
+        bool publishIfChanged,
+        CancellationToken cancellationToken = default)
     {
         PluginRefreshPublication publication;
         PluginRefreshDiscoveryFreshnessToken? freshnessToken;
@@ -80,19 +100,18 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             return publication with { Freshness = PluginRefreshFreshness.Missing };
         }
 
-        var state = _stateService.CurrentState;
-        var freshnessContext = new PluginRefreshDiscoveryFreshnessContext(
-            state.CurrentGameType,
-            state.Mo2ModeEnabled,
-            state.LoadOrderPath,
-            state.Mo2Profile);
         var freshness = await _discoveryPlanner.CheckFreshnessAsync(
                 freshnessToken,
-                freshnessContext,
+                CreateFreshnessContext(_stateService.CurrentState),
                 cancellationToken)
             .ConfigureAwait(false);
+        var refreshedPublication = publication with { Freshness = freshness };
+        if (publishIfChanged)
+        {
+            PublishFreshnessIfCurrent(publication, freshnessToken, refreshedPublication);
+        }
 
-        return publication with { Freshness = freshness };
+        return refreshedPublication;
     }
 
     /// <inheritdoc />
@@ -119,6 +138,8 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
     {
         _disposed = true;
         _stateSubscription.Dispose();
+        _userConfigurationSubscription?.Dispose();
+        _skipListSubscription?.Dispose();
         var cts = Interlocked.Exchange(ref _activeRefreshCts, null);
         cts?.Cancel();
         cts?.Dispose();
@@ -1037,7 +1058,19 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
 
     private void OnAppStateChanged(AppState state)
     {
-        if (_disposed || state.IsCleaning == _lastIsCleaning)
+        if (_disposed)
+        {
+            return;
+        }
+
+        var discoveryAffectingState = DiscoveryAffectingState.From(state);
+        if (discoveryAffectingState != _lastDiscoveryAffectingState)
+        {
+            _lastDiscoveryAffectingState = discoveryAffectingState;
+            OnDiscoveryAffectingSettingsChanged();
+        }
+
+        if (state.IsCleaning == _lastIsCleaning)
         {
             return;
         }
@@ -1052,6 +1085,64 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
 
         PublishSnapshot(next, state);
     }
+
+    private void OnDiscoveryAffectingSettingsChanged()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        var requestId = Interlocked.Increment(ref _freshnessRefreshVersion);
+        _ = RefreshPublicationFreshnessAsync(requestId);
+    }
+
+    private async Task RefreshPublicationFreshnessAsync(int requestId)
+    {
+        try
+        {
+            await GetCurrentPublicationWithFreshnessAsync(publishIfChanged: true).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            if (requestId == Volatile.Read(ref _freshnessRefreshVersion) && !_disposed)
+            {
+                _logger?.Error(ex, "Failed to evaluate Plugin refresh publication freshness");
+            }
+        }
+    }
+
+    private void PublishFreshnessIfCurrent(
+        PluginRefreshPublication observedPublication,
+        PluginRefreshDiscoveryFreshnessToken observedFreshnessToken,
+        PluginRefreshPublication refreshedPublication)
+    {
+        PluginRefreshSnapshot snapshot;
+        lock (_snapshotLock)
+        {
+            if (!ReferenceEquals(_currentPublicationFreshnessToken, observedFreshnessToken) ||
+                _currentPublication.Generation != observedPublication.Generation ||
+                _currentPublication.DiscoveryPlan != observedPublication.DiscoveryPlan ||
+                _currentPublication.Freshness == refreshedPublication.Freshness)
+            {
+                return;
+            }
+
+            _currentPublication = _currentPublication with { Freshness = refreshedPublication.Freshness };
+            snapshot = _currentSnapshot;
+        }
+
+        // Freshness is a publication fact, not a row refresh. Re-emit the current snapshot so callers
+        // can re-query publication readiness without AutoQAC changing visible rows underneath them.
+        _snapshots.OnNext(snapshot);
+    }
+
+    private static PluginRefreshDiscoveryFreshnessContext CreateFreshnessContext(AppState state) =>
+        new(
+            state.CurrentGameType,
+            state.Mo2ModeEnabled,
+            state.LoadOrderPath,
+            state.Mo2Profile);
 
     private static string? ResolveDataFolder(PluginRefreshDiscoveryPlan plan, IReadOnlyList<PluginInfo> rows)
     {
@@ -1164,6 +1255,20 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                 : _fileNames.Contains(fileName);
     }
 
+    private sealed record DiscoveryAffectingState(
+        GameType CurrentGameType,
+        bool Mo2ModeEnabled,
+        string? LoadOrderPath,
+        string? Mo2Profile)
+    {
+        public static DiscoveryAffectingState From(AppState state) =>
+            new(
+                state.CurrentGameType,
+                state.Mo2ModeEnabled,
+                state.LoadOrderPath,
+                state.Mo2Profile);
+    }
+
     private sealed class StateChangedObserver(Action<AppState> onNext) : IObserver<AppState>
     {
         public void OnCompleted()
@@ -1175,5 +1280,18 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         }
 
         public void OnNext(AppState value) => onNext(value);
+    }
+
+    private sealed class ConfigurationChangedObserver<T>(Action<T> onNext) : IObserver<T>
+    {
+        public void OnCompleted()
+        {
+        }
+
+        public void OnError(Exception error)
+        {
+        }
+
+        public void OnNext(T value) => onNext(value);
     }
 }

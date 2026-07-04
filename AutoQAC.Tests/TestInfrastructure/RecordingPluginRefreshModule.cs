@@ -1,5 +1,6 @@
 using System.Reactive.Subjects;
 using AutoQAC.Models;
+using AutoQAC.Services.GameCapability;
 using AutoQAC.Services.Plugin;
 
 namespace AutoQAC.Tests.TestInfrastructure;
@@ -95,6 +96,89 @@ public sealed class RecordingPluginRefreshModule : IPluginRefreshModule, IDispos
             currentSnapshot.Commands,
             currentSnapshot.StatusText);
     }
+
+    public static PluginRefreshPublication CreateFreshPublication(
+        GameType gameType = GameType.SkyrimSe,
+        IReadOnlyList<PluginRefreshPublishedRow>? rows = null,
+        PluginRefreshDiscoveryPlan? discoveryPlan = null,
+        PluginRefreshConfigurationProjection? configuration = null,
+        string statusText = "Ready")
+    {
+        configuration ??= CreateConfiguration();
+        discoveryPlan ??= CreateDiscoveryPlan(gameType, configuration: configuration);
+        rows ??=
+        [
+            CreatePublishedRow(new PluginInfo
+            {
+                FileName = "NeedsCleaning.esp",
+                FullPath = @"C:\Game\Data\NeedsCleaning.esp",
+                DetectedGameType = gameType
+            })
+        ];
+        var visibleRows = rows
+            .Where(row => row.IsVisible)
+            .Select(row => new PluginRefreshRow(
+                row.Plugin.FileName,
+                row.Plugin.FullPath,
+                row.Plugin.DetectedGameType,
+                row.IsSelected,
+                row.IsSkippedByPolicy,
+                row.Plugin.Approximation))
+            .ToList();
+        var snapshot = CreateSnapshot(gameType, visibleRows, configuration, statusText: statusText);
+        return CreatePublication(snapshot, rows, PluginRefreshFreshness.Fresh, discoveryPlan);
+    }
+
+    public static PluginRefreshConfigurationProjection CreateConfiguration(
+        string? loadOrderPath = null,
+        string? xEditPath = null,
+        string? mo2Path = null,
+        bool mo2ModeEnabled = false,
+        string? mo2InstancePath = null,
+        string? selectedProfile = null) =>
+        new(
+            LoadOrderPath: loadOrderPath,
+            GameDataFolder: null,
+            HasGameDataFolderOverride: false,
+            XEditPath: xEditPath,
+            Mo2Path: mo2Path,
+            Mo2ModeEnabled: mo2ModeEnabled,
+            Mo2InstancePath: mo2InstancePath,
+            IsMo2InstanceOverride: false,
+            IsMo2InstanceValid: string.IsNullOrWhiteSpace(mo2InstancePath) ? null : true,
+            AvailableProfiles: string.IsNullOrWhiteSpace(selectedProfile) ? [] : [selectedProfile],
+            SelectedProfile: selectedProfile,
+            CleaningTimeout: 300);
+
+    public static PluginRefreshDiscoveryPlan CreateDiscoveryPlan(
+        GameType gameType = GameType.SkyrimSe,
+        PluginRefreshDiscoveryMode mode = PluginRefreshDiscoveryMode.DirectAutomatic,
+        PluginRefreshConfigurationProjection? configuration = null,
+        string? loadOrderPath = null,
+        string? mo2LoadOrderPath = null) =>
+        new(
+            gameType,
+            mode,
+            configuration ?? CreateConfiguration(loadOrderPath: loadOrderPath),
+            DisableSkipLists: false,
+            CanAttemptIssueApproximation: true,
+            DataFolderPath: null,
+            LoadOrderPath: loadOrderPath,
+            Mo2LoadOrderPath: mo2LoadOrderPath,
+            Mo2PathMap: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+            Mo2BaseDataFolder: null);
+
+    public static PluginRefreshPublishedRow CreatePublishedRow(
+        PluginInfo plugin,
+        bool isVisible = true,
+        bool isSelected = true,
+        bool isSkippedByPolicy = false) =>
+        new(
+            plugin,
+            isVisible,
+            isSelected,
+            isSkippedByPolicy,
+            new PluginRefreshRowKey(plugin.FileName, plugin.FullPath));
 
     public void Dispose() => _snapshots.Dispose();
 }

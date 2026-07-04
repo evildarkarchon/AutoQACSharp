@@ -72,6 +72,9 @@ public static class ServiceCollectionExtensions
             services.AddSingleton<IXEditOutputParser, XEditOutputParser>();
             services.AddSingleton<IXEditLogFileService, XEditLogFileService>();
             services.AddSingleton<ICleaningService, CleaningService>();
+            services.AddSingleton<ICleaningCommandReadiness>(sp => new CleaningCommandReadiness(
+                sp.GetRequiredService<IPluginRefreshModule>(),
+                sp.GetRequiredService<IStateService>()));
             services.AddSingleton<IBackupFileCopier, BackupFileCopier>();
             services.AddSingleton<IBackupSessionDeleter, DirectoryBackupSessionDeleter>();
             services.AddSingleton<IBackupService, BackupService>();

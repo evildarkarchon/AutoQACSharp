@@ -98,7 +98,8 @@ public sealed class MainWindowViewModelInitializationTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             refreshModule,
-            gameCapabilityProvider);
+            gameCapabilityProvider,
+            new CleaningCommandReadiness(refreshModule, _stateServiceMock));
 
         await WaitForSignalAsync(initializationApplied);
 

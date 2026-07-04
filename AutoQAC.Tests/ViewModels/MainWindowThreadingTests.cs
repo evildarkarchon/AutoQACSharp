@@ -62,7 +62,8 @@ public sealed class MainWindowThreadingTests
             pluginLoadingService,
             captureDispatcher,
             refreshModule,
-            gameCapabilityProvider);
+            gameCapabilityProvider,
+            new CleaningCommandReadiness(refreshModule, stateService));
 
         try
         {
@@ -96,11 +97,14 @@ public sealed class MainWindowThreadingTests
     [Fact]
     public void CleaningCommandsViewModel_OnStateChanged_ShouldApplyStateSynchronously()
     {
+        var readiness = Substitute.For<ICleaningCommandReadiness>();
+        readiness.EvaluateAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(CleaningCommandReadinessResult.Ready));
         var viewModel = new CleaningCommandsViewModel(
             Substitute.For<IStateService>(),
             Substitute.For<ICleaningSession>(),
             Substitute.For<IConfigurationService>(),
-            CreateGameCapabilityProvider(),
+            readiness,
             new RecordingPluginRefreshModule(),
             Substitute.For<ILoggingService>(),
             Substitute.For<IMessageDialogService>(),
@@ -199,7 +203,8 @@ public sealed class MainWindowThreadingTests
             pluginLoadingService,
             captureDispatcher,
             pluginRefreshModule: refreshModule,
-            gameCapabilityProvider: gameCapabilityProvider);
+            gameCapabilityProvider: gameCapabilityProvider,
+            cleaningCommandReadiness: new CleaningCommandReadiness(refreshModule, stateService));
 
         try
         {

@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -10,7 +9,6 @@ using AutoQAC.Models;
 using AutoQAC.Models.Diagnostics;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
-using AutoQAC.Services.GameCapability;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Services.State;
 using AutoQAC.Services.UI;
@@ -28,7 +26,7 @@ public sealed partial class CleaningCommandsViewModel(
     IStateService stateService,
     ICleaningSession cleaningSession,
     IConfigurationService configService,
-    IGameCapabilityProvider gameCapabilityProvider,
+    ICleaningCommandReadiness cleaningCommandReadiness,
     IPluginRefreshModule pluginRefreshModule,
     ILoggingService logger,
     IMessageDialogService messageDialog,
@@ -42,6 +40,10 @@ public sealed partial class CleaningCommandsViewModel(
     : ViewModelBase, IDisposable
 {
     private readonly IPluginRefreshModule _pluginRefreshModule = pluginRefreshModule;
+    private readonly ICleaningCommandReadiness _cleaningCommandReadiness = cleaningCommandReadiness;
+    private CancellationTokenSource? _readinessCts;
+    private int _readinessRequestId;
+    private CleaningPreflightFailureKind? _currentReadinessFailureKind;
 
     [ObservableProperty] public partial string StatusText { get; set; } = "Ready";
 
@@ -65,14 +67,28 @@ public sealed partial class CleaningCommandsViewModel(
     /// <c>IStateService.StateChanged</c> fires; the parent has already marshaled
     /// onto the UI thread via <c>IUiDispatcher</c>, so we just apply directly here.
     /// </summary>
-    public void OnStateChanged(AppState state) => ApplyState(state);
+    public void OnStateChanged(AppState state)
+    {
+        ApplyState(state);
+        ScheduleReadinessRefresh(projectFailure: true);
+    }
+
+    /// <summary>
+    /// Re-evaluates command readiness when Plugin refresh publication facts may have changed.
+    /// </summary>
+    public void OnPluginRefreshSnapshot(PluginRefreshSnapshot snapshot)
+    {
+        _ = snapshot;
+        ScheduleReadinessRefresh(projectFailure: true);
+    }
 
     private void ApplyState(AppState state)
     {
         IsCleaning = state.IsCleaning;
-        CanStartCleaning = state.PluginsToClean.Count > 0 &&
-                           !string.IsNullOrWhiteSpace(state.XEditExecutablePath) &&
-                           !state.IsCleaning;
+        if (state.IsCleaning)
+        {
+            CanStartCleaning = false;
+        }
 
         if (state.IsCleaning)
         {
@@ -88,15 +104,8 @@ public sealed partial class CleaningCommandsViewModel(
         ValidationErrors.Clear();
         HasValidationErrors = false;
 
-        var errors = ValidatePreClean();
-        if (errors.Count > 0)
+        if (!await ValidatePreCleanAsync().ConfigureAwait(true))
         {
-            foreach (var error in errors)
-            {
-                ValidationErrors.Add(error);
-            }
-
-            HasValidationErrors = true;
             return;
         }
 
@@ -150,15 +159,8 @@ public sealed partial class CleaningCommandsViewModel(
         ValidationErrors.Clear();
         HasValidationErrors = false;
 
-        var errors = ValidatePreClean();
-        if (errors.Count > 0)
+        if (!await ValidatePreCleanAsync().ConfigureAwait(true))
         {
-            foreach (var error in errors)
-            {
-                ValidationErrors.Add(error);
-            }
-
-            HasValidationErrors = true;
             return;
         }
 
@@ -373,104 +375,81 @@ public sealed partial class CleaningCommandsViewModel(
         HasValidationErrors = false;
     }
 
-    private List<ValidationError> ValidatePreClean()
+    private async Task<bool> ValidatePreCleanAsync()
     {
-        var errors = new List<ValidationError>();
-        var state = stateService.CurrentState;
-
-        if (string.IsNullOrWhiteSpace(state.XEditExecutablePath))
-        {
-            errors.Add(new ValidationError(
-                "xEdit not configured",
-                MissingXEditMessage(state.XEditExecutablePath),
-                "Choose the correct xEdit executable in Settings."));
-        }
-        else if (!File.Exists(state.XEditExecutablePath))
-        {
-            errors.Add(new ValidationError(
-                "xEdit not found",
-                MissingXEditMessage(state.XEditExecutablePath),
-                "Choose the correct xEdit executable in Settings."));
-        }
-
-        var requiresLoadOrder = state.CurrentGameType != GameType.Unknown &&
-                                !state.Mo2ModeEnabled &&
-                                gameCapabilityProvider.Get(state.CurrentGameType).RequiresLoadOrderFile;
-        if (requiresLoadOrder)
-        {
-            if (string.IsNullOrWhiteSpace(state.LoadOrderPath))
-            {
-                errors.Add(new ValidationError(
-                    "Load order not configured",
-                    MissingLoadOrderMessage(state.LoadOrderPath),
-                    "Choose the current plugins.txt or loadorder.txt file."));
-            }
-            else if (!File.Exists(state.LoadOrderPath))
-            {
-                errors.Add(new ValidationError(
-                    "Load order not found",
-                    MissingLoadOrderMessage(state.LoadOrderPath),
-                    "Choose the current plugins.txt or loadorder.txt file."));
-            }
-        }
-
-        if (state.Mo2ModeEnabled)
-        {
-            if (string.IsNullOrWhiteSpace(state.Mo2ExecutablePath))
-            {
-                errors.Add(new ValidationError(
-                    "MO2 not configured",
-                    MissingMo2Message(state.Mo2ExecutablePath),
-                    "Choose ModOrganizer.exe or disable MO2 Mode."));
-            }
-            else if (!File.Exists(state.Mo2ExecutablePath))
-            {
-                errors.Add(new ValidationError(
-                    "MO2 not found",
-                    MissingMo2Message(state.Mo2ExecutablePath),
-                    "Choose ModOrganizer.exe or disable MO2 Mode."));
-            }
-
-            if (string.IsNullOrWhiteSpace(state.Mo2Profile))
-            {
-                errors.Add(new ValidationError(
-                    "MO2 profile not selected",
-                    "MO2 mode is enabled but no MO2 profile is selected.",
-                    "Select a game and MO2 profile before cleaning."));
-            }
-        }
-
-        if (state.PluginsToClean.Count == 0)
-        {
-            errors.Add(new ValidationError(
-                "No plugins loaded",
-                "No plugins are available for cleaning.",
-                "Select a game from the dropdown, or browse for a load order file."));
-        }
-        else
-        {
-            var selectedCount = state.PluginsToClean
-                .Count(plugin => !plugin.IsInSkipList && !state.ExcludedPluginPaths.Contains(plugin.FullPath));
-            if (selectedCount == 0)
-            {
-                errors.Add(new ValidationError(
-                    "No plugins selected",
-                    "All plugins are either deselected or in the skip list.",
-                    "Select at least one plugin to clean, or check your skip list settings."));
-            }
-        }
-
-        return errors;
+        var readiness = await _cleaningCommandReadiness.EvaluateAsync().ConfigureAwait(true);
+        ApplyReadiness(readiness, projectFailure: true);
+        return readiness.CanStartOrPreview;
     }
 
-    private static string MissingXEditMessage(string? path) =>
-        $"{DiagnosticTextFormatter.SafeFileIdentifier("xEdit Path", path, "xEdit executable")} is missing. Choose the correct xEdit executable in Settings.";
+    private void ScheduleReadinessRefresh(bool projectFailure)
+    {
+        var cts = new CancellationTokenSource();
+        var previous = Interlocked.Exchange(ref _readinessCts, cts);
+        previous?.Cancel();
+        previous?.Dispose();
 
-    private static string MissingMo2Message(string? path) =>
-        $"{DiagnosticTextFormatter.SafeFileIdentifier("MO2 Path", path, "ModOrganizer.exe")} is missing. Choose ModOrganizer.exe or disable MO2 Mode.";
+        var requestId = Interlocked.Increment(ref _readinessRequestId);
+        _ = UpdateReadinessAsync(requestId, projectFailure, cts.Token);
+    }
 
-    private static string MissingLoadOrderMessage(string? path) =>
-        $"{DiagnosticTextFormatter.SafeFileIdentifier("Load Order File", path, "load order file")} is missing. Choose the current plugins.txt or loadorder.txt file.";
+    private async Task UpdateReadinessAsync(
+        int requestId,
+        bool projectFailure,
+        CancellationToken ct)
+    {
+        try
+        {
+            var readiness = await _cleaningCommandReadiness.EvaluateAsync(ct).ConfigureAwait(true);
+            if (ct.IsCancellationRequested || requestId != Volatile.Read(ref _readinessRequestId))
+            {
+                return;
+            }
+
+            ApplyReadiness(readiness, projectFailure);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            logger.Error(ex, "Failed to evaluate Cleaning command readiness");
+            CanStartCleaning = false;
+        }
+    }
+
+    private void ApplyReadiness(CleaningCommandReadinessResult readiness, bool projectFailure)
+    {
+        CanStartCleaning = readiness.CanStartOrPreview;
+        if (readiness.CanStartOrPreview)
+        {
+            ClearReadinessValidationIfCurrent();
+            return;
+        }
+
+        if (projectFailure && readiness.Failure is not null && !IsCleaning)
+        {
+            ProjectReadinessFailure(readiness.Failure);
+        }
+    }
+
+    private void ProjectReadinessFailure(CleaningPreflightFailure failure)
+    {
+        ProjectPreflightFailure(failure);
+        _currentReadinessFailureKind = failure.Kind;
+    }
+
+    private void ClearReadinessValidationIfCurrent()
+    {
+        if (_currentReadinessFailureKind is null)
+        {
+            return;
+        }
+
+        ValidationErrors.Clear();
+        HasValidationErrors = false;
+        _currentReadinessFailureKind = null;
+    }
 
     private static CleaningPreflightFailure ToPreflightFailure(ConfigPersistenceFailureException ex) =>
         new(
@@ -530,5 +509,8 @@ public sealed partial class CleaningCommandsViewModel(
 
     public void Dispose()
     {
+        var cts = Interlocked.Exchange(ref _readinessCts, null);
+        cts?.Cancel();
+        cts?.Dispose();
     }
 }

@@ -49,6 +49,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         IUiDispatcher uiDispatcher,
         IPluginRefreshModule pluginRefreshModule,
         IGameCapabilityProvider gameCapabilityProvider,
+        ICleaningCommandReadiness cleaningCommandReadiness,
         IPluginRefreshDiscoveryPlanner? discoveryPlanner = null,
         IAppLifetime? appLifetime = null)
     {
@@ -61,7 +62,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         PluginList = new PluginListViewModel(pluginRefreshModule);
 
         Commands = new CleaningCommandsViewModel(
-            stateService, cleaningSession, configService, gameCapabilityProvider,
+            stateService, cleaningSession, configService,
+            cleaningCommandReadiness,
             pluginRefreshModule,
             logger, messageDialog, appLifetime ?? NoOpAppLifetime.Instance,
             ShowProgressInteraction, ShowPreviewInteraction,
@@ -90,6 +92,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
     {
         Configuration.OnPluginRefreshSnapshot(snapshot);
         PluginList.OnPluginRefreshSnapshot(snapshot);
+        Commands.OnPluginRefreshSnapshot(snapshot);
     }
 
     /// <summary>
