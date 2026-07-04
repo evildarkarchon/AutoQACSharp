@@ -64,7 +64,10 @@ public sealed class Phase11DiagnosticsBoundaryTests
                 rows: appState.PluginsToClean
                     .Select(plugin => RecordingPluginRefreshModule.CreatePublishedRow(plugin))
                     .ToList());
-            var gameCapabilityProvider = new GameCapabilityProvider();
+            var discoveryPlanner = new PluginRefreshDiscoveryPlanner(
+                configService,
+                pluginLoading,
+                Substitute.For<AutoQAC.Services.MO2.IMo2InstanceService>());
             cleaningSession.StartAsync(Arg.Any<CancellationToken>())
                 .ThrowsAsync(new Exception(DiagnosticSentinels.CreateUnsafePayload()));
 
@@ -79,7 +82,7 @@ public sealed class Phase11DiagnosticsBoundaryTests
                 pluginLoading,
                 uiDispatcher,
                 refreshModule,
-                gameCapabilityProvider,
+                discoveryPlanner,
                 new CleaningCommandReadiness(refreshModule, stateService));
             using var _ = viewModel.ShowProgressInteraction.RegisterHandler(_ => Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
 

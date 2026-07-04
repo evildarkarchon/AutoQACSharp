@@ -32,7 +32,7 @@ public sealed class ErrorDialogTests
     private readonly IPluginValidationService _pluginServiceMock;
     private readonly IPluginLoadingService _pluginLoadingServiceMock;
     private readonly IUiDispatcher _uiDispatcher;
-    private readonly IGameCapabilityProvider _gameCapabilityProvider;
+    private readonly IPluginRefreshDiscoveryPlanner _discoveryPlanner;
 
     public ErrorDialogTests()
     {
@@ -45,7 +45,10 @@ public sealed class ErrorDialogTests
         _pluginServiceMock = Substitute.For<IPluginValidationService>();
         _pluginLoadingServiceMock = Substitute.For<IPluginLoadingService>();
         _uiDispatcher = new SynchronousUiDispatcher();
-        _gameCapabilityProvider = new GameCapabilityProvider();
+        _discoveryPlanner = new PluginRefreshDiscoveryPlanner(
+            _configServiceMock,
+            _pluginLoadingServiceMock,
+            Substitute.For<AutoQAC.Services.MO2.IMo2InstanceService>());
 
         // Default setup for CleaningCompleted observable
         _stateServiceMock.CleaningCompleted
@@ -127,7 +130,7 @@ public sealed class ErrorDialogTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             effectiveRefreshModule,
-            _gameCapabilityProvider,
+            _discoveryPlanner,
             CreateReadiness(effectiveRefreshModule));
     }
 
@@ -161,7 +164,7 @@ public sealed class ErrorDialogTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             refreshModule,
-            _gameCapabilityProvider,
+            _discoveryPlanner,
             CreateReadiness(refreshModule));
     }
 
@@ -232,7 +235,7 @@ public sealed class ErrorDialogTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             refreshModule,
-            _gameCapabilityProvider,
+            _discoveryPlanner,
             CreateReadiness(refreshModule));
 
         // Act
@@ -273,7 +276,7 @@ public sealed class ErrorDialogTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             refreshModule,
-            _gameCapabilityProvider,
+            _discoveryPlanner,
             CreateReadiness(refreshModule));
 
         vm.Configuration.XEditPath = nonExistentPath;
@@ -319,7 +322,7 @@ public sealed class ErrorDialogTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             refreshModule,
-            _gameCapabilityProvider,
+            _discoveryPlanner,
             CreateReadiness(refreshModule));
 
         // Act
@@ -369,7 +372,7 @@ public sealed class ErrorDialogTests
                 _pluginLoadingServiceMock,
                 _uiDispatcher,
                 refreshModule,
-                _gameCapabilityProvider,
+                _discoveryPlanner,
                 CreateReadiness(refreshModule));
 
             // Act
@@ -593,7 +596,7 @@ public sealed class ErrorDialogTests
                 _pluginLoadingServiceMock,
                 _uiDispatcher,
                 refreshModule,
-                _gameCapabilityProvider,
+                _discoveryPlanner,
                 CreateReadiness(refreshModule));
 
             // Act
@@ -645,7 +648,7 @@ public sealed class ErrorDialogTests
                 _pluginLoadingServiceMock,
                 _uiDispatcher,
                 refreshModule,
-                _gameCapabilityProvider,
+                _discoveryPlanner,
                 CreateReadiness(refreshModule));
 
             // Act
@@ -694,7 +697,7 @@ public sealed class ErrorDialogTests
                 _pluginLoadingServiceMock,
                 _uiDispatcher,
                 refreshModule,
-                _gameCapabilityProvider,
+                _discoveryPlanner,
                 CreateReadiness(refreshModule));
 
             // Act
@@ -746,7 +749,7 @@ public sealed class ErrorDialogTests
                 _pluginLoadingServiceMock,
                 _uiDispatcher,
                 refreshModule,
-                _gameCapabilityProvider,
+                _discoveryPlanner,
                 CreateReadiness(refreshModule));
 
             // Act

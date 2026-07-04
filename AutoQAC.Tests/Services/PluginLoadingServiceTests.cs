@@ -1,7 +1,6 @@
 using System.Reflection;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
-using AutoQAC.Services.GameCapability;
 using AutoQAC.Services.Plugin;
 using FluentAssertions;
 using NSubstitute;
@@ -18,7 +17,7 @@ public sealed class PluginLoadingServiceTests
     {
         _mockPluginValidation = Substitute.For<IPluginValidationService>();
         _mockLogger = Substitute.For<ILoggingService>();
-        _sut = new PluginLoadingService(_mockPluginValidation, _mockLogger, new GameCapabilityProvider(), _ => null);
+        _sut = new PluginLoadingService(_mockPluginValidation, _mockLogger, _ => null);
     }
 
     #region GetPluginsFromFileAsync Tests
@@ -58,7 +57,6 @@ public sealed class PluginLoadingServiceTests
         var sut = new PluginLoadingService(
             _mockPluginValidation,
             _mockLogger,
-            new GameCapabilityProvider(),
             _ => null,
             (_, _, _) =>
             (
@@ -105,7 +103,6 @@ public sealed class PluginLoadingServiceTests
         var sut = new PluginLoadingService(
             _mockPluginValidation,
             _mockLogger,
-            new GameCapabilityProvider(),
             _ => null,
             (_, _, _) => (null, (IReadOnlyList<string>)new List<string>()));
 
@@ -125,7 +122,6 @@ public sealed class PluginLoadingServiceTests
         var sut = new PluginLoadingService(
             _mockPluginValidation,
             _mockLogger,
-            new GameCapabilityProvider(),
             _ => null,
             (_, _, _) => (dataFolder, (IReadOnlyList<string>)new List<string>()));
 
@@ -145,7 +141,6 @@ public sealed class PluginLoadingServiceTests
         var sut = new PluginLoadingService(
             _mockPluginValidation,
             _mockLogger,
-            new GameCapabilityProvider(),
             _ => null,
             (_, _, _) => throw new InvalidOperationException("Mutagen failure"));
 
@@ -169,7 +164,6 @@ public sealed class PluginLoadingServiceTests
         var sut = new PluginLoadingService(
             _mockPluginValidation,
             _mockLogger,
-            new GameCapabilityProvider(),
             _ => null,
             (_, _, ct) =>
             {
@@ -270,7 +264,7 @@ public sealed class PluginLoadingServiceTests
     {
         // Arrange
         var expectedPath = @"C:\Games\Detected\Data";
-        var sut = new PluginLoadingService(_mockPluginValidation, _mockLogger, new GameCapabilityProvider(),
+        var sut = new PluginLoadingService(_mockPluginValidation, _mockLogger,
             g => g == gameType ? expectedPath : null);
 
         // Act

@@ -8,7 +8,7 @@ namespace AutoQAC.Services.GameCapability;
 /// <param name="GameType">Game this capability row describes.</param>
 /// <param name="PluginDiscoveryMode">How AutoQAC can discover plugin rows for this game.</param>
 /// <param name="SupportsIssueApproximation">Whether AutoQAC can show pre-cleaning issue approximations for this game.</param>
-public sealed record GameCapability(
+internal sealed record GameCapability(
     GameType GameType,
     PluginDiscoveryMode PluginDiscoveryMode,
     bool SupportsIssueApproximation)

@@ -81,8 +81,7 @@ public sealed class PluginRefreshModuleTests
         var tokenSourcePlanner = new PluginRefreshDiscoveryPlanner(
             configurationService,
             new TestPluginLoadingService(),
-            Substitute.For<IMo2InstanceService>(),
-            new GameCapabilityProvider());
+            Substitute.For<IMo2InstanceService>());
         var freshnessToken = await tokenSourcePlanner.CreateFreshnessTokenAsync(plan);
         var expectedFreshness = new PluginRefreshFreshness(false, PluginRefreshStalenessReason.LoadOrderPathChanged);
         var discoveryPlanner = Substitute.For<IPluginRefreshDiscoveryPlanner>();
@@ -135,8 +134,7 @@ public sealed class PluginRefreshModuleTests
         var tokenSourcePlanner = new PluginRefreshDiscoveryPlanner(
             configurationService,
             new TestPluginLoadingService(),
-            Substitute.For<IMo2InstanceService>(),
-            new GameCapabilityProvider());
+            Substitute.For<IMo2InstanceService>());
         var freshnessToken = await tokenSourcePlanner.CreateFreshnessTokenAsync(plan);
         var discoveryPlanner = Substitute.For<IPluginRefreshDiscoveryPlanner>();
         discoveryPlanner.GetAffordance(Arg.Any<GameType>(), Arg.Any<bool>())
@@ -191,8 +189,7 @@ public sealed class PluginRefreshModuleTests
         var tokenSourcePlanner = new PluginRefreshDiscoveryPlanner(
             configurationService,
             new TestPluginLoadingService(),
-            Substitute.For<IMo2InstanceService>(),
-            new GameCapabilityProvider());
+            Substitute.For<IMo2InstanceService>());
         var freshnessToken = await tokenSourcePlanner.CreateFreshnessTokenAsync(plan);
         var discoveryPlanner = CreateStaleDiscoveryPlanner(
             plan,
@@ -241,8 +238,7 @@ public sealed class PluginRefreshModuleTests
         var tokenSourcePlanner = new PluginRefreshDiscoveryPlanner(
             configurationService,
             new TestPluginLoadingService(),
-            Substitute.For<IMo2InstanceService>(),
-            new GameCapabilityProvider());
+            Substitute.For<IMo2InstanceService>());
         var freshnessToken = await tokenSourcePlanner.CreateFreshnessTokenAsync(plan);
         var discoveryPlanner = CreateStaleDiscoveryPlanner(
             plan,
@@ -565,8 +561,7 @@ public sealed class PluginRefreshModuleTests
         discoveryPlanner ??= new PluginRefreshDiscoveryPlanner(
             configurationService,
             pluginLoadingService,
-            Substitute.For<IMo2InstanceService>(),
-            new GameCapabilityProvider());
+            Substitute.For<IMo2InstanceService>());
         return new PluginRefreshModule(
             discoveryPlanner,
             approximationService ?? new ResultIssueApproximationService(CreateDefaultResults()),

@@ -49,7 +49,7 @@ public sealed class MainWindowThreadingTests
         configService.GetSelectedGameAsync(Arg.Any<CancellationToken>())
             .Returns(GameType.Unknown);
         using var refreshModule = new RecordingPluginRefreshModule();
-        var gameCapabilityProvider = CreateGameCapabilityProvider();
+        var discoveryPlanner = CreateDiscoveryPlanner(configService, pluginLoadingService);
 
         var viewModel = new MainWindowViewModel(
             configService,
@@ -62,7 +62,7 @@ public sealed class MainWindowThreadingTests
             pluginLoadingService,
             captureDispatcher,
             refreshModule,
-            gameCapabilityProvider,
+            discoveryPlanner,
             new CleaningCommandReadiness(refreshModule, stateService));
 
         try
@@ -190,7 +190,7 @@ public sealed class MainWindowThreadingTests
             });
         configService.GetSelectedGameAsync(Arg.Any<CancellationToken>())
             .Returns(GameType.Unknown);
-        var gameCapabilityProvider = CreateGameCapabilityProvider();
+        var discoveryPlanner = CreateDiscoveryPlanner(configService, pluginLoadingService);
 
         var viewModel = new MainWindowViewModel(
             configService,
@@ -203,7 +203,7 @@ public sealed class MainWindowThreadingTests
             pluginLoadingService,
             captureDispatcher,
             pluginRefreshModule: refreshModule,
-            gameCapabilityProvider: gameCapabilityProvider,
+            discoveryPlanner: discoveryPlanner,
             cleaningCommandReadiness: new CleaningCommandReadiness(refreshModule, stateService));
 
         try
@@ -279,7 +279,13 @@ public sealed class MainWindowThreadingTests
             IsInSkipList: false,
             approximation ?? PluginIssueApproximation.Unavailable);
 
-    private static IGameCapabilityProvider CreateGameCapabilityProvider() => new GameCapabilityProvider();
+    private static IPluginRefreshDiscoveryPlanner CreateDiscoveryPlanner(
+        IConfigurationService configService,
+        IPluginLoadingService pluginLoadingService) =>
+        new PluginRefreshDiscoveryPlanner(
+            configService,
+            pluginLoadingService,
+            Substitute.For<AutoQAC.Services.MO2.IMo2InstanceService>());
 
     /// <summary>
     /// Test double <see cref="IUiDispatcher"/> that runs callbacks synchronously while

@@ -177,8 +177,7 @@ public sealed class PluginRefreshDiscoveryPlannerFreshnessTests
         return new PluginRefreshDiscoveryPlanner(
             configurationService,
             Substitute.For<IPluginLoadingService>(),
-            Substitute.For<IMo2InstanceService>(),
-            new GameCapabilityProvider());
+            Substitute.For<IMo2InstanceService>());
     }
 
     private static UserConfiguration CreateUserConfig(

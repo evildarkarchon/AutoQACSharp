@@ -64,7 +64,6 @@ public sealed class DependencyInjectionTests
 
         // Business Logic
         provider.GetService<IGameDetectionService>().Should().NotBeNull();
-        provider.GetService<IGameCapabilityProvider>().Should().NotBeNull();
         provider.GetService<IPluginRefreshDiscoveryPlanner>().Should().NotBeNull();
         provider.GetService<IPluginValidationService>().Should().NotBeNull();
         provider.GetService<IPluginLoadingService>().Should().NotBeNull();

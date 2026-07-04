@@ -14,45 +14,47 @@ namespace AutoQAC.Tests.Integration;
 public sealed class GameSelectionIntegrationTests
 {
     [Fact]
-    public void GameCapabilityProvider_ShouldReportCorrectAutomaticDiscoverySupport()
+    public void PluginRefreshDiscoveryPlanner_ShouldReportCorrectAutomaticDiscoverySupport()
     {
         // Arrange
         var services = new ServiceCollection();
         services.AddInfrastructure();
+        services.AddState();
         services.AddConfiguration();
         services.AddBusinessLogic();
         var provider = services.BuildServiceProvider();
 
-        var gameCapabilityProvider = provider.GetRequiredService<IGameCapabilityProvider>();
+        var discoveryPlanner = provider.GetRequiredService<IPluginRefreshDiscoveryPlanner>();
 
         // Act & Assert - automatic discovery games
-        gameCapabilityProvider.Get(GameType.SkyrimSe).SupportsAutomaticPluginDiscovery.Should().BeTrue();
-        gameCapabilityProvider.Get(GameType.SkyrimLe).SupportsAutomaticPluginDiscovery.Should().BeTrue();
-        gameCapabilityProvider.Get(GameType.SkyrimVr).SupportsAutomaticPluginDiscovery.Should().BeTrue();
-        gameCapabilityProvider.Get(GameType.Fallout4).SupportsAutomaticPluginDiscovery.Should().BeTrue();
-        gameCapabilityProvider.Get(GameType.Fallout4Vr).SupportsAutomaticPluginDiscovery.Should().BeTrue();
+        discoveryPlanner.GetAffordance(GameType.SkyrimSe, mo2ModeEnabled: false).IsMutagenSupported.Should().BeTrue();
+        discoveryPlanner.GetAffordance(GameType.SkyrimLe, mo2ModeEnabled: false).IsMutagenSupported.Should().BeTrue();
+        discoveryPlanner.GetAffordance(GameType.SkyrimVr, mo2ModeEnabled: false).IsMutagenSupported.Should().BeTrue();
+        discoveryPlanner.GetAffordance(GameType.Fallout4, mo2ModeEnabled: false).IsMutagenSupported.Should().BeTrue();
+        discoveryPlanner.GetAffordance(GameType.Fallout4Vr, mo2ModeEnabled: false).IsMutagenSupported.Should().BeTrue();
 
         // File-load-order or unsupported games
-        gameCapabilityProvider.Get(GameType.Fallout3).SupportsAutomaticPluginDiscovery.Should().BeFalse();
-        gameCapabilityProvider.Get(GameType.FalloutNewVegas).SupportsAutomaticPluginDiscovery.Should().BeFalse();
-        gameCapabilityProvider.Get(GameType.Oblivion).SupportsAutomaticPluginDiscovery.Should().BeFalse();
-        gameCapabilityProvider.Get(GameType.Unknown).SupportsAutomaticPluginDiscovery.Should().BeFalse();
+        discoveryPlanner.GetAffordance(GameType.Fallout3, mo2ModeEnabled: false).IsMutagenSupported.Should().BeFalse();
+        discoveryPlanner.GetAffordance(GameType.FalloutNewVegas, mo2ModeEnabled: false).IsMutagenSupported.Should().BeFalse();
+        discoveryPlanner.GetAffordance(GameType.Oblivion, mo2ModeEnabled: false).IsMutagenSupported.Should().BeFalse();
+        discoveryPlanner.GetAffordance(GameType.Unknown, mo2ModeEnabled: false).IsMutagenSupported.Should().BeFalse();
     }
 
     [Fact]
-    public void GameCapabilityProvider_ShouldReturnAllAvailableGames()
+    public void PluginRefreshDiscoveryPlanner_ShouldReturnAllAvailableGames()
     {
         // Arrange
         var services = new ServiceCollection();
         services.AddInfrastructure();
+        services.AddState();
         services.AddConfiguration();
         services.AddBusinessLogic();
         var provider = services.BuildServiceProvider();
 
-        var gameCapabilityProvider = provider.GetRequiredService<IGameCapabilityProvider>();
+        var discoveryPlanner = provider.GetRequiredService<IPluginRefreshDiscoveryPlanner>();
 
         // Act
-        var availableGames = gameCapabilityProvider.GetAvailableGames();
+        var availableGames = discoveryPlanner.GetAvailableGames();
 
         // Assert
         availableGames.Should().NotBeEmpty();

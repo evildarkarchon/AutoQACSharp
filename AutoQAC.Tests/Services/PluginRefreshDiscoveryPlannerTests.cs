@@ -381,13 +381,11 @@ public sealed class PluginRefreshDiscoveryPlannerTests
     private static PluginRefreshDiscoveryPlanner CreateSut(
         IConfigurationService? configurationService = null,
         IPluginLoadingService? pluginLoadingService = null,
-        IMo2InstanceService? mo2InstanceService = null,
-        IGameCapabilityProvider? gameCapabilityProvider = null) =>
+        IMo2InstanceService? mo2InstanceService = null) =>
         new(
             configurationService ?? CreateConfigurationService(),
             pluginLoadingService ?? Substitute.For<IPluginLoadingService>(),
-            mo2InstanceService ?? Substitute.For<IMo2InstanceService>(),
-            gameCapabilityProvider ?? new GameCapabilityProvider());
+            mo2InstanceService ?? Substitute.For<IMo2InstanceService>());
 
     private static IConfigurationService CreateConfigurationService(
         bool mo2Mode = false,

@@ -52,12 +52,10 @@ public static class ServiceCollectionExtensions
         public IServiceCollection AddBusinessLogic()
         {
             services.AddSingleton<IGameDetectionService, GameDetectionService>();
-            services.AddSingleton<IGameCapabilityProvider, GameCapabilityProvider>();
             services.AddSingleton<IPluginValidationService, PluginValidationService>();
             services.AddSingleton<IPluginLoadingService, PluginLoadingService>();
             services.AddSingleton<IPluginIssueApproximationService>(sp => new PluginIssueApproximationService(
-                sp.GetRequiredService<ILoggingService>(),
-                gameCapabilityProvider: sp.GetRequiredService<IGameCapabilityProvider>()));
+                sp.GetRequiredService<ILoggingService>()));
             services.AddSingleton<ISkipListPolicy, SkipListPolicy>();
             services.AddSingleton<IPluginRefreshDiscoveryPlanner, PluginRefreshDiscoveryPlanner>();
             services.AddSingleton<IPluginRefreshModule, PluginRefreshModule>();

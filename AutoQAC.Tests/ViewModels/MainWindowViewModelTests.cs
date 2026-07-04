@@ -30,7 +30,6 @@ public sealed class MainWindowViewModelTests
     private readonly IPluginLoadingService _pluginLoadingServiceMock;
     private readonly IUiDispatcher _uiDispatcher;
     private readonly RecordingPluginRefreshModule _pluginRefreshModule;
-    private readonly IGameCapabilityProvider _gameCapabilityProvider;
     private readonly IPluginRefreshDiscoveryPlanner _discoveryPlanner;
     private readonly ICleaningCommandReadiness _cleaningCommandReadiness;
 
@@ -45,12 +44,10 @@ public sealed class MainWindowViewModelTests
         _pluginServiceMock = Substitute.For<IPluginValidationService>();
         _pluginLoadingServiceMock = Substitute.For<IPluginLoadingService>();
         _uiDispatcher = new SynchronousUiDispatcher();
-        _gameCapabilityProvider = new GameCapabilityProvider();
         _discoveryPlanner = new PluginRefreshDiscoveryPlanner(
             _configServiceMock,
             _pluginLoadingServiceMock,
-            Substitute.For<AutoQAC.Services.MO2.IMo2InstanceService>(),
-            _gameCapabilityProvider);
+            Substitute.For<AutoQAC.Services.MO2.IMo2InstanceService>());
         _pluginRefreshModule = new RecordingPluginRefreshModule();
         _pluginRefreshModule.PublicationHandler = _ => Task.FromResult(CreatePublicationFromState(_stateServiceMock.CurrentState));
         _cleaningCommandReadiness = new CleaningCommandReadiness(_pluginRefreshModule, _stateServiceMock);
@@ -134,8 +131,7 @@ public sealed class MainWindowViewModelTests
         var discoveryPlanner = new PluginRefreshDiscoveryPlanner(
             _configServiceMock,
             _pluginLoadingServiceMock,
-            Substitute.For<AutoQAC.Services.MO2.IMo2InstanceService>(),
-            _gameCapabilityProvider);
+            Substitute.For<AutoQAC.Services.MO2.IMo2InstanceService>());
         return new PluginRefreshModule(
             discoveryPlanner,
             approximationService,
@@ -194,7 +190,7 @@ public sealed class MainWindowViewModelTests
                 _pluginLoadingServiceMock,
                 _uiDispatcher,
                 _pluginRefreshModule,
-                _gameCapabilityProvider,
+                _discoveryPlanner,
                 _cleaningCommandReadiness);
             using var _ = vm.ShowProgressInteraction.RegisterHandler(_ => Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
 
@@ -245,7 +241,7 @@ public sealed class MainWindowViewModelTests
                 _pluginLoadingServiceMock,
                 _uiDispatcher,
                 _pluginRefreshModule,
-                _gameCapabilityProvider,
+                _discoveryPlanner,
                 _cleaningCommandReadiness);
             using var _ = vm.ShowProgressInteraction.RegisterHandler(_ => throw new ApplicationException("Progress window failed"));
 
@@ -298,7 +294,7 @@ public sealed class MainWindowViewModelTests
                 _pluginLoadingServiceMock,
                 _uiDispatcher,
                 _pluginRefreshModule,
-                _gameCapabilityProvider,
+                _discoveryPlanner,
                 _cleaningCommandReadiness);
             using var _ = vm.ShowPreviewInteraction.RegisterHandler(_ => throw new ApplicationException("Preview window failed"));
 
@@ -340,7 +336,7 @@ public sealed class MainWindowViewModelTests
                 _pluginLoadingServiceMock,
                 _uiDispatcher,
                 _pluginRefreshModule,
-                _gameCapabilityProvider,
+                _discoveryPlanner,
                 _cleaningCommandReadiness);
 
             _fileDialogMock.OpenFileDialogAsync(
@@ -429,7 +425,7 @@ public sealed class MainWindowViewModelTests
                 _pluginLoadingServiceMock,
                 _uiDispatcher,
                 _pluginRefreshModule,
-                _gameCapabilityProvider,
+                _discoveryPlanner,
                 _cleaningCommandReadiness);
             using var _ = vm.ShowProgressInteraction.RegisterHandler(_ => Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
 
@@ -487,7 +483,7 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             _pluginRefreshModule,
-            _gameCapabilityProvider,
+            _discoveryPlanner,
             _cleaningCommandReadiness);
 
         // Configure dialog to return null (user cancelled)
@@ -540,7 +536,7 @@ public sealed class MainWindowViewModelTests
                 _pluginLoadingServiceMock,
                 _uiDispatcher,
                 _pluginRefreshModule,
-                _gameCapabilityProvider,
+                _discoveryPlanner,
                 _cleaningCommandReadiness);
 
             await WaitForSignalAsync(initializationApplied);
@@ -606,7 +602,7 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             _pluginRefreshModule,
-            _gameCapabilityProvider,
+            _discoveryPlanner,
             _cleaningCommandReadiness);
 
         // Act - set properties on Configuration sub-VM (these don't affect CanStartCleaning
@@ -641,7 +637,7 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             _pluginRefreshModule,
-            _gameCapabilityProvider,
+            _discoveryPlanner,
             _cleaningCommandReadiness);
 
         // Set valid paths on Configuration sub-VM
@@ -685,7 +681,7 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             _pluginRefreshModule,
-            _gameCapabilityProvider,
+            _discoveryPlanner,
             _cleaningCommandReadiness);
 
         // Act
@@ -746,7 +742,7 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             _pluginRefreshModule,
-            _gameCapabilityProvider,
+            _discoveryPlanner,
             _cleaningCommandReadiness);
 
         // Act
@@ -789,7 +785,7 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             _pluginRefreshModule,
-            _gameCapabilityProvider,
+            _discoveryPlanner,
             _cleaningCommandReadiness);
 
         // Act
@@ -832,7 +828,7 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             _pluginRefreshModule,
-            _gameCapabilityProvider,
+            _discoveryPlanner,
             _cleaningCommandReadiness);
 
         await vm.Commands.StopCleaningCommand.ExecuteAsync(null);
@@ -894,7 +890,7 @@ public sealed class MainWindowViewModelTests
                 _pluginLoadingServiceMock,
                 _uiDispatcher,
                 _pluginRefreshModule,
-                _gameCapabilityProvider,
+                _discoveryPlanner,
                 _cleaningCommandReadiness);
             vm.Configuration.SelectedGame = GameType.FalloutNewVegas;
 
@@ -949,7 +945,7 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             _pluginRefreshModule,
-            _gameCapabilityProvider,
+            _discoveryPlanner,
             _cleaningCommandReadiness);
         vm.Configuration.SelectedGame = GameType.SkyrimSe;
 
@@ -986,7 +982,7 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             _pluginRefreshModule,
-            _gameCapabilityProvider,
+            _discoveryPlanner,
             _cleaningCommandReadiness);
 
         await vm.Commands.StopCleaningCommand.ExecuteAsync(null);
@@ -1026,7 +1022,7 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             _pluginRefreshModule,
-            _gameCapabilityProvider,
+            _discoveryPlanner,
             _cleaningCommandReadiness);
 
         await vm.Commands.StopCleaningCommand.ExecuteAsync(null);
@@ -1066,7 +1062,7 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             _pluginRefreshModule,
-            _gameCapabilityProvider,
+            _discoveryPlanner,
             _cleaningCommandReadiness);
 
         await vm.Commands.StopCleaningCommand.ExecuteAsync(null);
@@ -1101,7 +1097,7 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             _pluginRefreshModule,
-            _gameCapabilityProvider,
+            _discoveryPlanner,
             _cleaningCommandReadiness);
 
         // Act
@@ -1289,7 +1285,7 @@ public sealed class MainWindowViewModelTests
     public void AvailableGames_ShouldBePopulatedFromGameCapability()
     {
         // Arrange
-        var expectedGames = _gameCapabilityProvider.GetAvailableGames();
+        var expectedGames = _discoveryPlanner.GetAvailableGames();
 
         var stateSubject = new BehaviorSubject<AppState>(new AppState());
         _stateServiceMock.StateChanged.Returns(stateSubject);
@@ -1307,7 +1303,7 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             _pluginRefreshModule,
-            _gameCapabilityProvider,
+            _discoveryPlanner,
             _cleaningCommandReadiness);
 
         // Assert - AvailableGames is now on Configuration sub-VM
@@ -1335,7 +1331,7 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             _pluginRefreshModule,
-            _gameCapabilityProvider,
+            _discoveryPlanner,
             _cleaningCommandReadiness);
 
         // Act & Assert - Default is Unknown (not supported)
@@ -1384,7 +1380,7 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             _pluginRefreshModule,
-            _gameCapabilityProvider,
+            _discoveryPlanner,
             _cleaningCommandReadiness);
 
         // Act
@@ -1459,7 +1455,7 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             refreshModule,
-            _gameCapabilityProvider,
+            _discoveryPlanner,
             new CleaningCommandReadiness(refreshModule, _stateServiceMock));
 
         // Act
@@ -1565,7 +1561,7 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             refreshModule,
-            _gameCapabilityProvider,
+            _discoveryPlanner,
             new CleaningCommandReadiness(refreshModule, stateService));
 
         vm.Configuration.SelectedGame = GameType.SkyrimSe;
@@ -1647,7 +1643,7 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             refreshModule,
-            _gameCapabilityProvider,
+            _discoveryPlanner,
             new CleaningCommandReadiness(refreshModule, stateService));
 
         vm.Configuration.SelectedGame = GameType.SkyrimSe;
@@ -1733,7 +1729,7 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             refreshModule,
-            _gameCapabilityProvider,
+            _discoveryPlanner,
             new CleaningCommandReadiness(refreshModule, _stateServiceMock));
 
         vm.Configuration.SelectedGame = GameType.SkyrimSe;
@@ -1808,7 +1804,7 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             _pluginRefreshModule,
-            _gameCapabilityProvider,
+            _discoveryPlanner,
             _cleaningCommandReadiness);
 
         // Act
@@ -1913,7 +1909,7 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             _pluginRefreshModule,
-            _gameCapabilityProvider,
+            _discoveryPlanner,
             _cleaningCommandReadiness);
         using var _ = vm.ShowSettingsInteraction.RegisterHandler(_ => Task.FromResult(true));
         _stateServiceMock.ClearReceivedCalls();
@@ -1968,7 +1964,7 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             _pluginRefreshModule,
-            _gameCapabilityProvider,
+            _discoveryPlanner,
             _cleaningCommandReadiness);
 
         // Act
@@ -2030,7 +2026,7 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             refreshModule,
-            _gameCapabilityProvider,
+            _discoveryPlanner,
             new CleaningCommandReadiness(refreshModule, _stateServiceMock));
 
         // Act
@@ -2068,7 +2064,7 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             _pluginRefreshModule,
-            _gameCapabilityProvider,
+            _discoveryPlanner,
             _cleaningCommandReadiness);
 
         // Act & Assert

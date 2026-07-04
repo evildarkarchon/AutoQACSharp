@@ -22,8 +22,7 @@ namespace AutoQAC.Services.Plugin;
 public sealed class PluginIssueApproximationService(
     ILoggingService logger,
     IPluginQueryService? pluginQueryService = null,
-    Func<GameType, string, CancellationToken, PluginIssueApproximationService.AnalysisContext>? contextFactory = null,
-    IGameCapabilityProvider? gameCapabilityProvider = null)
+    Func<GameType, string, CancellationToken, PluginIssueApproximationService.AnalysisContext>? contextFactory = null)
     : IPluginIssueApproximationService
 {
     public sealed record AnalysisTarget(string FileName, string FullPath, IModGetter? Plugin);
@@ -35,8 +34,6 @@ public sealed class PluginIssueApproximationService(
 
     private readonly IPluginQueryService _pluginQueryService = pluginQueryService ?? PluginQueryService.Default;
 
-    private readonly IGameCapabilityProvider _gameCapabilityProvider = gameCapabilityProvider ?? new GameCapabilityProvider();
-
     private readonly Func<GameType, string, CancellationToken, AnalysisContext> _contextFactory =
         contextFactory ?? CreateAnalysisContext;
 
@@ -45,7 +42,7 @@ public sealed class PluginIssueApproximationService(
         Action<PluginIssueApproximationResult>? onApproximationReady = null,
         CancellationToken ct = default)
     {
-        if (!_gameCapabilityProvider.Get(request.GameType).SupportsIssueApproximation)
+        if (!GameCapabilityCatalog.Get(request.GameType).SupportsIssueApproximation)
         {
             return [];
         }

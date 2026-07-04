@@ -20,7 +20,6 @@ public sealed class PluginRefreshDiscoveryPlanner : IPluginRefreshDiscoveryPlann
     private readonly IConfigurationService _configurationService;
     private readonly IPluginLoadingService _pluginLoadingService;
     private readonly IMo2InstanceService _mo2InstanceService;
-    private readonly IGameCapabilityProvider _gameCapabilityProvider;
 
     /// <summary>
     /// Initializes a planner with the adapter services needed to resolve Plugin refresh discovery details.
@@ -28,22 +27,20 @@ public sealed class PluginRefreshDiscoveryPlanner : IPluginRefreshDiscoveryPlann
     public PluginRefreshDiscoveryPlanner(
         IConfigurationService configurationService,
         IPluginLoadingService pluginLoadingService,
-        IMo2InstanceService mo2InstanceService,
-        IGameCapabilityProvider gameCapabilityProvider)
+        IMo2InstanceService mo2InstanceService)
     {
         _configurationService = configurationService;
         _pluginLoadingService = pluginLoadingService;
         _mo2InstanceService = mo2InstanceService;
-        _gameCapabilityProvider = gameCapabilityProvider;
     }
 
     /// <inheritdoc />
-    public IReadOnlyList<GameType> GetAvailableGames() => _gameCapabilityProvider.GetAvailableGames();
+    public IReadOnlyList<GameType> GetAvailableGames() => GameCapabilityCatalog.GetAvailableGames();
 
     /// <inheritdoc />
     public PluginRefreshGameAffordance GetAffordance(GameType gameType, bool mo2ModeEnabled)
     {
-        var capability = _gameCapabilityProvider.Get(gameType);
+        var capability = GameCapabilityCatalog.Get(gameType);
         return new PluginRefreshGameAffordance(
             gameType,
             capability.SupportsAutomaticPluginDiscovery,
@@ -212,7 +209,7 @@ public sealed class PluginRefreshDiscoveryPlanner : IPluginRefreshDiscoveryPlann
             ? null
             : selectedLoadOrderPath;
 
-        var capability = _gameCapabilityProvider.Get(gameType);
+        var capability = GameCapabilityCatalog.Get(gameType);
         if (string.IsNullOrWhiteSpace(loadOrderPath) && capability.RequiresLoadOrderFile)
         {
             loadOrderPath = await _configurationService.GetGameLoadOrderOverrideAsync(gameType, ct)
@@ -327,7 +324,7 @@ public sealed class PluginRefreshDiscoveryPlanner : IPluginRefreshDiscoveryPlann
                 () => _mo2InstanceService.BuildPluginPathMap(instance, profile, dataFolder),
                 ct)
             .ConfigureAwait(false);
-        var capability = _gameCapabilityProvider.Get(gameType);
+        var capability = GameCapabilityCatalog.Get(gameType);
         var plan = new PluginRefreshDiscoveryPlan(
             gameType,
             PluginRefreshDiscoveryMode.Mo2LoadOrderFile,

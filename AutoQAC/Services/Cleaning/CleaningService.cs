@@ -191,7 +191,7 @@ public sealed class CleaningService(
             return Task.FromResult(false);
         }
 
-        if (new GameCapabilityProvider().Get(state.CurrentGameType).RequiresLoadOrderFile)
+        if (GameCapabilityCatalog.Get(state.CurrentGameType).RequiresLoadOrderFile)
         {
             return Task.FromResult(!string.IsNullOrWhiteSpace(state.LoadOrderPath) && File.Exists(state.LoadOrderPath));
         }

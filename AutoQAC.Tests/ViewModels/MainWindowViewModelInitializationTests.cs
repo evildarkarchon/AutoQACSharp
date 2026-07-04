@@ -84,7 +84,10 @@ public sealed class MainWindowViewModelInitializationTests
             intent is PluginRefreshIntent.RefreshGame refresh
                 ? RecordingPluginRefreshModule.CreateSnapshot(gameType: refresh.GameType)
                 : refreshModule.CurrentSnapshot);
-        var gameCapabilityProvider = new GameCapabilityProvider();
+        var discoveryPlanner = new PluginRefreshDiscoveryPlanner(
+            _configServiceMock,
+            _pluginLoadingServiceMock,
+            Substitute.For<AutoQAC.Services.MO2.IMo2InstanceService>());
 
         // Act
         var vm = new MainWindowViewModel(
@@ -98,7 +101,7 @@ public sealed class MainWindowViewModelInitializationTests
             _pluginLoadingServiceMock,
             _uiDispatcher,
             refreshModule,
-            gameCapabilityProvider,
+            discoveryPlanner,
             new CleaningCommandReadiness(refreshModule, _stateServiceMock));
 
         await WaitForSignalAsync(initializationApplied);

@@ -23,7 +23,6 @@ public sealed class PluginLoadingService : IPluginLoadingService
 {
     private readonly IPluginValidationService _pluginValidation;
     private readonly ILoggingService _logger;
-    private readonly IGameCapabilityProvider _gameCapabilityProvider;
     private readonly Func<GameType, string?> _registryDataFolderResolver;
 
     private readonly Func<GameType, string?, CancellationToken, (string? DataFolder, IReadOnlyList<string>
@@ -50,14 +49,12 @@ public sealed class PluginLoadingService : IPluginLoadingService
     public PluginLoadingService(
         IPluginValidationService pluginValidation,
         ILoggingService logger,
-        IGameCapabilityProvider gameCapabilityProvider,
         Func<GameType, string?>? registryDataFolderResolver = null,
         Func<GameType, string?, CancellationToken, (string? DataFolder, IReadOnlyList<string> PluginFileNames)>?
             mutagenListingProvider = null)
     {
         _pluginValidation = pluginValidation;
         _logger = logger;
-        _gameCapabilityProvider = gameCapabilityProvider;
         _registryDataFolderResolver = registryDataFolderResolver ?? ResolveDataFolderFromRegistry;
         _mutagenListingProvider = mutagenListingProvider ?? LoadMutagenListings;
     }
@@ -80,7 +77,7 @@ public sealed class PluginLoadingService : IPluginLoadingService
         string? customDataFolder = null,
         CancellationToken ct = default)
     {
-        if (!_gameCapabilityProvider.Get(gameType).SupportsAutomaticPluginDiscovery)
+        if (!GameCapabilityCatalog.Get(gameType).SupportsAutomaticPluginDiscovery)
         {
             _logger.Information(
                 "Game {GameType} does not support automatic plugin discovery; use GetPluginsFromFileAsync instead",
@@ -170,7 +167,7 @@ public sealed class PluginLoadingService : IPluginLoadingService
             return customDataFolderOverride;
         }
 
-        if (_gameCapabilityProvider.Get(gameType).SupportsAutomaticPluginDiscovery)
+        if (GameCapabilityCatalog.Get(gameType).SupportsAutomaticPluginDiscovery)
         {
             try
             {

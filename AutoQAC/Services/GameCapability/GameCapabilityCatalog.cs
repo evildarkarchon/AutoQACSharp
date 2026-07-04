@@ -5,9 +5,9 @@ using AutoQAC.Models;
 namespace AutoQAC.Services.GameCapability;
 
 /// <summary>
-/// Deterministic Game capability matrix for AutoQAC's game-specific behavior.
+/// Deterministic Game capability matrix used behind the Plugin refresh discovery plan module.
 /// </summary>
-public sealed class GameCapabilityProvider : IGameCapabilityProvider
+internal static class GameCapabilityCatalog
 {
     private static readonly IReadOnlyDictionary<GameType, GameCapability> Capabilities =
         new Dictionary<GameType, GameCapability>
@@ -23,14 +23,21 @@ public sealed class GameCapabilityProvider : IGameCapabilityProvider
             { GameType.FalloutNewVegas, new GameCapability(GameType.FalloutNewVegas, PluginDiscoveryMode.LoadOrderFile, false) }
         };
 
-    /// <inheritdoc />
-    public GameCapability Get(GameType gameType) =>
+    /// <summary>
+    /// Gets the capability row for the specified game.
+    /// </summary>
+    /// <param name="gameType">Game to evaluate.</param>
+    /// <returns>The capability row for the game.</returns>
+    internal static GameCapability Get(GameType gameType) =>
         Capabilities.TryGetValue(gameType, out var capability)
             ? capability
             : new GameCapability(gameType, PluginDiscoveryMode.None, false);
 
-    /// <inheritdoc />
-    public IReadOnlyList<GameType> GetAvailableGames() =>
+    /// <summary>
+    /// Gets the games available for user selection.
+    /// </summary>
+    /// <returns>All supported selectable games, excluding <see cref="GameType.Unknown" />.</returns>
+    internal static IReadOnlyList<GameType> GetAvailableGames() =>
         Capabilities.Values
             .Where(capability => capability.SupportsPluginLoading)
             .Select(capability => capability.GameType)
