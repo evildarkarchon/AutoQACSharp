@@ -7,6 +7,7 @@ using AutoQAC.Services.GameDetection;
 using AutoQAC.Services.MO2;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Services.State;
+using AutoQAC.Tests.TestInfrastructure;
 using FluentAssertions;
 using NSubstitute;
 
@@ -344,6 +345,104 @@ public sealed class CleaningPreflightTests
             null,
             Arg.Any<string>(),
             Arg.Is<object[]>(args => ContainsSafeSummary(args)));
+    }
+
+    [Fact]
+    public async Task PrepareAsync_MissingPublication_ThrowsTypedPreflightFailure()
+    {
+        var config = Substitute.For<IConfigurationService>();
+        config.FlushPendingSavesAsync(Arg.Any<CancellationToken>())
+            .Returns(CreateFlushResult(ConfigPersistenceStatusKind.NoOp));
+        var state = Substitute.For<IStateService>();
+        state.CurrentState.Returns(CreateState());
+        using var refresh = new RecordingPluginRefreshModule(RecordingPluginRefreshModule.CreateSnapshot(GameType.SkyrimSe));
+        refresh.CurrentPublication = RecordingPluginRefreshModule.CreatePublication(
+            RecordingPluginRefreshModule.CreateSnapshot(GameType.SkyrimSe));
+        var sut = new CleaningPreflight(
+            config,
+            Substitute.For<IPluginValidationService>(),
+            refresh,
+            state,
+            Substitute.For<ILoggingService>());
+
+        var act = () => sut.PrepareAsync(CancellationToken.None);
+
+        var thrown = await act.Should().ThrowAsync<CleaningPreflightException>();
+        thrown.Which.Failure.Kind.Should().Be(CleaningPreflightFailureKind.MissingPluginRefreshPublication);
+    }
+
+    [Fact]
+    public async Task PrepareAsync_UsesPublicationSelectionAndSkipListFacts()
+    {
+        var xEditPath = Path.GetTempFileName();
+        try
+        {
+            var config = Substitute.For<IConfigurationService>();
+            config.FlushPendingSavesAsync(Arg.Any<CancellationToken>())
+                .Returns(CreateFlushResult(ConfigPersistenceStatusKind.NoOp));
+            config.LoadUserConfigAsync(Arg.Any<CancellationToken>()).Returns(new UserConfiguration());
+            var state = Substitute.For<IStateService>();
+            state.CurrentState.Returns(CreateState() with { XEditExecutablePath = xEditPath });
+            var validation = Substitute.For<IPluginValidationService>();
+            validation.ValidatePluginFile(Arg.Any<PluginInfo>()).Returns(PluginWarningKind.None);
+            var configuration = new PluginRefreshConfigurationProjection(
+                LoadOrderPath: null,
+                GameDataFolder: null,
+                HasGameDataFolderOverride: false,
+                XEditPath: xEditPath,
+                Mo2Path: null,
+                Mo2ModeEnabled: false,
+                Mo2InstancePath: null,
+                IsMo2InstanceOverride: false,
+                IsMo2InstanceValid: null,
+                AvailableProfiles: [],
+                SelectedProfile: null,
+                CleaningTimeout: 300);
+            var plan = new AutoQAC.Services.GameCapability.PluginRefreshDiscoveryPlan(
+                GameType.SkyrimSe,
+                AutoQAC.Services.GameCapability.PluginRefreshDiscoveryMode.DirectAutomatic,
+                configuration,
+                DisableSkipLists: false,
+                CanAttemptIssueApproximation: true,
+                DataFolderPath: null,
+                LoadOrderPath: null,
+                Mo2LoadOrderPath: null,
+                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+                Mo2BaseDataFolder: null);
+            var clean = CreatePlugin("Clean.esp");
+            var notSelected = CreatePlugin("NotSelected.esp");
+            var skipped = CreatePlugin("Skipped.esp") with { IsInSkipList = true };
+            var rows = new List<PluginRefreshPublishedRow>
+            {
+                new(clean, IsVisible: true, IsSelected: true, IsSkippedByPolicy: false, new PluginRefreshRowKey(clean.FileName, clean.FullPath)),
+                new(notSelected, IsVisible: true, IsSelected: false, IsSkippedByPolicy: false, new PluginRefreshRowKey(notSelected.FileName, notSelected.FullPath)),
+                new(skipped, IsVisible: false, IsSelected: true, IsSkippedByPolicy: true, new PluginRefreshRowKey(skipped.FileName, skipped.FullPath))
+            };
+            using var refresh = new RecordingPluginRefreshModule();
+            refresh.CurrentPublication = new PluginRefreshPublication(
+                Generation: 1,
+                GameType.SkyrimSe,
+                plan,
+                configuration,
+                PluginRefreshFreshness.Fresh,
+                rows,
+                VisibleRows: [],
+                new PluginRefreshActivity(false, false),
+                new PluginRefreshCommandAvailability(false, false, false, false),
+                StatusText: "Ready");
+            var sut = new CleaningPreflight(config, validation, refresh, state, Substitute.For<ILoggingService>());
+
+            var result = await sut.PrepareAsync(CancellationToken.None);
+
+            result.PluginRows.Should().Contain(row => row.Plugin.FileName == "Clean.esp" && row.Decision == PreflightDecision.Clean);
+            result.PluginRows.Should().Contain(row => row.Plugin.FileName == "NotSelected.esp" && row.SkipReason == PreflightSkipReason.NotSelected);
+            result.PluginRows.Should().Contain(row => row.Plugin.FileName == "Skipped.esp" && row.SkipReason == PreflightSkipReason.InSkipList);
+            await config.DidNotReceive().GetSkipListAsync(Arg.Any<GameType>(), Arg.Any<GameVariant>(), Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            File.Delete(xEditPath);
+        }
     }
 
     private static AppState CreateState(

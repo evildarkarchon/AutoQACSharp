@@ -76,7 +76,12 @@ public static class ServiceCollectionExtensions
             services.AddSingleton<IBackupSessionDeleter, DirectoryBackupSessionDeleter>();
             services.AddSingleton<IBackupService, BackupService>();
             services.AddSingleton<IHangDetectionService, HangDetectionService>();
-            services.AddSingleton<ICleaningPreflight, CleaningPreflight>();
+            services.AddSingleton<ICleaningPreflight>(sp => new CleaningPreflight(
+                sp.GetRequiredService<IConfigurationService>(),
+                sp.GetRequiredService<IPluginValidationService>(),
+                sp.GetRequiredService<IPluginRefreshModule>(),
+                sp.GetRequiredService<IStateService>(),
+                sp.GetRequiredService<ILoggingService>()));
             services.AddSingleton<IBackupSessionCoordinator, BackupSessionCoordinator>();
             services.AddSingleton<ICleaningTerminationCoordinator, CleaningTerminationCoordinator>();
             services.AddSingleton<IPluginCleaningRunner, PluginCleaningRunner>();

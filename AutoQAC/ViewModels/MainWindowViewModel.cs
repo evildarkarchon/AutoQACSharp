@@ -141,4 +141,5 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
             CancellationToken ct = default) =>
             throw new InvalidOperationException("Capability-only planner cannot load Plugin refresh rows.");
     }
+
 }

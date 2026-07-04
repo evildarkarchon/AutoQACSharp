@@ -13,6 +13,9 @@ public interface ICleaningService
         Action<System.Diagnostics.Process>? onProcessStarted = null,
         CancellationToken ct = default);
 
-    // Pre-cleaning validation
+    /// <summary>
+    /// Compatibility launch-readiness probe retained for legacy callers. Cleaning session
+    /// preflight is the authoritative validation path and does not call this method.
+    /// </summary>
     Task<bool> ValidateEnvironmentAsync(CancellationToken ct = default);
 }

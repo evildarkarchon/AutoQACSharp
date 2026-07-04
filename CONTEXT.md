@@ -12,8 +12,8 @@ _Avoid_: Cleaning workflow, cleaning transaction, cleaning run
 A user-visible update of plugin rows for the current game context, including skip-list status and issue approximation preparation.
 
 **Plugin refresh publication**:
-The point at which a Plugin refresh becomes visible to the user, including the current game context, plugin rows, and issue approximation status.
-_Avoid_: State update, app state mutation, row sync
+The point at which a Plugin refresh becomes visible to the user and authoritative for a later Cleaning session, including the current game context, user-visible plugin rows, full clean/skip row facts, Issue approximation status, and whether the Plugin refresh discovery plan still matches Discovery-affecting settings.
+_Avoid_: State update, app state mutation, row sync, cleaning-time rediscovery
 
 **Plugin refresh discovery plan**:
 The resolved plan for how a Plugin refresh will find plugin rows in the current game context, including whether discovery uses the game data folder, a load-order file, or an MO2 profile view. It is prepared before Plugin refresh publication and is not a Cleaning session.
@@ -32,3 +32,7 @@ A pre-cleaning estimate of known plugin issues shown before a Cleaning session.
 **Game capability**:
 The set of AutoQAC behaviors available for a selected game, including how plugins can be discovered, whether a load-order file is required, and whether Issue approximation can be shown.
 _Avoid_: Mutagen support, supported game
+
+**Discovery-affecting settings**:
+User choices that can change a Plugin refresh discovery plan or the published plugin rows, such as selected game, MO2 mode, load-order file, game data folder override, MO2 instance/profile, and Skip list settings.
+_Avoid_: Configuration generation, dirty config, any setting change

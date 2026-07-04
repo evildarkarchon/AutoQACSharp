@@ -14,6 +14,7 @@ public sealed class RecordingPluginRefreshModule : IPluginRefreshModule, IDispos
     public RecordingPluginRefreshModule(PluginRefreshSnapshot? initialSnapshot = null)
     {
         CurrentSnapshot = initialSnapshot ?? CreateSnapshot();
+        CurrentPublication = CreatePublication(CurrentSnapshot);
         _snapshots = new BehaviorSubject<PluginRefreshSnapshot>(CurrentSnapshot);
     }
 
@@ -21,7 +22,11 @@ public sealed class RecordingPluginRefreshModule : IPluginRefreshModule, IDispos
 
     public PluginRefreshSnapshot CurrentSnapshot { get; private set; }
 
+    public PluginRefreshPublication CurrentPublication { get; set; }
+
     public Func<PluginRefreshIntent, CancellationToken, Task<PluginRefreshSnapshot>>? ExecuteHandler { get; set; }
+
+    public Func<CancellationToken, Task<PluginRefreshPublication>>? PublicationHandler { get; set; }
 
     public IObservable<PluginRefreshSnapshot> Snapshots => _snapshots;
 
@@ -33,9 +38,13 @@ public sealed class RecordingPluginRefreshModule : IPluginRefreshModule, IDispos
         return ExecuteHandler?.Invoke(intent, cancellationToken) ?? Task.FromResult(CurrentSnapshot);
     }
 
+    public Task<PluginRefreshPublication> GetCurrentPublicationAsync(CancellationToken cancellationToken = default) =>
+        PublicationHandler?.Invoke(cancellationToken) ?? Task.FromResult(CurrentPublication);
+
     public void Publish(PluginRefreshSnapshot snapshot)
     {
         CurrentSnapshot = snapshot;
+        CurrentPublication = CreatePublication(snapshot);
         _snapshots.OnNext(snapshot);
     }
 
@@ -66,6 +75,26 @@ public sealed class RecordingPluginRefreshModule : IPluginRefreshModule, IDispos
             Activity: activity ?? new PluginRefreshActivity(false, false),
             Commands: commands ?? new PluginRefreshCommandAvailability(false, false, false, false),
             StatusText: statusText);
+
+    public static PluginRefreshPublication CreatePublication(
+        PluginRefreshSnapshot? snapshot = null,
+        IReadOnlyList<PluginRefreshPublishedRow>? rows = null,
+        PluginRefreshFreshness? freshness = null,
+        AutoQAC.Services.GameCapability.PluginRefreshDiscoveryPlan? discoveryPlan = null)
+    {
+        var currentSnapshot = snapshot ?? CreateSnapshot();
+        return new PluginRefreshPublication(
+            currentSnapshot.Generation,
+            currentSnapshot.GameType,
+            discoveryPlan,
+            currentSnapshot.Configuration,
+            freshness ?? PluginRefreshFreshness.Missing,
+            rows ?? [],
+            currentSnapshot.Rows,
+            currentSnapshot.Activity,
+            currentSnapshot.Commands,
+            currentSnapshot.StatusText);
+    }
 
     public void Dispose() => _snapshots.Dispose();
 }

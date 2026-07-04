@@ -99,6 +99,7 @@ public sealed class MainWindowViewModelTests
             _gameCapabilityProvider);
         return new PluginRefreshModule(
             discoveryPlanner,
+            _configServiceMock,
             approximationService,
             effectiveStateService,
             new SkipListPolicy(_configServiceMock, gameDetectionService),

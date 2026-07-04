@@ -92,7 +92,10 @@ public sealed partial class CleaningCommandsViewModel(
         if (errors.Count > 0)
         {
             foreach (var error in errors)
+            {
                 ValidationErrors.Add(error);
+            }
+
             HasValidationErrors = true;
             return;
         }
@@ -106,6 +109,11 @@ public sealed partial class CleaningCommandsViewModel(
             StatusText = "Cleaning started...";
             await cleaningSession.StartAsync();
             StatusText = "Cleaning completed.";
+        }
+        catch (CleaningPreflightException ex)
+        {
+            logger.Error(ex, "Cleaning preflight failed before cleaning");
+            ProjectPreflightFailure(ex.Failure);
         }
         catch (InvalidOperationException ex)
         {
@@ -141,7 +149,10 @@ public sealed partial class CleaningCommandsViewModel(
         if (errors.Count > 0)
         {
             foreach (var error in errors)
+            {
                 ValidationErrors.Add(error);
+            }
+
             HasValidationErrors = true;
             return;
         }
@@ -154,6 +165,11 @@ public sealed partial class CleaningCommandsViewModel(
             await showPreviewInteraction.Handle(results.ToList());
 
             StatusText = "Preview complete";
+        }
+        catch (CleaningPreflightException ex)
+        {
+            logger.Error(ex, "Cleaning preflight failed before preview");
+            ProjectPreflightFailure(ex.Failure);
         }
         catch (InvalidOperationException ex)
         {
@@ -354,41 +370,36 @@ public sealed partial class CleaningCommandsViewModel(
 
         if (string.IsNullOrWhiteSpace(state.XEditExecutablePath))
         {
-            var message = MissingXEditMessage(state.XEditExecutablePath);
             errors.Add(new ValidationError(
                 "xEdit not configured",
-                message,
+                MissingXEditMessage(state.XEditExecutablePath),
                 "Choose the correct xEdit executable in Settings."));
         }
         else if (!File.Exists(state.XEditExecutablePath))
         {
-            var message = MissingXEditMessage(state.XEditExecutablePath);
             errors.Add(new ValidationError(
                 "xEdit not found",
-                message,
+                MissingXEditMessage(state.XEditExecutablePath),
                 "Choose the correct xEdit executable in Settings."));
         }
 
         var requiresLoadOrder = state.CurrentGameType != GameType.Unknown &&
-                                 !state.Mo2ModeEnabled &&
-                                 gameCapabilityProvider.Get(state.CurrentGameType).RequiresLoadOrderFile;
-
+                                !state.Mo2ModeEnabled &&
+                                gameCapabilityProvider.Get(state.CurrentGameType).RequiresLoadOrderFile;
         if (requiresLoadOrder)
         {
             if (string.IsNullOrWhiteSpace(state.LoadOrderPath))
             {
-                var message = MissingLoadOrderMessage(state.LoadOrderPath);
                 errors.Add(new ValidationError(
                     "Load order not configured",
-                    message,
+                    MissingLoadOrderMessage(state.LoadOrderPath),
                     "Choose the current plugins.txt or loadorder.txt file."));
             }
             else if (!File.Exists(state.LoadOrderPath))
             {
-                var message = MissingLoadOrderMessage(state.LoadOrderPath);
                 errors.Add(new ValidationError(
                     "Load order not found",
-                    message,
+                    MissingLoadOrderMessage(state.LoadOrderPath),
                     "Choose the current plugins.txt or loadorder.txt file."));
             }
         }
@@ -397,18 +408,16 @@ public sealed partial class CleaningCommandsViewModel(
         {
             if (string.IsNullOrWhiteSpace(state.Mo2ExecutablePath))
             {
-                var message = MissingMo2Message(state.Mo2ExecutablePath);
                 errors.Add(new ValidationError(
                     "MO2 not configured",
-                    message,
+                    MissingMo2Message(state.Mo2ExecutablePath),
                     "Choose ModOrganizer.exe or disable MO2 Mode."));
             }
             else if (!File.Exists(state.Mo2ExecutablePath))
             {
-                var message = MissingMo2Message(state.Mo2ExecutablePath);
                 errors.Add(new ValidationError(
                     "MO2 not found",
-                    message,
+                    MissingMo2Message(state.Mo2ExecutablePath),
                     "Choose ModOrganizer.exe or disable MO2 Mode."));
             }
 
@@ -421,8 +430,7 @@ public sealed partial class CleaningCommandsViewModel(
             }
         }
 
-        var hasPlugins = state.PluginsToClean.Count > 0;
-        if (!hasPlugins)
+        if (state.PluginsToClean.Count == 0)
         {
             errors.Add(new ValidationError(
                 "No plugins loaded",
@@ -431,9 +439,8 @@ public sealed partial class CleaningCommandsViewModel(
         }
         else
         {
-            var excluded = state.ExcludedPluginPaths;
             var selectedCount = state.PluginsToClean
-                .Count(p => !p.IsInSkipList && !excluded.Contains(p.FullPath));
+                .Count(plugin => !plugin.IsInSkipList && !state.ExcludedPluginPaths.Contains(plugin.FullPath));
             if (selectedCount == 0)
             {
                 errors.Add(new ValidationError(
@@ -454,6 +461,57 @@ public sealed partial class CleaningCommandsViewModel(
 
     private static string MissingLoadOrderMessage(string? path) =>
         $"{DiagnosticTextFormatter.SafeFileIdentifier("Load Order File", path, "load order file")} is missing. Choose the current plugins.txt or loadorder.txt file.";
+
+    private void ProjectPreflightFailure(CleaningPreflightFailure failure)
+    {
+        ValidationErrors.Clear();
+        ValidationErrors.Add(ToValidationError(failure));
+        HasValidationErrors = true;
+        StatusText = "Configuration error";
+    }
+
+    private static ValidationError ToValidationError(CleaningPreflightFailure failure)
+    {
+        var (title, action) = failure.Kind switch
+        {
+            CleaningPreflightFailureKind.MissingPluginRefreshPublication =>
+                ("Plugins not refreshed", "Select a game and refresh plugins before cleaning."),
+            CleaningPreflightFailureKind.StalePluginRefreshPublication =>
+                ("Plugins need refresh", "Refresh plugins after changing game, load order, MO2, or skip list settings."),
+            CleaningPreflightFailureKind.NoGameSelected =>
+                ("No game selected", "Select a game before cleaning."),
+            CleaningPreflightFailureKind.XEditNotConfigured =>
+                ("xEdit not configured", "Choose the correct xEdit executable in Settings."),
+            CleaningPreflightFailureKind.XEditNotFound =>
+                ("xEdit not found", "Choose the correct xEdit executable in Settings."),
+            CleaningPreflightFailureKind.LoadOrderNotConfigured =>
+                ("Load order not configured", "Choose the current plugins.txt or loadorder.txt file."),
+            CleaningPreflightFailureKind.LoadOrderNotFound =>
+                ("Load order not found", "Choose the current plugins.txt or loadorder.txt file."),
+            CleaningPreflightFailureKind.Mo2NotConfigured =>
+                ("MO2 not configured", "Choose ModOrganizer.exe or disable MO2 Mode."),
+            CleaningPreflightFailureKind.Mo2NotFound =>
+                ("MO2 not found", "Choose ModOrganizer.exe or disable MO2 Mode."),
+            CleaningPreflightFailureKind.Mo2InstanceMissing =>
+                ("MO2 instance not found", "Choose the MO2 instance folder or disable MO2 Mode."),
+            CleaningPreflightFailureKind.Mo2ProfileMissing =>
+                ("MO2 profile not selected", "Select a game and MO2 profile before cleaning."),
+            CleaningPreflightFailureKind.Mo2ProfileLoadOrderMissing =>
+                ("MO2 profile load order missing", "Select a profile with a valid loadorder.txt before cleaning."),
+            CleaningPreflightFailureKind.NoPluginsLoaded =>
+                ("No plugins loaded", "Refresh plugins for the selected game."),
+            CleaningPreflightFailureKind.NoPluginsSelected =>
+                ("No plugins selected", "Select at least one plugin to clean, or check Skip list settings."),
+            CleaningPreflightFailureKind.ConfigPersistenceFailed =>
+                ("Configuration save failed", "Check the latest configuration save error and try again."),
+            _ => ("Configuration error", "Check your configuration in Edit > Settings.")
+        };
+
+        return new ValidationError(
+            title,
+            failure.SafeMessage,
+            failure.ActionHint ?? action);
+    }
 
     public void Dispose()
     {

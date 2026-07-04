@@ -251,6 +251,19 @@ public sealed class PluginListViewModelTests
             return Task.FromResult(_lastSnapshot);
         }
 
+        public Task<PluginRefreshPublication> GetCurrentPublicationAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(new PluginRefreshPublication(
+                _lastSnapshot.Generation,
+                _lastSnapshot.GameType,
+                DiscoveryPlan: null,
+                _lastSnapshot.Configuration,
+                PluginRefreshFreshness.Missing,
+                Rows: [],
+                _lastSnapshot.Rows,
+                _lastSnapshot.Activity,
+                _lastSnapshot.Commands,
+                _lastSnapshot.StatusText));
+
         public void Publish(PluginRefreshSnapshot snapshot)
         {
             _lastSnapshot = snapshot;

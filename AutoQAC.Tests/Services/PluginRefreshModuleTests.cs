@@ -49,6 +49,60 @@ public sealed class PluginRefreshModuleTests
     }
 
     [Fact]
+    public async Task GetCurrentPublicationAsync_AfterRefresh_PublishesPlanAndFullRows()
+    {
+        var stateService = new StateService();
+        var configurationService = CreateConfigurationServiceWithSkipList(
+            GameType.SkyrimSe,
+            ["Completed.esp"]);
+        using var sut = CreateModule(stateService, configurationService: configurationService);
+
+        var snapshot = await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+        var publication = await sut.GetCurrentPublicationAsync();
+
+        publication.Freshness.IsFresh.Should().BeTrue();
+        publication.DiscoveryPlan.Should().NotBeNull();
+        publication.Rows.Should().Contain(row =>
+            row.Plugin.FileName == "Completed.esp" &&
+            !row.IsVisible &&
+            row.IsSkippedByPolicy);
+        publication.VisibleRows.Select(row => row.FileName)
+            .Should().Equal(snapshot.Rows.Select(row => row.FileName));
+    }
+
+    [Fact]
+    public async Task GetCurrentPublicationAsync_WhenGameChanges_ReportsStalePublication()
+    {
+        var stateService = new StateService();
+        using var sut = CreateModule(stateService);
+
+        await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+        stateService.UpdateState(state => state with { CurrentGameType = GameType.Fallout4 });
+
+        var publication = await sut.GetCurrentPublicationAsync();
+
+        publication.Freshness.Should().Be(new PluginRefreshFreshness(
+            IsFresh: false,
+            PluginRefreshStalenessReason.SelectedGameChanged));
+    }
+
+    [Fact]
+    public async Task ChangeSelection_UpdatesPublicationSelectionFacts()
+    {
+        var stateService = new StateService();
+        using var sut = CreateModule(stateService);
+        var loaded = await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+        var selected = loaded.Rows.Single(row => row.FileName == "Selected.esp");
+
+        await sut.ExecuteAsync(new PluginRefreshIntent.ChangeSelection(
+            new PluginSelectionChange.SetOne(selected.Key, IsSelected: false)));
+        var publication = await sut.GetCurrentPublicationAsync();
+
+        publication.Rows.Should().Contain(row =>
+            row.Plugin.FileName == "Selected.esp" && !row.IsSelected);
+    }
+
+    [Fact]
     public async Task ChangeSelection_UpdatesSnapshotsAndAppStateExclusions()
     {
         var stateService = new StateService();
@@ -309,6 +363,7 @@ public sealed class PluginRefreshModuleTests
             new GameCapabilityProvider());
         return new PluginRefreshModule(
             discoveryPlanner,
+            configurationService,
             approximationService ?? new ResultIssueApproximationService(CreateDefaultResults()),
             stateService,
             new SkipListPolicy(configurationService, gameDetectionService));

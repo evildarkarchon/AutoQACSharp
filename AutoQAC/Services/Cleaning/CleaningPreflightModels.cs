@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System;
 using AutoQAC.Models;
 
 namespace AutoQAC.Services.Cleaning;
@@ -87,4 +88,62 @@ public enum PreflightSkipReason
 
     /// <summary>The plugin file extension is not supported for cleaning.</summary>
     InvalidExtension
+}
+
+/// <summary>
+/// Exception thrown when Cleaning session preflight blocks Start or Preview with a user-safe typed failure.
+/// </summary>
+public sealed class CleaningPreflightException : InvalidOperationException
+{
+    /// <summary>
+    /// Gets the typed user-safe failure payload.
+    /// </summary>
+    public CleaningPreflightFailure Failure { get; }
+
+    /// <summary>
+    /// Creates a preflight exception from a typed failure payload.
+    /// </summary>
+    /// <param name="failure">Failure payload to project at callers.</param>
+    /// <param name="innerException">Optional lower-level exception whose raw message is not shown to users.</param>
+    public CleaningPreflightException(
+        CleaningPreflightFailure failure,
+        Exception? innerException = null)
+        : base(failure.SafeMessage, innerException)
+    {
+        Failure = failure;
+    }
+}
+
+/// <summary>
+/// User-safe Cleaning session preflight failure payload.
+/// </summary>
+/// <param name="Kind">Stable failure kind for ViewModel projection.</param>
+/// <param name="SafeMessage">Safe message that must not include raw exception details.</param>
+/// <param name="ActionHint">Optional user action hint.</param>
+public sealed record CleaningPreflightFailure(
+    CleaningPreflightFailureKind Kind,
+    string SafeMessage,
+    string? ActionHint = null);
+
+/// <summary>
+/// Stable failure vocabulary for Cleaning session preflight.
+/// </summary>
+public enum CleaningPreflightFailureKind
+{
+    ConfigPersistenceFailed,
+    MissingPluginRefreshPublication,
+    StalePluginRefreshPublication,
+    NoGameSelected,
+    XEditNotConfigured,
+    XEditNotFound,
+    LoadOrderNotConfigured,
+    LoadOrderNotFound,
+    Mo2NotConfigured,
+    Mo2NotFound,
+    Mo2InstanceMissing,
+    Mo2ProfileMissing,
+    Mo2ProfileLoadOrderMissing,
+    NoPluginsLoaded,
+    NoPluginsSelected,
+    ConfigurationInvalid
 }

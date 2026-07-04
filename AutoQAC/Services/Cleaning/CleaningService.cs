@@ -18,12 +18,9 @@ public sealed class CleaningService(
     IStateService stateService,
     ILoggingService logger,
     IProcessExecutionService processService,
-    IXEditCommandBuilder commandBuilder,
-    IGameCapabilityProvider? gameCapabilityProvider = null)
+    IXEditCommandBuilder commandBuilder)
     : ICleaningService
 {
-    private readonly IGameCapabilityProvider _gameCapabilityProvider = gameCapabilityProvider ?? new GameCapabilityProvider();
-
     public async Task<CleaningResult> CleanPluginAsync(
         PluginInfo plugin,
         Action<System.Diagnostics.Process>? onProcessStarted = null,
@@ -185,20 +182,18 @@ public sealed class CleaningService(
         }
     }
 
+    /// <inheritdoc />
     public Task<bool> ValidateEnvironmentAsync(CancellationToken ct = default)
     {
-        var config = stateService.CurrentState;
-        if (string.IsNullOrEmpty(config.XEditExecutablePath) || !File.Exists(config.XEditExecutablePath))
+        var state = stateService.CurrentState;
+        if (string.IsNullOrWhiteSpace(state.XEditExecutablePath) || !File.Exists(state.XEditExecutablePath))
         {
             return Task.FromResult(false);
         }
 
-        if (_gameCapabilityProvider.Get(config.CurrentGameType).RequiresLoadOrderFile)
+        if (new GameCapabilityProvider().Get(state.CurrentGameType).RequiresLoadOrderFile)
         {
-            if (string.IsNullOrWhiteSpace(config.LoadOrderPath) || !File.Exists(config.LoadOrderPath))
-            {
-                return Task.FromResult(false);
-            }
+            return Task.FromResult(!string.IsNullOrWhiteSpace(state.LoadOrderPath) && File.Exists(state.LoadOrderPath));
         }
 
         return Task.FromResult(true);

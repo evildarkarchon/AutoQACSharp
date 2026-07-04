@@ -23,4 +23,12 @@ public interface IPluginRefreshModule
     Task<PluginRefreshSnapshot> ExecuteAsync(
         PluginRefreshIntent intent,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets the current authoritative Plugin refresh publication, including full row facts
+    /// and whether the accepted discovery plan still matches Discovery-affecting settings.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token for freshness inspection.</param>
+    /// <returns>The current Plugin refresh publication.</returns>
+    Task<PluginRefreshPublication> GetCurrentPublicationAsync(CancellationToken cancellationToken = default);
 }
