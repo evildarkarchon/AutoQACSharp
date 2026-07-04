@@ -75,6 +75,44 @@ public sealed class PluginRefreshDiscoveryPlanner : IPluginRefreshDiscoveryPlann
     }
 
     /// <inheritdoc />
+    public async Task<PluginRefreshDiscoveryFreshnessToken> CreateFreshnessTokenAsync(
+        PluginRefreshDiscoveryPlan plan,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+
+        var userConfig = await _configurationService.LoadUserConfigAsync(ct).ConfigureAwait(false);
+        var gameDataFolderOverride = await _configurationService.GetGameDataFolderOverrideAsync(plan.GameType, ct)
+            .ConfigureAwait(false);
+        var mo2Instance = plan.Configuration.Mo2ModeEnabled
+            ? GetConfiguredMo2InstancePath(userConfig, plan.GameType)
+            : null;
+
+        return new PluginRefreshDiscoveryFreshnessToken(
+            plan.GameType,
+            plan.Configuration.Mo2ModeEnabled,
+            NormalizePath(plan.Configuration.Mo2ModeEnabled ? null : plan.Configuration.LoadOrderPath),
+            NormalizePath(gameDataFolderOverride),
+            NormalizePath(mo2Instance),
+            NormalizeText(plan.Configuration.SelectedProfile),
+            userConfig.Settings.DisableSkipLists,
+            NormalizeSkipLists(userConfig));
+    }
+
+    /// <inheritdoc />
+    public async Task<PluginRefreshFreshness> CheckFreshnessAsync(
+        PluginRefreshDiscoveryFreshnessToken accepted,
+        PluginRefreshDiscoveryFreshnessContext current,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(accepted);
+        ArgumentNullException.ThrowIfNull(current);
+
+        var currentToken = await CreateCurrentFreshnessTokenAsync(accepted.GameType, current, ct).ConfigureAwait(false);
+        return accepted.CompareWith(currentToken);
+    }
+
+    /// <inheritdoc />
     public async Task<PluginRefreshDiscoveredPlugins> LoadPluginsAsync(
         PluginRefreshDiscoveryPlan plan,
         CancellationToken ct = default)
@@ -136,6 +174,26 @@ public sealed class PluginRefreshDiscoveryPlanner : IPluginRefreshDiscoveryPlann
             default:
                 return new PluginRefreshDiscoveredPlugins(plan, [], PluginLoadingStatus.UnsupportedGame);
         }
+    }
+
+    private async Task<PluginRefreshDiscoveryFreshnessToken> CreateCurrentFreshnessTokenAsync(
+        GameType publicationGameType,
+        PluginRefreshDiscoveryFreshnessContext current,
+        CancellationToken ct)
+    {
+        var userConfig = await _configurationService.LoadUserConfigAsync(ct).ConfigureAwait(false);
+        var gameDataFolderOverride = await _configurationService.GetGameDataFolderOverrideAsync(publicationGameType, ct)
+            .ConfigureAwait(false);
+
+        return new PluginRefreshDiscoveryFreshnessToken(
+            current.CurrentGameType,
+            current.Mo2ModeEnabled,
+            NormalizePath(current.Mo2ModeEnabled ? null : current.LoadOrderPath),
+            NormalizePath(gameDataFolderOverride),
+            NormalizePath(current.Mo2ModeEnabled ? GetConfiguredMo2InstancePath(userConfig, publicationGameType) : null),
+            NormalizeText(current.Mo2ModeEnabled ? current.Mo2Profile : null),
+            userConfig.Settings.DisableSkipLists,
+            NormalizeSkipLists(userConfig));
     }
 
     private async Task<PluginRefreshDiscoveryPlanResult> CreateDirectPlanAsync(
@@ -326,4 +384,47 @@ public sealed class PluginRefreshDiscoveryPlanner : IPluginRefreshDiscoveryPlann
             AvailableProfiles: profiles,
             SelectedProfile: selectedProfile,
             CleaningTimeout: userConfig.Settings.CleaningTimeout);
+
+    private static string? GetConfiguredMo2InstancePath(UserConfiguration userConfig, GameType gameType)
+    {
+        var key = gameType.ToString();
+        return userConfig.Mo2InstanceOverrides.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value)
+            ? value
+            : null;
+    }
+
+    private static IReadOnlyDictionary<string, IReadOnlyList<string>> NormalizeSkipLists(UserConfiguration userConfig)
+    {
+        var normalized = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (key, values) in userConfig.SkipLists.OrderBy(kvp => kvp.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            normalized[NormalizeText(key) ?? string.Empty] = (values ?? [])
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .Select(value => value.Trim())
+                .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        return normalized;
+    }
+
+    private static string? NormalizePath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return null;
+        }
+
+        try
+        {
+            return Path.GetFullPath(path.Trim());
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return path.Trim();
+        }
+    }
+
+    private static string? NormalizeText(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }

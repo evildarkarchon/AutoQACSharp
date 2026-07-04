@@ -8,8 +8,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
-using AutoQAC.Models.Configuration;
-using AutoQAC.Services.Configuration;
 using AutoQAC.Services.GameCapability;
 using AutoQAC.Services.State;
 
@@ -24,7 +22,6 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
     private static readonly PluginRefreshCommandAvailability EmptyCommands = new(false, false, false, false);
 
     private readonly IPluginRefreshDiscoveryPlanner _discoveryPlanner;
-    private readonly IConfigurationService _configurationService;
     private readonly IPluginIssueApproximationService _pluginIssueApproximationService;
     private readonly IStateService _stateService;
     private readonly ISkipListPolicy _skipListPolicy;
@@ -35,7 +32,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
 
     private PluginRefreshSnapshot _currentSnapshot;
     private PluginRefreshPublication _currentPublication;
-    private PluginRefreshDiscoveryFingerprint? _currentPublicationFingerprint;
+    private PluginRefreshDiscoveryFreshnessToken? _currentPublicationFreshnessToken;
     private CancellationTokenSource? _activeRefreshCts;
     private long _activeGeneration;
     private bool _lastIsCleaning;
@@ -46,14 +43,12 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
     /// </summary>
     public PluginRefreshModule(
         IPluginRefreshDiscoveryPlanner discoveryPlanner,
-        IConfigurationService configurationService,
         IPluginIssueApproximationService pluginIssueApproximationService,
         IStateService stateService,
         ISkipListPolicy skipListPolicy,
         ILoggingService? logger = null)
     {
         _discoveryPlanner = discoveryPlanner;
-        _configurationService = configurationService;
         _pluginIssueApproximationService = pluginIssueApproximationService;
         _stateService = stateService;
         _skipListPolicy = skipListPolicy;
@@ -73,16 +68,29 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
     public async Task<PluginRefreshPublication> GetCurrentPublicationAsync(CancellationToken cancellationToken = default)
     {
         PluginRefreshPublication publication;
-        PluginRefreshDiscoveryFingerprint? acceptedFingerprint;
+        PluginRefreshDiscoveryFreshnessToken? freshnessToken;
         lock (_snapshotLock)
         {
             publication = _currentPublication;
-            acceptedFingerprint = _currentPublicationFingerprint;
+            freshnessToken = _currentPublicationFreshnessToken;
         }
 
-        var freshness = acceptedFingerprint is null || publication.DiscoveryPlan is null
-            ? PluginRefreshFreshness.Missing
-            : await GetFreshnessAsync(publication, acceptedFingerprint, cancellationToken).ConfigureAwait(false);
+        if (freshnessToken is null || publication.DiscoveryPlan is null)
+        {
+            return publication with { Freshness = PluginRefreshFreshness.Missing };
+        }
+
+        var state = _stateService.CurrentState;
+        var freshnessContext = new PluginRefreshDiscoveryFreshnessContext(
+            state.CurrentGameType,
+            state.Mo2ModeEnabled,
+            state.LoadOrderPath,
+            state.Mo2Profile);
+        var freshness = await _discoveryPlanner.CheckFreshnessAsync(
+                freshnessToken,
+                freshnessContext,
+                cancellationToken)
+            .ConfigureAwait(false);
 
         return publication with { Freshness = freshness };
     }
@@ -177,7 +185,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             }
 
             var plan = planResult.Plan;
-            var acceptedFingerprint = await CreateAcceptedFingerprintAsync(plan, token).ConfigureAwait(false);
+            var freshnessToken = await _discoveryPlanner.CreateFreshnessTokenAsync(plan, token).ConfigureAwait(false);
             var loadedPlugins = await _discoveryPlanner.LoadPluginsAsync(plan, token).ConfigureAwait(false);
             if (!IsVisible(generation, token)) return GetCurrentSnapshot();
 
@@ -188,7 +196,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                     generation,
                     gameType,
                     plan,
-                    acceptedFingerprint,
+                    freshnessToken,
                     configuration,
                     IdleActivity,
                     GetNoPluginsFoundMessage(plan));
@@ -216,7 +224,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                 generation,
                 plan.GameType,
                 plan,
-                acceptedFingerprint,
+                freshnessToken,
                 configuration,
                 new PluginRefreshActivity(IsPluginRefreshRunning: true, IsIssueApproximationRefreshRunning: false),
                 $"Loading plugins for {plan.GameType}...");
@@ -227,7 +235,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                     generation,
                     plan.GameType,
                     plan,
-                    acceptedFingerprint,
+                    freshnessToken,
                     configuration,
                     IdleActivity,
                     "Approximation refresh is not available for this game.");
@@ -602,163 +610,6 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             .ConfigureAwait(false);
     }
 
-    private async Task<PluginRefreshDiscoveryFingerprint> CreateAcceptedFingerprintAsync(
-        PluginRefreshDiscoveryPlan plan,
-        CancellationToken ct)
-    {
-        var userConfig = await _configurationService.LoadUserConfigAsync(ct).ConfigureAwait(false);
-        var gameDataFolderOverride = await _configurationService.GetGameDataFolderOverrideAsync(plan.GameType, ct)
-            .ConfigureAwait(false);
-        var mo2Instance = plan.Configuration.Mo2ModeEnabled
-            ? GetConfiguredMo2InstancePath(userConfig, plan.GameType)
-            : null;
-
-        return new PluginRefreshDiscoveryFingerprint(
-            plan.GameType,
-            plan.Configuration.Mo2ModeEnabled,
-            NormalizePath(plan.Configuration.Mo2ModeEnabled ? null : plan.Configuration.LoadOrderPath),
-            NormalizePath(gameDataFolderOverride),
-            NormalizePath(mo2Instance),
-            NormalizeText(plan.Configuration.SelectedProfile),
-            userConfig.Settings.DisableSkipLists,
-            NormalizeSkipLists(userConfig));
-    }
-
-    private async Task<PluginRefreshFreshness> GetFreshnessAsync(
-        PluginRefreshPublication publication,
-        PluginRefreshDiscoveryFingerprint accepted,
-        CancellationToken ct)
-    {
-        var current = await CreateCurrentFingerprintAsync(publication.GameType, ct).ConfigureAwait(false);
-        if (current.GameType != accepted.GameType)
-        {
-            return new PluginRefreshFreshness(false, PluginRefreshStalenessReason.SelectedGameChanged);
-        }
-
-        if (current.Mo2ModeEnabled != accepted.Mo2ModeEnabled)
-        {
-            return new PluginRefreshFreshness(false, PluginRefreshStalenessReason.Mo2ModeChanged);
-        }
-
-        if (!StringComparer.OrdinalIgnoreCase.Equals(current.LoadOrderPath, accepted.LoadOrderPath))
-        {
-            return new PluginRefreshFreshness(false, PluginRefreshStalenessReason.LoadOrderPathChanged);
-        }
-
-        if (!StringComparer.OrdinalIgnoreCase.Equals(current.GameDataFolderOverride, accepted.GameDataFolderOverride))
-        {
-            return new PluginRefreshFreshness(false, PluginRefreshStalenessReason.GameDataFolderOverrideChanged);
-        }
-
-        if (!StringComparer.OrdinalIgnoreCase.Equals(current.Mo2InstancePath, accepted.Mo2InstancePath))
-        {
-            return new PluginRefreshFreshness(false, PluginRefreshStalenessReason.Mo2InstanceChanged);
-        }
-
-        if (!StringComparer.OrdinalIgnoreCase.Equals(current.Mo2Profile, accepted.Mo2Profile))
-        {
-            return new PluginRefreshFreshness(false, PluginRefreshStalenessReason.Mo2ProfileChanged);
-        }
-
-        if (current.DisableSkipLists != accepted.DisableSkipLists || !SkipListsEqual(current.SkipLists, accepted.SkipLists))
-        {
-            return new PluginRefreshFreshness(false, PluginRefreshStalenessReason.SkipListSettingsChanged);
-        }
-
-        return PluginRefreshFreshness.Fresh;
-    }
-
-    private async Task<PluginRefreshDiscoveryFingerprint> CreateCurrentFingerprintAsync(
-        GameType publicationGameType,
-        CancellationToken ct)
-    {
-        var state = _stateService.CurrentState;
-        var userConfig = await _configurationService.LoadUserConfigAsync(ct).ConfigureAwait(false);
-        var gameDataFolderOverride = await _configurationService.GetGameDataFolderOverrideAsync(publicationGameType, ct)
-            .ConfigureAwait(false);
-
-        return new PluginRefreshDiscoveryFingerprint(
-            state.CurrentGameType,
-            state.Mo2ModeEnabled,
-            NormalizePath(state.Mo2ModeEnabled ? null : state.LoadOrderPath),
-            NormalizePath(gameDataFolderOverride),
-            NormalizePath(state.Mo2ModeEnabled ? GetConfiguredMo2InstancePath(userConfig, publicationGameType) : null),
-            NormalizeText(state.Mo2ModeEnabled ? state.Mo2Profile : null),
-            userConfig.Settings.DisableSkipLists,
-            NormalizeSkipLists(userConfig));
-    }
-
-    private static string? GetConfiguredMo2InstancePath(UserConfiguration userConfig, GameType gameType)
-    {
-        var key = gameType.ToString();
-        return userConfig.Mo2InstanceOverrides.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value)
-            ? value
-            : null;
-    }
-
-    private static IReadOnlyDictionary<string, IReadOnlyList<string>> NormalizeSkipLists(UserConfiguration userConfig)
-    {
-        var normalized = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (key, values) in userConfig.SkipLists.OrderBy(kvp => kvp.Key, StringComparer.OrdinalIgnoreCase))
-        {
-            normalized[NormalizeText(key) ?? string.Empty] = (values ?? [])
-                .Where(value => !string.IsNullOrWhiteSpace(value))
-                .Select(value => value.Trim())
-                .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
-                .ToList();
-        }
-
-        return normalized;
-    }
-
-    private static bool SkipListsEqual(
-        IReadOnlyDictionary<string, IReadOnlyList<string>> left,
-        IReadOnlyDictionary<string, IReadOnlyList<string>> right)
-    {
-        if (left.Count != right.Count)
-        {
-            return false;
-        }
-
-        foreach (var (key, leftValues) in left)
-        {
-            if (!right.TryGetValue(key, out var rightValues) || leftValues.Count != rightValues.Count)
-            {
-                return false;
-            }
-
-            for (var i = 0; i < leftValues.Count; i++)
-            {
-                if (!string.Equals(leftValues[i], rightValues[i], StringComparison.OrdinalIgnoreCase))
-                {
-                    return false;
-                }
-            }
-        }
-
-        return true;
-    }
-
-    private static string? NormalizePath(string? path)
-    {
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            return null;
-        }
-
-        try
-        {
-            return Path.GetFullPath(path.Trim());
-        }
-        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
-        {
-            return path.Trim();
-        }
-    }
-
-    private static string? NormalizeText(string? value) =>
-        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
-
     private void PublishRuntimeConfiguration(
         PluginRefreshConfigurationProjection configuration,
         GameType gameType)
@@ -959,7 +810,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         lock (_snapshotLock)
         {
             _currentPublication = CreateMissingPublication(snapshot);
-            _currentPublicationFingerprint = null;
+            _currentPublicationFreshnessToken = null;
         }
 
         return snapshot;
@@ -969,7 +820,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         long generation,
         GameType gameType,
         PluginRefreshDiscoveryPlan plan,
-        PluginRefreshDiscoveryFingerprint fingerprint,
+        PluginRefreshDiscoveryFreshnessToken freshnessToken,
         PluginRefreshConfigurationProjection configuration,
         PluginRefreshActivity activity,
         string statusText)
@@ -988,7 +839,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             activity,
             EmptyCommands,
             statusText);
-        return PublishPublication(publication, fingerprint, state);
+        return PublishPublication(publication, freshnessToken, state);
     }
 
     private PluginRefreshSnapshot PublishCurrentPublicationFromState(
@@ -999,14 +850,14 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         string statusText)
     {
         PluginRefreshDiscoveryPlan? plan;
-        PluginRefreshDiscoveryFingerprint? fingerprint;
+        PluginRefreshDiscoveryFreshnessToken? freshnessToken;
         lock (_snapshotLock)
         {
             plan = _currentPublication.DiscoveryPlan;
-            fingerprint = _currentPublicationFingerprint;
+            freshnessToken = _currentPublicationFreshnessToken;
         }
 
-        if (plan is null || fingerprint is null || plan.GameType != gameType)
+        if (plan is null || freshnessToken is null || plan.GameType != gameType)
         {
             return PublishSnapshotFromState(generation, gameType, configuration, activity, statusText);
         }
@@ -1015,7 +866,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             generation,
             gameType,
             plan,
-            fingerprint,
+            freshnessToken,
             configuration,
             activity,
             statusText);
@@ -1040,7 +891,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
 
     private PluginRefreshSnapshot PublishPublication(
         PluginRefreshPublication publication,
-        PluginRefreshDiscoveryFingerprint fingerprint,
+        PluginRefreshDiscoveryFreshnessToken freshnessToken,
         AppState state)
     {
         if (_disposed)
@@ -1054,7 +905,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         lock (_snapshotLock)
         {
             _currentPublication = nextPublication;
-            _currentPublicationFingerprint = fingerprint;
+            _currentPublicationFreshnessToken = freshnessToken;
             _currentSnapshot = snapshot;
         }
 
@@ -1312,16 +1163,6 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                 ? _fullPaths.Contains(fullPath!) || _pathlessFileNames.Contains(fileName)
                 : _fileNames.Contains(fileName);
     }
-
-    private sealed record PluginRefreshDiscoveryFingerprint(
-        GameType GameType,
-        bool Mo2ModeEnabled,
-        string? LoadOrderPath,
-        string? GameDataFolderOverride,
-        string? Mo2InstancePath,
-        string? Mo2Profile,
-        bool DisableSkipLists,
-        IReadOnlyDictionary<string, IReadOnlyList<string>> SkipLists);
 
     private sealed class StateChangedObserver(Action<AppState> onNext) : IObserver<AppState>
     {

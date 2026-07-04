@@ -71,19 +71,68 @@ public sealed class PluginRefreshModuleTests
     }
 
     [Fact]
-    public async Task GetCurrentPublicationAsync_WhenGameChanges_ReportsStalePublication()
+    public async Task GetCurrentPublicationAsync_DelegatesFreshnessCheckWithCurrentAppStateContext()
+    {
+        var stateService = new StateService();
+        var configurationService = CreateConfigurationService();
+        var plan = CreateWiringPlan();
+        var tokenSourcePlanner = new PluginRefreshDiscoveryPlanner(
+            configurationService,
+            new TestPluginLoadingService(),
+            Substitute.For<IMo2InstanceService>(),
+            new GameCapabilityProvider());
+        var freshnessToken = await tokenSourcePlanner.CreateFreshnessTokenAsync(plan);
+        var expectedFreshness = new PluginRefreshFreshness(false, PluginRefreshStalenessReason.LoadOrderPathChanged);
+        var discoveryPlanner = Substitute.For<IPluginRefreshDiscoveryPlanner>();
+        discoveryPlanner.GetAffordance(Arg.Any<GameType>(), Arg.Any<bool>())
+            .Returns(call => new PluginRefreshGameAffordance(call.ArgAt<GameType>(0), true, false, false));
+        discoveryPlanner.CreatePlanAsync(Arg.Any<PluginRefreshDiscoveryPlanRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new PluginRefreshDiscoveryPlanResult(PluginRefreshDiscoveryPlanStatus.Ready, plan, plan.Configuration));
+        discoveryPlanner.CreateFreshnessTokenAsync(plan, Arg.Any<CancellationToken>())
+            .Returns(freshnessToken);
+        discoveryPlanner.LoadPluginsAsync(plan, Arg.Any<CancellationToken>())
+            .Returns(new PluginRefreshDiscoveredPlugins(plan, [Plugin("Selected.esp")], null));
+        discoveryPlanner.CheckFreshnessAsync(
+                freshnessToken,
+                Arg.Any<PluginRefreshDiscoveryFreshnessContext>(),
+                Arg.Any<CancellationToken>())
+            .Returns(expectedFreshness);
+        using var sut = CreateModule(
+            stateService,
+            configurationService: configurationService,
+            discoveryPlanner: discoveryPlanner);
+
+        await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+        stateService.UpdateState(state => state with
+        {
+            CurrentGameType = GameType.SkyrimSe,
+            Mo2ModeEnabled = false,
+            LoadOrderPath = @"C:\Changed\plugins.txt",
+            Mo2Profile = "Survival"
+        });
+
+        var publication = await sut.GetCurrentPublicationAsync();
+
+        publication.Freshness.Should().Be(expectedFreshness);
+        await discoveryPlanner.Received(1).CheckFreshnessAsync(
+            freshnessToken,
+            Arg.Is<PluginRefreshDiscoveryFreshnessContext>(context =>
+                context.CurrentGameType == GameType.SkyrimSe &&
+                !context.Mo2ModeEnabled &&
+                context.LoadOrderPath == @"C:\Changed\plugins.txt" &&
+                context.Mo2Profile == "Survival"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task GetCurrentPublicationAsync_WhenNoPlanAccepted_ReturnsMissingFreshness()
     {
         var stateService = new StateService();
         using var sut = CreateModule(stateService);
 
-        await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
-        stateService.UpdateState(state => state with { CurrentGameType = GameType.Fallout4 });
-
         var publication = await sut.GetCurrentPublicationAsync();
 
-        publication.Freshness.Should().Be(new PluginRefreshFreshness(
-            IsFresh: false,
-            PluginRefreshStalenessReason.SelectedGameChanged));
+        publication.Freshness.Should().Be(PluginRefreshFreshness.Missing);
     }
 
     [Fact]
@@ -351,19 +400,19 @@ public sealed class PluginRefreshModuleTests
         IConfigurationService? configurationService = null,
         IPluginLoadingService? pluginLoadingService = null,
         IPluginIssueApproximationService? approximationService = null,
-        IGameDetectionService? gameDetectionService = null)
+        IGameDetectionService? gameDetectionService = null,
+        IPluginRefreshDiscoveryPlanner? discoveryPlanner = null)
     {
         configurationService ??= CreateConfigurationService();
         pluginLoadingService ??= new TestPluginLoadingService();
         gameDetectionService ??= CreateDefaultGameDetectionService();
-        var discoveryPlanner = new PluginRefreshDiscoveryPlanner(
+        discoveryPlanner ??= new PluginRefreshDiscoveryPlanner(
             configurationService,
             pluginLoadingService,
             Substitute.For<IMo2InstanceService>(),
             new GameCapabilityProvider());
         return new PluginRefreshModule(
             discoveryPlanner,
-            configurationService,
             approximationService ?? new ResultIssueApproximationService(CreateDefaultResults()),
             stateService,
             new SkipListPolicy(configurationService, gameDetectionService));
@@ -431,6 +480,35 @@ public sealed class PluginRefreshModuleTests
         Result("Selected.esp"),
         Result("NotStarted.esp")
     ];
+
+    private static PluginRefreshDiscoveryPlan CreateWiringPlan()
+    {
+        var configuration = new PluginRefreshConfigurationProjection(
+            LoadOrderPath: @"C:\SkyrimSe\plugins.txt",
+            GameDataFolder: @"C:\SkyrimSe\Data",
+            HasGameDataFolderOverride: true,
+            XEditPath: null,
+            Mo2Path: null,
+            Mo2ModeEnabled: false,
+            Mo2InstancePath: null,
+            IsMo2InstanceOverride: false,
+            IsMo2InstanceValid: null,
+            AvailableProfiles: [],
+            SelectedProfile: null,
+            CleaningTimeout: 300);
+
+        return new PluginRefreshDiscoveryPlan(
+            GameType.SkyrimSe,
+            PluginRefreshDiscoveryMode.DirectLoadOrderFile,
+            configuration,
+            DisableSkipLists: false,
+            CanAttemptIssueApproximation: false,
+            DataFolderPath: @"C:\SkyrimSe\Data",
+            LoadOrderPath: @"C:\SkyrimSe\plugins.txt",
+            Mo2LoadOrderPath: null,
+            Mo2PathMap: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+            Mo2BaseDataFolder: null);
+    }
 
     private static PluginInfo Plugin(
         string fileName,

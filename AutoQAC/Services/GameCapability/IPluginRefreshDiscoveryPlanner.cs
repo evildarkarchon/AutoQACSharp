@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Models;
+using AutoQAC.Services.Plugin;
 
 namespace AutoQAC.Services.GameCapability;
 
@@ -32,6 +33,28 @@ public interface IPluginRefreshDiscoveryPlanner
     /// <returns>A structured planning outcome and configuration projection for Plugin refresh publication.</returns>
     Task<PluginRefreshDiscoveryPlanResult> CreatePlanAsync(
         PluginRefreshDiscoveryPlanRequest request,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Creates an opaque freshness token for the accepted Plugin refresh discovery plan.
+    /// </summary>
+    /// <param name="plan">Accepted discovery plan.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A token that callers store without inspecting.</returns>
+    Task<PluginRefreshDiscoveryFreshnessToken> CreateFreshnessTokenAsync(
+        PluginRefreshDiscoveryPlan plan,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Checks whether current Discovery-affecting settings still match an accepted freshness token.
+    /// </summary>
+    /// <param name="accepted">Opaque token stored with the accepted Plugin refresh publication.</param>
+    /// <param name="current">Current AppState-owned context needed for freshness checking.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>Freshness facts for the accepted Plugin refresh publication.</returns>
+    Task<PluginRefreshFreshness> CheckFreshnessAsync(
+        PluginRefreshDiscoveryFreshnessToken accepted,
+        PluginRefreshDiscoveryFreshnessContext current,
         CancellationToken ct = default);
 
     /// <summary>

@@ -136,6 +136,17 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
             CancellationToken ct = default) =>
             throw new InvalidOperationException("Capability-only planner cannot create Plugin refresh discovery plans.");
 
+        public Task<PluginRefreshDiscoveryFreshnessToken> CreateFreshnessTokenAsync(
+            PluginRefreshDiscoveryPlan plan,
+            CancellationToken ct = default) =>
+            throw new InvalidOperationException("Capability-only planner cannot create Plugin refresh freshness tokens.");
+
+        public Task<PluginRefreshFreshness> CheckFreshnessAsync(
+            PluginRefreshDiscoveryFreshnessToken accepted,
+            PluginRefreshDiscoveryFreshnessContext current,
+            CancellationToken ct = default) =>
+            throw new InvalidOperationException("Capability-only planner cannot check Plugin refresh freshness.");
+
         public Task<PluginRefreshDiscoveredPlugins> LoadPluginsAsync(
             PluginRefreshDiscoveryPlan plan,
             CancellationToken ct = default) =>
