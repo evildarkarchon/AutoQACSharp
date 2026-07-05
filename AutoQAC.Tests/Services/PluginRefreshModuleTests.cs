@@ -325,6 +325,65 @@ public sealed class PluginRefreshModuleTests
     }
 
     [Fact]
+    public async Task ChangeSelection_WhenAppStateRowsDiffer_UsesPublicationRowsAndRepairsCompatibilityMirror()
+    {
+        var stateService = new StateService();
+        using var sut = CreateModule(stateService);
+        var loaded = await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+        var selected = loaded.Rows.Single(row => row.FileName == "Selected.esp");
+        stateService.SetPluginsToClean([Plugin("External.esp")]);
+
+        await sut.ExecuteAsync(new PluginRefreshIntent.ChangeSelection(
+            new PluginSelectionChange.SetOne(selected.Key, IsSelected: false)));
+        var publication = await sut.GetCurrentPublicationAsync();
+
+        publication.Rows.Should().Contain(row =>
+            row.Plugin.FileName == "Selected.esp" && !row.IsSelected);
+        publication.Rows.Should().NotContain(row => row.Plugin.FileName == "External.esp");
+        stateService.CurrentState.PluginsToClean.Should().NotContain(plugin => plugin.FileName == "External.esp");
+        stateService.CurrentState.ExcludedPluginPaths.Should().Contain(selected.FullPath);
+    }
+
+    [Fact]
+    public async Task RefreshGame_WhenSameListRefreshes_PreservesPublicationSelection()
+    {
+        var stateService = new StateService();
+        using var sut = CreateModule(stateService);
+        var loaded = await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+        var selected = loaded.Rows.Single(row => row.FileName == "Selected.esp");
+        await sut.ExecuteAsync(new PluginRefreshIntent.ChangeSelection(
+            new PluginSelectionChange.SetOne(selected.Key, IsSelected: false)));
+
+        await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+        var publication = await sut.GetCurrentPublicationAsync();
+
+        publication.Rows.Should().Contain(row =>
+            row.Plugin.FileName == "Selected.esp" && !row.IsSelected);
+        publication.VisibleRows.Should().Contain(row =>
+            row.FileName == "Selected.esp" && !row.IsSelected);
+        stateService.CurrentState.ExcludedPluginPaths.Should().Contain(selected.FullPath);
+    }
+
+    [Fact]
+    public async Task IsCleaningChange_UpdatesPublicationCommandFactsWithoutReplacingPublicationRows()
+    {
+        var stateService = new StateService();
+        using var sut = CreateModule(stateService);
+        await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+        var beforeCleaning = await sut.GetCurrentPublicationAsync();
+
+        beforeCleaning.Commands.CanSelectAll.Should().BeTrue();
+        stateService.StartCleaning([stateService.CurrentState.PluginsToClean.First()]);
+        var whileCleaning = await sut.GetCurrentPublicationAsync();
+
+        whileCleaning.Commands.CanSelectAll.Should().BeFalse();
+        whileCleaning.Commands.CanDeselectAll.Should().BeFalse();
+        whileCleaning.Commands.CanRefreshSelectedIssueApproximations.Should().BeFalse();
+        whileCleaning.Rows.Select(row => row.Plugin.FileName)
+            .Should().Equal(beforeCleaning.Rows.Select(row => row.Plugin.FileName));
+    }
+
+    [Fact]
     public async Task RefreshSelectedIssueApproximations_DerivesTargetsFromCurrentSelection()
     {
         var stateService = CreateStateWithRows(
