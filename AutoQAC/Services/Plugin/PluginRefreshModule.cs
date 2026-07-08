@@ -235,11 +235,11 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             var initialApproximation = plan.CanAttemptIssueApproximation
                 ? PluginIssueApproximation.Pending
                 : PluginIssueApproximation.Unavailable;
-            var publishedRows = CreatePublishedRows(
+            var publishedRows = PluginRefreshPublicationRows.Accept(
                 skipEvaluation.Decisions,
                 initialApproximation,
                 _stateService.CurrentState.ExcludedPluginPaths);
-            var rows = publishedRows.Select(row => row.Plugin).ToList();
+            var rows = publishedRows.Rows.Select(row => row.Plugin).ToList();
 
             PublishAcceptedPublication(
                 generation,
@@ -247,7 +247,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                 plan,
                 freshnessToken,
                 configuration,
-                publishedRows,
+                publishedRows.Rows,
                 new PluginRefreshActivity(IsPluginRefreshRunning: true, IsIssueApproximationRefreshRunning: false),
                 $"Loading plugins for {plan.GameType}...");
 
@@ -269,7 +269,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                     decision.Plugin.FileName,
                     decision.Plugin.FullPath))
                 .ToList();
-            var targetLookup = PluginRefreshTargetLookup.Create(targets);
+            var targetLookup = PluginRefreshPublicationRows.CreateTargetLookup(targets);
             var issueActivity = new PluginRefreshActivity(
                 IsPluginRefreshRunning: true,
                 IsIssueApproximationRefreshRunning: true);
@@ -383,7 +383,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                 return GetCurrentSnapshot();
             }
 
-            var targetLookup = PluginRefreshTargetLookup.Create(selectedTargets);
+            var targetLookup = PluginRefreshPublicationRows.CreateTargetLookup(selectedTargets);
             MarkTargetsPending(plan.GameType, selectedTargets, targetLookup);
             var issueActivity = new PluginRefreshActivity(
                 IsPluginRefreshRunning: false,
@@ -395,7 +395,9 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                 issueActivity,
                 $"Analyzing 0 of {selectedTargets.Count} selected plugins.");
 
-            var dataFolder = ResolveDataFolder(plan, CreateRowsFromTargets(plan.GameType, selectedTargets));
+            var dataFolder = ResolveDataFolder(
+                plan,
+                PluginRefreshPublicationRows.CreateRowsFromTargets(plan.GameType, selectedTargets));
             var updatedCount = 0;
             await AnalyzeTargetsAsync(
                     plan,
@@ -436,7 +438,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                 token,
                 snapshot.GameType,
                 snapshot.Configuration,
-                PluginRefreshTargetLookup.Create(selectedTargets),
+                PluginRefreshPublicationRows.CreateTargetLookup(selectedTargets),
                 "Approximation refresh failed.");
         }
         finally
@@ -481,47 +483,23 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             return true;
         }
 
-        IReadOnlyList<PluginRefreshPublishedRow> rows;
-        switch (change)
+        var selection = PluginRefreshPublicationRows.ApplySelectionChange(publication.Rows, change);
+        if (!selection.WasTargetFound)
         {
-            case PluginSelectionChange.SelectAllVisible:
-                rows = publication.Rows
-                    .Select(row => row.IsVisible ? row with { IsSelected = true } : row)
-                    .ToList();
-                break;
-
-            case PluginSelectionChange.DeselectAllVisible:
-                rows = publication.Rows
-                    .Select(row => row.IsVisible ? row with { IsSelected = false } : row)
-                    .ToList();
-                break;
-
-            case PluginSelectionChange.SetOne setOne:
-            {
-                var found = publication.Rows.Any(row => row.IsVisible && IsMatch(row.Key, setOne.Row));
-                if (!found)
-                {
-                    return true;
-                }
-
-                rows = publication.Rows
-                    .Select(row => row.IsVisible && IsMatch(row.Key, setOne.Row)
-                        ? row with { IsSelected = setOne.IsSelected }
-                        : row)
-                    .ToList();
-                break;
-            }
-
-            default:
-                throw new ArgumentOutOfRangeException(nameof(change), change, "Unknown Plugin selection change.");
+            return true;
         }
 
         var nextPublication = publication with
         {
-            Rows = rows,
-            VisibleRows = CreateVisibleRows(rows)
+            Rows = selection.Commit.Rows,
+            VisibleRows = selection.Commit.VisibleRows
         };
-        TryPublishSelectionPublicationIfCurrent(publication, nextPublication, freshnessToken, out snapshot);
+        TryPublishSelectionPublicationIfCurrent(
+            publication,
+            nextPublication,
+            freshnessToken,
+            selection.Commit.Mirror,
+            out snapshot);
         return true;
     }
 
@@ -534,78 +512,20 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             return snapshot;
         }
 
-        switch (change)
+        var targetFound = false;
+        _stateService.UpdateExcludedPlugins(current =>
         {
-            case PluginSelectionChange.SelectAllVisible:
-            {
-                var visiblePaths = visibleRows.Select(row => row.FullPath).ToList();
-                _stateService.UpdateExcludedPlugins(current =>
-                {
-                    if (current.Count == 0)
-                    {
-                        return current;
-                    }
+            var result = PluginRefreshPublicationRows.ApplyStateSelectionChange(
+                visibleRows,
+                current,
+                change);
+            targetFound = result.WasTargetFound;
+            return result.ExcludedPluginPaths;
+        });
 
-                    var next = new HashSet<string>(current, StringComparer.OrdinalIgnoreCase);
-                    foreach (var path in visiblePaths)
-                    {
-                        next.Remove(path);
-                    }
-
-                    return next.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
-                });
-                break;
-            }
-
-            case PluginSelectionChange.DeselectAllVisible:
-            {
-                var visiblePaths = visibleRows.Select(row => row.FullPath).ToList();
-                _stateService.UpdateExcludedPlugins(current =>
-                {
-                    var next = new HashSet<string>(current, StringComparer.OrdinalIgnoreCase);
-                    foreach (var path in visiblePaths)
-                    {
-                        next.Add(path);
-                    }
-
-                    return next.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
-                });
-                break;
-            }
-
-            case PluginSelectionChange.SetOne setOne:
-            {
-                var row = visibleRows.FirstOrDefault(visible => IsMatch(visible, setOne.Row));
-                if (row is null)
-                {
-                    return snapshot;
-                }
-
-                _stateService.UpdateExcludedPlugins(current =>
-                {
-                    var alreadyExcluded = current.Contains(row.FullPath);
-                    if (setOne.IsSelected ? !alreadyExcluded : alreadyExcluded)
-                    {
-                        return current;
-                    }
-
-                    var next = new HashSet<string>(current, StringComparer.OrdinalIgnoreCase);
-                    if (setOne.IsSelected)
-                    {
-                        next.Remove(row.FullPath);
-                    }
-                    else
-                    {
-                        next.Add(row.FullPath);
-                    }
-
-                    return next.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
-                });
-                break;
-            }
-
-            default:
-                throw new ArgumentOutOfRangeException(nameof(change), change, "Unknown Plugin selection change.");
+        if (!targetFound)
+        {
+            return snapshot;
         }
 
         return PublishCurrentPublication(
@@ -767,7 +687,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         GameType gameType,
         PluginRefreshConfigurationProjection configuration,
         PluginRefreshActivity activity,
-        PluginRefreshTargetLookup targetLookup,
+        PluginRefreshPublicationRows.TargetLookup targetLookup,
         PluginIssueApproximationResult result,
         ref int updatedCount)
     {
@@ -778,8 +698,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
 
         var matchedRow = TryUpdateAcceptedPublicationRows(
             gameType,
-            row => IsMatch(row.Plugin, result),
-            row => row with { Plugin = row.Plugin with { Approximation = result.Approximation } },
+            rows => PluginRefreshPublicationRows.ApplyApproximationResult(rows, result),
             () => IsVisible(generation, token));
         if (!matchedRow)
         {
@@ -805,7 +724,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         CancellationToken token,
         GameType gameType,
         PluginRefreshConfigurationProjection configuration,
-        PluginRefreshTargetLookup targetLookup,
+        PluginRefreshPublicationRows.TargetLookup targetLookup,
         string message)
     {
         if (!IsVisible(generation, token))
@@ -825,12 +744,14 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
     private void MarkTargetsPending(
         GameType gameType,
         IReadOnlyList<PluginRefreshRowKey> targets,
-        PluginRefreshTargetLookup targetLookup)
+        PluginRefreshPublicationRows.TargetLookup targetLookup)
     {
         if (TryUpdateAcceptedPublicationRows(
                 gameType,
-                row => targetLookup.Contains(row.Plugin),
-                row => row with { Plugin = row.Plugin with { Approximation = PluginIssueApproximation.Pending } }))
+                rows => PluginRefreshPublicationRows.ApplyApproximationToTargets(
+                    rows,
+                    targetLookup,
+                    PluginIssueApproximation.Pending)))
         {
             return;
         }
@@ -839,7 +760,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         {
             if (state.PluginsToClean.Count == 0)
             {
-                var pendingRows = CreateRowsFromTargets(gameType, targets).ToList();
+                var pendingRows = PluginRefreshPublicationRows.CreateRowsFromTargets(gameType, targets).ToList();
                 return state with { PluginsToClean = pendingRows.AsReadOnly() };
             }
 
@@ -854,14 +775,16 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
 
     private void MarkTargetsUnavailable(
         GameType gameType,
-        PluginRefreshTargetLookup targetLookup,
+        PluginRefreshPublicationRows.TargetLookup targetLookup,
         long generation,
         CancellationToken token)
     {
         if (TryUpdateAcceptedPublicationRows(
                 gameType,
-                row => targetLookup.Contains(row.Plugin),
-                row => row with { Plugin = row.Plugin with { Approximation = PluginIssueApproximation.Unavailable } },
+                rows => PluginRefreshPublicationRows.ApplyApproximationToTargets(
+                    rows,
+                    targetLookup,
+                    PluginIssueApproximation.Unavailable),
                 () => IsVisible(generation, token)))
         {
             return;
@@ -885,11 +808,10 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
 
     private bool TryUpdateAcceptedPublicationRows(
         GameType gameType,
-        Func<PluginRefreshPublishedRow, bool> shouldUpdate,
-        Func<PluginRefreshPublishedRow, PluginRefreshPublishedRow> update,
+        Func<IReadOnlyList<PluginRefreshPublishedRow>, PluginRefreshPublicationRowsUpdate> updateRows,
         Func<bool>? canUpdate = null)
     {
-        IReadOnlyList<PluginRefreshPublishedRow> rowsToMirror;
+        PluginRefreshPublicationRowsMirror mirror;
         lock (_snapshotLock)
         {
             if (canUpdate is not null && !canUpdate())
@@ -905,33 +827,22 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                 return false;
             }
 
-            var matched = false;
-            var rows = _currentPublication.Rows.Select(row =>
-            {
-                if (!shouldUpdate(row))
-                {
-                    return row;
-                }
-
-                matched = true;
-                return update(row);
-            }).ToList();
-
-            if (!matched)
+            var result = updateRows(_currentPublication.Rows);
+            if (!result.Matched)
             {
                 return false;
             }
 
             _currentPublication = _currentPublication with
             {
-                Rows = rows,
-                VisibleRows = CreateVisibleRows(rows)
+                Rows = result.Commit.Rows,
+                VisibleRows = result.Commit.VisibleRows
             };
             _currentSnapshot = ToSnapshot(_currentPublication);
-            rowsToMirror = rows;
+            mirror = result.Commit.Mirror;
         }
 
-        MirrorPublicationRowsToState(rowsToMirror);
+        MirrorPublicationRowsToState(mirror);
         return true;
     }
 
@@ -950,7 +861,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
 
             var rows = state.PluginsToClean.Select(plugin =>
             {
-                if (!IsMatch(plugin, result))
+                if (!PluginRefreshPublicationRows.IsMatch(plugin, result))
                 {
                     return plugin;
                 }
@@ -973,7 +884,9 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         string statusText)
     {
         var state = _stateService.CurrentState;
-        var rows = CreateVisibleRows(state.PluginsToClean, state.ExcludedPluginPaths);
+        var rows = PluginRefreshPublicationRows.ProjectStateVisibleRows(
+            state.PluginsToClean,
+            state.ExcludedPluginPaths);
         return PublishSnapshot(
             new PluginRefreshSnapshot(
                 generation,
@@ -1013,19 +926,19 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         PluginRefreshActivity activity,
         string statusText)
     {
-        var visibleRows = CreateVisibleRows(rows);
+        var rowCommit = PluginRefreshPublicationRows.Commit(rows);
         var publication = new PluginRefreshPublication(
             generation,
             gameType,
             plan,
             configuration,
             PluginRefreshFreshness.Fresh,
-            rows,
-            visibleRows,
+            rowCommit.Rows,
+            rowCommit.VisibleRows,
             activity,
             EmptyCommands,
             statusText);
-        return PublishPublicationWithMirroredRows(publication, freshnessToken);
+        return PublishPublicationWithMirroredRows(publication, freshnessToken, rowCommit.Mirror);
     }
 
     private PluginRefreshSnapshot PublishCurrentPublication(
@@ -1055,7 +968,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             Generation = generation,
             GameType = gameType,
             Configuration = configuration,
-            VisibleRows = CreateVisibleRows(publication.Rows),
+            VisibleRows = PluginRefreshPublicationRows.ProjectVisibleRows(publication.Rows),
             Activity = activity,
             StatusText = statusText
         };
@@ -1064,9 +977,10 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
 
     private PluginRefreshSnapshot PublishPublicationWithMirroredRows(
         PluginRefreshPublication publication,
-        PluginRefreshDiscoveryFreshnessToken freshnessToken)
+        PluginRefreshDiscoveryFreshnessToken freshnessToken,
+        PluginRefreshPublicationRowsMirror mirror)
     {
-        MirrorPublicationRowsToState(publication.Rows);
+        MirrorPublicationRowsToState(mirror);
         return PublishPublication(publication, freshnessToken, _stateService.CurrentState);
     }
 
@@ -1074,6 +988,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         PluginRefreshPublication observedPublication,
         PluginRefreshPublication nextPublication,
         PluginRefreshDiscoveryFreshnessToken observedFreshnessToken,
+        PluginRefreshPublicationRowsMirror mirror,
         out PluginRefreshSnapshot snapshot)
     {
         if (_disposed)
@@ -1108,28 +1023,20 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             snapshot = _currentSnapshot;
         }
 
-        MirrorPublicationRowsToState(committedPublication.Rows);
+        MirrorPublicationRowsToState(mirror);
         _snapshots.OnNext(snapshot);
         return true;
     }
 
-    private void MirrorPublicationRowsToState(IReadOnlyList<PluginRefreshPublishedRow> rows)
+    private void MirrorPublicationRowsToState(PluginRefreshPublicationRowsMirror mirror)
     {
         if (_stateService.CurrentState.IsCleaning)
         {
             return;
         }
 
-        // AppState remains a compatibility adapter during migration. Do not read it back
-        // to reconstruct publication facts; mirror the accepted publication outward instead.
-        var plugins = rows.Select(row => row.Plugin).ToList();
-        var excludedPaths = rows
-            .Where(row => row.IsVisible && !row.IsSelected)
-            .Select(row => row.Plugin.FullPath)
-            .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
-
-        _stateService.SetPluginsToClean(plugins);
-        _stateService.UpdateExcludedPlugins(_ => excludedPaths);
+        _stateService.SetPluginsToClean(mirror.PluginsToClean.ToList());
+        _stateService.UpdateExcludedPlugins(_ => mirror.ExcludedPluginPaths);
     }
 
     private PluginRefreshSnapshot PublishSnapshot(PluginRefreshSnapshot snapshot, AppState? state = null)
@@ -1246,7 +1153,9 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
 
     private PluginRefreshSnapshot CreateInitialSnapshot(AppState state)
     {
-        var rows = CreateVisibleRows(state.PluginsToClean, state.ExcludedPluginPaths);
+        var rows = PluginRefreshPublicationRows.ProjectStateVisibleRows(
+            state.PluginsToClean,
+            state.ExcludedPluginPaths);
         var configuration = CreateConfigurationProjectionFromState(state);
         return new PluginRefreshSnapshot(
             Generation: 0,
@@ -1277,47 +1186,6 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             AvailableProfiles: [],
             SelectedProfile: state.Mo2Profile,
             CleaningTimeout: state.CleaningTimeout);
-
-    private static IReadOnlyList<PluginRefreshRow> CreateVisibleRows(
-        IReadOnlyList<PluginInfo> plugins,
-        IReadOnlySet<string> excludedPaths) =>
-        plugins.Where(plugin => !plugin.IsInSkipList)
-            .Select(plugin => new PluginRefreshRow(
-                plugin.FileName,
-                plugin.FullPath,
-                plugin.DetectedGameType,
-                IsSelected: !excludedPaths.Contains(plugin.FullPath),
-                plugin.IsInSkipList,
-                plugin.Approximation))
-            .ToList();
-
-    private static IReadOnlyList<PluginRefreshPublishedRow> CreatePublishedRows(
-        IReadOnlyList<SkipListPluginDecision> decisions,
-        PluginIssueApproximation initialApproximation,
-        IReadOnlySet<string> excludedPaths) =>
-        decisions.Select(decision =>
-            {
-                var plugin = decision.Plugin with { Approximation = initialApproximation };
-                return new PluginRefreshPublishedRow(
-                    plugin,
-                    IsVisible: !decision.ShouldSkipByPolicy,
-                    IsSelected: !excludedPaths.Contains(plugin.FullPath),
-                    IsSkippedByPolicy: decision.ShouldSkipByPolicy,
-                    new PluginRefreshRowKey(plugin.FileName, plugin.FullPath));
-            })
-            .ToList();
-
-    private static IReadOnlyList<PluginRefreshRow> CreateVisibleRows(
-        IReadOnlyList<PluginRefreshPublishedRow> rows) =>
-        rows.Where(row => row.IsVisible)
-            .Select(row => new PluginRefreshRow(
-                row.Plugin.FileName,
-                row.Plugin.FullPath,
-                row.Plugin.DetectedGameType,
-                row.IsSelected,
-                row.Plugin.IsInSkipList,
-                row.Plugin.Approximation))
-            .ToList();
 
     private void OnAppStateChanged(AppState state)
     {
@@ -1448,17 +1316,6 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         return string.IsNullOrWhiteSpace(firstPath) ? null : Path.GetDirectoryName(firstPath);
     }
 
-    private static IReadOnlyList<PluginInfo> CreateRowsFromTargets(
-        GameType gameType,
-        IReadOnlyList<PluginRefreshRowKey> targets) =>
-        targets.Select(target => new PluginInfo
-        {
-            FileName = target.FileName,
-            FullPath = target.FullPath,
-            DetectedGameType = gameType,
-            Approximation = PluginIssueApproximation.Pending
-        }).ToList();
-
     private static string GetPlanStatusText(PluginRefreshDiscoveryPlanResult result, GameType gameType) =>
         result.Status switch
         {
@@ -1478,80 +1335,6 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         plan.Mode == PluginRefreshDiscoveryMode.DirectAutomatic
             ? $"No plugins discovered via Mutagen for {plan.GameType}."
             : "No plugins found in the selected load order.";
-
-    private static bool IsMatch(PluginRefreshRow row, PluginRefreshRowKey target)
-    {
-        if (HasUsablePath(row.FullPath) && HasUsablePath(target.FullPath))
-        {
-            return string.Equals(row.FullPath, target.FullPath, StringComparison.OrdinalIgnoreCase);
-        }
-
-        return string.Equals(row.FileName, target.FileName, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static bool IsMatch(PluginRefreshRowKey row, PluginRefreshRowKey target)
-    {
-        if (HasUsablePath(row.FullPath) && HasUsablePath(target.FullPath))
-        {
-            return string.Equals(row.FullPath, target.FullPath, StringComparison.OrdinalIgnoreCase);
-        }
-
-        return string.Equals(row.FileName, target.FileName, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static bool IsMatch(PluginInfo plugin, PluginIssueApproximationResult result)
-    {
-        if (HasUsablePath(plugin.FullPath) && HasUsablePath(result.FullPath))
-        {
-            return string.Equals(plugin.FullPath, result.FullPath, StringComparison.OrdinalIgnoreCase);
-        }
-
-        return string.Equals(plugin.FileName, result.FileName, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static bool HasUsablePath(string? path) => !string.IsNullOrWhiteSpace(path);
-
-    private sealed class PluginRefreshTargetLookup
-    {
-        private readonly IReadOnlySet<string> _fullPaths;
-        private readonly IReadOnlySet<string> _fileNames;
-        private readonly IReadOnlySet<string> _pathlessFileNames;
-
-        private PluginRefreshTargetLookup(
-            IReadOnlySet<string> fullPaths,
-            IReadOnlySet<string> fileNames,
-            IReadOnlySet<string> pathlessFileNames,
-            int count)
-        {
-            _fullPaths = fullPaths;
-            _fileNames = fileNames;
-            _pathlessFileNames = pathlessFileNames;
-            Count = count;
-        }
-
-        public int Count { get; }
-
-        public static PluginRefreshTargetLookup Create(IReadOnlyList<PluginRefreshRowKey> targets) =>
-            new(
-                targets.Where(target => HasUsablePath(target.FullPath))
-                    .Select(target => target.FullPath)
-                    .ToFrozenSet(StringComparer.OrdinalIgnoreCase),
-                targets.Select(target => target.FileName)
-                    .ToFrozenSet(StringComparer.OrdinalIgnoreCase),
-                targets.Where(target => !HasUsablePath(target.FullPath))
-                    .Select(target => target.FileName)
-                    .ToFrozenSet(StringComparer.OrdinalIgnoreCase),
-                targets.Count);
-
-        public bool Contains(PluginInfo plugin) => Contains(plugin.FileName, plugin.FullPath);
-
-        public bool Contains(PluginIssueApproximationResult result) => Contains(result.FileName, result.FullPath);
-
-        private bool Contains(string fileName, string? fullPath) =>
-            HasUsablePath(fullPath)
-                ? _fullPaths.Contains(fullPath!) || _pathlessFileNames.Contains(fileName)
-                : _fileNames.Contains(fileName);
-    }
 
     private sealed record DiscoveryAffectingState(
         GameType CurrentGameType,
