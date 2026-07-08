@@ -3178,8 +3178,15 @@ public sealed partial class CleaningSessionTests : IDisposable
                 "plugin-loop work must not be parallelized through task scheduling");
         }
 
-        source.IndexOf("RunPluginBackupAsync", StringComparison.Ordinal).Should().BeLessThan(
-            source.IndexOf("pluginCleaning.CleanAsync", StringComparison.Ordinal),
+        var backupOutcomeIndex = source.IndexOf("await HandleBackupOutcomeAsync", StringComparison.Ordinal);
+        var cleanAsyncIndex = source.IndexOf("pluginCleaning.CleanAsync", StringComparison.Ordinal);
+
+        backupOutcomeIndex.Should().BeGreaterThanOrEqualTo(0,
+            "CleaningSession must route per-plugin backups through HandleBackupOutcomeAsync");
+        cleanAsyncIndex.Should().BeGreaterThanOrEqualTo(0,
+            "CleaningSession must still call pluginCleaning.CleanAsync for xEdit cleaning");
+        backupOutcomeIndex.Should().BeLessThan(
+            cleanAsyncIndex,
             "backup invocation must remain before the sequential xEdit cleaning call");
     }
 

@@ -154,17 +154,17 @@ public static partial class DiagnosticTextFormatter
         return string.IsNullOrWhiteSpace(sanitized) ? fallback : sanitized;
     }
 
-    [GeneratedRegex(@"[A-Za-z]:[\\/]", RegexOptions.Compiled)]
+    [GeneratedRegex(@"[A-Za-z]:[\\/]")]
     private static partial Regex DriveRootedPathPatternRegex();
 
-    [GeneratedRegex(@"\bat\s+[A-Za-z_][\w]*(\.[A-Za-z_][\w]*)+", RegexOptions.IgnoreCase | RegexOptions.Compiled,
+    [GeneratedRegex(@"\bat\s+[A-Za-z_][\w]*(\.[A-Za-z_][\w]*)+", RegexOptions.IgnoreCase,
         "en-US")]
     private static partial Regex NamespaceStackFramePatternRegex();
 
-    [GeneratedRegex(@"\.exe(?=$|[\s""'`])", RegexOptions.IgnoreCase | RegexOptions.Compiled, "en-US")]
+    [GeneratedRegex(@"\.exe(?=$|[\s""'`])", RegexOptions.IgnoreCase, "en-US")]
     private static partial Regex ExeCommandMarkerPatternRegex();
 
-    [GeneratedRegex(@"(?:[\s_-]*(?:-QAC|-autoload))+(?=\.[^./\\]+$|$)", RegexOptions.IgnoreCase | RegexOptions.Compiled,
+    [GeneratedRegex(@"(?:[\s_-]*(?:-QAC|-autoload))+(?=\.[^./\\]+$|$)", RegexOptions.IgnoreCase,
         "en-US")]
     private static partial Regex PluginCommandFlagPatternRegex();
 }

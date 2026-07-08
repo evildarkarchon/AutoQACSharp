@@ -15,6 +15,8 @@ namespace AutoQAC.ViewModels.MainWindow;
 /// </summary>
 public sealed partial class PluginListViewModel(IPluginRefreshModule pluginRefreshModule) : ViewModelBase, IDisposable
 {
+    private readonly IPluginRefreshModule _pluginRefreshModule = pluginRefreshModule;
+
     public ObservableCollection<PluginListItem> PluginsToClean { get; } = [];
 
     [ObservableProperty] public partial PluginListItem? SelectedPlugin { get; set; }
@@ -73,12 +75,12 @@ public sealed partial class PluginListViewModel(IPluginRefreshModule pluginRefre
 
     [RelayCommand(CanExecute = nameof(CanSelectAll))]
     private Task SelectAllAsync() =>
-        pluginRefreshModule.ExecuteAsync(
+        _pluginRefreshModule.ExecuteAsync(
             new PluginRefreshIntent.ChangeSelection(new PluginSelectionChange.SelectAllVisible()));
 
     [RelayCommand(CanExecute = nameof(CanDeselectAll))]
     private Task DeselectAllAsync() =>
-        pluginRefreshModule.ExecuteAsync(
+        _pluginRefreshModule.ExecuteAsync(
             new PluginRefreshIntent.ChangeSelection(new PluginSelectionChange.DeselectAllVisible()));
 
     /// <summary>
@@ -87,7 +89,7 @@ public sealed partial class PluginListViewModel(IPluginRefreshModule pluginRefre
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanRefreshSelectedApproximations))]
     private Task RefreshSelectedApproximationsAsync() =>
-        pluginRefreshModule.ExecuteAsync(new PluginRefreshIntent.RefreshSelectedIssueApproximations());
+        _pluginRefreshModule.ExecuteAsync(new PluginRefreshIntent.RefreshSelectedIssueApproximations());
 
     /// <summary>
     /// Cancels active Plugin refresh work without prompting the user.
@@ -95,7 +97,7 @@ public sealed partial class PluginListViewModel(IPluginRefreshModule pluginRefre
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanCancelApproximationRefresh))]
     private Task CancelApproximationRefreshAsync() =>
-        pluginRefreshModule.ExecuteAsync(new PluginRefreshIntent.Cancel(PluginRefreshCancelReason.Manual));
+        _pluginRefreshModule.ExecuteAsync(new PluginRefreshIntent.Cancel(PluginRefreshCancelReason.Manual));
 
     /// <summary>
     /// Applies the whole Plugin refresh snapshot published by the module.
@@ -177,7 +179,7 @@ public sealed partial class PluginListViewModel(IPluginRefreshModule pluginRefre
 
     private void OnRowSelectionToggled(PluginListItem item, bool isSelected)
     {
-        _ = pluginRefreshModule.ExecuteAsync(
+        _ = _pluginRefreshModule.ExecuteAsync(
             new PluginRefreshIntent.ChangeSelection(
                 new PluginSelectionChange.SetOne(item.Key, isSelected)));
     }

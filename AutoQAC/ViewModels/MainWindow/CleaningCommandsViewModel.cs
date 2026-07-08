@@ -39,6 +39,7 @@ public sealed partial class CleaningCommandsViewModel(
     Interaction<Unit, Unit> showAboutInteraction)
     : ViewModelBase, IDisposable
 {
+    private readonly IPluginRefreshModule _pluginRefreshModule = pluginRefreshModule;
     private CancellationTokenSource? _readinessCts;
     private int _readinessRequestId;
     private CleaningPreflightFailureKind? _currentReadinessFailureKind;
@@ -109,7 +110,7 @@ public sealed partial class CleaningCommandsViewModel(
 
         try
         {
-            await pluginRefreshModule.ExecuteAsync(
+            await _pluginRefreshModule.ExecuteAsync(
                 new PluginRefreshIntent.Cancel(PluginRefreshCancelReason.CleaningStarted));
             await showProgressInteraction.Handle(cleaningSession);
 
