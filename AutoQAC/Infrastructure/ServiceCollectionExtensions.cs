@@ -58,7 +58,28 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<ILoggingService>()));
             services.AddSingleton<ISkipListPolicy, SkipListPolicy>();
             services.AddSingleton<IPluginRefreshDiscoveryPlanner, PluginRefreshDiscoveryPlanner>();
-            services.AddSingleton<IPluginRefreshModule, PluginRefreshModule>();
+            services.AddSingleton(sp => new PluginRefreshAppStateMirror(
+                sp.GetRequiredService<IStateService>()));
+            services.AddSingleton(_ => new PluginRefreshCommandAvailabilityPolicy());
+            services.AddSingleton<PluginRefreshPublicationStore>(sp =>
+            {
+                var state = sp.GetRequiredService<IStateService>().CurrentState;
+                var configuration = PluginRefreshAppStateMirror.CreateConfigurationProjection(state);
+                var initialAffordance = sp.GetRequiredService<IPluginRefreshDiscoveryPlanner>()
+                    .GetAffordance(state.CurrentGameType, configuration.Mo2ModeEnabled);
+                return new PluginRefreshPublicationStore(
+                    sp.GetRequiredService<PluginRefreshAppStateMirror>(),
+                    sp.GetRequiredService<PluginRefreshCommandAvailabilityPolicy>(),
+                    initialAffordance);
+            });
+            services.AddSingleton<IPluginRefreshModule>(sp => new PluginRefreshModule(
+                sp.GetRequiredService<IPluginRefreshDiscoveryPlanner>(),
+                sp.GetRequiredService<IPluginIssueApproximationService>(),
+                sp.GetRequiredService<IStateService>(),
+                sp.GetRequiredService<ISkipListPolicy>(),
+                sp.GetRequiredService<PluginRefreshPublicationStore>(),
+                sp.GetRequiredService<ILoggingService>(),
+                sp.GetRequiredService<IConfigurationService>()));
             services.AddSingleton<IDiscoverySettingsModule, DiscoverySettingsModule>();
             services.AddSingleton<IPidStorePathProvider, DefaultPidStorePathProvider>();
             services.AddSingleton<IProcessSessionIdProvider, ProcessSessionIdProvider>();

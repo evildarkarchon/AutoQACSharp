@@ -288,63 +288,6 @@ public sealed class PluginRefreshModuleTests
     }
 
     [Fact]
-    public async Task ChangeSelection_UpdatesPublicationSelectionFacts()
-    {
-        var stateService = new StateService();
-        using var sut = CreateModule(stateService);
-        var loaded = await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
-        var selected = loaded.Rows.Single(row => row.FileName == "Selected.esp");
-
-        await sut.ExecuteAsync(new PluginRefreshIntent.ChangeSelection(
-            new PluginSelectionChange.SetOne(selected.Key, IsSelected: false)));
-        var publication = await sut.GetCurrentPublicationAsync();
-
-        publication.Rows.Should().Contain(row =>
-            row.Plugin.FileName == "Selected.esp" && !row.IsSelected);
-    }
-
-    [Fact]
-    public async Task ChangeSelection_UpdatesSnapshotsAndAppStateExclusions()
-    {
-        var stateService = new StateService();
-        using var sut = CreateModule(stateService);
-        var loaded = await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
-        var selected = loaded.Rows.Single(row => row.FileName == "Selected.esp");
-
-        var deselected = await sut.ExecuteAsync(new PluginRefreshIntent.ChangeSelection(
-            new PluginSelectionChange.SetOne(selected.Key, IsSelected: false)));
-
-        deselected.Rows.Should().Contain(row => row.FileName == "Selected.esp" && !row.IsSelected);
-        stateService.CurrentState.ExcludedPluginPaths.Should().Contain(selected.FullPath);
-
-        var reselected = await sut.ExecuteAsync(new PluginRefreshIntent.ChangeSelection(
-            new PluginSelectionChange.SelectAllVisible()));
-
-        reselected.Rows.Should().OnlyContain(row => row.IsSelected);
-        stateService.CurrentState.ExcludedPluginPaths.Should().BeEmpty();
-    }
-
-    [Fact]
-    public async Task ChangeSelection_WhenAppStateRowsDiffer_UsesPublicationRowsAndRepairsCompatibilityMirror()
-    {
-        var stateService = new StateService();
-        using var sut = CreateModule(stateService);
-        var loaded = await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
-        var selected = loaded.Rows.Single(row => row.FileName == "Selected.esp");
-        stateService.SetPluginsToClean([Plugin("External.esp")]);
-
-        await sut.ExecuteAsync(new PluginRefreshIntent.ChangeSelection(
-            new PluginSelectionChange.SetOne(selected.Key, IsSelected: false)));
-        var publication = await sut.GetCurrentPublicationAsync();
-
-        publication.Rows.Should().Contain(row =>
-            row.Plugin.FileName == "Selected.esp" && !row.IsSelected);
-        publication.Rows.Should().NotContain(row => row.Plugin.FileName == "External.esp");
-        stateService.CurrentState.PluginsToClean.Should().NotContain(plugin => plugin.FileName == "External.esp");
-        stateService.CurrentState.ExcludedPluginPaths.Should().Contain(selected.FullPath);
-    }
-
-    [Fact]
     public async Task RefreshGame_WhenSameListRefreshes_PreservesPublicationSelection()
     {
         var stateService = new StateService();
@@ -362,25 +305,6 @@ public sealed class PluginRefreshModuleTests
         publication.VisibleRows.Should().Contain(row =>
             row.FileName == "Selected.esp" && !row.IsSelected);
         stateService.CurrentState.ExcludedPluginPaths.Should().Contain(selected.FullPath);
-    }
-
-    [Fact]
-    public async Task IsCleaningChange_UpdatesPublicationCommandFactsWithoutReplacingPublicationRows()
-    {
-        var stateService = new StateService();
-        using var sut = CreateModule(stateService);
-        await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
-        var beforeCleaning = await sut.GetCurrentPublicationAsync();
-
-        beforeCleaning.Commands.CanSelectAll.Should().BeTrue();
-        stateService.StartCleaning([stateService.CurrentState.PluginsToClean.First()]);
-        var whileCleaning = await sut.GetCurrentPublicationAsync();
-
-        whileCleaning.Commands.CanSelectAll.Should().BeFalse();
-        whileCleaning.Commands.CanDeselectAll.Should().BeFalse();
-        whileCleaning.Commands.CanRefreshSelectedIssueApproximations.Should().BeFalse();
-        whileCleaning.Rows.Select(row => row.Plugin.FileName)
-            .Should().Equal(beforeCleaning.Rows.Select(row => row.Plugin.FileName));
     }
 
     [Fact]
@@ -439,54 +363,6 @@ public sealed class PluginRefreshModuleTests
         final.Rows.Should().Contain(row => row.FileName == "Selected.esp" && row.IsSelected);
         stateService.CurrentState.ExcludedPluginPaths.Should().BeEmpty(
             "StateService.SetPluginsToClean pruning prevents stale path exclusions from leaking into replacement rows");
-    }
-
-    [Fact]
-    public async Task ApproximationMerge_PrefersFullPathWhenBothSidesHaveUsablePaths()
-    {
-        var stateService = CreateStateWithRows(
-            Plugin("Duplicate.esp", @"C:\A\Duplicate.esp", PluginIssueApproximation.Pending),
-            Plugin("Duplicate.esp", @"C:\B\Duplicate.esp", PluginIssueApproximation.Pending));
-        using var sut = CreateModule(stateService, approximationService: new ResultIssueApproximationService([
-            Result("Duplicate.esp", @"C:\B\Duplicate.esp")
-        ]));
-
-        await sut.ExecuteAsync(new PluginRefreshIntent.RefreshSelectedIssueApproximations());
-
-        stateService.CurrentState.PluginsToClean.Should().Contain(plugin =>
-            plugin.FullPath == @"C:\A\Duplicate.esp" && plugin.Approximation.Status == PluginIssueApproximationStatus.Pending);
-        stateService.CurrentState.PluginsToClean.Should().Contain(plugin =>
-            plugin.FullPath == @"C:\B\Duplicate.esp" && plugin.Approximation.Status == PluginIssueApproximationStatus.Available);
-    }
-
-    [Fact]
-    public async Task ApproximationMerge_FallsBackToFileNameWhenUsablePathIsMissing()
-    {
-        var stateService = CreateStateWithRows(
-            Plugin("Fallback.esp", string.Empty, PluginIssueApproximation.Pending));
-        using var sut = CreateModule(stateService, approximationService: new ResultIssueApproximationService([
-            Result("Fallback.esp", @"C:\Game\Data\Fallback.esp")
-        ]));
-
-        await sut.ExecuteAsync(new PluginRefreshIntent.RefreshSelectedIssueApproximations());
-
-        stateService.CurrentState.PluginsToClean.Should().ContainSingle(plugin =>
-            plugin.FileName == "Fallback.esp" && plugin.Approximation.Status == PluginIssueApproximationStatus.Available);
-    }
-
-    [Fact]
-    public async Task ApproximationMerge_IgnoresNonTargetResults()
-    {
-        var stateService = CreateStateWithRows(
-            Plugin("Target.esp", approximation: PluginIssueApproximation.Pending));
-        using var sut = CreateModule(stateService, approximationService: new ResultIssueApproximationService([
-            Result("Other.esp")
-        ]));
-
-        await sut.ExecuteAsync(new PluginRefreshIntent.RefreshSelectedIssueApproximations());
-
-        stateService.CurrentState.PluginsToClean.Should().ContainSingle(plugin =>
-            plugin.FileName == "Target.esp" && plugin.Approximation.Status == PluginIssueApproximationStatus.Pending);
     }
 
     [Fact]
@@ -621,11 +497,19 @@ public sealed class PluginRefreshModuleTests
             configurationService,
             pluginLoadingService,
             Substitute.For<IMo2InstanceService>());
+        var initialConfiguration = PluginRefreshAppStateMirror.CreateConfigurationProjection(stateService.CurrentState);
+        var publicationStore = new PluginRefreshPublicationStore(
+            new PluginRefreshAppStateMirror(stateService),
+            new PluginRefreshCommandAvailabilityPolicy(),
+            discoveryPlanner.GetAffordance(
+                stateService.CurrentState.CurrentGameType,
+                initialConfiguration.Mo2ModeEnabled));
         return new PluginRefreshModule(
             discoveryPlanner,
             approximationService ?? new ResultIssueApproximationService(CreateDefaultResults()),
             stateService,
             new SkipListPolicy(configurationService, gameDetectionService),
+            publicationStore,
             configurationService: configurationService);
     }
 

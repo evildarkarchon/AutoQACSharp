@@ -132,11 +132,20 @@ public sealed class MainWindowViewModelTests
             _configServiceMock,
             _pluginLoadingServiceMock,
             Substitute.For<AutoQAC.Services.MO2.IMo2InstanceService>());
+        var initialConfiguration = PluginRefreshAppStateMirror.CreateConfigurationProjection(
+            effectiveStateService.CurrentState);
+        var publicationStore = new PluginRefreshPublicationStore(
+            new PluginRefreshAppStateMirror(effectiveStateService),
+            new PluginRefreshCommandAvailabilityPolicy(),
+            discoveryPlanner.GetAffordance(
+                effectiveStateService.CurrentState.CurrentGameType,
+                initialConfiguration.Mo2ModeEnabled));
         return new PluginRefreshModule(
             discoveryPlanner,
             approximationService,
             effectiveStateService,
             new SkipListPolicy(_configServiceMock, gameDetectionService),
+            publicationStore,
             _loggerMock);
     }
 
