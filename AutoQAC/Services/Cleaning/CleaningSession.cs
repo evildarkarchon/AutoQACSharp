@@ -17,8 +17,7 @@ public sealed class CleaningSession(
     ICleaningPreflight preflight,
     IBackupSessionCoordinator backupCoordinator,
     ICleaningTerminationCoordinator terminationCoordinator,
-    IPluginCleaningRunner runner,
-    IPluginResultFinalizer finalizer,
+    IPluginCleaning pluginCleaning,
     ICleaningSessionStatePublisher statePublisher,
     ICleaningSessionDecisionAdapter decisions,
     ILoggingService logger,
@@ -166,18 +165,15 @@ public sealed class CleaningSession(
                 }
             }
 
-            // RunPluginBackupAsync is handled above via HandleBackupOutcomeAsync; keep backup before runner.RunAsync.
-            var runnerOutput = await runner.RunAsync(
-                plugin, plan.DetectedGameType, plan.XEditDirectory, decisions,
-                plan.CleaningTimeoutSeconds, retryLimit,
-                attachProcess: terminationCoordinator.AttachProcess,
-                detachProcess: terminationCoordinator.DetachProcess, cancellationToken).ConfigureAwait(false);
-
-            // Snapshot termination context after detach so ProcessMayStillBeRunning reflects final state.
-            var terminationContext = new TerminationFinalizeContext(terminationCoordinator.ProcessMayStillBeRunning,
-                terminationCoordinator.IsStopRequested);
-            var result = await finalizer.FinalizeAsync(plugin, plan.DetectedGameType,
-                    plan.XEditDirectory, runnerOutput, terminationContext, cancellationToken)
+            // RunPluginBackupAsync is handled above via HandleBackupOutcomeAsync; keep backup before Plugin cleaning.
+            var result = await pluginCleaning.CleanAsync(
+                    new PluginCleaningContext(
+                        plugin,
+                        plan.DetectedGameType,
+                        plan.XEditDirectory,
+                        plan.CleaningTimeoutSeconds,
+                        retryLimit),
+                    cancellationToken)
                 .ConfigureAwait(false);
 
             contextSnapshot.Results.Add(result);

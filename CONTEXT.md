@@ -8,6 +8,10 @@ AutoQAC helps users run xEdit Quick Auto Clean safely against selected Bethesda 
 A single user-initiated attempt to clean selected plugins, one at a time, from readiness checks through completion or cancellation.
 _Avoid_: Cleaning workflow, cleaning transaction, cleaning run
 
+**Plugin cleaning**:
+The per-plugin cleaning attempt within a Cleaning session, including that plugin's xEdit Quick Auto Clean attempt and final cleaned, skipped, or failed outcome. It does not include Cleaning session backup policy or session metadata.
+_Avoid_: Runner refactor, single-plugin workflow
+
 **Plugin refresh**:
 A user-visible update of plugin rows for the current game context, including skip-list status and issue approximation preparation.
 

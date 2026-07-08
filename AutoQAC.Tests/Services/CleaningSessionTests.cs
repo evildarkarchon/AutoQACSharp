@@ -137,12 +137,13 @@ public sealed class CleaningSessionTests : IDisposable
                 Arg.Any<CancellationToken>())
             .Returns(CleaningSessionStopDecision.LeaveRunning);
 
+        var terminationCoordinator =
+            new CleaningTerminationCoordinator(_processServiceMock, _hangDetectionMock, _stateServiceMock, _loggerMock);
         _cleaningSession = new CleaningSession(
             CreatePreflight(),
             new BackupSessionCoordinator(_backupServiceMock, _stateServiceMock, _loggerMock),
-            new CleaningTerminationCoordinator(_processServiceMock, _hangDetectionMock, _stateServiceMock, _loggerMock),
-            new PluginCleaningRunner(_cleaningServiceMock, _logFileServiceMock, _loggerMock),
-            new PluginResultFinalizer(_logFileServiceMock, _outputParserMock, _loggerMock),
+            terminationCoordinator,
+            CreatePluginCleaning(terminationCoordinator),
             new StateServiceCleaningSessionStatePublisher(_stateServiceMock),
             _decisionsMock,
             _loggerMock,
@@ -156,6 +157,13 @@ public sealed class CleaningSessionTests : IDisposable
         _mo2ValidationServiceMock,
         _stateServiceMock,
         _loggerMock);
+
+    private IPluginCleaning CreatePluginCleaning(ICleaningTerminationCoordinator terminationCoordinator) =>
+        new PluginCleaning(
+            new PluginCleaningRunner(_cleaningServiceMock, _logFileServiceMock, _loggerMock),
+            new PluginResultFinalizer(_logFileServiceMock, _outputParserMock, _loggerMock),
+            _decisionsMock,
+            terminationCoordinator);
 
     public void Dispose()
     {
@@ -909,12 +917,13 @@ public sealed class CleaningSessionTests : IDisposable
                 return await releaseTcs.Task.ConfigureAwait(false);
             });
 
+        var terminationCoordinator =
+            new CleaningTerminationCoordinator(_processServiceMock, _hangDetectionMock, _stateServiceMock, _loggerMock);
         var orchestrator = new CleaningSession(
             preflightSub,
             new BackupSessionCoordinator(_backupServiceMock, _stateServiceMock, _loggerMock),
-            new CleaningTerminationCoordinator(_processServiceMock, _hangDetectionMock, _stateServiceMock, _loggerMock),
-            new PluginCleaningRunner(_cleaningServiceMock, _logFileServiceMock, _loggerMock),
-            new PluginResultFinalizer(_logFileServiceMock, _outputParserMock, _loggerMock),
+            terminationCoordinator,
+            CreatePluginCleaning(terminationCoordinator),
             new StateServiceCleaningSessionStatePublisher(_stateServiceMock),
             _decisionsMock,
             _loggerMock,
@@ -967,12 +976,13 @@ public sealed class CleaningSessionTests : IDisposable
                 await releaseOrphanCleanup.Task.ConfigureAwait(false);
             });
 
+        var terminationCoordinator =
+            new CleaningTerminationCoordinator(_processServiceMock, _hangDetectionMock, _stateServiceMock, _loggerMock);
         var orchestrator = new CleaningSession(
             CreatePreflight(),
             new BackupSessionCoordinator(_backupServiceMock, _stateServiceMock, _loggerMock),
-            new CleaningTerminationCoordinator(_processServiceMock, _hangDetectionMock, _stateServiceMock, _loggerMock),
-            new PluginCleaningRunner(_cleaningServiceMock, _logFileServiceMock, _loggerMock),
-            new PluginResultFinalizer(_logFileServiceMock, _outputParserMock, _loggerMock),
+            terminationCoordinator,
+            CreatePluginCleaning(terminationCoordinator),
             new StateServiceCleaningSessionStatePublisher(_stateServiceMock),
             _decisionsMock,
             _loggerMock,
@@ -3089,11 +3099,12 @@ public sealed class CleaningSessionTests : IDisposable
     {
         // Arrange
         var source = File.ReadAllText(GetSourcePath("AutoQAC", "Services", "Cleaning", "CleaningSession.cs"));
+        var pluginCleaningSource = File.ReadAllText(GetSourcePath("AutoQAC", "Services", "Cleaning", "PluginCleaning.cs"));
         var runnerSource = File.ReadAllText(GetSourcePath("AutoQAC", "Services", "Cleaning", "PluginCleaningRunner.cs"));
         var finalizerSource = File.ReadAllText(GetSourcePath("AutoQAC", "Services", "Cleaning", "PluginResultFinalizer.cs"));
 
         // Act & Assert
-        foreach (var cleaningSource in new[] { source, runnerSource, finalizerSource })
+        foreach (var cleaningSource in new[] { source, pluginCleaningSource, runnerSource, finalizerSource })
         {
             cleaningSource.Should().NotContain("Task.WhenAll", "plugin cleaning must remain sequential");
             cleaningSource.Should().NotContain("Parallel.ForEachAsync", "plugin cleaning must remain sequential");
@@ -3101,7 +3112,7 @@ public sealed class CleaningSessionTests : IDisposable
         }
 
         source.IndexOf("RunPluginBackupAsync", StringComparison.Ordinal).Should().BeLessThan(
-            source.IndexOf("runner.RunAsync", StringComparison.Ordinal),
+            source.IndexOf("pluginCleaning.CleanAsync", StringComparison.Ordinal),
             "backup invocation must remain before the sequential xEdit cleaning call");
     }
 
@@ -3116,6 +3127,7 @@ public sealed class CleaningSessionTests : IDisposable
             "CleaningSession.cs",
             "CleaningPreflight.cs",
             "BackupSessionCoordinator.cs",
+            "PluginCleaning.cs",
             "PluginCleaningRunner.cs",
             "PluginResultFinalizer.cs",
             "CleaningTerminationCoordinator.cs"
@@ -3167,12 +3179,13 @@ public sealed class CleaningSessionTests : IDisposable
     public void Dispose_ShouldCleanupCancellationTokenSource()
     {
         // Arrange - use a new orchestrator instance for this test
+        var terminationCoordinator =
+            new CleaningTerminationCoordinator(_processServiceMock, _hangDetectionMock, _stateServiceMock, _loggerMock);
         var orchestrator = new CleaningSession(
             CreatePreflight(),
             new BackupSessionCoordinator(_backupServiceMock, _stateServiceMock, _loggerMock),
-            new CleaningTerminationCoordinator(_processServiceMock, _hangDetectionMock, _stateServiceMock, _loggerMock),
-            new PluginCleaningRunner(_cleaningServiceMock, _logFileServiceMock, _loggerMock),
-            new PluginResultFinalizer(_logFileServiceMock, _outputParserMock, _loggerMock),
+            terminationCoordinator,
+            CreatePluginCleaning(terminationCoordinator),
             new StateServiceCleaningSessionStatePublisher(_stateServiceMock),
             _decisionsMock,
             _loggerMock,

@@ -475,12 +475,18 @@ public sealed class ProcessExecutionServiceTests : IDisposable
         gameDetectionServiceMock.DetectVariant(Arg.Any<GameType>(), Arg.Any<List<string>>())
             .Returns(GameVariant.None);
 
+        var terminationCoordinator =
+            new CleaningTerminationCoordinator(processServiceMock, hangDetectionMock, stateServiceMock, loggerMock);
+        var pluginCleaning = new PluginCleaning(
+            new PluginCleaningRunner(cleaningServiceMock, logFileServiceMock, loggerMock),
+            new PluginResultFinalizer(logFileServiceMock, outputParserMock, loggerMock),
+            decisionsMock,
+            terminationCoordinator);
         var session = new CleaningSession(
             preflight,
             new BackupSessionCoordinator(backupServiceMock, stateServiceMock, loggerMock),
-            new CleaningTerminationCoordinator(processServiceMock, hangDetectionMock, stateServiceMock, loggerMock),
-            new PluginCleaningRunner(cleaningServiceMock, logFileServiceMock, loggerMock),
-            new PluginResultFinalizer(logFileServiceMock, outputParserMock, loggerMock),
+            terminationCoordinator,
+            pluginCleaning,
             new StateServiceCleaningSessionStatePublisher(stateServiceMock),
             decisionsMock,
             loggerMock,
@@ -666,15 +672,22 @@ public sealed class ProcessExecutionServiceTests : IDisposable
             stateServiceMock,
             Substitute.For<ILoggingService>());
 
+        var sessionLogger = Substitute.For<ILoggingService>();
+        var terminationCoordinator =
+            new CleaningTerminationCoordinator(processServiceMock, hangDetectionMock, stateServiceMock, sessionLogger);
+        var pluginCleaning = new PluginCleaning(
+            new PluginCleaningRunner(cleaningServiceMock, logFileServiceMock, sessionLogger),
+            new PluginResultFinalizer(logFileServiceMock, Substitute.For<IXEditOutputParser>(), sessionLogger),
+            decisionsMock,
+            terminationCoordinator);
         var session = new CleaningSession(
             preflight,
-            new BackupSessionCoordinator(backupServiceMock, stateServiceMock, Substitute.For<ILoggingService>()),
-            new CleaningTerminationCoordinator(processServiceMock, hangDetectionMock, stateServiceMock, Substitute.For<ILoggingService>()),
-            new PluginCleaningRunner(cleaningServiceMock, logFileServiceMock, Substitute.For<ILoggingService>()),
-            new PluginResultFinalizer(logFileServiceMock, Substitute.For<IXEditOutputParser>(), Substitute.For<ILoggingService>()),
+            new BackupSessionCoordinator(backupServiceMock, stateServiceMock, sessionLogger),
+            terminationCoordinator,
+            pluginCleaning,
             new StateServiceCleaningSessionStatePublisher(stateServiceMock),
             decisionsMock,
-            Substitute.For<ILoggingService>(),
+            sessionLogger,
             processServiceMock);
 
         // Act
