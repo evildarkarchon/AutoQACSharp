@@ -59,6 +59,7 @@ public static class ServiceCollectionExtensions
             services.AddSingleton<ISkipListPolicy, SkipListPolicy>();
             services.AddSingleton<IPluginRefreshDiscoveryPlanner, PluginRefreshDiscoveryPlanner>();
             services.AddSingleton<IPluginRefreshModule, PluginRefreshModule>();
+            services.AddSingleton<IDiscoverySettingsModule, DiscoverySettingsModule>();
             services.AddSingleton<IPidStorePathProvider, DefaultPidStorePathProvider>();
             services.AddSingleton<IProcessSessionIdProvider, ProcessSessionIdProvider>();
             services.AddSingleton<IPidStore, JsonPidStore>();

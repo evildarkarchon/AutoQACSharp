@@ -83,6 +83,7 @@ public sealed class Phase11DiagnosticsBoundaryTests
                 uiDispatcher,
                 refreshModule,
                 discoveryPlanner,
+                new DiscoverySettingsModule(configService, stateService, refreshModule),
                 new CleaningCommandReadiness(refreshModule, stateService));
             using var _ = viewModel.ShowProgressInteraction.RegisterHandler(_ => Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
 

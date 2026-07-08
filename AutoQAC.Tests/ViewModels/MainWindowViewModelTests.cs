@@ -140,6 +140,15 @@ public sealed class MainWindowViewModelTests
             _loggerMock);
     }
 
+    private IDiscoverySettingsModule CreateDiscoverySettingsModule(
+        IConfigurationService? configService = null,
+        IStateService? stateService = null,
+        IPluginRefreshModule? pluginRefreshModule = null) =>
+        new DiscoverySettingsModule(
+            configService ?? _configServiceMock,
+            stateService ?? _stateServiceMock,
+            pluginRefreshModule ?? _pluginRefreshModule);
+
     private static Task WaitForSignalAsync(TaskCompletionSource<bool> signal)
     {
         return WaitForSignalAsync(signal.Task, "expected asynchronous test signal to be observed");
@@ -191,6 +200,7 @@ public sealed class MainWindowViewModelTests
                 _uiDispatcher,
                 _pluginRefreshModule,
                 _discoveryPlanner,
+                CreateDiscoverySettingsModule(),
                 _cleaningCommandReadiness);
             using var _ = vm.ShowProgressInteraction.RegisterHandler(_ => Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
 
@@ -242,6 +252,7 @@ public sealed class MainWindowViewModelTests
                 _uiDispatcher,
                 _pluginRefreshModule,
                 _discoveryPlanner,
+                CreateDiscoverySettingsModule(),
                 _cleaningCommandReadiness);
             using var _ = vm.ShowProgressInteraction.RegisterHandler(_ => throw new ApplicationException("Progress window failed"));
 
@@ -295,6 +306,7 @@ public sealed class MainWindowViewModelTests
                 _uiDispatcher,
                 _pluginRefreshModule,
                 _discoveryPlanner,
+                CreateDiscoverySettingsModule(),
                 _cleaningCommandReadiness);
             using var _ = vm.ShowPreviewInteraction.RegisterHandler(_ => throw new ApplicationException("Preview window failed"));
 
@@ -337,6 +349,7 @@ public sealed class MainWindowViewModelTests
                 _uiDispatcher,
                 _pluginRefreshModule,
                 _discoveryPlanner,
+                CreateDiscoverySettingsModule(),
                 _cleaningCommandReadiness);
 
             _fileDialogMock.OpenFileDialogAsync(
@@ -426,6 +439,7 @@ public sealed class MainWindowViewModelTests
                 _uiDispatcher,
                 _pluginRefreshModule,
                 _discoveryPlanner,
+                CreateDiscoverySettingsModule(),
                 _cleaningCommandReadiness);
             using var _ = vm.ShowProgressInteraction.RegisterHandler(_ => Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
 
@@ -484,6 +498,7 @@ public sealed class MainWindowViewModelTests
             _uiDispatcher,
             _pluginRefreshModule,
             _discoveryPlanner,
+            CreateDiscoverySettingsModule(),
             _cleaningCommandReadiness);
 
         // Configure dialog to return null (user cancelled)
@@ -537,6 +552,7 @@ public sealed class MainWindowViewModelTests
                 _uiDispatcher,
                 _pluginRefreshModule,
                 _discoveryPlanner,
+                CreateDiscoverySettingsModule(),
                 _cleaningCommandReadiness);
 
             await WaitForSignalAsync(initializationApplied);
@@ -603,6 +619,7 @@ public sealed class MainWindowViewModelTests
             _uiDispatcher,
             _pluginRefreshModule,
             _discoveryPlanner,
+            CreateDiscoverySettingsModule(),
             _cleaningCommandReadiness);
 
         // Act - set properties on Configuration sub-VM (these don't affect CanStartCleaning
@@ -638,6 +655,7 @@ public sealed class MainWindowViewModelTests
             _uiDispatcher,
             _pluginRefreshModule,
             _discoveryPlanner,
+            CreateDiscoverySettingsModule(),
             _cleaningCommandReadiness);
 
         // Set valid paths on Configuration sub-VM
@@ -682,6 +700,7 @@ public sealed class MainWindowViewModelTests
             _uiDispatcher,
             _pluginRefreshModule,
             _discoveryPlanner,
+            CreateDiscoverySettingsModule(),
             _cleaningCommandReadiness);
 
         // Act
@@ -743,6 +762,7 @@ public sealed class MainWindowViewModelTests
             _uiDispatcher,
             _pluginRefreshModule,
             _discoveryPlanner,
+            CreateDiscoverySettingsModule(),
             _cleaningCommandReadiness);
 
         // Act
@@ -786,6 +806,7 @@ public sealed class MainWindowViewModelTests
             _uiDispatcher,
             _pluginRefreshModule,
             _discoveryPlanner,
+            CreateDiscoverySettingsModule(),
             _cleaningCommandReadiness);
 
         // Act
@@ -829,6 +850,7 @@ public sealed class MainWindowViewModelTests
             _uiDispatcher,
             _pluginRefreshModule,
             _discoveryPlanner,
+            CreateDiscoverySettingsModule(),
             _cleaningCommandReadiness);
 
         await vm.Commands.StopCleaningCommand.ExecuteAsync(null);
@@ -891,6 +913,7 @@ public sealed class MainWindowViewModelTests
                 _uiDispatcher,
                 _pluginRefreshModule,
                 _discoveryPlanner,
+                CreateDiscoverySettingsModule(),
                 _cleaningCommandReadiness);
             vm.Configuration.SelectedGame = GameType.FalloutNewVegas;
 
@@ -946,6 +969,7 @@ public sealed class MainWindowViewModelTests
             _uiDispatcher,
             _pluginRefreshModule,
             _discoveryPlanner,
+            CreateDiscoverySettingsModule(),
             _cleaningCommandReadiness);
         vm.Configuration.SelectedGame = GameType.SkyrimSe;
 
@@ -983,6 +1007,7 @@ public sealed class MainWindowViewModelTests
             _uiDispatcher,
             _pluginRefreshModule,
             _discoveryPlanner,
+            CreateDiscoverySettingsModule(),
             _cleaningCommandReadiness);
 
         await vm.Commands.StopCleaningCommand.ExecuteAsync(null);
@@ -1023,6 +1048,7 @@ public sealed class MainWindowViewModelTests
             _uiDispatcher,
             _pluginRefreshModule,
             _discoveryPlanner,
+            CreateDiscoverySettingsModule(),
             _cleaningCommandReadiness);
 
         await vm.Commands.StopCleaningCommand.ExecuteAsync(null);
@@ -1063,6 +1089,7 @@ public sealed class MainWindowViewModelTests
             _uiDispatcher,
             _pluginRefreshModule,
             _discoveryPlanner,
+            CreateDiscoverySettingsModule(),
             _cleaningCommandReadiness);
 
         await vm.Commands.StopCleaningCommand.ExecuteAsync(null);
@@ -1098,6 +1125,7 @@ public sealed class MainWindowViewModelTests
             _uiDispatcher,
             _pluginRefreshModule,
             _discoveryPlanner,
+            CreateDiscoverySettingsModule(),
             _cleaningCommandReadiness);
 
         // Act
@@ -1160,7 +1188,11 @@ public sealed class MainWindowViewModelTests
             _pluginServiceMock,
             _pluginLoadingServiceMock,
             pluginRefreshModule: refreshModule,
-            discoveryPlanner: _discoveryPlanner);
+            discoveryPlanner: _discoveryPlanner,
+            discoverySettingsModule: CreateDiscoverySettingsModule(
+                configService: configService,
+                stateService: stateService,
+                pluginRefreshModule: refreshModule));
 
         try
         {
@@ -1204,7 +1236,11 @@ public sealed class MainWindowViewModelTests
             _pluginServiceMock,
             _pluginLoadingServiceMock,
             pluginRefreshModule: refreshModule,
-            discoveryPlanner: _discoveryPlanner);
+            discoveryPlanner: _discoveryPlanner,
+            discoverySettingsModule: CreateDiscoverySettingsModule(
+                configService: configService,
+                stateService: stateService,
+                pluginRefreshModule: refreshModule));
 
         try
         {
@@ -1253,7 +1289,11 @@ public sealed class MainWindowViewModelTests
                 _pluginServiceMock,
                 _pluginLoadingServiceMock,
                 pluginRefreshModule: refreshModule,
-                discoveryPlanner: _discoveryPlanner);
+                discoveryPlanner: _discoveryPlanner,
+                discoverySettingsModule: CreateDiscoverySettingsModule(
+                    configService: configService,
+                    stateService: stateService,
+                    pluginRefreshModule: refreshModule));
 
             await vm.InitializeAsync();
 
@@ -1304,6 +1344,7 @@ public sealed class MainWindowViewModelTests
             _uiDispatcher,
             _pluginRefreshModule,
             _discoveryPlanner,
+            CreateDiscoverySettingsModule(),
             _cleaningCommandReadiness);
 
         // Assert - AvailableGames is now on Configuration sub-VM
@@ -1332,6 +1373,7 @@ public sealed class MainWindowViewModelTests
             _uiDispatcher,
             _pluginRefreshModule,
             _discoveryPlanner,
+            CreateDiscoverySettingsModule(),
             _cleaningCommandReadiness);
 
         // Act & Assert - Default is Unknown (not supported)
@@ -1381,6 +1423,7 @@ public sealed class MainWindowViewModelTests
             _uiDispatcher,
             _pluginRefreshModule,
             _discoveryPlanner,
+            CreateDiscoverySettingsModule(),
             _cleaningCommandReadiness);
 
         // Act
@@ -1456,6 +1499,7 @@ public sealed class MainWindowViewModelTests
             _uiDispatcher,
             refreshModule,
             _discoveryPlanner,
+            CreateDiscoverySettingsModule(pluginRefreshModule: refreshModule),
             new CleaningCommandReadiness(refreshModule, _stateServiceMock));
 
         // Act
@@ -1562,6 +1606,7 @@ public sealed class MainWindowViewModelTests
             _uiDispatcher,
             refreshModule,
             _discoveryPlanner,
+            CreateDiscoverySettingsModule(pluginRefreshModule: refreshModule),
             new CleaningCommandReadiness(refreshModule, stateService));
 
         vm.Configuration.SelectedGame = GameType.SkyrimSe;
@@ -1644,6 +1689,7 @@ public sealed class MainWindowViewModelTests
             _uiDispatcher,
             refreshModule,
             _discoveryPlanner,
+            CreateDiscoverySettingsModule(pluginRefreshModule: refreshModule),
             new CleaningCommandReadiness(refreshModule, stateService));
 
         vm.Configuration.SelectedGame = GameType.SkyrimSe;
@@ -1730,6 +1776,7 @@ public sealed class MainWindowViewModelTests
             _uiDispatcher,
             refreshModule,
             _discoveryPlanner,
+            CreateDiscoverySettingsModule(pluginRefreshModule: refreshModule),
             new CleaningCommandReadiness(refreshModule, _stateServiceMock));
 
         vm.Configuration.SelectedGame = GameType.SkyrimSe;
@@ -1805,6 +1852,7 @@ public sealed class MainWindowViewModelTests
             _uiDispatcher,
             _pluginRefreshModule,
             _discoveryPlanner,
+            CreateDiscoverySettingsModule(),
             _cleaningCommandReadiness);
 
         // Act
@@ -1853,7 +1901,11 @@ public sealed class MainWindowViewModelTests
                 _pluginServiceMock,
                 _pluginLoadingServiceMock,
                 refreshModule,
-                _discoveryPlanner);
+                _discoveryPlanner,
+                CreateDiscoverySettingsModule(
+                    configService: configService,
+                    stateService: stateService,
+                    pluginRefreshModule: refreshModule));
             await vm.InitializeAsync();
 
             // Act
@@ -1910,6 +1962,7 @@ public sealed class MainWindowViewModelTests
             _uiDispatcher,
             _pluginRefreshModule,
             _discoveryPlanner,
+            CreateDiscoverySettingsModule(),
             _cleaningCommandReadiness);
         using var _ = vm.ShowSettingsInteraction.RegisterHandler(_ => Task.FromResult(true));
         _stateServiceMock.ClearReceivedCalls();
@@ -1926,7 +1979,8 @@ public sealed class MainWindowViewModelTests
     {
         // Arrange
         const string oldPath = @"C:\Tools\MO2-old\ModOrganizer.exe";
-        const string newPath = @"C:\Tools\MO2-new\ModOrganizer.exe";
+        var newPath = Path.Combine(Path.GetTempPath(), $"ModOrganizer-{Guid.NewGuid():N}.exe");
+        await File.WriteAllTextAsync(newPath, string.Empty);
 
         var initialConfig = new UserConfiguration
         {
@@ -1965,15 +2019,147 @@ public sealed class MainWindowViewModelTests
             _uiDispatcher,
             _pluginRefreshModule,
             _discoveryPlanner,
+            CreateDiscoverySettingsModule(),
             _cleaningCommandReadiness);
 
-        // Act
-        await vm.Configuration.ConfigureMo2Command.ExecuteAsync(null);
+        try
+        {
+            // Act
+            await vm.Configuration.ConfigureMo2Command.ExecuteAsync(null);
 
-        // Assert
-        savedConfig.Should().NotBeNull("SaveUserConfigAsync should be invoked after picking a new path");
-        savedConfig!.ModOrganizer.Binary.Should().Be(newPath,
-            "the persisted MO2 path must reflect the user's just-selected file, not the stale VM property");
+            // Assert
+            savedConfig.Should().NotBeNull("SaveUserConfigAsync should be invoked after picking a new path");
+            savedConfig!.ModOrganizer.Binary.Should().Be(newPath,
+                "the persisted MO2 path must reflect the user's just-selected file, not the stale VM property");
+        }
+        finally
+        {
+            File.Delete(newPath);
+        }
+    }
+
+    [Fact]
+    public async Task ConfigureMo2Async_WhenSelectedPathRejected_ShouldKeepPreviousVisiblePath()
+    {
+        // Arrange
+        const string oldPath = @"C:\Tools\MO2-old\ModOrganizer.exe";
+        var rejectedPath = Path.Combine(Path.GetTempPath(), $"ModOrganizer-{Guid.NewGuid():N}.txt");
+        await File.WriteAllTextAsync(rejectedPath, string.Empty);
+
+        _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>()).Returns(new UserConfiguration
+        {
+            LoadOrder = new(),
+            XEdit = new(),
+            ModOrganizer = new() { Binary = oldPath },
+            Settings = new()
+        });
+        _configServiceMock.GetSelectedGameAsync(Arg.Any<CancellationToken>()).Returns(GameType.Unknown);
+
+        _fileDialogMock.OpenFileDialogAsync(
+                "Select Mod Organizer 2 Executable",
+                Arg.Any<string>())
+            .Returns(rejectedPath);
+
+        var stateSubject = new BehaviorSubject<AppState>(new AppState { Mo2ExecutablePath = oldPath });
+        _stateServiceMock.StateChanged.Returns(stateSubject);
+        _stateServiceMock.CurrentState.Returns(new AppState { Mo2ExecutablePath = oldPath });
+        _messageDialogMock.ShowErrorAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>())
+            .Returns(Task.CompletedTask);
+
+        var vm = new MainWindowViewModel(
+            _configServiceMock,
+            _stateServiceMock,
+            _cleaningSessionMock,
+            _loggerMock,
+            _fileDialogMock,
+            _messageDialogMock,
+            _pluginServiceMock,
+            _pluginLoadingServiceMock,
+            _uiDispatcher,
+            _pluginRefreshModule,
+            _discoveryPlanner,
+            CreateDiscoverySettingsModule(),
+            _cleaningCommandReadiness);
+
+        try
+        {
+            // Act
+            await vm.Configuration.ConfigureMo2Command.ExecuteAsync(null);
+
+            // Assert
+            vm.Configuration.Mo2Path.Should().Be(oldPath,
+                "a rejected Discovery settings change should not project unaccepted paths into the UI");
+            await _configServiceMock.DidNotReceive().SaveUserConfigAsync(
+                Arg.Any<UserConfiguration>(),
+                Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            File.Delete(rejectedPath);
+        }
+    }
+
+    [Fact]
+    public async Task ResetSettingsAsync_ShouldProjectDefaultDisableSkipListsWithoutReSavingOldToggle()
+    {
+        // Arrange
+        var configService = Substitute.For<IConfigurationService>();
+        using var stateService = new StateService();
+        using var refreshModule = new RecordingPluginRefreshModule();
+        var defaultsLoaded = false;
+
+        configService.SkipListChanged.Returns(Observable.Never<GameType>());
+        configService.LoadUserConfigAsync(Arg.Any<CancellationToken>()).Returns(_ =>
+            defaultsLoaded
+                ? new UserConfiguration { LoadOrder = new(), XEdit = new(), ModOrganizer = new(), Settings = new() }
+                : new UserConfiguration
+                {
+                    LoadOrder = new(),
+                    XEdit = new(),
+                    ModOrganizer = new(),
+                    Settings = new AutoQacSettings { DisableSkipLists = true }
+                });
+        configService.GetSelectedGameAsync(Arg.Any<CancellationToken>()).Returns(GameType.Unknown);
+        configService.ResetToDefaultsAsync(Arg.Any<CancellationToken>()).Returns(_ =>
+        {
+            defaultsLoaded = true;
+            return Task.CompletedTask;
+        });
+
+        var vm = new ConfigurationViewModel(
+            configService,
+            stateService,
+            _loggerMock,
+            _fileDialogMock,
+            _messageDialogMock,
+            _pluginServiceMock,
+            _pluginLoadingServiceMock,
+            refreshModule,
+            _discoveryPlanner,
+            CreateDiscoverySettingsModule(
+                configService: configService,
+                stateService: stateService,
+                pluginRefreshModule: refreshModule));
+
+        try
+        {
+            await vm.InitializeAsync();
+            vm.DisableSkipListsEnabled.Should().BeTrue();
+
+            // Act
+            await vm.ResetSettingsCommand.ExecuteAsync(null);
+
+            // Assert
+            vm.DisableSkipListsEnabled.Should().BeFalse(
+                "reset defaults should be reflected in UI-only Discovery settings fields");
+            await configService.DidNotReceive().SaveUserConfigAsync(
+                Arg.Is<UserConfiguration>(config => config.Settings.DisableSkipLists),
+                Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            vm.Dispose();
+        }
     }
 
     [Fact]
@@ -2027,6 +2213,7 @@ public sealed class MainWindowViewModelTests
             _uiDispatcher,
             refreshModule,
             _discoveryPlanner,
+            CreateDiscoverySettingsModule(pluginRefreshModule: refreshModule),
             new CleaningCommandReadiness(refreshModule, _stateServiceMock));
 
         // Act
@@ -2065,6 +2252,7 @@ public sealed class MainWindowViewModelTests
             _uiDispatcher,
             _pluginRefreshModule,
             _discoveryPlanner,
+            CreateDiscoverySettingsModule(),
             _cleaningCommandReadiness);
 
         // Act & Assert

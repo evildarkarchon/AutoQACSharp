@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
+using AutoQAC.Models.Configuration;
 using AutoQAC.Models.Diagnostics;
 using AutoQAC.Services.Configuration;
 using AutoQAC.Services.GameCapability;
@@ -30,10 +31,13 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
     private readonly IPluginLoadingService _pluginLoadingService;
     private readonly IPluginRefreshModule _pluginRefreshModule;
     private readonly IPluginRefreshDiscoveryPlanner _discoveryPlanner;
+    private readonly IDiscoverySettingsModule _discoverySettingsModule;
     private readonly IStateService _stateService;
     private readonly IDisposable _skipListChangedSubscription;
 
     private bool _initialized;
+    private bool _suppressSelectedGameChanged;
+    private bool _suppressDisableSkipListsChanged;
     private bool _suppressSelectedProfileChanged;
 
     [ObservableProperty]
@@ -116,7 +120,8 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         IPluginValidationService pluginService,
         IPluginLoadingService pluginLoadingService,
         IPluginRefreshModule pluginRefreshModule,
-        IPluginRefreshDiscoveryPlanner discoveryPlanner)
+        IPluginRefreshDiscoveryPlanner discoveryPlanner,
+        IDiscoverySettingsModule discoverySettingsModule)
     {
         _configService = configService;
         _stateService = stateService;
@@ -126,6 +131,7 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         _pluginLoadingService = pluginLoadingService;
         _pluginRefreshModule = pluginRefreshModule;
         _discoveryPlanner = discoveryPlanner;
+        _discoverySettingsModule = discoverySettingsModule;
 
         AvailableGames = _discoveryPlanner.GetAvailableGames();
 
@@ -166,7 +172,7 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
     partial void OnSelectedGameChanged(GameType value)
     {
         RecomputeLoadOrderValidity();
-        if (!_initialized) return;
+        if (_suppressSelectedGameChanged || !_initialized) return;
         _ = HandleSelectedGameChangedAsync(value);
     }
 
@@ -174,8 +180,9 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
     {
         try
         {
-            await _configService.SetSelectedGameAsync(gameType);
-            await RefreshPluginsForGameAsync(gameType);
+            var result = await _discoverySettingsModule.ExecuteAsync(
+                new DiscoverySettingsIntent.SelectGame(gameType));
+            await ApplyDiscoverySettingsResultAsync(result);
         }
         catch (Exception ex)
         {
@@ -227,9 +234,9 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
     {
         try
         {
-            await SaveConfigurationAsync();
-            _stateService.UpdateState(s => s with { Mo2ModeEnabled = value });
-            await RefreshPluginsForGameAsync(SelectedGame);
+            var result = await _discoverySettingsModule.ExecuteAsync(
+                new DiscoverySettingsIntent.SetMo2Mode(value));
+            await ApplyDiscoverySettingsResultAsync(result);
         }
         catch (Exception ex)
         {
@@ -241,9 +248,9 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
     {
         try
         {
-            await _configService.SetMo2ProfileAsync(SelectedGame, value);
-            await _configService.FlushPendingSavesAsync();
-            await RefreshPluginsForGameAsync(SelectedGame);
+            var result = await _discoverySettingsModule.ExecuteAsync(
+                new DiscoverySettingsIntent.SetMo2Profile(SelectedGame, value));
+            await ApplyDiscoverySettingsResultAsync(result);
         }
         catch (Exception ex)
         {
@@ -255,7 +262,7 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
     // ReSharper disable once UnusedParameter.Global
     partial void OnDisableSkipListsEnabledChanged(bool value)
     {
-        if (!_initialized) return;
+        if (_suppressDisableSkipListsChanged || !_initialized) return;
         _ = HandleDisableSkipListsChangedAsync();
     }
 
@@ -263,8 +270,9 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
     {
         try
         {
-            await SaveConfigurationAsync();
-            await RefreshPluginsForGameAsync(SelectedGame);
+            var result = await _discoverySettingsModule.ExecuteAsync(
+                new DiscoverySettingsIntent.SetDisableSkipLists(DisableSkipListsEnabled));
+            await ApplyDiscoverySettingsResultAsync(result);
         }
         catch (Exception ex)
         {
@@ -294,9 +302,12 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
 
         try
         {
-            var snapshot = await _pluginRefreshModule.ExecuteAsync(
-                new PluginRefreshIntent.RefreshGame(SelectedGame, path));
-            OnPluginRefreshSnapshot(snapshot);
+            var result = await _discoverySettingsModule.ExecuteAsync(
+                new DiscoverySettingsIntent.SetLoadOrderPath(SelectedGame, path));
+            if (!await ApplyDiscoverySettingsResultAsync(result))
+            {
+                return;
+            }
         }
         catch (FileNotFoundException ex)
         {
@@ -323,19 +334,17 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         }
         catch (Exception ex)
         {
-            _logger.Error(ex, "Failed to parse selected load order");
+            _logger.Error(ex, "Failed to apply selected load order");
             var loadOrderIdentifier =
                 DiagnosticTextFormatter.SafeFileIdentifier("Load Order File", path, "load order file");
             var failureMessage = DiagnosticTextFormatter.OperationFailed("Load order selection");
             await _messageDialog.ShowErrorAsync(
-                "Invalid Load Order",
-                $"{loadOrderIdentifier} could not be parsed. {failureMessage}",
+                "Load Order Selection Failed",
+                $"{loadOrderIdentifier} could not be applied. {failureMessage}",
                 DiagnosticTextFormatter.LatestLogDetails);
             StatusText = failureMessage;
             return;
         }
-
-        await _configService.SetGameLoadOrderOverrideAsync(SelectedGame, path);
     }
 
     [RelayCommand]
@@ -366,11 +375,9 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
 
         if (string.IsNullOrEmpty(path)) return;
 
-        // See ConfigureXEditAsync — VM property must be set synchronously before save.
-        Mo2Path = path;
-        _stateService.UpdateConfigurationPaths(LoadOrderPath, path, XEditPath);
-        await SaveConfigurationAsync(flushToDisk: true);
-        await RefreshPluginsForGameAsync(SelectedGame);
+        var result = await _discoverySettingsModule.ExecuteAsync(
+            new DiscoverySettingsIntent.SetMo2ExecutablePath(path));
+        await ApplyDiscoverySettingsResultAsync(result);
     }
 
     private bool CanConfigureMo2Instance() => IsGameSelected;
@@ -394,12 +401,12 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         }
 
         Mo2InstancePath = path;
-        await _configService.SetMo2InstanceOverrideAsync(SelectedGame, path);
-        await _configService.FlushPendingSavesAsync();
-        IsMo2InstanceOverride = true;
-
-        await RefreshPluginsForGameAsync(SelectedGame);
-        StatusText = $"MO2 instance override set for {SelectedGame}";
+        var result = await _discoverySettingsModule.ExecuteAsync(
+            new DiscoverySettingsIntent.SetMo2InstanceOverride(SelectedGame, path));
+        if (await ApplyDiscoverySettingsResultAsync(result))
+        {
+            StatusText = $"MO2 instance override set for {SelectedGame}";
+        }
     }
 
     private bool CanResetMo2Instance() => IsMo2InstanceOverride;
@@ -407,11 +414,13 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
     [RelayCommand(CanExecute = nameof(CanResetMo2Instance))]
     private async Task ResetMo2InstanceAsync()
     {
-        await _configService.SetMo2InstanceOverrideAsync(SelectedGame, null);
-        await _configService.FlushPendingSavesAsync();
-        IsMo2InstanceOverride = false;
-        await RefreshPluginsForGameAsync(SelectedGame);
-        StatusText = $"MO2 instance reset to auto-detect for {SelectedGame}";
+        var result = await _discoverySettingsModule.ExecuteAsync(
+            new DiscoverySettingsIntent.SetMo2InstanceOverride(SelectedGame, null));
+        if (await ApplyDiscoverySettingsResultAsync(result))
+        {
+            IsMo2InstanceOverride = false;
+            StatusText = $"MO2 instance reset to auto-detect for {SelectedGame}";
+        }
     }
 
     private bool CanConfigureGameDataFolder() => IsGameSelected;
@@ -434,14 +443,14 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        await _configService.SetGameDataFolderOverrideAsync(SelectedGame, path);
-
         GameDataFolder = path;
-        HasGameDataFolderOverride = true;
-
-        await RefreshPluginsForGameAsync(SelectedGame);
-
-        StatusText = $"Data folder override set for {SelectedGame}";
+        var result = await _discoverySettingsModule.ExecuteAsync(
+            new DiscoverySettingsIntent.SetGameDataFolderOverride(SelectedGame, path));
+        if (await ApplyDiscoverySettingsResultAsync(result))
+        {
+            HasGameDataFolderOverride = true;
+            StatusText = $"Data folder override set for {SelectedGame}";
+        }
     }
 
     private bool CanClearGameDataFolderOverride() => HasGameDataFolderOverride;
@@ -466,14 +475,14 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
     [RelayCommand(CanExecute = nameof(CanClearGameDataFolderOverride))]
     private async Task ClearGameDataFolderOverrideAsync()
     {
-        await _configService.SetGameDataFolderOverrideAsync(SelectedGame, null);
-        HasGameDataFolderOverride = false;
-
-        await RefreshPluginsForGameAsync(SelectedGame);
-
-        GameDataFolder = _pluginLoadingService.GetGameDataFolder(SelectedGame);
-
-        StatusText = $"Data folder reset to auto-detect for {SelectedGame}";
+        var result = await _discoverySettingsModule.ExecuteAsync(
+            new DiscoverySettingsIntent.SetGameDataFolderOverride(SelectedGame, null));
+        if (await ApplyDiscoverySettingsResultAsync(result))
+        {
+            HasGameDataFolderOverride = false;
+            GameDataFolder = _pluginLoadingService.GetGameDataFolder(SelectedGame);
+            StatusText = $"Data folder reset to auto-detect for {SelectedGame}";
+        }
     }
 
     [RelayCommand]
@@ -489,31 +498,15 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         try
         {
             StatusText = "Resetting settings to defaults...";
-            await _pluginRefreshModule.ExecuteAsync(
-                new PluginRefreshIntent.Cancel(PluginRefreshCancelReason.Reset));
-            await _configService.ResetToDefaultsAsync();
+            var result = await _discoverySettingsModule.ExecuteAsync(new DiscoverySettingsIntent.Reset());
 
-            var config = await _configService.LoadUserConfigAsync();
-
-            _stateService.UpdateConfigurationPaths(
-                config.LoadOrder.File,
-                config.ModOrganizer.Binary,
-                config.XEdit.Binary);
-
-            _stateService.UpdateState(s => s with
-            {
-                Mo2ModeEnabled = config.Settings.Mo2Mode,
-                CleaningTimeout = config.Settings.CleaningTimeout,
-                PartialFormsEnabled = false,
-                Mo2Profile = null
-            });
-
-            SelectedGame = GameType.Unknown;
+            SetSelectedGameWithoutPersistence(GameType.Unknown);
+            SetDisableSkipListsWithoutPersistence(new AutoQacSettings().DisableSkipLists);
             Mo2InstancePath = null;
             IsMo2InstanceOverride = false;
             SetSelectedProfileWithoutPersistence(null);
             AvailableProfiles.Clear();
-            _stateService.SetPluginsToClean([]);
+            await ApplyDiscoverySettingsResultAsync(result);
 
             StatusText = "Settings reset to defaults";
             _logger.Information("Settings reset to defaults by user");
@@ -618,6 +611,54 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         OnPluginRefreshSnapshot(snapshot);
     }
 
+    private async Task<bool> ApplyDiscoverySettingsResultAsync(DiscoverySettingsChangeResult result)
+    {
+        if (result.Status == DiscoverySettingsChangeStatus.Accepted)
+        {
+            if (result.Snapshot is not null)
+            {
+                OnPluginRefreshSnapshot(result.Snapshot);
+            }
+
+            return true;
+        }
+
+        if (result.Failure is not null)
+        {
+            await ProjectDiscoverySettingsFailureAsync(result.Failure);
+        }
+
+        return false;
+    }
+
+    private async Task ProjectDiscoverySettingsFailureAsync(DiscoverySettingsChangeFailure failure)
+    {
+        StatusText = failure.SafeMessage;
+        if (failure.Kind == DiscoverySettingsChangeFailureKind.InvalidLoadOrderPath)
+        {
+            await _messageDialog.ShowErrorAsync(
+                "File Not Found",
+                failure.SafeMessage);
+            return;
+        }
+
+        if (failure.Kind is DiscoverySettingsChangeFailureKind.InvalidGameDataFolder
+            or DiscoverySettingsChangeFailureKind.InvalidMo2InstanceFolder)
+        {
+            await _messageDialog.ShowErrorAsync(
+                "Folder Not Found",
+                failure.SafeMessage);
+            return;
+        }
+
+        if (failure.Kind == DiscoverySettingsChangeFailureKind.InvalidMo2ExecutablePath)
+        {
+            await _messageDialog.ShowErrorAsync(
+                "File Not Found",
+                failure.SafeMessage);
+        }
+    }
+
     private void ApplyRefreshConfiguration(PluginRefreshConfigurationProjection projection)
     {
         LoadOrderPath = projection.LoadOrderPath;
@@ -669,6 +710,32 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         finally
         {
             _suppressSelectedProfileChanged = false;
+        }
+    }
+
+    private void SetSelectedGameWithoutPersistence(GameType gameType)
+    {
+        _suppressSelectedGameChanged = true;
+        try
+        {
+            SelectedGame = gameType;
+        }
+        finally
+        {
+            _suppressSelectedGameChanged = false;
+        }
+    }
+
+    private void SetDisableSkipListsWithoutPersistence(bool disabled)
+    {
+        _suppressDisableSkipListsChanged = true;
+        try
+        {
+            DisableSkipListsEnabled = disabled;
+        }
+        finally
+        {
+            _suppressDisableSkipListsChanged = false;
         }
     }
 

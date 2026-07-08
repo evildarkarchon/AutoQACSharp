@@ -47,6 +47,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         IUiDispatcher uiDispatcher,
         IPluginRefreshModule pluginRefreshModule,
         IPluginRefreshDiscoveryPlanner discoveryPlanner,
+        IDiscoverySettingsModule discoverySettingsModule,
         ICleaningCommandReadiness cleaningCommandReadiness,
         IAppLifetime? appLifetime = null)
     {
@@ -54,7 +55,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
             configService, stateService, logger, fileDialog,
             messageDialog, pluginService, pluginLoadingService,
             pluginRefreshModule,
-            discoveryPlanner);
+            discoveryPlanner,
+            discoverySettingsModule);
 
         PluginList = new PluginListViewModel(pluginRefreshModule);
 

@@ -40,3 +40,7 @@ _Avoid_: Mutagen support, supported game
 **Discovery-affecting settings**:
 User choices that can change a Plugin refresh discovery plan or the published plugin rows, such as selected game, MO2 mode, load-order file, game data folder override, MO2 instance/profile, and Skip list settings.
 _Avoid_: Configuration generation, dirty config, any setting change
+
+**Discovery settings change**:
+A user or app intent that updates one Discovery-affecting setting and results in either an accepted Plugin refresh publication or a typed rejection.
+_Avoid_: Settings mutation, config save, refresh trigger

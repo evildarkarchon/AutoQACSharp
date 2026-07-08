@@ -65,6 +65,7 @@ public sealed class DependencyInjectionTests
         // Business Logic
         provider.GetService<IGameDetectionService>().Should().NotBeNull();
         provider.GetService<IPluginRefreshDiscoveryPlanner>().Should().NotBeNull();
+        provider.GetService<IDiscoverySettingsModule>().Should().NotBeNull();
         provider.GetService<IPluginValidationService>().Should().NotBeNull();
         provider.GetService<IPluginLoadingService>().Should().NotBeNull();
         provider.GetService<IPluginRefreshModule>().Should().NotBeNull();
@@ -95,6 +96,8 @@ public sealed class DependencyInjectionTests
             .Should().BeSameAs(sharedRefreshModule);
         GetPrivateField<IPluginRefreshDiscoveryPlanner>(vm1.Configuration, "_discoveryPlanner")
             .Should().BeSameAs(provider.GetRequiredService<IPluginRefreshDiscoveryPlanner>());
+        GetPrivateField<IDiscoverySettingsModule>(vm1.Configuration, "_discoverySettingsModule")
+            .Should().BeSameAs(provider.GetRequiredService<IDiscoverySettingsModule>());
         GetPrivateField<IPluginRefreshModule>(vm1.PluginList, "_pluginRefreshModule")
             .Should().BeSameAs(sharedRefreshModule);
         GetPrivateField<IPluginRefreshModule>(vm1.Commands, "_pluginRefreshModule")

@@ -76,6 +76,9 @@ public sealed class ErrorDialogTests
     private ICleaningCommandReadiness CreateReadiness(IPluginRefreshModule refreshModule) =>
         new CleaningCommandReadiness(refreshModule, _stateServiceMock);
 
+    private IDiscoverySettingsModule CreateDiscoverySettingsModule(IPluginRefreshModule refreshModule) =>
+        new DiscoverySettingsModule(_configServiceMock, _stateServiceMock, refreshModule);
+
     private static PluginRefreshPublication CreatePublicationFromState(AppState state)
     {
         var gameType = state.CurrentGameType == GameType.Unknown ? GameType.SkyrimSe : state.CurrentGameType;
@@ -131,6 +134,7 @@ public sealed class ErrorDialogTests
             _uiDispatcher,
             effectiveRefreshModule,
             _discoveryPlanner,
+            CreateDiscoverySettingsModule(effectiveRefreshModule),
             CreateReadiness(effectiveRefreshModule));
     }
 
@@ -165,6 +169,7 @@ public sealed class ErrorDialogTests
             _uiDispatcher,
             refreshModule,
             _discoveryPlanner,
+            CreateDiscoverySettingsModule(refreshModule),
             CreateReadiness(refreshModule));
     }
 
@@ -236,6 +241,7 @@ public sealed class ErrorDialogTests
             _uiDispatcher,
             refreshModule,
             _discoveryPlanner,
+            CreateDiscoverySettingsModule(refreshModule),
             CreateReadiness(refreshModule));
 
         // Act
@@ -277,6 +283,7 @@ public sealed class ErrorDialogTests
             _uiDispatcher,
             refreshModule,
             _discoveryPlanner,
+            CreateDiscoverySettingsModule(refreshModule),
             CreateReadiness(refreshModule));
 
         vm.Configuration.XEditPath = nonExistentPath;
@@ -323,6 +330,7 @@ public sealed class ErrorDialogTests
             _uiDispatcher,
             refreshModule,
             _discoveryPlanner,
+            CreateDiscoverySettingsModule(refreshModule),
             CreateReadiness(refreshModule));
 
         // Act
@@ -373,6 +381,7 @@ public sealed class ErrorDialogTests
                 _uiDispatcher,
                 refreshModule,
                 _discoveryPlanner,
+                CreateDiscoverySettingsModule(refreshModule),
                 CreateReadiness(refreshModule));
 
             // Act
@@ -597,6 +606,7 @@ public sealed class ErrorDialogTests
                 _uiDispatcher,
                 refreshModule,
                 _discoveryPlanner,
+                CreateDiscoverySettingsModule(refreshModule),
                 CreateReadiness(refreshModule));
 
             // Act
@@ -649,6 +659,7 @@ public sealed class ErrorDialogTests
                 _uiDispatcher,
                 refreshModule,
                 _discoveryPlanner,
+                CreateDiscoverySettingsModule(refreshModule),
                 CreateReadiness(refreshModule));
 
             // Act
@@ -698,6 +709,7 @@ public sealed class ErrorDialogTests
                 _uiDispatcher,
                 refreshModule,
                 _discoveryPlanner,
+                CreateDiscoverySettingsModule(refreshModule),
                 CreateReadiness(refreshModule));
 
             // Act
@@ -750,6 +762,7 @@ public sealed class ErrorDialogTests
                 _uiDispatcher,
                 refreshModule,
                 _discoveryPlanner,
+                CreateDiscoverySettingsModule(refreshModule),
                 CreateReadiness(refreshModule));
 
             // Act

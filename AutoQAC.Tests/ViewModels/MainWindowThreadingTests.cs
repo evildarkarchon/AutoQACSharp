@@ -63,6 +63,7 @@ public sealed class MainWindowThreadingTests
             captureDispatcher,
             refreshModule,
             discoveryPlanner,
+            new DiscoverySettingsModule(configService, stateService, refreshModule),
             new CleaningCommandReadiness(refreshModule, stateService));
 
         try
@@ -204,6 +205,7 @@ public sealed class MainWindowThreadingTests
             captureDispatcher,
             pluginRefreshModule: refreshModule,
             discoveryPlanner: discoveryPlanner,
+            discoverySettingsModule: new DiscoverySettingsModule(configService, stateService, refreshModule),
             cleaningCommandReadiness: new CleaningCommandReadiness(refreshModule, stateService));
 
         try
