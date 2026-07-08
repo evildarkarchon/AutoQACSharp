@@ -23,11 +23,18 @@ public sealed class StateService : IStateService, IDisposable
     // BehaviorSubject.OnNext is called OUTSIDE the lock to prevent subscriber deadlocks.
     private volatile AppState _currentState = new();
 
-    private readonly List<PluginCleaningResult> _currentSessionResults = new();
-    private DateTime _cleaningStartTime;
     private CleaningSessionResult? _lastSessionResult;
 
-    public CleaningSessionResult? LastSessionResult => _lastSessionResult;
+    public CleaningSessionResult? LastSessionResult
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _lastSessionResult;
+            }
+        }
+    }
 
     public AppState CurrentState => _currentState;
 
@@ -71,10 +78,16 @@ public sealed class StateService : IStateService, IDisposable
 
     public void UpdateConfigurationPaths(string? loadOrder, string? mo2, string? xEdit)
     {
+        UpdateConfigurationPaths(loadOrder, mo2, xEdit, _currentState.Mo2Profile);
+    }
+
+    public void UpdateConfigurationPaths(string? loadOrder, string? mo2, string? xEdit, string? mo2Profile)
+    {
         UpdateState(s => s with
         {
             LoadOrderPath = loadOrder,
             Mo2ExecutablePath = mo2,
+            Mo2Profile = mo2Profile,
             XEditExecutablePath = xEdit
         });
     }
@@ -173,22 +186,29 @@ public sealed class StateService : IStateService, IDisposable
 
     public void StartCleaning(List<PluginInfo> plugins)
     {
-        lock (_lock)
-        {
-            _currentSessionResults.Clear();
-            _cleaningStartTime = DateTime.Now;
-        }
-
         UpdateState(s => s with
         {
             IsCleaning = true,
             PluginsToClean = new List<PluginInfo>(plugins).AsReadOnly(),
             Progress = 0,
             TotalPlugins = plugins.Count,
+            BackupOperation = null,
             CleanedPlugins = Array.Empty<string>().ToFrozenSet(StringComparer.Ordinal),
             FailedPlugins = Array.Empty<string>().ToFrozenSet(StringComparer.Ordinal),
             SkippedPlugins = Array.Empty<string>().ToFrozenSet(StringComparer.Ordinal)
         });
+    }
+
+    /// <inheritdoc />
+    public void SetBackupOperation(BackupOperationState state)
+    {
+        UpdateState(s => s with { BackupOperation = state });
+    }
+
+    /// <inheritdoc />
+    public void ClearBackupOperation()
+    {
+        UpdateState(s => s with { BackupOperation = null });
     }
 
     public void FinishCleaning()
@@ -197,17 +217,13 @@ public sealed class StateService : IStateService, IDisposable
         {
             IsCleaning = false,
             CurrentPlugin = null,
-            CurrentOperation = null
+            CurrentOperation = null,
+            BackupOperation = null
         });
     }
 
     public void AddDetailedCleaningResult(PluginCleaningResult result)
     {
-        lock (_lock)
-        {
-            _currentSessionResults.Add(result);
-        }
-
         // Emit the detailed result for live per-plugin stat subscribers (e.g., ProgressViewModel)
         _detailedPluginResultSubject.OnNext(result);
 
@@ -226,7 +242,8 @@ public sealed class StateService : IStateService, IDisposable
         {
             IsCleaning = false,
             CurrentPlugin = null,
-            CurrentOperation = null
+            CurrentOperation = null,
+            BackupOperation = null
         });
 
         _cleaningCompletedSubject.OnNext(sessionResult);
@@ -252,6 +269,9 @@ public sealed class StateService : IStateService, IDisposable
                 case CleaningStatus.Skipped:
                     skipped.Add(plugin);
                     break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(status), status,
+                        "Unexpected cleaning status.");
             }
 
             return s with
@@ -296,19 +316,25 @@ public sealed class StateService : IStateService, IDisposable
             return true;
         }
 
-        if (byFileName.TryGetValue(plugin.FileName, out var fileNameMatch))
+        // Only fall back to file name when the plugin has no usable path
+        if (string.IsNullOrWhiteSpace(plugin.FullPath) &&
+            byFileName.TryGetValue(plugin.FileName, out var fileNameMatch))
         {
             approximation = fileNameMatch;
             return true;
         }
 
-        approximation = default!;
+        approximation = null!;
         return false;
     }
 
     private static bool IsApproximationMatch(PluginInfo plugin, PluginIssueApproximationResult approximation)
     {
-        return string.Equals(plugin.FullPath, approximation.FullPath, StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(plugin.FileName, approximation.FileName, StringComparison.OrdinalIgnoreCase);
+        // Prefer full path when both sides have one
+        if (!string.IsNullOrWhiteSpace(plugin.FullPath) && !string.IsNullOrWhiteSpace(approximation.FullPath))
+            return string.Equals(plugin.FullPath, approximation.FullPath, StringComparison.OrdinalIgnoreCase);
+
+        // Fall back to file name only when one side has no usable path
+        return string.Equals(plugin.FileName, approximation.FileName, StringComparison.OrdinalIgnoreCase);
     }
 }

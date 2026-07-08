@@ -5,6 +5,7 @@ using AutoQAC.Services.Configuration;
 using FluentAssertions;
 using NSubstitute;
 using System.Collections.Concurrent;
+using System.Reactive.Subjects;
 
 namespace AutoQAC.Tests.Services;
 
@@ -38,6 +39,21 @@ public sealed class ConfigurationServiceTests : IDisposable
         }
     }
 
+    /// <summary>
+    /// Creates a coordinator substitute with the observable streams required by the
+    /// configuration facade constructor.
+    /// </summary>
+    private static IConfigPersistenceCoordinator CreateCoordinatorSubstitute()
+    {
+        var coordinator = Substitute.For<IConfigPersistenceCoordinator>();
+        coordinator.Failures.Returns(new Subject<ConfigPersistenceFailure>());
+        coordinator.PersistenceResults.Returns(new Subject<ConfigPersistenceResult>());
+        coordinator.ConfigurationAccepted.Returns(new Subject<UserConfiguration>());
+        coordinator.StartAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        coordinator.StopAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        return coordinator;
+    }
+
     [Fact]
     public async Task LoadUserConfig_ShouldCreateDefault_WhenFileNotFound()
     {
@@ -48,11 +64,96 @@ public sealed class ConfigurationServiceTests : IDisposable
         // Act
         var config = await service.LoadUserConfigAsync();
         // Flush debounced save to disk so file exists for assertion
-        await service.FlushPendingSavesAsync();
+        var flushResult = await service.FlushPendingSavesAsync();
 
         // Assert
         config.Should().NotBeNull();
+        flushResult.Status.Should().Be(
+            ConfigPersistenceStatusKind.Success,
+            because: "D-05 forced flush returns typed success result");
         File.Exists(expectedPath).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task FlushPendingSavesAsync_NoPending_DrainsCoordinatorBarrier()
+    {
+        // Arrange
+        var coordinator = CreateCoordinatorSubstitute();
+        var barrierResult = new ConfigPersistenceResult(
+            ConfigPersistenceStatusKind.NoOp,
+            ConfigPersistenceOperationKind.Flush,
+            99,
+            null);
+
+        coordinator.FlushPendingSavesAsync(Arg.Any<CancellationToken>()).Returns(barrierResult);
+        using var service = new ConfigurationService(coordinator, Substitute.For<ILoggingService>(), _testDirectory);
+
+        // Act
+        var result = await service.FlushPendingSavesAsync();
+
+        // Assert
+        result.Should().BeSameAs(
+            barrierResult,
+            because: "D-05 forced flush is a coordinator queue barrier even when the facade has no pending app save");
+        result.Generation.Should().Be(99);
+        await coordinator.Received(1).FlushPendingSavesAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public void Failures_ExposesCoordinatorFailureStream()
+    {
+        // Arrange
+        var coordinator = Substitute.For<IConfigPersistenceCoordinator>();
+        var failures = new Subject<ConfigPersistenceFailure>();
+        var persistenceResults = new Subject<ConfigPersistenceResult>();
+        var acceptedConfigs = new Subject<UserConfiguration>();
+        var failure = new ConfigPersistenceFailure(
+            ConfigPersistenceOperationKind.Flush,
+            ConfigPersistenceFailureKind.WriteFailed,
+            "Could not write settings file (write_failed)",
+            null,
+            42);
+        coordinator.Failures.Returns(failures);
+        coordinator.PersistenceResults.Returns(persistenceResults);
+        coordinator.ConfigurationAccepted.Returns(acceptedConfigs);
+        coordinator.StartAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+
+        using var service = new ConfigurationService(coordinator, Substitute.For<ILoggingService>(), _testDirectory);
+        ConfigPersistenceFailure? observed = null;
+        using var subscription = service.Failures.Subscribe(value => observed = value);
+
+        // Act
+        failures.OnNext(failure);
+
+        // Assert
+        observed.Should().BeSameAs(
+            failure,
+            because: "D-24 exposes the coordinator's safe recoverable failure stream without transformation");
+    }
+
+    [Fact]
+    public void LastFailure_ReturnsCoordinatorSnapshot()
+    {
+        // Arrange
+        var coordinator = Substitute.For<IConfigPersistenceCoordinator>();
+        var failure = new ConfigPersistenceFailure(
+            ConfigPersistenceOperationKind.Reload,
+            ConfigPersistenceFailureKind.InvalidExternalYaml,
+            "Invalid settings YAML was rejected (invalid_external_yaml)",
+            null,
+            7);
+        coordinator.Failures.Returns(new Subject<ConfigPersistenceFailure>());
+        coordinator.PersistenceResults.Returns(new Subject<ConfigPersistenceResult>());
+        coordinator.ConfigurationAccepted.Returns(new Subject<UserConfiguration>());
+        coordinator.LastFailure.Returns(failure);
+        coordinator.StartAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+
+        using var service = new ConfigurationService(coordinator, Substitute.For<ILoggingService>(), _testDirectory);
+
+        // Act / Assert
+        service.LastFailure.Should().BeSameAs(
+            failure,
+            because: "D-27 requires the public configuration facade to expose the coordinator's current failure snapshot");
     }
 
     [Fact]
@@ -71,6 +172,101 @@ public sealed class ConfigurationServiceTests : IDisposable
         // Assert
         var loaded = await service.LoadUserConfigAsync();
         loaded.Settings.CleaningTimeout.Should().Be(999);
+    }
+
+    [Fact]
+    public async Task GetAllSettingsAsync_IncludesBackupSettings()
+    {
+        // Arrange
+        var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
+        var config = new UserConfiguration
+        {
+            Backup = new BackupSettings
+            {
+                Enabled = false,
+                MaxSessions = 17
+            }
+        };
+        await service.SaveUserConfigAsync(config);
+
+        // Act
+        var settings = await service.GetAllSettingsAsync();
+
+        // Assert
+        settings.Should().Contain("Backup.Enabled", false);
+        settings.Should().Contain("Backup.MaxSessions", 17);
+    }
+
+    /// <summary>
+    /// Verifies that a failed explicit reload does not discard the facade's pending-save marker.
+    /// </summary>
+    [Fact]
+    public async Task ReloadFromDiskAsync_FailedReload_DoesNotClearPendingSaveFlag()
+    {
+        // Arrange
+        var coordinator = CreateCoordinatorSubstitute();
+        var pendingConfig = new UserConfiguration
+        {
+            Settings = new AutoQacSettings { CleaningTimeout = 111 }
+        };
+        var failure = new ConfigPersistenceFailure(
+            ConfigPersistenceOperationKind.Reload,
+            ConfigPersistenceFailureKind.ReadFailed,
+            "Could not read settings file (read_failed)",
+            null,
+            0);
+
+        coordinator.ReloadFromDiskAsync(Arg.Any<CancellationToken>()).Returns(
+            new ConfigPersistenceResult(ConfigPersistenceStatusKind.Failed, ConfigPersistenceOperationKind.Reload, 0, failure));
+        coordinator.LoadCurrentAsync(Arg.Any<CancellationToken>()).Returns(pendingConfig);
+        coordinator.FlushPendingSavesAsync(Arg.Any<CancellationToken>()).Returns(
+            new ConfigPersistenceResult(ConfigPersistenceStatusKind.Success, ConfigPersistenceOperationKind.Flush, 1, null));
+
+        using var service = new ConfigurationService(coordinator, Substitute.For<ILoggingService>(), _testDirectory);
+        await service.SaveUserConfigAsync(pendingConfig);
+
+        // Act
+        await service.ReloadFromDiskAsync();
+        var loaded = await service.LoadUserConfigAsync();
+        await service.FlushPendingSavesAsync();
+
+        // Assert
+        loaded.Settings.CleaningTimeout.Should().Be(
+            111,
+            because: "failed reloads must leave pending facade state pointing at the unsaved user edit");
+        await coordinator.Received(1).FlushPendingSavesAsync(Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// Verifies that a successful explicit reload still leaves later forced flushes as coordinator barriers.
+    /// </summary>
+    [Fact]
+    public async Task ReloadFromDiskAsync_SuccessfulReload_DrainsSubsequentFlushBarrier()
+    {
+        // Arrange
+        var coordinator = CreateCoordinatorSubstitute();
+        var pendingConfig = new UserConfiguration
+        {
+            Settings = new AutoQacSettings { CleaningTimeout = 222 }
+        };
+
+        coordinator.ReloadFromDiskAsync(Arg.Any<CancellationToken>()).Returns(
+            new ConfigPersistenceResult(ConfigPersistenceStatusKind.Success, ConfigPersistenceOperationKind.Reload, 1, null));
+        coordinator.FlushPendingSavesAsync(Arg.Any<CancellationToken>()).Returns(
+            new ConfigPersistenceResult(ConfigPersistenceStatusKind.Success, ConfigPersistenceOperationKind.Flush, 2, null));
+
+        using var service = new ConfigurationService(coordinator, Substitute.For<ILoggingService>(), _testDirectory);
+        await service.SaveUserConfigAsync(pendingConfig);
+
+        // Act
+        await service.ReloadFromDiskAsync();
+        var result = await service.FlushPendingSavesAsync();
+
+        // Assert
+        result.Status.Should().Be(
+            ConfigPersistenceStatusKind.Success,
+            because: "forced flush remains a coordinator barrier after successful reloads clear pending facade work");
+        await coordinator.Received(1).FlushPendingSavesAsync(Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -194,7 +390,7 @@ AutoQAC_Data:
     /// malformed/corrupted YAML content.
     /// </summary>
     [Fact]
-    public async Task LoadUserConfigAsync_ShouldThrow_WhenYamlIsCorrupted()
+    public async Task LoadUserConfigAsync_ShouldKeepDefaultAndExposeFailure_WhenYamlIsCorrupted()
     {
         // Arrange
         var corruptedYaml = @"
@@ -210,12 +406,12 @@ Settings: [not: properly: closed
         var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
 
         // Act
-        Func<Task> act = () => service.LoadUserConfigAsync();
+        var config = await service.LoadUserConfigAsync();
 
         // Assert
-        // YamlDotNet should throw a YamlException (or derived) for malformed YAML
-        await act.Should().ThrowAsync<Exception>(
-            "corrupted YAML should cause an exception");
+        config.Should().NotBeNull("Phase 10 keeps a usable in-memory configuration when external YAML is invalid");
+        service.LastFailure.Should().NotBeNull("invalid external YAML is now surfaced through the typed recoverable failure path");
+        service.LastFailure!.Kind.Should().Be(ConfigPersistenceFailureKind.InvalidExternalYaml);
     }
 
     /// <summary>
@@ -609,7 +805,7 @@ AutoQAC_Data:
         reloaded.Settings.CleaningTimeout.Should().Be(123);
         logger.Received().Error(
             Arg.Any<Exception>(),
-            Arg.Is<string>(msg => msg.Contains("Save failed after")),
+            Arg.Is<string>(msg => msg.Contains("Could not write settings file")),
             Arg.Any<object[]>());
     }
 

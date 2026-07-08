@@ -1,269 +1,344 @@
 # Codebase Structure
 
-**Analysis Date:** 2026-04-28
+**Analysis Date:** 2026-04-29
 
 ## Directory Layout
 
 ```text
 AutoQACSharp/
-├── .claude/skills/          # Project-local OpenSpec agent skills
-├── .opencode/skills/        # Alternate runtime copies of OpenSpec skills
-├── .planning/               # GSD planning state and generated codebase maps
-├── AutoQAC/                 # Avalonia Windows desktop app
-├── AutoQAC.Tests/           # xUnit tests for the desktop app
-├── QueryPlugins/            # Mutagen-based plugin issue analysis library
-├── QueryPlugins.Tests/      # xUnit tests for QueryPlugins
-├── AutoQAC Data/            # Source YAML defaults copied/used by the app
-├── docs/                    # Reference docs, including curated Mutagen docs
-├── Mutagen/                 # Read-only Mutagen submodule/reference source
-├── openspec/                # OpenSpec changes and specs
-├── Release/                 # Release artifacts/scripts
-├── AutoQACSharp.slnx        # Solution containing app, library, and test projects
-├── AGENTS.md                # Repository guidance for coding agents
-└── README.md                # User/project documentation
+├── AutoQAC/                    # Avalonia Windows desktop app
+│   ├── App.axaml(.cs)          # Application bootstrap and DI composition
+│   ├── Program.cs              # Desktop process entry point
+│   ├── AutoQAC.csproj          # App project and package references
+│   ├── Assets/                 # Avalonia resources
+│   ├── AutoQAC Data/           # App-bundled default YAML data copied to output
+│   ├── Converters/             # Avalonia binding converters
+│   ├── Infrastructure/         # DI registration and logging infrastructure
+│   ├── Models/                 # Domain records/enums/config models
+│   ├── Services/               # Business, I/O, process, config, state, and UI services
+│   ├── ViewModels/             # MVVM ViewModels and main-window sub-ViewModels
+│   └── Views/                  # Avalonia windows and code-behind interaction handlers
+├── AutoQAC.Tests/              # xUnit tests for AutoQAC app code
+│   ├── Integration/            # Integration-flow tests
+│   ├── Models/                 # Model tests
+│   ├── Services/               # Service tests
+│   ├── TestInfrastructure/     # Shared test helpers
+│   ├── TestProcessHelper/      # Helper process project for process tests
+│   ├── ViewModels/             # ViewModel tests
+│   └── Views/                  # View lifecycle tests
+├── QueryPlugins/               # Standalone Mutagen-backed plugin analysis library
+│   ├── Detectors/              # Generic and game-specific issue detectors
+│   ├── Models/                 # Analysis result and issue models
+│   └── PluginQueryService.cs   # Library orchestration entry point
+├── QueryPlugins.Tests/         # xUnit tests for QueryPlugins
+├── AutoQAC Data/               # Root-level source YAML config/data files
+├── docs/                       # Project documentation and Mutagen lookup docs
+├── openspec/                   # OpenSpec change/spec workflow artifacts
+├── prompts/                    # Prompt/reference material
+├── Release/                    # Release artifacts or release support files
+├── Mutagen/                    # Read-only referenced submodule; do not scan/build/modify
+├── .planning/                  # GSD planning and codebase map documents
+├── .claude/skills/             # Project-local OpenSpec skills
+├── AutoQACSharp.slnx           # Solution containing app, tests, and QueryPlugins projects
+├── AGENTS.md                   # Agent guidance for this repository
+├── README.md                   # User/developer overview
+└── ROADMAP.md                  # Project roadmap
 ```
 
 ## Directory Purposes
 
 **`AutoQAC/`:**
-- Purpose: Windows-only Avalonia desktop application for safe xEdit Quick Auto Clean automation.
-- Contains: App bootstrap, AXAML views, ViewModels, services, models, converters, assets, and app-local data.
-- Key files: `AutoQAC/AutoQAC.csproj`, `AutoQAC/Program.cs`, `AutoQAC/App.axaml.cs`, `AutoQAC/App.axaml`
+- Purpose: Main Avalonia desktop application for safely running xEdit Quick Auto Clean.
+- Contains: App entry point, Avalonia resources, domain models, services, ViewModels, Views, and application project file.
+- Key files: `AutoQAC/Program.cs`, `AutoQAC/App.axaml.cs`, `AutoQAC/AutoQAC.csproj`, `AutoQAC/ViewLocator.cs`.
 
 **`AutoQAC/Infrastructure/`:**
-- Purpose: DI wiring and infrastructure services.
-- Contains: Service registration extensions and logging adapter classes.
-- Key files: `AutoQAC/Infrastructure/ServiceCollectionExtensions.cs`, `AutoQAC/Infrastructure/Logging/LoggingService.cs`, `AutoQAC/Infrastructure/Logging/ILoggingService.cs`, `AutoQAC/Infrastructure/Logging/LogFilePaths.cs`
+- Purpose: Cross-cutting application infrastructure.
+- Contains: DI registration and logging abstractions/implementation.
+- Key files: `AutoQAC/Infrastructure/ServiceCollectionExtensions.cs`, `AutoQAC/Infrastructure/Logging/LoggingService.cs`, `AutoQAC/Infrastructure/Logging/ILoggingService.cs`.
 
 **`AutoQAC/Services/`:**
-- Purpose: Main business logic and platform integration services.
-- Contains: Feature-area subdirectories for backup, cleaning, configuration, game detection, MO2, monitoring, plugin handling, process handling, state, and UI services.
-- Key files: `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs`, `AutoQAC/Services/Process/ProcessExecutionService.cs`, `AutoQAC/Services/Configuration/ConfigurationService.cs`, `AutoQAC/Services/State/StateService.cs`
+- Purpose: Business and platform service layer.
+- Contains: Service families grouped by responsibility: `Backup`, `Cleaning`, `Configuration`, `GameDetection`, `MO2`, `Monitoring`, `Plugin`, `Process`, `State`, and `UI`.
+- Key files: `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs`, `AutoQAC/Services/Process/ProcessExecutionService.cs`, `AutoQAC/Services/State/StateService.cs`, `AutoQAC/Services/Configuration/ConfigurationService.cs`.
 
 **`AutoQAC/Services/Backup/`:**
-- Purpose: Plugin backup, restore, session metadata, and backup retention.
-- Contains: Backup service interface/implementation.
-- Key files: `AutoQAC/Services/Backup/IBackupService.cs`, `AutoQAC/Services/Backup/BackupService.cs`
+- Purpose: Plugin backup, session metadata, backup retention, deletion, and path containment.
+- Contains: `BackupService`, file copier, session deleter, options, containment helpers, and interfaces.
+- Key files: `AutoQAC/Services/Backup/BackupService.cs`, `AutoQAC/Services/Backup/BackupFileCopier.cs`, `AutoQAC/Services/Backup/BackupPathContainment.cs`.
 
 **`AutoQAC/Services/Cleaning/`:**
-- Purpose: Cleaning workflow orchestration, xEdit command building, log file reading, output parsing, and cleaning service facade.
-- Contains: `ICleaningOrchestrator`, `CleaningOrchestrator`, `ICleaningService`, `CleaningService`, xEdit command/log helpers.
-- Key files: `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs`, `AutoQAC/Services/Cleaning/CleaningService.cs`, `AutoQAC/Services/Cleaning/XEditCommandBuilder.cs`, `AutoQAC/Services/Cleaning/XEditLogFileService.cs`, `AutoQAC/Services/Cleaning/XEditOutputParser.cs`
+- Purpose: End-to-end cleaning orchestration, single-plugin cleaning, xEdit command building, log reading, and output parsing.
+- Contains: Orchestrator/service interfaces, `CleaningOrchestrator`, `CleaningService`, `XEditCommandBuilder`, `XEditLogFileService`, `XEditOutputParser`, and stop-result types.
+- Key files: `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs`, `AutoQAC/Services/Cleaning/CleaningService.cs`, `AutoQAC/Services/Cleaning/XEditCommandBuilder.cs`.
 
 **`AutoQAC/Services/Configuration/`:**
-- Purpose: YAML configuration loading/saving, config file watching, legacy migration, and log retention.
-- Contains: Config service interfaces and implementations.
-- Key files: `AutoQAC/Services/Configuration/ConfigurationService.cs`, `AutoQAC/Services/Configuration/ConfigWatcherService.cs`, `AutoQAC/Services/Configuration/LegacyMigrationService.cs`, `AutoQAC/Services/Configuration/LogRetentionService.cs`
+- Purpose: YAML config persistence, config watching, legacy migration, and log retention.
+- Contains: `ConfigurationService`, `ConfigWatcherService`, `LegacyMigrationService`, `LogRetentionService`, and interfaces.
+- Key files: `AutoQAC/Services/Configuration/ConfigurationService.cs`, `AutoQAC/Services/Configuration/ConfigWatcherService.cs`, `AutoQAC/Services/Configuration/LegacyMigrationService.cs`.
 
 **`AutoQAC/Services/GameDetection/`:**
-- Purpose: Detect base games and game variants from xEdit executable names or load-order master files.
-- Contains: Game detection service interface/implementation.
-- Key files: `AutoQAC/Services/GameDetection/IGameDetectionService.cs`, `AutoQAC/Services/GameDetection/GameDetectionService.cs`
+- Purpose: Detect game type from xEdit executable/load-order files and detect variants like TTW and Enderal.
+- Contains: `GameDetectionService` and `IGameDetectionService`.
+- Key files: `AutoQAC/Services/GameDetection/GameDetectionService.cs`.
 
 **`AutoQAC/Services/MO2/`:**
-- Purpose: Validate Mod Organizer 2 configuration and support MO2 execution mode.
-- Contains: MO2 validation service interface/implementation.
-- Key files: `AutoQAC/Services/MO2/IMO2ValidationService.cs`, `AutoQAC/Services/MO2/MO2ValidationService.cs`
+- Purpose: Validate Mod Organizer 2 configuration and executable paths.
+- Contains: `MO2ValidationService` and `IMO2ValidationService`.
+- Key files: `AutoQAC/Services/MO2/MO2ValidationService.cs`.
 
 **`AutoQAC/Services/Monitoring/`:**
 - Purpose: Monitor xEdit processes for CPU-based hangs.
-- Contains: Hang detection service interface/implementation.
-- Key files: `AutoQAC/Services/Monitoring/IHangDetectionService.cs`, `AutoQAC/Services/Monitoring/HangDetectionService.cs`
+- Contains: `HangDetectionService` and `IHangDetectionService`.
+- Key files: `AutoQAC/Services/Monitoring/HangDetectionService.cs`.
 
 **`AutoQAC/Services/Plugin/`:**
-- Purpose: Load plugin lists, validate plugin files, and approximate plugin issues through Mutagen/QueryPlugins.
-- Contains: Plugin loading, validation, and issue approximation services.
-- Key files: `AutoQAC/Services/Plugin/PluginLoadingService.cs`, `AutoQAC/Services/Plugin/PluginValidationService.cs`, `AutoQAC/Services/Plugin/PluginIssueApproximationService.cs`
+- Purpose: Plugin validation, load-order loading, Mutagen-backed discovery, refresh coordination, and issue approximation.
+- Contains: `PluginLoadingService`, `PluginValidationService`, `PluginIssueApproximationService`, `PluginRefreshCoordinator`, refresh capability policy, and interfaces.
+- Key files: `AutoQAC/Services/Plugin/PluginLoadingService.cs`, `AutoQAC/Services/Plugin/PluginValidationService.cs`, `AutoQAC/Services/Plugin/PluginRefreshCoordinator.cs`.
 
 **`AutoQAC/Services/Process/`:**
-- Purpose: Launch, track, cancel, gracefully terminate, force-kill, and clean up xEdit processes.
-- Contains: Process execution interface/implementation.
-- Key files: `AutoQAC/Services/Process/IProcessExecutionService.cs`, `AutoQAC/Services/Process/ProcessExecutionService.cs`
+- Purpose: xEdit/MO2 process execution, PID persistence, process-session IDs, single-instance guard, orphan cleanup, and termination.
+- Contains: Process execution service, PID store abstractions, session ID provider, default PID path provider, and single-instance guard.
+- Key files: `AutoQAC/Services/Process/ProcessExecutionService.cs`, `AutoQAC/Services/Process/JsonPidStore.cs`, `AutoQAC/Services/Process/SingleInstanceGuard.cs`.
 
 **`AutoQAC/Services/State/`:**
-- Purpose: Shared runtime state hub and observable event streams.
-- Contains: State service interface/implementation.
-- Key files: `AutoQAC/Services/State/IStateService.cs`, `AutoQAC/Services/State/StateService.cs`
+- Purpose: Central runtime state and event streams.
+- Contains: `StateService` and `IStateService`.
+- Key files: `AutoQAC/Services/State/StateService.cs`, `AutoQAC/Services/State/IStateService.cs`, `AutoQAC/Models/AppState.cs`.
 
 **`AutoQAC/Services/UI/`:**
-- Purpose: UI-thread dispatching, file/message dialog abstractions, callback observers, and interaction primitives.
-- Contains: Dispatcher and dialog services plus interaction infrastructure.
-- Key files: `AutoQAC/Services/UI/IUiDispatcher.cs`, `AutoQAC/Services/UI/AvaloniaUiDispatcher.cs`, `AutoQAC/Services/UI/FileDialogService.cs`, `AutoQAC/Services/UI/MessageDialogService.cs`, `AutoQAC/Services/UI/Interactions/Interaction.cs`
-
-**`AutoQAC/ViewModels/`:**
-- Purpose: MVVM state and command surface for Avalonia bindings.
-- Contains: Main window composition ViewModel, dialog/window ViewModels, and base class.
-- Key files: `AutoQAC/ViewModels/MainWindowViewModel.cs`, `AutoQAC/ViewModels/ViewModelBase.cs`, `AutoQAC/ViewModels/ProgressViewModel.cs`, `AutoQAC/ViewModels/SettingsViewModel.cs`, `AutoQAC/ViewModels/RestoreViewModel.cs`
-
-**`AutoQAC/ViewModels/MainWindow/`:**
-- Purpose: Split main window responsibilities into focused sub-ViewModels.
-- Contains: Configuration, plugin list, command orchestration, and plugin row wrapper ViewModels.
-- Key files: `AutoQAC/ViewModels/MainWindow/ConfigurationViewModel.cs`, `AutoQAC/ViewModels/MainWindow/PluginListViewModel.cs`, `AutoQAC/ViewModels/MainWindow/CleaningCommandsViewModel.cs`, `AutoQAC/ViewModels/MainWindow/PluginListItem.cs`
-
-**`AutoQAC/Views/`:**
-- Purpose: Avalonia windows and dialogs.
-- Contains: `.axaml` layout files and `.axaml.cs` code-behind files.
-- Key files: `AutoQAC/Views/MainWindow.axaml`, `AutoQAC/Views/MainWindow.axaml.cs`, `AutoQAC/Views/ProgressWindow.axaml`, `AutoQAC/Views/SettingsWindow.axaml`, `AutoQAC/Views/RestoreWindow.axaml`
+- Purpose: UI abstractions for dispatching, dialogs, file pickers, interactions, and observable callback helpers.
+- Contains: `AvaloniaUiDispatcher`, `FileDialogService`, `MessageDialogService`, interaction types, and `CallbackObserver`.
+- Key files: `AutoQAC/Services/UI/IUiDispatcher.cs`, `AutoQAC/Services/UI/AvaloniaUiDispatcher.cs`, `AutoQAC/Services/UI/Interactions/Interaction.cs`.
 
 **`AutoQAC/Models/`:**
-- Purpose: Domain/result/configuration models shared across services and ViewModels.
-- Contains: Records/enums/classes for state, plugins, cleaning results, backups, validation, game types, and configuration models.
-- Key files: `AutoQAC/Models/AppState.cs`, `AutoQAC/Models/PluginInfo.cs`, `AutoQAC/Models/CleaningSessionResult.cs`, `AutoQAC/Models/GameType.cs`, `AutoQAC/Models/Configuration/UserConfiguration.cs`
+- Purpose: Domain types shared between services, ViewModels, and tests.
+- Contains: State, plugin, cleaning, backup, game, validation, process, and configuration models.
+- Key files: `AutoQAC/Models/AppState.cs`, `AutoQAC/Models/PluginInfo.cs`, `AutoQAC/Models/CleaningSessionResult.cs`, `AutoQAC/Models/Configuration/UserConfiguration.cs`.
+
+**`AutoQAC/ViewModels/`:**
+- Purpose: Bindable MVVM state and commands.
+- Contains: Main-window orchestrator ViewModel, child ViewModels, dialog ViewModels, progress/results ViewModels, and base ViewModel.
+- Key files: `AutoQAC/ViewModels/MainWindowViewModel.cs`, `AutoQAC/ViewModels/MainWindow/ConfigurationViewModel.cs`, `AutoQAC/ViewModels/MainWindow/PluginListViewModel.cs`, `AutoQAC/ViewModels/MainWindow/CleaningCommandsViewModel.cs`.
+
+**`AutoQAC/ViewModels/MainWindow/`:**
+- Purpose: Keep the main window ViewModel split by feature area.
+- Contains: `ConfigurationViewModel`, `PluginListViewModel`, `CleaningCommandsViewModel`, and plugin list row model.
+- Key files: `AutoQAC/ViewModels/MainWindow/ConfigurationViewModel.cs`, `AutoQAC/ViewModels/MainWindow/PluginListViewModel.cs`, `AutoQAC/ViewModels/MainWindow/CleaningCommandsViewModel.cs`, `AutoQAC/ViewModels/MainWindow/PluginListItem.cs`.
+
+**`AutoQAC/Views/`:**
+- Purpose: Avalonia windows and their code-behind interaction handlers.
+- Contains: Main, progress, settings, skip list, restore, results, about, message, and warning dialogs.
+- Key files: `AutoQAC/Views/MainWindow.axaml`, `AutoQAC/Views/MainWindow.axaml.cs`, `AutoQAC/Views/ProgressWindow.axaml`, `AutoQAC/Views/SettingsWindow.axaml`.
+
+**`AutoQAC/Converters/`:**
+- Purpose: Avalonia binding converters.
+- Contains: converter classes used by `.axaml` views.
+- Key files: `AutoQAC/Converters/`.
 
 **`QueryPlugins/`:**
-- Purpose: Standalone plugin issue detector library.
-- Contains: Service facade, detector interfaces/implementations, game-specific detector strategies, and library result models.
-- Key files: `QueryPlugins/QueryPlugins.csproj`, `QueryPlugins/IPluginQueryService.cs`, `QueryPlugins/PluginQueryService.cs`, `QueryPlugins/Detectors/ItmDetector.cs`, `QueryPlugins/Detectors/Games/SkyrimDetector.cs`
+- Purpose: Standalone plugin issue analysis library.
+- Contains: service entry point, detector interfaces, generic ITM detector, game-specific detectors, and result models.
+- Key files: `QueryPlugins/PluginQueryService.cs`, `QueryPlugins/IPluginQueryService.cs`, `QueryPlugins/Detectors/ItmDetector.cs`.
+
+**`QueryPlugins/Detectors/Games/`:**
+- Purpose: Game-specific deleted reference/navmesh detection.
+- Contains: `SkyrimDetector`, `Fallout4Detector`, `StarfieldDetector`, and `OblivionDetector`.
+- Key files: `QueryPlugins/Detectors/Games/SkyrimDetector.cs`, `QueryPlugins/Detectors/Games/Fallout4Detector.cs`.
 
 **`AutoQAC.Tests/`:**
-- Purpose: App test project.
-- Contains: `Services`, `ViewModels`, `Models`, `Integration`, `Views`, and `TestInfrastructure` test areas.
-- Key files: `AutoQAC.Tests/AutoQAC.Tests.csproj`, `AutoQAC.Tests/Services/CleaningOrchestratorTests.cs`, `AutoQAC.Tests/ViewModels/MainWindowViewModelTests.cs`, `AutoQAC.Tests/Integration/DependencyInjectionTests.cs`
+- Purpose: Test coverage for the desktop app.
+- Contains: model, service, ViewModel, view lifecycle, integration, and process-helper tests.
+- Key files: `AutoQAC.Tests/AutoQAC.Tests.csproj`, `AutoQAC.Tests/TestInfrastructure/`, `AutoQAC.Tests/TestProcessHelper/AutoQAC.TestProcessHelper.csproj`.
 
 **`QueryPlugins.Tests/`:**
-- Purpose: Library test project for detector behavior and analysis models.
-- Contains: Detector tests and model tests.
-- Key files: `QueryPlugins.Tests/QueryPlugins.Tests.csproj`, `QueryPlugins.Tests/Detectors/ItmDetectorTests.cs`, `QueryPlugins.Tests/Detectors/Games/Fallout4DetectorTests.cs`
+- Purpose: Test coverage for the QueryPlugins library.
+- Contains: detector and model tests.
+- Key files: `QueryPlugins.Tests/QueryPlugins.Tests.csproj`, `QueryPlugins.Tests/Detectors/`, `QueryPlugins.Tests/Models/`.
+
+**`AutoQAC Data/`:**
+- Purpose: Source YAML configuration/data used by the app.
+- Contains: main and user settings YAML files.
+- Key files: `AutoQAC Data/AutoQAC Main.yaml`, `AutoQAC Data/AutoQAC Settings.yaml`.
+
+**`docs/`:**
+- Purpose: Developer/user documentation and local reference material.
+- Contains: project docs and Mutagen lookup docs.
+- Key files: `docs/mutagen/`.
+
+**`openspec/`:**
+- Purpose: OpenSpec capability specs and active/archived change artifacts.
+- Contains: spec/change workflow files used by project-local OpenSpec skills.
+- Key files: `openspec/`.
+
+**`Mutagen/`:**
+- Purpose: Referenced upstream submodule for Mutagen source reference only.
+- Contains: external repository content.
+- Key files: `.gitmodules` declares `Mutagen/`; do not scan, build, modify, or add files under this directory.
 
 ## Key File Locations
 
 **Entry Points:**
-- `AutoQAC/Program.cs`: Desktop process entry point and Avalonia builder.
-- `AutoQAC/App.axaml.cs`: DI/bootstrap entry point after Avalonia initialization.
-- `QueryPlugins/PluginQueryService.cs`: Library facade for plugin issue analysis.
+- `AutoQAC/Program.cs`: Process entry point and Avalonia builder.
+- `AutoQAC/App.axaml.cs`: Application startup composition, main window creation, startup tasks, and shutdown cleanup.
+- `QueryPlugins/PluginQueryService.cs`: Public analysis entry point for QueryPlugins consumers.
 
 **Configuration:**
-- `AutoQACSharp.slnx`: Solution project list.
-- `AutoQAC/AutoQAC.csproj`: Avalonia app target/framework/resources/packages/project reference.
-- `QueryPlugins/QueryPlugins.csproj`: Standalone detector library target/framework/packages.
-- `AutoQAC.Tests/AutoQAC.Tests.csproj`: App test dependencies and coverlet setup.
-- `QueryPlugins.Tests/QueryPlugins.Tests.csproj`: Library test dependencies and coverlet setup.
-- `AutoQAC Data/AutoQAC Main.yaml`: Bundled main/default configuration source.
-- `AutoQAC Data/AutoQAC Settings.yaml`: User settings seed/source file.
-- `AutoQAC/AutoQAC Data/`: App project data copied to output by `AutoQAC/AutoQAC.csproj`.
+- `AutoQACSharp.slnx`: Solution containing `AutoQAC`, `AutoQAC.Tests`, `QueryPlugins`, `QueryPlugins.Tests`, and test helper project.
+- `AutoQAC/AutoQAC.csproj`: Desktop app target framework, package references, resources, and project reference to QueryPlugins.
+- `QueryPlugins/QueryPlugins.csproj`: Library target framework and Mutagen package references.
+- `AutoQAC.Tests/AutoQAC.Tests.csproj`: App test project, coverage collection, and app/library references.
+- `QueryPlugins.Tests/QueryPlugins.Tests.csproj`: QueryPlugins test project and coverage collection.
+- `AutoQAC Data/AutoQAC Main.yaml`: Root source main configuration.
+- `AutoQAC Data/AutoQAC Settings.yaml`: Root source user settings.
+- `AutoQAC/AutoQAC Data/`: App project data folder copied to output by `AutoQAC/AutoQAC.csproj`.
+- `.gitmodules`: Declares `Mutagen/` as a submodule.
 
 **Core Logic:**
-- `AutoQAC/Infrastructure/ServiceCollectionExtensions.cs`: DI registration for every app layer.
-- `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs`: Primary workflow coordinator.
-- `AutoQAC/Services/Process/ProcessExecutionService.cs`: Process execution/termination and PID tracking.
-- `AutoQAC/Services/Configuration/ConfigurationService.cs`: YAML persistence and skip-list access.
-- `AutoQAC/Services/Plugin/PluginLoadingService.cs`: Game-specific plugin discovery.
-- `AutoQAC/Services/Plugin/PluginIssueApproximationService.cs`: Mutagen/QueryPlugins bridge.
-- `AutoQAC/Services/State/StateService.cs`: Runtime state/event hub.
-- `QueryPlugins/Detectors/`: Plugin analysis detector implementations.
+- `AutoQAC/Infrastructure/ServiceCollectionExtensions.cs`: Service registration and lifetimes.
+- `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs`: Full cleaning session orchestration.
+- `AutoQAC/Services/Cleaning/CleaningService.cs`: Single-plugin cleaning.
+- `AutoQAC/Services/Cleaning/XEditCommandBuilder.cs`: xEdit and MO2 command construction.
+- `AutoQAC/Services/Process/ProcessExecutionService.cs`: Process launch, timeout, PID tracking, and termination.
+- `AutoQAC/Services/Configuration/ConfigurationService.cs`: YAML config load/save and debounced persistence.
+- `AutoQAC/Services/Plugin/PluginLoadingService.cs`: Mutagen/file-based plugin loading.
+- `AutoQAC/Services/State/StateService.cs`: Runtime state hub.
+- `AutoQAC/Services/GameDetection/GameDetectionService.cs`: Game and variant detection.
+- `QueryPlugins/PluginQueryService.cs`: Issue detector orchestration.
 
-**UI:**
-- `AutoQAC/Views/MainWindow.axaml`: Main window layout.
+**UI Logic:**
+- `AutoQAC/ViewModels/MainWindowViewModel.cs`: Main window ViewModel composition and interactions.
+- `AutoQAC/ViewModels/MainWindow/ConfigurationViewModel.cs`: Configuration/game/plugin refresh UI state.
+- `AutoQAC/ViewModels/MainWindow/PluginListViewModel.cs`: Plugin list selection state.
+- `AutoQAC/ViewModels/MainWindow/CleaningCommandsViewModel.cs`: Start/preview/stop commands and validation messages.
 - `AutoQAC/Views/MainWindow.axaml.cs`: Dialog/window interaction handlers.
-- `AutoQAC/ViewModels/MainWindowViewModel.cs`: Main ViewModel composition root.
-- `AutoQAC/ViewModels/MainWindow/`: Main window sub-ViewModels.
-- `AutoQAC/Services/UI/Interactions/Interaction.cs`: ViewModel-to-View interaction primitive.
+- `AutoQAC/Views/MainWindow.axaml`: Main window layout.
+
+**Models:**
+- `AutoQAC/Models/AppState.cs`: Runtime state snapshot and backup-operation state.
+- `AutoQAC/Models/PluginInfo.cs`: Plugin metadata used by loading, UI, and cleaning.
+- `AutoQAC/Models/CleaningSessionResult.cs`: Session summary model.
+- `AutoQAC/Models/PluginCleaningResult.cs`: Per-plugin result model.
+- `AutoQAC/Models/Configuration/UserConfiguration.cs`: User settings model.
+- `QueryPlugins/Models/PluginAnalysisResult.cs`: QueryPlugins analysis result.
+- `QueryPlugins/Models/PluginIssue.cs`: QueryPlugins issue model.
 
 **Testing:**
-- `AutoQAC.Tests/Services/`: Service tests matching app service names.
-- `AutoQAC.Tests/ViewModels/`: ViewModel tests.
-- `AutoQAC.Tests/Integration/`: DI and cross-service integration tests.
-- `AutoQAC.Tests/TestInfrastructure/SynchronousUiDispatcher.cs`: UI-dispatch test helper.
-- `QueryPlugins.Tests/Detectors/`: Detector tests matching `QueryPlugins/Detectors/`.
+- `AutoQAC.Tests/`: App test root.
+- `AutoQAC.Tests/TestInfrastructure/`: Shared testing helpers and fakes.
+- `AutoQAC.Tests/TestProcessHelper/`: Helper executable/library used by process tests.
+- `QueryPlugins.Tests/`: QueryPlugins test root.
 
 ## Naming Conventions
 
 **Files:**
-- Interface/implementation pairs use `I{Name}.cs` and `{Name}.cs`: `AutoQAC/Services/Cleaning/ICleaningService.cs` with `AutoQAC/Services/Cleaning/CleaningService.cs`.
-- Avalonia views use `{WindowName}.axaml` plus `{WindowName}.axaml.cs`: `AutoQAC/Views/SettingsWindow.axaml` and `AutoQAC/Views/SettingsWindow.axaml.cs`.
-- ViewModels end in `ViewModel.cs`: `AutoQAC/ViewModels/ProgressViewModel.cs`.
-- Tests end in `Tests.cs`: `AutoQAC.Tests/Services/ConfigurationServiceTests.cs`.
-- Models use descriptive singular names: `AutoQAC/Models/PluginInfo.cs`, `AutoQAC/Models/CleaningResult.cs`.
+- Service implementations use `[Name]Service.cs`: `AutoQAC/Services/Configuration/ConfigurationService.cs`, `AutoQAC/Services/Plugin/PluginLoadingService.cs`.
+- Service interfaces use `I[Name]Service.cs`: `AutoQAC/Services/Configuration/IConfigurationService.cs`, `AutoQAC/Services/State/IStateService.cs`.
+- ViewModels use `[WindowOrFeature]ViewModel.cs`: `AutoQAC/ViewModels/SettingsViewModel.cs`, `AutoQAC/ViewModels/MainWindow/PluginListViewModel.cs`.
+- Avalonia views use `[WindowOrDialog].axaml` with optional `[WindowOrDialog].axaml.cs`: `AutoQAC/Views/ProgressWindow.axaml`, `AutoQAC/Views/ProgressWindow.axaml.cs`.
+- Models use domain nouns: `AutoQAC/Models/PluginInfo.cs`, `AutoQAC/Models/DryRunResult.cs`, `AutoQAC/Models/TerminationResult.cs`.
+- Tests mirror the production area under `AutoQAC.Tests/Services/`, `AutoQAC.Tests/ViewModels/`, `AutoQAC.Tests/Models/`, and `QueryPlugins.Tests/Detectors/`.
 
 **Directories:**
-- Service directories group by feature responsibility: `AutoQAC/Services/Cleaning`, `AutoQAC/Services/Plugin`, `AutoQAC/Services/Configuration`.
-- Test directories mirror source responsibilities: `AutoQAC.Tests/Services`, `AutoQAC.Tests/ViewModels`, `QueryPlugins.Tests/Detectors`.
-- QueryPlugins game strategies live under `QueryPlugins/Detectors/Games`.
+- Service directories are PascalCase responsibility areas under `AutoQAC/Services/`: `Cleaning`, `Process`, `Configuration`, `Plugin`.
+- ViewModel feature splits live under `AutoQAC/ViewModels/MainWindow/` when they are part of the main window.
+- QueryPlugins detector implementations are separated into generic detectors at `QueryPlugins/Detectors/` and game-specific detectors at `QueryPlugins/Detectors/Games/`.
+- Build artifacts (`bin/`, `obj/`, `TestResults/`) are generated and should not receive source files.
 
 ## Where to Add New Code
 
-**New App Service:**
-- Primary code: add interface and implementation under the matching feature folder in `AutoQAC/Services/<Feature>/`.
-- DI registration: add the service in `AutoQAC/Infrastructure/ServiceCollectionExtensions.cs`.
-- Tests: add matching tests under `AutoQAC.Tests/Services/` or a feature-specific test subfolder if one exists.
+**New UI command on the main window:**
+- Primary code: add command state/logic to the relevant child ViewModel in `AutoQAC/ViewModels/MainWindow/`.
+- Dialog/window handling: add an interaction to `AutoQAC/ViewModels/MainWindowViewModel.cs` and implement it in `AutoQAC/Views/MainWindow.axaml.cs`.
+- Markup: update `AutoQAC/Views/MainWindow.axaml`.
+- Tests: add ViewModel tests under `AutoQAC.Tests/ViewModels/` and view lifecycle tests under `AutoQAC.Tests/Views/` if interaction disposal/lifetime changes.
 
-**New Cleaning Workflow Behavior:**
-- Primary code: add orchestration steps to `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs` when it affects session flow.
-- Process launch behavior: add to `AutoQAC/Services/Cleaning/XEditCommandBuilder.cs` or `AutoQAC/Services/Process/ProcessExecutionService.cs` based on responsibility.
-- Tests: add/update `AutoQAC.Tests/Services/CleaningOrchestratorTests.cs`, `AutoQAC.Tests/Services/CleaningServiceTests.cs`, `AutoQAC.Tests/Services/ProcessExecutionServiceTests.cs`, or `AutoQAC.Tests/Services/XEditCommandBuilderTests.cs`.
+**New application service:**
+- Interface: place `I[Name]Service.cs` in the matching `AutoQAC/Services/<Area>/` directory.
+- Implementation: place `[Name]Service.cs` in the same directory.
+- Registration: add it to `AutoQAC/Infrastructure/ServiceCollectionExtensions.cs` in the appropriate `Add*` method.
+- Tests: add tests under `AutoQAC.Tests/Services/<Area>/`.
 
-**New Main Window UI Feature:**
-- ViewModel state/commands: add to the focused sub-ViewModel in `AutoQAC/ViewModels/MainWindow/` or create a new sub-ViewModel there.
-- View layout: update `AutoQAC/Views/MainWindow.axaml`.
-- Dialog/window ownership: add interaction handling to `AutoQAC/Views/MainWindow.axaml.cs`, not directly to the ViewModel.
-- Tests: add/update tests under `AutoQAC.Tests/ViewModels/` and view lifecycle tests under `AutoQAC.Tests/Views/` if subscriptions/disposal are involved.
+**New cleaning workflow behavior:**
+- Session policy: update `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs`.
+- Single-plugin process behavior: update `AutoQAC/Services/Cleaning/CleaningService.cs` or `AutoQAC/Services/Cleaning/XEditCommandBuilder.cs`.
+- Process lifecycle/termination behavior: update `AutoQAC/Services/Process/ProcessExecutionService.cs`.
+- Tests: add focused tests under `AutoQAC.Tests/Services/Cleaning/` or `AutoQAC.Tests/Services/Process/`.
 
-**New Dialog/Window:**
-- View: add `AutoQAC/Views/<Name>Window.axaml` and `AutoQAC/Views/<Name>Window.axaml.cs`.
-- ViewModel: add `AutoQAC/ViewModels/<Name>ViewModel.cs`.
-- DI: register transient ViewModel/View in `AutoQAC/Infrastructure/ServiceCollectionExtensions.cs` when constructed through DI.
-- Interaction: expose an `Interaction` from `AutoQAC/ViewModels/MainWindowViewModel.cs` or an appropriate parent ViewModel.
+**New runtime state:**
+- Model: add immutable property to `AutoQAC/Models/AppState.cs` or a focused model in `AutoQAC/Models/`.
+- Mutation: add helper methods to `AutoQAC/Services/State/IStateService.cs` and `AutoQAC/Services/State/StateService.cs` when many callers need the update.
+- UI consumption: dispatch state changes in `AutoQAC/ViewModels/MainWindowViewModel.cs` and apply state in the relevant child ViewModel.
+- Tests: add state and ViewModel tests under `AutoQAC.Tests/Services/State/` and `AutoQAC.Tests/ViewModels/`.
 
-**New Plugin Analysis Capability:**
-- Library code: add detector/model code under `QueryPlugins/Detectors/` or `QueryPlugins/Models/`.
-- Game-specific code: add strategy code under `QueryPlugins/Detectors/Games/` and register it in `QueryPlugins/PluginQueryService.cs`.
-- App bridge: update `AutoQAC/Services/Plugin/PluginIssueApproximationService.cs` only when the desktop app needs to expose the new analysis.
-- Tests: add detector tests under `QueryPlugins.Tests/Detectors/` and app bridge tests under `AutoQAC.Tests/Services/` if state merging/UI display changes.
+**New configuration setting:**
+- Model: update `AutoQAC/Models/Configuration/UserConfiguration.cs` or related config models in `AutoQAC/Models/Configuration/`.
+- Persistence/defaults: update `AutoQAC/Services/Configuration/ConfigurationService.cs` and YAML defaults in `AutoQAC Data/` and `AutoQAC/AutoQAC Data/` when applicable.
+- UI: update `AutoQAC/ViewModels/SettingsViewModel.cs`, `AutoQAC/Views/SettingsWindow.axaml`, or `AutoQAC/ViewModels/MainWindow/ConfigurationViewModel.cs` depending on where the setting is edited.
+- Tests: add config persistence and ViewModel tests under `AutoQAC.Tests/Services/Configuration/` and `AutoQAC.Tests/ViewModels/`.
 
-**New Domain Model:**
-- App model: add under `AutoQAC/Models/` or `AutoQAC/Models/Configuration/` for config-specific types.
-- Library model: add under `QueryPlugins/Models/` for analysis-only types.
-- Tests: add matching model tests under `AutoQAC.Tests/Models/` or `QueryPlugins.Tests/Models/`.
+**New plugin loading behavior:**
+- Mutagen-supported loading: update `AutoQAC/Services/Plugin/PluginLoadingService.cs` and add any required Mutagen package references to `AutoQAC/AutoQAC.csproj`.
+- File-based validation/loading: update `AutoQAC/Services/Plugin/PluginValidationService.cs`.
+- Game mapping/detection: update `AutoQAC/Models/GameType.cs` and `AutoQAC/Services/GameDetection/GameDetectionService.cs`.
+- Tests: add tests under `AutoQAC.Tests/Services/Plugin/` and `AutoQAC.Tests/Services/GameDetection/`.
+
+**New QueryPlugins detector:**
+- Interface/implementation: add the detector under `QueryPlugins/Detectors/` or `QueryPlugins/Detectors/Games/`.
+- Registry: wire it into `QueryPlugins/PluginQueryService.cs` if it should be part of the default analyzer.
+- Models: add result/issue types under `QueryPlugins/Models/` only when existing `PluginIssue`/`IssueType` is insufficient.
+- Tests: add tests under `QueryPlugins.Tests/Detectors/`.
+
+**New backup behavior:**
+- Service logic: update `AutoQAC/Services/Backup/BackupService.cs`, `AutoQAC/Services/Backup/BackupFileCopier.cs`, or `AutoQAC/Services/Backup/DirectoryBackupSessionDeleter.cs`.
+- Session/progress models: update `AutoQAC/Models/BackupSession.cs`, `AutoQAC/Models/BackupResult.cs`, or `AutoQAC/Models/AppState.cs`.
+- Orchestration: update `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs` only when backup timing or session policy changes.
+- Tests: add tests under `AutoQAC.Tests/Services/Backup/`.
 
 **Utilities:**
-- UI utilities: add under `AutoQAC/Services/UI/` or `AutoQAC/Converters/` based on binding/service responsibility.
-- Logging/path helpers: add under `AutoQAC/Infrastructure/Logging/` when logging-specific.
-- Avoid cross-cutting static utility dumps; prefer feature-local private helpers or injected services.
+- Shared UI utility: use `AutoQAC/Services/UI/` when it abstracts Avalonia or dispatching behavior.
+- Domain helper: place near the owning service area, e.g. `AutoQAC/Services/Backup/BackupPathContainment.cs`.
+- Cross-cutting infrastructure helper: use `AutoQAC/Infrastructure/`.
 
 ## Special Directories
 
 **`Mutagen/`:**
-- Purpose: Reference submodule/source checkout for Mutagen.
-- Generated: No.
-- Committed: Yes, as a submodule/reference tree.
-- Rule: Treat as read-only; do not build, modify, or add files under `Mutagen/`.
+- Purpose: External referenced Mutagen repository for source reference only.
+- Generated: No, but external/submodule-managed.
+- Committed: As a submodule reference via `.gitmodules`.
+- Rule: Do not scan broadly, build, modify, or add files under `Mutagen/`.
 
-**`AutoQAC Data/`:**
-- Purpose: Source configuration data files used by the application and copied/located for runtime configuration.
-- Generated: No.
-- Committed: Yes.
-- Rule: Preserve YAML structure expected by `AutoQAC/Services/Configuration/ConfigurationService.cs`.
-
-**`AutoQAC/bin/`, `AutoQAC/obj/`, `AutoQAC.Tests/bin/`, `AutoQAC.Tests/obj/`, `QueryPlugins/bin/`, `QueryPlugins/obj/`:**
-- Purpose: .NET build outputs and intermediate files.
+**`AutoQAC/bin/`, `AutoQAC/obj/`, `QueryPlugins/bin/`, `QueryPlugins/obj/`, `AutoQAC.Tests/bin/`, `AutoQAC.Tests/obj/`, `QueryPlugins.Tests/bin/`, `QueryPlugins.Tests/obj/`:**
+- Purpose: .NET build outputs and intermediates.
 - Generated: Yes.
 - Committed: No.
-- Rule: Do not add source files here.
 
-**`AutoQAC.Tests/TestResults/`:**
-- Purpose: Test output and Cobertura coverage generated by `dotnet test`.
+**`AutoQAC.Tests/TestResults/`, `QueryPlugins.Tests/TestResults/`:**
+- Purpose: coverlet/xUnit test and Cobertura coverage outputs.
 - Generated: Yes.
 - Committed: No.
-- Rule: Use for local verification artifacts only.
-
-**`logs/` and `AutoQAC/logs/`:**
-- Purpose: Runtime log output.
-- Generated: Yes.
-- Committed: No.
-- Rule: Do not rely on log files for committed state.
 
 **`.planning/`:**
-- Purpose: GSD planning, roadmap, phase, and codebase-map artifacts.
-- Generated: Partially.
-- Committed: Project-dependent planning artifacts are tracked by workflow.
-- Rule: Codebase maps belong in `.planning/codebase/`; implementation code does not.
+- Purpose: GSD planning state, roadmap, phase artifacts, and codebase maps.
+- Generated: Partially; maintained by planning workflow.
+- Committed: Project-dependent planning artifacts.
+
+**`.claude/skills/`:**
+- Purpose: Project-local OpenSpec skills that define workflow commands and constraints.
+- Generated: Managed by skill/OpenSpec tooling.
+- Committed: Yes when project workflows require shared skills.
 
 **`openspec/`:**
-- Purpose: OpenSpec active changes, archived changes, and specs.
-- Generated: Partially.
-- Committed: Yes.
-- Rule: Use OpenSpec skills/workflows when creating or applying change artifacts.
+- Purpose: OpenSpec specs, active changes, and archived change artifacts.
+- Generated: Managed by OpenSpec workflow.
+- Committed: Yes when specs/changes are part of project governance.
+
+**`logs/` and `AutoQAC/logs/`:**
+- Purpose: Runtime log output locations.
+- Generated: Yes.
+- Committed: No.
 
 ---
 
-*Structure analysis: 2026-04-28*
+*Structure analysis: 2026-04-29*

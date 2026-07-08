@@ -4,6 +4,7 @@ using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
+using AutoQAC.Services.GameCapability;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Services.State;
 using AutoQAC.Services.UI;
@@ -47,19 +48,23 @@ public sealed class MainWindowThreadingTests
             });
         configService.GetSelectedGameAsync(Arg.Any<CancellationToken>())
             .Returns(GameType.Unknown);
-        pluginLoadingService.GetAvailableGames()
-            .Returns(new List<GameType> { GameType.Fallout4 });
+        using var refreshModule = new RecordingPluginRefreshModule();
+        var discoveryPlanner = CreateDiscoveryPlanner(configService, pluginLoadingService);
 
         var viewModel = new MainWindowViewModel(
             configService,
             stateService,
-            Substitute.For<ICleaningOrchestrator>(),
+            Substitute.For<ICleaningSession>(),
             Substitute.For<ILoggingService>(),
             Substitute.For<IFileDialogService>(),
             Substitute.For<IMessageDialogService>(),
             Substitute.For<IPluginValidationService>(),
             pluginLoadingService,
-            captureDispatcher);
+            captureDispatcher,
+            refreshModule,
+            discoveryPlanner,
+            new DiscoverySettingsModule(configService, stateService, refreshModule),
+            new CleaningCommandReadiness(refreshModule, stateService));
 
         try
         {
@@ -93,17 +98,19 @@ public sealed class MainWindowThreadingTests
     [Fact]
     public void CleaningCommandsViewModel_OnStateChanged_ShouldApplyStateSynchronously()
     {
-        var dispatcher = Substitute.For<IUiDispatcher>();
-        var pluginLoadingService = Substitute.For<IPluginLoadingService>();
+        var readiness = Substitute.For<ICleaningCommandReadiness>();
+        readiness.EvaluateAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(CleaningCommandReadinessResult.Ready));
         var viewModel = new CleaningCommandsViewModel(
             Substitute.For<IStateService>(),
-            Substitute.For<ICleaningOrchestrator>(),
+            Substitute.For<ICleaningSession>(),
             Substitute.For<IConfigurationService>(),
-            pluginLoadingService,
+            readiness,
+            new RecordingPluginRefreshModule(),
             Substitute.For<ILoggingService>(),
             Substitute.For<IMessageDialogService>(),
-            dispatcher,
-            new Interaction<Unit, Unit>(),
+            Substitute.For<IAppLifetime>(),
+            new Interaction<ICleaningSession, Unit>(),
             new Interaction<List<DryRunResult>, Unit>(),
             new Interaction<Unit, bool>(),
             new Interaction<Unit, bool>(),
@@ -125,7 +132,6 @@ public sealed class MainWindowThreadingTests
 
             viewModel.CanStartCleaning.Should().BeTrue(
                 "the parent VM already dispatched state changes before invoking the child VM");
-            dispatcher.DidNotReceive().Post(Arg.Any<Action>());
         }
         finally
         {
@@ -134,44 +140,90 @@ public sealed class MainWindowThreadingTests
     }
 
     [Fact]
-    public async Task PluginListViewModel_ShouldUpdateOnStateChanges_ThroughUiDispatcherFlow()
+    public void PluginListViewModel_ShouldUpdateOnSnapshots()
     {
-        // Originally this test verified that ReactiveCommand.CanExecute marshaled
-        // updates to RxApp.MainThreadScheduler. With CommunityToolkit.Mvvm there is no
-        // separate scheduler -- IRelayCommand.CanExecute returns synchronously and the
-        // parent VM dispatches OnStateChanged through IUiDispatcher. This test verifies
-        // the equivalent contract: when the parent dispatches OnStateChanged, the
-        // PluginListViewModel responds and command CanExecute reflects the new state.
-        var currentState = new AppState
-        {
-            PluginsToClean =
-            [
-                new PluginInfo { FileName = "Test.esp", FullPath = "Test.esp" }
-            ]
-        };
-        var stateSubject = new BehaviorSubject<AppState>(currentState);
-        var stateService = Substitute.For<IStateService>();
-        stateService.StateChanged.Returns(stateSubject);
-        stateService.CurrentState.Returns(_ => currentState);
-
-        var viewModel = new PluginListViewModel(stateService);
+        var viewModel = new PluginListViewModel(new RecordingPluginRefreshModule());
 
         try
         {
-            // Initially HasPlugins=true and IsCleaning=false → command CanExecute true.
+            viewModel.OnPluginRefreshSnapshot(RecordingPluginRefreshModule.CreateSnapshot(
+                gameType: GameType.SkyrimSe,
+                rows: [CreateRow("Test.esp")],
+                commands: new PluginRefreshCommandAvailability(true, true, true, false)));
+
             viewModel.SelectAllCommand.CanExecute(null).Should().BeTrue();
 
-            // Simulate the parent VM dispatching state changes (this is what IUiDispatcher
-            // would call inline in the SynchronousUiDispatcher test setup).
-            await Task.Run(() =>
-            {
-                currentState = currentState with { IsCleaning = true };
-            });
-            viewModel.OnStateChanged(currentState);
+            viewModel.OnPluginRefreshSnapshot(RecordingPluginRefreshModule.CreateSnapshot(
+                gameType: GameType.SkyrimSe,
+                rows: [CreateRow("Test.esp")],
+                commands: new PluginRefreshCommandAvailability(false, false, false, false)));
 
-            viewModel.IsCleaning.Should().BeTrue();
             viewModel.SelectAllCommand.CanExecute(null).Should().BeFalse(
-                "command should be disabled while cleaning");
+                "command availability comes from the Plugin refresh snapshot");
+        }
+        finally
+        {
+            viewModel.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task MainWindowViewModel_ShouldPostRefreshSnapshotsThroughIUiDispatcher()
+    {
+        using var captureDispatcher = new ThreadCapturingUiDispatcher();
+        var currentState = new AppState();
+        var stateSubject = new BehaviorSubject<AppState>(currentState);
+        var configService = Substitute.For<IConfigurationService>();
+        var stateService = Substitute.For<IStateService>();
+        var pluginLoadingService = Substitute.For<IPluginLoadingService>();
+        using var refreshModule = new RecordingPluginRefreshModule();
+        stateService.StateChanged.Returns(stateSubject);
+        stateService.CurrentState.Returns(_ => currentState);
+        stateService.CleaningCompleted.Returns(Observable.Never<CleaningSessionResult>());
+        configService.SkipListChanged.Returns(Observable.Never<GameType>());
+        configService.LoadUserConfigAsync(Arg.Any<CancellationToken>())
+            .Returns(new global::AutoQAC.Models.Configuration.UserConfiguration
+            {
+                LoadOrder = new(),
+                XEdit = new(),
+                ModOrganizer = new(),
+                Settings = new()
+            });
+        configService.GetSelectedGameAsync(Arg.Any<CancellationToken>())
+            .Returns(GameType.Unknown);
+        var discoveryPlanner = CreateDiscoveryPlanner(configService, pluginLoadingService);
+
+        var viewModel = new MainWindowViewModel(
+            configService,
+            stateService,
+            Substitute.For<ICleaningSession>(),
+            Substitute.For<ILoggingService>(),
+            Substitute.For<IFileDialogService>(),
+            Substitute.For<IMessageDialogService>(),
+            Substitute.For<IPluginValidationService>(),
+            pluginLoadingService,
+            captureDispatcher,
+            pluginRefreshModule: refreshModule,
+            discoveryPlanner: discoveryPlanner,
+            discoverySettingsModule: new DiscoverySettingsModule(configService, stateService, refreshModule),
+            cleaningCommandReadiness: new CleaningCommandReadiness(refreshModule, stateService));
+
+        try
+        {
+            captureDispatcher.Reset();
+
+            await Task.Run(() => refreshModule.Publish(RecordingPluginRefreshModule.CreateSnapshot(
+                gameType: GameType.SkyrimSe,
+                rows: [CreateRow("A.esp")],
+                activity: new PluginRefreshActivity(false, true),
+                commands: new PluginRefreshCommandAvailability(false, false, false, true),
+                statusText: "Analyzing 1 of 2 selected plugins.")));
+            await captureDispatcher.WaitForNextPostAsync();
+
+            captureDispatcher.PostCount.Should().BeGreaterThanOrEqualTo(1,
+                "Plugin refresh snapshots must marshal UI-bound mutations through IUiDispatcher");
+            viewModel.Configuration.StatusText.Should().Be("Analyzing 1 of 2 selected plugins.");
+            viewModel.PluginList.IsApproximationRefreshRunning.Should().BeTrue();
         }
         finally
         {
@@ -182,48 +234,30 @@ public sealed class MainWindowThreadingTests
     [Fact]
     public void PluginListViewModel_OnStateChanged_ShouldKeepUnchangedRows_WhenOneApproximationUpdates()
     {
-        var stateService = Substitute.For<IStateService>();
-        stateService.StateChanged.Returns(Observable.Never<AppState>());
-        stateService.CurrentState.Returns(new AppState());
-        var viewModel = new PluginListViewModel(stateService);
+        var viewModel = new PluginListViewModel(new RecordingPluginRefreshModule());
 
         try
         {
-            var initialState = new AppState
+            var initialRows = new[]
             {
-                PluginsToClean =
-                [
-                    new PluginInfo
-                    {
-                        FileName = "One.esp",
-                        FullPath = @"C:\Data\One.esp",
-                        Approximation = PluginIssueApproximation.Pending
-                    },
-                    new PluginInfo
-                    {
-                        FileName = "Two.esp",
-                        FullPath = @"C:\Data\Two.esp",
-                        Approximation = PluginIssueApproximation.Pending
-                    }
-                ]
+                CreateRow("One.esp", @"C:\Data\One.esp", PluginIssueApproximation.Pending),
+                CreateRow("Two.esp", @"C:\Data\Two.esp", PluginIssueApproximation.Pending)
             };
 
-            viewModel.OnStateChanged(initialState);
+            viewModel.OnPluginRefreshSnapshot(RecordingPluginRefreshModule.CreateSnapshot(
+                gameType: GameType.SkyrimSe,
+                rows: initialRows));
             var unchangedRow = viewModel.PluginsToClean[1];
 
-            var updatedState = initialState with
+            var updatedRows = new[]
             {
-                PluginsToClean =
-                [
-                    initialState.PluginsToClean[0] with
-                    {
-                        Approximation = PluginIssueApproximation.Available(2, 1, 0)
-                    },
-                    initialState.PluginsToClean[1]
-                ]
+                initialRows[0] with { Approximation = PluginIssueApproximation.Available(2, 1, 0) },
+                initialRows[1]
             };
 
-            viewModel.OnStateChanged(updatedState);
+            viewModel.OnPluginRefreshSnapshot(RecordingPluginRefreshModule.CreateSnapshot(
+                gameType: GameType.SkyrimSe,
+                rows: updatedRows));
 
             viewModel.PluginsToClean.Should().HaveCount(2);
             viewModel.PluginsToClean[1].Should().BeSameAs(unchangedRow);
@@ -235,6 +269,26 @@ public sealed class MainWindowThreadingTests
         }
     }
 
+    private static PluginRefreshRow CreateRow(
+        string fileName,
+        string? fullPath = null,
+        PluginIssueApproximation? approximation = null) =>
+        new(
+            fileName,
+            fullPath ?? fileName,
+            GameType.SkyrimSe,
+            IsSelected: true,
+            IsInSkipList: false,
+            approximation ?? PluginIssueApproximation.Unavailable);
+
+    private static IPluginRefreshDiscoveryPlanner CreateDiscoveryPlanner(
+        IConfigurationService configService,
+        IPluginLoadingService pluginLoadingService) =>
+        new PluginRefreshDiscoveryPlanner(
+            configService,
+            pluginLoadingService,
+            Substitute.For<AutoQAC.Services.MO2.IMo2InstanceService>());
+
     /// <summary>
     /// Test double <see cref="IUiDispatcher"/> that runs callbacks synchronously while
     /// recording the thread id of the most recent post. Replaces the previous
@@ -244,16 +298,39 @@ public sealed class MainWindowThreadingTests
     private sealed class ThreadCapturingUiDispatcher : IUiDispatcher, IDisposable
     {
         private TaskCompletionSource<int> _nextPost = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private TaskCompletionSource<int> _postTargetReached = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _targetPostCount = 1;
 
         public int LastPostThreadId { get; private set; }
+
+        public int PostCount { get; private set; }
 
         public void Reset()
         {
             LastPostThreadId = 0;
+            PostCount = 0;
+            _targetPostCount = 1;
             _nextPost = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _postTargetReached = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
         }
 
         public Task WaitForNextPostAsync() => _nextPost.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        public Task WaitForPostCountAsync(int postCount)
+        {
+            if (PostCount >= postCount)
+            {
+                return Task.CompletedTask;
+            }
+
+            _targetPostCount = postCount;
+            if (_postTargetReached.Task.IsCompleted)
+            {
+                _postTargetReached = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+            }
+
+            return _postTargetReached.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        }
 
         public void Post(Action action)
         {
@@ -264,7 +341,12 @@ public sealed class MainWindowThreadingTests
             finally
             {
                 LastPostThreadId = Environment.CurrentManagedThreadId;
+                PostCount++;
                 _nextPost.TrySetResult(LastPostThreadId);
+                if (PostCount >= _targetPostCount)
+                {
+                    _postTargetReached.TrySetResult(PostCount);
+                }
             }
         }
 

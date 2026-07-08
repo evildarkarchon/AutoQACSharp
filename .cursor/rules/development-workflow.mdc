@@ -2,7 +2,7 @@
 description: Development workflow, porting guidelines, and testing requirements
 globs:
   - "**/*.cs"
-  - "**/*.axaml"
+  - "**/*.xaml"
 ---
 
 # Development Workflow
@@ -12,9 +12,9 @@ globs:
 Follow this order when implementing features:
 
 1. **Reference Implementation**: Check `Code_To_Port/` for equivalent functionality
-2. **Design C# Equivalent**: Translate concepts to C#/Avalonia patterns
+2. **Design C# Equivalent**: Translate concepts to C#/WinUI 3 patterns
 3. **Implement Models First**: Business logic before UI
-4. **Build ViewModels**: Presentation logic with ReactiveUI
+4. **Build ViewModels**: Presentation logic with CommunityToolkit.Mvvm
 5. **Create Views Last**: XAML UI with data binding
 6. **Test Incrementally**: Verify each layer before moving on
 7. **Maintain Sequential Processing**: Always process plugins one at a time
@@ -31,16 +31,16 @@ When porting functionality from `Code_To_Port/`:
 
 ### Translation Mappings
 
-| Python/Qt | C# Avalonia |
+| Python/Qt | C# WinUI 3 |
 |-----------|-------------|
-| `StateManager` with Qt signals | ReactiveUI `ReactiveObject` properties |
-| `QThread` worker | `Task.Run()` or `ReactiveCommand.CreateFromTask()` |
+| `StateManager` with Qt signals | CommunityToolkit.Mvvm observable properties and service `IObservable<T>` streams |
+| `QThread` worker | `Task.Run()` or async `[RelayCommand]` methods |
 | `QMutex` | `SemaphoreSlim` or async patterns |
-| Python signals/slots | ReactiveUI observables |
+| Python signals/slots | ViewModel events, commands, and service observables |
 | `ConfigManager` YAML I/O | `YamlDotNet` for YAML serialization |
 | `CleaningService` subprocess | `Process.Start()` with async output reading |
 | `GuiController` mediator | ViewModel orchestration |
-| PySide6 dialogs | Avalonia `Window` with MVVM |
+| PySide6 dialogs | WinUI `ContentDialog` or secondary `Window` with MVVM |
 
 ### Translate Concepts, Not Code
 
@@ -61,7 +61,7 @@ Don't copy Python code line-by-line. Instead:
 
 - **Unit Tests**: Test ViewModels and Models independently
 - **Integration Tests**: Test file I/O and subprocess execution
-- **UI Tests**: Consider Avalonia.Headless for automated UI testing
+- **UI Tests**: No WinUI UI automation project exists today; add one intentionally before documenting or depending on UI automation.
 
 ### Coverage Target
 
@@ -107,6 +107,6 @@ public class CleaningServiceTests
 3. **Memory Leaks**: Dispose of `IDisposable` objects, especially event subscriptions
 4. **Mixing MVVM Layers**: Keep Models, ViewModels, and Views strictly separated
 5. **Blocking Operations**: Never block the UI thread; use `Task.Run()` or async commands
-6. **Improper Binding**: Use compiled bindings; avoid string-based bindings
+6. **Improper Binding**: WinUI `x:Bind` defaults to `OneTime`; specify `Mode=OneWay` or `Mode=TwoWay` when values must update.
 7. **Static State**: Avoid static mutable state; use dependency injection
 8. **Exception Swallowing**: Always log exceptions and handle them gracefully

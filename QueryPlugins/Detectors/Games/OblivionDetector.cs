@@ -21,7 +21,7 @@ public sealed class OblivionDetector : IGameSpecificDetector
     };
 
     /// <inheritdoc />
-    public IEnumerable<PluginIssue> FindDeletedReferences(IModGetter plugin)
+    public IEnumerable<PluginIssue> FindDeletedReferences(IModGetter plugin, CancellationToken ct = default)
     {
         if (plugin is not IOblivionModGetter oblivionMod)
             throw new ArgumentException(
@@ -29,7 +29,7 @@ public sealed class OblivionDetector : IGameSpecificDetector
                 nameof(plugin));
 
         return oblivionMod.EnumerateMajorRecords<IPlacedGetter>()
-            .Where(placed => placed.IsDeleted)
+            .Where(placed => { ct.ThrowIfCancellationRequested(); return placed.IsDeleted; })
             .Select(placed => new PluginIssue(
                 placed.FormKey,
                 placed.EditorID,
@@ -41,6 +41,6 @@ public sealed class OblivionDetector : IGameSpecificDetector
     /// Oblivion does not have Navigation Mesh records (it uses PathGrids). This method
     /// returns an empty sequence. PathGrid deletion detection is deferred to a future iteration.
     /// </remarks>
-    public IEnumerable<PluginIssue> FindDeletedNavmeshes(IModGetter plugin) =>
+    public IEnumerable<PluginIssue> FindDeletedNavmeshes(IModGetter plugin, CancellationToken ct = default) =>
         Enumerable.Empty<PluginIssue>();
 }

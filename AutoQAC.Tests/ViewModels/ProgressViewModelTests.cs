@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
+using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.State;
@@ -9,6 +10,7 @@ using AutoQAC.Tests.TestInfrastructure;
 using AutoQAC.ViewModels;
 using FluentAssertions;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 
 namespace AutoQAC.Tests.ViewModels;
 
@@ -19,13 +21,15 @@ namespace AutoQAC.Tests.ViewModels;
 public sealed class ProgressViewModelTests
 {
     private readonly IStateService _stateServiceMock;
-    private readonly ICleaningOrchestrator _orchestratorMock;
+    private readonly ICleaningSession _cleaningSessionMock;
     private readonly BehaviorSubject<AppState> _stateSubject;
     private readonly Subject<(string plugin, CleaningStatus status)> _pluginProcessedSubject;
     private readonly Subject<PluginCleaningResult> _detailedPluginResultSubject;
     private readonly Subject<CleaningSessionResult> _cleaningCompletedSubject;
     private readonly BehaviorSubject<bool> _isTerminatingSubject;
     private readonly Subject<bool> _hangDetectedSubject;
+    private readonly IMessageDialogService _messageDialogMock;
+    private readonly ILoggingService _loggerMock;
     private readonly IUiDispatcher _uiDispatcher;
 
     /// <summary>
@@ -49,8 +53,11 @@ public sealed class ProgressViewModelTests
         _stateServiceMock.IsTerminatingChanged.Returns(_isTerminatingSubject);
         _stateServiceMock.CurrentState.Returns(new AppState());
 
-        _orchestratorMock = Substitute.For<ICleaningOrchestrator>();
-        _orchestratorMock.HangDetected.Returns(_hangDetectedSubject);
+        _cleaningSessionMock = Substitute.For<ICleaningSession>();
+        _cleaningSessionMock.HangDetected.Returns(_hangDetectedSubject);
+
+        _messageDialogMock = Substitute.For<IMessageDialogService>();
+        _loggerMock = Substitute.For<ILoggingService>();
     }
 
     /// <summary>
@@ -58,7 +65,7 @@ public sealed class ProgressViewModelTests
     /// </summary>
     private ProgressViewModel CreateViewModel()
     {
-        return new ProgressViewModel(_stateServiceMock, _orchestratorMock, _uiDispatcher);
+        return new ProgressViewModel(_stateServiceMock, _cleaningSessionMock, _messageDialogMock, _loggerMock, _uiDispatcher);
     }
 
     [Fact]
@@ -84,10 +91,13 @@ public sealed class ProgressViewModelTests
     }
 
     [Fact]
-    public async Task StopCommand_ShouldCallOrchestratorStop()
+    public async Task StopCommand_ShouldRequestSessionStop()
     {
         // Arrange
-        _orchestratorMock.StopCleaningAsync().Returns(Task.CompletedTask);
+        _cleaningSessionMock.ControlAsync(CleaningSessionControl.RequestStop, Arg.Any<CancellationToken>())
+            .Returns(new CleaningSessionControlResult(
+                CleaningSessionControl.RequestStop,
+                CleaningSessionControlStatus.StopRequested));
         var vm = CreateViewModel();
         // Activate IsCleaning so the StopCommand CanExecute is true.
         _stateSubject.OnNext(new AppState { IsCleaning = true });
@@ -96,7 +106,138 @@ public sealed class ProgressViewModelTests
         await vm.StopCommand.ExecuteAsync(null);
 
         // Assert
-        await _orchestratorMock.Received(1).StopCleaningAsync();
+        await _cleaningSessionMock.Received(1)
+            .ControlAsync(CleaningSessionControl.RequestStop, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task StopCommand_WhenForceStopped_ShouldNotPromptInViewModel()
+    {
+        // Arrange
+        _cleaningSessionMock.ControlAsync(CleaningSessionControl.RequestStop, Arg.Any<CancellationToken>())
+            .Returns(new CleaningSessionControlResult(
+                CleaningSessionControl.RequestStop,
+                CleaningSessionControlStatus.ForceStopped,
+                TerminationResult.ForceKilled));
+
+        var vm = CreateViewModel();
+        _stateSubject.OnNext(new AppState { IsCleaning = true });
+
+        // Act
+        await vm.StopCommand.ExecuteAsync(null);
+
+        // Assert
+        await _cleaningSessionMock.Received(1)
+            .ControlAsync(CleaningSessionControl.RequestStop, Arg.Any<CancellationToken>());
+        await _messageDialogMock.DidNotReceive().ShowChoiceAsync(
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Any<MessageDialogIcon>(),
+            Arg.Any<string?>());
+    }
+
+    [Fact]
+    public async Task StopCommand_WhenForceTerminationDeclined_ShouldMarkLeftRunningAndPersistWarning()
+    {
+        // Arrange
+        _cleaningSessionMock.ControlAsync(CleaningSessionControl.RequestStop, Arg.Any<CancellationToken>())
+            .Returns(new CleaningSessionControlResult(
+                CleaningSessionControl.RequestStop,
+                CleaningSessionControlStatus.LeftRunningByUser,
+                TerminationResult.GracePeriodExpired));
+
+        var vm = CreateViewModel();
+        _stateSubject.OnNext(new AppState { IsCleaning = true });
+
+        // Act
+        await vm.StopCommand.ExecuteAsync(null);
+
+        // Assert
+        await _cleaningSessionMock.Received(1)
+            .ControlAsync(CleaningSessionControl.RequestStop, Arg.Any<CancellationToken>());
+        vm.StopOutcomeWarningText.Should().Be(StopTerminationDialogContent.LeftRunningMessage);
+        vm.HasStopOutcomeWarning.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task StopCommand_WhenConfirmedDetachedForceTerminationFails_ShouldShowSharedFailureAndPersistWarning()
+    {
+        // Arrange
+        _cleaningSessionMock.ControlAsync(CleaningSessionControl.RequestStop, Arg.Any<CancellationToken>())
+            .Returns(new CleaningSessionControlResult(
+                CleaningSessionControl.RequestStop,
+                CleaningSessionControlStatus.ForceKillFailed,
+                TerminationResult.ForceKillFailed));
+
+        var vm = CreateViewModel();
+        _stateSubject.OnNext(new AppState { IsCleaning = true });
+
+        // Act
+        await vm.StopCommand.ExecuteAsync(null);
+
+        // Assert
+        await _cleaningSessionMock.Received(1)
+            .ControlAsync(CleaningSessionControl.RequestStop, Arg.Any<CancellationToken>());
+        await _messageDialogMock.Received(1).ShowErrorAsync(
+            StopTerminationDialogContent.ForceFailureTitle,
+            StopTerminationDialogContent.ForceFailureMessage,
+            Arg.Any<string?>());
+        vm.StopOutcomeWarningText.Should().Be(StopTerminationDialogContent.ForceFailureMessage);
+        vm.HasStopOutcomeWarning.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task StopCommand_WhenStopThrows_ShouldPersistFailureWarningAndShowSharedFailure()
+    {
+        // Arrange
+        _cleaningSessionMock.ControlAsync(CleaningSessionControl.RequestStop, Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("stop failed"));
+        _messageDialogMock.ShowErrorAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>())
+            .Returns(Task.CompletedTask);
+
+        var vm = CreateViewModel();
+        _stateSubject.OnNext(new AppState { IsCleaning = true });
+
+        // Act
+        await vm.StopCommand.ExecuteAsync(null);
+
+        // Assert
+        vm.StopOutcomeWarningText.Should().Be(StopTerminationDialogContent.ForceFailureMessage);
+        vm.HasStopOutcomeWarning.Should().BeTrue();
+        await _messageDialogMock.Received(1).ShowErrorAsync(
+            StopTerminationDialogContent.ForceFailureTitle,
+            StopTerminationDialogContent.ForceFailureMessage,
+            Arg.Any<string?>());
+        _loggerMock.Received(1).Error(Arg.Any<InvalidOperationException>(), "Progress stop command failed");
+    }
+
+    [Fact]
+    public async Task StopCommand_WhenFailureDialogThrows_ShouldPersistWarningAndComplete()
+    {
+        // Arrange
+        _cleaningSessionMock.ControlAsync(CleaningSessionControl.RequestStop, Arg.Any<CancellationToken>())
+            .Returns(new CleaningSessionControlResult(
+                CleaningSessionControl.RequestStop,
+                CleaningSessionControlStatus.ForceKillFailed,
+                TerminationResult.ForceKillFailed));
+        _messageDialogMock.ShowErrorAsync(
+                StopTerminationDialogContent.ForceFailureTitle,
+                StopTerminationDialogContent.ForceFailureMessage,
+                Arg.Any<string?>())
+            .ThrowsAsync(new ApplicationException("dialog failed"));
+
+        var vm = CreateViewModel();
+        _stateSubject.OnNext(new AppState { IsCleaning = true });
+
+        // Act
+        await vm.StopCommand.ExecuteAsync(null);
+
+        // Assert
+        vm.StopOutcomeWarningText.Should().Be(StopTerminationDialogContent.ForceFailureMessage);
+        vm.HasStopOutcomeWarning.Should().BeTrue();
+        _loggerMock.Received(1).Error(Arg.Any<ApplicationException>(), "Failed to show Progress stop failure dialog");
     }
 
     #region Edge Case Tests
@@ -455,6 +596,7 @@ public sealed class ProgressViewModelTests
 
         // Assert
         vm.IsShowingResults.Should().BeTrue();
+        vm.IsResultsSummaryVisible.Should().BeTrue();
         vm.SessionResult.Should().Be(session);
         vm.WasCancelled.Should().BeFalse();
         vm.IsCleaning.Should().BeFalse();
@@ -528,6 +670,7 @@ public sealed class ProgressViewModelTests
         // Assert
         vm.CompletedPlugins.Should().BeEmpty("should be cleared for new session");
         vm.IsShowingResults.Should().BeFalse("should not show results during active cleaning");
+        vm.IsResultsSummaryVisible.Should().BeFalse("summary overlay should not be visible during active cleaning");
         vm.CurrentItmCount.Should().Be(0);
         vm.CurrentUdrCount.Should().Be(0);
         vm.CurrentNavCount.Should().Be(0);
@@ -535,6 +678,47 @@ public sealed class ProgressViewModelTests
         vm.TotalUdrCount.Should().Be(0);
         vm.TotalNavCount.Should().Be(0);
         vm.SessionSummaryText.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void IsResultsSummaryVisible_ShouldRequireResultsAndNonPreviewMode()
+    {
+        // Arrange
+        var vm = CreateViewModel();
+
+        // Act & Assert
+        vm.IsResultsSummaryVisible.Should().BeFalse("initial state is active/idle, not completed results");
+
+        vm.IsShowingResults = true;
+        vm.IsResultsSummaryVisible.Should().BeTrue("completed cleaning results should show the summary panel");
+
+        vm.IsPreviewMode = true;
+        vm.IsResultsSummaryVisible.Should().BeFalse("dry-run preview owns the preview panel instead of the cleaning summary");
+
+        vm.IsShowingResults = false;
+        vm.IsResultsSummaryVisible.Should().BeFalse("active cleaning should never leave the summary overlay visible");
+
+        vm.IsPreviewMode = false;
+        vm.IsResultsSummaryVisible.Should().BeFalse("not showing results keeps the summary hidden even outside preview");
+    }
+
+    [Fact]
+    public void IsResultsSummaryVisible_ShouldNotifyWhenDependenciesChange()
+    {
+        // Arrange
+        var vm = CreateViewModel();
+        var notifications = new List<string?>();
+        vm.PropertyChanged += (_, args) => notifications.Add(args.PropertyName);
+
+        // Act
+        vm.IsShowingResults = true;
+        vm.IsPreviewMode = true;
+
+        // Assert
+        notifications.Should().Contain(nameof(ProgressViewModel.IsResultsSummaryVisible),
+            "IsShowingResults changes affect the summary panel visibility");
+        notifications.Count(n => n == nameof(ProgressViewModel.IsResultsSummaryVisible))
+            .Should().BeGreaterThanOrEqualTo(2, "both IsShowingResults and IsPreviewMode changes should notify the dependent property");
     }
 
     #endregion
@@ -583,6 +767,129 @@ public sealed class ProgressViewModelTests
 
         // Assert
         vm.StopCommand.CanExecute(null).Should().BeFalse("Stop should be disabled while terminating");
+    }
+
+    [Fact]
+    public void BackupOperation_ShowsCancelBackup()
+    {
+        // Arrange
+        var vm = CreateViewModel();
+
+        // Act
+        _stateSubject.OnNext(new AppState
+        {
+            IsCleaning = true,
+            BackupOperation = new BackupOperationState
+            {
+                Kind = BackupOperationKind.Backup,
+                Label = "Backing up: Update.esm",
+                FileName = "Update.esm",
+                FilesCompleted = 0,
+                TotalFiles = 1,
+                BytesCopied = 40 * 1024 * 1024,
+                TotalBytes = 100 * 1024 * 1024,
+                IsActive = true,
+                CanCancel = true
+            }
+        });
+
+        // Assert
+        vm.ActiveOperationLabel.Should().Be("Backing up: Update.esm");
+        vm.IsBackupOperationActive.Should().BeTrue();
+        vm.IsBackupCancelVisible.Should().BeTrue();
+        vm.IsCleanupCancelVisible.Should().BeFalse();
+        vm.BackupOperationProgressText.Should().Be("0 / 1 files — 41.9 MB / 104.9 MB");
+    }
+
+    [Fact]
+    public void CleanupOperation_ShowsCancelCleanup()
+    {
+        // Arrange
+        var vm = CreateViewModel();
+
+        // Act
+        _stateSubject.OnNext(new AppState
+        {
+            IsCleaning = true,
+            BackupOperation = new BackupOperationState
+            {
+                Kind = BackupOperationKind.RetentionCleanup,
+                Label = "Cleaning up old backups",
+                FilesCompleted = 2,
+                TotalFiles = 5,
+                IsActive = true,
+                CanCancel = true
+            }
+        });
+
+        // Assert
+        vm.ActiveOperationLabel.Should().Be("Cleaning up old backups");
+        vm.IsBackupOperationActive.Should().BeTrue();
+        vm.IsBackupCancelVisible.Should().BeFalse();
+        vm.IsCleanupCancelVisible.Should().BeTrue();
+        vm.BackupOperationProgressText.Should().Be("2 / 5 files");
+    }
+
+    [Fact]
+    public async Task CancelBackupOperationCommand_SendsSessionControlOnce()
+    {
+        // Arrange
+        var vm = CreateViewModel();
+        _stateSubject.OnNext(new AppState
+        {
+            IsCleaning = true,
+            BackupOperation = new BackupOperationState
+            {
+                Kind = BackupOperationKind.Backup,
+                Label = "Backing up: Update.esm",
+                IsActive = true,
+                CanCancel = true
+            }
+        });
+
+        // Act
+        await vm.CancelBackupOperationCommand.ExecuteAsync(null);
+
+        // Assert
+        await _cleaningSessionMock.Received(1)
+            .ControlAsync(CleaningSessionControl.CancelBackupOperation, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public void Dispose_RemovesBackupOperationSubscription()
+    {
+        // Arrange
+        var vm = CreateViewModel();
+        _stateSubject.OnNext(new AppState
+        {
+            IsCleaning = true,
+            BackupOperation = new BackupOperationState
+            {
+                Kind = BackupOperationKind.Backup,
+                Label = "Backing up: BeforeDispose.esm",
+                IsActive = true,
+                CanCancel = true
+            }
+        });
+        vm.ActiveOperationLabel.Should().Be("Backing up: BeforeDispose.esm");
+
+        // Act
+        vm.Dispose();
+        _stateSubject.OnNext(new AppState
+        {
+            IsCleaning = true,
+            BackupOperation = new BackupOperationState
+            {
+                Kind = BackupOperationKind.RetentionCleanup,
+                Label = "Cleaning up old backups",
+                IsActive = true,
+                CanCancel = true
+            }
+        });
+
+        // Assert
+        vm.ActiveOperationLabel.Should().Be("Backing up: BeforeDispose.esm");
+        vm.IsCleanupCancelVisible.Should().BeFalse();
     }
 
     /// <summary>
@@ -641,6 +948,134 @@ public sealed class ProgressViewModelTests
         vm.IsHangWarningVisible.Should().BeTrue("warning should reappear after non-hung reset event");
     }
 
+    [Fact]
+    public async Task KillHungProcessCommand_ShouldForceStopDirectlyWithoutConfirmation()
+    {
+        // Arrange
+        _cleaningSessionMock.ControlAsync(CleaningSessionControl.ForceStop, Arg.Any<CancellationToken>())
+            .Returns(new CleaningSessionControlResult(
+                CleaningSessionControl.ForceStop,
+                CleaningSessionControlStatus.ForceStopped,
+                TerminationResult.ForceKilled));
+        var vm = CreateViewModel();
+        vm.IsHangWarningVisible = true;
+
+        // Act
+        await vm.KillHungProcessCommand.ExecuteAsync(null);
+
+        // Assert
+        await _cleaningSessionMock.Received(1)
+            .ControlAsync(CleaningSessionControl.ForceStop, Arg.Any<CancellationToken>());
+        await _messageDialogMock.DidNotReceive().ShowChoiceAsync(
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Any<MessageDialogIcon>(),
+            Arg.Any<string?>());
+        vm.IsHangWarningVisible.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task KillHungProcessCommand_WhenForceKillFails_ShouldShowSharedFailureAndPersistWarning()
+    {
+        // Arrange
+        _cleaningSessionMock.ControlAsync(CleaningSessionControl.ForceStop, Arg.Any<CancellationToken>())
+            .Returns(new CleaningSessionControlResult(
+                CleaningSessionControl.ForceStop,
+                CleaningSessionControlStatus.ForceKillFailed,
+                TerminationResult.ForceKillFailed));
+        var vm = CreateViewModel();
+        vm.IsHangWarningVisible = true;
+
+        // Act
+        await vm.KillHungProcessCommand.ExecuteAsync(null);
+
+        // Assert
+        await _messageDialogMock.Received(1).ShowErrorAsync(
+            StopTerminationDialogContent.ForceFailureTitle,
+            StopTerminationDialogContent.ForceFailureMessage,
+            Arg.Any<string?>());
+        vm.StopOutcomeWarningText.Should().Be(StopTerminationDialogContent.ForceFailureMessage);
+        vm.HasStopOutcomeWarning.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task KillHungProcessCommand_WhenForceStopThrows_ShouldPersistFailureWarningAndShowSharedFailure()
+    {
+        // Arrange
+        _cleaningSessionMock.ControlAsync(CleaningSessionControl.ForceStop, Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("force stop failed"));
+        _messageDialogMock.ShowErrorAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>())
+            .Returns(Task.CompletedTask);
+        var vm = CreateViewModel();
+        vm.IsHangWarningVisible = true;
+
+        // Act
+        await vm.KillHungProcessCommand.ExecuteAsync(null);
+
+        // Assert
+        vm.IsHangWarningVisible.Should().BeFalse();
+        vm.StopOutcomeWarningText.Should().Be(StopTerminationDialogContent.ForceFailureMessage);
+        vm.HasStopOutcomeWarning.Should().BeTrue();
+        await _messageDialogMock.Received(1).ShowErrorAsync(
+            StopTerminationDialogContent.ForceFailureTitle,
+            StopTerminationDialogContent.ForceFailureMessage,
+            Arg.Any<string?>());
+        _loggerMock.Received(1).Error(Arg.Any<InvalidOperationException>(), "Progress hang force-stop command failed");
+    }
+
+    [Fact]
+    public async Task KillHungProcessCommand_WhenFailureDialogThrows_ShouldLogAndPersistWarning()
+    {
+        // Arrange
+        _cleaningSessionMock.ControlAsync(CleaningSessionControl.ForceStop, Arg.Any<CancellationToken>())
+            .Returns(new CleaningSessionControlResult(
+                CleaningSessionControl.ForceStop,
+                CleaningSessionControlStatus.ForceKillFailed,
+                TerminationResult.ForceKillFailed));
+        _messageDialogMock.ShowErrorAsync(
+                StopTerminationDialogContent.ForceFailureTitle,
+                StopTerminationDialogContent.ForceFailureMessage,
+                Arg.Any<string?>())
+            .ThrowsAsync(new ApplicationException("dialog failed"));
+        var vm = CreateViewModel();
+        vm.IsHangWarningVisible = true;
+
+        // Act
+        await vm.KillHungProcessCommand.ExecuteAsync(null);
+
+        // Assert
+        vm.IsHangWarningVisible.Should().BeFalse();
+        vm.StopOutcomeWarningText.Should().Be(StopTerminationDialogContent.ForceFailureMessage);
+        vm.HasStopOutcomeWarning.Should().BeTrue();
+        _loggerMock.Received(1).Error(Arg.Any<ApplicationException>(), "Failed to show Progress stop failure dialog");
+    }
+
+    [Fact]
+    public async Task KillHungProcessCommand_WhenForceKillSucceeds_ShouldNotSetSuccessWarningCopy()
+    {
+        // Arrange
+        _cleaningSessionMock.ControlAsync(CleaningSessionControl.ForceStop, Arg.Any<CancellationToken>())
+            .Returns(new CleaningSessionControlResult(
+                CleaningSessionControl.ForceStop,
+                CleaningSessionControlStatus.ForceStopped,
+                TerminationResult.ForceKilled));
+        var vm = CreateViewModel();
+        vm.IsHangWarningVisible = true;
+
+        // Act
+        await vm.KillHungProcessCommand.ExecuteAsync(null);
+
+        // Assert
+        await _messageDialogMock.DidNotReceive().ShowErrorAsync(
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Any<string?>());
+        vm.StopOutcomeWarningText.Should().BeNull();
+        vm.HasStopOutcomeWarning.Should().BeFalse();
+    }
+
     #endregion
 
     #region State Synchronization Tests
@@ -668,7 +1103,7 @@ public sealed class ProgressViewModelTests
         _stateServiceMock.StateChanged.Returns(stateSubject);
 
         // Act
-        var vm = new ProgressViewModel(_stateServiceMock, _orchestratorMock, _uiDispatcher);
+        var vm = new ProgressViewModel(_stateServiceMock, _cleaningSessionMock, _messageDialogMock, _loggerMock, _uiDispatcher);
 
         // Assert
         vm.Progress.Should().Be(3);

@@ -4,7 +4,7 @@ Guidance for coding agents working in this repository.
 
 ## Project Overview
 
-- `AutoQAC` is a Windows-only Avalonia desktop app for running xEdit Quick Auto Clean (`-QAC`) safely, one plugin at a time.
+- `AutoQAC` is a Windows-only WinUI 3 desktop app for running xEdit Quick Auto Clean (`-QAC`) safely, one plugin at a time.
 - `QueryPlugins` is a separate Mutagen-based analysis library for detecting ITMs, deleted references, and deleted navmeshes.
 - The solution currently includes `AutoQAC`, `AutoQAC.Tests`, `QueryPlugins`, and `QueryPlugins.Tests`.
 
@@ -23,7 +23,7 @@ dotnet clean AutoQACSharp.slnx
 - .NET 10
 - C# 13 with nullable reference types enabled
 - `AutoQAC`: `net10.0-windows10.0.19041.0`
-- Avalonia 12.0.1
+- WinUI 3 with Microsoft Windows App SDK 2.2.0
 - CommunityToolkit.Mvvm 8.4.2 (source-generator MVVM)
 - Microsoft.Extensions.DependencyInjection 10.0.3
 - Serilog 4.3.1 with console and file sinks
@@ -36,9 +36,10 @@ dotnet clean AutoQACSharp.slnx
 - `AutoQAC/Infrastructure` contains DI wiring and logging.
 - `AutoQAC/Services` contains the main business logic, grouped into `Backup`, `Cleaning`, `Configuration`, `GameDetection`, `MO2`, `Monitoring`, `Plugin`, `Process`, `State`, and `UI`.
 - `AutoQAC/ViewModels/MainWindow` splits the main window into `ConfigurationViewModel`, `PluginListViewModel`, and `CleaningCommandsViewModel`, coordinated by `MainWindowViewModel`.
-- `MainWindow.axaml.cs` owns dialog/window interactions; ViewModels should not directly manipulate controls.
+- `MainWindow.xaml.cs` owns dialog/window interactions; ViewModels should not directly manipulate controls.
 - `IStateService` and `AppState` are the shared runtime state hub for cleaning progress, plugin lists, and session results.
-- `App.axaml.cs` builds the service provider, starts config watching, runs legacy config migration, and triggers log retention cleanup on startup.
+- `App.xaml.cs` builds the service provider, starts config watching, runs legacy config migration, and triggers log retention cleanup on startup.
+- `IWindowContextProvider` supplies active WinUI window context for file pickers and `ContentDialog` ownership; `IAppLifetime` abstracts shutdown.
 
 ## Runtime Behavior To Preserve
 
@@ -55,8 +56,9 @@ dotnet clean AutoQACSharp.slnx
 
 ## Coding Guidelines
 
+- Comments are welcome and encouraged; this project overrides the default "no comments" agent rule. Prefer WHY-comments over WHAT-comments — explain non-obvious decisions, invariants, and the reasoning behind intentional patterns (e.g. sync-over-async in disposal, sequential-only cleaning, the single process slot). Do not strip accurate existing comments as cleanup. Add XML doc comments (`///`) on new or substantially rewritten public members unless trivial.
 - Maintain strict MVVM boundaries.
-- Use CommunityToolkit.Mvvm source generators (`[ObservableProperty]`, `[RelayCommand]`, `[NotifyPropertyChangedFor]`, `[NotifyCanExecuteChangedFor]`) for ViewModel state. ViewModels MUST be `partial` for the source generators. Do not use `ReactiveUI` or `System.Reactive` in the ViewModel layer; service `IObservable<T>` streams are subscribed via `CallbackObserver<T>` and marshaled to the UI thread via the injected `IUiDispatcher`.
+- Use CommunityToolkit.Mvvm source generators (`[ObservableProperty]`, `[RelayCommand]`, `[NotifyPropertyChangedFor]`, `[NotifyCanExecuteChangedFor]`) for ViewModel state. ViewModels MUST be `partial` for the source generators. Service `IObservable<T>` streams are subscribed via `CallbackObserver<T>` and marshaled to the UI thread via the injected `IUiDispatcher`.
 - Keep I/O and process work async; never block the UI thread with `.Result` or `.Wait()`.
 - Use constructor injection through `ServiceCollectionExtensions`; avoid static mutable state and service locators.
 - Respect Windows-specific assumptions when touching registry probing, executable paths, or process handling.
@@ -69,11 +71,11 @@ dotnet clean AutoQACSharp.slnx
 - `QueryPlugins.Tests` covers the standalone detector library.
 - `dotnet test` auto-collects Cobertura coverage into each test project's `TestResults/coverage/` directory.
 - Use NSubstitute for mocks, and match optional parameters explicitly in substitute setups and assertions.
-- There is no separate Avalonia.Headless test project in the current solution. Do not document or depend on one unless you add it intentionally.
+- There is no separate WinUI UI automation/headless test project in the current solution. Do not document or depend on one unless you add it intentionally.
 
 ## Important Files
 
-- `AutoQAC/App.axaml.cs`
+- `AutoQAC/App.xaml.cs`
 - `AutoQAC/Infrastructure/ServiceCollectionExtensions.cs`
 - `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs`
 - `AutoQAC/Services/Process/ProcessExecutionService.cs`

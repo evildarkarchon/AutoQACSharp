@@ -1,0 +1,89 @@
+<UserControl
+    x:Class="AutoQAC.Views.SettingsContent"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid RowDefinitions="*,Auto" RowSpacing="16" MinWidth="560" MaxHeight="680">
+        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="16">
+                <InfoBar
+                    IsOpen="{Binding HasPersistenceBanner, Mode=OneWay}"
+                    Severity="Warning"
+                    Message="{Binding PersistenceBannerText, Mode=OneWay}" />
+
+                <TextBlock Text="File Paths" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                <Grid ColumnDefinitions="140,*,Auto" ColumnSpacing="8" RowDefinitions="Auto,Auto,Auto" RowSpacing="8">
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="xEdit Executable:" VerticalAlignment="Center" />
+                    <TextBox Grid.Row="0" Grid.Column="1"
+                             Text="{Binding XEditPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                             PlaceholderText="Path to SSEEdit.exe, FO4Edit.exe, etc." />
+                    <Button Grid.Row="0" Grid.Column="2" Content="Browse..." Command="{Binding BrowseXEditCommand}" />
+
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Mod Organizer 2:" VerticalAlignment="Center" />
+                    <TextBox Grid.Row="1" Grid.Column="1"
+                             Text="{Binding Mo2Path, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                             PlaceholderText="Optional - ModOrganizer.exe" />
+                    <Button Grid.Row="1" Grid.Column="2" Content="Browse..." Command="{Binding BrowseMo2Command}" />
+
+                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Load Order File:" VerticalAlignment="Center" />
+                    <TextBox Grid.Row="2" Grid.Column="1"
+                             Text="{Binding LoadOrderPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                             PlaceholderText="plugins.txt or loadorder.txt" />
+                    <Button Grid.Row="2" Grid.Column="2" Content="Browse..." Command="{Binding BrowseLoadOrderCommand}" />
+                </Grid>
+
+                <TextBlock Text="Cleaning" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                <Grid ColumnDefinitions="220,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="8">
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Cleaning timeout (seconds):"
+                               VerticalAlignment="Center" />
+                    <NumberBox Grid.Row="0" Grid.Column="1" Minimum="30" Maximum="3600"
+                               SpinButtonPlacementMode="Inline"
+                               Value="{Binding CleaningTimeout, Mode=TwoWay, Converter={StaticResource IntDoubleConverter}}" />
+
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Journal expiration (days):"
+                               VerticalAlignment="Center" />
+                    <NumberBox Grid.Row="1" Grid.Column="1" Minimum="1" Maximum="365" SpinButtonPlacementMode="Inline"
+                               Value="{Binding JournalExpiration, Mode=TwoWay, Converter={StaticResource IntDoubleConverter}}" />
+
+                    <TextBlock Grid.Row="2" Grid.Column="0" Text="CPU hang threshold (%):" VerticalAlignment="Center" />
+                    <NumberBox Grid.Row="2" Grid.Column="1" Minimum="1" Maximum="100" SpinButtonPlacementMode="Inline"
+                               Value="{Binding CpuThreshold, Mode=TwoWay, Converter={StaticResource IntDoubleConverter}}" />
+
+                    <CheckBox Grid.Row="3" Grid.ColumnSpan="2" Content="Enable MO2 mode by default"
+                              IsChecked="{Binding Mo2Mode, Mode=TwoWay}" />
+                </Grid>
+
+                <TextBlock Text="Logs and Backups" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                <Grid ColumnDefinitions="220,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="8"
+                      ColumnSpacing="8">
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Retention mode:" VerticalAlignment="Center" />
+                    <ComboBox Grid.Row="0" Grid.Column="1" SelectedIndex="{Binding RetentionMode, Mode=TwoWay}">
+                        <ComboBoxItem Content="Age based" />
+                        <ComboBoxItem Content="Count based" />
+                    </ComboBox>
+
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Max age (days):" VerticalAlignment="Center" />
+                    <NumberBox Grid.Row="1" Grid.Column="1" Minimum="1" SpinButtonPlacementMode="Inline"
+                               Value="{Binding MaxAgeDays, Mode=TwoWay, Converter={StaticResource IntDoubleConverter}}" />
+
+                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Max log files:" VerticalAlignment="Center" />
+                    <NumberBox Grid.Row="2" Grid.Column="1" Minimum="1" SpinButtonPlacementMode="Inline"
+                               Value="{Binding MaxFileCount, Mode=TwoWay, Converter={StaticResource IntDoubleConverter}}" />
+
+                    <CheckBox Grid.Row="3" Grid.ColumnSpan="2" Content="Enable plugin backups before cleaning"
+                              IsChecked="{Binding BackupEnabled, Mode=TwoWay}" />
+
+                    <TextBlock Grid.Row="4" Grid.Column="0" Text="Backup sessions to keep:" VerticalAlignment="Center" />
+                    <NumberBox Grid.Row="4" Grid.Column="1" Minimum="1" Maximum="100" SpinButtonPlacementMode="Inline"
+                               Value="{Binding BackupMaxSessions, Mode=TwoWay, Converter={StaticResource IntDoubleConverter}}" />
+                </Grid>
+            </StackPanel>
+        </ScrollViewer>
+
+        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+            <Button Content="Reset to Defaults" Command="{Binding ResetToDefaultsCommand}" />
+            <Button Content="Cancel" Command="{Binding CancelCommand}" />
+            <Button Content="Save" Command="{Binding SaveCommand}" />
+        </StackPanel>
+    </Grid>
+</UserControl>
+

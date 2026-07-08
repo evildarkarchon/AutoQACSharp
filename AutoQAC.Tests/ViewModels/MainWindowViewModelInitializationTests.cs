@@ -5,6 +5,7 @@ using AutoQAC.Models;
 using AutoQAC.Models.Configuration;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
+using AutoQAC.Services.GameCapability;
 using AutoQAC.Services.State;
 using AutoQAC.Services.UI;
 using AutoQAC.Services.Plugin;
@@ -18,7 +19,7 @@ public sealed class MainWindowViewModelInitializationTests
 {
     private readonly IConfigurationService _configServiceMock;
     private readonly IStateService _stateServiceMock;
-    private readonly ICleaningOrchestrator _orchestratorMock;
+    private readonly ICleaningSession _cleaningSessionMock;
     private readonly ILoggingService _loggerMock;
     private readonly IFileDialogService _fileDialogMock;
     private readonly IMessageDialogService _messageDialogMock;
@@ -30,19 +31,13 @@ public sealed class MainWindowViewModelInitializationTests
     {
         _configServiceMock = Substitute.For<IConfigurationService>();
         _stateServiceMock = Substitute.For<IStateService>();
-        _orchestratorMock = Substitute.For<ICleaningOrchestrator>();
+        _cleaningSessionMock = Substitute.For<ICleaningSession>();
         _loggerMock = Substitute.For<ILoggingService>();
         _fileDialogMock = Substitute.For<IFileDialogService>();
         _messageDialogMock = Substitute.For<IMessageDialogService>();
         _pluginServiceMock = Substitute.For<IPluginValidationService>();
         _pluginLoadingServiceMock = Substitute.For<IPluginLoadingService>();
         _uiDispatcher = new SynchronousUiDispatcher();
-
-        // Default setup for plugin loading service
-        _pluginLoadingServiceMock.GetAvailableGames()
-            .Returns(new List<GameType> { GameType.SkyrimSe, GameType.Fallout4 });
-        _pluginLoadingServiceMock.IsGameSupportedByMutagen(Arg.Any<GameType>())
-            .Returns(false);
 
         // Default setup for CleaningCompleted observable
         _stateServiceMock.CleaningCompleted
@@ -84,18 +79,31 @@ public sealed class MainWindowViewModelInitializationTests
 
         _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>())
             .Returns(config);
+        using var refreshModule = new RecordingPluginRefreshModule();
+        refreshModule.ExecuteHandler = (intent, _) => Task.FromResult(
+            intent is PluginRefreshIntent.RefreshGame refresh
+                ? RecordingPluginRefreshModule.CreateSnapshot(gameType: refresh.GameType)
+                : refreshModule.CurrentSnapshot);
+        var discoveryPlanner = new PluginRefreshDiscoveryPlanner(
+            _configServiceMock,
+            _pluginLoadingServiceMock,
+            Substitute.For<AutoQAC.Services.MO2.IMo2InstanceService>());
 
         // Act
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
             _pluginServiceMock,
             _pluginLoadingServiceMock,
-            _uiDispatcher);
+            _uiDispatcher,
+            refreshModule,
+            discoveryPlanner,
+            new DiscoverySettingsModule(_configServiceMock, _stateServiceMock, refreshModule),
+            new CleaningCommandReadiness(refreshModule, _stateServiceMock));
 
         await WaitForSignalAsync(initializationApplied);
 

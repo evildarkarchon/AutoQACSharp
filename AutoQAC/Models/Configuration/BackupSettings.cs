@@ -18,4 +18,7 @@ public sealed class BackupSettings
     /// </summary>
     [YamlMember(Alias = "max_sessions")]
     public int MaxSessions { get; set; } = 10;
+
+    /// <summary>Deep copy of BackupSettings (no YAML round-trip; see Phase 10 D-43).</summary>
+    public BackupSettings Copy() => new() { Enabled = Enabled, MaxSessions = MaxSessions };
 }

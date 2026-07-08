@@ -24,7 +24,7 @@ public sealed class SkyrimDetector : IGameSpecificDetector
     };
 
     /// <inheritdoc />
-    public IEnumerable<PluginIssue> FindDeletedReferences(IModGetter plugin)
+    public IEnumerable<PluginIssue> FindDeletedReferences(IModGetter plugin, CancellationToken ct = default)
     {
         if (plugin is not ISkyrimModGetter skyrimMod)
             throw new ArgumentException(
@@ -32,7 +32,7 @@ public sealed class SkyrimDetector : IGameSpecificDetector
                 nameof(plugin));
 
         return skyrimMod.EnumerateMajorRecords<IPlacedGetter>()
-            .Where(placed => placed.IsDeleted)
+            .Where(placed => { ct.ThrowIfCancellationRequested(); return placed.IsDeleted; })
             .Select(placed => new PluginIssue(
                 placed.FormKey,
                 placed.EditorID,
@@ -40,7 +40,7 @@ public sealed class SkyrimDetector : IGameSpecificDetector
     }
 
     /// <inheritdoc />
-    public IEnumerable<PluginIssue> FindDeletedNavmeshes(IModGetter plugin)
+    public IEnumerable<PluginIssue> FindDeletedNavmeshes(IModGetter plugin, CancellationToken ct = default)
     {
         if (plugin is not ISkyrimModGetter skyrimMod)
             throw new ArgumentException(
@@ -48,7 +48,7 @@ public sealed class SkyrimDetector : IGameSpecificDetector
                 nameof(plugin));
 
         return skyrimMod.EnumerateMajorRecords<INavigationMeshGetter>()
-            .Where(navm => navm.IsDeleted)
+            .Where(navm => { ct.ThrowIfCancellationRequested(); return navm.IsDeleted; })
             .Select(navm => new PluginIssue(
                 navm.FormKey,
                 navm.EditorID,

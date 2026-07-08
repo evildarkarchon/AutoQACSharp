@@ -1,11 +1,11 @@
 ---
-description: C# coding standards and Avalonia UI best practices
+description: C# coding standards and WinUI 3 UI best practices
 globs:
   - "**/*.cs"
-  - "**/*.axaml"
+  - "**/*.xaml"
 ---
 
-# C# and Avalonia Guidelines
+# C# and WinUI 3 Guidelines
 
 ## C# Code Standards
 
@@ -68,33 +68,36 @@ catch (FileNotFoundException ex)
 }
 ```
 
-## Avalonia UI Guidelines
+## WinUI 3 Guidelines
 
 ### Data Binding
 
-Use compiled bindings by default:
+Prefer `x:Bind` where the view has a strongly typed surface, and always set the binding mode explicitly because WinUI `x:Bind` defaults to `OneTime`.
 
 ```xml
-<!-- CORRECT: Standard binding -->
-<TextBlock Text="{Binding Status}" />
+<!-- ViewModel DataContext binding -->
+<TextBlock Text="{Binding Status, Mode=OneWay}" />
 
-<!-- For complex scenarios -->
-<TextBlock Text="{CompiledBinding Status}" />
+<!-- Function/helper binding -->
+<TextBlock Visibility="{x:Bind helpers:BindingHelpers.BoolToVisibility(ViewModel.IsBusy), Mode=OneWay}" />
 ```
 
 Avoid code-behind data access; use ViewModels.
 
 ### XAML Styling
 
-- Use Fluent theme as the base
-- Define styles in `App.axaml` or separate resource dictionaries
-- Use `StyleInclude` for modular styles
+- Use WinUI Fluent styling and system theme defaults.
+- Define app-wide resources in `App.xaml`.
+- Keep custom styles small and local unless they are shared across views.
 
 ```xml
-<Application.Styles>
-    <FluentTheme />
-    <StyleInclude Source="/Styles/CustomStyles.axaml" />
-</Application.Styles>
+<Application.Resources>
+    <ResourceDictionary>
+        <Style x:Key="HyperlinkButtonStyle" TargetType="Button">
+            <!-- shared style setters -->
+        </Style>
+    </ResourceDictionary>
+</Application.Resources>
 ```
 
 ### Controls and Layout
@@ -107,20 +110,24 @@ Prefer these layout containers:
 Use these for data display:
 - `ItemsControl` for simple lists
 - `ListBox` for selectable lists
-- `DataGrid` for tabular data
+- `ListView` with column headers for lightweight tabular read-only results
 
 ### Dialogs and Windows
 
 ```csharp
-// Modal dialog
-var result = await dialog.ShowDialog<bool>(owner);
+// Serialized ContentDialog flow
+await ContentDialogPresenter.ShowBooleanAsync(
+    windowContextProvider,
+    "Settings",
+    content,
+    handler => viewModel.CloseRequested += handler,
+    handler => viewModel.CloseRequested -= handler);
 
 // Non-modal window
-window.Show();
-
-// Return result from dialog
-Close(true);  // Returns true to ShowDialog caller
+window.Activate();
 ```
+
+Use `IWindowContextProvider` to supply `WindowId` and `XamlRoot` for Windows App SDK pickers and `ContentDialog` ownership. Capture `DispatcherQueue` on the UI thread and access it through `IUiDispatcher`.
 
 ## Resource Management
 

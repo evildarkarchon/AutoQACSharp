@@ -6,8 +6,10 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
+using AutoQAC.Services.GameCapability;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Fallout4;
+using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Plugins.Cache;
 using Mutagen.Bethesda.Plugins.Order;
 using Mutagen.Bethesda.Plugins.Records;
@@ -17,7 +19,11 @@ using QueryPlugins;
 
 namespace AutoQAC.Services.Plugin;
 
-public sealed class PluginIssueApproximationService : IPluginIssueApproximationService
+public sealed class PluginIssueApproximationService(
+    ILoggingService logger,
+    IPluginQueryService? pluginQueryService = null,
+    Func<GameType, string, CancellationToken, PluginIssueApproximationService.AnalysisContext>? contextFactory = null)
+    : IPluginIssueApproximationService
 {
     public sealed record AnalysisTarget(string FileName, string FullPath, IModGetter? Plugin);
 
@@ -26,32 +32,42 @@ public sealed class PluginIssueApproximationService : IPluginIssueApproximationS
         ILinkCache LinkCache,
         IReadOnlyList<AnalysisTarget> Targets);
 
-    private readonly ILoggingService _logger;
-    private readonly IPluginQueryService _pluginQueryService;
-    private readonly Func<GameType, string, CancellationToken, AnalysisContext> _contextFactory;
+    private readonly IPluginQueryService _pluginQueryService = pluginQueryService ?? PluginQueryService.Default;
 
-    public PluginIssueApproximationService(
-        ILoggingService logger,
-        IPluginQueryService? pluginQueryService = null,
-        Func<GameType, string, CancellationToken, AnalysisContext>? contextFactory = null)
-    {
-        _logger = logger;
-        _pluginQueryService = pluginQueryService ?? PluginQueryService.Default;
-        _contextFactory = contextFactory ?? CreateAnalysisContext;
-    }
+    private readonly Func<GameType, string, CancellationToken, AnalysisContext> _contextFactory =
+        contextFactory ?? CreateAnalysisContext;
 
     public async Task<IReadOnlyList<PluginIssueApproximationResult>> GetApproximationsAsync(
-        GameType gameType,
-        string dataFolder,
+        PluginIssueApproximationRequest request,
         Action<PluginIssueApproximationResult>? onApproximationReady = null,
         CancellationToken ct = default)
     {
-        if (!IsSupportedGame(gameType) || string.IsNullOrWhiteSpace(dataFolder))
+        if (!GameCapabilityCatalog.Get(request.GameType).SupportsIssueApproximation)
         {
-            return Array.Empty<PluginIssueApproximationResult>();
+            return [];
         }
 
-        return await Task.Run(() => AnalyzePlugins(gameType, dataFolder, onApproximationReady, ct), ct).ConfigureAwait(false);
+        return request.Source switch
+        {
+            PluginIssueApproximationSource.DirectDataFolder direct when !string.IsNullOrWhiteSpace(direct.DataFolder) =>
+                await Task.Run(
+                        () => AnalyzePlugins(request.GameType, direct.DataFolder, onApproximationReady, ct),
+                        ct)
+                    .ConfigureAwait(false),
+            PluginIssueApproximationSource.ResolvedLoadOrder resolved when
+                !string.IsNullOrWhiteSpace(resolved.BaseDataFolder) && resolved.OrderedPluginNames.Count > 0 =>
+                await Task.Run(
+                        () => AnalyzePluginsFromResolvedPaths(
+                            request.GameType,
+                            resolved.BaseDataFolder,
+                            resolved.OrderedPluginNames,
+                            resolved.PathsByFileName,
+                            onApproximationReady,
+                            ct),
+                        ct)
+                    .ConfigureAwait(false),
+            _ => []
+        };
     }
 
     private IReadOnlyList<PluginIssueApproximationResult> AnalyzePlugins(
@@ -64,54 +80,8 @@ public sealed class PluginIssueApproximationService : IPluginIssueApproximationS
 
         var context = _contextFactory(gameType, dataFolder, ct);
         ct.ThrowIfCancellationRequested();
-        var results = new List<PluginIssueApproximationResult>(context.Targets.Count);
 
-        foreach (var target in context.Targets)
-        {
-            ct.ThrowIfCancellationRequested();
-
-            if (target.Plugin is null)
-            {
-                var unavailableResult = CreateUnavailableResult(target);
-                results.Add(unavailableResult);
-                onApproximationReady?.Invoke(unavailableResult);
-                continue;
-            }
-
-            try
-            {
-                var analysis = _pluginQueryService.Analyse(target.Plugin, context.LinkCache, context.GameRelease);
-                var result = new PluginIssueApproximationResult
-                {
-                    FileName = target.FileName,
-                    FullPath = target.FullPath,
-                    Approximation = PluginIssueApproximation.Available(
-                        analysis.ItmCount,
-                        analysis.DeletedReferenceCount,
-                        analysis.DeletedNavmeshCount)
-                };
-                results.Add(result);
-                onApproximationReady?.Invoke(result);
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                _logger.Warning("Approximation analysis failed for plugin {PluginName}: {Message}", target.FileName, ex.Message);
-                var unavailableResult = CreateUnavailableResult(target);
-                results.Add(unavailableResult);
-                onApproximationReady?.Invoke(unavailableResult);
-            }
-        }
-
-        return results;
-    }
-
-    private static bool IsSupportedGame(GameType gameType)
-    {
-        return gameType is GameType.SkyrimLe or GameType.SkyrimSe or GameType.SkyrimVr or GameType.Fallout4 or GameType.Fallout4Vr;
+        return AnalyzeContext(context, onApproximationReady, ct);
     }
 
     private static PluginIssueApproximationResult CreateUnavailableResult(AnalysisTarget target)
@@ -143,6 +113,73 @@ public sealed class PluginIssueApproximationService : IPluginIssueApproximationS
         };
     }
 
+    private IReadOnlyList<PluginIssueApproximationResult> AnalyzePluginsFromResolvedPaths(
+        GameType gameType,
+        string baseDataFolder,
+        IReadOnlyList<string> orderedPluginNames,
+        IReadOnlyDictionary<string, string> pathsByFileName,
+        Action<PluginIssueApproximationResult>? onApproximationReady,
+        CancellationToken ct)
+    {
+        var release = MapToGameRelease(gameType);
+        var resolved = new Dictionary<ModKey, string>();
+        var unresolved = new List<AnalysisTarget>();
+        var listings = new List<ILoadOrderListingGetter>();
+
+        foreach (var pluginName in orderedPluginNames)
+        {
+            ct.ThrowIfCancellationRequested();
+            var modKey = ModKey.FromFileName(pluginName);
+            var fullPath = ResolvePath(pathsByFileName, modKey.FileName.String);
+            if (string.IsNullOrWhiteSpace(fullPath) || !File.Exists(fullPath))
+            {
+                unresolved.Add(new AnalysisTarget(pluginName, fullPath ?? pluginName, null));
+                continue;
+            }
+
+            resolved[modKey] = fullPath;
+            listings.Add(LoadOrderListing.CreateEnabled(modKey));
+        }
+
+        var context = gameType switch
+        {
+            GameType.SkyrimLe or GameType.SkyrimSe or GameType.SkyrimVr =>
+                CreateSkyrimContext(release, baseDataFolder, listings, resolved, ct),
+            GameType.Fallout4 or GameType.Fallout4Vr =>
+                CreateFallout4Context(release, baseDataFolder, listings, resolved, ct),
+            _ => throw new ArgumentException($"Game {gameType} is not supported by plugin issue approximations")
+        };
+
+        var results = AnalyzeContext(context, onApproximationReady, ct).ToList();
+        foreach (var target in unresolved)
+        {
+            ct.ThrowIfCancellationRequested();
+            var unavailable = CreateUnavailableResult(target);
+            results.Add(unavailable);
+            onApproximationReady?.Invoke(unavailable);
+        }
+
+        return results;
+    }
+
+    private static string? ResolvePath(IReadOnlyDictionary<string, string> pathsByFileName, string fileName)
+    {
+        if (pathsByFileName.TryGetValue(fileName, out var path))
+        {
+            return path;
+        }
+
+        foreach (var pair in pathsByFileName)
+        {
+            if (string.Equals(pair.Key, fileName, StringComparison.OrdinalIgnoreCase))
+            {
+                return pair.Value;
+            }
+        }
+
+        return null;
+    }
+
     private static AnalysisContext CreateSkyrimContext(
         GameRelease release,
         string dataFolder,
@@ -164,6 +201,36 @@ public sealed class PluginIssueApproximationService : IPluginIssueApproximationS
                 Path.Combine(dataFolder, modListing.ModKey.FileName.String),
                 modListing.Mod));
         }
+
+        return new AnalysisContext(release, linkCache, targets);
+    }
+
+    private static AnalysisContext CreateSkyrimContext(
+        GameRelease release,
+        string dataFolder,
+        IReadOnlyList<ILoadOrderListingGetter> listings,
+        IReadOnlyDictionary<ModKey, string> resolvedPaths,
+        CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        var skyrimRelease = release.ToSkyrimRelease();
+        var loadOrder = LoadOrder.Import<ISkyrimModGetter>(
+            new DirectoryPath(dataFolder),
+            listings,
+            release,
+            modPath => SkyrimMod.CreateFromBinary(
+                new ModPath(modPath.ModKey, resolvedPaths[modPath.ModKey]),
+                skyrimRelease));
+        ct.ThrowIfCancellationRequested();
+        var linkCache = loadOrder.ToImmutableLinkCache();
+        var targets = loadOrder.Select(listing =>
+        {
+            var modListing = listing.Value;
+            return new AnalysisTarget(
+                modListing.ModKey.FileName.String,
+                resolvedPaths[modListing.ModKey],
+                modListing.Mod);
+        }).ToList();
 
         return new AnalysisContext(release, linkCache, targets);
     }
@@ -191,6 +258,86 @@ public sealed class PluginIssueApproximationService : IPluginIssueApproximationS
         }
 
         return new AnalysisContext(release, linkCache, targets);
+    }
+
+    private static AnalysisContext CreateFallout4Context(
+        GameRelease release,
+        string dataFolder,
+        IReadOnlyList<ILoadOrderListingGetter> listings,
+        IReadOnlyDictionary<ModKey, string> resolvedPaths,
+        CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        var fallout4Release = release.ToFallout4Release();
+        var loadOrder = LoadOrder.Import<IFallout4ModGetter>(
+            new DirectoryPath(dataFolder),
+            listings,
+            release,
+            modPath => Fallout4Mod.CreateFromBinary(
+                new ModPath(modPath.ModKey, resolvedPaths[modPath.ModKey]),
+                fallout4Release));
+        ct.ThrowIfCancellationRequested();
+        var linkCache = loadOrder.ToImmutableLinkCache();
+        var targets = loadOrder.Select(listing =>
+        {
+            var modListing = listing.Value;
+            return new AnalysisTarget(
+                modListing.ModKey.FileName.String,
+                resolvedPaths[modListing.ModKey],
+                modListing.Mod);
+        }).ToList();
+
+        return new AnalysisContext(release, linkCache, targets);
+    }
+
+    private IReadOnlyList<PluginIssueApproximationResult> AnalyzeContext(
+        AnalysisContext context,
+        Action<PluginIssueApproximationResult>? onApproximationReady,
+        CancellationToken ct)
+    {
+        var results = new List<PluginIssueApproximationResult>(context.Targets.Count);
+        foreach (var target in context.Targets)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            if (target.Plugin is null)
+            {
+                var unavailableResult = CreateUnavailableResult(target);
+                results.Add(unavailableResult);
+                onApproximationReady?.Invoke(unavailableResult);
+                continue;
+            }
+
+            try
+            {
+                var analysis = _pluginQueryService.Analyse(target.Plugin, context.LinkCache, context.GameRelease, ct);
+                var result = new PluginIssueApproximationResult
+                {
+                    FileName = target.FileName,
+                    FullPath = target.FullPath,
+                    Approximation = PluginIssueApproximation.Available(
+                        analysis.ItmCount,
+                        analysis.DeletedReferenceCount,
+                        analysis.DeletedNavmeshCount)
+                };
+                results.Add(result);
+                onApproximationReady?.Invoke(result);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                logger.Warning("Approximation analysis failed for plugin {PluginName}: {Message}", target.FileName,
+                    ex.Message);
+                var unavailableResult = CreateUnavailableResult(target);
+                results.Add(unavailableResult);
+                onApproximationReady?.Invoke(unavailableResult);
+            }
+        }
+
+        return results;
     }
 
     private static GameRelease MapToGameRelease(GameType gameType) => gameType switch

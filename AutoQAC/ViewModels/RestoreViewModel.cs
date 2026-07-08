@@ -1,8 +1,11 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
+using AutoQAC.Models.Diagnostics;
 using AutoQAC.Services.Backup;
 using AutoQAC.Services.UI;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -10,52 +13,69 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace AutoQAC.ViewModels;
 
-public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
+public sealed partial class RestoreViewModel(
+    IBackupService backupService,
+    IMessageDialogService messageDialog,
+    ILoggingService logger,
+    IUiDispatcher uiDispatcher)
+    : ViewModelBase, IDisposable
 {
-    private readonly IBackupService _backupService;
-    private readonly IMessageDialogService _messageDialog;
-    private readonly ILoggingService _logger;
-
     private string? _backupRoot;
+    private string? _trustedRestoreRoot;
+    private CancellationTokenSource? _restoreCts;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasSessions))]
-    private ObservableCollection<BackupSession> _sessions = new();
+    public partial ObservableCollection<BackupSession> Sessions { get; set; } = [];
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(RestoreAllCommand))]
     [NotifyCanExecuteChangedFor(nameof(DeleteSessionCommand))]
-    private BackupSession? _selectedSession;
+    public partial BackupSession? SelectedSession { get; set; }
 
     [ObservableProperty]
-    private ObservableCollection<BackupPluginEntry> _selectedSessionPlugins = new();
+    public partial ObservableCollection<BackupPluginEntry> SelectedSessionPlugins { get; set; } = [];
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(RestorePluginCommand))]
-    private BackupPluginEntry? _selectedPlugin;
+    public partial BackupPluginEntry? SelectedPlugin { get; set; }
+
+    [ObservableProperty] public partial bool IsLoading { get; set; }
+
+    [ObservableProperty] public partial string StatusText { get; set; } = "Select a backup session to view plugins";
+
+    [ObservableProperty] public partial string RestoreOutcomeTitle { get; set; } = string.Empty;
+
+    [ObservableProperty] public partial string RestoreSummaryText { get; set; } = string.Empty;
+
+    [ObservableProperty] public partial string RestoreProgressText { get; set; } = string.Empty;
+
+    [ObservableProperty] public partial long RestoreBytesCopied { get; set; }
+
+    [ObservableProperty] public partial long? RestoreTotalBytes { get; set; }
+
+    [ObservableProperty] public partial ObservableCollection<BackupRestoreRowResult> RestoreResults { get; set; } = [];
+
+    [ObservableProperty] public partial bool IsRestoreResultVisible { get; set; }
 
     [ObservableProperty]
-    private bool _isLoading;
-
-    [ObservableProperty]
-    private string _statusText = "Select a backup session to view plugins";
+    [NotifyCanExecuteChangedFor(nameof(RestorePluginCommand))]
+    [NotifyCanExecuteChangedFor(nameof(RestoreAllCommand))]
+    [NotifyCanExecuteChangedFor(nameof(DeleteSessionCommand))]
+    [NotifyCanExecuteChangedFor(nameof(LoadSessionsCommand))]
+    [NotifyCanExecuteChangedFor(nameof(CancelRestoreCommand))]
+    public partial bool IsRestoreActive { get; set; }
 
     public bool HasSessions => Sessions.Count > 0;
 
     public event EventHandler? CloseRequested;
 
     /// <summary>Design-time constructor.</summary>
-    public RestoreViewModel() : this(null!, null!, null!) { }
-
-    public RestoreViewModel(
-        IBackupService backupService,
-        IMessageDialogService messageDialog,
-        ILoggingService logger)
+    public RestoreViewModel() : this(null!, null!, null!, new SynchronousFallbackDispatcher())
     {
-        _backupService = backupService;
-        _messageDialog = messageDialog;
-        _logger = logger;
     }
+
+    private bool HasTrustedRestoreRoot => !string.IsNullOrWhiteSpace(_trustedRestoreRoot);
 
     partial void OnSelectedSessionChanged(BackupSession? value)
     {
@@ -68,7 +88,8 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
             {
                 SelectedSessionPlugins.Add(plugin);
             }
-            StatusText = $"Session: {value.Timestamp:MMM d, yyyy h:mm tt} - {value.Plugins.Count} plugin(s)";
+
+            StatusText = $"Session: {FormatSessionTimestamp(value.Timestamp)} - {value.Plugins.Count} plugin(s)";
         }
         else
         {
@@ -81,17 +102,30 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
     /// </summary>
     public async Task LoadSessionsAsync(string? dataFolderPath)
     {
-        if (string.IsNullOrEmpty(dataFolderPath))
+        _trustedRestoreRoot = string.IsNullOrWhiteSpace(dataFolderPath) ? null : dataFolderPath;
+        RestorePluginCommand.NotifyCanExecuteChanged();
+        RestoreAllCommand.NotifyCanExecuteChanged();
+
+        if (!HasTrustedRestoreRoot)
         {
+            _backupRoot = null;
+            // _backupRoot is a private field (not [ObservableProperty]), so the DeleteSession
+            // predicate must be re-evaluated manually after assignment.
+            DeleteSessionCommand.NotifyCanExecuteChanged();
             StatusText = "No game data folder configured -- cannot locate backups";
             return;
         }
 
-        _backupRoot = _backupService.GetBackupRoot(dataFolderPath);
+        var trustedRestoreRoot = _trustedRestoreRoot!;
+        _backupRoot = backupService.GetBackupRoot(trustedRestoreRoot);
+        // Re-evaluate DeleteSession predicate after _backupRoot transitions to a non-null value.
+        DeleteSessionCommand.NotifyCanExecuteChanged();
         await LoadSessions();
     }
 
-    [RelayCommand]
+    private bool CanLoadSessions() => !IsRestoreActive;
+
+    [RelayCommand(CanExecute = nameof(CanLoadSessions))]
     private async Task LoadSessions()
     {
         if (string.IsNullOrEmpty(_backupRoot))
@@ -105,7 +139,7 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
             IsLoading = true;
             StatusText = "Loading backup sessions...";
 
-            var sessions = await _backupService.GetBackupSessionsAsync(_backupRoot);
+            var sessions = await backupService.GetBackupSessionsAsync(_backupRoot);
 
             Sessions.Clear();
             foreach (var session in sessions)
@@ -121,8 +155,8 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
         }
         catch (Exception ex)
         {
-            _logger.Error(ex, "Failed to load backup sessions");
-            StatusText = $"Error loading sessions: {ex.Message}";
+            logger.Error(ex, "Failed to load backup sessions");
+            StatusText = "Backup sessions could not be loaded. See the latest AutoQAC log for technical details.";
         }
         finally
         {
@@ -130,7 +164,7 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
         }
     }
 
-    private bool CanRestorePlugin() => SelectedPlugin != null;
+    private bool CanRestorePlugin() => SelectedPlugin != null && HasTrustedRestoreRoot && !IsRestoreActive;
 
     [RelayCommand(CanExecute = nameof(CanRestorePlugin))]
     private async Task RestorePluginAsync()
@@ -138,24 +172,50 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
         if (SelectedPlugin == null || SelectedSession == null)
             return;
 
+        var plugin = SelectedPlugin;
+        var session = SelectedSession;
+        var safePluginName = DiagnosticTextFormatter.SafePluginName(plugin.FileName);
+        var timestamp = FormatSessionTimestamp(session.Timestamp);
+        var confirmed = await messageDialog.ShowConfirmAsync(
+            "Restore Selected",
+            $"Restore Selected: Restore {safePluginName} from {timestamp}? This overwrites the current plugin file with the backup copy.");
+
+        if (!confirmed)
+            return;
+
         try
         {
-            _backupService.RestorePlugin(SelectedPlugin, SelectedSession.SessionDirectory);
-            StatusText = $"Restored: {SelectedPlugin.FileName}";
-            _logger.Information("Restored plugin {Plugin} from backup", SelectedPlugin.FileName);
+            IsRestoreActive = true;
+            ClearRestoreResult();
+            StatusText = $"Restoring: {safePluginName}";
+            RestoreProgressText = "Restoring 1 / 1 plugins";
+
+            var cts = CreateRestoreCancellationSource();
+            var progress = CreateRestoreProgressReporter([plugin]);
+
+            var result = await backupService.RestorePluginAsync(plugin, session.SessionDirectory, _trustedRestoreRoot,
+                progress, cts.Token);
+            ApplyRestoreResult(result);
+            logger.Information("Restore selected completed with status {Status} for plugin {Plugin}", result.Status,
+                plugin.FileName);
         }
         catch (Exception ex)
         {
-            _logger.Error(ex, "Failed to restore plugin {Plugin}", SelectedPlugin.FileName);
-            await _messageDialog.ShowErrorAsync(
+            logger.Error(ex, "Failed to restore plugin {Plugin}", plugin.FileName);
+            await messageDialog.ShowErrorAsync(
                 "Restore Failed",
-                $"Failed to restore '{SelectedPlugin.FileName}'.",
-                ex.Message);
-            StatusText = $"Failed to restore: {SelectedPlugin.FileName}";
+                $"Failed to restore '{safePluginName}'.",
+                "Technical details were written to the log.");
+            StatusText = $"Failed to restore: {safePluginName}";
+        }
+        finally
+        {
+            DisposeRestoreCancellationSource(cancel: false);
+            IsRestoreActive = false;
         }
     }
 
-    private bool CanRestoreAll() => SelectedSession != null;
+    private bool CanRestoreAll() => SelectedSession != null && HasTrustedRestoreRoot && !IsRestoreActive;
 
     [RelayCommand(CanExecute = nameof(CanRestoreAll))]
     private async Task RestoreAllAsync()
@@ -164,42 +224,81 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
             return;
 
         var pluginCount = SelectedSession.Plugins.Count;
-        var timestamp = SelectedSession.Timestamp.ToString("MMM d, yyyy h:mm tt");
+        var session = SelectedSession;
+        var timestamp = FormatSessionTimestamp(session.Timestamp);
 
-        var confirmed = await _messageDialog.ShowConfirmAsync(
-            "Restore All Plugins",
-            $"Restore all {pluginCount} plugin(s) from session {timestamp}?\n\n" +
-            "This will overwrite current files with the backed-up versions.");
+        var confirmed = await messageDialog.ShowConfirmAsync(
+            "Restore All",
+            $"Restore All: Restore {pluginCount} plugin(s) from {timestamp}? Current plugin files will be overwritten by backup copies. AutoQAC will continue past individual failures and show a result list.");
 
         if (!confirmed)
             return;
 
         try
         {
-            _backupService.RestoreSession(SelectedSession);
-            StatusText = $"Restored all {pluginCount} plugin(s) from session";
-            _logger.Information("Restored all {Count} plugins from backup session {Timestamp}",
-                pluginCount, timestamp);
+            IsRestoreActive = true;
+            ClearRestoreResult();
+            StatusText = $"Restoring {pluginCount} plugin(s) from session";
+            RestoreProgressText = $"Restoring 0 / {pluginCount} plugins";
+
+            var cts = CreateRestoreCancellationSource();
+            var progress = CreateRestoreProgressReporter(session.Plugins);
+
+            var result = await backupService.RestoreSessionAsync(session, _trustedRestoreRoot, progress, cts.Token);
+            ApplyRestoreResult(result);
+            logger.Information("Restore all completed with status {Status} for backup session {Timestamp}",
+                result.Status, timestamp);
         }
         catch (Exception ex)
         {
-            _logger.Error(ex, "Failed to restore session");
-            await _messageDialog.ShowErrorAsync(
+            logger.Error(ex, "Failed to restore session");
+            await messageDialog.ShowErrorAsync(
                 "Restore Failed",
                 "Some plugins may have failed to restore.",
-                ex.Message);
+                "Technical details were written to the log.");
             StatusText = "Partial restore -- some plugins may have failed";
+        }
+        finally
+        {
+            DisposeRestoreCancellationSource(cancel: false);
+            IsRestoreActive = false;
         }
     }
 
-    [RelayCommand(CanExecute = nameof(CanRestoreAll))]
+    private bool CanCancelRestore() => IsRestoreActive;
+
+    [RelayCommand(CanExecute = nameof(CanCancelRestore))]
+    private void CancelRestore()
+    {
+        _restoreCts?.Cancel();
+        StatusText =
+            "Cancel restore requested. The partial file will be deleted and completed/failed/canceled rows will remain visible.";
+    }
+
+    /// <summary>
+    /// Plan 07-13: gates DeleteSessionCommand on a non-null/non-whitespace _backupRoot AND a
+    /// loaded trusted restore root, unifying Delete Session safety with Restore Selected/All
+    /// gating from Plan 07-11. _backupRoot is a private field rather than an [ObservableProperty],
+    /// so callers must invoke <see cref="System.Windows.Input.ICommand"/> NotifyCanExecuteChanged
+    /// after mutating it (see <see cref="LoadSessionsAsync"/>).
+    /// </summary>
+    private bool CanDeleteSession() =>
+        SelectedSession != null &&
+        !string.IsNullOrWhiteSpace(_backupRoot) &&
+        HasTrustedRestoreRoot &&
+        !IsRestoreActive;
+
+    [RelayCommand(CanExecute = nameof(CanDeleteSession))]
     private async Task DeleteSessionAsync()
     {
-        if (SelectedSession == null)
+        // Defense-in-depth guard: even if a caller bypasses CanExecute, a missing _backupRoot
+        // or null SelectedSession must still short-circuit before invoking the backup service.
+        if (SelectedSession == null || string.IsNullOrWhiteSpace(_backupRoot))
             return;
 
-        var timestamp = SelectedSession.Timestamp.ToString("MMM d, yyyy h:mm tt");
-        var confirmed = await _messageDialog.ShowConfirmAsync(
+        var session = SelectedSession;
+        var timestamp = FormatSessionTimestamp(session.Timestamp);
+        var confirmed = await messageDialog.ShowConfirmAsync(
             "Delete Backup Session",
             $"Permanently delete backup session from {timestamp}?\n\n" +
             "This action cannot be undone.");
@@ -207,34 +306,214 @@ public sealed partial class RestoreViewModel : ViewModelBase, IDisposable
         if (!confirmed)
             return;
 
-        try
-        {
-            var dirToDelete = SelectedSession.SessionDirectory;
-            if (System.IO.Directory.Exists(dirToDelete))
-            {
-                System.IO.Directory.Delete(dirToDelete, recursive: true);
-            }
+        // Plan 07-13: filesystem work runs in IBackupService.DeleteSessionAsync (per CLAUDE.md
+        // "All business logic lives in services, not ViewModels"). The service validates
+        // session-directory containment via BackupPathContainment.IsContained (Plan 07-14)
+        // and routes the recursive delete through IBackupSessionDeleter (Plan 07-02).
+        var result = await backupService.DeleteSessionAsync(session, _backupRoot!, CancellationToken.None);
 
-            Sessions.Remove(SelectedSession);
-            SelectedSession = null;
-            OnPropertyChanged(nameof(HasSessions));
-            StatusText = "Session deleted";
-            _logger.Information("Deleted backup session: {Timestamp}", timestamp);
-        }
-        catch (Exception ex)
+        switch (result.Status)
         {
-            _logger.Error(ex, "Failed to delete backup session");
-            await _messageDialog.ShowErrorAsync(
-                "Delete Failed",
-                "Failed to delete the backup session.",
-                ex.Message);
+            case BackupSessionDeleteStatus.Deleted:
+                Sessions.Remove(session);
+                SelectedSession = null;
+                OnPropertyChanged(nameof(HasSessions));
+                StatusText = "Session deleted";
+                logger.Information("Deleted backup session: {Timestamp}", timestamp);
+                break;
+
+            case BackupSessionDeleteStatus.RejectedOutsideBackupRoot:
+                // One canonical user-facing sentence is shared between StatusText and dialog
+                // details so the safety message stays consistent across the restore-window
+                // surface (LOW finding from cross-AI review).
+                StatusText = "The selected backup session is outside the configured backup folder.";
+                await messageDialog.ShowErrorAsync(
+                    "Delete Failed",
+                    "Failed to delete the backup session.",
+                    "The selected backup session is outside the configured backup folder.");
+                break;
+
+            case BackupSessionDeleteStatus.Failed:
+            default:
+                // Generic IO failure copy: the technical exception detail lives in the
+                // service log, not in the dialog (D-04 concise reason pattern).
+                StatusText = "Failed to delete the backup session. Technical details were written to the log.";
+                await messageDialog.ShowErrorAsync(
+                    "Delete Failed",
+                    "Failed to delete the backup session.",
+                    "Technical details were written to the log.");
+                break;
         }
     }
 
     [RelayCommand]
     private void Close() => CloseRequested?.Invoke(this, EventArgs.Empty);
 
+    /// <summary>
+    /// Clears the inline restore result state before a new restore operation starts.
+    /// </summary>
+    private void ClearRestoreResult()
+    {
+        RestoreOutcomeTitle = string.Empty;
+        RestoreSummaryText = string.Empty;
+        RestoreProgressText = string.Empty;
+        RestoreBytesCopied = 0;
+        RestoreTotalBytes = null;
+        RestoreResults.Clear();
+        IsRestoreResultVisible = false;
+    }
+
+    /// <summary>
+    /// Creates and owns the cancellation source for exactly one active restore operation.
+    /// </summary>
+    /// <returns>The newly created cancellation source.</returns>
+    private CancellationTokenSource CreateRestoreCancellationSource()
+    {
+        DisposeRestoreCancellationSource(cancel: false);
+        _restoreCts = new CancellationTokenSource();
+        return _restoreCts;
+    }
+
+    /// <summary>
+    /// Disposes the active restore cancellation source and optionally requests cancellation first.
+    /// </summary>
+    /// <param name="cancel">True when disposal should also cancel active restore work.</param>
+    private void DisposeRestoreCancellationSource(bool cancel)
+    {
+        var cts = _restoreCts;
+        _restoreCts = null;
+
+        if (cts == null)
+            return;
+
+        if (cancel)
+        {
+            cts.Cancel();
+        }
+
+        cts.Dispose();
+    }
+
+    /// <summary>
+    /// Builds a progress reporter that translates byte-level service progress into restore-window text.
+    /// </summary>
+    /// <param name="plugins">Plugins included in the current restore operation.</param>
+    /// <returns>A progress reporter safe for the backup service to call during restore copies.</returns>
+    private IProgress<BackupCopyProgress> CreateRestoreProgressReporter(IReadOnlyList<BackupPluginEntry> plugins) =>
+        new RestoreProgressReporter(progress =>
+            uiDispatcher.Post(() => UpdateRestoreProgress(progress, plugins)));
+
+    /// <summary>
+    /// Updates bindable progress fields with plugin position and decimal byte counts when available.
+    /// </summary>
+    /// <param name="progress">Latest copy progress from the backup service.</param>
+    /// <param name="plugins">Plugins included in the active restore operation.</param>
+    private void UpdateRestoreProgress(BackupCopyProgress progress, IReadOnlyList<BackupPluginEntry> plugins)
+    {
+        RestoreBytesCopied = progress.BytesCopied;
+        RestoreTotalBytes = progress.TotalBytes;
+
+        var currentIndex = -1;
+        for (var i = 0; i < plugins.Count; i++)
+        {
+            if (!string.Equals(plugins[i].FileName, progress.FileName, StringComparison.OrdinalIgnoreCase)) continue;
+            currentIndex = i;
+            break;
+        }
+
+        var currentCount = currentIndex >= 0 ? currentIndex + 1 : Math.Min(RestoreResults.Count + 1, plugins.Count);
+        var text = $"Restoring {currentCount} / {plugins.Count} plugins";
+
+        if (progress.TotalBytes is { } totalBytes)
+        {
+            text +=
+                $" — {BackupProgressTextFormatter.FormatBytes(progress.BytesCopied)} / {BackupProgressTextFormatter.FormatBytes(totalBytes)}";
+        }
+
+        RestoreProgressText = text;
+    }
+
+    /// <summary>
+    /// Marshals service progress through the UI dispatcher before applying it to bindable state.
+    /// </summary>
+    private sealed class RestoreProgressReporter(Action<BackupCopyProgress> onProgress) : IProgress<BackupCopyProgress>
+    {
+        /// <summary>
+        /// Applies a progress update to the owning ViewModel.
+        /// </summary>
+        /// <param name="value">Progress value reported by the backup service.</param>
+        public void Report(BackupCopyProgress value) => onProgress(value);
+    }
+
+    /// <summary>
+    /// Design-time fallback dispatcher used only when the XAML designer invokes the parameterless constructor.
+    /// </summary>
+    private sealed class SynchronousFallbackDispatcher : IUiDispatcher
+    {
+        /// <inheritdoc />
+        public void Post(Action action) => action();
+
+        /// <inheritdoc />
+        public Task InvokeAsync(Func<Task> action) => action();
+    }
+
+    /// <summary>
+    /// Copies a structured restore service result into bindable inline result properties without exposing raw exception details.
+    /// </summary>
+    /// <param name="result">Structured restore result returned by the backup service.</param>
+    private void ApplyRestoreResult(BackupRestoreResult result)
+    {
+        RestoreOutcomeTitle = result.Status switch
+        {
+            BackupOperationStatus.Complete => "Restore Complete",
+            BackupOperationStatus.Partial => "Restore Partial",
+            BackupOperationStatus.Failed => "Restore Failed",
+            BackupOperationStatus.Canceled => "Restore Canceled",
+            _ => "Restore Failed"
+        };
+
+        RestoreResults.Clear();
+        foreach (var row in result.Rows)
+        {
+            RestoreResults.Add(row);
+        }
+
+        RestoreSummaryText = BuildRestoreSummaryText(result);
+        StatusText = RestoreSummaryText;
+        IsRestoreResultVisible = true;
+    }
+
+    /// <summary>
+    /// Builds concise restore summary copy for the inline result panel.
+    /// </summary>
+    /// <param name="result">Structured restore result to summarize.</param>
+    /// <returns>User-facing summary text without raw file paths or exception details.</returns>
+    private static string BuildRestoreSummaryText(BackupRestoreResult result)
+    {
+        var counts = $"{result.RestoredCount} restored, {result.FailedCount} failed, {result.CanceledCount} canceled";
+
+        return result.Status switch
+        {
+            BackupOperationStatus.Complete => $"Restore completed: {result.RestoredCount} plugin(s) restored.",
+            BackupOperationStatus.Partial =>
+                $"Restore partially completed: {counts}. Review the rows below. Technical details were written to the log.",
+            BackupOperationStatus.Failed =>
+                $"Restore failed: {counts}. Review the failed rows, fix missing files or permissions, then try again. Technical details were written to the log.",
+            BackupOperationStatus.Canceled =>
+                $"Restore canceled: {counts}. Partial files were removed and completed/failed/canceled rows remain visible.",
+            _ => $"Restore completed with status {result.Status}: {counts}."
+        };
+    }
+
+    /// <summary>
+    /// Formats session timestamps for restore confirmation copy so tests and dialogs use one consistent value.
+    /// </summary>
+    /// <param name="timestamp">Backup session timestamp.</param>
+    /// <returns>Short local timestamp suitable for confirmation dialogs.</returns>
+    private static string FormatSessionTimestamp(DateTime timestamp) => timestamp.ToString("MMM d, yyyy h:mm tt");
+
     public void Dispose()
     {
+        DisposeRestoreCancellationSource(cancel: true);
     }
 }

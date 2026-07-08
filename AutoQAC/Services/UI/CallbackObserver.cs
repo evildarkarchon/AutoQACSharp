@@ -8,20 +8,13 @@ namespace AutoQAC.Services.UI;
 /// (e.g. <c>IStateService.StateChanged</c>) without depending on
 /// <c>System.Reactive</c> for the <c>Subscribe(Action&lt;T&gt;)</c> overload.
 /// </summary>
-public sealed class CallbackObserver<T> : IObserver<T>
+public sealed class CallbackObserver<T>(Action<T> onNext, Action<Exception>? onError = null) : IObserver<T>
 {
-    private readonly Action<T> _onNext;
-    private readonly Action<Exception>? _onError;
-
-    public CallbackObserver(Action<T> onNext, Action<Exception>? onError = null)
+    public void OnCompleted()
     {
-        _onNext = onNext;
-        _onError = onError;
     }
 
-    public void OnCompleted() { }
+    public void OnError(Exception error) => onError?.Invoke(error);
 
-    public void OnError(Exception error) => _onError?.Invoke(error);
-
-    public void OnNext(T value) => _onNext(value);
+    public void OnNext(T value) => onNext(value);
 }

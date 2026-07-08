@@ -7,39 +7,33 @@ namespace AutoQAC.ViewModels;
 
 public sealed partial class MessageDialogViewModel : ViewModelBase
 {
-    [ObservableProperty]
-    private string _title = string.Empty;
+    [ObservableProperty] public partial string Title { get; set; } = string.Empty;
 
-    [ObservableProperty]
-    private string _message = string.Empty;
+    [ObservableProperty] public partial string Message { get; set; } = string.Empty;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasDetails))]
-    private string? _details;
+    public partial string? Details { get; set; }
 
-    [ObservableProperty]
-    private bool _showDetailsExpanded;
+    [ObservableProperty] public partial bool ShowDetailsExpanded { get; set; }
 
-    [ObservableProperty]
-    private string _iconGlyph = string.Empty;
+    [ObservableProperty] public partial string IconGlyph { get; set; } = string.Empty;
 
-    [ObservableProperty]
-    private string _iconColor = "Gray";
+    [ObservableProperty] public partial string IconColor { get; set; } = "Gray";
 
-    [ObservableProperty]
-    private bool _showOkButton;
+    [ObservableProperty] public partial bool ShowOkButton { get; set; }
 
-    [ObservableProperty]
-    private bool _showCancelButton;
+    [ObservableProperty] public partial bool ShowCancelButton { get; set; }
 
-    [ObservableProperty]
-    private bool _showYesButton;
+    [ObservableProperty] public partial bool ShowYesButton { get; set; }
 
-    [ObservableProperty]
-    private bool _showNoButton;
+    [ObservableProperty] public partial bool ShowNoButton { get; set; }
 
-    [ObservableProperty]
-    private bool _showRetryButton;
+    [ObservableProperty] public partial string YesButtonText { get; set; } = "Yes";
+
+    [ObservableProperty] public partial string NoButtonText { get; set; } = "No";
+
+    [ObservableProperty] public partial bool ShowRetryButton { get; set; }
 
     public bool HasDetails => !string.IsNullOrEmpty(Details);
 
@@ -63,65 +57,4 @@ public sealed partial class MessageDialogViewModel : ViewModelBase
 
     [RelayCommand]
     private void ToggleDetails() => ShowDetailsExpanded = !ShowDetailsExpanded;
-
-    public void ConfigureButtons(MessageDialogButtons buttons)
-    {
-        ShowOkButton = false;
-        ShowCancelButton = false;
-        ShowYesButton = false;
-        ShowNoButton = false;
-        ShowRetryButton = false;
-
-        switch (buttons)
-        {
-            case MessageDialogButtons.Ok:
-                ShowOkButton = true;
-                break;
-            case MessageDialogButtons.OkCancel:
-                ShowOkButton = true;
-                ShowCancelButton = true;
-                break;
-            case MessageDialogButtons.YesNo:
-                ShowYesButton = true;
-                ShowNoButton = true;
-                break;
-            case MessageDialogButtons.YesNoCancel:
-                ShowYesButton = true;
-                ShowNoButton = true;
-                ShowCancelButton = true;
-                break;
-            case MessageDialogButtons.RetryCancel:
-                ShowRetryButton = true;
-                ShowCancelButton = true;
-                break;
-        }
-    }
-
-    public void ConfigureIcon(MessageDialogIcon icon)
-    {
-        switch (icon)
-        {
-            case MessageDialogIcon.Information:
-                IconGlyph = "ℹ";
-                IconColor = "#0078D4";
-                break;
-            case MessageDialogIcon.Warning:
-                IconGlyph = "⚠";
-                IconColor = "#FF8C00";
-                break;
-            case MessageDialogIcon.Error:
-                IconGlyph = "❌";
-                IconColor = "#D13438";
-                break;
-            case MessageDialogIcon.Question:
-                IconGlyph = "?";
-                IconColor = "#0078D4";
-                break;
-            case MessageDialogIcon.None:
-            default:
-                IconGlyph = string.Empty;
-                IconColor = "Gray";
-                break;
-        }
-    }
 }

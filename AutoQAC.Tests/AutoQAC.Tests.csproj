@@ -4,6 +4,7 @@
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <LangVersion>preview</LangVersion>
 
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
@@ -15,20 +16,21 @@
     <Include>[AutoQAC]*</Include>
     <Exclude>[AutoQAC.Tests]*</Exclude>
     <ExcludeByAttribute>ExcludeFromCodeCoverage</ExcludeByAttribute>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="coverlet.collector" Version="8.0.0">
+    <PackageReference Include="coverlet.collector" Version="10.0.1">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="coverlet.msbuild" Version="8.0.0">
+    <PackageReference Include="coverlet.msbuild" Version="10.0.1">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="FluentAssertions" Version="8.8.0" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.3" />
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
+    <PackageReference Include="FluentAssertions" Version="8.10.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.9" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.7.0" />
     <PackageReference Include="NSubstitute" Version="5.3.0" />
     <PackageReference Include="NSubstitute.Analyzers.CSharp" Version="1.0.17">
       <PrivateAssets>all</PrivateAssets>
@@ -39,12 +41,18 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Remove="TestProcessHelper\**\*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\AutoQAC\AutoQAC.csproj" />
     <ProjectReference Include="..\QueryPlugins\QueryPlugins.csproj" />
+    <ProjectReference Include="TestProcessHelper\AutoQAC.TestProcessHelper.csproj" ReferenceOutputAssembly="false" OutputItemType="Content" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="TestProcessHelper\bin\$(Configuration)\net10.0\AutoQAC.TestProcessHelper.dll" CopyToOutputDirectory="PreserveNewest" Link="AutoQAC.TestProcessHelper.dll" />
   </ItemGroup>
 
 </Project>

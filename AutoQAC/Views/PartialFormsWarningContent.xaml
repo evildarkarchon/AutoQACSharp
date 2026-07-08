@@ -1,0 +1,47 @@
+<UserControl
+    x:Class="AutoQAC.Views.PartialFormsWarningContent"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid RowDefinitions="*,Auto" RowSpacing="24" MinWidth="460">
+        <StackPanel Grid.Row="0" Spacing="16">
+            <TextBlock
+                Text="Warning: Experimental Feature"
+                Style="{StaticResource SubtitleTextBlockStyle}"
+                Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
+
+            <TextBlock TextWrapping="Wrap">
+                Partial Forms cleaning is an experimental feature that may cause issues:
+            </TextBlock>
+
+            <StackPanel Margin="16,0,0,0" Spacing="8">
+                <TextBlock Text="- Only works with xEdit 4.1.5b or newer" />
+                <TextBlock Text="- Only supported for SSE and FO4" />
+                <TextBlock Text="- May cause unexpected behavior" />
+                <TextBlock Text="- Always backup your plugins first" />
+            </StackPanel>
+
+            <TextBlock
+                Text="Do you want to enable Partial Forms cleaning?"
+                TextWrapping="Wrap"
+                Style="{StaticResource BodyStrongTextBlockStyle}" />
+        </StackPanel>
+
+        <StackPanel
+            Grid.Row="1"
+            Orientation="Horizontal"
+            HorizontalAlignment="Right"
+            Spacing="8">
+            <Button
+                AutomationProperties.AutomationId="PartialFormsEnableButton"
+                Content="Enable"
+                Command="{Binding EnableCommand}"
+                MinWidth="96" />
+            <Button
+                AutomationProperties.AutomationId="PartialFormsCancelButton"
+                Content="Cancel"
+                Command="{Binding CancelCommand}"
+                MinWidth="96" />
+        </StackPanel>
+    </Grid>
+</UserControl>
+

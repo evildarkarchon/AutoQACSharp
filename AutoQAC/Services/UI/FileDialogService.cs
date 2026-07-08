@@ -1,155 +1,155 @@
-using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis;
+using System;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
-using Avalonia;
-using Avalonia.Controls;
-using Avalonia.Controls.ApplicationLifetimes;
-using Avalonia.Platform.Storage;
+using Microsoft.Windows.Storage.Pickers;
 
 namespace AutoQAC.Services.UI;
 
-public sealed class FileDialogService : IFileDialogService
+public sealed class FileDialogService(
+    IWindowContextProvider windowContextProvider,
+    IUiDispatcher uiDispatcher)
+    : IFileDialogService
 {
-    [SuppressMessage("Performance", "CA1826:Do not use Enumerable methods on indexable collections")]
-    public async Task<string?> OpenFileDialogAsync(
+    public Task<string?> OpenFileDialogAsync(
         string title,
         string filter,
         string? initialDirectory = null)
     {
-        var mainWindow = GetMainWindow();
-        if (mainWindow == null) return null;
-
-        var topLevel = TopLevel.GetTopLevel(mainWindow);
-        if (topLevel == null) return null;
-
-        var options = new FilePickerOpenOptions
+        return InvokeOnUiThreadAsync(async () =>
         {
-            Title = title,
-            AllowMultiple = false
-        };
-
-        if (!string.IsNullOrEmpty(initialDirectory))
-        {
-            // Try to get the folder from path
-            try 
+            if (!windowContextProvider.TryGetContext(out var windowId, out _))
             {
-                var folder = await topLevel.StorageProvider.TryGetFolderFromPathAsync(initialDirectory);
-                options.SuggestedStartLocation = folder;
+                return null;
             }
-            catch { /* ignore invalid path */ }
-        }
 
-        if (!string.IsNullOrEmpty(filter))
-        {
-            options.FileTypeFilter = ParseFilter(filter);
-        }
+            var picker = new FileOpenPicker(windowId)
+            {
+                Title = title
+            };
 
-        var result = await topLevel.StorageProvider.OpenFilePickerAsync(options);
-        return result.FirstOrDefault()?.Path.LocalPath;
+            SetSuggestedStartFolder(picker, initialDirectory);
+
+            foreach (var choice in FileDialogFilterMapper.BuildFileTypeChoices(filter))
+            {
+                picker.FileTypeChoices.Add(choice.Key, choice.Value.ToList());
+            }
+
+            var result = await picker.PickSingleFileAsync();
+            return result?.Path;
+        });
     }
 
-    public async Task<string?> SaveFileDialogAsync(
+    public Task<string?> SaveFileDialogAsync(
         string title,
         string filter,
         string? defaultFileName = null,
         string? initialDirectory = null)
     {
-        var mainWindow = GetMainWindow();
-        if (mainWindow == null) return null;
-
-        var topLevel = TopLevel.GetTopLevel(mainWindow);
-        if (topLevel == null) return null;
-
-        var options = new FilePickerSaveOptions
+        return InvokeOnUiThreadAsync(async () =>
         {
-            Title = title,
-            SuggestedFileName = defaultFileName
-        };
-
-        if (!string.IsNullOrEmpty(initialDirectory))
-        {
-            try
+            if (!windowContextProvider.TryGetContext(out var windowId, out _))
             {
-                var folder = await topLevel.StorageProvider.TryGetFolderFromPathAsync(initialDirectory);
-                options.SuggestedStartLocation = folder;
+                return null;
             }
-            catch { /* ignore invalid path */ }
-        }
 
-        if (!string.IsNullOrEmpty(filter))
-        {
-            options.FileTypeChoices = ParseFilter(filter);
-        }
+            var picker = new FileSavePicker(windowId)
+            {
+                Title = title,
+                SuggestedFileName = defaultFileName
+            };
 
-        var result = await topLevel.StorageProvider.SaveFilePickerAsync(options);
-        return result?.Path.LocalPath;
+            SetSuggestedStartFolder(picker, initialDirectory);
+
+            foreach (var choice in FileDialogFilterMapper.BuildFileTypeChoices(filter))
+            {
+                picker.FileTypeChoices.Add(choice.Key, choice.Value.ToList());
+            }
+
+            var defaultExtension = FileDialogFilterMapper.BuildExtensionList(filter)
+                .FirstOrDefault(extension => extension != "*");
+            if (!string.IsNullOrWhiteSpace(defaultExtension))
+            {
+                picker.DefaultFileExtension = defaultExtension;
+            }
+
+            var result = await picker.PickSaveFileAsync();
+            return result?.Path;
+        });
     }
 
-    public async Task<string?> OpenFolderDialogAsync(
+    public Task<string?> OpenFolderDialogAsync(
         string title,
         string? initialDirectory = null)
     {
-        var mainWindow = GetMainWindow();
-        if (mainWindow == null) return null;
-
-        var topLevel = TopLevel.GetTopLevel(mainWindow);
-        if (topLevel == null) return null;
-
-        var options = new FolderPickerOpenOptions
+        return InvokeOnUiThreadAsync(async () =>
         {
-            Title = title,
-            AllowMultiple = false
-        };
-
-        if (!string.IsNullOrEmpty(initialDirectory))
-        {
-            try
+            if (!windowContextProvider.TryGetContext(out var windowId, out _))
             {
-                var folder = await topLevel.StorageProvider.TryGetFolderFromPathAsync(initialDirectory);
-                options.SuggestedStartLocation = folder;
+                return null;
             }
-            catch { /* ignore invalid path */ }
-        }
 
-        var result = await topLevel.StorageProvider.OpenFolderPickerAsync(options);
-        return result.FirstOrDefault()?.Path.LocalPath;
+            var picker = new FolderPicker(windowId)
+            {
+                Title = title
+            };
+
+            SetSuggestedStartFolder(picker, initialDirectory);
+
+            var result = await picker.PickSingleFolderAsync();
+            return result?.Path;
+        });
     }
 
-    private static List<FilePickerFileType> ParseFilter(string filter)
+    private async Task<T> InvokeOnUiThreadAsync<T>(Func<Task<T>> action)
     {
-        // Format: "Text Files (*.txt)|*.txt|All Files (*.*)|*.*"
-        var result = new List<FilePickerFileType>();
-        var parts = filter.Split('|');
-        
-        for (int i = 0; i < parts.Length; i += 2)
-        {
-            if (i + 1 >= parts.Length) break;
-            
-            var name = parts[i];
-            var patterns = parts[i+1].Split(';');
-            
-            // Remove * prefix for patterns list, e.g. "*.txt" -> "txt"
-            // Avalonia expects patterns like ["txt", "md"] or MIME types
-            // Actually FilePickerFileType Patterns property expects glob patterns like "*.txt" 
-            // Wait, checking Avalonia docs... 
-            // Patterns: "The list of file name patterns (globs), e.g. *.txt, *.md."
-            
-            result.Add(new FilePickerFileType(name)
-            {
-                Patterns = patterns.ToList()
-            });
-        }
-        
+        T result = default!;
+        await uiDispatcher.InvokeAsync(async () => result = await action());
         return result;
     }
 
-    private static Window? GetMainWindow()
+    private static void SetSuggestedStartFolder(FileOpenPicker picker, string? initialDirectory)
     {
-        if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+        var directory = GetExistingDirectory(initialDirectory);
+        if (directory is not null)
         {
-            return desktop.MainWindow;
+            picker.SuggestedStartFolder = directory;
         }
-        return null;
+    }
+
+    private static void SetSuggestedStartFolder(FileSavePicker picker, string? initialDirectory)
+    {
+        var directory = GetExistingDirectory(initialDirectory);
+        if (directory is not null)
+        {
+            picker.SuggestedStartFolder = directory;
+        }
+    }
+
+    private static void SetSuggestedStartFolder(FolderPicker picker, string? initialDirectory)
+    {
+        var directory = GetExistingDirectory(initialDirectory);
+        if (directory is not null)
+        {
+            picker.SuggestedStartFolder = directory;
+        }
+    }
+
+    private static string? GetExistingDirectory(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return null;
+        }
+
+        if (Directory.Exists(path))
+        {
+            return path;
+        }
+
+        var parentDirectory = Path.GetDirectoryName(path);
+        return !string.IsNullOrWhiteSpace(parentDirectory) && Directory.Exists(parentDirectory)
+            ? parentDirectory
+            : null;
     }
 }

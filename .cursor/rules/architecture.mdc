@@ -2,8 +2,8 @@
 description: MVVM architecture pattern rules and project structure guidelines
 globs:
   - "AutoQAC/**/*.cs"
-  - "AutoQAC/**/*.axaml"
-  - "AutoQAC/**/*.axaml.cs"
+  - "AutoQAC/**/*.xaml"
+  - "AutoQAC/**/*.xaml.cs"
 ---
 
 # MVVM Architecture Rules
@@ -15,7 +15,7 @@ This project follows **strict MVVM architecture**. Violations of layer separatio
 ### Models (`AutoQAC/Models/`)
 
 - Pure business logic and data structures
-- **No UI dependencies** (no Avalonia, no ReactiveUI)
+- **No UI dependencies** (no WinUI controls, windows, or XAML types)
 - Reusable, testable business logic
 - Data transfer objects and domain models
 
@@ -31,25 +31,20 @@ public class PluginInfo
 
 ### ViewModels (`AutoQAC/ViewModels/`)
 
-- Inherit from `ReactiveObject` or `ViewModelBase`
 - Presentation logic only
-- Command handling via `ReactiveCommand`
-- Property change notifications via `RaiseAndSetIfChanged`
+- Use CommunityToolkit.Mvvm source generators (`[ObservableProperty]`, `[RelayCommand]`, `[NotifyPropertyChangedFor]`)
 - **No direct UI manipulation** (no controls, no windows)
 - Communicate with Models for business logic
 
 ```csharp
-// CORRECT: ViewModel with ReactiveUI patterns
-public class MainWindowViewModel : ViewModelBase
+// CORRECT: ViewModel with CommunityToolkit.Mvvm patterns
+public partial class MainWindowViewModel : ViewModelBase
 {
+    [ObservableProperty]
     private string _status = string.Empty;
-    public string Status
-    {
-        get => _status;
-        set => this.RaiseAndSetIfChanged(ref _status, value);
-    }
-    
-    public ReactiveCommand<Unit, Unit> StartCommand { get; }
+
+    [RelayCommand]
+    private Task StartAsync() => Task.CompletedTask;
 }
 ```
 
@@ -72,10 +67,9 @@ AutoQAC/
 ├── ViewModels/              # Presentation logic
 ├── Views/                   # XAML UI
 ├── Infrastructure/          # Cross-cutting concerns (logging, DI)
-├── App.axaml               # Application definition
-├── App.axaml.cs            # Application startup and DI setup
-├── Program.cs              # Entry point
-└── ViewLocator.cs          # Automatic View resolution
+├── App.xaml                # Application resources
+├── App.xaml.cs             # Application startup and DI setup
+└── Program.cs              # Entry point and single-instance redirect
 ```
 
 ## Dependency Injection
@@ -83,7 +77,7 @@ AutoQAC/
 - Services injected via constructor parameters
 - No static dependencies or service locators
 - Use interfaces for testability
-- Register services in `Program.cs` or `App.axaml.cs`
+- Register services through `ServiceCollectionExtensions` and app startup in `App.xaml.cs`
 
 ```csharp
 // CORRECT: Constructor injection

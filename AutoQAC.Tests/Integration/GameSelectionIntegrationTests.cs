@@ -1,6 +1,7 @@
 using AutoQAC.Infrastructure;
 using AutoQAC.Models;
 using AutoQAC.Services.Configuration;
+using AutoQAC.Services.GameCapability;
 using AutoQAC.Services.Plugin;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -8,50 +9,52 @@ using Microsoft.Extensions.DependencyInjection;
 namespace AutoQAC.Tests.Integration;
 
 /// <summary>
-/// Integration tests for the game selection feature with Mutagen support.
+/// Integration tests for game selection and Game capability.
 /// </summary>
 public sealed class GameSelectionIntegrationTests
 {
     [Fact]
-    public void PluginLoadingService_ShouldReportCorrectMutagenSupport()
+    public void PluginRefreshDiscoveryPlanner_ShouldReportCorrectAutomaticDiscoverySupport()
     {
         // Arrange
         var services = new ServiceCollection();
         services.AddInfrastructure();
+        services.AddState();
         services.AddConfiguration();
         services.AddBusinessLogic();
         var provider = services.BuildServiceProvider();
 
-        var pluginLoadingService = provider.GetRequiredService<IPluginLoadingService>();
+        var discoveryPlanner = provider.GetRequiredService<IPluginRefreshDiscoveryPlanner>();
 
-        // Act & Assert - Mutagen supported games
-        pluginLoadingService.IsGameSupportedByMutagen(GameType.SkyrimSe).Should().BeTrue();
-        pluginLoadingService.IsGameSupportedByMutagen(GameType.SkyrimLe).Should().BeTrue();
-        pluginLoadingService.IsGameSupportedByMutagen(GameType.SkyrimVr).Should().BeTrue();
-        pluginLoadingService.IsGameSupportedByMutagen(GameType.Fallout4).Should().BeTrue();
-        pluginLoadingService.IsGameSupportedByMutagen(GameType.Fallout4Vr).Should().BeTrue();
+        // Act & Assert - automatic discovery games
+        discoveryPlanner.GetAffordance(GameType.SkyrimSe, mo2ModeEnabled: false).IsMutagenSupported.Should().BeTrue();
+        discoveryPlanner.GetAffordance(GameType.SkyrimLe, mo2ModeEnabled: false).IsMutagenSupported.Should().BeTrue();
+        discoveryPlanner.GetAffordance(GameType.SkyrimVr, mo2ModeEnabled: false).IsMutagenSupported.Should().BeTrue();
+        discoveryPlanner.GetAffordance(GameType.Fallout4, mo2ModeEnabled: false).IsMutagenSupported.Should().BeTrue();
+        discoveryPlanner.GetAffordance(GameType.Fallout4Vr, mo2ModeEnabled: false).IsMutagenSupported.Should().BeTrue();
 
-        // Not supported by Mutagen
-        pluginLoadingService.IsGameSupportedByMutagen(GameType.Fallout3).Should().BeFalse();
-        pluginLoadingService.IsGameSupportedByMutagen(GameType.FalloutNewVegas).Should().BeFalse();
-        pluginLoadingService.IsGameSupportedByMutagen(GameType.Oblivion).Should().BeFalse();
-        pluginLoadingService.IsGameSupportedByMutagen(GameType.Unknown).Should().BeFalse();
+        // File-load-order or unsupported games
+        discoveryPlanner.GetAffordance(GameType.Fallout3, mo2ModeEnabled: false).IsMutagenSupported.Should().BeFalse();
+        discoveryPlanner.GetAffordance(GameType.FalloutNewVegas, mo2ModeEnabled: false).IsMutagenSupported.Should().BeFalse();
+        discoveryPlanner.GetAffordance(GameType.Oblivion, mo2ModeEnabled: false).IsMutagenSupported.Should().BeFalse();
+        discoveryPlanner.GetAffordance(GameType.Unknown, mo2ModeEnabled: false).IsMutagenSupported.Should().BeFalse();
     }
 
     [Fact]
-    public void PluginLoadingService_ShouldReturnAllAvailableGames()
+    public void PluginRefreshDiscoveryPlanner_ShouldReturnAllAvailableGames()
     {
         // Arrange
         var services = new ServiceCollection();
         services.AddInfrastructure();
+        services.AddState();
         services.AddConfiguration();
         services.AddBusinessLogic();
         var provider = services.BuildServiceProvider();
 
-        var pluginLoadingService = provider.GetRequiredService<IPluginLoadingService>();
+        var discoveryPlanner = provider.GetRequiredService<IPluginRefreshDiscoveryPlanner>();
 
         // Act
-        var availableGames = pluginLoadingService.GetAvailableGames();
+        var availableGames = discoveryPlanner.GetAvailableGames();
 
         // Assert
         availableGames.Should().NotBeEmpty();
@@ -66,7 +69,7 @@ public sealed class GameSelectionIntegrationTests
     public async Task ConfigurationService_ShouldPersistAndLoadSelectedGame()
     {
         // Arrange
-        var tempDir = Path.Combine(Path.GetTempPath(), $"AutoQAC_Test_{System.Guid.NewGuid()}");
+        var tempDir = Path.Combine(Path.GetTempPath(), $"AutoQAC_Test_{Guid.NewGuid()}");
         Directory.CreateDirectory(tempDir);
 
         try
@@ -112,19 +115,18 @@ public sealed class GameSelectionIntegrationTests
     public async Task PluginLoadingService_ShouldLoadPluginsFromFile()
     {
         // Arrange
-        var tempDir = Path.Combine(Path.GetTempPath(), $"AutoQAC_Test_{System.Guid.NewGuid()}");
+        var tempDir = Path.Combine(Path.GetTempPath(), $"AutoQAC_Test_{Guid.NewGuid()}");
         Directory.CreateDirectory(tempDir);
 
         try
         {
             var loadOrderPath = Path.Combine(tempDir, "plugins.txt");
-            await File.WriteAllLinesAsync(loadOrderPath, new[]
-            {
+            await File.WriteAllLinesAsync(loadOrderPath, [
                 "# Comment line",
                 "*Skyrim.esm",
                 "*Update.esm",
                 "TestMod.esp"
-            });
+            ]);
 
             var services = new ServiceCollection();
             services.AddInfrastructure();

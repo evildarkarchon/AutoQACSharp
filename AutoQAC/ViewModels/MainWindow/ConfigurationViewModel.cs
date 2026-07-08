@@ -1,12 +1,15 @@
 using System;
+using System.Collections.ObjectModel;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
+using AutoQAC.Models.Configuration;
+using AutoQAC.Models.Diagnostics;
 using AutoQAC.Services.Configuration;
+using AutoQAC.Services.GameCapability;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Services.State;
 using AutoQAC.Services.UI;
@@ -25,78 +28,88 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
     private readonly IFileDialogService _fileDialog;
     private readonly ILoggingService _logger;
     private readonly IMessageDialogService _messageDialog;
-    private readonly IPluginIssueApproximationService _pluginIssueApproximationService;
     private readonly IPluginLoadingService _pluginLoadingService;
-    private readonly IPluginValidationService _pluginService;
+    private readonly IPluginRefreshModule _pluginRefreshModule;
+    private readonly IPluginRefreshDiscoveryPlanner _discoveryPlanner;
+    private readonly IDiscoverySettingsModule _discoverySettingsModule;
     private readonly IStateService _stateService;
     private readonly IDisposable _skipListChangedSubscription;
 
     private bool _initialized;
-    private CancellationTokenSource? _pluginApproximationCts;
-    private CancellationTokenSource? _pluginRefreshCts;
-    private int _pluginRefreshGeneration;
+    private bool _suppressSelectedGameChanged;
+    private bool _suppressDisableSkipListsChanged;
+    private bool _suppressSelectedProfileChanged;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsLoadOrderConfigured))]
-    private string? _loadOrderPath;
+    public partial string? LoadOrderPath { get; set; }
+
+    [ObservableProperty] public partial string? XEditPath { get; set; }
+
+    [ObservableProperty] public partial string? Mo2Path { get; set; }
 
     [ObservableProperty]
-    private string? _xEditPath;
+    [NotifyPropertyChangedFor(nameof(ShowMo2Config))]
+    [NotifyPropertyChangedFor(nameof(ShowProfileSelector))]
+    [NotifyPropertyChangedFor(nameof(RequiresLoadOrderFile))]
+    public partial bool Mo2ModeEnabled { get; set; }
 
-    [ObservableProperty]
-    private string? _mo2Path;
+    [ObservableProperty] public partial bool PartialFormsEnabled { get; set; }
 
-    [ObservableProperty]
-    private bool _mo2ModeEnabled;
-
-    [ObservableProperty]
-    private bool _partialFormsEnabled;
-
-    [ObservableProperty]
-    private bool _disableSkipListsEnabled;
+    [ObservableProperty] public partial bool DisableSkipListsEnabled { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsMutagenSupported))]
     [NotifyPropertyChangedFor(nameof(IsGameSelected))]
     [NotifyPropertyChangedFor(nameof(RequiresLoadOrderFile))]
+    [NotifyPropertyChangedFor(nameof(ShowMo2Config))]
+    [NotifyPropertyChangedFor(nameof(ShowProfileSelector))]
     [NotifyCanExecuteChangedFor(nameof(ConfigureGameDataFolderCommand))]
-    private GameType _selectedGame = GameType.Unknown;
+    [NotifyCanExecuteChangedFor(nameof(ConfigureMo2InstanceCommand))]
+    public partial GameType SelectedGame { get; set; } = GameType.Unknown;
 
-    [ObservableProperty]
-    private string? _gameDataFolder;
+    [ObservableProperty] public partial string? GameDataFolder { get; set; }
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(ClearGameDataFolderOverrideCommand))]
-    private bool _hasGameDataFolderOverride;
+    public partial bool HasGameDataFolderOverride { get; set; }
+
+    [ObservableProperty] public partial bool HasMigrationWarning { get; set; }
+
+    [ObservableProperty] public partial string? MigrationWarningMessage { get; set; }
+
+    [ObservableProperty] public partial string StatusText { get; set; } = "Ready";
+
+    [ObservableProperty] public partial bool? IsXEditPathValid { get; set; }
+
+    [ObservableProperty] public partial bool? IsMo2PathValid { get; set; }
+
+    [ObservableProperty] public partial bool? IsLoadOrderPathValid { get; set; }
+
+    [ObservableProperty] public partial bool? IsGameDataFolderValid { get; set; }
+
+    [ObservableProperty] public partial string? Mo2InstancePath { get; set; }
 
     [ObservableProperty]
-    private bool _hasMigrationWarning;
+    [NotifyCanExecuteChangedFor(nameof(ResetMo2InstanceCommand))]
+    public partial bool IsMo2InstanceOverride { get; set; }
 
-    [ObservableProperty]
-    private string? _migrationWarningMessage;
+    [ObservableProperty] public partial bool? IsMo2InstanceValid { get; set; }
 
-    [ObservableProperty]
-    private string _statusText = "Ready";
+    [ObservableProperty] public partial string? SelectedProfile { get; set; }
 
-    [ObservableProperty]
-    private bool? _isXEditPathValid;
-
-    [ObservableProperty]
-    private bool? _isMo2PathValid;
-
-    [ObservableProperty]
-    private bool? _isLoadOrderPathValid;
-
-    [ObservableProperty]
-    private bool? _isGameDataFolderValid;
+    public ObservableCollection<string> AvailableProfiles { get; } = [];
 
     public IReadOnlyList<GameType> AvailableGames { get; }
 
-    public bool IsMutagenSupported => _pluginLoadingService.IsGameSupportedByMutagen(SelectedGame);
+    public bool IsMutagenSupported => _discoveryPlanner.GetAffordance(SelectedGame, Mo2ModeEnabled).IsMutagenSupported;
     public bool IsGameSelected => SelectedGame != GameType.Unknown;
-    public bool RequiresLoadOrderFile =>
-        SelectedGame != GameType.Unknown && !_pluginLoadingService.IsGameSupportedByMutagen(SelectedGame);
+
+    public bool RequiresLoadOrderFile => _discoveryPlanner.GetAffordance(SelectedGame, Mo2ModeEnabled).RequiresLoadOrderFile;
+
     public bool IsLoadOrderConfigured => !string.IsNullOrWhiteSpace(LoadOrderPath);
+    public bool ShowMo2Config => Mo2ModeEnabled && IsGameSelected;
+    public bool ShowProfileSelector => ShowMo2Config && AvailableProfiles.Count > 1;
 
     public ConfigurationViewModel(
         IConfigurationService configService,
@@ -106,19 +119,21 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         IMessageDialogService messageDialog,
         IPluginValidationService pluginService,
         IPluginLoadingService pluginLoadingService,
-        IPluginIssueApproximationService? pluginIssueApproximationService = null)
+        IPluginRefreshModule pluginRefreshModule,
+        IPluginRefreshDiscoveryPlanner discoveryPlanner,
+        IDiscoverySettingsModule discoverySettingsModule)
     {
         _configService = configService;
         _stateService = stateService;
         _logger = logger;
         _fileDialog = fileDialog;
         _messageDialog = messageDialog;
-        _pluginService = pluginService;
         _pluginLoadingService = pluginLoadingService;
-        _pluginIssueApproximationService =
-            pluginIssueApproximationService ?? NoOpPluginIssueApproximationService.Instance;
+        _pluginRefreshModule = pluginRefreshModule;
+        _discoveryPlanner = discoveryPlanner;
+        _discoverySettingsModule = discoverySettingsModule;
 
-        AvailableGames = _pluginLoadingService.GetAvailableGames();
+        AvailableGames = _discoveryPlanner.GetAvailableGames();
 
         _skipListChangedSubscription = _configService.SkipListChanged.Subscribe(
             new CallbackObserver<GameType>(OnSkipListChanged));
@@ -146,12 +161,18 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
             ? null
             : File.Exists(value) && value.EndsWith(".exe", StringComparison.OrdinalIgnoreCase);
 
+    partial void OnMo2InstancePathChanged(string? value) =>
+        IsMo2InstanceValid = string.IsNullOrWhiteSpace(value)
+            ? null
+            : Directory.Exists(value);
+
+    // ReSharper disable once UnusedParameter.Global
     partial void OnLoadOrderPathChanged(string? value) => RecomputeLoadOrderValidity();
 
     partial void OnSelectedGameChanged(GameType value)
     {
         RecomputeLoadOrderValidity();
-        if (!_initialized) return;
+        if (_suppressSelectedGameChanged || !_initialized) return;
         _ = HandleSelectedGameChangedAsync(value);
     }
 
@@ -159,8 +180,9 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
     {
         try
         {
-            await _configService.SetSelectedGameAsync(gameType);
-            await RefreshPluginsForGameAsync(gameType);
+            var result = await _discoverySettingsModule.ExecuteAsync(
+                new DiscoverySettingsIntent.SelectGame(gameType));
+            await ApplyDiscoverySettingsResultAsync(result);
         }
         catch (Exception ex)
         {
@@ -192,12 +214,55 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
     partial void OnMo2ModeEnabledChanged(bool value)
     {
         if (!_initialized) return;
-        _ = AutoSaveConfigurationAsync("MO2 mode");
+        _ = HandleMo2ModeChangedAsync(value);
     }
 
-    partial void OnDisableSkipListsEnabledChanged(bool value)
+    partial void OnPartialFormsEnabledChanged(bool value)
     {
         if (!_initialized) return;
+        _stateService.UpdateState(s => s with { PartialFormsEnabled = value });
+    }
+
+    partial void OnSelectedProfileChanged(string? value)
+    {
+        if (_suppressSelectedProfileChanged || !_initialized || !Mo2ModeEnabled ||
+            SelectedGame == GameType.Unknown) return;
+        _ = HandleSelectedProfileChangedAsync(value);
+    }
+
+    private async Task HandleMo2ModeChangedAsync(bool value)
+    {
+        try
+        {
+            var result = await _discoverySettingsModule.ExecuteAsync(
+                new DiscoverySettingsIntent.SetMo2Mode(value));
+            await ApplyDiscoverySettingsResultAsync(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "Failed to handle MO2 mode change");
+        }
+    }
+
+    private async Task HandleSelectedProfileChangedAsync(string? value)
+    {
+        try
+        {
+            var result = await _discoverySettingsModule.ExecuteAsync(
+                new DiscoverySettingsIntent.SetMo2Profile(SelectedGame, value));
+            await ApplyDiscoverySettingsResultAsync(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "Failed to handle MO2 profile change");
+            StatusText = "Error changing MO2 profile";
+        }
+    }
+
+    // ReSharper disable once UnusedParameter.Global
+    partial void OnDisableSkipListsEnabledChanged(bool value)
+    {
+        if (_suppressDisableSkipListsChanged || !_initialized) return;
         _ = HandleDisableSkipListsChangedAsync();
     }
 
@@ -205,24 +270,13 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
     {
         try
         {
-            await SaveConfigurationAsync();
-            await RefreshPluginsForGameAsync(SelectedGame);
+            var result = await _discoverySettingsModule.ExecuteAsync(
+                new DiscoverySettingsIntent.SetDisableSkipLists(DisableSkipListsEnabled));
+            await ApplyDiscoverySettingsResultAsync(result);
         }
         catch (Exception ex)
         {
             _logger.Error(ex, "Failed to handle DisableSkipLists change");
-        }
-    }
-
-    private async Task AutoSaveConfigurationAsync(string description)
-    {
-        try
-        {
-            await SaveConfigurationAsync();
-        }
-        catch (Exception ex)
-        {
-            _logger.Error(ex, "Failed to auto-save {Description} configuration", description);
         }
     }
 
@@ -238,70 +292,59 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
 
         if (!File.Exists(path))
         {
+            var loadOrderIdentifier =
+                DiagnosticTextFormatter.SafeFileIdentifier("Load Order File", path, "load order file");
             await _messageDialog.ShowErrorAsync(
                 "File Not Found",
-                "The selected load order file does not exist.",
-                $"Path: {path}");
+                $"{loadOrderIdentifier} is missing. Choose the current plugins.txt or loadorder.txt file.");
             return;
         }
 
-        _stateService.UpdateConfigurationPaths(path, Mo2Path, XEditPath);
-
         try
         {
-            var plugins = await _pluginService.GetPluginsFromLoadOrderAsync(path, GameDataFolder);
-
-            if (plugins.Count == 0)
+            var result = await _discoverySettingsModule.ExecuteAsync(
+                new DiscoverySettingsIntent.SetLoadOrderPath(SelectedGame, path));
+            if (!await ApplyDiscoverySettingsResultAsync(result))
             {
-                await _messageDialog.ShowWarningAsync(
-                    "No Plugins Found",
-                    "The load order file was parsed successfully but no plugins were found.",
-                    $"File: {path}\n\nEnsure the file contains a valid list of plugin names (one per line).");
+                return;
             }
-
-            var skipList = await _configService.GetSkipListAsync(SelectedGame, ct: CancellationToken.None);
-            var pluginsWithSkipStatus =
-                ApplySkipListStatus(
-                    plugins,
-                    skipList,
-                    SelectedGame,
-                    DisableSkipListsEnabled,
-                    PluginIssueApproximation.Unavailable);
-            _stateService.SetPluginsToClean(pluginsWithSkipStatus);
-            StatusText = $"Loaded {plugins.Count} plugins from load order";
         }
         catch (FileNotFoundException ex)
         {
             _logger.Error(ex, "Load order file not found");
+            var loadOrderIdentifier =
+                DiagnosticTextFormatter.SafeFileIdentifier("Load Order File", path, "load order file");
             await _messageDialog.ShowErrorAsync(
                 "File Not Found",
-                "The load order file could not be found.",
-                $"Path: {path}\n\nError: {ex.Message}");
-            StatusText = "Load order file not found";
+                $"{loadOrderIdentifier} is missing. Choose the current plugins.txt or loadorder.txt file.");
+            StatusText = $"{loadOrderIdentifier} is missing.";
             return;
         }
         catch (IOException ex)
         {
             _logger.Error(ex, "Failed to read load order file");
+            var loadOrderIdentifier =
+                DiagnosticTextFormatter.SafeFileIdentifier("Load Order File", path, "load order file");
             await _messageDialog.ShowErrorAsync(
                 "Read Error",
-                "Failed to read the load order file. The file may be in use by another application.",
-                $"Path: {path}\n\nError: {ex.Message}");
-            StatusText = "Error reading load order file";
+                $"{loadOrderIdentifier} could not be read. See the latest AutoQAC log for technical details.",
+                DiagnosticTextFormatter.LatestLogDetails);
+            StatusText = $"{loadOrderIdentifier} could not be read. See the latest AutoQAC log for technical details.";
             return;
         }
         catch (Exception ex)
         {
-            _logger.Error(ex, "Failed to parse selected load order");
+            _logger.Error(ex, "Failed to apply selected load order");
+            var loadOrderIdentifier =
+                DiagnosticTextFormatter.SafeFileIdentifier("Load Order File", path, "load order file");
+            var failureMessage = DiagnosticTextFormatter.OperationFailed("Load order selection");
             await _messageDialog.ShowErrorAsync(
-                "Invalid Load Order",
-                "Failed to parse the load order file. The file format may be invalid.",
-                $"Path: {path}\n\nError: {ex.Message}\n\nExpected format: One plugin filename per line (e.g., 'MyMod.esp')");
-            StatusText = "Error parsing load order file";
+                "Load Order Selection Failed",
+                $"{loadOrderIdentifier} could not be applied. {failureMessage}",
+                DiagnosticTextFormatter.LatestLogDetails);
+            StatusText = failureMessage;
             return;
         }
-
-        await _configService.SetGameLoadOrderOverrideAsync(SelectedGame, path);
     }
 
     [RelayCommand]
@@ -332,10 +375,52 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
 
         if (string.IsNullOrEmpty(path)) return;
 
-        // See ConfigureXEditAsync — VM property must be set synchronously before save.
-        Mo2Path = path;
-        _stateService.UpdateConfigurationPaths(LoadOrderPath, path, XEditPath);
-        await SaveConfigurationAsync(flushToDisk: true);
+        var result = await _discoverySettingsModule.ExecuteAsync(
+            new DiscoverySettingsIntent.SetMo2ExecutablePath(path));
+        await ApplyDiscoverySettingsResultAsync(result);
+    }
+
+    private bool CanConfigureMo2Instance() => IsGameSelected;
+
+    [RelayCommand(CanExecute = nameof(CanConfigureMo2Instance))]
+    private async Task ConfigureMo2InstanceAsync()
+    {
+        var path = await _fileDialog.OpenFolderDialogAsync(
+            "Select MO2 Instance Folder",
+            Mo2InstancePath);
+
+        if (string.IsNullOrEmpty(path))
+            return;
+
+        if (!Directory.Exists(path))
+        {
+            await _messageDialog.ShowErrorAsync(
+                "Folder Not Found",
+                "The selected MO2 instance folder does not exist.");
+            return;
+        }
+
+        Mo2InstancePath = path;
+        var result = await _discoverySettingsModule.ExecuteAsync(
+            new DiscoverySettingsIntent.SetMo2InstanceOverride(SelectedGame, path));
+        if (await ApplyDiscoverySettingsResultAsync(result))
+        {
+            StatusText = $"MO2 instance override set for {SelectedGame}";
+        }
+    }
+
+    private bool CanResetMo2Instance() => IsMo2InstanceOverride;
+
+    [RelayCommand(CanExecute = nameof(CanResetMo2Instance))]
+    private async Task ResetMo2InstanceAsync()
+    {
+        var result = await _discoverySettingsModule.ExecuteAsync(
+            new DiscoverySettingsIntent.SetMo2InstanceOverride(SelectedGame, null));
+        if (await ApplyDiscoverySettingsResultAsync(result))
+        {
+            IsMo2InstanceOverride = false;
+            StatusText = $"MO2 instance reset to auto-detect for {SelectedGame}";
+        }
     }
 
     private bool CanConfigureGameDataFolder() => IsGameSelected;
@@ -351,42 +436,53 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
 
         if (!Directory.Exists(path))
         {
+            var folderIssue = DiagnosticTextFormatter.SafeFolderIssue(GetSelectedGameFolderDisplayName());
             await _messageDialog.ShowErrorAsync(
                 "Folder Not Found",
-                "The selected folder does not exist.",
-                $"Path: {path}");
+                folderIssue);
             return;
         }
 
-        await _configService.SetGameDataFolderOverrideAsync(SelectedGame, path);
-
         GameDataFolder = path;
-        HasGameDataFolderOverride = true;
-
-        await RefreshPluginsForGameAsync(SelectedGame);
-
-        StatusText = $"Data folder override set for {SelectedGame}";
+        var result = await _discoverySettingsModule.ExecuteAsync(
+            new DiscoverySettingsIntent.SetGameDataFolderOverride(SelectedGame, path));
+        if (await ApplyDiscoverySettingsResultAsync(result))
+        {
+            HasGameDataFolderOverride = true;
+            StatusText = $"Data folder override set for {SelectedGame}";
+        }
     }
 
     private bool CanClearGameDataFolderOverride() => HasGameDataFolderOverride;
 
+    /// <summary>
+    /// Converts the selected game into the folder label used by diagnostics without exposing a selected folder path.
+    /// </summary>
+    /// <returns>A safe game label, or the stable fallback phrase when no game is selected.</returns>
+    private string GetSelectedGameFolderDisplayName() => SelectedGame switch
+    {
+        GameType.SkyrimLe => "Skyrim Legendary Edition",
+        GameType.SkyrimSe => "Skyrim Special Edition",
+        GameType.SkyrimVr => "Skyrim VR",
+        GameType.Fallout4 => "Fallout 4",
+        GameType.Fallout4Vr => "Fallout 4 VR",
+        GameType.Fallout3 => "Fallout 3",
+        GameType.FalloutNewVegas => "Fallout New Vegas",
+        GameType.Oblivion => "Oblivion",
+        _ => "selected game"
+    };
+
     [RelayCommand(CanExecute = nameof(CanClearGameDataFolderOverride))]
     private async Task ClearGameDataFolderOverrideAsync()
     {
-        await _configService.SetGameDataFolderOverrideAsync(SelectedGame, null);
-        HasGameDataFolderOverride = false;
-
-        await RefreshPluginsForGameAsync(SelectedGame);
-
-        GameDataFolder = _pluginLoadingService.GetGameDataFolder(SelectedGame);
-
-        StatusText = $"Data folder reset to auto-detect for {SelectedGame}";
-    }
-
-    [RelayCommand]
-    private void TogglePartialForms()
-    {
-        // PartialFormsEnabled is bound to a CheckBox, so it updates automatically.
+        var result = await _discoverySettingsModule.ExecuteAsync(
+            new DiscoverySettingsIntent.SetGameDataFolderOverride(SelectedGame, null));
+        if (await ApplyDiscoverySettingsResultAsync(result))
+        {
+            HasGameDataFolderOverride = false;
+            GameDataFolder = _pluginLoadingService.GetGameDataFolder(SelectedGame);
+            StatusText = $"Data folder reset to auto-detect for {SelectedGame}";
+        }
     }
 
     [RelayCommand]
@@ -402,24 +498,15 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         try
         {
             StatusText = "Resetting settings to defaults...";
-            await _configService.ResetToDefaultsAsync();
+            var result = await _discoverySettingsModule.ExecuteAsync(new DiscoverySettingsIntent.Reset());
 
-            var config = await _configService.LoadUserConfigAsync();
-
-            _stateService.UpdateConfigurationPaths(
-                config.LoadOrder.File,
-                config.ModOrganizer.Binary,
-                config.XEdit.Binary);
-
-            _stateService.UpdateState(s => s with
-            {
-                Mo2ModeEnabled = config.Settings.Mo2Mode,
-                CleaningTimeout = config.Settings.CleaningTimeout,
-                PartialFormsEnabled = false
-            });
-
-            SelectedGame = GameType.Unknown;
-            _stateService.SetPluginsToClean(new List<PluginInfo>());
+            SetSelectedGameWithoutPersistence(GameType.Unknown);
+            SetDisableSkipListsWithoutPersistence(new AutoQacSettings().DisableSkipLists);
+            Mo2InstancePath = null;
+            IsMo2InstanceOverride = false;
+            SetSelectedProfileWithoutPersistence(null);
+            AvailableProfiles.Clear();
+            await ApplyDiscoverySettingsResultAsync(result);
 
             StatusText = "Settings reset to defaults";
             _logger.Information("Settings reset to defaults by user");
@@ -459,23 +546,13 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
             _initialized = true;
 
             var savedGame = await _configService.GetSelectedGameAsync();
-            SelectedGame = savedGame;
-
-            if (savedGame == GameType.Unknown &&
-                !string.IsNullOrEmpty(config.LoadOrder.File) &&
-                File.Exists(config.LoadOrder.File))
+            if (SelectedGame == savedGame)
             {
-                try
-                {
-                    var plugins = await _pluginService.GetPluginsFromLoadOrderAsync(config.LoadOrder.File);
-                    _stateService.SetPluginsToClean(plugins);
-                    StatusText = "Configuration loaded";
-                }
-                catch (Exception ex)
-                {
-                    _logger.Error(ex, "Failed to parse saved load order on startup");
-                    StatusText = "Configuration loaded (Load Order parse error)";
-                }
+                await RefreshPluginsForGameAsync(savedGame);
+            }
+            else
+            {
+                SelectedGame = savedGame;
             }
         }
         catch (Exception ex)
@@ -495,6 +572,17 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         Mo2Path = state.Mo2ExecutablePath;
         Mo2ModeEnabled = state.Mo2ModeEnabled;
         PartialFormsEnabled = state.PartialFormsEnabled;
+        SetSelectedProfileWithoutPersistence(state.Mo2Profile);
+    }
+
+    /// <summary>
+    /// Applies visible configuration and status fields published by the Plugin refresh module.
+    /// </summary>
+    /// <param name="snapshot">Whole Plugin refresh publication snapshot.</param>
+    public void OnPluginRefreshSnapshot(PluginRefreshSnapshot snapshot)
+    {
+        ApplyRefreshConfiguration(snapshot.Configuration);
+        StatusText = snapshot.StatusText;
     }
 
     /// <summary>
@@ -519,337 +607,141 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
 
     private async Task RefreshPluginsForGameAsync(GameType gameType)
     {
-        var refreshGeneration = Interlocked.Increment(ref _pluginRefreshGeneration);
-        CancelPendingApproximation();
+        var snapshot = await _pluginRefreshModule.ExecuteAsync(new PluginRefreshIntent.RefreshGame(gameType));
+        OnPluginRefreshSnapshot(snapshot);
+    }
 
-        var cts = new CancellationTokenSource();
-        var previousCts = Interlocked.Exchange(ref _pluginRefreshCts, cts);
-        CancelAndDispose(previousCts);
-        var ct = cts.Token;
+    private async Task<bool> ApplyDiscoverySettingsResultAsync(DiscoverySettingsChangeResult result)
+    {
+        if (result.Status == DiscoverySettingsChangeStatus.Accepted)
+        {
+            if (result.Snapshot is not null)
+            {
+                OnPluginRefreshSnapshot(result.Snapshot);
+            }
 
-        bool IsCurrent() =>
-            !ct.IsCancellationRequested
-            && refreshGeneration == Volatile.Read(ref _pluginRefreshGeneration);
+            return true;
+        }
 
+        if (result.Failure is not null)
+        {
+            await ProjectDiscoverySettingsFailureAsync(result.Failure);
+        }
+
+        return false;
+    }
+
+    private async Task ProjectDiscoverySettingsFailureAsync(DiscoverySettingsChangeFailure failure)
+    {
+        StatusText = failure.SafeMessage;
+        if (failure.Kind == DiscoverySettingsChangeFailureKind.InvalidLoadOrderPath)
+        {
+            await _messageDialog.ShowErrorAsync(
+                "File Not Found",
+                failure.SafeMessage);
+            return;
+        }
+
+        if (failure.Kind is DiscoverySettingsChangeFailureKind.InvalidGameDataFolder
+            or DiscoverySettingsChangeFailureKind.InvalidMo2InstanceFolder)
+        {
+            await _messageDialog.ShowErrorAsync(
+                "Folder Not Found",
+                failure.SafeMessage);
+            return;
+        }
+
+        if (failure.Kind == DiscoverySettingsChangeFailureKind.InvalidMo2ExecutablePath)
+        {
+            await _messageDialog.ShowErrorAsync(
+                "File Not Found",
+                failure.SafeMessage);
+        }
+    }
+
+    private void ApplyRefreshConfiguration(PluginRefreshConfigurationProjection projection)
+    {
+        LoadOrderPath = projection.LoadOrderPath;
+        GameDataFolder = projection.GameDataFolder;
+        HasGameDataFolderOverride = projection.HasGameDataFolderOverride;
+
+        if (Mo2ModeEnabled && SelectedGame != GameType.Unknown)
+        {
+            Mo2InstancePath = projection.Mo2InstancePath;
+            IsMo2InstanceOverride = projection.IsMo2InstanceOverride;
+            IsMo2InstanceValid = projection.IsMo2InstanceValid;
+            SetAvailableProfiles(projection.AvailableProfiles);
+            SetSelectedProfileWithoutPersistence(projection.SelectedProfile);
+            return;
+        }
+
+        ClearMo2ProfileState();
+    }
+
+    private void SetAvailableProfiles(IReadOnlyList<string> profiles)
+    {
+        AvailableProfiles.Clear();
+        foreach (var profile in profiles)
+        {
+            AvailableProfiles.Add(profile);
+        }
+
+        OnPropertyChanged(nameof(ShowProfileSelector));
+    }
+
+    private void ClearAvailableProfiles() => SetAvailableProfiles([]);
+
+    private void ClearMo2ProfileState()
+    {
+        Mo2InstancePath = null;
+        IsMo2InstanceOverride = false;
+        IsMo2InstanceValid = null;
+        SetSelectedProfileWithoutPersistence(null);
+        ClearAvailableProfiles();
+    }
+
+    private void SetSelectedProfileWithoutPersistence(string? profile)
+    {
+        _suppressSelectedProfileChanged = true;
         try
         {
-            if (gameType == GameType.Unknown)
-            {
-                if (!IsCurrent()) return;
-                _stateService.SetPluginsToClean(new List<PluginInfo>());
-                GameDataFolder = null;
-                HasGameDataFolderOverride = false;
-                StatusText = "No game selected";
-                return;
-            }
-
-            if (!IsCurrent()) return;
-            _stateService.UpdateState(s => s with { CurrentGameType = gameType });
-
-            var customDataFolder = await _configService.GetGameDataFolderOverrideAsync(gameType, ct);
-            if (!IsCurrent()) return;
-            HasGameDataFolderOverride = !string.IsNullOrWhiteSpace(customDataFolder);
-            GameDataFolder = _pluginLoadingService.GetGameDataFolder(gameType, customDataFolder);
-
-            if (_pluginLoadingService.IsGameSupportedByMutagen(gameType))
-            {
-                if (!IsCurrent()) return;
-                LoadOrderPath = null;
-                _stateService.UpdateConfigurationPaths(null, Mo2Path, XEditPath);
-            }
-            else
-            {
-                var configuredPath = await _configService.GetGameLoadOrderOverrideAsync(gameType, ct);
-                if (!IsCurrent()) return;
-                if (string.IsNullOrWhiteSpace(configuredPath))
-                {
-                    configuredPath = _pluginLoadingService.GetDefaultLoadOrderPath(gameType);
-                    if (!string.IsNullOrEmpty(configuredPath))
-                    {
-                        await _configService.SetGameLoadOrderOverrideAsync(gameType, configuredPath, ct);
-                        if (!IsCurrent()) return;
-                        _logger.Information(
-                            "Auto-detected load order path for {GameType}: {ConfiguredPath}",
-                            gameType,
-                            configuredPath);
-                    }
-                }
-
-                LoadOrderPath = configuredPath;
-                _stateService.UpdateConfigurationPaths(configuredPath, Mo2Path, XEditPath);
-            }
-
-            var skipList = await _configService.GetSkipListAsync(gameType, ct: ct);
-            if (!IsCurrent()) return;
-            var hasMutagenStatusMessage = false;
-
-            if (_pluginLoadingService.IsGameSupportedByMutagen(gameType))
-            {
-                StatusText = $"Loading plugins via Mutagen for {gameType}...";
-                var loadResult = await _pluginLoadingService.TryGetPluginsAsync(gameType, customDataFolder, ct);
-
-                if (!IsCurrent()) return;
-
-                if (!string.IsNullOrWhiteSpace(loadResult.DataFolder))
-                {
-                    GameDataFolder = loadResult.DataFolder;
-                }
-
-                switch (loadResult.Status)
-                {
-                    case PluginLoadingStatus.Success:
-                    {
-                        var pluginsWithSkipStatus =
-                            ApplySkipListStatus(
-                                loadResult.Plugins,
-                                skipList,
-                                gameType,
-                                DisableSkipListsEnabled,
-                                PluginIssueApproximation.Pending);
-                        _stateService.SetPluginsToClean(pluginsWithSkipStatus);
-                        StatusText = $"Loaded {loadResult.Plugins.Count} plugins for {gameType}";
-                        StartApproximationRefresh(
-                            gameType,
-                            loadResult.DataFolder ?? GameDataFolder,
-                            pluginsWithSkipStatus,
-                            refreshGeneration);
-                        return;
-                    }
-                    case PluginLoadingStatus.NoPluginsDiscovered:
-                        _logger.Information(
-                            "Mutagen returned no plugins for {GameType}; file-based loading can be used if configured",
-                            gameType);
-                        StatusText =
-                            $"No plugins discovered via Mutagen for {gameType}. Verify the game has a valid load order and/or set a Data Folder override.";
-                        hasMutagenStatusMessage = true;
-                        break;
-                    case PluginLoadingStatus.DataFolderNotFound:
-                        _logger.Information(
-                            "Mutagen could not resolve data folder for {GameType}; file-based loading can be used if configured",
-                            gameType);
-                        StatusText =
-                            $"Could not resolve {gameType} data folder via Mutagen. Set a game data folder override.";
-                        hasMutagenStatusMessage = true;
-                        break;
-                    case PluginLoadingStatus.Failed:
-                        _logger.Warning(
-                            "Mutagen failed for {GameType}: {Message}",
-                            gameType,
-                            loadResult.FailureReason ?? "Unknown error");
-                        StatusText =
-                            $"Failed to load plugins via Mutagen for {gameType}. Verify Data Folder settings and check logs for details.";
-                        hasMutagenStatusMessage = true;
-                        break;
-                    case PluginLoadingStatus.UnsupportedGame:
-                        StatusText =
-                            $"{gameType} is not supported by Mutagen in this flow. Use file-based loading if configured.";
-                        hasMutagenStatusMessage = true;
-                        break;
-                    default:
-                        _logger.Warning("Unexpected plugin loading status from Mutagen path: {Status}", loadResult.Status);
-                        StatusText =
-                            $"Unexpected plugin loading result for {gameType}. Verify Data Folder settings and check logs for details.";
-                        hasMutagenStatusMessage = true;
-                        break;
-                }
-            }
-
-            if (!string.IsNullOrEmpty(LoadOrderPath) && File.Exists(LoadOrderPath))
-            {
-                try
-                {
-                    StatusText = $"Loading plugins from file for {gameType}...";
-                    var plugins = await _pluginLoadingService.GetPluginsFromFileAsync(LoadOrderPath, GameDataFolder, ct);
-                    if (!IsCurrent()) return;
-                    var pluginsWithSkipStatus = ApplySkipListStatus(
-                        plugins,
-                        skipList,
-                        gameType,
-                        DisableSkipListsEnabled,
-                        PluginIssueApproximation.Unavailable);
-                    _stateService.SetPluginsToClean(pluginsWithSkipStatus);
-                    StatusText = $"Loaded {plugins.Count} plugins from file";
-                }
-                catch (OperationCanceledException) when (ct.IsCancellationRequested)
-                {
-                    // Refresh superseded by a newer game selection; safe to ignore.
-                }
-                catch (Exception ex)
-                {
-                    _logger.Error(ex, "Failed to load plugins from file");
-                    if (IsCurrent()) StatusText = "Error loading plugins";
-                }
-            }
-            else
-            {
-                if (!IsCurrent()) return;
-                _stateService.SetPluginsToClean(new List<PluginInfo>());
-                if (!hasMutagenStatusMessage)
-                {
-                    StatusText = _pluginLoadingService.IsGameSupportedByMutagen(gameType)
-                        ? $"Could not detect {gameType} installation"
-                        : $"{gameType} requires a load order file";
-                }
-            }
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            // Refresh superseded by a newer game selection; safe to ignore.
+            SelectedProfile = profile;
         }
         finally
         {
-            // A newer refresh may have already swapped this CTS out and disposed it
-            // (see Interlocked.Exchange + CancelAndDispose at the top of this method);
-            // only dispose here if we're still the active refresh.
-            if (Interlocked.CompareExchange(ref _pluginRefreshCts, null, cts) == cts)
-            {
-                cts.Dispose();
-            }
+            _suppressSelectedProfileChanged = false;
         }
     }
 
-    /// <summary>
-    /// Applies skip list status to plugins, marking IsInSkipList for each plugin.
-    /// If <paramref name="disableSkipLists"/> is true, all plugins will have IsInSkipList = false.
-    /// </summary>
-    internal static List<PluginInfo> ApplySkipListStatus(IReadOnlyList<PluginInfo> plugins, List<string> skipList,
-        GameType gameType, bool disableSkipLists, PluginIssueApproximation? approximation = null)
+    private void SetSelectedGameWithoutPersistence(GameType gameType)
     {
-        var skipSet = new HashSet<string>(skipList, StringComparer.OrdinalIgnoreCase);
-        return plugins.Select(p => p with
-        {
-            IsInSkipList = !disableSkipLists && skipSet.Contains(p.FileName),
-            DetectedGameType = gameType,
-            Approximation = approximation ?? p.Approximation
-        }).ToList();
-    }
-
-    private void StartApproximationRefresh(
-        GameType gameType,
-        string? dataFolder,
-        IReadOnlyList<PluginInfo> plugins,
-        int refreshGeneration)
-    {
-        if (string.IsNullOrWhiteSpace(dataFolder))
-        {
-            _stateService.MergePluginApproximations(CreateUnavailableApproximations(plugins));
-            return;
-        }
-
-        if (refreshGeneration != Volatile.Read(ref _pluginRefreshGeneration))
-        {
-            return;
-        }
-
-        var cts = new CancellationTokenSource();
-
-        var previous = Interlocked.Exchange(ref _pluginApproximationCts, cts);
-        if (refreshGeneration != Volatile.Read(ref _pluginRefreshGeneration))
-        {
-            Interlocked.CompareExchange(ref _pluginApproximationCts, null, cts);
-            CancelAndDispose(previous);
-            cts.Dispose();
-            return;
-        }
-
-        CancelAndDispose(previous);
-        _ = RunApproximationRefreshAsync(gameType, dataFolder, plugins, refreshGeneration, cts);
-    }
-
-    private async Task RunApproximationRefreshAsync(
-        GameType gameType,
-        string dataFolder,
-        IReadOnlyList<PluginInfo> plugins,
-        int refreshGeneration,
-        CancellationTokenSource cts)
-    {
-        var cancellationToken = cts.Token;
-
+        _suppressSelectedGameChanged = true;
         try
         {
-            var results = await _pluginIssueApproximationService
-                .GetApproximationsAsync(
-                    gameType,
-                    dataFolder,
-                    approximation =>
-                    {
-                        if (cancellationToken.IsCancellationRequested ||
-                            refreshGeneration != Volatile.Read(ref _pluginRefreshGeneration))
-                        {
-                            return;
-                        }
-
-                        _stateService.MergePluginApproximation(approximation);
-                    },
-                    cancellationToken)
-                .ConfigureAwait(false);
-
-            if (cancellationToken.IsCancellationRequested ||
-                refreshGeneration != Volatile.Read(ref _pluginRefreshGeneration))
-            {
-                return;
-            }
-
-            _stateService.MergePluginApproximations(
-                results.Count == 0 ? CreateUnavailableApproximations(plugins) : results);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-        }
-        catch (Exception ex)
-        {
-            _logger.Warning("Plugin issue approximation refresh failed for {GameType}: {Message}", gameType,
-                ex.Message);
-
-            if (!cancellationToken.IsCancellationRequested &&
-                refreshGeneration == Volatile.Read(ref _pluginRefreshGeneration))
-            {
-                _stateService.MergePluginApproximations(CreateUnavailableApproximations(plugins));
-            }
+            SelectedGame = gameType;
         }
         finally
         {
-            Interlocked.CompareExchange(ref _pluginApproximationCts, null, cts);
-            cts.Dispose();
+            _suppressSelectedGameChanged = false;
         }
     }
 
-    private static List<PluginIssueApproximationResult> CreateUnavailableApproximations(
-        IReadOnlyList<PluginInfo> plugins) =>
-        plugins.Select(plugin => new PluginIssueApproximationResult
-        {
-            FileName = plugin.FileName,
-            FullPath = plugin.FullPath,
-            Approximation = PluginIssueApproximation.Unavailable
-        }).ToList();
-
-    private void CancelPendingApproximation()
+    private void SetDisableSkipListsWithoutPersistence(bool disabled)
     {
-        var cts = Interlocked.Exchange(ref _pluginApproximationCts, null);
-        CancelAndDispose(cts);
-    }
-
-    private static void CancelAndDispose(CancellationTokenSource? cts)
-    {
-        if (cts is null)
-        {
-            return;
-        }
-
+        _suppressDisableSkipListsChanged = true;
         try
         {
-            cts.Cancel();
+            DisableSkipListsEnabled = disabled;
         }
-        catch (ObjectDisposedException)
+        finally
         {
+            _suppressDisableSkipListsChanged = false;
         }
-
-        cts.Dispose();
     }
 
     /// <summary>
     /// Shows a non-modal migration warning banner in the main window.
-    /// Called from App.axaml.cs after legacy migration runs on startup.
+    /// Called from App.xaml.cs after legacy migration runs on startup.
     /// </summary>
     public void ShowMigrationWarning(string message)
     {
@@ -859,21 +751,7 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
-        CancelPendingApproximation();
-        CancelAndDispose(Interlocked.Exchange(ref _pluginRefreshCts, null));
+        _ = _pluginRefreshModule.ExecuteAsync(new PluginRefreshIntent.Cancel(PluginRefreshCancelReason.Disposed));
         _skipListChangedSubscription.Dispose();
-    }
-
-    private sealed class NoOpPluginIssueApproximationService : IPluginIssueApproximationService
-    {
-        public static NoOpPluginIssueApproximationService Instance { get; } = new();
-
-        public Task<IReadOnlyList<PluginIssueApproximationResult>> GetApproximationsAsync(
-            GameType gameType,
-            string dataFolder,
-            Action<PluginIssueApproximationResult>? onApproximationReady = null,
-            CancellationToken ct = default) =>
-            Task.FromResult<IReadOnlyList<PluginIssueApproximationResult>>(
-                Array.Empty<PluginIssueApproximationResult>());
     }
 }

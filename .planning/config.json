@@ -1,11 +1,11 @@
 {
-  "model_profile": "quality",
+  "model_profile": "inherit",
   "commit_docs": true,
-  "parallelization": true,
+  "parallelization": false,
   "search_gitignored": false,
   "brave_search": false,
   "firecrawl": false,
-  "exa_search": false,
+  "exa_search": "81a7c4de-78ba-4aef-a32c-6ae9ea97a7c7",
   "git": {
     "branching_strategy": "milestone",
     "phase_branch_template": "gsd/phase-{phase}-{slug}",
@@ -17,7 +17,7 @@
     "plan_check": true,
     "verifier": true,
     "nyquist_validation": true,
-    "auto_advance": true,
+    "auto_advance": false,
     "node_repair": true,
     "node_repair_budget": 2,
     "ui_phase": true,
@@ -26,13 +26,30 @@
     "research_before_questions": true,
     "discuss_mode": "discuss",
     "skip_discuss": false,
-    "_auto_chain_active": false
+    "_auto_chain_active": false,
+    "code_review": true,
+    "tdd_mode": true,
+    "code_review_depth": "deep",
+    "drift_action": "auto-remap",
+    "auto_prune_state": true,
+    "pattern_mapper": true,
+    "use_worktrees": false,
+    "security_enforcement": false,
+    "cross_ai_execution": false
   },
   "hooks": {
     "context_warnings": true
   },
   "agent_skills": {},
-  "resolve_model_ids": "omit",
   "mode": "interactive",
-  "granularity": "fine"
+  "granularity": "fine",
+  "features": {
+    "global_learnings": true
+  },
+  "review": {
+    "models": {
+      "opencode": "opencode run --model opencode/claude-sonnet-4-6"
+    }
+  },
+  "context_window": 1000000
 }

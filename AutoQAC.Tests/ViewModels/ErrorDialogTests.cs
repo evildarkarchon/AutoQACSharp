@@ -5,9 +5,11 @@ using AutoQAC.Models;
 using AutoQAC.Models.Configuration;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
+using AutoQAC.Services.GameCapability;
 using AutoQAC.Services.State;
 using AutoQAC.Services.UI;
 using AutoQAC.Services.Plugin;
+using AutoQAC.Tests.Helpers;
 using AutoQAC.Tests.TestInfrastructure;
 using AutoQAC.ViewModels;
 using FluentAssertions;
@@ -23,31 +25,30 @@ public sealed class ErrorDialogTests
 {
     private readonly IConfigurationService _configServiceMock;
     private readonly IStateService _stateServiceMock;
-    private readonly ICleaningOrchestrator _orchestratorMock;
+    private readonly ICleaningSession _cleaningSessionMock;
     private readonly ILoggingService _loggerMock;
     private readonly IFileDialogService _fileDialogMock;
     private readonly IMessageDialogService _messageDialogMock;
     private readonly IPluginValidationService _pluginServiceMock;
     private readonly IPluginLoadingService _pluginLoadingServiceMock;
     private readonly IUiDispatcher _uiDispatcher;
+    private readonly IPluginRefreshDiscoveryPlanner _discoveryPlanner;
 
     public ErrorDialogTests()
     {
         _configServiceMock = Substitute.For<IConfigurationService>();
         _stateServiceMock = Substitute.For<IStateService>();
-        _orchestratorMock = Substitute.For<ICleaningOrchestrator>();
+        _cleaningSessionMock = Substitute.For<ICleaningSession>();
         _loggerMock = Substitute.For<ILoggingService>();
         _fileDialogMock = Substitute.For<IFileDialogService>();
         _messageDialogMock = Substitute.For<IMessageDialogService>();
         _pluginServiceMock = Substitute.For<IPluginValidationService>();
         _pluginLoadingServiceMock = Substitute.For<IPluginLoadingService>();
         _uiDispatcher = new SynchronousUiDispatcher();
-
-        // Default setup for plugin loading service
-        _pluginLoadingServiceMock.GetAvailableGames()
-            .Returns(new List<GameType> { GameType.SkyrimSe, GameType.Fallout4 });
-        _pluginLoadingServiceMock.IsGameSupportedByMutagen(Arg.Any<GameType>())
-            .Returns(false);
+        _discoveryPlanner = new PluginRefreshDiscoveryPlanner(
+            _configServiceMock,
+            _pluginLoadingServiceMock,
+            Substitute.For<AutoQAC.Services.MO2.IMo2InstanceService>());
 
         // Default setup for CleaningCompleted observable
         _stateServiceMock.CleaningCompleted
@@ -56,24 +57,85 @@ public sealed class ErrorDialogTests
         // Default setup for SkipListChanged observable
         _configServiceMock.SkipListChanged
             .Returns(Observable.Never<GameType>());
+        _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>())
+            .Returns(new UserConfiguration { LoadOrder = new(), XEdit = new(), ModOrganizer = new(), Settings = new() });
+        _configServiceMock.GetSkipListAsync(
+                Arg.Any<GameType>(),
+                Arg.Any<GameVariant>(),
+                Arg.Any<CancellationToken>())
+            .Returns([]);
     }
 
-    private MainWindowViewModel CreateViewModel()
+    private IPluginRefreshModule CreateRefreshModule()
+    {
+        var refreshModule = new RecordingPluginRefreshModule();
+        refreshModule.PublicationHandler = _ => Task.FromResult(CreatePublicationFromState(_stateServiceMock.CurrentState));
+        return refreshModule;
+    }
+
+    private ICleaningCommandReadiness CreateReadiness(IPluginRefreshModule refreshModule) =>
+        new CleaningCommandReadiness(refreshModule, _stateServiceMock);
+
+    private IDiscoverySettingsModule CreateDiscoverySettingsModule(IPluginRefreshModule refreshModule) =>
+        new DiscoverySettingsModule(_configServiceMock, _stateServiceMock, refreshModule);
+
+    private static PluginRefreshPublication CreatePublicationFromState(AppState state)
+    {
+        var gameType = state.CurrentGameType == GameType.Unknown ? GameType.SkyrimSe : state.CurrentGameType;
+        var configuration = RecordingPluginRefreshModule.CreateConfiguration(
+            loadOrderPath: state.LoadOrderPath,
+            xEditPath: state.XEditExecutablePath,
+            mo2Path: state.Mo2ExecutablePath,
+            mo2ModeEnabled: state.Mo2ModeEnabled,
+            mo2InstancePath: state.Mo2ModeEnabled ? Path.GetTempPath() : null,
+            selectedProfile: state.Mo2Profile);
+        var mode = state.Mo2ModeEnabled
+            ? PluginRefreshDiscoveryMode.Mo2LoadOrderFile
+            : gameType is GameType.Fallout3 or GameType.FalloutNewVegas or GameType.Oblivion
+                ? PluginRefreshDiscoveryMode.DirectLoadOrderFile
+                : PluginRefreshDiscoveryMode.DirectAutomatic;
+        var plan = RecordingPluginRefreshModule.CreateDiscoveryPlan(
+            gameType,
+            mode,
+            configuration,
+            loadOrderPath: mode == PluginRefreshDiscoveryMode.DirectLoadOrderFile ? state.LoadOrderPath : null,
+            mo2LoadOrderPath: state.Mo2ModeEnabled ? state.LoadOrderPath : null);
+        var rows = state.PluginsToClean
+            .Select(plugin => RecordingPluginRefreshModule.CreatePublishedRow(
+                plugin,
+                isVisible: !plugin.IsInSkipList,
+                isSelected: !state.ExcludedPluginPaths.Contains(plugin.FullPath),
+                isSkippedByPolicy: plugin.IsInSkipList))
+            .ToList();
+        var snapshot = RecordingPluginRefreshModule.CreateSnapshot(gameType, configuration: configuration);
+        return RecordingPluginRefreshModule.CreatePublication(
+            snapshot,
+            rows,
+            PluginRefreshFreshness.Fresh,
+            plan);
+    }
+
+    private MainWindowViewModel CreateViewModel(IPluginRefreshModule? refreshModule = null)
     {
         var stateSubject = new BehaviorSubject<AppState>(new AppState());
         _stateServiceMock.StateChanged.Returns(stateSubject);
         _stateServiceMock.CurrentState.Returns(new AppState());
 
+        var effectiveRefreshModule = refreshModule ?? CreateRefreshModule();
         return new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
             _pluginServiceMock,
             _pluginLoadingServiceMock,
-            _uiDispatcher);
+            _uiDispatcher,
+            effectiveRefreshModule,
+            _discoveryPlanner,
+            CreateDiscoverySettingsModule(effectiveRefreshModule),
+            CreateReadiness(effectiveRefreshModule));
     }
 
     /// <summary>
@@ -94,16 +156,21 @@ public sealed class ErrorDialogTests
         _stateServiceMock.StateChanged.Returns(stateSubject);
         _stateServiceMock.CurrentState.Returns(validState);
 
+        var refreshModule = CreateRefreshModule();
         return new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
             _pluginServiceMock,
             _pluginLoadingServiceMock,
-            _uiDispatcher);
+            _uiDispatcher,
+            refreshModule,
+            _discoveryPlanner,
+            CreateDiscoverySettingsModule(refreshModule),
+            CreateReadiness(refreshModule));
     }
 
     #region xEdit Validation Tests (Inline Validation Panel)
@@ -127,7 +194,7 @@ public sealed class ErrorDialogTests
         await _messageDialogMock.DidNotReceive().ShowErrorAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>());
 
         // Orchestrator should NOT be called
-        await _orchestratorMock.DidNotReceive().StartCleaningAsync(Arg.Any<TimeoutRetryCallback>(), Arg.Any<BackupFailureCallback>(), Arg.Any<CancellationToken>());
+        await _cleaningSessionMock.DidNotReceive().StartAsync(Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -146,10 +213,51 @@ public sealed class ErrorDialogTests
     }
 
     [Fact]
+    public async Task StartCleaningCommand_ShouldShowInlineValidation_WhenXEditPathIsWhitespace()
+    {
+        // Arrange - whitespace-only paths are not valid configured executable paths.
+        var stateWithWhitespaceXEdit = new AppState
+        {
+            XEditExecutablePath = "   ",
+            PluginsToClean = new List<PluginInfo>
+            {
+                new() { FileName = "Test.esp", FullPath = "Test.esp" }
+            }
+        };
+        var stateSubject = new BehaviorSubject<AppState>(stateWithWhitespaceXEdit);
+        _stateServiceMock.StateChanged.Returns(stateSubject);
+        _stateServiceMock.CurrentState.Returns(stateWithWhitespaceXEdit);
+        var refreshModule = CreateRefreshModule();
+
+        var vm = new MainWindowViewModel(
+            _configServiceMock,
+            _stateServiceMock,
+            _cleaningSessionMock,
+            _loggerMock,
+            _fileDialogMock,
+            _messageDialogMock,
+            _pluginServiceMock,
+            _pluginLoadingServiceMock,
+            _uiDispatcher,
+            refreshModule,
+            _discoveryPlanner,
+            CreateDiscoverySettingsModule(refreshModule),
+            CreateReadiness(refreshModule));
+
+        // Act
+        await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
+
+        // Assert
+        vm.Commands.HasValidationErrors.Should().BeTrue();
+        vm.Commands.ValidationErrors.Should().ContainSingle(e => e.Title == "xEdit not configured");
+        await _cleaningSessionMock.DidNotReceive().StartAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task StartCleaningCommand_ShouldShowInlineValidation_WhenXEditFileNotFound()
     {
         // Arrange - CurrentState has xEdit path that doesn't exist on disk
-        var nonExistentPath = @"C:\NonExistent\xedit.exe";
+        var nonExistentPath = @"C:\Users\Alice\Tools\SSEEdit.exe";
         var stateWithBadXEdit = new AppState
         {
             XEditExecutablePath = nonExistentPath,
@@ -161,17 +269,22 @@ public sealed class ErrorDialogTests
         var stateSubject = new BehaviorSubject<AppState>(stateWithBadXEdit);
         _stateServiceMock.StateChanged.Returns(stateSubject);
         _stateServiceMock.CurrentState.Returns(stateWithBadXEdit);
+        var refreshModule = CreateRefreshModule();
 
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
             _pluginServiceMock,
             _pluginLoadingServiceMock,
-            _uiDispatcher);
+            _uiDispatcher,
+            refreshModule,
+            _discoveryPlanner,
+            CreateDiscoverySettingsModule(refreshModule),
+            CreateReadiness(refreshModule));
 
         vm.Configuration.XEditPath = nonExistentPath;
 
@@ -182,6 +295,51 @@ public sealed class ErrorDialogTests
         vm.Commands.HasValidationErrors.Should().BeTrue();
         vm.Commands.ValidationErrors.Should().Contain(e => e.Title == "xEdit not found",
             "should show xEdit not found error");
+        var error = vm.Commands.ValidationErrors.Single(e => e.Title == "xEdit not found");
+        error.Message.Should().Be("xEdit Path (SSEEdit.exe) is missing. Choose the correct xEdit executable in Settings.");
+        AssertValidationErrorDoesNotContainFullPath(error, @"C:\Users\Alice");
+    }
+
+    [Fact]
+    public async Task StartCleaningCommand_ShouldUseFallbackIdentifier_WhenXEditBasenameIsUnsafe()
+    {
+        // Arrange - all basename characters are unsafe for display, so the fallback name should be used.
+        var unsafeBasenamePath = "C:\\Users\\Alice\\Tools\\\"`|&;";
+        var stateWithBadXEdit = new AppState
+        {
+            XEditExecutablePath = unsafeBasenamePath,
+            PluginsToClean = new List<PluginInfo>
+            {
+                new() { FileName = "Test.esp", FullPath = "Test.esp" }
+            }
+        };
+        var stateSubject = new BehaviorSubject<AppState>(stateWithBadXEdit);
+        _stateServiceMock.StateChanged.Returns(stateSubject);
+        _stateServiceMock.CurrentState.Returns(stateWithBadXEdit);
+        var refreshModule = CreateRefreshModule();
+
+        var vm = new MainWindowViewModel(
+            _configServiceMock,
+            _stateServiceMock,
+            _cleaningSessionMock,
+            _loggerMock,
+            _fileDialogMock,
+            _messageDialogMock,
+            _pluginServiceMock,
+            _pluginLoadingServiceMock,
+            _uiDispatcher,
+            refreshModule,
+            _discoveryPlanner,
+            CreateDiscoverySettingsModule(refreshModule),
+            CreateReadiness(refreshModule));
+
+        // Act
+        await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
+
+        // Assert
+        var error = vm.Commands.ValidationErrors.Single(e => e.Title == "xEdit not found");
+        error.Message.Should().Be("xEdit Path (xEdit executable) is missing. Choose the correct xEdit executable in Settings.");
+        AssertValidationErrorDoesNotContainFullPath(error, @"C:\Users\Alice");
     }
 
     #endregion
@@ -209,17 +367,22 @@ public sealed class ErrorDialogTests
             var stateSubject = new BehaviorSubject<AppState>(state);
             _stateServiceMock.StateChanged.Returns(stateSubject);
             _stateServiceMock.CurrentState.Returns(state);
+            var refreshModule = CreateRefreshModule();
 
             var vm = new MainWindowViewModel(
                 _configServiceMock,
                 _stateServiceMock,
-                _orchestratorMock,
+                _cleaningSessionMock,
                 _loggerMock,
                 _fileDialogMock,
                 _messageDialogMock,
                 _pluginServiceMock,
                 _pluginLoadingServiceMock,
-                _uiDispatcher);
+                _uiDispatcher,
+                refreshModule,
+                _discoveryPlanner,
+                CreateDiscoverySettingsModule(refreshModule),
+                CreateReadiness(refreshModule));
 
             // Act
             await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
@@ -227,10 +390,7 @@ public sealed class ErrorDialogTests
             // Assert
             vm.Commands.HasValidationErrors.Should().BeTrue();
             vm.Commands.ValidationErrors.Should().Contain(e => e.Title == "Load order not configured");
-            await _orchestratorMock.DidNotReceive().StartCleaningAsync(
-                Arg.Any<TimeoutRetryCallback>(),
-                Arg.Any<BackupFailureCallback>(),
-                Arg.Any<CancellationToken>());
+            await _cleaningSessionMock.DidNotReceive().StartAsync(Arg.Any<CancellationToken>());
         }
         finally
         {
@@ -271,7 +431,12 @@ public sealed class ErrorDialogTests
         var tempFile = Path.GetTempFileName();
         try
         {
-            var vm = CreateViewModel();
+            using var refreshModule = new RecordingPluginRefreshModule();
+            refreshModule.ExecuteHandler = (_, _) => Task.FromResult(
+                RecordingPluginRefreshModule.CreateSnapshot(
+                    gameType: GameType.FalloutNewVegas,
+                    statusText: "No plugins found in the selected load order."));
+            var vm = CreateViewModel(refreshModule);
 
             _fileDialogMock.OpenFileDialogAsync(
                     Arg.Any<string>(),
@@ -282,18 +447,16 @@ public sealed class ErrorDialogTests
             _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>())
                 .Returns(new UserConfiguration { LoadOrder = new(), XEdit = new(), ModOrganizer = new(), Settings = new() });
 
-            // Return empty list
-            _pluginServiceMock.GetPluginsFromLoadOrderAsync(tempFile, Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            // Return empty list from the coordinator-backed load-order path.
+            _pluginLoadingServiceMock.GetPluginsFromFileAsync(tempFile, Arg.Any<string?>(), Arg.Any<CancellationToken>())
                 .Returns(new List<PluginInfo>());
+            vm.Configuration.SelectedGame = GameType.FalloutNewVegas;
 
             // Act
             await vm.Configuration.ConfigureLoadOrderCommand.ExecuteAsync(null);
 
             // Assert
-            await _messageDialogMock.Received(1).ShowWarningAsync(
-                    "No Plugins Found",
-                    Arg.Any<string>(),
-                    Arg.Any<string?>());
+            vm.Configuration.StatusText.Should().Contain("No plugins found");
         }
         finally
         {
@@ -309,7 +472,9 @@ public sealed class ErrorDialogTests
         var tempFile = Path.GetTempFileName();
         try
         {
-            var vm = CreateViewModel();
+            using var refreshModule = new RecordingPluginRefreshModule();
+            refreshModule.ExecuteHandler = (_, _) => throw new IOException("File in use");
+            var vm = CreateViewModel(refreshModule);
 
             _fileDialogMock.OpenFileDialogAsync(
                     Arg.Any<string>(),
@@ -317,9 +482,10 @@ public sealed class ErrorDialogTests
                     Arg.Any<string?>())
                 .Returns(tempFile);
 
-            // Throw IOException
-            _pluginServiceMock.GetPluginsFromLoadOrderAsync(tempFile, Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            // Throw IOException from the coordinator-backed load-order path.
+            _pluginLoadingServiceMock.GetPluginsFromFileAsync(tempFile, Arg.Any<string?>(), Arg.Any<CancellationToken>())
                 .ThrowsAsync(new IOException("File in use"));
+            vm.Configuration.SelectedGame = GameType.FalloutNewVegas;
 
             // Act
             await vm.Configuration.ConfigureLoadOrderCommand.ExecuteAsync(null);
@@ -352,7 +518,7 @@ public sealed class ErrorDialogTests
             using var _ = vm.ShowProgressInteraction.RegisterHandler(_ => Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
             vm.Configuration.XEditPath = tempFile;
 
-            _orchestratorMock.StartCleaningAsync(Arg.Any<TimeoutRetryCallback>(), Arg.Any<BackupFailureCallback>(), Arg.Any<CancellationToken>())
+            _cleaningSessionMock.StartAsync(Arg.Any<CancellationToken>())
                 .ThrowsAsync(new InvalidOperationException("Configuration is invalid"));
 
             // Act
@@ -385,7 +551,7 @@ public sealed class ErrorDialogTests
             using var _ = vm.ShowProgressInteraction.RegisterHandler(_ => Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
             vm.Configuration.XEditPath = tempFile;
 
-            _orchestratorMock.StartCleaningAsync(Arg.Any<TimeoutRetryCallback>(), Arg.Any<BackupFailureCallback>(), Arg.Any<CancellationToken>())
+            _cleaningSessionMock.StartAsync(Arg.Any<CancellationToken>())
                 .ThrowsAsync(new Exception("Unexpected error"));
 
             // Act
@@ -404,120 +570,326 @@ public sealed class ErrorDialogTests
         }
     }
 
-    #endregion
-
-    #region Timeout Retry Tests
-
     [Fact]
-    public async Task StartCleaningCommand_ShouldPassTimeoutCallback_ToOrchestrator()
+    public async Task StartCleaningCommand_ShouldShowSafeLoadOrderIdentifier_WhenNonMutagenGameLoadOrderFileMissing()
     {
-        // Arrange - use valid state so ValidatePreClean passes
-        var tempFile = Path.GetTempFileName();
+        // Arrange - Fallout 3 uses the file-load-order branch, so this covers non-Mutagen load-order validation.
+        var tempXEdit = Path.GetTempFileName();
         try
         {
-            var vm = CreateViewModelWithValidState(tempFile);
-            using var _ = vm.ShowProgressInteraction.RegisterHandler(_ => Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
-            vm.Configuration.XEditPath = tempFile;
+            var missingLoadOrder = @"C:\Users\Alice\AppData\Local\plugins.txt";
+            var state = new AppState
+            {
+                CurrentGameType = GameType.Fallout3,
+                LoadOrderPath = missingLoadOrder,
+                XEditExecutablePath = tempXEdit,
+                PluginsToClean = new List<PluginInfo>
+                {
+                    new() { FileName = "Test.esp", FullPath = "Test.esp" }
+                }
+            };
 
-            TimeoutRetryCallback? capturedCallback = null;
-            _orchestratorMock.StartCleaningAsync(
-                    Arg.Do<TimeoutRetryCallback?>(cb => capturedCallback = cb),
-                    Arg.Any<BackupFailureCallback?>(),
-                    Arg.Any<CancellationToken>())
-                .Returns(Task.CompletedTask);
+            var stateSubject = new BehaviorSubject<AppState>(state);
+            _stateServiceMock.StateChanged.Returns(stateSubject);
+            _stateServiceMock.CurrentState.Returns(state);
+            var refreshModule = CreateRefreshModule();
+
+            var vm = new MainWindowViewModel(
+                _configServiceMock,
+                _stateServiceMock,
+                _cleaningSessionMock,
+                _loggerMock,
+                _fileDialogMock,
+                _messageDialogMock,
+                _pluginServiceMock,
+                _pluginLoadingServiceMock,
+                _uiDispatcher,
+                refreshModule,
+                _discoveryPlanner,
+                CreateDiscoverySettingsModule(refreshModule),
+                CreateReadiness(refreshModule));
 
             // Act
             await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
 
             // Assert
-            capturedCallback.Should().NotBeNull("Timeout callback should be passed to orchestrator");
+            var error = vm.Commands.ValidationErrors.Single(e => e.Title == "Load order not found");
+            error.Message.Should().Be("Load Order File (plugins.txt) is missing. Choose the current plugins.txt or loadorder.txt file.");
+            AssertValidationErrorDoesNotContainFullPath(error, @"C:\Users\Alice");
         }
         finally
         {
-            if (File.Exists(tempFile))
-                File.Delete(tempFile);
+            if (File.Exists(tempXEdit))
+                File.Delete(tempXEdit);
         }
     }
 
     [Fact]
-    public async Task TimeoutCallback_ShouldCallShowRetryAsync()
+    public async Task StartCleaningCommand_ShouldNotValidateLoadOrder_WhenMutagenGameHasMissingLoadOrderFile()
     {
-        // Arrange - use valid state so ValidatePreClean passes
-        var tempFile = Path.GetTempFileName();
+        // Arrange - Skyrim SE supports automatic plugin discovery, so the load-order file branch must not produce a false positive.
+        var tempXEdit = Path.GetTempFileName();
         try
         {
-            var vm = CreateViewModelWithValidState(tempFile);
-            using var _ = vm.ShowProgressInteraction.RegisterHandler(_ => Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
-            vm.Configuration.XEditPath = tempFile;
+            var state = new AppState
+            {
+                CurrentGameType = GameType.SkyrimSe,
+                LoadOrderPath = @"C:\Users\Alice\AppData\Local\plugins.txt",
+                XEditExecutablePath = tempXEdit,
+                PluginsToClean = new List<PluginInfo>
+                {
+                    new() { FileName = "Test.esp", FullPath = "Test.esp" }
+                }
+            };
 
-            TimeoutRetryCallback? capturedCallback = null;
-            _orchestratorMock.StartCleaningAsync(
-                    Arg.Do<TimeoutRetryCallback?>(cb => capturedCallback = cb),
-                    Arg.Any<BackupFailureCallback?>(),
-                    Arg.Any<CancellationToken>())
-                .Returns(Task.CompletedTask);
+            var stateSubject = new BehaviorSubject<AppState>(state);
+            _stateServiceMock.StateChanged.Returns(stateSubject);
+            _stateServiceMock.CurrentState.Returns(state);
+            var refreshModule = CreateRefreshModule();
 
-            _messageDialogMock.ShowRetryAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>())
-                .Returns(true);
-
-            await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
-
-            // Act - simulate timeout callback being invoked
-            capturedCallback.Should().NotBeNull();
-            var result = await capturedCallback!("TestPlugin.esp", 300, 1);
-
-            // Assert
-            await _messageDialogMock.Received(1).ShowRetryAsync(
-                    "Plugin Timeout",
-                    Arg.Is<string>(s => s.Contains("TestPlugin.esp")),
-                    Arg.Any<string?>());
-
-            result.Should().BeTrue("ShowRetryAsync returned true");
-        }
-        finally
-        {
-            if (File.Exists(tempFile))
-                File.Delete(tempFile);
-        }
-    }
-
-    [Fact]
-    public async Task TimeoutCallback_ShouldReturnFalse_WhenUserCancels()
-    {
-        // Arrange - use valid state so ValidatePreClean passes
-        var tempFile = Path.GetTempFileName();
-        try
-        {
-            var vm = CreateViewModelWithValidState(tempFile);
-            using var _ = vm.ShowProgressInteraction.RegisterHandler(_ => Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
-            vm.Configuration.XEditPath = tempFile;
-
-            TimeoutRetryCallback? capturedCallback = null;
-            _orchestratorMock.StartCleaningAsync(
-                    Arg.Do<TimeoutRetryCallback?>(cb => capturedCallback = cb),
-                    Arg.Any<BackupFailureCallback?>(),
-                    Arg.Any<CancellationToken>())
-                .Returns(Task.CompletedTask);
-
-            // User cancels retry
-            _messageDialogMock.ShowRetryAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>())
-                .Returns(false);
-
-            await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
+            var vm = new MainWindowViewModel(
+                _configServiceMock,
+                _stateServiceMock,
+                _cleaningSessionMock,
+                _loggerMock,
+                _fileDialogMock,
+                _messageDialogMock,
+                _pluginServiceMock,
+                _pluginLoadingServiceMock,
+                _uiDispatcher,
+                refreshModule,
+                _discoveryPlanner,
+                CreateDiscoverySettingsModule(refreshModule),
+                CreateReadiness(refreshModule));
 
             // Act
-            capturedCallback.Should().NotBeNull();
-            var result = await capturedCallback!("TestPlugin.esp", 300, 1);
+            await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
 
             // Assert
-            result.Should().BeFalse("User cancelled the retry");
+            vm.Commands.ValidationErrors.Should().NotContain(e => e.Title.StartsWith("Load order", StringComparison.Ordinal));
+        }
+        finally
+        {
+            if (File.Exists(tempXEdit))
+                File.Delete(tempXEdit);
+        }
+    }
+
+    [Fact]
+    public async Task StartCleaningCommand_ShouldShowSafeMo2Identifier_WhenMo2PathMissing()
+    {
+        // Arrange
+        var tempXEdit = Path.GetTempFileName();
+        try
+        {
+            var state = new AppState
+            {
+                XEditExecutablePath = tempXEdit,
+                Mo2ModeEnabled = true,
+                Mo2ExecutablePath = @"C:\Users\Alice\MO2\ModOrganizer.exe",
+                PluginsToClean = new List<PluginInfo>
+                {
+                    new() { FileName = "Test.esp", FullPath = "Test.esp" }
+                }
+            };
+            var stateSubject = new BehaviorSubject<AppState>(state);
+            _stateServiceMock.StateChanged.Returns(stateSubject);
+            _stateServiceMock.CurrentState.Returns(state);
+            var refreshModule = CreateRefreshModule();
+
+            var vm = new MainWindowViewModel(
+                _configServiceMock,
+                _stateServiceMock,
+                _cleaningSessionMock,
+                _loggerMock,
+                _fileDialogMock,
+                _messageDialogMock,
+                _pluginServiceMock,
+                _pluginLoadingServiceMock,
+                _uiDispatcher,
+                refreshModule,
+                _discoveryPlanner,
+                CreateDiscoverySettingsModule(refreshModule),
+                CreateReadiness(refreshModule));
+
+            // Act
+            await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
+
+            // Assert
+            var error = vm.Commands.ValidationErrors.Single(e => e.Title == "MO2 not found");
+            error.Message.Should().Be("MO2 Path (ModOrganizer.exe) is missing. Choose ModOrganizer.exe or disable MO2 Mode.");
+            AssertValidationErrorDoesNotContainFullPath(error, @"C:\Users\Alice");
+        }
+        finally
+        {
+            if (File.Exists(tempXEdit))
+                File.Delete(tempXEdit);
+        }
+    }
+
+    [Fact]
+    public async Task StartCleaningCommand_ShouldShowSingleMo2ExecutableValidation_WhenMo2PathMissing()
+    {
+        // Arrange
+        var tempXEdit = Path.GetTempFileName();
+        try
+        {
+            var state = new AppState
+            {
+                XEditExecutablePath = tempXEdit,
+                Mo2ModeEnabled = true,
+                Mo2ExecutablePath = @"C:\Users\Alice\MO2\ModOrganizer.exe",
+                Mo2Profile = "Default",
+                PluginsToClean = new List<PluginInfo>
+                {
+                    new() { FileName = "Test.esp", FullPath = "Test.esp" }
+                }
+            };
+            var stateSubject = new BehaviorSubject<AppState>(state);
+            _stateServiceMock.StateChanged.Returns(stateSubject);
+            _stateServiceMock.CurrentState.Returns(state);
+            var refreshModule = CreateRefreshModule();
+
+            var vm = new MainWindowViewModel(
+                _configServiceMock,
+                _stateServiceMock,
+                _cleaningSessionMock,
+                _loggerMock,
+                _fileDialogMock,
+                _messageDialogMock,
+                _pluginServiceMock,
+                _pluginLoadingServiceMock,
+                _uiDispatcher,
+                refreshModule,
+                _discoveryPlanner,
+                CreateDiscoverySettingsModule(refreshModule),
+                CreateReadiness(refreshModule));
+
+            // Act
+            await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
+
+            // Assert
+            var error = vm.Commands.ValidationErrors.Should().ContainSingle().Subject;
+            error.Title.Should().Be("MO2 not found");
+            error.Message.Should().Be("MO2 Path (ModOrganizer.exe) is missing. Choose ModOrganizer.exe or disable MO2 Mode.");
+            AssertValidationErrorDoesNotContainFullPath(error, @"C:\Users\Alice");
+            await _cleaningSessionMock.DidNotReceive().StartAsync(Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            if (File.Exists(tempXEdit))
+                File.Delete(tempXEdit);
+        }
+    }
+
+    [Fact]
+    public async Task StartCommand_WhenUnexpectedError_ShouldShowSafeDiagnosticCopy()
+    {
+        // Arrange - the exception contains representative path, command, exception, and stack-like sentinels.
+        var tempFile = Path.GetTempFileName();
+        try
+        {
+            var unsafeSentinel = @"C:\Users\Alice\Tools\SSEEdit.exe -QAC System.InvalidOperationException: boom at AutoQAC.Services.Cleaning Stack Trace";
+            var vm = CreateViewModelWithValidState(tempFile);
+            using var _ = vm.ShowProgressInteraction.RegisterHandler(_ => Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
+            vm.Configuration.XEditPath = tempFile;
+
+            _cleaningSessionMock.StartAsync(Arg.Any<CancellationToken>())
+                .ThrowsAsync(new Exception(unsafeSentinel));
+
+            // Act
+            await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
+
+            // Assert
+            var expectedMessage = "Cleaning failed. See the latest AutoQAC log for technical details.";
+            var expectedDetails = "Technical details were written to the latest AutoQAC log.";
+            vm.Commands.StatusText.Should().Be(expectedMessage);
+
+            await _messageDialogMock.Received(1).ShowErrorAsync(
+                "Cleaning Failed",
+                expectedMessage,
+                expectedDetails);
+
+            AssertDoesNotContainUnsafeDiagnosticDetails(
+                ["Cleaning Failed", expectedMessage, expectedDetails, vm.Commands.StatusText],
+                unsafeSentinel);
         }
         finally
         {
             if (File.Exists(tempFile))
                 File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public async Task PreviewAsync_WhenUnexpectedError_ShouldShowSafeDiagnosticCopy()
+    {
+        // Arrange - the exception contains representative path, command, exception, and stack-like sentinels.
+        var tempFile = Path.GetTempFileName();
+        try
+        {
+            var unsafeSentinel = @"C:\Users\Alice\Tools\SSEEdit.exe -QAC System.InvalidOperationException: boom at AutoQAC.Services.Cleaning Stack Trace";
+            var vm = CreateViewModelWithValidState(tempFile);
+            vm.Configuration.XEditPath = tempFile;
+
+            _cleaningSessionMock.PreviewAsync(Arg.Any<CancellationToken>())
+                .ThrowsAsync(new Exception(unsafeSentinel));
+
+            // Act
+            await vm.Commands.PreviewCommand.ExecuteAsync(null);
+
+            // Assert
+            var expectedMessage = "Preview failed. See the latest AutoQAC log for technical details.";
+            var expectedDetails = "Technical details were written to the latest AutoQAC log.";
+            vm.Commands.StatusText.Should().Be(expectedMessage);
+
+            await _messageDialogMock.Received(1).ShowErrorAsync(
+                "Preview Failed",
+                expectedMessage,
+                expectedDetails);
+
+            AssertDoesNotContainUnsafeDiagnosticDetails(
+                ["Preview Failed", expectedMessage, expectedDetails, vm.Commands.StatusText],
+                unsafeSentinel);
+        }
+        finally
+        {
+            if (File.Exists(tempFile))
+                File.Delete(tempFile);
+        }
+    }
+
+    private static void AssertDoesNotContainUnsafeDiagnosticDetails(IEnumerable<string?> userVisibleTexts, string unsafeSentinel)
+    {
+        var forbiddenFragments = new[]
+        {
+            @"C:\Users\Alice",
+            "SSEEdit.exe -QAC",
+            "System.InvalidOperationException",
+            "AutoQAC.Services.Cleaning",
+            "Stack Trace",
+            unsafeSentinel
+        };
+
+        foreach (var text in userVisibleTexts)
+        {
+            foreach (var fragment in forbiddenFragments)
+            {
+                text.Should().NotContain(fragment);
+            }
+        }
+    }
+
+    private static void AssertValidationErrorDoesNotContainFullPath(ValidationError error, string forbiddenPathPrefix)
+    {
+        var userVisibleTexts = new[] { error.Title, error.Message, error.FixStep };
+        foreach (var text in userVisibleTexts)
+        {
+            text.Should().NotContain(forbiddenPathPrefix);
+            text.Should().NotContain("latest AutoQAC log", "simple missing-path validation should give direct fix guidance only");
         }
     }
 
     #endregion
+
 }

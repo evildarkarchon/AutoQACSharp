@@ -1,3 +1,4 @@
+using System.Reflection;
 using AutoQAC.Models;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.State;
@@ -8,6 +9,8 @@ namespace AutoQAC.Tests.Services;
 
 public class XEditCommandBuilderTests
 {
+    private const string WorstCasePluginName = "Quote\" Résumé 測試 🚀 & | ; ( ) ^ Spaces.esp";
+
     private readonly IStateService _stateServiceMock;
     private readonly XEditCommandBuilder _sut;
 
@@ -31,67 +34,6 @@ public class XEditCommandBuilderTests
     }
 
     [Fact]
-    public void BuildCommand_UsesXEditPath_InDirectMode()
-    {
-        // Arrange
-        var xEditPath = @"C:\Games\SSE\SSEEdit.exe";
-        _stateServiceMock.CurrentState.Returns(new AppState
-        {
-            XEditExecutablePath = xEditPath,
-            Mo2ModeEnabled = false
-        });
-        var plugin = new PluginInfo { FileName = "Update.esm", FullPath = "C:\\Games\\SSE\\Data\\Update.esm" };
-
-        // Act
-        var result = _sut.BuildCommand(plugin, GameType.SkyrimSe);
-
-        // Assert
-        result.Should().NotBeNull();
-        result!.FileName.Should().Be(xEditPath);
-        result.Arguments.Should().Contain("-autoexit");
-        result.Arguments.Should().Contain("-QAC");
-        result.Arguments.Should().Contain($"-autoload \"{plugin.FileName}\"");
-        // SSEEdit shouldn't usually get -SSE unless the name is generic, but logic says: if name starts with xEdit.
-        // SSEEdit.exe does NOT start with xEdit.
-        result.Arguments.Should().NotContain("-SSE");
-    }
-
-    [Fact]
-    public void BuildCommand_AddsGameFlag_WhenUniversalXEdit()
-    {
-         // Arrange
-        var xEditPath = @"C:\Tools\xEdit.exe";
-        _stateServiceMock.CurrentState.Returns(new AppState
-        {
-            XEditExecutablePath = xEditPath
-        });
-
-        // Act
-        var result = _sut.BuildCommand(new PluginInfo { FileName = "foo.esp", FullPath = "foo.esp" }, GameType.Fallout4);
-
-        // Assert
-        result!.Arguments.Should().Contain("-FO4");
-    }
-
-    [Fact]
-    public void BuildCommand_AddsPartialFormFlags_WhenEnabled()
-    {
-        // Arrange
-        _stateServiceMock.CurrentState.Returns(new AppState
-        {
-            XEditExecutablePath = "xEdit.exe",
-            PartialFormsEnabled = true
-        });
-
-        // Act
-        var result = _sut.BuildCommand(new PluginInfo { FileName = "foo.esp", FullPath = "foo.esp" }, GameType.SkyrimSe);
-
-        // Assert
-        result!.Arguments.Should().Contain("-iknowwhatimdoing");
-        result.Arguments.Should().Contain("-allowmakepartial");
-    }
-
-    [Fact]
     public void BuildCommand_ReturnsNull_WhenGameTypeIsUnknown()
     {
         // Arrange
@@ -100,7 +42,7 @@ public class XEditCommandBuilderTests
             XEditExecutablePath = @"C:\Tools\xEdit.exe",
             Mo2ModeEnabled = false
         });
-        var plugin = new PluginInfo { FileName = "test.esp", FullPath = "C:\\path\\test.esp" };
+        var plugin = CreatePlugin("test.esp");
 
         // Act
         var result = _sut.BuildCommand(plugin, GameType.Unknown);
@@ -110,11 +52,78 @@ public class XEditCommandBuilderTests
     }
 
     [Fact]
-    public void BuildCommand_WrapsInMO2_WhenEnabled()
+    public void BuildCommand_DirectMode_ShouldUseParsedAutoloadArgumentAndExactPluginFileName()
     {
         // Arrange
-        var xEditPath = @"C:\Tools\SSEEdit.exe";
-        var mo2Path = @"C:\MO2\ModOrganizer.exe";
+        const string xEditPath = @"C:\Tools With Spaces\Résumé 測試\SSEEdit.exe";
+        _stateServiceMock.CurrentState.Returns(new AppState
+        {
+            XEditExecutablePath = xEditPath,
+            Mo2ModeEnabled = false
+        });
+        var plugin = CreatePlugin(WorstCasePluginName);
+
+        // Act
+        var result = _sut.BuildCommand(plugin, GameType.SkyrimSe);
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.FileName.Should().Be(xEditPath);
+        result.UseShellExecute.Should().BeFalse("D-04 requires shell-sensitive characters to remain literal argv data");
+        result.Arguments.Should().BeEmpty("D-16 requires asserting parsed ArgumentList entries instead of raw command strings");
+        result.ArgumentList.Should().Equal("-QAC", "-autoexit", "-autoload", WorstCasePluginName);
+    }
+
+    [Fact]
+    public void BuildCommand_DirectUniversalXEditWithPartialForms_ShouldUseExactArgumentOrder()
+    {
+        // Arrange
+        _stateServiceMock.CurrentState.Returns(new AppState
+        {
+            XEditExecutablePath = @"C:\Tools\xEdit.exe",
+            PartialFormsEnabled = true,
+            Mo2ModeEnabled = false
+        });
+
+        // Act
+        var result = _sut.BuildCommand(CreatePlugin("Plugin.esp"), GameType.Fallout4);
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.Arguments.Should().BeEmpty();
+        result.ArgumentList.Should().Equal("-FO4", "-QAC", "-autoexit", "-autoload", "Plugin.esp", "-iknowwhatimdoing", "-allowmakepartial");
+    }
+
+    [Theory]
+    [InlineData("Simple Plugin.esp")]
+    [InlineData("Quote & Parser \"Case\".esp")]
+    [InlineData("Résumé 測試 🚀.esp")]
+    [InlineData("Shell & | ; ( ) ^ Name.esp")]
+    public void BuildCommand_DirectMode_ShouldPreserveCuratedPluginNamesAsLiteralArgv(string pluginName)
+    {
+        // Arrange
+        _stateServiceMock.CurrentState.Returns(new AppState
+        {
+            XEditExecutablePath = @"C:\Tools\SSEEdit.exe",
+            Mo2ModeEnabled = false
+        });
+
+        // Act
+        var result = _sut.BuildCommand(CreatePlugin(pluginName), GameType.SkyrimSe);
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.Arguments.Should().BeEmpty("D-01/D-15 matrix entries must be verified as parsed argv data");
+        result.ArgumentList.Should().Equal("-QAC", "-autoexit", "-autoload", pluginName);
+    }
+
+    [Fact]
+    public void BuildCommand_Mo2Mode_ShouldUseRunXEditDashAAndOneNestedPayload()
+    {
+        // Arrange
+        const string xEditPath = @"C:\Tools With Spaces\xEdit.exe";
+        const string mo2Path = @"C:\MO2 With Spaces\Résumé 測試\ModOrganizer.exe";
+        var plugin = CreatePlugin(WorstCasePluginName, @"C:\Game Data\" + WorstCasePluginName);
         _stateServiceMock.CurrentState.Returns(new AppState
         {
             XEditExecutablePath = xEditPath,
@@ -123,11 +132,150 @@ public class XEditCommandBuilderTests
         });
 
         // Act
-        var result = _sut.BuildCommand(new PluginInfo { FileName = "foo.esp", FullPath = "foo.esp" }, GameType.SkyrimSe);
+        var result = _sut.BuildCommand(plugin, GameType.Fallout4);
 
         // Assert
+        result.Should().NotBeNull();
         result!.FileName.Should().Be(mo2Path);
-        result.Arguments.Should().StartWith("run \"");
-        result.Arguments.Should().Contain(xEditPath);
+        result.UseShellExecute.Should().BeFalse();
+        result.Arguments.Should().BeEmpty("MO2 argv should be carried through ArgumentList while only the -a value remains nested text");
+        result.ArgumentList.Should().HaveCount(4, "D-05/D-06 require run, xEdit path, -a, and exactly one nested xEdit payload entry");
+        result.ArgumentList.Should().Equal("run", xEditPath, "-a", result.ArgumentList[3]);
+
+        var nestedPayload = result.ArgumentList[3];
+        nestedPayload.Should().Contain("-autoload");
+        nestedPayload.Should().NotContain(plugin.FullPath, "D-07 requires MO2 -autoload to use the file-name-only target");
+        var parsedPayload = ParseWindowsCommandLine(nestedPayload);
+        parsedPayload.Should().Contain(WorstCasePluginName);
+        parsedPayload.Should().Equal("-FO4", "-QAC", "-autoexit", "-autoload", WorstCasePluginName);
+    }
+
+    [Fact]
+    public void BuildCommand_Mo2ModeWithProfile_ShouldInjectProfileBeforeRun()
+    {
+        const string xEditPath = @"C:\Tools\xEdit.exe";
+        const string mo2Path = @"C:\MO2\ModOrganizer.exe";
+        _stateServiceMock.CurrentState.Returns(new AppState
+        {
+            XEditExecutablePath = xEditPath,
+            Mo2ExecutablePath = mo2Path,
+            Mo2ModeEnabled = true,
+            Mo2Profile = "Testing Profile"
+        });
+
+        var result = _sut.BuildCommand(CreatePlugin("Plugin.esp"), GameType.SkyrimSe);
+
+        result.Should().NotBeNull();
+        result!.ArgumentList.Should().HaveCount(6);
+        result.ArgumentList.Should().Equal("-p", "Testing Profile", "run", xEditPath, "-a", result.ArgumentList[5]);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void BuildCommand_Mo2ModeWithoutMo2ExecutablePath_ShouldReturnNull(string? mo2ExecutablePath)
+    {
+        // Arrange
+        _stateServiceMock.CurrentState.Returns(new AppState
+        {
+            XEditExecutablePath = @"C:\Tools\SSEEdit.exe",
+            Mo2ModeEnabled = true,
+            Mo2ExecutablePath = mo2ExecutablePath
+        });
+
+        // Act
+        var result = _sut.BuildCommand(CreatePlugin("Plugin.esp"), GameType.SkyrimSe);
+
+        // Assert
+        result.Should().BeNull("D-09/D-11 require MO2 command-build failure before process start when MO2 mode is enabled without a usable MO2 executable path");
+    }
+
+    [Theory]
+    [InlineData("Quote \"Case\".esp")]
+    [InlineData("TrailingBackslash\\")]
+    [InlineData("QuoteAndTrailingBackslash\\\"")]
+    public void FormatMo2NestedArgument_ShouldPreserveQuotesAndTrailingBackslashesThroughWindowsParsing(string nestedValue)
+    {
+        // Arrange / Act
+        var formatted = InvokeFormatMo2NestedArgument(nestedValue);
+
+        // Assert
+        ParseWindowsCommandLine(formatted).Should().Equal(
+            [nestedValue],
+            "D-06 requires MO2 -a to remain one value while its nested tokens survive MO2's parser");
+    }
+
+    private static PluginInfo CreatePlugin(string fileName, string? fullPath = null)
+    {
+        return new PluginInfo
+        {
+            FileName = fileName,
+            FullPath = fullPath ?? @"C:\Game Data\" + fileName
+        };
+    }
+
+    private static string InvokeFormatMo2NestedArgument(string argument)
+    {
+        var method = typeof(XEditCommandBuilder).GetMethod("FormatMo2NestedArgument", BindingFlags.NonPublic | BindingFlags.Static);
+        method.Should().NotBeNull("the MO2 nested formatter is the audited second parser-boundary escaping helper");
+        return ((string?)method!.Invoke(null, [argument])).Should().NotBeNull().And.Subject;
+    }
+
+    private static IReadOnlyList<string> ParseWindowsCommandLine(string commandLine)
+    {
+        var args = new List<string>();
+        var current = new System.Text.StringBuilder();
+        var inQuotes = false;
+        var backslashes = 0;
+
+        foreach (var c in commandLine)
+        {
+            if (c == '\\')
+            {
+                backslashes++;
+                continue;
+            }
+
+            if (c == '"')
+            {
+                current.Append('\\', backslashes / 2);
+                if (backslashes % 2 == 0)
+                {
+                    inQuotes = !inQuotes;
+                }
+                else
+                {
+                    current.Append('"');
+                }
+
+                backslashes = 0;
+                continue;
+            }
+
+            current.Append('\\', backslashes);
+            backslashes = 0;
+
+            if (char.IsWhiteSpace(c) && !inQuotes)
+            {
+                if (current.Length > 0)
+                {
+                    args.Add(current.ToString());
+                    current.Clear();
+                }
+
+                continue;
+            }
+
+            current.Append(c);
+        }
+
+        current.Append('\\', backslashes);
+        if (current.Length > 0)
+        {
+            args.Add(current.ToString());
+        }
+
+        return args;
     }
 }

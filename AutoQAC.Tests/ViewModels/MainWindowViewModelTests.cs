@@ -5,6 +5,7 @@ using AutoQAC.Models;
 using AutoQAC.Models.Configuration;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
+using AutoQAC.Services.GameCapability;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Services.State;
 using AutoQAC.Services.UI;
@@ -21,31 +22,35 @@ public sealed class MainWindowViewModelTests
 {
     private readonly IConfigurationService _configServiceMock;
     private readonly IStateService _stateServiceMock;
-    private readonly ICleaningOrchestrator _orchestratorMock;
+    private readonly ICleaningSession _cleaningSessionMock;
     private readonly ILoggingService _loggerMock;
     private readonly IFileDialogService _fileDialogMock;
     private readonly IMessageDialogService _messageDialogMock;
     private readonly IPluginValidationService _pluginServiceMock;
     private readonly IPluginLoadingService _pluginLoadingServiceMock;
     private readonly IUiDispatcher _uiDispatcher;
+    private readonly RecordingPluginRefreshModule _pluginRefreshModule;
+    private readonly IPluginRefreshDiscoveryPlanner _discoveryPlanner;
+    private readonly ICleaningCommandReadiness _cleaningCommandReadiness;
 
     public MainWindowViewModelTests()
     {
         _configServiceMock = Substitute.For<IConfigurationService>();
         _stateServiceMock = Substitute.For<IStateService>();
-        _orchestratorMock = Substitute.For<ICleaningOrchestrator>();
+        _cleaningSessionMock = Substitute.For<ICleaningSession>();
         _loggerMock = Substitute.For<ILoggingService>();
         _fileDialogMock = Substitute.For<IFileDialogService>();
         _messageDialogMock = Substitute.For<IMessageDialogService>();
         _pluginServiceMock = Substitute.For<IPluginValidationService>();
         _pluginLoadingServiceMock = Substitute.For<IPluginLoadingService>();
         _uiDispatcher = new SynchronousUiDispatcher();
-
-        // Default setup for plugin loading service
-        _pluginLoadingServiceMock.GetAvailableGames()
-            .Returns(new List<GameType> { GameType.SkyrimSe, GameType.Fallout4 });
-        _pluginLoadingServiceMock.IsGameSupportedByMutagen(Arg.Any<GameType>())
-            .Returns(false);
+        _discoveryPlanner = new PluginRefreshDiscoveryPlanner(
+            _configServiceMock,
+            _pluginLoadingServiceMock,
+            Substitute.For<AutoQAC.Services.MO2.IMo2InstanceService>());
+        _pluginRefreshModule = new RecordingPluginRefreshModule();
+        _pluginRefreshModule.PublicationHandler = _ => Task.FromResult(CreatePublicationFromState(_stateServiceMock.CurrentState));
+        _cleaningCommandReadiness = new CleaningCommandReadiness(_pluginRefreshModule, _stateServiceMock);
 
         // Default setup for CleaningCompleted observable
         _stateServiceMock.CleaningCompleted
@@ -78,10 +83,84 @@ public sealed class MainWindowViewModelTests
         return new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 
+    private static PluginRefreshPublication CreatePublicationFromState(AppState state)
+    {
+        var gameType = state.CurrentGameType == GameType.Unknown ? GameType.SkyrimSe : state.CurrentGameType;
+        var configuration = RecordingPluginRefreshModule.CreateConfiguration(
+            loadOrderPath: state.LoadOrderPath,
+            xEditPath: state.XEditExecutablePath,
+            mo2Path: state.Mo2ExecutablePath,
+            mo2ModeEnabled: state.Mo2ModeEnabled,
+            mo2InstancePath: state.Mo2ModeEnabled ? Path.GetTempPath() : null,
+            selectedProfile: state.Mo2Profile);
+        var mode = state.Mo2ModeEnabled
+            ? PluginRefreshDiscoveryMode.Mo2LoadOrderFile
+            : gameType is GameType.Fallout3 or GameType.FalloutNewVegas or GameType.Oblivion
+                ? PluginRefreshDiscoveryMode.DirectLoadOrderFile
+                : PluginRefreshDiscoveryMode.DirectAutomatic;
+        var plan = RecordingPluginRefreshModule.CreateDiscoveryPlan(
+            gameType,
+            mode,
+            configuration,
+            loadOrderPath: mode == PluginRefreshDiscoveryMode.DirectLoadOrderFile ? state.LoadOrderPath : null,
+            mo2LoadOrderPath: state.Mo2ModeEnabled ? state.LoadOrderPath : null);
+        var rows = state.PluginsToClean
+            .Select(plugin => RecordingPluginRefreshModule.CreatePublishedRow(
+                plugin,
+                isVisible: !plugin.IsInSkipList,
+                isSelected: !state.ExcludedPluginPaths.Contains(plugin.FullPath),
+                isSkippedByPolicy: plugin.IsInSkipList))
+            .ToList();
+        var snapshot = RecordingPluginRefreshModule.CreateSnapshot(gameType, configuration: configuration);
+        return RecordingPluginRefreshModule.CreatePublication(
+            snapshot,
+            rows,
+            PluginRefreshFreshness.Fresh,
+            plan);
+    }
+
+    private PluginRefreshModule CreatePluginRefreshModule(
+        IPluginIssueApproximationService approximationService,
+        IStateService? stateService = null)
+    {
+        var effectiveStateService = stateService ?? _stateServiceMock;
+        var gameDetectionService = Substitute.For<AutoQAC.Services.GameDetection.IGameDetectionService>();
+        gameDetectionService
+            .DetectVariant(Arg.Any<GameType>(), Arg.Any<IReadOnlyList<string>>())
+            .Returns(GameVariant.None);
+        var discoveryPlanner = new PluginRefreshDiscoveryPlanner(
+            _configServiceMock,
+            _pluginLoadingServiceMock,
+            Substitute.For<AutoQAC.Services.MO2.IMo2InstanceService>());
+        return new PluginRefreshModule(
+            discoveryPlanner,
+            approximationService,
+            effectiveStateService,
+            new SkipListPolicy(_configServiceMock, gameDetectionService),
+            _loggerMock);
+    }
+
+    private IDiscoverySettingsModule CreateDiscoverySettingsModule(
+        IConfigurationService? configService = null,
+        IStateService? stateService = null,
+        IPluginRefreshModule? pluginRefreshModule = null) =>
+        new DiscoverySettingsModule(
+            configService ?? _configServiceMock,
+            stateService ?? _stateServiceMock,
+            pluginRefreshModule ?? _pluginRefreshModule);
+
     private static Task WaitForSignalAsync(TaskCompletionSource<bool> signal)
     {
         return WaitForSignalAsync(signal.Task, "expected asynchronous test signal to be observed");
     }
+
+    private static bool IsDirectApproximationRequest(
+        PluginIssueApproximationRequest request,
+        GameType gameType,
+        string dataFolder) =>
+        request.GameType == gameType &&
+        request.Source is PluginIssueApproximationSource.DirectDataFolder direct &&
+        direct.DataFolder == dataFolder;
 
     private static async Task WaitForSignalAsync(Task signalTask, string because)
     {
@@ -91,7 +170,7 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
-    public async Task StartCleaningCommand_ShouldCallOrchestrator_WhenCanStart()
+    public async Task StartCleaningCommand_ShouldCallSession_WhenCanStart()
     {
         // Arrange - create temp file to satisfy File.Exists check in ValidatePreClean
         var tempFile = Path.GetTempFileName();
@@ -112,13 +191,17 @@ public sealed class MainWindowViewModelTests
             var vm = new MainWindowViewModel(
                 _configServiceMock,
                 _stateServiceMock,
-                _orchestratorMock,
+                _cleaningSessionMock,
                 _loggerMock,
                 _fileDialogMock,
                 _messageDialogMock,
                 _pluginServiceMock,
                 _pluginLoadingServiceMock,
-                _uiDispatcher);
+                _uiDispatcher,
+                _pluginRefreshModule,
+                _discoveryPlanner,
+                CreateDiscoverySettingsModule(),
+                _cleaningCommandReadiness);
             using var _ = vm.ShowProgressInteraction.RegisterHandler(_ => Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
 
             // Manually set properties to satisfy CanExecute (use temp file path)
@@ -128,9 +211,112 @@ public sealed class MainWindowViewModelTests
             // Act
             await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
 
-            // Assert - verify the 3-param overload with timeout and backup failure callbacks is called
-            await _orchestratorMock.Received(1)
-                .StartCleaningAsync(Arg.Any<TimeoutRetryCallback>(), Arg.Any<BackupFailureCallback>(), Arg.Any<CancellationToken>());
+            await _cleaningSessionMock.Received(1).StartAsync(Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            if (File.Exists(tempFile))
+                File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public async Task StartCleaningCommand_WhenProgressInteractionFails_ShouldHandleErrorBeforeStartingCleaning()
+    {
+        var tempFile = Path.GetTempFileName();
+        try
+        {
+            var stateWithPlugins = new AppState
+            {
+                XEditExecutablePath = tempFile,
+                PluginsToClean = new List<PluginInfo>
+                {
+                    new() { FileName = "Test.esp", FullPath = "Test.esp" }
+                }
+            };
+            var stateSubject = new BehaviorSubject<AppState>(stateWithPlugins);
+            _stateServiceMock.StateChanged.Returns(stateSubject);
+            _stateServiceMock.CurrentState.Returns(stateWithPlugins);
+            _messageDialogMock.ShowErrorAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>())
+                .Returns(Task.CompletedTask);
+
+            var vm = new MainWindowViewModel(
+                _configServiceMock,
+                _stateServiceMock,
+                _cleaningSessionMock,
+                _loggerMock,
+                _fileDialogMock,
+                _messageDialogMock,
+                _pluginServiceMock,
+                _pluginLoadingServiceMock,
+                _uiDispatcher,
+                _pluginRefreshModule,
+                _discoveryPlanner,
+                CreateDiscoverySettingsModule(),
+                _cleaningCommandReadiness);
+            using var _ = vm.ShowProgressInteraction.RegisterHandler(_ => throw new ApplicationException("Progress window failed"));
+
+            await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
+
+            await _cleaningSessionMock.DidNotReceive().StartAsync(Arg.Any<CancellationToken>());
+            await _messageDialogMock.Received(1).ShowErrorAsync(
+                "Cleaning Failed",
+                Arg.Any<string>(),
+                Arg.Any<string?>());
+            _loggerMock.Received().Error(Arg.Any<ApplicationException>(), "StartAsync failed");
+        }
+        finally
+        {
+            if (File.Exists(tempFile))
+                File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public async Task PreviewCommand_WhenPreviewInteractionFails_ShouldHandleError()
+    {
+        var tempFile = Path.GetTempFileName();
+        try
+        {
+            var stateWithPlugins = new AppState
+            {
+                XEditExecutablePath = tempFile,
+                PluginsToClean = new List<PluginInfo>
+                {
+                    new() { FileName = "Test.esp", FullPath = "Test.esp" }
+                }
+            };
+            var stateSubject = new BehaviorSubject<AppState>(stateWithPlugins);
+            _stateServiceMock.StateChanged.Returns(stateSubject);
+            _stateServiceMock.CurrentState.Returns(stateWithPlugins);
+            _cleaningSessionMock.PreviewAsync(Arg.Any<CancellationToken>())
+                .Returns(new List<DryRunResult>());
+            _messageDialogMock.ShowErrorAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>())
+                .Returns(Task.CompletedTask);
+
+            var vm = new MainWindowViewModel(
+                _configServiceMock,
+                _stateServiceMock,
+                _cleaningSessionMock,
+                _loggerMock,
+                _fileDialogMock,
+                _messageDialogMock,
+                _pluginServiceMock,
+                _pluginLoadingServiceMock,
+                _uiDispatcher,
+                _pluginRefreshModule,
+                _discoveryPlanner,
+                CreateDiscoverySettingsModule(),
+                _cleaningCommandReadiness);
+            using var _ = vm.ShowPreviewInteraction.RegisterHandler(_ => throw new ApplicationException("Preview window failed"));
+
+            await vm.Commands.PreviewCommand.ExecuteAsync(null);
+
+            await _messageDialogMock.Received(1).ShowErrorAsync(
+                "Preview Failed",
+                Arg.Any<string>(),
+                Arg.Any<string?>());
+            _loggerMock.Received().Error(Arg.Any<ApplicationException>(), "RunPreviewAsync failed");
         }
         finally
         {
@@ -154,13 +340,17 @@ public sealed class MainWindowViewModelTests
             var vm = new MainWindowViewModel(
                 _configServiceMock,
                 _stateServiceMock,
-                _orchestratorMock,
+                _cleaningSessionMock,
                 _loggerMock,
                 _fileDialogMock,
                 _messageDialogMock,
                 _pluginServiceMock,
                 _pluginLoadingServiceMock,
-                _uiDispatcher);
+                _uiDispatcher,
+                _pluginRefreshModule,
+                _discoveryPlanner,
+                CreateDiscoverySettingsModule(),
+                _cleaningCommandReadiness);
 
             _fileDialogMock.OpenFileDialogAsync(
                     Arg.Any<string>(),
@@ -177,7 +367,7 @@ public sealed class MainWindowViewModelTests
                 new PluginInfo { FileName = "Dawnguard.esm", FullPath = "Dawnguard.esm", DetectedGameType = GameType.Unknown }
             };
 
-            _pluginServiceMock.GetPluginsFromLoadOrderAsync(tempFile, Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            _pluginLoadingServiceMock.GetPluginsFromFileAsync(tempFile, Arg.Any<string?>(), Arg.Any<CancellationToken>())
                 .Returns(expectedPlugins);
 
             // Setup skip list (required for ApplySkipListStatus)
@@ -186,14 +376,17 @@ public sealed class MainWindowViewModelTests
                     Arg.Any<GameVariant>(),
                     Arg.Any<CancellationToken>())
                 .Returns(new List<string>());
+            vm.Configuration.SelectedGame = GameType.FalloutNewVegas;
+            _pluginRefreshModule.Intents.Clear();
 
             // Act
             await vm.Configuration.ConfigureLoadOrderCommand.ExecuteAsync(null);
 
             // Assert
-            _stateServiceMock.Received(1).UpdateConfigurationPaths(tempFile, Arg.Any<string>(), Arg.Any<string>());
-            _stateServiceMock.Received(1).SetPluginsToClean(Arg.Is<List<PluginInfo>>(l => l.Count == 2 && l[0].FileName == "Update.esm"));
-            await _configServiceMock.Received().SetGameLoadOrderOverrideAsync(Arg.Any<GameType>(), tempFile, Arg.Any<CancellationToken>());
+            _pluginRefreshModule.Intents.OfType<PluginRefreshIntent.RefreshGame>()
+                .Should().ContainSingle(refresh =>
+                    refresh.GameType == GameType.FalloutNewVegas && refresh.SelectedLoadOrderPath == tempFile);
+            await _configServiceMock.Received().SetGameLoadOrderOverrideAsync(GameType.FalloutNewVegas, tempFile, Arg.Any<CancellationToken>());
         }
         finally
         {
@@ -237,13 +430,17 @@ public sealed class MainWindowViewModelTests
             var vm = new MainWindowViewModel(
                 _configServiceMock,
                 _stateServiceMock,
-                _orchestratorMock,
+                _cleaningSessionMock,
                 _loggerMock,
                 _fileDialogMock,
                 _messageDialogMock,
                 _pluginServiceMock,
                 _pluginLoadingServiceMock,
-                _uiDispatcher);
+                _uiDispatcher,
+                _pluginRefreshModule,
+                _discoveryPlanner,
+                CreateDiscoverySettingsModule(),
+                _cleaningCommandReadiness);
             using var _ = vm.ShowProgressInteraction.RegisterHandler(_ => Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
 
             await WaitForSignalAsync(initializationApplied);
@@ -252,8 +449,7 @@ public sealed class MainWindowViewModelTests
             vm.Configuration.LoadOrderPath = "plugins.txt";
             vm.Configuration.XEditPath = tempFile;
 
-            // Configure orchestrator to throw exception (use the 3-param overload)
-            _orchestratorMock.StartCleaningAsync(Arg.Any<TimeoutRetryCallback>(), Arg.Any<BackupFailureCallback>(), Arg.Any<CancellationToken>())
+            _cleaningSessionMock.StartAsync(Arg.Any<CancellationToken>())
                 .ThrowsAsync(new InvalidOperationException("Configuration is invalid"));
 
             // Act
@@ -269,7 +465,7 @@ public sealed class MainWindowViewModelTests
             await _messageDialogMock.DidNotReceive()
                 .ShowErrorAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>());
 
-            // Verify that the StartCleaningAsync error was logged
+            // Verify that the StartAsync error was logged
             _loggerMock.Received().Error(Arg.Any<Exception>(), Arg.Is<string>(s => s.Contains("validation") || s.Contains("failed")));
         }
         finally
@@ -293,13 +489,17 @@ public sealed class MainWindowViewModelTests
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
             _pluginServiceMock,
             _pluginLoadingServiceMock,
-            _uiDispatcher);
+            _uiDispatcher,
+            _pluginRefreshModule,
+            _discoveryPlanner,
+            CreateDiscoverySettingsModule(),
+            _cleaningCommandReadiness);
 
         // Configure dialog to return null (user cancelled)
         _fileDialogMock.OpenFileDialogAsync(
@@ -343,13 +543,17 @@ public sealed class MainWindowViewModelTests
             var vm = new MainWindowViewModel(
                 _configServiceMock,
                 _stateServiceMock,
-                _orchestratorMock,
+                _cleaningSessionMock,
                 _loggerMock,
                 _fileDialogMock,
                 _messageDialogMock,
                 _pluginServiceMock,
                 _pluginLoadingServiceMock,
-                _uiDispatcher);
+                _uiDispatcher,
+                _pluginRefreshModule,
+                _discoveryPlanner,
+                CreateDiscoverySettingsModule(),
+                _cleaningCommandReadiness);
 
             await WaitForSignalAsync(initializationApplied);
 
@@ -360,14 +564,17 @@ public sealed class MainWindowViewModelTests
                 .Returns(tempFile);
 
             // Plugin service throws exception for the corrupted file path
-            _pluginServiceMock.GetPluginsFromLoadOrderAsync(tempFile, Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            _pluginLoadingServiceMock.GetPluginsFromFileAsync(tempFile, Arg.Any<string?>(), Arg.Any<CancellationToken>())
                 .ThrowsAsync(new InvalidOperationException("Failed to parse load order"));
+            _pluginRefreshModule.ExecuteHandler = (_, _) =>
+                throw new InvalidOperationException("Failed to parse load order");
+            vm.Configuration.SelectedGame = GameType.FalloutNewVegas;
 
             // Act
             await vm.Configuration.ConfigureLoadOrderCommand.ExecuteAsync(null);
 
             // Assert
-            vm.Configuration.StatusText.Should().Contain("Error", "error should be reflected in status");
+            vm.Configuration.StatusText.Should().Contain("failed", "error should be reflected in status");
 
             // Verify error dialog was shown
             await _messageDialogMock.Received(1)
@@ -403,13 +610,17 @@ public sealed class MainWindowViewModelTests
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
             _pluginServiceMock,
             _pluginLoadingServiceMock,
-            _uiDispatcher);
+            _uiDispatcher,
+            _pluginRefreshModule,
+            _discoveryPlanner,
+            CreateDiscoverySettingsModule(),
+            _cleaningCommandReadiness);
 
         // Act - set properties on Configuration sub-VM (these don't affect CanStartCleaning
         // since it now reads from IStateService, but the state has no plugins/xEdit)
@@ -435,13 +646,17 @@ public sealed class MainWindowViewModelTests
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
             _pluginServiceMock,
             _pluginLoadingServiceMock,
-            _uiDispatcher);
+            _uiDispatcher,
+            _pluginRefreshModule,
+            _discoveryPlanner,
+            CreateDiscoverySettingsModule(),
+            _cleaningCommandReadiness);
 
         // Set valid paths on Configuration sub-VM
         vm.Configuration.LoadOrderPath = "plugins.txt";
@@ -458,111 +673,428 @@ public sealed class MainWindowViewModelTests
     }
 
     /// <summary>
-    /// Verifies that StopCleaningCommand calls orchestrator's StopCleaningAsync.
+    /// Verifies that StopCleaningCommand sends a stop control request to the active session.
     /// </summary>
     [Fact]
-    public async Task StopCleaningCommand_ShouldCallOrchestratorStop()
+    public async Task StopCleaningCommand_ShouldRequestSessionStop()
     {
         // Arrange
         var stateSubject = new BehaviorSubject<AppState>(new AppState { IsCleaning = true });
         _stateServiceMock.StateChanged.Returns(stateSubject);
         _stateServiceMock.CurrentState.Returns(new AppState { IsCleaning = true });
 
-        _orchestratorMock.StopCleaningAsync().Returns(Task.CompletedTask);
-        _orchestratorMock.LastTerminationResult.Returns((TerminationResult?)null);
+        _cleaningSessionMock.ControlAsync(CleaningSessionControl.RequestStop, Arg.Any<CancellationToken>())
+            .Returns(new CleaningSessionControlResult(
+                CleaningSessionControl.RequestStop,
+                CleaningSessionControlStatus.StopRequested));
 
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
             _pluginServiceMock,
             _pluginLoadingServiceMock,
-            _uiDispatcher);
+            _uiDispatcher,
+            _pluginRefreshModule,
+            _discoveryPlanner,
+            CreateDiscoverySettingsModule(),
+            _cleaningCommandReadiness);
 
         // Act
         await vm.Commands.StopCleaningCommand.ExecuteAsync(null);
 
         // Assert
-        await _orchestratorMock.Received(1).StopCleaningAsync();
+        await _cleaningSessionMock.Received(1)
+            .ControlAsync(CleaningSessionControl.RequestStop, Arg.Any<CancellationToken>());
         vm.Commands.StatusText.Should().Contain("Stopping");
     }
 
-    /// <summary>
-    /// When grace period expires and user confirms, ForceStopCleaningAsync should be called.
-    /// </summary>
     [Fact]
-    public async Task StopCleaningCommand_GracePeriodExpired_UserConfirms_ShouldForceStop()
+    public void StopTerminationDialogContent_ShouldExposeSharedStopCopyContract()
     {
-        // Arrange
-        var stateSubject = new BehaviorSubject<AppState>(new AppState { IsCleaning = true });
-        _stateServiceMock.StateChanged.Returns(stateSubject);
-        _stateServiceMock.CurrentState.Returns(new AppState { IsCleaning = true });
-
-        _orchestratorMock.StopCleaningAsync().Returns(Task.CompletedTask);
-        _orchestratorMock.LastTerminationResult.Returns(TerminationResult.GracePeriodExpired);
-        _orchestratorMock.ForceStopCleaningAsync().Returns(Task.CompletedTask);
-        _messageDialogMock.ShowConfirmAsync(
-            Arg.Any<string>(), Arg.Any<string>()).Returns(true);
-
-        var vm = new MainWindowViewModel(
-            _configServiceMock,
-            _stateServiceMock,
-            _orchestratorMock,
-            _loggerMock,
-            _fileDialogMock,
-            _messageDialogMock,
-            _pluginServiceMock,
-            _pluginLoadingServiceMock,
-            _uiDispatcher);
-
-        // Act
-        await vm.Commands.StopCleaningCommand.ExecuteAsync(null);
-
-        // Assert
-        await _orchestratorMock.Received(1).ForceStopCleaningAsync();
-        await _messageDialogMock.Received(1).ShowConfirmAsync(
-            "Force Terminate?",
-            "xEdit did not exit gracefully. Force terminate the process?");
+        StopTerminationDialogContent.ConfirmationTitle.Should().Be("Force Terminate xEdit?");
+        StopTerminationDialogContent.ConfirmationMessage.Should().Be("xEdit did not exit after the stop request. AutoQAC can leave xEdit running, or force terminate it now. Force terminating can interrupt remaining file or log writes.");
+        StopTerminationDialogContent.ForceTerminateButton.Should().Be("Force Terminate");
+        StopTerminationDialogContent.LeaveRunningButton.Should().Be("Leave Running");
+        StopTerminationDialogContent.ForceFailureTitle.Should().Be("Could Not Force Terminate xEdit");
+        StopTerminationDialogContent.ForceFailureMessage.Should().Be("AutoQAC could not force terminate xEdit. xEdit may still be running; close it manually before starting another cleaning session. Technical details are in the latest AutoQAC log.");
+        StopTerminationDialogContent.LeftRunningTitle.Should().Be("Cleaning Stopped");
+        StopTerminationDialogContent.LeftRunningMessage.Should().Be("AutoQAC stopped the cleaning session. xEdit was left running by your choice; close it manually when it is safe.");
     }
 
-    /// <summary>
-    /// When grace period expires and user declines, ForceStopCleaningAsync should NOT be called.
-    /// </summary>
     [Fact]
-    public async Task StopCleaningCommand_GracePeriodExpired_UserDeclines_ShouldNotForceStop()
+    public void MessageDialogViewModel_ShouldDefaultChoiceButtonTextToYesAndNo()
+    {
+        // Arrange
+        var dialog = new MessageDialogViewModel();
+
+        // Assert
+        dialog.YesButtonText.Should().Be("Yes");
+        dialog.NoButtonText.Should().Be("No");
+    }
+
+    [Fact]
+    public async Task StopCleaningCommand_ForceStoppedStatus_ShouldNotPromptInViewModel()
     {
         // Arrange
         var stateSubject = new BehaviorSubject<AppState>(new AppState { IsCleaning = true });
         _stateServiceMock.StateChanged.Returns(stateSubject);
         _stateServiceMock.CurrentState.Returns(new AppState { IsCleaning = true });
 
-        _orchestratorMock.StopCleaningAsync().Returns(Task.CompletedTask);
-        _orchestratorMock.LastTerminationResult.Returns(TerminationResult.GracePeriodExpired);
-        _messageDialogMock.ShowConfirmAsync(
-            Arg.Any<string>(), Arg.Any<string>()).Returns(false);
+        _cleaningSessionMock.ControlAsync(CleaningSessionControl.RequestStop, Arg.Any<CancellationToken>())
+            .Returns(new CleaningSessionControlResult(
+                CleaningSessionControl.RequestStop,
+                CleaningSessionControlStatus.ForceStopped,
+                TerminationResult.ForceKilled));
 
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
             _pluginServiceMock,
             _pluginLoadingServiceMock,
-            _uiDispatcher);
+            _uiDispatcher,
+            _pluginRefreshModule,
+            _discoveryPlanner,
+            CreateDiscoverySettingsModule(),
+            _cleaningCommandReadiness);
 
         // Act
         await vm.Commands.StopCleaningCommand.ExecuteAsync(null);
 
         // Assert
-        await _orchestratorMock.DidNotReceive().ForceStopCleaningAsync();
-        await _messageDialogMock.Received(1).ShowConfirmAsync(
-            "Force Terminate?",
-            "xEdit did not exit gracefully. Force terminate the process?");
+        await _cleaningSessionMock.Received(1)
+            .ControlAsync(CleaningSessionControl.RequestStop, Arg.Any<CancellationToken>());
+        await _messageDialogMock.DidNotReceive().ShowChoiceAsync(
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Any<MessageDialogIcon>(),
+            Arg.Any<string?>());
+    }
+
+    [Fact]
+    public async Task StopCleaningCommand_LeftRunningByUserStatus_ShouldShowWarning()
+    {
+        // Arrange
+        var stateSubject = new BehaviorSubject<AppState>(new AppState { IsCleaning = true });
+        _stateServiceMock.StateChanged.Returns(stateSubject);
+        _stateServiceMock.CurrentState.Returns(new AppState { IsCleaning = true });
+
+        _cleaningSessionMock.ControlAsync(CleaningSessionControl.RequestStop, Arg.Any<CancellationToken>())
+            .Returns(new CleaningSessionControlResult(
+                CleaningSessionControl.RequestStop,
+                CleaningSessionControlStatus.LeftRunningByUser,
+                TerminationResult.GracePeriodExpired));
+
+        var vm = new MainWindowViewModel(
+            _configServiceMock,
+            _stateServiceMock,
+            _cleaningSessionMock,
+            _loggerMock,
+            _fileDialogMock,
+            _messageDialogMock,
+            _pluginServiceMock,
+            _pluginLoadingServiceMock,
+            _uiDispatcher,
+            _pluginRefreshModule,
+            _discoveryPlanner,
+            CreateDiscoverySettingsModule(),
+            _cleaningCommandReadiness);
+
+        // Act
+        await vm.Commands.StopCleaningCommand.ExecuteAsync(null);
+
+        // Assert
+        await _cleaningSessionMock.Received(1)
+            .ControlAsync(CleaningSessionControl.RequestStop, Arg.Any<CancellationToken>());
+        await _messageDialogMock.Received(1).ShowWarningAsync(
+            StopTerminationDialogContent.LeftRunningTitle,
+            StopTerminationDialogContent.LeftRunningMessage,
+            null);
+    }
+
+    [Fact]
+    public async Task StopCleaningCommand_WhenLeftRunningWarningDialogThrows_ShouldKeepLeftRunningOutcome()
+    {
+        var stateSubject = new BehaviorSubject<AppState>(new AppState { IsCleaning = true });
+        _stateServiceMock.StateChanged.Returns(stateSubject);
+        _stateServiceMock.CurrentState.Returns(new AppState { IsCleaning = true });
+        _cleaningSessionMock.ControlAsync(CleaningSessionControl.RequestStop, Arg.Any<CancellationToken>())
+            .Returns(new CleaningSessionControlResult(
+                CleaningSessionControl.RequestStop,
+                CleaningSessionControlStatus.LeftRunningByUser,
+                TerminationResult.GracePeriodExpired));
+        _messageDialogMock.ShowWarningAsync(
+                StopTerminationDialogContent.LeftRunningTitle,
+                StopTerminationDialogContent.LeftRunningMessage,
+                Arg.Any<string?>())
+            .ThrowsAsync(new ApplicationException("warning dialog failed"));
+
+        var vm = new MainWindowViewModel(
+            _configServiceMock,
+            _stateServiceMock,
+            _cleaningSessionMock,
+            _loggerMock,
+            _fileDialogMock,
+            _messageDialogMock,
+            _pluginServiceMock,
+            _pluginLoadingServiceMock,
+            _uiDispatcher,
+            _pluginRefreshModule,
+            _discoveryPlanner,
+            CreateDiscoverySettingsModule(),
+            _cleaningCommandReadiness);
+
+        await vm.Commands.StopCleaningCommand.ExecuteAsync(null);
+
+        await _cleaningSessionMock.Received(1)
+            .ControlAsync(CleaningSessionControl.RequestStop, Arg.Any<CancellationToken>());
+        await _messageDialogMock.DidNotReceive().ShowErrorAsync(
+            StopTerminationDialogContent.ForceFailureTitle,
+            StopTerminationDialogContent.ForceFailureMessage,
+            Arg.Any<string?>());
+        vm.Commands.StatusText.Should().Be("Cleaning stopped; xEdit left running.");
+        _loggerMock.Received(1).Error(Arg.Any<ApplicationException>(), "Failed to show left-running stop warning dialog");
+    }
+
+    [Fact]
+    public async Task ConfigureLoadOrderCommand_ShouldUseSafeLoadOrderIdentifier_WhenParsingFails()
+    {
+        // Arrange
+        var stateSubject = new BehaviorSubject<AppState>(new AppState());
+        _stateServiceMock.StateChanged.Returns(stateSubject);
+        _stateServiceMock.CurrentState.Returns(new AppState());
+
+        var selectedDirectory = Path.Combine(Path.GetTempPath(), "AutoQAC_AliceLoadOrder_" + Guid.NewGuid());
+        Directory.CreateDirectory(selectedDirectory);
+        var selectedPath = Path.Combine(selectedDirectory, "plugins.txt");
+        await File.WriteAllTextAsync(selectedPath, "Skyrim.esm");
+        string? dialogMessage = null;
+        string? dialogDetails = null;
+        _fileDialogMock.OpenFileDialogAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<string?>())
+            .Returns(selectedPath);
+        _pluginLoadingServiceMock.GetPluginsFromFileAsync(selectedPath, Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("Access denied reading C:\\Users\\Alice\\AppData\\Local\\Skyrim Special Edition\\plugins.txt"));
+        _pluginRefreshModule.ExecuteHandler = (_, _) =>
+            throw new InvalidOperationException("Access denied reading C:\\Users\\Alice\\AppData\\Local\\Skyrim Special Edition\\plugins.txt");
+        _messageDialogMock.ShowErrorAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<string?>())
+            .Returns(Task.CompletedTask)
+            .AndDoes(callInfo =>
+            {
+                dialogMessage = callInfo.ArgAt<string>(1);
+                dialogDetails = callInfo.ArgAt<string?>(2);
+            });
+
+        try
+        {
+            var vm = new MainWindowViewModel(
+                _configServiceMock,
+                _stateServiceMock,
+                _cleaningSessionMock,
+                _loggerMock,
+                _fileDialogMock,
+                _messageDialogMock,
+                _pluginServiceMock,
+                _pluginLoadingServiceMock,
+                _uiDispatcher,
+                _pluginRefreshModule,
+                _discoveryPlanner,
+                CreateDiscoverySettingsModule(),
+                _cleaningCommandReadiness);
+            vm.Configuration.SelectedGame = GameType.FalloutNewVegas;
+
+            // Act
+            await vm.Configuration.ConfigureLoadOrderCommand.ExecuteAsync(null);
+
+            // Assert
+            var userText = string.Join("\n", vm.Configuration.StatusText, dialogMessage, dialogDetails);
+            userText.Should().Contain("Load Order File (plugins.txt)");
+            userText.Should().Contain("See the latest AutoQAC log for technical details.");
+            userText.Should().NotContain(@"C:\Users\Alice");
+            userText.Should().NotContain("Access denied reading");
+        }
+        finally
+        {
+            Directory.Delete(selectedDirectory, true);
+        }
+    }
+
+    [Fact]
+    public async Task ConfigureGameDataFolderCommand_ShouldUseSafeGameFolderLabel_WhenFolderIsMissing()
+    {
+        // Arrange
+        var stateSubject = new BehaviorSubject<AppState>(new AppState());
+        _stateServiceMock.StateChanged.Returns(stateSubject);
+        _stateServiceMock.CurrentState.Returns(new AppState());
+
+        const string selectedFolder = @"C:\Games\Skyrim Special Edition\Data";
+        string? dialogMessage = null;
+        string? dialogDetails = null;
+        _fileDialogMock.OpenFolderDialogAsync("Select Game Data Folder", Arg.Any<string?>())
+            .Returns(selectedFolder);
+        _messageDialogMock.ShowErrorAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<string?>())
+            .Returns(Task.CompletedTask)
+            .AndDoes(callInfo =>
+            {
+                dialogMessage = callInfo.ArgAt<string>(1);
+                dialogDetails = callInfo.ArgAt<string?>(2);
+            });
+
+        var vm = new MainWindowViewModel(
+            _configServiceMock,
+            _stateServiceMock,
+            _cleaningSessionMock,
+            _loggerMock,
+            _fileDialogMock,
+            _messageDialogMock,
+            _pluginServiceMock,
+            _pluginLoadingServiceMock,
+            _uiDispatcher,
+            _pluginRefreshModule,
+            _discoveryPlanner,
+            CreateDiscoverySettingsModule(),
+            _cleaningCommandReadiness);
+        vm.Configuration.SelectedGame = GameType.SkyrimSe;
+
+        // Act
+        await vm.Configuration.ConfigureGameDataFolderCommand.ExecuteAsync(null);
+
+        // Assert
+        var userText = string.Join("\n", vm.Configuration.StatusText, dialogMessage, dialogDetails);
+        dialogMessage.Should().Be("Skyrim Special Edition data folder is unavailable. Choose a valid Data folder or reset the override.");
+        userText.Should().NotContain(selectedFolder);
+        userText.Should().NotContain("latest AutoQAC log");
+    }
+
+    [Fact]
+    public async Task StopCleaningCommand_ForceKillFailed_ShouldShowErrorCopy()
+    {
+        var stateSubject = new BehaviorSubject<AppState>(new AppState { IsCleaning = true });
+        _stateServiceMock.StateChanged.Returns(stateSubject);
+        _stateServiceMock.CurrentState.Returns(new AppState { IsCleaning = true });
+        _cleaningSessionMock.ControlAsync(CleaningSessionControl.RequestStop, Arg.Any<CancellationToken>())
+            .Returns(new CleaningSessionControlResult(
+                CleaningSessionControl.RequestStop,
+                CleaningSessionControlStatus.ForceKillFailed,
+                TerminationResult.ForceKillFailed));
+
+        var vm = new MainWindowViewModel(
+            _configServiceMock,
+            _stateServiceMock,
+            _cleaningSessionMock,
+            _loggerMock,
+            _fileDialogMock,
+            _messageDialogMock,
+            _pluginServiceMock,
+            _pluginLoadingServiceMock,
+            _uiDispatcher,
+            _pluginRefreshModule,
+            _discoveryPlanner,
+            CreateDiscoverySettingsModule(),
+            _cleaningCommandReadiness);
+
+        await vm.Commands.StopCleaningCommand.ExecuteAsync(null);
+
+        await _messageDialogMock.Received(1).ShowErrorAsync(
+            StopTerminationDialogContent.ForceFailureTitle,
+            StopTerminationDialogContent.ForceFailureMessage,
+            null);
+        await _messageDialogMock.DidNotReceive().ShowChoiceAsync(
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Any<MessageDialogIcon>(),
+            Arg.Any<string?>());
+    }
+
+    [Fact]
+    public async Task StopCleaningCommand_WhenStopThrows_ShouldShowSafeFailureCopy()
+    {
+        var stateSubject = new BehaviorSubject<AppState>(new AppState { IsCleaning = true });
+        _stateServiceMock.StateChanged.Returns(stateSubject);
+        _stateServiceMock.CurrentState.Returns(new AppState { IsCleaning = true });
+        _cleaningSessionMock.ControlAsync(CleaningSessionControl.RequestStop, Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("stop failed"));
+        _messageDialogMock.ShowErrorAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>())
+            .Returns(Task.CompletedTask);
+
+        var vm = new MainWindowViewModel(
+            _configServiceMock,
+            _stateServiceMock,
+            _cleaningSessionMock,
+            _loggerMock,
+            _fileDialogMock,
+            _messageDialogMock,
+            _pluginServiceMock,
+            _pluginLoadingServiceMock,
+            _uiDispatcher,
+            _pluginRefreshModule,
+            _discoveryPlanner,
+            CreateDiscoverySettingsModule(),
+            _cleaningCommandReadiness);
+
+        await vm.Commands.StopCleaningCommand.ExecuteAsync(null);
+
+        await _messageDialogMock.Received(1).ShowErrorAsync(
+            StopTerminationDialogContent.ForceFailureTitle,
+            StopTerminationDialogContent.ForceFailureMessage,
+            null);
+        _loggerMock.Received().Error(Arg.Any<InvalidOperationException>(), "StopCleaningAsync failed");
+    }
+
+    [Fact]
+    public async Task StopCleaningCommand_WhenFailureDialogThrows_ShouldLogAndComplete()
+    {
+        var stateSubject = new BehaviorSubject<AppState>(new AppState { IsCleaning = true });
+        _stateServiceMock.StateChanged.Returns(stateSubject);
+        _stateServiceMock.CurrentState.Returns(new AppState { IsCleaning = true });
+        _cleaningSessionMock.ControlAsync(CleaningSessionControl.RequestStop, Arg.Any<CancellationToken>())
+            .Returns(new CleaningSessionControlResult(
+                CleaningSessionControl.RequestStop,
+                CleaningSessionControlStatus.ForceKillFailed,
+                TerminationResult.ForceKillFailed));
+        _messageDialogMock.ShowErrorAsync(
+                StopTerminationDialogContent.ForceFailureTitle,
+                StopTerminationDialogContent.ForceFailureMessage,
+                Arg.Any<string?>())
+            .ThrowsAsync(new ApplicationException("dialog failed"));
+
+        var vm = new MainWindowViewModel(
+            _configServiceMock,
+            _stateServiceMock,
+            _cleaningSessionMock,
+            _loggerMock,
+            _fileDialogMock,
+            _messageDialogMock,
+            _pluginServiceMock,
+            _pluginLoadingServiceMock,
+            _uiDispatcher,
+            _pluginRefreshModule,
+            _discoveryPlanner,
+            CreateDiscoverySettingsModule(),
+            _cleaningCommandReadiness);
+
+        await vm.Commands.StopCleaningCommand.ExecuteAsync(null);
+
+        _loggerMock.Received().Error(Arg.Any<ApplicationException>(), "Failed to show stop failure dialog");
     }
 
     #endregion
@@ -584,13 +1116,17 @@ public sealed class MainWindowViewModelTests
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
             _pluginServiceMock,
             _pluginLoadingServiceMock,
-            _uiDispatcher);
+            _uiDispatcher,
+            _pluginRefreshModule,
+            _discoveryPlanner,
+            CreateDiscoverySettingsModule(),
+            _cleaningCommandReadiness);
 
         // Act
         var newState = new AppState
@@ -611,20 +1147,185 @@ public sealed class MainWindowViewModelTests
         vm.Configuration.PartialFormsEnabled.Should().BeTrue();
     }
 
+    [Fact]
+    public async Task Mo2ModeEnabled_ShouldPersistAndUpdateRuntimeState_WhenToggledInMainWindow()
+    {
+        // Arrange
+        using var stateService = new StateService();
+        var configService = Substitute.For<IConfigurationService>();
+        using var refreshModule = new RecordingPluginRefreshModule();
+        var refreshObserved = CreateSignal();
+        UserConfiguration? savedConfig = null;
+
+        configService.SkipListChanged.Returns(Observable.Never<GameType>());
+        configService.LoadUserConfigAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => new UserConfiguration { LoadOrder = new(), XEdit = new(), ModOrganizer = new(), Settings = new() });
+        configService.GetSelectedGameAsync(Arg.Any<CancellationToken>())
+            .Returns(GameType.Unknown);
+        configService.SaveUserConfigAsync(Arg.Any<UserConfiguration>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                savedConfig = callInfo.Arg<UserConfiguration>();
+                return Task.CompletedTask;
+            });
+
+        refreshModule.ExecuteHandler = (intent, _) =>
+        {
+            if (intent is PluginRefreshIntent.RefreshGame)
+            {
+                refreshObserved.TrySetResult(true);
+            }
+
+            return Task.FromResult(refreshModule.CurrentSnapshot);
+        };
+
+        var vm = new ConfigurationViewModel(
+            configService,
+            stateService,
+            _loggerMock,
+            _fileDialogMock,
+            _messageDialogMock,
+            _pluginServiceMock,
+            _pluginLoadingServiceMock,
+            pluginRefreshModule: refreshModule,
+            discoveryPlanner: _discoveryPlanner,
+            discoverySettingsModule: CreateDiscoverySettingsModule(
+                configService: configService,
+                stateService: stateService,
+                pluginRefreshModule: refreshModule));
+
+        try
+        {
+            await vm.InitializeAsync();
+
+            // Act
+            vm.Mo2ModeEnabled = true;
+            await WaitForSignalAsync(refreshObserved);
+
+            // Assert
+            savedConfig.Should().NotBeNull();
+            savedConfig!.Settings.Mo2Mode.Should().BeTrue();
+            stateService.CurrentState.Mo2ModeEnabled.Should().BeTrue(
+                "cleaning command construction reads MO2 mode from AppState");
+        }
+        finally
+        {
+            vm.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task PartialFormsEnabled_ShouldUpdateRuntimeState_WhenToggledInMainWindow()
+    {
+        // Arrange
+        using var stateService = new StateService();
+        var configService = Substitute.For<IConfigurationService>();
+        using var refreshModule = new RecordingPluginRefreshModule();
+
+        configService.SkipListChanged.Returns(Observable.Never<GameType>());
+        configService.LoadUserConfigAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => new UserConfiguration { LoadOrder = new(), XEdit = new(), ModOrganizer = new(), Settings = new() });
+        configService.GetSelectedGameAsync(Arg.Any<CancellationToken>())
+            .Returns(GameType.Unknown);
+        var vm = new ConfigurationViewModel(
+            configService,
+            stateService,
+            _loggerMock,
+            _fileDialogMock,
+            _messageDialogMock,
+            _pluginServiceMock,
+            _pluginLoadingServiceMock,
+            pluginRefreshModule: refreshModule,
+            discoveryPlanner: _discoveryPlanner,
+            discoverySettingsModule: CreateDiscoverySettingsModule(
+                configService: configService,
+                stateService: stateService,
+                pluginRefreshModule: refreshModule));
+
+        try
+        {
+            await vm.InitializeAsync();
+
+            // Act
+            vm.PartialFormsEnabled = true;
+
+            // Assert
+            stateService.CurrentState.PartialFormsEnabled.Should().BeTrue(
+                "xEdit argument construction reads Partial Forms from AppState");
+        }
+        finally
+        {
+            vm.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task InitializeAsync_WhenSavedGameUnknownWithSavedLoadOrder_ShouldUsePluginRefreshSeam()
+    {
+        var tempFile = Path.GetTempFileName();
+        try
+        {
+            using var stateService = new StateService();
+            var configService = Substitute.For<IConfigurationService>();
+            using var refreshModule = new RecordingPluginRefreshModule();
+
+            configService.SkipListChanged.Returns(Observable.Never<GameType>());
+            configService.LoadUserConfigAsync(Arg.Any<CancellationToken>())
+                .Returns(_ => new UserConfiguration
+                {
+                    LoadOrder = new LoadOrderConfig { File = tempFile },
+                    XEdit = new XEditConfig(),
+                    ModOrganizer = new ModOrganizerConfig(),
+                    Settings = new AutoQacSettings()
+                });
+            configService.GetSelectedGameAsync(Arg.Any<CancellationToken>())
+                .Returns(GameType.Unknown);
+            var vm = new ConfigurationViewModel(
+                configService,
+                stateService,
+                _loggerMock,
+                _fileDialogMock,
+                _messageDialogMock,
+                _pluginServiceMock,
+                _pluginLoadingServiceMock,
+                pluginRefreshModule: refreshModule,
+                discoveryPlanner: _discoveryPlanner,
+                discoverySettingsModule: CreateDiscoverySettingsModule(
+                    configService: configService,
+                    stateService: stateService,
+                    pluginRefreshModule: refreshModule));
+
+            await vm.InitializeAsync();
+
+            refreshModule.Intents.OfType<PluginRefreshIntent.RefreshGame>()
+                .Should().ContainSingle(refresh =>
+                    refresh.GameType == GameType.Unknown && refresh.SelectedLoadOrderPath == null);
+            await _pluginServiceMock.DidNotReceive().GetPluginsFromLoadOrderAsync(
+                Arg.Any<string>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>());
+            stateService.CurrentState.PluginsToClean.Should().BeEmpty(
+                "no-game startup must not publish stale load-order rows outside Plugin refresh");
+        }
+        finally
+        {
+            if (File.Exists(tempFile))
+                File.Delete(tempFile);
+        }
+    }
+
     #endregion
 
     #region Game Selection Tests
 
     /// <summary>
-    /// Verifies that AvailableGames is populated from IPluginLoadingService.
+    /// Verifies that AvailableGames is populated from Game capability.
     /// </summary>
     [Fact]
-    public void AvailableGames_ShouldBePopulatedFromPluginLoadingService()
+    public void AvailableGames_ShouldBePopulatedFromGameCapability()
     {
         // Arrange
-        var expectedGames = new List<GameType> { GameType.SkyrimSe, GameType.Fallout4, GameType.SkyrimLe };
-        _pluginLoadingServiceMock.GetAvailableGames()
-            .Returns(expectedGames);
+        var expectedGames = _discoveryPlanner.GetAvailableGames();
 
         var stateSubject = new BehaviorSubject<AppState>(new AppState());
         _stateServiceMock.StateChanged.Returns(stateSubject);
@@ -634,16 +1335,20 @@ public sealed class MainWindowViewModelTests
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
             _pluginServiceMock,
             _pluginLoadingServiceMock,
-            _uiDispatcher);
+            _uiDispatcher,
+            _pluginRefreshModule,
+            _discoveryPlanner,
+            CreateDiscoverySettingsModule(),
+            _cleaningCommandReadiness);
 
         // Assert - AvailableGames is now on Configuration sub-VM
-        vm.Configuration.AvailableGames.Should().BeEquivalentTo(expectedGames);
+        vm.Configuration.AvailableGames.Should().BeEquivalentTo(expectedGames, options => options.WithStrictOrdering());
     }
 
     /// <summary>
@@ -652,12 +1357,6 @@ public sealed class MainWindowViewModelTests
     [Fact]
     public void IsMutagenSupported_ShouldReflectSelectedGame()
     {
-        // Arrange
-        _pluginLoadingServiceMock.IsGameSupportedByMutagen(GameType.SkyrimSe)
-            .Returns(true);
-        _pluginLoadingServiceMock.IsGameSupportedByMutagen(GameType.Fallout3)
-            .Returns(false);
-
         var stateSubject = new BehaviorSubject<AppState>(new AppState());
         _stateServiceMock.StateChanged.Returns(stateSubject);
         _stateServiceMock.CurrentState.Returns(new AppState());
@@ -665,13 +1364,17 @@ public sealed class MainWindowViewModelTests
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
             _pluginServiceMock,
             _pluginLoadingServiceMock,
-            _uiDispatcher);
+            _uiDispatcher,
+            _pluginRefreshModule,
+            _discoveryPlanner,
+            CreateDiscoverySettingsModule(),
+            _cleaningCommandReadiness);
 
         // Act & Assert - Default is Unknown (not supported)
         vm.Configuration.IsMutagenSupported.Should().BeFalse();
@@ -711,13 +1414,17 @@ public sealed class MainWindowViewModelTests
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
             _pluginServiceMock,
             _pluginLoadingServiceMock,
-            _uiDispatcher);
+            _uiDispatcher,
+            _pluginRefreshModule,
+            _discoveryPlanner,
+            CreateDiscoverySettingsModule(),
+            _cleaningCommandReadiness);
 
         // Act
         vm.Configuration.SelectedGame = GameType.SkyrimSe;
@@ -743,8 +1450,6 @@ public sealed class MainWindowViewModelTests
             new() { FileName = "Plugin2.esp", FullPath = "Data/Plugin2.esp" }
         };
 
-        _pluginLoadingServiceMock.IsGameSupportedByMutagen(GameType.SkyrimSe)
-            .Returns(true);
         _pluginLoadingServiceMock.TryGetPluginsAsync(GameType.SkyrimSe, Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(new PluginLoadingResult
             {
@@ -774,17 +1479,28 @@ public sealed class MainWindowViewModelTests
                     pluginsLoaded.TrySetResult(true);
                 }
             });
+        var approximationService = Substitute.For<IPluginIssueApproximationService>();
+        approximationService.GetApproximationsAsync(
+                Arg.Any<PluginIssueApproximationRequest>(),
+                Arg.Any<Action<PluginIssueApproximationResult>?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<PluginIssueApproximationResult>>([]));
+        using var refreshModule = CreatePluginRefreshModule(approximationService);
 
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
             _pluginServiceMock,
             _pluginLoadingServiceMock,
-            _uiDispatcher);
+            _uiDispatcher,
+            refreshModule,
+            _discoveryPlanner,
+            CreateDiscoverySettingsModule(pluginRefreshModule: refreshModule),
+            new CleaningCommandReadiness(refreshModule, _stateServiceMock));
 
         // Act
         vm.Configuration.SelectedGame = GameType.SkyrimSe;
@@ -812,7 +1528,6 @@ public sealed class MainWindowViewModelTests
             new() { FileName = "Plugin1.esp", FullPath = @"C:\Games\SkyrimSE\Data\Plugin1.esp" }
         };
 
-        _pluginLoadingServiceMock.IsGameSupportedByMutagen(GameType.SkyrimSe).Returns(true);
         _pluginLoadingServiceMock.TryGetPluginsAsync(GameType.SkyrimSe, Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(new PluginLoadingResult
             {
@@ -823,13 +1538,13 @@ public sealed class MainWindowViewModelTests
 
         approximationServiceMock
             .GetApproximationsAsync(
-                GameType.SkyrimSe,
-                @"C:\Games\SkyrimSE\Data",
+                Arg.Is<PluginIssueApproximationRequest>(request =>
+                    IsDirectApproximationRequest(request, GameType.SkyrimSe, @"C:\Games\SkyrimSE\Data")),
                 Arg.Any<Action<PluginIssueApproximationResult>>(),
                 Arg.Any<CancellationToken>())
             .Returns(async callInfo =>
             {
-                var callback = callInfo.ArgAt<Action<PluginIssueApproximationResult>>(2);
+                var callback = callInfo.ArgAt<Action<PluginIssueApproximationResult>>(1);
                 callback(new PluginIssueApproximationResult
                 {
                     FileName = "Plugin1.esp",
@@ -857,62 +1572,58 @@ public sealed class MainWindowViewModelTests
                 Arg.Any<CancellationToken>())
             .Returns(new List<string>());
 
-        var stateSubject = new BehaviorSubject<AppState>(new AppState());
-        _stateServiceMock.StateChanged.Returns(stateSubject);
-        _stateServiceMock.CurrentState.Returns(new AppState());
-        _stateServiceMock.When(x => x.SetPluginsToClean(Arg.Any<List<PluginInfo>>()))
-            .Do(callInfo =>
+        using var stateService = new StateService();
+        using var stateSubscription = stateService.StateChanged.Subscribe(state =>
+        {
+            if (state.PluginsToClean.Count == 1 &&
+                state.PluginsToClean[0].Approximation.Status == PluginIssueApproximationStatus.Pending)
             {
-                var plugins = callInfo.Arg<List<PluginInfo>>();
-                if (plugins.Count == 1 &&
-                    plugins[0].Approximation.Status == PluginIssueApproximationStatus.Pending)
+                pendingPluginsPublished.TrySetResult(true);
+            }
+
+            if (state.PluginsToClean.Count == 1 &&
+                state.PluginsToClean[0].Approximation is
                 {
-                    pendingPluginsPublished.TrySetResult(true);
-                }
-            });
-        _stateServiceMock.When(x => x.MergePluginApproximation(Arg.Any<PluginIssueApproximationResult>()))
-            .Do(callInfo =>
+                    Status: PluginIssueApproximationStatus.Available,
+                    ItmCount: 3
+                })
             {
-                var result = callInfo.Arg<PluginIssueApproximationResult>();
-                if (result.Approximation.Status == PluginIssueApproximationStatus.Available)
-                {
-                    approximationMergedBeforeCompletion.TrySetResult(true);
-                }
-            });
+                approximationMergedBeforeCompletion.TrySetResult(true);
+            }
+        });
+
+        using var refreshModule = CreatePluginRefreshModule(approximationServiceMock, stateService);
 
         var vm = new MainWindowViewModel(
             _configServiceMock,
-            _stateServiceMock,
-            _orchestratorMock,
+            stateService,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
             _pluginServiceMock,
             _pluginLoadingServiceMock,
             _uiDispatcher,
-            pluginIssueApproximationService: approximationServiceMock);
+            refreshModule,
+            _discoveryPlanner,
+            CreateDiscoverySettingsModule(pluginRefreshModule: refreshModule),
+            new CleaningCommandReadiness(refreshModule, stateService));
 
         vm.Configuration.SelectedGame = GameType.SkyrimSe;
         await WaitForSignalAsync(pendingPluginsPublished);
         await WaitForSignalAsync(approximationMergedBeforeCompletion);
         allowApproximationCompletion.TrySetResult(true);
 
-        _stateServiceMock.Received(1).SetPluginsToClean(Arg.Is<List<PluginInfo>>(list =>
-            list.Count == 1 &&
-            list[0].Approximation.Status == PluginIssueApproximationStatus.Pending));
+        stateService.CurrentState.PluginsToClean.Should().ContainSingle(plugin =>
+            plugin.FileName == "Plugin1.esp" &&
+            plugin.Approximation.Status == PluginIssueApproximationStatus.Available &&
+            plugin.Approximation.ItmCount == 3);
         await approximationServiceMock.Received(1)
             .GetApproximationsAsync(
-                GameType.SkyrimSe,
-                @"C:\Games\SkyrimSE\Data",
+                Arg.Is<PluginIssueApproximationRequest>(request =>
+                    IsDirectApproximationRequest(request, GameType.SkyrimSe, @"C:\Games\SkyrimSE\Data")),
                 Arg.Any<Action<PluginIssueApproximationResult>>(),
                 Arg.Any<CancellationToken>());
-        _stateServiceMock.Received(1).MergePluginApproximation(Arg.Is<PluginIssueApproximationResult>(result =>
-            result.Approximation.Status == PluginIssueApproximationStatus.Available &&
-            result.Approximation.ItmCount == 3));
-        _stateServiceMock.Received(1).MergePluginApproximations(Arg.Is<IReadOnlyList<PluginIssueApproximationResult>>(results =>
-            results.Count == 1 &&
-            results[0].Approximation.Status == PluginIssueApproximationStatus.Available &&
-            results[0].Approximation.ItmCount == 3));
     }
 
     [Fact]
@@ -927,7 +1638,6 @@ public sealed class MainWindowViewModelTests
             new() { FileName = "Plugin1.esp", FullPath = @"C:\Games\SkyrimSE\Data\Plugin1.esp" }
         };
 
-        _pluginLoadingServiceMock.IsGameSupportedByMutagen(GameType.SkyrimSe).Returns(true);
         _pluginLoadingServiceMock.TryGetPluginsAsync(GameType.SkyrimSe, Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(new PluginLoadingResult
             {
@@ -937,7 +1647,11 @@ public sealed class MainWindowViewModelTests
             });
 
         approximationServiceMock
-            .GetApproximationsAsync(GameType.SkyrimSe, @"C:\Games\SkyrimSE\Data", ct: Arg.Any<CancellationToken>())
+            .GetApproximationsAsync(
+                Arg.Is<PluginIssueApproximationRequest>(request =>
+                    IsDirectApproximationRequest(request, GameType.SkyrimSe, @"C:\Games\SkyrimSE\Data")),
+                Arg.Any<Action<PluginIssueApproximationResult>>(),
+                Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("Approximation failed"));
 
         _configServiceMock.GetSkipListAsync(
@@ -946,49 +1660,45 @@ public sealed class MainWindowViewModelTests
                 Arg.Any<CancellationToken>())
             .Returns(new List<string>());
 
-        var stateSubject = new BehaviorSubject<AppState>(new AppState());
-        _stateServiceMock.StateChanged.Returns(stateSubject);
-        _stateServiceMock.CurrentState.Returns(new AppState());
-        _stateServiceMock.When(x => x.SetPluginsToClean(Arg.Any<List<PluginInfo>>()))
-            .Do(callInfo =>
+        using var stateService = new StateService();
+        using var stateSubscription = stateService.StateChanged.Subscribe(state =>
+        {
+            if (state.PluginsToClean.Count == 1 && state.PluginsToClean[0].FileName == "Plugin1.esp")
             {
-                var plugins = callInfo.Arg<List<PluginInfo>>();
-                if (plugins.Count == 1 && plugins[0].FileName == "Plugin1.esp")
-                {
-                    pluginsLoaded.TrySetResult(true);
-                }
-            });
-        _stateServiceMock.When(x => x.MergePluginApproximations(Arg.Any<IReadOnlyList<PluginIssueApproximationResult>>()))
-            .Do(callInfo =>
+                pluginsLoaded.TrySetResult(true);
+            }
+
+            if (state.PluginsToClean.Count == 1 &&
+                state.PluginsToClean[0].Approximation.Status == PluginIssueApproximationStatus.Unavailable)
             {
-                var results = callInfo.Arg<IReadOnlyList<PluginIssueApproximationResult>>();
-                if (results.Count == 1 &&
-                    results[0].Approximation.Status == PluginIssueApproximationStatus.Unavailable)
-                {
-                    unavailableMerged.TrySetResult(true);
-                }
-            });
+                unavailableMerged.TrySetResult(true);
+            }
+        });
+
+        using var refreshModule = CreatePluginRefreshModule(approximationServiceMock, stateService);
 
         var vm = new MainWindowViewModel(
             _configServiceMock,
-            _stateServiceMock,
-            _orchestratorMock,
+            stateService,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
             _pluginServiceMock,
             _pluginLoadingServiceMock,
             _uiDispatcher,
-            pluginIssueApproximationService: approximationServiceMock);
+            refreshModule,
+            _discoveryPlanner,
+            CreateDiscoverySettingsModule(pluginRefreshModule: refreshModule),
+            new CleaningCommandReadiness(refreshModule, stateService));
 
         vm.Configuration.SelectedGame = GameType.SkyrimSe;
         await WaitForSignalAsync(pluginsLoaded);
         await WaitForSignalAsync(unavailableMerged);
 
-        _stateServiceMock.Received(1).SetPluginsToClean(Arg.Any<List<PluginInfo>>());
-        _stateServiceMock.Received(1).MergePluginApproximations(Arg.Is<IReadOnlyList<PluginIssueApproximationResult>>(results =>
-            results.Count == 1 &&
-            results[0].Approximation.Status == PluginIssueApproximationStatus.Unavailable));
+        stateService.CurrentState.PluginsToClean.Should().ContainSingle(plugin =>
+            plugin.FileName == "Plugin1.esp" &&
+            plugin.Approximation.Status == PluginIssueApproximationStatus.Unavailable);
     }
 
     [Fact]
@@ -1007,7 +1717,6 @@ public sealed class MainWindowViewModelTests
             new() { FileName = "Plugin1.esp", FullPath = @"C:\Games\SkyrimSE\Data\Plugin1.esp" }
         };
 
-        _pluginLoadingServiceMock.IsGameSupportedByMutagen(GameType.SkyrimSe).Returns(true);
         _pluginLoadingServiceMock.TryGetPluginsAsync(GameType.SkyrimSe, Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
@@ -1022,7 +1731,10 @@ public sealed class MainWindowViewModelTests
             .Returns(new List<string>());
 
         approximationServiceMock
-            .GetApproximationsAsync(Arg.Any<GameType>(), Arg.Any<string>(), ct: Arg.Any<CancellationToken>())
+            .GetApproximationsAsync(
+                Arg.Any<PluginIssueApproximationRequest>(),
+                Arg.Any<Action<PluginIssueApproximationResult>>(),
+                Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 approximationAttempted.TrySetResult(true);
@@ -1050,17 +1762,22 @@ public sealed class MainWindowViewModelTests
         _stateServiceMock.StateChanged.Returns(stateSubject);
         _stateServiceMock.CurrentState.Returns(new AppState());
 
+        using var refreshModule = CreatePluginRefreshModule(approximationServiceMock);
+
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
             _pluginServiceMock,
             _pluginLoadingServiceMock,
             _uiDispatcher,
-            pluginIssueApproximationService: approximationServiceMock);
+            refreshModule,
+            _discoveryPlanner,
+            CreateDiscoverySettingsModule(pluginRefreshModule: refreshModule),
+            new CleaningCommandReadiness(refreshModule, _stateServiceMock));
 
         vm.Configuration.SelectedGame = GameType.SkyrimSe;
         await WaitForSignalAsync(firstLoadStarted);
@@ -1085,7 +1802,10 @@ public sealed class MainWindowViewModelTests
         approximationAttempted.Task.IsCompleted.Should().BeFalse(
             "stale plugin loads should not start a background approximation refresh");
         await approximationServiceMock.DidNotReceive()
-            .GetApproximationsAsync(Arg.Any<GameType>(), Arg.Any<string>(), ct: Arg.Any<CancellationToken>());
+            .GetApproximationsAsync(
+                Arg.Any<PluginIssueApproximationRequest>(),
+                Arg.Any<Action<PluginIssueApproximationResult>>(),
+                Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -1123,13 +1843,17 @@ public sealed class MainWindowViewModelTests
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
             _pluginServiceMock,
             _pluginLoadingServiceMock,
-            _uiDispatcher);
+            _uiDispatcher,
+            _pluginRefreshModule,
+            _discoveryPlanner,
+            CreateDiscoverySettingsModule(),
+            _cleaningCommandReadiness);
 
         // Act
         await vm.Configuration.ConfigureXEditCommand.ExecuteAsync(null);
@@ -1167,6 +1891,7 @@ public sealed class MainWindowViewModelTests
                 .Returns(newPath);
 
             var stateService = new StateService();
+            using var refreshModule = new RecordingPluginRefreshModule();
             var vm = new ConfigurationViewModel(
                 configService,
                 stateService,
@@ -1174,7 +1899,13 @@ public sealed class MainWindowViewModelTests
                 fileDialog,
                 _messageDialogMock,
                 _pluginServiceMock,
-                _pluginLoadingServiceMock);
+                _pluginLoadingServiceMock,
+                refreshModule,
+                _discoveryPlanner,
+                CreateDiscoverySettingsModule(
+                    configService: configService,
+                    stateService: stateService,
+                    pluginRefreshModule: refreshModule));
             await vm.InitializeAsync();
 
             // Act
@@ -1222,13 +1953,17 @@ public sealed class MainWindowViewModelTests
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
             _pluginServiceMock,
             _pluginLoadingServiceMock,
-            _uiDispatcher);
+            _uiDispatcher,
+            _pluginRefreshModule,
+            _discoveryPlanner,
+            CreateDiscoverySettingsModule(),
+            _cleaningCommandReadiness);
         using var _ = vm.ShowSettingsInteraction.RegisterHandler(_ => Task.FromResult(true));
         _stateServiceMock.ClearReceivedCalls();
 
@@ -1244,7 +1979,8 @@ public sealed class MainWindowViewModelTests
     {
         // Arrange
         const string oldPath = @"C:\Tools\MO2-old\ModOrganizer.exe";
-        const string newPath = @"C:\Tools\MO2-new\ModOrganizer.exe";
+        var newPath = Path.Combine(Path.GetTempPath(), $"ModOrganizer-{Guid.NewGuid():N}.exe");
+        await File.WriteAllTextAsync(newPath, string.Empty);
 
         var initialConfig = new UserConfiguration
         {
@@ -1274,21 +2010,156 @@ public sealed class MainWindowViewModelTests
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
             _pluginServiceMock,
             _pluginLoadingServiceMock,
-            _uiDispatcher);
+            _uiDispatcher,
+            _pluginRefreshModule,
+            _discoveryPlanner,
+            CreateDiscoverySettingsModule(),
+            _cleaningCommandReadiness);
 
-        // Act
-        await vm.Configuration.ConfigureMo2Command.ExecuteAsync(null);
+        try
+        {
+            // Act
+            await vm.Configuration.ConfigureMo2Command.ExecuteAsync(null);
 
-        // Assert
-        savedConfig.Should().NotBeNull("SaveUserConfigAsync should be invoked after picking a new path");
-        savedConfig!.ModOrganizer.Binary.Should().Be(newPath,
-            "the persisted MO2 path must reflect the user's just-selected file, not the stale VM property");
+            // Assert
+            savedConfig.Should().NotBeNull("SaveUserConfigAsync should be invoked after picking a new path");
+            savedConfig!.ModOrganizer.Binary.Should().Be(newPath,
+                "the persisted MO2 path must reflect the user's just-selected file, not the stale VM property");
+        }
+        finally
+        {
+            File.Delete(newPath);
+        }
+    }
+
+    [Fact]
+    public async Task ConfigureMo2Async_WhenSelectedPathRejected_ShouldKeepPreviousVisiblePath()
+    {
+        // Arrange
+        const string oldPath = @"C:\Tools\MO2-old\ModOrganizer.exe";
+        var rejectedPath = Path.Combine(Path.GetTempPath(), $"ModOrganizer-{Guid.NewGuid():N}.txt");
+        await File.WriteAllTextAsync(rejectedPath, string.Empty);
+
+        _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>()).Returns(new UserConfiguration
+        {
+            LoadOrder = new(),
+            XEdit = new(),
+            ModOrganizer = new() { Binary = oldPath },
+            Settings = new()
+        });
+        _configServiceMock.GetSelectedGameAsync(Arg.Any<CancellationToken>()).Returns(GameType.Unknown);
+
+        _fileDialogMock.OpenFileDialogAsync(
+                "Select Mod Organizer 2 Executable",
+                Arg.Any<string>())
+            .Returns(rejectedPath);
+
+        var stateSubject = new BehaviorSubject<AppState>(new AppState { Mo2ExecutablePath = oldPath });
+        _stateServiceMock.StateChanged.Returns(stateSubject);
+        _stateServiceMock.CurrentState.Returns(new AppState { Mo2ExecutablePath = oldPath });
+        _messageDialogMock.ShowErrorAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>())
+            .Returns(Task.CompletedTask);
+
+        var vm = new MainWindowViewModel(
+            _configServiceMock,
+            _stateServiceMock,
+            _cleaningSessionMock,
+            _loggerMock,
+            _fileDialogMock,
+            _messageDialogMock,
+            _pluginServiceMock,
+            _pluginLoadingServiceMock,
+            _uiDispatcher,
+            _pluginRefreshModule,
+            _discoveryPlanner,
+            CreateDiscoverySettingsModule(),
+            _cleaningCommandReadiness);
+
+        try
+        {
+            // Act
+            await vm.Configuration.ConfigureMo2Command.ExecuteAsync(null);
+
+            // Assert
+            vm.Configuration.Mo2Path.Should().Be(oldPath,
+                "a rejected Discovery settings change should not project unaccepted paths into the UI");
+            await _configServiceMock.DidNotReceive().SaveUserConfigAsync(
+                Arg.Any<UserConfiguration>(),
+                Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            File.Delete(rejectedPath);
+        }
+    }
+
+    [Fact]
+    public async Task ResetSettingsAsync_ShouldProjectDefaultDisableSkipListsWithoutReSavingOldToggle()
+    {
+        // Arrange
+        var configService = Substitute.For<IConfigurationService>();
+        using var stateService = new StateService();
+        using var refreshModule = new RecordingPluginRefreshModule();
+        var defaultsLoaded = false;
+
+        configService.SkipListChanged.Returns(Observable.Never<GameType>());
+        configService.LoadUserConfigAsync(Arg.Any<CancellationToken>()).Returns(_ =>
+            defaultsLoaded
+                ? new UserConfiguration { LoadOrder = new(), XEdit = new(), ModOrganizer = new(), Settings = new() }
+                : new UserConfiguration
+                {
+                    LoadOrder = new(),
+                    XEdit = new(),
+                    ModOrganizer = new(),
+                    Settings = new AutoQacSettings { DisableSkipLists = true }
+                });
+        configService.GetSelectedGameAsync(Arg.Any<CancellationToken>()).Returns(GameType.Unknown);
+        configService.ResetToDefaultsAsync(Arg.Any<CancellationToken>()).Returns(_ =>
+        {
+            defaultsLoaded = true;
+            return Task.CompletedTask;
+        });
+
+        var vm = new ConfigurationViewModel(
+            configService,
+            stateService,
+            _loggerMock,
+            _fileDialogMock,
+            _messageDialogMock,
+            _pluginServiceMock,
+            _pluginLoadingServiceMock,
+            refreshModule,
+            _discoveryPlanner,
+            CreateDiscoverySettingsModule(
+                configService: configService,
+                stateService: stateService,
+                pluginRefreshModule: refreshModule));
+
+        try
+        {
+            await vm.InitializeAsync();
+            vm.DisableSkipListsEnabled.Should().BeTrue();
+
+            // Act
+            await vm.ResetSettingsCommand.ExecuteAsync(null);
+
+            // Assert
+            vm.DisableSkipListsEnabled.Should().BeFalse(
+                "reset defaults should be reflected in UI-only Discovery settings fields");
+            await configService.DidNotReceive().SaveUserConfigAsync(
+                Arg.Is<UserConfiguration>(config => config.Settings.DisableSkipLists),
+                Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            vm.Dispose();
+        }
     }
 
     [Fact]
@@ -1297,8 +2168,6 @@ public sealed class MainWindowViewModelTests
         // Arrange
         EnableSelectedGameSideEffects();
         var emptyPluginListPublished = CreateSignal();
-        _pluginLoadingServiceMock.IsGameSupportedByMutagen(GameType.SkyrimSe)
-            .Returns(true);
         _pluginLoadingServiceMock.TryGetPluginsAsync(GameType.SkyrimSe, Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(new PluginLoadingResult
             {
@@ -1324,17 +2193,28 @@ public sealed class MainWindowViewModelTests
                     emptyPluginListPublished.TrySetResult(true);
                 }
             });
+        var approximationService = Substitute.For<IPluginIssueApproximationService>();
+        approximationService.GetApproximationsAsync(
+                Arg.Any<PluginIssueApproximationRequest>(),
+                Arg.Any<Action<PluginIssueApproximationResult>?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<PluginIssueApproximationResult>>([]));
+        using var refreshModule = CreatePluginRefreshModule(approximationService);
 
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
             _pluginServiceMock,
             _pluginLoadingServiceMock,
-            _uiDispatcher);
+            _uiDispatcher,
+            refreshModule,
+            _discoveryPlanner,
+            CreateDiscoverySettingsModule(pluginRefreshModule: refreshModule),
+            new CleaningCommandReadiness(refreshModule, _stateServiceMock));
 
         // Act
         vm.Configuration.SelectedGame = GameType.SkyrimSe;
@@ -1363,13 +2243,17 @@ public sealed class MainWindowViewModelTests
         var vm = new MainWindowViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _orchestratorMock,
+            _cleaningSessionMock,
             _loggerMock,
             _fileDialogMock,
             _messageDialogMock,
             _pluginServiceMock,
             _pluginLoadingServiceMock,
-            _uiDispatcher);
+            _uiDispatcher,
+            _pluginRefreshModule,
+            _discoveryPlanner,
+            CreateDiscoverySettingsModule(),
+            _cleaningCommandReadiness);
 
         // Act & Assert
         FluentActions.Invoking(vm.Dispose)

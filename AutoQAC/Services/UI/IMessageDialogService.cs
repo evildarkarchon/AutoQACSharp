@@ -76,6 +76,18 @@ public interface IMessageDialogService
     Task<bool> ShowConfirmAsync(string title, string message);
 
     /// <summary>
+    /// Shows a two-choice dialog with custom button labels.
+    /// </summary>
+    /// <param name="title">Dialog title.</param>
+    /// <param name="message">Dialog message shown to the user.</param>
+    /// <param name="primaryButtonText">Text for the primary button, returned as <see cref="MessageDialogResult.Yes" />.</param>
+    /// <param name="secondaryButtonText">Text for the secondary button, returned as <see cref="MessageDialogResult.No" />.</param>
+    /// <param name="icon">Icon shown with the dialog.</param>
+    /// <param name="details">Optional details text.</param>
+    /// <returns>The selected choice result.</returns>
+    Task<MessageDialogResult> ShowChoiceAsync(string title, string message, string primaryButtonText, string secondaryButtonText, MessageDialogIcon icon = MessageDialogIcon.Question, string? details = null);
+
+    /// <summary>
     /// Shows a retry dialog.
     /// </summary>
     Task<bool> ShowRetryAsync(string title, string message, string? details = null);

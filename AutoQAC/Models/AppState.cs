@@ -4,11 +4,57 @@ using System.Linq;
 
 namespace AutoQAC.Models;
 
+/// <summary>
+/// Identifies the non-xEdit file operation currently shown in the cleaning progress surface.
+/// </summary>
+public enum BackupOperationKind
+{
+    /// <summary>A plugin backup copy is active before the plugin's xEdit launch.</summary>
+    Backup,
+
+    /// <summary>Old backup-session retention cleanup is active after plugin cleaning.</summary>
+    RetentionCleanup
+}
+
+/// <summary>
+/// Describes visible progress for backup or retention work that must not reuse xEdit stop state.
+/// </summary>
+public sealed record BackupOperationState
+{
+    /// <summary>The kind of non-xEdit file operation currently active.</summary>
+    public BackupOperationKind Kind { get; init; }
+
+    /// <summary>User-facing phase label such as <c>Backing up: Plugin.esp</c>.</summary>
+    public string Label { get; init; } = string.Empty;
+
+    /// <summary>The current file name when byte progress is available; null for count-only cleanup.</summary>
+    public string? FileName { get; init; }
+
+    /// <summary>Number of files or sessions completed by the operation.</summary>
+    public int FilesCompleted { get; init; }
+
+    /// <summary>Total files or sessions when known.</summary>
+    public int? TotalFiles { get; init; }
+
+    /// <summary>Bytes copied for the current file when known.</summary>
+    public long BytesCopied { get; init; }
+
+    /// <summary>Total bytes for the current file when known.</summary>
+    public long? TotalBytes { get; init; }
+
+    /// <summary>Whether the operation is currently running.</summary>
+    public bool IsActive { get; init; }
+
+    /// <summary>Whether the UI may offer a non-xEdit cancel affordance for this operation.</summary>
+    public bool CanCancel { get; init; }
+}
+
 public sealed record AppState
 {
     // Configuration paths
     public string? LoadOrderPath { get; init; }
     public string? Mo2ExecutablePath { get; init; }
+    public string? Mo2Profile { get; init; }
     public string? XEditExecutablePath { get; init; }
 
     // Configuration validity
@@ -25,6 +71,11 @@ public sealed record AppState
     public int Progress { get; init; }
     public int TotalPlugins { get; init; }
     public IReadOnlyList<PluginInfo> PluginsToClean { get; init; } = [];
+
+    /// <summary>
+    /// Progress for backup or retention file operations that are separate from xEdit process control.
+    /// </summary>
+    public BackupOperationState? BackupOperation { get; init; }
 
     /// <summary>
     /// Full paths (case-insensitive) of plugins the user has explicitly deselected from

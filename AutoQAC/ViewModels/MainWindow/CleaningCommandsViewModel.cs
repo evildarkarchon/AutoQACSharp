@@ -1,20 +1,18 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.IO;
 using System.Linq;
-using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
+using AutoQAC.Models.Diagnostics;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Services.State;
 using AutoQAC.Services.UI;
 using AutoQAC.Services.UI.Interactions;
-using Avalonia;
-using Avalonia.Controls.ApplicationLifetimes;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -24,86 +22,73 @@ namespace AutoQAC.ViewModels.MainWindow;
 /// Manages cleaning commands (start/stop/preview), validation errors,
 /// status text during cleaning, and pre-clean validation.
 /// </summary>
-public sealed partial class CleaningCommandsViewModel : ViewModelBase, IDisposable
+public sealed partial class CleaningCommandsViewModel(
+    IStateService stateService,
+    ICleaningSession cleaningSession,
+    IConfigurationService configService,
+    ICleaningCommandReadiness cleaningCommandReadiness,
+    IPluginRefreshModule pluginRefreshModule,
+    ILoggingService logger,
+    IMessageDialogService messageDialog,
+    IAppLifetime appLifetime,
+    Interaction<ICleaningSession, Unit> showProgressInteraction,
+    Interaction<List<DryRunResult>, Unit> showPreviewInteraction,
+    Interaction<Unit, bool> showSettingsInteraction,
+    Interaction<Unit, bool> showSkipListInteraction,
+    Interaction<Unit, Unit> showRestoreInteraction,
+    Interaction<Unit, Unit> showAboutInteraction)
+    : ViewModelBase, IDisposable
 {
-    private readonly IConfigurationService _configService;
-    private readonly ILoggingService _logger;
-    private readonly IMessageDialogService _messageDialog;
-    private readonly ICleaningOrchestrator _orchestrator;
-    private readonly IPluginLoadingService _pluginLoadingService;
-    private readonly IStateService _stateService;
-    private readonly IUiDispatcher _uiDispatcher;
+    private readonly IPluginRefreshModule _pluginRefreshModule = pluginRefreshModule;
+    private readonly ICleaningCommandReadiness _cleaningCommandReadiness = cleaningCommandReadiness;
+    private CancellationTokenSource? _readinessCts;
+    private int _readinessRequestId;
+    private CleaningPreflightFailureKind? _currentReadinessFailureKind;
 
-    private readonly Interaction<Unit, Unit> _showProgressInteraction;
-    private readonly Interaction<List<DryRunResult>, Unit> _showPreviewInteraction;
-    private readonly Interaction<Unit, bool> _showSettingsInteraction;
-    private readonly Interaction<Unit, bool> _showSkipListInteraction;
-    private readonly Interaction<Unit, Unit> _showRestoreInteraction;
-    private readonly Interaction<Unit, Unit> _showAboutInteraction;
+    [ObservableProperty] public partial string StatusText { get; set; } = "Ready";
 
-    [ObservableProperty]
-    private string _statusText = "Ready";
+    [ObservableProperty] public partial ObservableCollection<ValidationError> ValidationErrors { get; set; } = [];
 
-    [ObservableProperty]
-    private ObservableCollection<ValidationError> _validationErrors = new();
-
-    [ObservableProperty]
-    private bool _hasValidationErrors;
+    [ObservableProperty] public partial bool HasValidationErrors { get; set; }
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(StopCleaningCommand))]
     [NotifyCanExecuteChangedFor(nameof(ShowSkipListCommand))]
     [NotifyCanExecuteChangedFor(nameof(RestoreBackupsCommand))]
-    private bool _isCleaning;
+    public partial bool IsCleaning { get; set; }
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(StartCleaningCommand))]
     [NotifyCanExecuteChangedFor(nameof(PreviewCommand))]
-    private bool _canStartCleaning;
-
-    public CleaningCommandsViewModel(
-        IStateService stateService,
-        ICleaningOrchestrator orchestrator,
-        IConfigurationService configService,
-        IPluginLoadingService pluginLoadingService,
-        ILoggingService logger,
-        IMessageDialogService messageDialog,
-        IUiDispatcher uiDispatcher,
-        Interaction<Unit, Unit> showProgressInteraction,
-        Interaction<List<DryRunResult>, Unit> showPreviewInteraction,
-        Interaction<Unit, bool> showSettingsInteraction,
-        Interaction<Unit, bool> showSkipListInteraction,
-        Interaction<Unit, Unit> showRestoreInteraction,
-        Interaction<Unit, Unit> showAboutInteraction)
-    {
-        _stateService = stateService;
-        _orchestrator = orchestrator;
-        _configService = configService;
-        _pluginLoadingService = pluginLoadingService;
-        _logger = logger;
-        _messageDialog = messageDialog;
-        _uiDispatcher = uiDispatcher;
-        _showProgressInteraction = showProgressInteraction;
-        _showPreviewInteraction = showPreviewInteraction;
-        _showSettingsInteraction = showSettingsInteraction;
-        _showSkipListInteraction = showSkipListInteraction;
-        _showRestoreInteraction = showRestoreInteraction;
-        _showAboutInteraction = showAboutInteraction;
-    }
+    public partial bool CanStartCleaning { get; set; }
 
     /// <summary>
     /// Updates VM state from application state. Called by the parent VM when
     /// <c>IStateService.StateChanged</c> fires; the parent has already marshaled
     /// onto the UI thread via <c>IUiDispatcher</c>, so we just apply directly here.
     /// </summary>
-    public void OnStateChanged(AppState state) => ApplyState(state);
+    public void OnStateChanged(AppState state)
+    {
+        ApplyState(state);
+        ScheduleReadinessRefresh(projectFailure: true);
+    }
+
+    /// <summary>
+    /// Re-evaluates command readiness when Plugin refresh publication facts may have changed.
+    /// </summary>
+    public void OnPluginRefreshSnapshot(PluginRefreshSnapshot snapshot)
+    {
+        _ = snapshot;
+        ScheduleReadinessRefresh(projectFailure: true);
+    }
 
     private void ApplyState(AppState state)
     {
         IsCleaning = state.IsCleaning;
-        CanStartCleaning = state.PluginsToClean.Count > 0 &&
-                           !string.IsNullOrEmpty(state.XEditExecutablePath) &&
-                           !state.IsCleaning;
+        if (state.IsCleaning)
+        {
+            CanStartCleaning = false;
+        }
 
         if (state.IsCleaning)
         {
@@ -119,42 +104,52 @@ public sealed partial class CleaningCommandsViewModel : ViewModelBase, IDisposab
         ValidationErrors.Clear();
         HasValidationErrors = false;
 
-        var errors = ValidatePreClean();
-        if (errors.Count > 0)
+        if (!await ValidatePreCleanAsync().ConfigureAwait(true))
         {
-            foreach (var error in errors)
-                ValidationErrors.Add(error);
-            HasValidationErrors = true;
             return;
         }
 
         try
         {
-            _ = _showProgressInteraction.Handle(Unit.Default);
+            await _pluginRefreshModule.ExecuteAsync(
+                new PluginRefreshIntent.Cancel(PluginRefreshCancelReason.CleaningStarted));
+            await showProgressInteraction.Handle(cleaningSession);
 
             StatusText = "Cleaning started...";
-            await _orchestrator.StartCleaningAsync(HandleTimeoutRetryAsync, HandleBackupFailureAsync);
+            await cleaningSession.StartAsync();
             StatusText = "Cleaning completed.";
+        }
+        catch (CleaningPreflightException ex)
+        {
+            logger.Error(ex, "Cleaning preflight failed before cleaning");
+            ProjectPreflightFailure(ex.Failure);
+        }
+        catch (ConfigPersistenceFailureException ex)
+        {
+            logger.Error(ex, "Configuration persistence failed before cleaning");
+            ProjectPreflightFailure(ToPreflightFailure(ex));
         }
         catch (InvalidOperationException ex)
         {
-            _logger.Error(ex, "Configuration validation failed before cleaning");
+            logger.Error(ex, "Configuration validation failed before cleaning");
+            var message = DiagnosticTextFormatter.OperationFailed("Configuration validation");
             ValidationErrors.Clear();
             ValidationErrors.Add(new ValidationError(
                 "Configuration error",
-                ex.Message,
+                message,
                 "Check your configuration in Edit > Settings."));
             HasValidationErrors = true;
             StatusText = "Configuration error";
         }
         catch (Exception ex)
         {
-            StatusText = $"Error: {ex.Message}";
-            _logger.Error(ex, "StartCleaningAsync failed");
-            await _messageDialog.ShowErrorAsync(
+            logger.Error(ex, "StartAsync failed");
+            var message = DiagnosticTextFormatter.OperationFailed("Cleaning");
+            StatusText = message;
+            await messageDialog.ShowErrorAsync(
                 "Cleaning Failed",
-                "An error occurred during the cleaning process.",
-                $"Error: {ex.Message}\n\nStack Trace:\n{ex.StackTrace}");
+                message,
+                DiagnosticTextFormatter.LatestLogDetails);
         }
     }
 
@@ -164,43 +159,51 @@ public sealed partial class CleaningCommandsViewModel : ViewModelBase, IDisposab
         ValidationErrors.Clear();
         HasValidationErrors = false;
 
-        var errors = ValidatePreClean();
-        if (errors.Count > 0)
+        if (!await ValidatePreCleanAsync().ConfigureAwait(true))
         {
-            foreach (var error in errors)
-                ValidationErrors.Add(error);
-            HasValidationErrors = true;
             return;
         }
 
         try
         {
             StatusText = "Running preview...";
-            var results = await _orchestrator.RunDryRunAsync();
+            var results = await cleaningSession.PreviewAsync();
 
-            _ = _showPreviewInteraction.Handle(results);
+            await showPreviewInteraction.Handle(results.ToList());
 
             StatusText = "Preview complete";
         }
+        catch (CleaningPreflightException ex)
+        {
+            logger.Error(ex, "Cleaning preflight failed before preview");
+            ProjectPreflightFailure(ex.Failure);
+        }
+        catch (ConfigPersistenceFailureException ex)
+        {
+            logger.Error(ex, "Configuration persistence failed before preview");
+            ProjectPreflightFailure(ToPreflightFailure(ex));
+        }
         catch (InvalidOperationException ex)
         {
-            _logger.Error(ex, "Configuration validation failed before preview");
+            logger.Error(ex, "Configuration validation failed before preview");
+            var message = DiagnosticTextFormatter.OperationFailed("Configuration validation");
             ValidationErrors.Clear();
             ValidationErrors.Add(new ValidationError(
                 "Configuration error",
-                ex.Message,
+                message,
                 "Check your configuration in Edit > Settings."));
             HasValidationErrors = true;
             StatusText = "Configuration error";
         }
         catch (Exception ex)
         {
-            StatusText = $"Error: {ex.Message}";
-            _logger.Error(ex, "RunPreviewAsync failed");
-            await _messageDialog.ShowErrorAsync(
+            logger.Error(ex, "RunPreviewAsync failed");
+            var message = DiagnosticTextFormatter.OperationFailed("Preview");
+            StatusText = message;
+            await messageDialog.ShowErrorAsync(
                 "Preview Failed",
-                "An error occurred while running the preview.",
-                $"Error: {ex.Message}\n\nStack Trace:\n{ex.StackTrace}");
+                message,
+                DiagnosticTextFormatter.LatestLogDetails);
         }
     }
 
@@ -209,29 +212,76 @@ public sealed partial class CleaningCommandsViewModel : ViewModelBase, IDisposab
     [RelayCommand(CanExecute = nameof(CanStop))]
     private async Task StopCleaningAsync()
     {
-        StatusText = "Stopping...";
-        await _orchestrator.StopCleaningAsync();
-
-        if (_orchestrator.LastTerminationResult == TerminationResult.GracePeriodExpired)
+        try
         {
-            var confirmed = await _messageDialog.ShowConfirmAsync(
-                "Force Terminate?",
-                "xEdit did not exit gracefully. Force terminate the process?");
+            StatusText = "Stopping...";
+            var result = await cleaningSession.ControlAsync(CleaningSessionControl.RequestStop);
+            await ProjectStopControlResultAsync(result);
+        }
+        catch (Exception ex)
+        {
+            logger.Error(ex, "StopCleaningAsync failed");
+            StatusText = StopTerminationDialogContent.ForceFailureTitle;
+            await ShowStopFailureDialogSafelyAsync();
+        }
+    }
 
-            if (confirmed)
-            {
-                await _orchestrator.ForceStopCleaningAsync();
-            }
+    /// <summary>
+    /// Projects the session-owned stop decision outcome without reimplementing stop escalation policy.
+    /// </summary>
+    private async Task ProjectStopControlResultAsync(CleaningSessionControlResult result)
+    {
+        switch (result.Status)
+        {
+            case CleaningSessionControlStatus.LeftRunningByUser:
+                StatusText = "Cleaning stopped; xEdit left running.";
+                await ShowLeftRunningWarningSafelyAsync();
+                break;
+            case CleaningSessionControlStatus.ForceKillFailed:
+                StatusText = StopTerminationDialogContent.ForceFailureTitle;
+                await ShowStopFailureDialogSafelyAsync();
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Shows the left-running acknowledgement without converting dialog failures into force-termination failures.
+    /// </summary>
+    private async Task ShowLeftRunningWarningSafelyAsync()
+    {
+        try
+        {
+            await messageDialog.ShowWarningAsync(
+                StopTerminationDialogContent.LeftRunningTitle,
+                StopTerminationDialogContent.LeftRunningMessage);
+        }
+        catch (Exception ex)
+        {
+            logger.Error(ex, "Failed to show left-running stop warning dialog");
+        }
+    }
+
+    /// <summary>
+    /// Shows the shared force-failure dialog without letting dialog-service failures escape the stop command.
+    /// </summary>
+    private async Task ShowStopFailureDialogSafelyAsync()
+    {
+        try
+        {
+            await messageDialog.ShowErrorAsync(
+                StopTerminationDialogContent.ForceFailureTitle,
+                StopTerminationDialogContent.ForceFailureMessage);
+        }
+        catch (Exception ex)
+        {
+            logger.Error(ex, "Failed to show stop failure dialog");
         }
     }
 
     [RelayCommand]
     private void Exit()
     {
-        if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
-        {
-            desktop.Shutdown();
-        }
+        appLifetime.Shutdown();
     }
 
     [RelayCommand]
@@ -239,11 +289,11 @@ public sealed partial class CleaningCommandsViewModel : ViewModelBase, IDisposab
     {
         try
         {
-            await _showAboutInteraction.Handle(Unit.Default);
+            await showAboutInteraction.Handle(Unit.Default);
         }
         catch (Exception ex)
         {
-            _logger.Error(ex, "Failed to show about dialog");
+            logger.Error(ex, "Failed to show about dialog");
             StatusText = "Error opening about dialog";
         }
     }
@@ -253,29 +303,29 @@ public sealed partial class CleaningCommandsViewModel : ViewModelBase, IDisposab
     {
         try
         {
-            var result = await _showSettingsInteraction.Handle(Unit.Default);
+            var result = await showSettingsInteraction.Handle(Unit.Default);
 
             if (result)
             {
-                var config = await _configService.LoadUserConfigAsync();
+                var config = await configService.LoadUserConfigAsync();
 
-                _stateService.UpdateConfigurationPaths(
+                stateService.UpdateConfigurationPaths(
                     config.LoadOrder.File,
                     config.ModOrganizer.Binary,
                     config.XEdit.Binary);
-                _stateService.UpdateState(s => s with
+                stateService.UpdateState(s => s with
                 {
                     Mo2ModeEnabled = config.Settings.Mo2Mode,
                     CleaningTimeout = config.Settings.CleaningTimeout
                 });
 
                 StatusText = "Settings saved";
-                _logger.Information("Settings updated from settings dialog");
+                logger.Information("Settings updated from settings dialog");
             }
         }
         catch (Exception ex)
         {
-            _logger.Error(ex, "Failed to show or process settings dialog");
+            logger.Error(ex, "Failed to show or process settings dialog");
             StatusText = "Error opening settings";
         }
     }
@@ -287,17 +337,17 @@ public sealed partial class CleaningCommandsViewModel : ViewModelBase, IDisposab
     {
         try
         {
-            var result = await _showSkipListInteraction.Handle(Unit.Default);
+            var result = await showSkipListInteraction.Handle(Unit.Default);
 
             if (result)
             {
                 StatusText = "Skip list saved";
-                _logger.Information("Skip list updated from skip list dialog");
+                logger.Information("Skip list updated from skip list dialog");
             }
         }
         catch (Exception ex)
         {
-            _logger.Error(ex, "Failed to show or process skip list dialog");
+            logger.Error(ex, "Failed to show or process skip list dialog");
             StatusText = "Error opening skip list";
         }
     }
@@ -309,11 +359,11 @@ public sealed partial class CleaningCommandsViewModel : ViewModelBase, IDisposab
     {
         try
         {
-            await _showRestoreInteraction.Handle(Unit.Default);
+            await showRestoreInteraction.Handle(Unit.Default);
         }
         catch (Exception ex)
         {
-            _logger.Error(ex, "Failed to show restore window");
+            logger.Error(ex, "Failed to show restore window");
             StatusText = "Error opening restore window";
         }
     }
@@ -325,108 +375,142 @@ public sealed partial class CleaningCommandsViewModel : ViewModelBase, IDisposab
         HasValidationErrors = false;
     }
 
-    private List<ValidationError> ValidatePreClean()
+    private async Task<bool> ValidatePreCleanAsync()
     {
-        var errors = new List<ValidationError>();
-        var state = _stateService.CurrentState;
-
-        if (string.IsNullOrEmpty(state.XEditExecutablePath))
-        {
-            errors.Add(new ValidationError(
-                "xEdit not configured",
-                "xEdit executable path is not set.",
-                "Go to Edit > Settings and set the xEdit Path to your xEdit executable (SSEEdit.exe, FO4Edit.exe, etc.)."));
-        }
-        else if (!File.Exists(state.XEditExecutablePath))
-        {
-            errors.Add(new ValidationError(
-                "xEdit not found",
-                $"xEdit not found at: {state.XEditExecutablePath}",
-                "Go to Edit > Settings and update the xEdit Path to the correct location."));
-        }
-
-        var requiresLoadOrder = state.CurrentGameType != GameType.Unknown &&
-                                !_pluginLoadingService.IsGameSupportedByMutagen(state.CurrentGameType);
-
-        if (requiresLoadOrder)
-        {
-            if (string.IsNullOrWhiteSpace(state.LoadOrderPath))
-            {
-                errors.Add(new ValidationError(
-                    "Load order not configured",
-                    $"{state.CurrentGameType} requires a load order file (plugins.txt/loadorder.txt).",
-                    "Set the load order path in the main window under Configuration > Load Order File."));
-            }
-            else if (!File.Exists(state.LoadOrderPath))
-            {
-                errors.Add(new ValidationError(
-                    "Load order not found",
-                    $"Load order file not found at: {state.LoadOrderPath}",
-                    "Set a valid per-game load order path in the main window under Configuration > Load Order File."));
-            }
-        }
-
-        var hasPlugins = state.PluginsToClean.Count > 0;
-        if (!hasPlugins)
-        {
-            errors.Add(new ValidationError(
-                "No plugins loaded",
-                "No plugins are available for cleaning.",
-                new StringBuilder().Append("Select a game from the dropdown, or browse for a load order file.")
-                    .ToString()));
-        }
-        else
-        {
-            var excluded = state.ExcludedPluginPaths;
-            var selectedCount = state.PluginsToClean
-                .Count(p => !p.IsInSkipList && !excluded.Contains(p.FullPath));
-            if (selectedCount == 0)
-            {
-                errors.Add(new ValidationError(
-                    "No plugins selected",
-                    "All plugins are either deselected or in the skip list.",
-                    "Select at least one plugin to clean, or check your skip list settings."));
-            }
-        }
-
-        if (!state.Mo2ModeEnabled) return errors;
-        if (string.IsNullOrEmpty(state.Mo2ExecutablePath))
-        {
-            errors.Add(new ValidationError(
-                "MO2 not configured",
-                "MO2 mode is enabled but no MO2 executable path is set.",
-                "Go to Edit > Settings and set the MO2 Path, or disable MO2 mode if not using Mod Organizer 2."));
-        }
-        else if (!File.Exists(state.Mo2ExecutablePath))
-        {
-            errors.Add(new ValidationError(
-                "MO2 not found",
-                $"MO2 executable not found at: {state.Mo2ExecutablePath}",
-                "Check the MO2 executable path in Edit > Settings, or disable MO2 mode."));
-        }
-
-        return errors;
+        var readiness = await _cleaningCommandReadiness.EvaluateAsync().ConfigureAwait(true);
+        ApplyReadiness(readiness, projectFailure: true);
+        return readiness.CanStartOrPreview;
     }
 
-    private async Task<bool> HandleTimeoutRetryAsync(string pluginName, int timeoutSeconds, int attemptNumber)
+    private void ScheduleReadinessRefresh(bool projectFailure)
     {
-        var message = $"Cleaning of '{pluginName}' timed out after {timeoutSeconds} seconds.\n\n" +
-                      $"Attempt {attemptNumber} of 3 failed.\n\n" +
-                      "Would you like to retry cleaning this plugin?";
+        var cts = new CancellationTokenSource();
+        var previous = Interlocked.Exchange(ref _readinessCts, cts);
+        previous?.Cancel();
+        previous?.Dispose();
 
-        const string details = "Possible causes:\n" +
-                               "- The plugin is very large\n" +
-                               "- xEdit is processing slowly\n" +
-                               "- The system is under heavy load\n\n" +
-                               "You can increase the timeout in Edit > Settings if plugins regularly time out.";
-
-        return await _messageDialog.ShowRetryAsync("Plugin Timeout", message, details);
+        var requestId = Interlocked.Increment(ref _readinessRequestId);
+        _ = UpdateReadinessAsync(requestId, projectFailure, cts.Token);
     }
 
-    private async Task<BackupFailureChoice> HandleBackupFailureAsync(string pluginName, string errorMessage) =>
-        await _messageDialog.ShowBackupFailureDialogAsync(pluginName, errorMessage);
+    private async Task UpdateReadinessAsync(
+        int requestId,
+        bool projectFailure,
+        CancellationToken ct)
+    {
+        try
+        {
+            var readiness = await _cleaningCommandReadiness.EvaluateAsync(ct).ConfigureAwait(true);
+            if (ct.IsCancellationRequested || requestId != Volatile.Read(ref _readinessRequestId))
+            {
+                return;
+            }
+
+            ApplyReadiness(readiness, projectFailure);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            logger.Error(ex, "Failed to evaluate Cleaning command readiness");
+            CanStartCleaning = false;
+        }
+    }
+
+    private void ApplyReadiness(CleaningCommandReadinessResult readiness, bool projectFailure)
+    {
+        CanStartCleaning = readiness.CanStartOrPreview;
+        if (readiness.CanStartOrPreview)
+        {
+            ClearReadinessValidationIfCurrent();
+            return;
+        }
+
+        if (projectFailure && readiness.Failure is not null && !IsCleaning)
+        {
+            ProjectReadinessFailure(readiness.Failure);
+        }
+    }
+
+    private void ProjectReadinessFailure(CleaningPreflightFailure failure)
+    {
+        ProjectPreflightFailure(failure);
+        _currentReadinessFailureKind = failure.Kind;
+    }
+
+    private void ClearReadinessValidationIfCurrent()
+    {
+        if (_currentReadinessFailureKind is null)
+        {
+            return;
+        }
+
+        ValidationErrors.Clear();
+        HasValidationErrors = false;
+        _currentReadinessFailureKind = null;
+    }
+
+    private static CleaningPreflightFailure ToPreflightFailure(ConfigPersistenceFailureException ex) =>
+        new(
+            CleaningPreflightFailureKind.ConfigPersistenceFailed,
+            ex.Failure.SafeSummary);
+
+    private void ProjectPreflightFailure(CleaningPreflightFailure failure)
+    {
+        ValidationErrors.Clear();
+        ValidationErrors.Add(ToValidationError(failure));
+        HasValidationErrors = true;
+        StatusText = "Configuration error";
+    }
+
+    private static ValidationError ToValidationError(CleaningPreflightFailure failure)
+    {
+        var (title, action) = failure.Kind switch
+        {
+            CleaningPreflightFailureKind.MissingPluginRefreshPublication =>
+                ("Plugins not refreshed", "Select a game and refresh plugins before cleaning."),
+            CleaningPreflightFailureKind.StalePluginRefreshPublication =>
+                ("Plugins need refresh", "Refresh plugins after changing game, load order, MO2, or skip list settings."),
+            CleaningPreflightFailureKind.NoGameSelected =>
+                ("No game selected", "Select a game before cleaning."),
+            CleaningPreflightFailureKind.XEditNotConfigured =>
+                ("xEdit not configured", "Choose the correct xEdit executable in Settings."),
+            CleaningPreflightFailureKind.XEditNotFound =>
+                ("xEdit not found", "Choose the correct xEdit executable in Settings."),
+            CleaningPreflightFailureKind.LoadOrderNotConfigured =>
+                ("Load order not configured", "Choose the current plugins.txt or loadorder.txt file."),
+            CleaningPreflightFailureKind.LoadOrderNotFound =>
+                ("Load order not found", "Choose the current plugins.txt or loadorder.txt file."),
+            CleaningPreflightFailureKind.Mo2NotConfigured =>
+                ("MO2 not configured", "Choose ModOrganizer.exe or disable MO2 Mode."),
+            CleaningPreflightFailureKind.Mo2NotFound =>
+                ("MO2 not found", "Choose ModOrganizer.exe or disable MO2 Mode."),
+            CleaningPreflightFailureKind.Mo2InstanceMissing =>
+                ("MO2 instance not found", "Choose the MO2 instance folder or disable MO2 Mode."),
+            CleaningPreflightFailureKind.Mo2ProfileMissing =>
+                ("MO2 profile not selected", "Select a game and MO2 profile before cleaning."),
+            CleaningPreflightFailureKind.Mo2ProfileLoadOrderMissing =>
+                ("MO2 profile load order missing", "Select a profile with a valid loadorder.txt before cleaning."),
+            CleaningPreflightFailureKind.NoPluginsLoaded =>
+                ("No plugins loaded", "Refresh plugins for the selected game."),
+            CleaningPreflightFailureKind.NoPluginsSelected =>
+                ("No plugins selected", "Select at least one plugin to clean, or check Skip list settings."),
+            CleaningPreflightFailureKind.ConfigPersistenceFailed =>
+                ("Configuration save failed", "Check the latest configuration save error and try again."),
+            _ => ("Configuration error", "Check your configuration in Edit > Settings.")
+        };
+
+        return new ValidationError(
+            title,
+            failure.SafeMessage,
+            failure.ActionHint ?? action);
+    }
 
     public void Dispose()
     {
+        var cts = Interlocked.Exchange(ref _readinessCts, null);
+        cts?.Cancel();
+        cts?.Dispose();
     }
 }

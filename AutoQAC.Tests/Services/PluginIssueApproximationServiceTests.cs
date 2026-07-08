@@ -24,7 +24,7 @@ public sealed class PluginIssueApproximationServiceTests
         var plugin = new SkyrimMod(ModKey.FromNameAndExtension("Plugin.esp"), SkyrimRelease.SkyrimSE);
         var cache = new ISkyrimModGetter[] { plugin }.ToImmutableLinkCache();
 
-        _queryService.Analyse(Arg.Any<IModGetter>(), Arg.Any<ILinkCache>(), GameRelease.SkyrimSE)
+        _queryService.Analyse(Arg.Any<IModGetter>(), Arg.Any<ILinkCache>(), GameRelease.SkyrimSE, Arg.Any<CancellationToken>())
             .Returns(new PluginAnalysisResult(
             [
                 new PluginIssue(FormKey.Null, null, IssueType.ItmRecord),
@@ -40,7 +40,7 @@ public sealed class PluginIssueApproximationServiceTests
                 cache,
                 [new PluginIssueApproximationService.AnalysisTarget("Plugin.esp", @"C:\Game\Data\Plugin.esp", plugin)]));
 
-        var results = await sut.GetApproximationsAsync(GameType.SkyrimSe, @"C:\Game\Data");
+        var results = await sut.GetApproximationsAsync(DirectRequest(GameType.SkyrimSe, @"C:\Game\Data"));
 
         results.Should().ContainSingle();
         results[0].Approximation.Status.Should().Be(PluginIssueApproximationStatus.Available);
@@ -57,10 +57,10 @@ public sealed class PluginIssueApproximationServiceTests
             _queryService,
             (_, _, _) => throw new InvalidOperationException("Should not be called"));
 
-        var results = await sut.GetApproximationsAsync(GameType.Fallout3, @"C:\Game\Data");
+        var results = await sut.GetApproximationsAsync(DirectRequest(GameType.Fallout3, @"C:\Game\Data"));
 
         results.Should().BeEmpty();
-        _queryService.DidNotReceiveWithAnyArgs().Analyse(default!, default!, default);
+        _queryService.DidNotReceiveWithAnyArgs().Analyse(default!, default!, default, default);
     }
 
     [Fact]
@@ -74,10 +74,10 @@ public sealed class PluginIssueApproximationServiceTests
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
-        var act = () => sut.GetApproximationsAsync(GameType.SkyrimSe, @"C:\Game\Data", ct: cts.Token);
+        var act = () => sut.GetApproximationsAsync(DirectRequest(GameType.SkyrimSe, @"C:\Game\Data"), ct: cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
-        _queryService.DidNotReceiveWithAnyArgs().Analyse(default!, default!, default);
+        _queryService.DidNotReceiveWithAnyArgs().Analyse(default!, default!, default, default);
     }
 
     [Fact]
@@ -97,10 +97,10 @@ public sealed class PluginIssueApproximationServiceTests
                     []);
             });
 
-        var act = () => sut.GetApproximationsAsync(GameType.SkyrimSe, @"C:\Game\Data", ct: cts.Token);
+        var act = () => sut.GetApproximationsAsync(DirectRequest(GameType.SkyrimSe, @"C:\Game\Data"), ct: cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
-        _queryService.DidNotReceiveWithAnyArgs().Analyse(default!, default!, default);
+        _queryService.DidNotReceiveWithAnyArgs().Analyse(default!, default!, default, default);
     }
 
     [Fact]
@@ -110,9 +110,9 @@ public sealed class PluginIssueApproximationServiceTests
         var plugin2 = new SkyrimMod(ModKey.FromNameAndExtension("Two.esp"), SkyrimRelease.SkyrimSE);
         var cache = new ISkyrimModGetter[] { plugin1, plugin2 }.ToImmutableLinkCache();
 
-        _queryService.Analyse(Arg.Is<IModGetter>(p => ReferenceEquals(p, plugin1)), Arg.Any<ILinkCache>(), GameRelease.SkyrimSE)
+        _queryService.Analyse(Arg.Is<IModGetter>(p => ReferenceEquals(p, plugin1)), Arg.Any<ILinkCache>(), GameRelease.SkyrimSE, Arg.Any<CancellationToken>())
             .Returns(new PluginAnalysisResult([new PluginIssue(FormKey.Null, null, IssueType.ItmRecord)]));
-        _queryService.Analyse(Arg.Is<IModGetter>(p => ReferenceEquals(p, plugin2)), Arg.Any<ILinkCache>(), GameRelease.SkyrimSE)
+        _queryService.Analyse(Arg.Is<IModGetter>(p => ReferenceEquals(p, plugin2)), Arg.Any<ILinkCache>(), GameRelease.SkyrimSE, Arg.Any<CancellationToken>())
             .Returns(_ => throw new InvalidOperationException("boom"));
 
         var sut = new PluginIssueApproximationService(
@@ -126,7 +126,7 @@ public sealed class PluginIssueApproximationServiceTests
                     new PluginIssueApproximationService.AnalysisTarget("Two.esp", @"C:\Game\Data\Two.esp", plugin2)
                 ]));
 
-        var results = await sut.GetApproximationsAsync(GameType.SkyrimSe, @"C:\Game\Data");
+        var results = await sut.GetApproximationsAsync(DirectRequest(GameType.SkyrimSe, @"C:\Game\Data"));
 
         results.Should().HaveCount(2);
         results.Single(r => r.FileName == "One.esp").Approximation.Status.Should().Be(PluginIssueApproximationStatus.Available);
@@ -141,9 +141,9 @@ public sealed class PluginIssueApproximationServiceTests
         var cache = new ISkyrimModGetter[] { plugin1, plugin2 }.ToImmutableLinkCache();
         var reported = new List<PluginIssueApproximationResult>();
 
-        _queryService.Analyse(Arg.Is<IModGetter>(p => ReferenceEquals(p, plugin1)), Arg.Any<ILinkCache>(), GameRelease.SkyrimSE)
+        _queryService.Analyse(Arg.Is<IModGetter>(p => ReferenceEquals(p, plugin1)), Arg.Any<ILinkCache>(), GameRelease.SkyrimSE, Arg.Any<CancellationToken>())
             .Returns(new PluginAnalysisResult([new PluginIssue(FormKey.Null, null, IssueType.ItmRecord)]));
-        _queryService.Analyse(Arg.Is<IModGetter>(p => ReferenceEquals(p, plugin2)), Arg.Any<ILinkCache>(), GameRelease.SkyrimSE)
+        _queryService.Analyse(Arg.Is<IModGetter>(p => ReferenceEquals(p, plugin2)), Arg.Any<ILinkCache>(), GameRelease.SkyrimSE, Arg.Any<CancellationToken>())
             .Returns(new PluginAnalysisResult([new PluginIssue(FormKey.Null, null, IssueType.DeletedReference)]));
 
         var sut = new PluginIssueApproximationService(
@@ -158,8 +158,7 @@ public sealed class PluginIssueApproximationServiceTests
                 ]));
 
         var results = await sut.GetApproximationsAsync(
-            GameType.SkyrimSe,
-            @"C:\Game\Data",
+            DirectRequest(GameType.SkyrimSe, @"C:\Game\Data"),
             reported.Add,
             CancellationToken.None);
 
@@ -176,7 +175,7 @@ public sealed class PluginIssueApproximationServiceTests
         var cache = new ISkyrimModGetter[] { plugin }.ToImmutableLinkCache();
         var reported = new List<PluginIssueApproximationResult>();
 
-        _queryService.Analyse(Arg.Any<IModGetter>(), Arg.Any<ILinkCache>(), GameRelease.SkyrimSE)
+        _queryService.Analyse(Arg.Any<IModGetter>(), Arg.Any<ILinkCache>(), GameRelease.SkyrimSE, Arg.Any<CancellationToken>())
             .Returns(_ => throw new InvalidOperationException("boom"));
 
         var sut = new PluginIssueApproximationService(
@@ -188,8 +187,7 @@ public sealed class PluginIssueApproximationServiceTests
                 [new PluginIssueApproximationService.AnalysisTarget("Broken.esp", @"C:\Game\Data\Broken.esp", plugin)]));
 
         var results = await sut.GetApproximationsAsync(
-            GameType.SkyrimSe,
-            @"C:\Game\Data",
+            DirectRequest(GameType.SkyrimSe, @"C:\Game\Data"),
             reported.Add,
             CancellationToken.None);
 
@@ -197,4 +195,73 @@ public sealed class PluginIssueApproximationServiceTests
         reported.Should().ContainSingle();
         reported[0].Approximation.Status.Should().Be(PluginIssueApproximationStatus.Unavailable);
     }
+
+    [Fact]
+    public async Task GetApproximationsAsync_WhenQueryAnalysisCancels_DoesNotPublishPartialResult()
+    {
+        var plugin = new SkyrimMod(ModKey.FromNameAndExtension("Canceled.esp"), SkyrimRelease.SkyrimSE);
+        var cache = new ISkyrimModGetter[] { plugin }.ToImmutableLinkCache();
+        var reported = new List<PluginIssueApproximationResult>();
+        using var cts = new CancellationTokenSource();
+
+        _queryService
+            .Analyse(
+                Arg.Any<IModGetter>(),
+                Arg.Any<ILinkCache>(),
+                GameRelease.SkyrimSE,
+                Arg.Is<CancellationToken>(token => token == cts.Token))
+            .Returns(_ => throw new OperationCanceledException(cts.Token));
+
+        var sut = new PluginIssueApproximationService(
+            _logger,
+            _queryService,
+            (_, _, _) => new PluginIssueApproximationService.AnalysisContext(
+                GameRelease.SkyrimSE,
+                cache,
+                [new PluginIssueApproximationService.AnalysisTarget("Canceled.esp", @"C:\Game\Data\Canceled.esp", plugin)]));
+
+        var act = () => sut.GetApproximationsAsync(
+            DirectRequest(GameType.SkyrimSe, @"C:\Game\Data"),
+            reported.Add,
+            cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        reported.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetApproximationsAsync_WithResolvedLoadOrderAndMissingPath_ShouldReturnUnavailable()
+    {
+        var tempDataFolder = Path.Combine(Path.GetTempPath(), "AutoQAC_Approximation_" + Guid.NewGuid());
+        Directory.CreateDirectory(tempDataFolder);
+        var sut = new PluginIssueApproximationService(
+            _logger,
+            _queryService,
+            (_, _, _) => throw new InvalidOperationException("Direct context should not be used"));
+        var reported = new List<PluginIssueApproximationResult>();
+        var request = new PluginIssueApproximationRequest(
+            GameType.SkyrimSe,
+            new PluginIssueApproximationSource.ResolvedLoadOrder(
+                tempDataFolder,
+                ["Missing.esp"],
+                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)));
+
+        try
+        {
+            var results = await sut.GetApproximationsAsync(request, reported.Add, CancellationToken.None);
+
+            results.Should().ContainSingle(result =>
+                result.FileName == "Missing.esp" &&
+                result.Approximation.Status == PluginIssueApproximationStatus.Unavailable);
+            reported.Should().ContainSingle(result => result.FileName == "Missing.esp");
+            _queryService.DidNotReceiveWithAnyArgs().Analyse(default!, default!, default, default);
+        }
+        finally
+        {
+            Directory.Delete(tempDataFolder, recursive: true);
+        }
+    }
+
+    private static PluginIssueApproximationRequest DirectRequest(GameType gameType, string dataFolder) =>
+        new(gameType, new PluginIssueApproximationSource.DirectDataFolder(dataFolder));
 }

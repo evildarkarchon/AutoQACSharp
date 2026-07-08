@@ -2,14 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Reactive.Linq;
 using System.Reactive.Subjects;
-using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Models.Configuration;
+using AutoQAC.Services.State;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
@@ -18,35 +17,36 @@ namespace AutoQAC.Services.Configuration;
 public sealed class ConfigurationService : IConfigurationService, IDisposable, IAsyncDisposable
 {
     private readonly ILoggingService _logger;
+    private readonly IConfigPersistenceCoordinator _coordinator;
+    private readonly Task _consumerTask;
     private readonly SemaphoreSlim _fileLock = new(1, 1);
     private readonly Lock _stateLock = new();
-    private readonly Subject<UserConfiguration> _configChanges = new();
     private readonly Subject<GameType> _skipListChanges = new();
-    private readonly Subject<UserConfiguration> _saveRequests = new();
-    private readonly IDisposable _debounceSubscription;
     private readonly string _configDirectory;
-    private readonly ISerializer _serializer;
     private readonly IDeserializer _deserializer;
 
-    private UserConfiguration? _lastKnownGoodConfig;
-    private UserConfiguration? _pendingConfig;
     private MainConfiguration? _mainConfigCache;
-    private string? _lastWrittenHash;
+    private bool _loadedUserConfigFromDisk;
+    private bool _hasPendingUserSave;
     private int _disposeState;
 
     private const string MainConfigFile = "AutoQAC Main.yaml";
     private const string UserConfigFile = "AutoQAC Settings.yaml";
 
-    public IObservable<UserConfiguration> UserConfigurationChanged => _configChanges;
+    public IObservable<UserConfiguration> UserConfigurationChanged => _coordinator.ConfigurationAccepted;
     public IObservable<GameType> SkipListChanged => _skipListChanges;
+    public IObservable<ConfigPersistenceFailure> Failures => _coordinator.Failures;
+    public IObservable<ConfigPersistenceResult> PersistenceResults => _coordinator.PersistenceResults;
+    public ConfigPersistenceFailure? LastFailure => _coordinator.LastFailure;
 
-    public ConfigurationService(ILoggingService logger, string? configDirectory = null)
+    internal ConfigurationService(
+        IConfigPersistenceCoordinator coordinator,
+        ILoggingService logger,
+        string? configDirectory = null)
     {
+        _coordinator = coordinator;
         _logger = logger;
         _configDirectory = configDirectory ?? ResolveConfigDirectory(logger);
-        _serializer = new SerializerBuilder()
-            .WithNamingConvention(NullNamingConvention.Instance)
-            .Build();
         _deserializer = new DeserializerBuilder()
             .WithNamingConvention(NullNamingConvention.Instance)
             .IgnoreUnmatchedProperties()
@@ -57,24 +57,26 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
             Directory.CreateDirectory(_configDirectory);
         }
 
-        // Debounced async save pipeline. Switch cancels superseded in-flight saves.
-        _debounceSubscription = _saveRequests
-            .Throttle(TimeSpan.FromMilliseconds(500))
-            .Select(config => Observable.FromAsync(async saveCt =>
-            {
-                try
-                {
-                    await SaveToDiskWithRetryAsync(config, saveCt).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (saveCt.IsCancellationRequested)
-                {
-                    _logger.Debug("[Config] Superseded debounced save canceled");
-                }
-            }))
-            .Switch()
-            .Subscribe(
-                _ => { },
-                ex => _logger.Error(ex, "[Config] Debounced save pipeline failed"));
+        _consumerTask = _coordinator.StartAsync(CancellationToken.None);
+        _ = _consumerTask.ContinueWith(
+            t => _logger.Error(t.Exception, "[Config] Persistence coordinator consumer crashed"),
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted,
+            TaskScheduler.Default);
+    }
+
+    public ConfigurationService(ILoggingService logger, string? configDirectory = null)
+        : this(CreateDefaultCoordinator(logger, configDirectory), logger, configDirectory)
+    {
+    }
+
+    private static IConfigPersistenceCoordinator CreateDefaultCoordinator(
+        ILoggingService logger,
+        string? configDirectory)
+    {
+        var stateService = new StateService();
+        var fileStore = new UserConfigFileStore(logger, configDirectory);
+        return new ConfigPersistenceCoordinator(fileStore, stateService, logger);
     }
 
     private string ResolveConfigDirectory(ILoggingService logger)
@@ -83,7 +85,7 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
 
 #if DEBUG
         var current = new DirectoryInfo(baseDir);
-        for (int i = 0; i < 6 && current != null; i++)
+        for (var i = 0; i < 6 && current != null; i++)
         {
             var candidate = Path.Combine(current.FullName, "AutoQAC Data");
             if (Directory.Exists(candidate))
@@ -162,16 +164,12 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
     public async Task<UserConfiguration> LoadUserConfigAsync(CancellationToken ct = default)
     {
         ThrowIfDisposed();
+        await _consumerTask.ConfigureAwait(false);
 
-        UserConfiguration? pendingSnapshot;
-        lock (_stateLock)
+        var (hasPending, loadedFromDisk) = GetUserConfigStateFlags();
+        if (hasPending)
         {
-            pendingSnapshot = _pendingConfig;
-        }
-
-        if (pendingSnapshot != null)
-        {
-            return CloneConfig(pendingSnapshot);
+            return await _coordinator.LoadCurrentAsync(ct).ConfigureAwait(false);
         }
 
         var path = Path.Combine(_configDirectory, UserConfigFile);
@@ -180,154 +178,55 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
             _logger.Information("[Config] User config file not found at {Path}. Creating default.", path);
             var defaultConfig = new UserConfiguration();
             await SaveUserConfigAsync(defaultConfig, ct).ConfigureAwait(false);
-            return CloneConfig(defaultConfig);
+            return defaultConfig.Copy();
         }
 
-        await _fileLock.WaitAsync(ct).ConfigureAwait(false);
-        try
+        if (loadedFromDisk || hasPending) return await _coordinator.LoadCurrentAsync(ct).ConfigureAwait(false);
+        var result = await _coordinator.ReloadFromDiskAsync(ct).ConfigureAwait(false);
+        if (result.Status == ConfigPersistenceStatusKind.Failed)
         {
-            var content = await File.ReadAllTextAsync(path, ct).ConfigureAwait(false);
-            var loaded = _deserializer.Deserialize<UserConfiguration?>(content);
-            if (loaded == null)
-            {
-                _logger.Warning("[Config] User configuration file was empty. Using default configuration.");
-                loaded = new UserConfiguration();
-            }
+            _logger.Warning("[Config] Initial user configuration reload failed: {Summary}",
+                result.Failure?.SafeSummary ?? "unknown");
+        }
 
-            lock (_stateLock)
-            {
-                _lastKnownGoodConfig = CloneConfig(loaded);
-                if (_pendingConfig != null)
-                {
-                    return CloneConfig(_pendingConfig);
-                }
-            }
+        lock (_stateLock)
+        {
+            _loadedUserConfigFromDisk = true;
+        }
 
-            return CloneConfig(loaded);
-        }
-        catch (Exception ex)
-        {
-            _logger.Error(ex, "[Config] Failed to load user configuration");
-            throw;
-        }
-        finally
-        {
-            _fileLock.Release();
-        }
+        return await _coordinator.LoadCurrentAsync(ct).ConfigureAwait(false);
     }
 
-    public Task SaveUserConfigAsync(UserConfiguration config, CancellationToken ct = default)
+    public async Task SaveUserConfigAsync(UserConfiguration config, CancellationToken ct = default)
     {
         ThrowIfDisposed();
         ct.ThrowIfCancellationRequested();
-
-        var configCopy = CloneConfig(config);
+        await _consumerTask.ConfigureAwait(false);
+        await _coordinator.SaveUserConfigAsync(config, ct).ConfigureAwait(false);
         lock (_stateLock)
         {
-            _pendingConfig = configCopy;
-        }
-
-        _configChanges.OnNext(CloneConfig(configCopy));
-        _saveRequests.OnNext(configCopy);
-        return Task.CompletedTask;
-    }
-
-    private async Task SaveToDiskWithRetryAsync(UserConfiguration config, CancellationToken ct = default)
-    {
-        const int maxRetries = 2;
-        var path = Path.Combine(_configDirectory, UserConfigFile);
-
-        for (int attempt = 0; attempt <= maxRetries; attempt++)
-        {
-            ct.ThrowIfCancellationRequested();
-            try
-            {
-                await _fileLock.WaitAsync(ct).ConfigureAwait(false);
-                try
-                {
-                    Directory.CreateDirectory(_configDirectory);
-
-                    var content = _serializer.Serialize(config);
-                    await File.WriteAllTextAsync(path, content, ct).ConfigureAwait(false);
-
-                    var successfulConfig = CloneConfig(config);
-                    lock (_stateLock)
-                    {
-                        _lastKnownGoodConfig = successfulConfig;
-                    }
-
-                    Interlocked.CompareExchange(ref _pendingConfig, null, config);
-
-                    lock (_stateLock)
-                    {
-                        _lastWrittenHash = ComputeFileHash(path);
-                    }
-
-                    _logger.Information("[Config] Debounced save completed successfully");
-                    return;
-                }
-                finally
-                {
-                    _fileLock.Release();
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex) when (attempt < maxRetries)
-            {
-                _logger.Warning(
-                    "[Config] Save failed (attempt {Attempt}/{MaxAttempts}): {Message}",
-                    attempt + 1,
-                    maxRetries + 1,
-                    ex.Message);
-                await Task.Delay(100, ct).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                _logger.Error(
-                    ex,
-                    "[Config] Save failed after {MaxRetries} retries. Reverting to last known good config.",
-                    maxRetries + 1);
-
-                UserConfiguration? fallback = null;
-                lock (_stateLock)
-                {
-                    if (_lastKnownGoodConfig != null)
-                    {
-                        fallback = CloneConfig(_lastKnownGoodConfig);
-                        Interlocked.Exchange(ref _pendingConfig, null);
-                    }
-                }
-
-                if (fallback != null)
-                {
-                    _configChanges.OnNext(fallback);
-                    _logger.Warning("[Config] Reverted to last known good configuration");
-                }
-            }
+            _loadedUserConfigFromDisk = true;
+            _hasPendingUserSave = true;
         }
     }
 
-    public async Task FlushPendingSavesAsync(CancellationToken ct = default)
+    public async Task<ConfigPersistenceResult> FlushPendingSavesAsync(CancellationToken ct = default)
     {
         ThrowIfDisposed();
+        await _consumerTask.ConfigureAwait(false);
 
-        UserConfiguration? config;
-        lock (_stateLock)
+        // Forced flush is also the public queue barrier for watcher reload work; a missing
+        // facade pending-save marker does not prove the coordinator queue is already drained.
+        var result = await _coordinator.FlushPendingSavesAsync(ct).ConfigureAwait(false);
+        if (result.Status is ConfigPersistenceStatusKind.Success or ConfigPersistenceStatusKind.NoOp)
         {
-            config = _pendingConfig;
+            lock (_stateLock)
+            {
+                _hasPendingUserSave = false;
+            }
         }
 
-        if (config == null)
-        {
-            _logger.Debug("[Config] No pending config changes to flush");
-            return;
-        }
-
-        _logger.Information("[Config] Flushing pending config saves to disk");
-        await SaveToDiskWithRetryAsync(config, ct).ConfigureAwait(false);
+        return result;
     }
 
     public Task<bool> ValidatePathsAsync(UserConfiguration config, CancellationToken ct = default)
@@ -445,12 +344,7 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
             return list;
         }
 
-        if (mainConfig.Data.XEditLists.TryGetValue("Universal", out var universalList))
-        {
-            return universalList;
-        }
-
-        return [];
+        return mainConfig.Data.XEditLists.TryGetValue("Universal", out var universalList) ? universalList : [];
     }
 
     public async Task<List<string>> GetGameSpecificSkipListAsync(GameType gameType, CancellationToken ct = default)
@@ -509,8 +403,8 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
         }
 
         var currentList = await GetGameSpecificSkipListAsync(gameType, ct).ConfigureAwait(false);
-        var toRemove = currentList.FirstOrDefault(
-            p => string.Equals(p, pluginName, StringComparison.OrdinalIgnoreCase));
+        var toRemove =
+            currentList.FirstOrDefault(p => string.Equals(p, pluginName, StringComparison.OrdinalIgnoreCase));
 
         if (toRemove != null)
         {
@@ -619,6 +513,65 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
         await SaveUserConfigAsync(config, ct).ConfigureAwait(false);
     }
 
+    public async Task<string?> GetMo2InstanceOverrideAsync(GameType gameType, CancellationToken ct = default)
+    {
+        ThrowIfDisposed();
+        var config = await LoadUserConfigAsync(ct).ConfigureAwait(false);
+        var key = GetGameKey(gameType);
+        return config.Mo2InstanceOverrides.GetValueOrDefault(key);
+    }
+
+    public async Task SetMo2InstanceOverrideAsync(
+        GameType gameType,
+        string? folderPath,
+        CancellationToken ct = default)
+    {
+        ThrowIfDisposed();
+        var config = await LoadUserConfigAsync(ct).ConfigureAwait(false);
+        var key = GetGameKey(gameType);
+
+        if (string.IsNullOrWhiteSpace(folderPath))
+        {
+            config.Mo2InstanceOverrides.Remove(key);
+            _logger.Information("Removed MO2 instance override for {GameType}", gameType);
+        }
+        else
+        {
+            config.Mo2InstanceOverrides[key] = folderPath;
+            _logger.Information("Set MO2 instance override for {GameType} to {FolderPath}", gameType, folderPath);
+        }
+
+        await SaveUserConfigAsync(config, ct).ConfigureAwait(false);
+    }
+
+    public async Task<string?> GetMo2ProfileAsync(GameType gameType, CancellationToken ct = default)
+    {
+        ThrowIfDisposed();
+        var config = await LoadUserConfigAsync(ct).ConfigureAwait(false);
+        var key = GetGameKey(gameType);
+        return config.Mo2ProfileSelections.GetValueOrDefault(key);
+    }
+
+    public async Task SetMo2ProfileAsync(GameType gameType, string? profileName, CancellationToken ct = default)
+    {
+        ThrowIfDisposed();
+        var config = await LoadUserConfigAsync(ct).ConfigureAwait(false);
+        var key = GetGameKey(gameType);
+
+        if (string.IsNullOrWhiteSpace(profileName))
+        {
+            config.Mo2ProfileSelections.Remove(key);
+            _logger.Information("Removed MO2 profile selection for {GameType}", gameType);
+        }
+        else
+        {
+            config.Mo2ProfileSelections[key] = profileName;
+            _logger.Information("Set MO2 profile selection for {GameType} to {ProfileName}", gameType, profileName);
+        }
+
+        await SaveUserConfigAsync(config, ct).ConfigureAwait(false);
+    }
+
     public async Task ResetToDefaultsAsync(CancellationToken ct = default)
     {
         ThrowIfDisposed();
@@ -637,6 +590,8 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
             ["LoadOrderPath"] = config.LoadOrder.File,
             ["LoadOrderOverrides"] = config.LoadOrderFileOverrides,
             ["Mo2Binary"] = config.ModOrganizer.Binary,
+            ["Mo2InstanceOverrides"] = config.Mo2InstanceOverrides,
+            ["Mo2ProfileSelections"] = config.Mo2ProfileSelections,
             ["Mo2Mode"] = config.Settings.Mo2Mode,
             ["CleaningTimeout"] = config.Settings.CleaningTimeout,
             ["JournalExpiration"] = config.Settings.JournalExpiration,
@@ -645,6 +600,8 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
             ["LogRetention.Mode"] = config.LogRetention.Mode,
             ["LogRetention.MaxAgeDays"] = config.LogRetention.MaxAgeDays,
             ["LogRetention.MaxFileCount"] = config.LogRetention.MaxFileCount,
+            ["Backup.Enabled"] = config.Backup.Enabled,
+            ["Backup.MaxSessions"] = config.Backup.MaxSessions,
             ["SelectedGame"] = config.SelectedGame
         };
     }
@@ -652,74 +609,27 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
     public async Task ReloadFromDiskAsync(CancellationToken ct = default)
     {
         ThrowIfDisposed();
-
-        var path = Path.Combine(_configDirectory, UserConfigFile);
-        if (!File.Exists(path))
+        await _consumerTask.ConfigureAwait(false);
+        var result = await _coordinator.ReloadFromDiskAsync(ct).ConfigureAwait(false);
+        if (result.Status is ConfigPersistenceStatusKind.Success)
         {
-            _logger.Warning("[Config] Config file not found during reload: {Path}", path);
-            return;
-        }
-
-        await _fileLock.WaitAsync(ct).ConfigureAwait(false);
-        try
-        {
-            var content = await File.ReadAllTextAsync(path, ct).ConfigureAwait(false);
-            var loaded = _deserializer.Deserialize<UserConfiguration>(content);
-            if (loaded == null)
-            {
-                throw new InvalidOperationException("Reloaded user configuration deserialized to null.");
-            }
-
-            var loadedCopy = CloneConfig(loaded);
+            // Only a successful coordinator reload means pending facade edits were persisted
+            // and accepted back from disk. Failed/rejected reloads must leave the pending
+            // indicator intact so a later flush still protects the user's edits.
             lock (_stateLock)
             {
-                Interlocked.Exchange(ref _pendingConfig, null);
-                _mainConfigCache = null;
-                _lastKnownGoodConfig = loadedCopy;
+                _loadedUserConfigFromDisk = true;
+                _hasPendingUserSave = false;
             }
+        }
 
-            _configChanges.OnNext(CloneConfig(loadedCopy));
-            _logger.Information("[Config] Reloaded configuration from disk");
-        }
-        catch (Exception ex)
-        {
-            _logger.Error(ex, "[Config] Failed to reload configuration from disk");
-            throw;
-        }
-        finally
-        {
-            _fileLock.Release();
-        }
-    }
-
-    public string? GetLastWrittenHash()
-    {
         lock (_stateLock)
         {
-            return _lastWrittenHash;
+            _mainConfigCache = null;
         }
     }
 
-    private UserConfiguration CloneConfig(UserConfiguration source)
-    {
-        var yaml = _serializer.Serialize(source);
-        var clone = _deserializer.Deserialize<UserConfiguration>(yaml);
-        if (clone == null)
-        {
-            throw new InvalidOperationException("Configuration clone failed (deserialized to null).");
-        }
-
-        return clone;
-    }
-
-    private static string ComputeFileHash(string filePath)
-    {
-        using var stream = File.OpenRead(filePath);
-        var hashBytes = SHA256.HashData(stream);
-        return Convert.ToHexString(hashBytes);
-    }
-
-    private string GetGameKey(GameType gameType) => gameType switch
+    private static string GetGameKey(GameType gameType) => gameType switch
     {
         GameType.Fallout3 => "FO3",
         GameType.FalloutNewVegas => "FNV",
@@ -731,6 +641,17 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
         GameType.Oblivion => "Oblivion",
         _ => "Unknown"
     };
+
+    /// <summary>
+    /// Returns a consistent snapshot of facade user-config bookkeeping flags.
+    /// </summary>
+    private (bool HasPendingUserSave, bool LoadedUserConfigFromDisk) GetUserConfigStateFlags()
+    {
+        lock (_stateLock)
+        {
+            return (_hasPendingUserSave, _loadedUserConfigFromDisk);
+        }
+    }
 
     public void Dispose()
     {
@@ -746,26 +667,22 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
 
         try
         {
-            await FlushPendingSavesAsync(CancellationToken.None).ConfigureAwait(false);
+            await _coordinator.StopAsync(CancellationToken.None)
+                .WaitAsync(TimeSpan.FromSeconds(5))
+                .ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            _logger.Warning("[Config] Flush during disposal failed: {Message}", ex.Message);
+            _logger.Warning("[Config] Coordinator stop during disposal failed: {Message}", ex.Message);
         }
 
-        _debounceSubscription.Dispose();
-        _saveRequests.Dispose();
         _fileLock.Dispose();
-        _configChanges.Dispose();
         _skipListChanges.Dispose();
         Volatile.Write(ref _disposeState, 2);
     }
 
     private void ThrowIfDisposed()
     {
-        if (Volatile.Read(ref _disposeState) >= 2)
-        {
-            throw new ObjectDisposedException(nameof(ConfigurationService));
-        }
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposeState) >= 2, this);
     }
 }

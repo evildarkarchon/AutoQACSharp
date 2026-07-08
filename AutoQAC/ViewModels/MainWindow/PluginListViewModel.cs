@@ -1,140 +1,162 @@
 using System;
-using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Threading.Tasks;
 using AutoQAC.Models;
-using AutoQAC.Services.State;
+using AutoQAC.Services.Plugin;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
 namespace AutoQAC.ViewModels.MainWindow;
 
 /// <summary>
-/// Manages the plugin collection and select/deselect all commands for the main
-/// window plugin list. Receives state via <see cref="OnStateChanged"/> from the
-/// parent VM (which marshals onto the UI thread via <c>IUiDispatcher</c>).
+/// Manages the plugin collection and plugin-refresh commands from module snapshots.
 /// </summary>
 public sealed partial class PluginListViewModel : ViewModelBase, IDisposable
 {
-    private readonly IStateService _stateService;
+    private readonly IPluginRefreshModule _pluginRefreshModule;
 
-    public ObservableCollection<PluginListItem> PluginsToClean { get; } = new();
+    public ObservableCollection<PluginListItem> PluginsToClean { get; } = [];
 
-    [ObservableProperty]
-    private PluginListItem? _selectedPlugin;
-
-    [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(SelectAllCommand))]
-    [NotifyCanExecuteChangedFor(nameof(DeselectAllCommand))]
-    private bool _hasPlugins;
+    [ObservableProperty] public partial PluginListItem? SelectedPlugin { get; set; }
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SelectAllCommand))]
     [NotifyCanExecuteChangedFor(nameof(DeselectAllCommand))]
-    private bool _isCleaning;
+    [NotifyCanExecuteChangedFor(nameof(RefreshSelectedApproximationsCommand))]
+    public partial bool HasPlugins { get; set; }
 
-    public PluginListViewModel(IStateService stateService)
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(SelectAllCommand))]
+    [NotifyCanExecuteChangedFor(nameof(DeselectAllCommand))]
+    [NotifyCanExecuteChangedFor(nameof(RefreshSelectedApproximationsCommand))]
+    public partial bool IsCleaning { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanRefreshApproximations))]
+    [NotifyCanExecuteChangedFor(nameof(RefreshSelectedApproximationsCommand))]
+    public partial GameType CurrentGameType { get; set; }
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(RefreshSelectedApproximationsCommand))]
+    public partial bool HasSelectedVisiblePlugin { get; set; }
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(CancelApproximationRefreshCommand))]
+    public partial bool IsApproximationRefreshRunning { get; set; }
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(SelectAllCommand))]
+    public partial bool CanSelectAllPlugins { get; set; }
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(DeselectAllCommand))]
+    public partial bool CanDeselectAllPlugins { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanRefreshApproximations))]
+    [NotifyCanExecuteChangedFor(nameof(RefreshSelectedApproximationsCommand))]
+    public partial bool CanRefreshSelectedIssueApproximations { get; set; }
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(CancelApproximationRefreshCommand))]
+    public partial bool CanCancelRefresh { get; set; }
+
+    public bool CanRefreshApproximations => CanRefreshSelectedIssueApproximations;
+
+    public PluginListViewModel(IPluginRefreshModule pluginRefreshModule)
     {
-        _stateService = stateService;
-        // No subscription here — the parent VM dispatches OnStateChanged on the UI thread.
-        // Initial pull from current state so commands reflect reality before first change event.
-        var initial = stateService.CurrentState;
-        HasPlugins = initial.PluginsToClean.Count > 0;
-        IsCleaning = initial.IsCleaning;
+        _pluginRefreshModule = pluginRefreshModule;
     }
 
-    private bool CanSelectPlugins() => HasPlugins && !IsCleaning;
+    private bool CanSelectAll() => CanSelectAllPlugins;
 
-    [RelayCommand(CanExecute = nameof(CanSelectPlugins))]
-    private void SelectAll()
-    {
-        // Drop every visible plugin's path from the excluded set (they all become selected).
-        var visiblePaths = PluginsToClean.Select(p => p.FullPath).ToList();
-        _stateService.UpdateExcludedPlugins(current =>
-        {
-            if (current.Count == 0)
-            {
-                return current;
-            }
+    private bool CanDeselectAll() => CanDeselectAllPlugins;
 
-            var next = new HashSet<string>(current, StringComparer.OrdinalIgnoreCase);
-            foreach (var path in visiblePaths)
-            {
-                next.Remove(path);
-            }
+    private bool CanRefreshSelectedApproximations() => CanRefreshSelectedIssueApproximations;
 
-            return next.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
-        });
-    }
+    private bool CanCancelApproximationRefresh() => CanCancelRefresh;
 
-    [RelayCommand(CanExecute = nameof(CanSelectPlugins))]
-    private void DeselectAll()
-    {
-        // Add every visible plugin's path to the excluded set (they all become deselected).
-        var visiblePaths = PluginsToClean.Select(p => p.FullPath).ToList();
-        _stateService.UpdateExcludedPlugins(current =>
-        {
-            var next = new HashSet<string>(current, StringComparer.OrdinalIgnoreCase);
-            foreach (var path in visiblePaths)
-            {
-                next.Add(path);
-            }
+    [RelayCommand(CanExecute = nameof(CanSelectAll))]
+    private Task SelectAllAsync() =>
+        _pluginRefreshModule.ExecuteAsync(
+            new PluginRefreshIntent.ChangeSelection(new PluginSelectionChange.SelectAllVisible()));
 
-            return next.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
-        });
-    }
+    [RelayCommand(CanExecute = nameof(CanDeselectAll))]
+    private Task DeselectAllAsync() =>
+        _pluginRefreshModule.ExecuteAsync(
+            new PluginRefreshIntent.ChangeSelection(new PluginSelectionChange.DeselectAllVisible()));
 
     /// <summary>
-    /// Updates the plugin list and gating flags from application state. Called by parent
-    /// on state changes (already on the UI thread).
+    /// Requests a targeted issue-approximation refresh for currently selected visible rows.
+    /// The module materializes the selected target snapshot when the intent is accepted.
     /// </summary>
-    public void OnStateChanged(AppState state)
+    [RelayCommand(CanExecute = nameof(CanRefreshSelectedApproximations))]
+    private Task RefreshSelectedApproximationsAsync() =>
+        _pluginRefreshModule.ExecuteAsync(new PluginRefreshIntent.RefreshSelectedIssueApproximations());
+
+    /// <summary>
+    /// Cancels active Plugin refresh work without prompting the user.
+    /// Completed row results are left intact by the module's cancellation policy.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanCancelApproximationRefresh))]
+    private Task CancelApproximationRefreshAsync() =>
+        _pluginRefreshModule.ExecuteAsync(new PluginRefreshIntent.Cancel(PluginRefreshCancelReason.Manual));
+
+    /// <summary>
+    /// Applies the whole Plugin refresh snapshot published by the module.
+    /// </summary>
+    /// <param name="snapshot">Current visible Plugin refresh snapshot.</param>
+    public void OnPluginRefreshSnapshot(PluginRefreshSnapshot snapshot)
     {
-        IsCleaning = state.IsCleaning;
-        HasPlugins = state.PluginsToClean.Count > 0;
+        HasPlugins = snapshot.Rows.Count > 0;
+        IsCleaning = !snapshot.Commands.CanSelectAll && HasPlugins;
+        CurrentGameType = snapshot.GameType;
+        HasSelectedVisiblePlugin = snapshot.Rows.Any(row => row.IsSelected);
+        IsApproximationRefreshRunning = snapshot.Activity.IsIssueApproximationRefreshRunning || snapshot.Commands.CanCancelRefresh;
+        CanSelectAllPlugins = snapshot.Commands.CanSelectAll;
+        CanDeselectAllPlugins = snapshot.Commands.CanDeselectAll;
+        CanRefreshSelectedIssueApproximations = snapshot.Commands.CanRefreshSelectedIssueApproximations;
+        CanCancelRefresh = snapshot.Commands.CanCancelRefresh;
 
-        var displayPlugins = state.PluginsToClean.Where(p => !p.IsInSkipList).ToList();
-        var excluded = state.ExcludedPluginPaths;
+        SyncRows(snapshot.Rows);
+    }
 
-        // 1. Sync each visible row position-by-position. Reuse the existing wrapper when
-        //    the underlying plugin matches by full path so the row's IsSelected stays in
-        //    sync without firing SelectionToggled back into state.
-        for (var i = 0; i < displayPlugins.Count; i++)
+    private void SyncRows(IReadOnlyList<PluginRefreshRow> rows)
+    {
+        for (var i = 0; i < rows.Count; i++)
         {
-            var nextPlugin = displayPlugins[i];
-            var isSelected = !excluded.Contains(nextPlugin.FullPath);
+            var nextRow = rows[i];
 
             if (i >= PluginsToClean.Count)
             {
-                PluginsToClean.Add(CreateItem(nextPlugin, isSelected));
+                PluginsToClean.Add(CreateItem(nextRow));
                 continue;
             }
 
             var existing = PluginsToClean[i];
-            if (IsSamePlugin(existing.Info, nextPlugin))
+            if (IsSamePlugin(existing.Info, nextRow))
             {
-                if (!ReferenceEquals(existing.Info, nextPlugin))
+                if (!ReferenceEquals(existing.Info, nextRow))
                 {
-                    existing.UpdateInfo(nextPlugin);
+                    existing.UpdateInfo(nextRow);
                 }
 
-                existing.SetSelectedFromState(isSelected);
+                existing.SetSelectedFromState(nextRow.IsSelected);
                 continue;
             }
 
-            // Different plugin at this slot — replace, but detach the old subscription first.
             DetachItem(existing);
             if (SelectedPlugin is not null && IsSamePlugin(SelectedPlugin.Info, existing.Info))
             {
                 SelectedPlugin = null;
             }
 
-            PluginsToClean[i] = CreateItem(nextPlugin, isSelected);
+            PluginsToClean[i] = CreateItem(nextRow);
         }
 
-        // 2. Trim trailing rows that no longer exist in state.
-        while (PluginsToClean.Count > displayPlugins.Count)
+        while (PluginsToClean.Count > rows.Count)
         {
             var removed = PluginsToClean[^1];
             DetachItem(removed);
@@ -147,9 +169,9 @@ public sealed partial class PluginListViewModel : ViewModelBase, IDisposable
         }
     }
 
-    private PluginListItem CreateItem(PluginInfo info, bool isSelected)
+    private PluginListItem CreateItem(PluginRefreshRow row)
     {
-        var item = new PluginListItem(info, isSelected);
+        var item = new PluginListItem(row, row.IsSelected);
         item.SelectionToggled += OnRowSelectionToggled;
         return item;
     }
@@ -161,30 +183,12 @@ public sealed partial class PluginListViewModel : ViewModelBase, IDisposable
 
     private void OnRowSelectionToggled(PluginListItem item, bool isSelected)
     {
-        var fullPath = item.FullPath;
-        _stateService.UpdateExcludedPlugins(current =>
-        {
-            var alreadyExcluded = current.Contains(fullPath);
-            if (isSelected ? !alreadyExcluded : alreadyExcluded)
-            {
-                return current;
-            }
-
-            var next = new HashSet<string>(current, StringComparer.OrdinalIgnoreCase);
-            if (isSelected)
-            {
-                next.Remove(fullPath);
-            }
-            else
-            {
-                next.Add(fullPath);
-            }
-
-            return next.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
-        });
+        _ = _pluginRefreshModule.ExecuteAsync(
+            new PluginRefreshIntent.ChangeSelection(
+                new PluginSelectionChange.SetOne(item.Key, isSelected)));
     }
 
-    private static bool IsSamePlugin(PluginInfo left, PluginInfo right) =>
+    private static bool IsSamePlugin(PluginRefreshRow left, PluginRefreshRow right) =>
         string.Equals(left.FullPath, right.FullPath, StringComparison.OrdinalIgnoreCase) ||
         string.Equals(left.FileName, right.FileName, StringComparison.OrdinalIgnoreCase);
 

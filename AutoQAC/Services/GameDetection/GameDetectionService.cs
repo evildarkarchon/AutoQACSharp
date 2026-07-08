@@ -91,14 +91,14 @@ public sealed class GameDetectionService(ILoggingService logger) : IGameDetectio
             foreach (var line in lines)
             {
                 if (string.IsNullOrWhiteSpace(line)) continue;
-                if (line.TrimStart().StartsWith("#")) continue;
+                if (line.TrimStart().StartsWith('#')) continue;
 
                 // Clean up the line to get the plugin name
                 // Remove leading * (enabled flag in plugins.txt)
                 var pluginName = line.Trim();
-                if (pluginName.StartsWith("*"))
+                if (pluginName.StartsWith('*'))
                 {
-                    pluginName = pluginName.Substring(1);
+                    pluginName = pluginName[1..];
                 }
 
                 // Check if this plugin is a known master
@@ -130,18 +130,15 @@ public sealed class GameDetectionService(ILoggingService logger) : IGameDetectio
             }
         }
 
-        if (baseGame == GameType.SkyrimSe)
+        if (baseGame != GameType.SkyrimSe) return GameVariant.None;
         {
-            if (pluginNames.Any(p =>
-                p.Equals("Enderal - Forgotten Stories.esm", StringComparison.OrdinalIgnoreCase) ||
-                p.Equals("Enderal.esm", StringComparison.OrdinalIgnoreCase)))
-            {
-                logger.Information("Detected Enderal variant");
-                return GameVariant.Enderal;
-            }
-        }
+            if (!pluginNames.Any(p =>
+                    p.Equals("Enderal - Forgotten Stories.esm", StringComparison.OrdinalIgnoreCase) ||
+                    p.Equals("Enderal.esm", StringComparison.OrdinalIgnoreCase))) return GameVariant.None;
+            logger.Information("Detected Enderal variant");
 
-        return GameVariant.None;
+            return GameVariant.Enderal;
+        }
     }
 
     public bool IsValidGameType(GameType gameType)

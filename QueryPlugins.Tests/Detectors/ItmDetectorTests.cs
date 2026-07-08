@@ -89,6 +89,24 @@ public sealed class ItmDetectorTests
     }
 
     [Fact]
+    public void FindItmRecords_MiddleOverride_StreamingRewritePreservesImmediatePreviousComparison()
+    {
+        var (master, plugin, _, cache) = BuildThreeModLoadOrder(
+            pluginOverrideAction: null,
+            laterOverrideAction: npc =>
+            {
+                npc.ShortName = "Later Change";
+            });
+        var expectedFormKey = master.Npcs.First().FormKey;
+
+        var issues = _sut.FindItmRecords(plugin, cache).ToList();
+
+        issues.Should().ContainSingle(issue =>
+            issue.Type == IssueType.ItmRecord &&
+            issue.FormKey == expectedFormKey);
+    }
+
+    [Fact]
     public void MiddleOverride_ModifiedRelativeToPreviousVersion_IsNotFlagged()
     {
         var (_, plugin, _, cache) = BuildThreeModLoadOrder(
@@ -158,6 +176,22 @@ public sealed class ItmDetectorTests
         issues.Should().BeEmpty();
     }
 
+    [Fact]
+    public void FindItmRecords_RecordWithNullFormKey_IsSkipped()
+    {
+        var masterMod = new SkyrimMod(MasterKey, SkyrimRelease.SkyrimSE);
+        masterMod.Npcs.AddNew("OriginalNpc");
+
+        var pluginMod = new SkyrimMod(PluginKey, SkyrimRelease.SkyrimSE);
+        pluginMod.Npcs.Add(new Npc(FormKey.Null, SkyrimRelease.SkyrimSE));
+
+        var cache = new ISkyrimModGetter[] { masterMod, pluginMod }.ToImmutableLinkCache();
+
+        var issues = _sut.FindItmRecords(pluginMod, cache).ToList();
+
+        issues.Should().BeEmpty("null-form-key records cannot be resolved through the link cache and are ignored for approximation");
+    }
+
     // ── Multiple records ──────────────────────────────────────────────────────
 
     [Fact]
@@ -222,6 +256,18 @@ public sealed class ItmDetectorTests
         act.Should().Throw<ArgumentException>()
             .WithParameterName("linkCache")
             .WithMessage("*does not contain analyzed plugin*");
+    }
+
+    [Fact]
+    public void FindItmRecords_WithCanceledToken_ThrowsOperationCanceledException()
+    {
+        var (_, plugin, cache) = BuildLoadOrder(overrideAction: null);
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        var act = () => _sut.FindItmRecords(plugin, cache, cts.Token).ToList();
+
+        act.Should().Throw<OperationCanceledException>();
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

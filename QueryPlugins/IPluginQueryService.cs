@@ -26,6 +26,10 @@ public interface IPluginQueryService
     /// The game release the plugin targets. Used to select the correct game-specific
     /// detector for UDR and navmesh traversal.
     /// </param>
+    /// <param name="ct">
+    /// Cancellation token that should interrupt detector work without producing a partial
+    /// <see cref="PluginAnalysisResult"/>.
+    /// </param>
     /// <returns>Aggregated analysis result containing all discovered issues.</returns>
-    PluginAnalysisResult Analyse(IModGetter plugin, ILinkCache linkCache, GameRelease gameRelease);
+    PluginAnalysisResult Analyse(IModGetter plugin, ILinkCache linkCache, GameRelease gameRelease, CancellationToken ct = default);
 }

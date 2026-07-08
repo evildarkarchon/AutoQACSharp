@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
+using AutoQAC.Services.GameCapability;
 using Microsoft.Win32;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Installs;
@@ -23,21 +24,10 @@ public sealed class PluginLoadingService : IPluginLoadingService
     private readonly IPluginValidationService _pluginValidation;
     private readonly ILoggingService _logger;
     private readonly Func<GameType, string?> _registryDataFolderResolver;
-    private readonly Func<GameType, string?, CancellationToken, (string? DataFolder, IReadOnlyList<string> PluginFileNames)>
-        _mutagenListingProvider;
 
-    /// <summary>
-    /// Games supported by Mutagen for load order detection.
-    /// Note: Fallout 3, Fallout NV, and Oblivion are not supported by Mutagen.
-    /// </summary>
-    private static readonly HashSet<GameType> MutagenSupportedGames =
-    [
-        GameType.SkyrimLe,
-        GameType.SkyrimSe,
-        GameType.SkyrimVr,
-        GameType.Fallout4,
-        GameType.Fallout4Vr
-    ];
+    private readonly Func<GameType, string?, CancellationToken, (string? DataFolder, IReadOnlyList<string>
+            PluginFileNames)>
+        _mutagenListingProvider;
 
     /// <summary>
     /// Maps GameType to My Games folder names for non-Mutagen games.
@@ -78,7 +68,7 @@ public sealed class PluginLoadingService : IPluginLoadingService
         var result = await TryGetPluginsAsync(gameType, customDataFolder, ct).ConfigureAwait(false);
         return result.Status == PluginLoadingStatus.Success
             ? result.Plugins.ToList()
-            : new List<PluginInfo>();
+            : [];
     }
 
     /// <inheritdoc />
@@ -87,15 +77,15 @@ public sealed class PluginLoadingService : IPluginLoadingService
         string? customDataFolder = null,
         CancellationToken ct = default)
     {
-        if (gameType == GameType.Unknown || !IsGameSupportedByMutagen(gameType))
+        if (!GameCapabilityCatalog.Get(gameType).SupportsAutomaticPluginDiscovery)
         {
             _logger.Information(
-                "Game {GameType} is not supported by Mutagen, use GetPluginsFromFileAsync instead",
+                "Game {GameType} does not support automatic plugin discovery; use GetPluginsFromFileAsync instead",
                 gameType);
             return new PluginLoadingResult
             {
                 Status = PluginLoadingStatus.UnsupportedGame,
-                Plugins = Array.Empty<PluginInfo>()
+                Plugins = []
             };
         }
 
@@ -113,7 +103,7 @@ public sealed class PluginLoadingService : IPluginLoadingService
                 return new PluginLoadingResult
                 {
                     Status = PluginLoadingStatus.DataFolderNotFound,
-                    Plugins = Array.Empty<PluginInfo>(),
+                    Plugins = [],
                     DataFolder = customDataFolder
                 };
             }
@@ -125,7 +115,7 @@ public sealed class PluginLoadingService : IPluginLoadingService
                 return new PluginLoadingResult
                 {
                     Status = PluginLoadingStatus.NoPluginsDiscovered,
-                    Plugins = Array.Empty<PluginInfo>(),
+                    Plugins = [],
                     DataFolder = resolvedDataFolder
                 };
             }
@@ -151,7 +141,7 @@ public sealed class PluginLoadingService : IPluginLoadingService
             return new PluginLoadingResult
             {
                 Status = PluginLoadingStatus.Failed,
-                Plugins = Array.Empty<PluginInfo>(),
+                Plugins = [],
                 DataFolder = customDataFolder,
                 FailureReason = ex.Message
             };
@@ -169,21 +159,6 @@ public sealed class PluginLoadingService : IPluginLoadingService
     }
 
     /// <inheritdoc />
-    public bool IsGameSupportedByMutagen(GameType gameType)
-    {
-        return MutagenSupportedGames.Contains(gameType);
-    }
-
-    /// <inheritdoc />
-    public IReadOnlyList<GameType> GetAvailableGames()
-    {
-        return Enum.GetValues<GameType>()
-            .Where(g => g != GameType.Unknown)
-            .OrderBy(g => g.ToString())
-            .ToList();
-    }
-
-    /// <inheritdoc />
     public string? GetGameDataFolder(GameType gameType, string? customDataFolderOverride = null)
     {
         // Return override if provided
@@ -192,7 +167,7 @@ public sealed class PluginLoadingService : IPluginLoadingService
             return customDataFolderOverride;
         }
 
-        if (IsGameSupportedByMutagen(gameType))
+        if (GameCapabilityCatalog.Get(gameType).SupportsAutomaticPluginDiscovery)
         {
             try
             {
@@ -204,18 +179,16 @@ public sealed class PluginLoadingService : IPluginLoadingService
             }
             catch (Exception ex)
             {
-                _logger.Debug("Could not detect data folder via Mutagen for {GameType}: {Message}", gameType, ex.Message);
+                _logger.Debug("Could not detect data folder via Mutagen for {GameType}: {Message}", gameType,
+                    ex.Message);
             }
         }
 
         var registryPath = _registryDataFolderResolver(gameType);
-        if (!string.IsNullOrWhiteSpace(registryPath))
-        {
-            _logger.Information("Detected data folder via registry for {GameType}: {DataFolder}", gameType, registryPath);
-            return registryPath;
-        }
-
-        return null;
+        if (string.IsNullOrWhiteSpace(registryPath)) return null;
+        _logger.Information("Detected data folder via registry for {GameType}: {DataFolder}", gameType,
+            registryPath);
+        return registryPath;
     }
 
     /// <inheritdoc />
@@ -245,17 +218,11 @@ public sealed class PluginLoadingService : IPluginLoadingService
         IReadOnlyList<string> pluginFileNames)
     {
         var plugins = new List<PluginInfo>(pluginFileNames.Count);
-
-        foreach (var fileName in pluginFileNames)
+        plugins.AddRange(pluginFileNames.Select(fileName => new PluginInfo
         {
-            plugins.Add(new PluginInfo
-            {
-                FileName = fileName,
-                FullPath = Path.Combine(dataFolder, fileName),
-                IsInSkipList = false,
-                DetectedGameType = gameType
-            });
-        }
+            FileName = fileName, FullPath = Path.Combine(dataFolder, fileName), IsInSkipList = false,
+            DetectedGameType = gameType
+        }));
 
         return plugins;
     }
@@ -274,7 +241,7 @@ public sealed class PluginLoadingService : IPluginLoadingService
         {
             if (!GameLocations.TryGetDataFolder(release, out var detectedDataFolder))
             {
-                return (null, Array.Empty<string>());
+                return (null, []);
             }
 
             dataFolder = detectedDataFolder.Path;
@@ -282,7 +249,7 @@ public sealed class PluginLoadingService : IPluginLoadingService
 
         if (string.IsNullOrWhiteSpace(dataFolder))
         {
-            return (null, Array.Empty<string>());
+            return (null, []);
         }
 
         var listings = LoadOrder.GetLoadOrderListings(
@@ -362,13 +329,11 @@ public sealed class PluginLoadingService : IPluginLoadingService
 
                         foreach (var valueName in RegistryInstallPathValueNames)
                         {
-                            if (key.GetValue(valueName) is string rawPath)
+                            if (key.GetValue(valueName) is not string rawPath) continue;
+                            var normalized = NormalizeDataFolderPath(rawPath);
+                            if (!string.IsNullOrWhiteSpace(normalized))
                             {
-                                var normalized = NormalizeDataFolderPath(rawPath);
-                                if (!string.IsNullOrWhiteSpace(normalized))
-                                {
-                                    return normalized;
-                                }
+                                return normalized;
                             }
                         }
                     }
@@ -404,7 +369,8 @@ public sealed class PluginLoadingService : IPluginLoadingService
 
         if (Directory.Exists(trimmed))
         {
-            var dirName = Path.GetFileName(trimmed.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            var dirName =
+                Path.GetFileName(trimmed.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
             if (string.Equals(dirName, "Data", StringComparison.OrdinalIgnoreCase))
             {
                 return trimmed;
@@ -412,11 +378,6 @@ public sealed class PluginLoadingService : IPluginLoadingService
         }
 
         var dataFolder = Path.Combine(trimmed, "Data");
-        if (Directory.Exists(dataFolder))
-        {
-            return dataFolder;
-        }
-
-        return null;
+        return Directory.Exists(dataFolder) ? dataFolder : null;
     }
 }

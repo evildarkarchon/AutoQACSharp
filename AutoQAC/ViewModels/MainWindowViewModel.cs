@@ -4,6 +4,7 @@ using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
+using AutoQAC.Services.GameCapability;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Services.State;
 using AutoQAC.Services.UI;
@@ -14,19 +15,19 @@ namespace AutoQAC.ViewModels;
 
 /// <summary>
 /// Slim orchestrator that composes Configuration, PluginList, and CleaningCommands
-/// sub-ViewModels. Owns Interactions (registered in MainWindow.axaml.cs code-behind)
+/// sub-ViewModels. Owns Interactions (registered in MainWindow.xaml.cs code-behind)
 /// and mediates cross-VM state changes.
 /// </summary>
-public sealed class MainWindowViewModel : ViewModelBase, IDisposable
+public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
 {
-    private readonly IUiDispatcher _uiDispatcher;
     private readonly IDisposable _stateSubscription;
+    private readonly IDisposable _pluginRefreshSnapshotSubscription;
 
     public ConfigurationViewModel Configuration { get; }
     public PluginListViewModel PluginList { get; }
     public CleaningCommandsViewModel Commands { get; }
 
-    public Interaction<Unit, Unit> ShowProgressInteraction { get; } = new();
+    public Interaction<ICleaningSession, Unit> ShowProgressInteraction { get; } = new();
     public Interaction<List<DryRunResult>, Unit> ShowPreviewInteraction { get; } = new();
     public Interaction<CleaningSessionResult, Unit> ShowCleaningResultsInteraction { get; } = new();
     public Interaction<Unit, bool> ShowSettingsInteraction { get; } = new();
@@ -37,32 +38,43 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
     public MainWindowViewModel(
         IConfigurationService configService,
         IStateService stateService,
-        ICleaningOrchestrator orchestrator,
+        ICleaningSession cleaningSession,
         ILoggingService logger,
         IFileDialogService fileDialog,
         IMessageDialogService messageDialog,
         IPluginValidationService pluginService,
         IPluginLoadingService pluginLoadingService,
         IUiDispatcher uiDispatcher,
-        IPluginIssueApproximationService? pluginIssueApproximationService = null)
+        IPluginRefreshModule pluginRefreshModule,
+        IPluginRefreshDiscoveryPlanner discoveryPlanner,
+        IDiscoverySettingsModule discoverySettingsModule,
+        ICleaningCommandReadiness cleaningCommandReadiness,
+        IAppLifetime? appLifetime = null)
     {
-        _uiDispatcher = uiDispatcher;
-
         Configuration = new ConfigurationViewModel(
             configService, stateService, logger, fileDialog,
-            messageDialog, pluginService, pluginLoadingService, pluginIssueApproximationService);
+            messageDialog, pluginService, pluginLoadingService,
+            pluginRefreshModule,
+            discoveryPlanner,
+            discoverySettingsModule);
 
-        PluginList = new PluginListViewModel(stateService);
+        PluginList = new PluginListViewModel(pluginRefreshModule);
 
         Commands = new CleaningCommandsViewModel(
-            stateService, orchestrator, configService, pluginLoadingService,
-            logger, messageDialog, uiDispatcher,
+            stateService, cleaningSession, configService,
+            cleaningCommandReadiness,
+            pluginRefreshModule,
+            logger, messageDialog, appLifetime ?? NoOpAppLifetime.Instance,
             ShowProgressInteraction, ShowPreviewInteraction,
             ShowSettingsInteraction, ShowSkipListInteraction,
             ShowRestoreInteraction, ShowAboutInteraction);
 
+        _pluginRefreshSnapshotSubscription = pluginRefreshModule.Snapshots.Subscribe(
+            new CallbackObserver<PluginRefreshSnapshot>(snapshot =>
+                uiDispatcher.Post(() => OnPluginRefreshSnapshot(snapshot))));
+
         _stateSubscription = stateService.StateChanged.Subscribe(
-            new CallbackObserver<AppState>(state => _uiDispatcher.Post(() => OnStateChanged(state))));
+            new CallbackObserver<AppState>(state => uiDispatcher.Post(() => OnStateChanged(state))));
 
         OnStateChanged(stateService.CurrentState);
 
@@ -72,8 +84,14 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
     private void OnStateChanged(AppState state)
     {
         Configuration.OnStateChanged(state);
-        PluginList.OnStateChanged(state);
         Commands.OnStateChanged(state);
+    }
+
+    private void OnPluginRefreshSnapshot(PluginRefreshSnapshot snapshot)
+    {
+        Configuration.OnPluginRefreshSnapshot(snapshot);
+        PluginList.OnPluginRefreshSnapshot(snapshot);
+        Commands.OnPluginRefreshSnapshot(snapshot);
     }
 
     /// <summary>
@@ -84,9 +102,20 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
+        _pluginRefreshSnapshotSubscription.Dispose();
         _stateSubscription.Dispose();
         Configuration.Dispose();
         PluginList.Dispose();
         Commands.Dispose();
     }
+
+    private sealed class NoOpAppLifetime : IAppLifetime
+    {
+        public static NoOpAppLifetime Instance { get; } = new();
+
+        public void Shutdown()
+        {
+        }
+    }
+
 }

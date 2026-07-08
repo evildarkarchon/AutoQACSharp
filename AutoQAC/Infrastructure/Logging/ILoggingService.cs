@@ -8,5 +8,4 @@ public interface ILoggingService
     void Information(string message, params object[] args);
     void Warning(string message, params object[] args);
     void Error(Exception? ex, string message, params object[] args);
-    void Fatal(Exception? ex, string message, params object[] args);
 }

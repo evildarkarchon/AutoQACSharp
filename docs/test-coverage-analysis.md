@@ -129,7 +129,7 @@ The project has **good foundational test coverage** for core services and ViewMo
 ### Low Priority (Nice to Have)
 
 10. **FileDialogService** - No tests
-    - **Why Low:** UI service, hard to test, simple wrapper around Avalonia APIs
+    - **Why Low:** UI service, hard to test, thin wrapper around Windows App SDK pickers
     - **Risk:** Minimal, tested through manual QA
 
 11. **Model Tests**

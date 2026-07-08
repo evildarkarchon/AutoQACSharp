@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using AutoQAC.Models.Diagnostics;
 
 namespace AutoQAC.Models;
 
@@ -37,7 +38,12 @@ public sealed record CleaningSessionResult
     /// <summary>
     /// Detailed results for each plugin processed.
     /// </summary>
-    public IReadOnlyList<PluginCleaningResult> PluginResults { get; init; } = Array.Empty<PluginCleaningResult>();
+    public IReadOnlyList<PluginCleaningResult> PluginResults { get; init; } = [];
+
+    /// <summary>
+    /// Structured result for post-cleaning backup retention cleanup, if backup cleanup ran.
+    /// </summary>
+    public BackupRetentionCleanupResult? BackupCleanup { get; init; }
 
     /// <summary>
     /// Gets plugins that were successfully cleaned (includes AlreadyClean).
@@ -113,6 +119,14 @@ public sealed record CleaningSessionResult
             if (WasCancelled)
                 return $"Cancelled after {CleanedCount} of {TotalPlugins} plugins";
 
+            if (BackupCleanup?.Status == BackupOperationStatus.Canceled)
+                return
+                    $"Backup cleanup canceled: {BackupCleanup.DeletedCount} deleted, {BackupCleanup.SkippedCount} skipped, {BackupCleanup.RemainingCount} remaining";
+
+            if (BackupCleanup?.Status == BackupOperationStatus.Warning)
+                return
+                    $"Backup cleanup warning: {BackupCleanup.DeletedCount} deleted, {BackupCleanup.SkippedCount} skipped, {BackupCleanup.RemainingCount} remaining";
+
             if (FailedCount > 0)
                 return $"Completed with errors: {CleanedCount} cleaned, {FailedCount} failed, {SkippedCount} skipped";
 
@@ -133,7 +147,7 @@ public sealed record CleaningSessionResult
         EndTime = DateTime.Now,
         GameType = GameType.Unknown,
         WasCancelled = false,
-        PluginResults = Array.Empty<PluginCleaningResult>()
+        PluginResults = []
     };
 
     /// <summary>
@@ -147,6 +161,7 @@ public sealed record CleaningSessionResult
         sb.AppendLine($"Date: {StartTime:yyyy-MM-dd HH:mm:ss}");
         sb.AppendLine($"Game: {GameType}");
         sb.AppendLine($"Duration: {TotalDuration:hh\\:mm\\:ss}");
+        sb.AppendLine(DiagnosticTextFormatter.ReportDisclaimer);
         sb.AppendLine();
 
         sb.AppendLine("--- Summary ---");
@@ -168,8 +183,10 @@ public sealed record CleaningSessionResult
             sb.AppendLine("--- Cleaned Plugins ---");
             foreach (var result in CleanedPlugins)
             {
-                sb.AppendLine($"  {result.PluginName}: {result.Summary} ({result.Duration:mm\\:ss})");
+                var safePluginName = DiagnosticTextFormatter.SafePluginName(result.PluginName);
+                sb.AppendLine($"  {safePluginName}: {result.Summary} ({result.Duration:mm\\:ss})");
             }
+
             sb.AppendLine();
         }
 
@@ -178,8 +195,9 @@ public sealed record CleaningSessionResult
             sb.AppendLine("--- Already Clean Plugins ---");
             foreach (var result in AlreadyCleanPlugins)
             {
-                sb.AppendLine($"  {result.PluginName}");
+                sb.AppendLine($"  {DiagnosticTextFormatter.SafePluginName(result.PluginName)}");
             }
+
             sb.AppendLine();
         }
 
@@ -188,8 +206,9 @@ public sealed record CleaningSessionResult
             sb.AppendLine("--- Skipped Plugins ---");
             foreach (var result in SkippedPlugins)
             {
-                sb.AppendLine($"  {result.PluginName}");
+                sb.AppendLine($"  {DiagnosticTextFormatter.SafePluginName(result.PluginName)}");
             }
+
             sb.AppendLine();
         }
 
@@ -198,8 +217,9 @@ public sealed record CleaningSessionResult
             sb.AppendLine("--- Failed Plugins ---");
             foreach (var result in FailedPlugins)
             {
-                sb.AppendLine($"  {result.PluginName}: {result.Message}");
+                sb.AppendLine($"  {FormatFailedPluginReportLine(result)}");
             }
+
             sb.AppendLine();
         }
 
@@ -208,6 +228,32 @@ public sealed record CleaningSessionResult
             sb.AppendLine("*** Session was cancelled by user ***");
         }
 
+        if (BackupCleanup != null)
+        {
+            sb.AppendLine("--- Backup Cleanup ---");
+            sb.AppendLine($"Status: {BackupCleanup.Status}");
+            sb.AppendLine($"Deleted: {BackupCleanup.DeletedCount}");
+            sb.AppendLine($"Skipped: {BackupCleanup.SkippedCount}");
+            sb.AppendLine($"Remaining: {BackupCleanup.RemainingCount}");
+            sb.AppendLine();
+        }
+
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Formats a failed report row with a defensive safe-summary fallback and avoids prefixing the plugin name twice.
+    /// </summary>
+    /// <param name="result">The failed plugin result to render into the exported report.</param>
+    /// <returns>A safe failed-plugin report row without raw diagnostic detail.</returns>
+    private static string FormatFailedPluginReportLine(PluginCleaningResult result)
+    {
+        var safePluginName = DiagnosticTextFormatter.SafePluginName(result.PluginName);
+        var fallback = DiagnosticTextFormatter.CleaningFailedForPlugin(safePluginName);
+        var summary = DiagnosticTextFormatter.SafeFailureSummary(result.Message, fallback);
+        var prefix = $"{safePluginName}:";
+        return summary.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+            ? summary
+            : $"{safePluginName}: {summary}";
     }
 }

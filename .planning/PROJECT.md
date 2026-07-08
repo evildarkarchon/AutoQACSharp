@@ -8,6 +8,17 @@ AutoQAC is a Windows-only Avalonia desktop app that runs xEdit Quick Auto Clean 
 
 Accurate, automated xEdit Quick Auto Clean with reliable result reporting.
 
+## Current Milestone: v1.0 Cleanup
+
+**Goal:** Address the concrete risks identified in `.planning/codebase/CONCERNS.md` while preserving sequential xEdit cleaning behavior.
+
+**Target features:**
+- Fix high-priority safety bugs in stop/force-kill behavior, command-line escaping, and backup restore failure handling.
+- Refactor the highest-risk responsibility concentrations around cleaning orchestration, configuration/plugin refresh, config persistence/watchers, and PID tracking.
+- Add coverage for process termination/orphan cleanup, command escaping, config watcher races, and backup restore safety.
+- Improve security posture for user-configured executable launches, user-facing error detail, and log/path exposure boundaries.
+- Reduce performance risk in approximation refresh, ITM context lookup, config cloning, and backup/retention operations.
+
 ## Requirements
 
 ### Validated
@@ -33,10 +44,17 @@ Accurate, automated xEdit Quick Auto Clean with reliable result reporting.
 - ✓ Dead stdout parsing code paths fully removed — v1.0
 - ✓ Timestamp-based log staleness replaced by offset-based reading — v1.0
 - ✓ Stale test mocks and unused parameters cleaned up — v1.0
+- ✓ Cleaning orchestrator decomposition preserves session guarding, detected-game preflight validation, sequential behavior, and focused collaborator boundaries — Phase 14 (REF-01)
+- ✓ Stop escalation ownership survives graceful timeout, runner detach/finalization, and confirmed force-stop paths without relying on a disposed process wrapper — Phase 15 (SAF-01, SAF-02, TEST-01)
+- ✓ v1.0 Cleanup milestone audit, validation, roadmap, and requirement markers reconcile to current Phase 13/14/15 evidence — Phase 16
 
 ### Active
 
-None — planning next milestone.
+- [ ] Fix high-priority safety bugs identified in `.planning/codebase/CONCERNS.md`.
+- [ ] Refactor cleanup targets only where doing so reduces concrete regression risk.
+- [ ] Add missing safety and regression tests before or alongside risky changes.
+- [ ] Improve user-facing security/error boundaries without changing core cleaning behavior.
+- [ ] Reduce documented performance bottlenecks without parallelizing xEdit cleaning.
 
 ### Out of Scope
 
@@ -47,7 +65,9 @@ None — planning next milestone.
 
 ## Context
 
-Shipped v1.0 with the xEdit log parsing fix. The app now correctly reads xEdit results from log files (`<game>Edit_log.txt`) using offset-based reading that isolates each plugin's output. All dead stdout parsing code has been removed. 680 tests passing across AutoQAC and QueryPlugins.
+Shipped v1.0 with the xEdit log parsing fix. The app now correctly reads xEdit results from log files (`<game>Edit_log.txt`) using offset-based reading that isolates each plugin's output. All dead stdout parsing code has been removed. 838 tests passing across AutoQAC and QueryPlugins after Phase 07 (779 + 59).
+
+Current cleanup scope is driven by `.planning/codebase/CONCERNS.md` from 2026-04-28, covering safety bugs, refactor debt, test gaps, security polish, and performance bottlenecks. Phase 16 (milestone-evidence-validation-reconciliation) is complete: the v1.0 Cleanup milestone audit now reports passed with reconciled verification, validation, roadmap, and requirements evidence.
 
 Tech stack: .NET 10, C# 13, Avalonia 11.3, ReactiveUI, Mutagen 0.53.1, Serilog, YamlDotNet.
 
@@ -70,6 +90,16 @@ Tech stack: .NET 10, C# 13, Avalonia 11.3, ReactiveUI, Mutagen 0.53.1, Serilog, 
 | GameType-based log naming (not executable stem) | Supports universal xEdit.exe with game flags; maps to xEdit wbAppName convention | ✓ Implemented in v1.0 |
 | Exponential backoff retry for file contention | Windows antivirus/indexer may briefly lock log files after xEdit exits | ✓ Implemented in v1.0 |
 | Remove dead code after log-first pipeline | Obsolete stdout parsing, timestamp detection, unused params all removed | ✓ Implemented in v1.0 |
+| Async cancellable backup/restore/retention with structured per-file results | Replace blocking sync APIs with row-level success/failure reporting; preserve sequential xEdit cleaning | ✓ Implemented in Phase 07 |
+| Trusted-restore-root containment for restore + Delete Session | Tampered metadata cannot redirect or recursively delete outside the loaded backup root | ✓ Implemented in Phase 07 (Plans 07-09, 07-11, 07-13) |
+| Shared `BackupPathContainment.IsContained` helper | Single canonical path-containment policy reused by `BackupService.IsRestoreTargetInsideTrustedRoot` and Delete Session, eliminating duplicated `Path.GetFullPath`+`StartsWith` logic | ✓ Implemented in Phase 07 (Plan 07-14) |
+| Filesystem deletion lives in IBackupService, not RestoreViewModel | Cross-AI architectural consensus + project rule "All business logic lives in services, not ViewModels" — recursive `Directory.Delete` moved into `BackupService.DeleteSessionAsync` via `IBackupSessionDeleter` | ✓ Implemented in Phase 07 (Plan 07-13) |
+| Defense-in-depth ProgressWindow close/disposal wiring | `MainWindow.ShowProgressAsync` adds `CloseRequested` + `Closed` handlers alongside the pre-existing `ProgressWindow.OnDataContextChanged`/`OnClosed` contract; both paths are idempotent | ✓ Implemented in Phase 07 (Plan 07-12) |
+| Serialized user-config persistence authority | One `ConfigPersistenceCoordinator` owns save, flush, reload, watcher, deferral, and failure publication ordering; production DI explicitly shares it between the configuration facade and watcher service | ✓ Implemented in Phase 10 |
+| Manual user-config copy graph | User-configuration cloning uses model-owned `Copy()` methods instead of YAML serialization round-trips for in-memory copies | ✓ Implemented in Phase 10 |
+| Shared stop termination copy and choice contract | Main Stop, Progress Stop, and Hang Kill force-failure paths use one fixed, Phase 11-safe stop outcome text contract with explicit `Force Terminate` / `Leave Running` labels | ✓ Implemented in Phase 12 |
+| Durable stop-escalation target identity | Confirmed force-stop after a graceful timeout must reopen and validate the pending target instead of depending on a disposed `ExecuteAsync` process wrapper | ✓ Implemented in Phase 15 |
+| Milestone audit reconciliation uses current source-of-truth evidence | Historical Phase 05/06/14 audit blockers are closed by explicit reconciliation artifacts and current Phase 13/14/15 verification instead of rewriting old source history | ✓ Implemented in Phase 16 |
 
 ## Evolution
 
@@ -89,4 +119,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-31 after v1.0 milestone — xEdit log parsing fix shipped*
+*Last updated: 2026-05-02 after Phase 16 (milestone-evidence-validation-reconciliation) completion*

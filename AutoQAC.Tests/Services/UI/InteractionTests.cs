@@ -1,8 +1,5 @@
-using System;
-using System.Threading.Tasks;
 using AutoQAC.Services.UI.Interactions;
 using FluentAssertions;
-using Xunit;
 
 namespace AutoQAC.Tests.Services.UI;
 

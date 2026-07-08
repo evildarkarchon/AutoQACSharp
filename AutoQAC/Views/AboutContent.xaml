@@ -1,0 +1,48 @@
+<UserControl
+    x:Class="AutoQAC.Views.AboutContent"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="16" MinWidth="420">
+        <StackPanel Grid.Row="0" HorizontalAlignment="Center" Spacing="8">
+            <Image Source="ms-appx:///Assets/AutoQAC.ico" Width="64" Height="64" />
+            <TextBlock Text="AutoQAC" Style="{StaticResource TitleTextBlockStyle}" HorizontalAlignment="Center" />
+            <TextBlock Text="Plugin Auto Cleaning Tool" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                       HorizontalAlignment="Center" />
+        </StackPanel>
+
+        <Grid Grid.Row="1" ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="6"
+              ColumnSpacing="8">
+            <TextBlock Grid.Row="0" Grid.Column="0" Text="Version:" Style="{StaticResource BodyStrongTextBlockStyle}" />
+            <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding InformationalVersion, Mode=OneWay}" />
+            <TextBlock Grid.Row="1" Grid.Column="0" Text="Build Date:"
+                       Style="{StaticResource BodyStrongTextBlockStyle}" />
+            <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding BuildDate, Mode=OneWay}" />
+            <TextBlock Grid.Row="2" Grid.Column="0" Text=".NET Runtime:"
+                       Style="{StaticResource BodyStrongTextBlockStyle}" />
+            <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding DotNetVersion, Mode=OneWay}" />
+            <TextBlock Grid.Row="3" Grid.Column="0" Text="{Binding UiFrameworkDisplayName, Mode=OneWay}"
+                       Style="{StaticResource BodyStrongTextBlockStyle}" />
+            <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding UiFrameworkVersion, Mode=OneWay}" />
+            <TextBlock Grid.Row="4" Grid.Column="0" Text="MVVM Toolkit:"
+                       Style="{StaticResource BodyStrongTextBlockStyle}" />
+            <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding MvvmToolkitVersion, Mode=OneWay}" />
+        </Grid>
+
+        <StackPanel Grid.Row="2" Spacing="6">
+            <HyperlinkButton Content="GitHub Repository" Command="{Binding OpenGitHubCommand}"
+                             Style="{StaticResource AutoQacHyperlinkButtonStyle}" />
+            <HyperlinkButton Content="Report an Issue" Command="{Binding OpenIssuesCommand}"
+                             Style="{StaticResource AutoQacHyperlinkButtonStyle}" />
+            <HyperlinkButton Content="xEdit Project" Command="{Binding OpenXEditCommand}"
+                             Style="{StaticResource AutoQacHyperlinkButtonStyle}" />
+        </StackPanel>
+
+        <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="8">
+            <Button Content="Check for Updates" Command="{Binding CheckForUpdateCommand}" />
+            <Button Content="Open Latest Release" Command="{Binding OpenLatestReleaseCommand}"
+                    Visibility="{Binding UpdateAvailable, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}" />
+            <TextBlock Text="{Binding UpdateStatusText, Mode=OneWay}" VerticalAlignment="Center" TextWrapping="Wrap" />
+        </StackPanel>
+    </Grid>
+</UserControl>
+

@@ -1,4 +1,5 @@
 using System;
+using AutoQAC.Models.Diagnostics;
 
 namespace AutoQAC.Models;
 
@@ -71,11 +72,6 @@ public sealed record PluginCleaningResult
     public string? LogParseWarning { get; init; }
 
     /// <summary>
-    /// Whether a log parse warning exists for this plugin.
-    /// </summary>
-    public bool HasLogParseWarning => !string.IsNullOrEmpty(LogParseWarning);
-
-    /// <summary>
     /// Gets a short summary string for display.
     /// </summary>
     public string Summary
@@ -86,7 +82,8 @@ public sealed record PluginCleaningResult
                 return "Skipped";
 
             if (Status == CleaningStatus.Failed)
-                return $"Failed: {Message}";
+                return
+                    $"Failed: {DiagnosticTextFormatter.SafeFailureSummary(Message, DiagnosticTextFormatter.CleaningFailedForPlugin(PluginName))}";
 
             if (Status == CleaningStatus.AlreadyClean)
                 return "Already clean";
@@ -97,6 +94,7 @@ public sealed record PluginCleaningResult
             var parts = new System.Collections.Generic.List<string>();
             if (ItemsRemoved > 0) parts.Add($"{ItemsRemoved} ITMs");
             if (ItemsUndeleted > 0) parts.Add($"{ItemsUndeleted} UDRs");
+            if (ItemsSkipped > 0) parts.Add($"{ItemsSkipped} skipped");
             if (PartialFormsCreated > 0) parts.Add($"{PartialFormsCreated} partial");
 
             return parts.Count > 0 ? string.Join(", ", parts) : "Cleaned";

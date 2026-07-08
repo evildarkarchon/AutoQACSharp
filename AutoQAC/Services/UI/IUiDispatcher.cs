@@ -4,9 +4,9 @@ using System.Threading.Tasks;
 namespace AutoQAC.Services.UI;
 
 /// <summary>
-/// Marshals callbacks onto the UI thread. Production wires this to
-/// <c>Avalonia.Threading.Dispatcher.UIThread</c>; tests substitute a synchronous
-/// implementation that runs callbacks inline on the calling thread.
+/// Marshals callbacks onto the UI thread. Production wires this to the active
+/// UI framework dispatcher; tests substitute a synchronous implementation that
+/// runs callbacks inline on the calling thread.
 /// </summary>
 public interface IUiDispatcher
 {

@@ -1,12 +1,12 @@
 # AutoQACSharp
 
-AutoQACSharp is a Windows desktop tool for sequential cleaning of Bethesda plugins with xEdit Quick Auto Clean (`-QAC`). The main app is built with Avalonia and ReactiveUI, uses Serilog for logging, YamlDotNet for configuration, and Mutagen for plugin discovery where supported.
+AutoQACSharp is a Windows desktop tool for sequential cleaning of Bethesda plugins with xEdit Quick Auto Clean (`-QAC`). The main app is built with WinUI 3 and the Windows App SDK, uses Serilog for logging, YamlDotNet for configuration, and Mutagen for plugin discovery where supported.
 
 ## Current Status
 
 - The desktop app is past the old "foundation stage". Core configuration, plugin loading, cleaning orchestration, backup/restore, result reporting, and test coverage are all in place.
 - The solution currently contains four projects: `AutoQAC`, `AutoQAC.Tests`, `QueryPlugins`, and `QueryPlugins.Tests`.
-- The UI uses Avalonia, but the shipping app currently targets Windows (`net10.0-windows10.0.19041.0`) because it relies on Windows registry and process behavior for game discovery and xEdit integration.
+- The UI uses WinUI 3 and the shipping app targets Windows (`net10.0-windows10.0.19041.0`) because it relies on Windows registry and process behavior for game discovery and xEdit integration.
 
 ## Implemented Features
 
@@ -41,7 +41,7 @@ Note: the dry-run preview is a readiness check only. The plugin list can show Mu
 ## Solution Layout
 
 ```text
-AutoQAC/             Avalonia desktop application
+AutoQAC/             WinUI 3 desktop application
 AutoQAC.Tests/       Tests for the desktop app
 QueryPlugins/        Standalone Mutagen-based plugin analysis library
 QueryPlugins.Tests/  Tests for the analysis library
@@ -66,6 +66,34 @@ dotnet run --project AutoQAC/AutoQAC.csproj
 dotnet test AutoQACSharp.slnx
 dotnet build AutoQAC/AutoQAC.csproj -c Release
 ```
+
+## Release Publish
+
+The shipping app is published as an **unpackaged, self-contained folder** (not single-file). The publish output includes the .NET and Windows App SDK runtimes, so end users do not need the .NET SDK or a separate Windows App SDK runtime install.
+
+**Requirements for running published output:**
+
+- Windows 10 version 19041 or later (Windows 11 is supported)
+- xEdit and any configured game/MO2 paths on the target machine
+
+**Publish with the release script:**
+
+```powershell
+.\scripts\Publish-Release.ps1
+```
+
+This restores, builds Release, runs tests, publishes to `artifacts/publish/win-x64/`, verifies required files (`AutoQAC.exe`, `AutoQAC Data/`, assets, self-contained runtime), and performs a short launch smoke check.
+
+**Manual publish fallback:**
+
+```bash
+dotnet publish AutoQAC/AutoQAC.csproj -c Release -r win-x64 --self-contained true -o artifacts/publish/win-x64
+```
+
+**Distribution:** Zip the publish folder for xcopy-style deployment. At runtime:
+
+- Configuration reads and writes under `AutoQAC Data/` next to `AutoQAC.exe`
+- Logs are written to `logs/` next to `AutoQAC.exe`
 
 ## Configuration Files
 

@@ -1,17 +1,11 @@
-using System.Reflection;
-using Avalonia.Platform.Storage;
+using AutoQAC.Services.UI;
 using FluentAssertions;
 
 namespace AutoQAC.Tests.Services.UI;
 
 /// <summary>
-/// Unit tests for <see cref="AutoQAC.Services.UI.FileDialogService"/>.
-///
-/// NOTE: The FileDialogService is tightly coupled to Avalonia UI and cannot be
-/// fully unit tested without the Avalonia.Headless infrastructure. These tests
-/// focus on the testable ParseFilter method via reflection.
-///
-/// For full UI testing, consider using Avalonia.Headless for integration tests.
+/// Unit tests for framework-neutral file dialog filter parsing.
+/// The UI-specific file dialog services adapt these entries to their picker APIs.
 /// </summary>
 public sealed class FileDialogServiceTests
 {
@@ -25,7 +19,7 @@ public sealed class FileDialogServiceTests
     public void ParseFilter_ShouldParseStandardFormat()
     {
         // Arrange
-        var filter = "Text Files (*.txt)|*.txt|All Files (*.*)|*.*";
+        const string filter = "Text Files (*.txt)|*.txt|All Files (*.*)|*.*";
 
         // Act
         var result = InvokeParseFilter(filter);
@@ -47,7 +41,7 @@ public sealed class FileDialogServiceTests
     public void ParseFilter_ShouldHandleMultiplePatterns()
     {
         // Arrange
-        var filter = "Image Files (*.jpg;*.png;*.gif)|*.jpg;*.png;*.gif";
+        const string filter = "Image Files (*.jpg;*.png;*.gif)|*.jpg;*.png;*.gif";
 
         // Act
         var result = InvokeParseFilter(filter);
@@ -67,7 +61,7 @@ public sealed class FileDialogServiceTests
     public void ParseFilter_ShouldHandleEmptyString()
     {
         // Arrange
-        var filter = "";
+        const string filter = "";
 
         // Act
         var result = InvokeParseFilter(filter);
@@ -83,7 +77,7 @@ public sealed class FileDialogServiceTests
     public void ParseFilter_ShouldHandleMalformedFilter_OddParts()
     {
         // Arrange
-        var filter = "Text Files|*.txt|Orphan Part";
+        const string filter = "Text Files|*.txt|Orphan Part";
 
         // Act
         var result = InvokeParseFilter(filter);
@@ -102,7 +96,7 @@ public sealed class FileDialogServiceTests
     public void ParseFilter_ShouldHandleSingleFilter()
     {
         // Arrange
-        var filter = "Executables (*.exe)|*.exe";
+        const string filter = "Executables (*.exe)|*.exe";
 
         // Act
         var result = InvokeParseFilter(filter);
@@ -120,7 +114,7 @@ public sealed class FileDialogServiceTests
     public void ParseFilter_ShouldHandleSpecialCharactersInName()
     {
         // Arrange
-        var filter = "C# Source (*.cs)|*.cs";
+        const string filter = "C# Source (*.cs)|*.cs";
 
         // Act
         var result = InvokeParseFilter(filter);
@@ -138,7 +132,7 @@ public sealed class FileDialogServiceTests
     public void ParseFilter_ShouldHandleXEditFilter()
     {
         // Arrange
-        var filter = "Executables (*.exe)|*.exe|All Files (*.*)|*.*";
+        const string filter = "Executables (*.exe)|*.exe|All Files (*.*)|*.*";
 
         // Act
         var result = InvokeParseFilter(filter);
@@ -149,28 +143,55 @@ public sealed class FileDialogServiceTests
         result[1].Patterns.Should().Contain("*.*");
     }
 
+    [Fact]
+    public void BuildExtensionList_ShouldNormalizePickerExtensions()
+    {
+        // Arrange
+        const string filter = "Executables (*.exe)|*.exe|All Files (*.*)|*.*";
+
+        // Act
+        var result = FileDialogFilterMapper.BuildExtensionList(filter);
+
+        // Assert
+        result.Should().Equal(".exe", "*");
+    }
+
+    [Fact]
+    public void BuildFileTypeChoices_ShouldPreserveFilterNamesAndNormalizePatterns()
+    {
+        // Arrange
+        const string filter = "Images (*.jpg;*.png)|*.jpg;*.png|All Files (*.*)|*.*";
+
+        // Act
+        var result = FileDialogFilterMapper.BuildFileTypeChoices(filter);
+
+        // Assert
+        result.Should().ContainKey("Images (*.jpg;*.png)");
+        result["Images (*.jpg;*.png)"].Should().Equal(".jpg", ".png");
+        result["All Files (*.*)"].Should().Equal("*");
+    }
+
+    [Fact]
+    public void BuildFileTypeChoices_ShouldFallbackToAllFilesForEmptyFilter()
+    {
+        // Act
+        var result = FileDialogFilterMapper.BuildFileTypeChoices(string.Empty);
+
+        // Assert
+        result.Should().ContainSingle();
+        result["All Files (*.*)"].Should().Equal("*");
+    }
+
     #endregion
 
     #region Helper Methods
 
     /// <summary>
-    /// Invokes the private ParseFilter method via reflection for testing.
+    /// Parses the filter string through the framework-neutral helper used by
+    /// UI-specific file dialog service implementations.
     /// </summary>
-    private static List<FilePickerFileType> InvokeParseFilter(string filter)
-    {
-        var serviceType = typeof(AutoQAC.Services.UI.FileDialogService);
-        var method = serviceType.GetMethod("ParseFilter",
-            BindingFlags.NonPublic | BindingFlags.Static);
-
-        if (method == null)
-        {
-            throw new InvalidOperationException("ParseFilter method not found");
-        }
-
-        var result = method.Invoke(null, new object[] { filter });
-        return result as List<FilePickerFileType>
-               ?? throw new InvalidOperationException("ParseFilter returned unexpected type");
-    }
+    private static IReadOnlyList<FileDialogFilterEntry> InvokeParseFilter(string filter) =>
+        FileDialogFilterParser.Parse(filter);
 
     #endregion
 }

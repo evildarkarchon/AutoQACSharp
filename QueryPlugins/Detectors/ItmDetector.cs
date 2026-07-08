@@ -13,8 +13,9 @@ namespace QueryPlugins.Detectors;
 public sealed class ItmDetector : IItmDetector
 {
     /// <inheritdoc />
-    public IEnumerable<PluginIssue> FindItmRecords(IModGetter plugin, ILinkCache linkCache)
+    public IEnumerable<PluginIssue> FindItmRecords(IModGetter plugin, ILinkCache linkCache, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
         var pluginModKey = plugin.ModKey;
 
         if (!linkCache.ListedOrder.Any(mod => mod.ModKey == pluginModKey))
@@ -24,13 +25,24 @@ public sealed class ItmDetector : IItmDetector
                 nameof(linkCache));
         }
 
-        return EnumerateItmRecords(plugin, linkCache, pluginModKey);
+        return EnumerateItmRecords(plugin, linkCache, pluginModKey, ct);
     }
 
-    private static IEnumerable<PluginIssue> EnumerateItmRecords(IModGetter plugin, ILinkCache linkCache, ModKey pluginModKey)
+    private static IEnumerable<PluginIssue> EnumerateItmRecords(
+        IModGetter plugin,
+        ILinkCache linkCache,
+        ModKey pluginModKey,
+        CancellationToken ct)
     {
         foreach (var record in plugin.EnumerateMajorRecords())
         {
+            ct.ThrowIfCancellationRequested();
+
+            // Some Creation Club plugins contain records Mutagen exposes with a null FormKey.
+            // They cannot be resolved through a link cache, so they cannot be classified as ITMs.
+            if (record.FormKey.IsNull)
+                continue;
+
             // New records defined in this plugin cannot be ITMs — they have no master to be identical to.
             if (record.FormKey.ModKey == pluginModKey)
                 continue;
@@ -42,34 +54,56 @@ public sealed class ItmDetector : IItmDetector
                 continue;
 
             var formLinkInfo = FormLinkInformation.Factory(record);
-            var allContexts = linkCache.ResolveAllSimpleContexts(formLinkInfo).ToArray();
 
-            // Need at least two versions: this plugin's override and the lower-priority
-            // version it overrides in the load order.
-            if (allContexts.Length < 2)
-                continue;
-
-            // Mutagen returns contexts in winner-first order, so the analyzed plugin may appear
-            // at any index in a full load-order cache. Compare the plugin's version to the
-            // next lower-priority context, which is the record it actually overrides.
-            var pluginContextIndex = Array.FindIndex(allContexts, context => context.ModKey == pluginModKey);
-            if (pluginContextIndex < 0)
-            {
-                throw new ArgumentException(
-                    $"The supplied link cache does not contain analyzed plugin {pluginModKey} for record {record.FormKey}.",
-                    nameof(linkCache));
-            }
-
-            if (pluginContextIndex == allContexts.Length - 1)
-                continue;
-
-            // Deep equality via Loqui-generated Equals(object) override.
-            // Both records are the same concrete type (resolved from the same FormKey),
-            // so virtual dispatch correctly reaches the type-specific FooCommon.Equals().
-            if (allContexts[pluginContextIndex].Record.Equals(allContexts[pluginContextIndex + 1].Record))
+            if (IsIdenticalToImmediateLowerPriorityContext(linkCache, formLinkInfo, pluginModKey, record.FormKey, ct))
             {
                 yield return new PluginIssue(record.FormKey, record.EditorID, IssueType.ItmRecord);
             }
         }
+    }
+
+    private static bool IsIdenticalToImmediateLowerPriorityContext(
+        ILinkCache linkCache,
+        FormLinkInformation formLinkInfo,
+        ModKey pluginModKey,
+        FormKey recordFormKey,
+        CancellationToken ct)
+    {
+        IModContext<IMajorRecordGetter>? pluginContext = null;
+
+        // Mutagen returns contexts in winner-first order, so the analyzed plugin may appear
+        // anywhere in the load-order cache. Once found, only the next yielded context is the
+        // immediate lower-priority version the plugin actually overrides; retaining more would
+        // increase peak memory without changing exact ITM semantics.
+        foreach (var context in linkCache.ResolveAllSimpleContexts(formLinkInfo))
+        {
+            ct.ThrowIfCancellationRequested();
+
+            if (pluginContext is null)
+            {
+                if (context.ModKey == pluginModKey)
+                {
+                    pluginContext = context;
+                }
+
+                continue;
+            }
+
+            // Deep equality via Loqui-generated Equals(object) override.
+            // Both records are the same concrete type (resolved from the same FormKey),
+            // so virtual dispatch correctly reaches the type-specific FooCommon.Equals().
+            return pluginContext.Record.Equals(context.Record);
+        }
+
+        if (pluginContext is null)
+        {
+            throw new ArgumentException(
+                $"The supplied link cache does not contain analyzed plugin {pluginModKey} for record {recordFormKey}.",
+                nameof(linkCache));
+        }
+
+        // The plugin is the lowest-priority context for this FormKey, so there is no lower-priority
+        // overridden version to compare against.
+        return false;
     }
 }

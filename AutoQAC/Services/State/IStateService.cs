@@ -17,10 +17,22 @@ public interface IStateService
     // State updates
     void UpdateState(Func<AppState, AppState> updateFunc);
     void UpdateConfigurationPaths(string? loadOrder, string? mo2, string? xEdit);
+    void UpdateConfigurationPaths(string? loadOrder, string? mo2, string? xEdit, string? mo2Profile);
     void SetPluginsToClean(List<PluginInfo> plugins);
     void MergePluginApproximation(PluginIssueApproximationResult approximation);
     void MergePluginApproximations(IReadOnlyList<PluginIssueApproximationResult> approximations);
     void StartCleaning(List<PluginInfo> plugins);
+
+    /// <summary>
+    /// Sets visible non-xEdit backup or retention operation progress without changing xEdit stop state.
+    /// </summary>
+    /// <param name="state">The active operation state to publish.</param>
+    void SetBackupOperation(BackupOperationState state);
+
+    /// <summary>
+    /// Clears the visible non-xEdit backup or retention operation after completion or cancellation.
+    /// </summary>
+    void ClearBackupOperation();
 
     /// <summary>
     /// Updates the set of plugin full paths the user has deselected from cleaning.

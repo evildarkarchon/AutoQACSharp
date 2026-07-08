@@ -5,6 +5,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
+using AutoQAC.Models.Diagnostics;
+using AutoQAC.Services.GameCapability;
 using AutoQAC.Services.GameDetection;
 using AutoQAC.Services.Process;
 using AutoQAC.Services.State;
@@ -21,8 +23,8 @@ public sealed class CleaningService(
 {
     public async Task<CleaningResult> CleanPluginAsync(
         PluginInfo plugin,
-        CancellationToken ct = default,
-        Action<System.Diagnostics.Process>? onProcessStarted = null)
+        Action<System.Diagnostics.Process>? onProcessStarted = null,
+        CancellationToken ct = default)
     {
         var sw = Stopwatch.StartNew();
 
@@ -41,44 +43,70 @@ public sealed class CleaningService(
             }
 
             // 2. Build Command
+            // Snapshot state once so launch-mode messaging matches the mode used to build the command.
+            var state = stateService.CurrentState;
             // Determine game type from state if available, otherwise detect
-            var gameType = stateService.CurrentState.CurrentGameType;
+            var gameType = state.CurrentGameType;
             if (gameType == GameType.Unknown)
             {
                 // Fallback or error? Orchestrator usually sets this.
                 gameType = plugin.DetectedGameType;
             }
 
+            var safePluginName = DiagnosticTextFormatter.SafePluginName(plugin.FileName);
             var command = commandBuilder.BuildCommand(plugin, gameType);
             if (command == null)
             {
+                var buildFailureLaunchMode = state.Mo2ModeEnabled ? "MO2" : "direct xEdit";
+                logger.Warning(
+                    "Failed to build {LaunchMode} launch command for {Plugin}; no process was started.",
+                    buildFailureLaunchMode,
+                    safePluginName);
+
                 return new CleaningResult
                 {
                     Success = false,
                     Status = CleaningStatus.Failed,
-                    Message = "Failed to build xEdit command.",
+                    Message =
+                        $"Could not build {buildFailureLaunchMode} launch command for {safePluginName}. No process was started. See the latest AutoQAC log.",
                     Duration = sw.Elapsed
                 };
             }
 
             // 3. Execute
             // Get timeout from settings
-            var timeoutSeconds = stateService.CurrentState.CleaningTimeout;
+            var timeoutSeconds = state.CleaningTimeout;
             var timeout = TimeSpan.FromSeconds(timeoutSeconds > 0 ? timeoutSeconds : 300);
             var gameDisplayName = gameDetection.GetGameDisplayName(gameType);
+            var launchMode = state.Mo2ModeEnabled ? "MO2" : "direct xEdit";
+            var argumentCount = GetArgumentCount(command);
 
             logger.Information(
-                "Cleaning {Plugin} for {Game} with timeout {TimeoutSeconds}s...",
-                plugin.FileName,
+                "Starting {Operation} launch: mode={LaunchMode}, game={Game}, plugin={Plugin}, argumentCount={ArgumentCount}, status={Status}",
+                "QuickAutoClean",
+                launchMode,
                 gameDisplayName,
-                timeout.TotalSeconds);
+                safePluginName,
+                argumentCount,
+                "Starting");
 
-            var result = await processService.ExecuteAsync(command, timeout, ct, onProcessStarted).ConfigureAwait(false);
+            var result = await processService.ExecuteAsync(command, timeout, ct, onProcessStarted)
+                .ConfigureAwait(false);
 
             sw.Stop();
 
             if (result.TimedOut)
             {
+                logger.Warning(
+                    "Completed {Operation} launch: mode={LaunchMode}, game={Game}, plugin={Plugin}, argumentCount={ArgumentCount}, status={Status}, reason={Reason}",
+                    "QuickAutoClean",
+                    launchMode,
+                    gameDisplayName,
+                    safePluginName,
+                    argumentCount,
+                    "Failed",
+                    "TimedOut");
+
                 return new CleaningResult
                 {
                     Success = false,
@@ -91,6 +119,16 @@ public sealed class CleaningService(
 
             if (result.ExitCode != 0)
             {
+                logger.Warning(
+                    "Completed {Operation} launch: mode={LaunchMode}, game={Game}, plugin={Plugin}, argumentCount={ArgumentCount}, status={Status}, reason={Reason}",
+                    "QuickAutoClean",
+                    launchMode,
+                    gameDisplayName,
+                    safePluginName,
+                    argumentCount,
+                    "Failed",
+                    "ExitCode");
+
                 // xEdit might exit with non-zero on error, check output
                 return new CleaningResult
                 {
@@ -102,6 +140,16 @@ public sealed class CleaningService(
             }
 
             // Statistics intentionally omitted -- orchestrator parses from log file (per D-02)
+            logger.Information(
+                "Completed {Operation} launch: mode={LaunchMode}, game={Game}, plugin={Plugin}, argumentCount={ArgumentCount}, status={Status}, reason={Reason}",
+                "QuickAutoClean",
+                launchMode,
+                gameDisplayName,
+                safePluginName,
+                argumentCount,
+                "Succeeded",
+                "ProcessExited");
+
             return new CleaningResult
             {
                 Success = true,
@@ -109,7 +157,6 @@ public sealed class CleaningService(
                 Message = "Cleaning completed successfully.",
                 Duration = sw.Elapsed
             };
-
         }
         catch (OperationCanceledException)
         {
@@ -123,41 +170,42 @@ public sealed class CleaningService(
         }
         catch (Exception ex)
         {
-            logger.Error(ex, "Error cleaning {Plugin}", plugin.FileName);
+            var safePluginName = DiagnosticTextFormatter.SafePluginName(plugin.FileName);
+            logger.Error(ex, "Error cleaning {Plugin}", safePluginName);
             return new CleaningResult
             {
                 Success = false,
                 Status = CleaningStatus.Failed,
-                Message = ex.Message,
+                Message = DiagnosticTextFormatter.CleaningFailedForPlugin(plugin.FileName),
                 Duration = sw.Elapsed
             };
         }
     }
 
+    /// <inheritdoc />
     public Task<bool> ValidateEnvironmentAsync(CancellationToken ct = default)
     {
-        var config = stateService.CurrentState;
-        if (string.IsNullOrEmpty(config.XEditExecutablePath) || !File.Exists(config.XEditExecutablePath))
+        var state = stateService.CurrentState;
+        if (string.IsNullOrWhiteSpace(state.XEditExecutablePath) || !File.Exists(state.XEditExecutablePath))
         {
             return Task.FromResult(false);
         }
 
-        if (RequiresFileLoadOrder(config.CurrentGameType))
+        if (GameCapabilityCatalog.Get(state.CurrentGameType).RequiresLoadOrderFile)
         {
-            if (string.IsNullOrWhiteSpace(config.LoadOrderPath) || !File.Exists(config.LoadOrderPath))
-            {
-                return Task.FromResult(false);
-            }
+            return Task.FromResult(!string.IsNullOrWhiteSpace(state.LoadOrderPath) && File.Exists(state.LoadOrderPath));
         }
 
         return Task.FromResult(true);
     }
 
-    private static bool RequiresFileLoadOrder(GameType gameType) => gameType switch
-    {
-        GameType.Fallout3 => true,
-        GameType.FalloutNewVegas => true,
-        GameType.Oblivion => true,
-        _ => false
-    };
+    /// <summary>
+    /// Counts the launch arguments without reconstructing or logging the command payload.
+    /// </summary>
+    private static int GetArgumentCount(ProcessStartInfo startInfo) =>
+        startInfo.ArgumentList.Count > 0
+            ? startInfo.ArgumentList.Count
+            : string.IsNullOrWhiteSpace(startInfo.Arguments)
+                ? 0
+                : 1;
 }

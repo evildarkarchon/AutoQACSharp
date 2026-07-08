@@ -53,19 +53,6 @@ public interface IPluginLoadingService
         CancellationToken ct = default);
 
     /// <summary>
-    /// Returns true if the game is supported by Mutagen for load order detection.
-    /// </summary>
-    /// <param name="gameType">The game type to check.</param>
-    /// <returns>True if Mutagen can load the game's load order.</returns>
-    bool IsGameSupportedByMutagen(GameType gameType);
-
-    /// <summary>
-    /// Gets list of games available for selection.
-    /// </summary>
-    /// <returns>All game types except Unknown.</returns>
-    IReadOnlyList<GameType> GetAvailableGames();
-
-    /// <summary>
     /// Gets the data folder path for a game.
     /// Returns the custom override if provided, otherwise auto-detects via Mutagen and/or registry.
     /// </summary>

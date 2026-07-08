@@ -30,7 +30,7 @@ public sealed partial class CleaningResultsViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(HasFailures))]
     [NotifyPropertyChangedFor(nameof(WasCancelled))]
     [NotifyPropertyChangedFor(nameof(HasPartialForms))]
-    private CleaningSessionResult _sessionResult;
+    public partial CleaningSessionResult SessionResult { get; set; }
 
     public ObservableCollection<PluginCleaningResult> PluginResults { get; }
 
@@ -60,8 +60,8 @@ public sealed partial class CleaningResultsViewModel : ViewModelBase
     /// <summary>Design-time constructor for XAML previewer.</summary>
     public CleaningResultsViewModel()
     {
-        _sessionResult = CleaningSessionResult.CreateEmpty();
-        PluginResults = new ObservableCollection<PluginCleaningResult>();
+        SessionResult = CleaningSessionResult.CreateEmpty();
+        PluginResults = [];
     }
 
     public CleaningResultsViewModel(
@@ -69,7 +69,7 @@ public sealed partial class CleaningResultsViewModel : ViewModelBase
         ILoggingService logger,
         IFileDialogService fileDialog)
     {
-        _sessionResult = sessionResult;
+        SessionResult = sessionResult;
         _logger = logger;
         _fileDialog = fileDialog;
 

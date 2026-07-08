@@ -1,73 +1,45 @@
+using System;
+using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Models;
-using Avalonia;
-using Avalonia.Controls;
-using Avalonia.Controls.ApplicationLifetimes;
-using Avalonia.Threading;
-using AutoQAC.ViewModels;
-using AutoQAC.Views;
+using AutoQAC.Models.Diagnostics;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 
 namespace AutoQAC.Services.UI;
 
-/// <summary>
-/// Service for displaying message dialogs using Avalonia windows.
-/// </summary>
-public sealed class MessageDialogService : IMessageDialogService
+public sealed class MessageDialogService(
+    IWindowContextProvider windowContextProvider,
+    IUiDispatcher uiDispatcher)
+    : IMessageDialogService
 {
-    public async Task<MessageDialogResult> ShowAsync(
+    private readonly SemaphoreSlim _dialogLock = new(1, 1);
+
+    public Task<MessageDialogResult> ShowAsync(
         string title,
         string message,
         MessageDialogButtons buttons = MessageDialogButtons.Ok,
         MessageDialogIcon icon = MessageDialogIcon.None,
         string? details = null)
     {
-        // Ensure we're on the UI thread
-        if (!Dispatcher.UIThread.CheckAccess())
-        {
-            return await Dispatcher.UIThread.InvokeAsync(() =>
-                ShowAsync(title, message, buttons, icon, details));
-        }
-
-        var viewModel = new MessageDialogViewModel
-        {
-            Title = title,
-            Message = message,
-            Details = details
-        };
-
-        viewModel.ConfigureButtons(buttons);
-        viewModel.ConfigureIcon(icon);
-
-        var dialog = new MessageDialog
-        {
-            DataContext = viewModel
-        };
-
-        var mainWindow = GetMainWindow();
-        if (mainWindow != null)
-        {
-            var result = await dialog.ShowDialog<MessageDialogResult?>(mainWindow);
-            return result ?? MessageDialogResult.None;
-        }
-
-        // Fallback: show as standalone window
-        dialog.Show();
-        return MessageDialogResult.None;
+        var buttonConfiguration = MessageDialogButtonMapper.Build(buttons);
+        return ShowMessageDialogAsync(title, message, buttonConfiguration, icon, details);
     }
 
-    public async Task ShowErrorAsync(string title, string message, string? details = null)
+    public Task ShowErrorAsync(string title, string message, string? details = null)
     {
-        await ShowAsync(title, message, MessageDialogButtons.Ok, MessageDialogIcon.Error, details);
+        return ShowAsync(title, message, MessageDialogButtons.Ok, MessageDialogIcon.Error, details);
     }
 
-    public async Task ShowWarningAsync(string title, string message, string? details = null)
+    public Task ShowWarningAsync(string title, string message, string? details = null)
     {
-        await ShowAsync(title, message, MessageDialogButtons.Ok, MessageDialogIcon.Warning, details);
+        return ShowAsync(title, message, MessageDialogButtons.Ok, MessageDialogIcon.Warning, details);
     }
 
-    public async Task ShowInfoAsync(string title, string message)
+    public Task ShowInfoAsync(string title, string message)
     {
-        await ShowAsync(title, message, MessageDialogButtons.Ok, MessageDialogIcon.Information);
+        return ShowAsync(title, message, MessageDialogButtons.Ok, MessageDialogIcon.Information);
     }
 
     public async Task<bool> ShowConfirmAsync(string title, string message)
@@ -76,116 +48,205 @@ public sealed class MessageDialogService : IMessageDialogService
         return result == MessageDialogResult.Yes;
     }
 
+    public Task<MessageDialogResult> ShowChoiceAsync(
+        string title,
+        string message,
+        string primaryButtonText,
+        string secondaryButtonText,
+        MessageDialogIcon icon = MessageDialogIcon.Question,
+        string? details = null)
+    {
+        var buttonConfiguration = MessageDialogButtonMapper.BuildChoice(
+            primaryButtonText,
+            secondaryButtonText);
+
+        return ShowMessageDialogAsync(title, message, buttonConfiguration, icon, details);
+    }
+
     public async Task<bool> ShowRetryAsync(string title, string message, string? details = null)
     {
-        var result = await ShowAsync(title, message, MessageDialogButtons.RetryCancel, MessageDialogIcon.Warning, details);
+        var result = await ShowAsync(title, message, MessageDialogButtons.RetryCancel, MessageDialogIcon.Warning,
+            details);
         return result == MessageDialogResult.Retry;
     }
 
-    public async Task<BackupFailureChoice> ShowBackupFailureDialogAsync(string pluginName, string errorMessage)
+    public Task<BackupFailureChoice> ShowBackupFailureDialogAsync(string pluginName, string errorMessage)
     {
-        // Ensure we're on the UI thread
-        if (!Dispatcher.UIThread.CheckAccess())
+        var safePluginName = DiagnosticTextFormatter.SafePluginName(pluginName);
+        var safeErrorMessage = DiagnosticTextFormatter.SafeFailureSummary(
+            errorMessage,
+            DiagnosticTextFormatter.CleaningFailedForPlugin(pluginName));
+
+        return ShowSerializedAsync(async () =>
         {
-            return await Dispatcher.UIThread.InvokeAsync(() =>
-                ShowBackupFailureDialogAsync(pluginName, errorMessage));
+            if (!windowContextProvider.TryGetContext(out _, out var xamlRoot))
+            {
+                return BackupFailureChoice.SkipPlugin;
+            }
+
+            var dialog = new ContentDialog
+            {
+                XamlRoot = xamlRoot,
+                Title = "Backup Failed",
+                Content = BuildBackupFailureContent(safePluginName, safeErrorMessage),
+                PrimaryButtonText = "Skip Plugin",
+                SecondaryButtonText = "Continue Anyway",
+                CloseButtonText = "Abort Session",
+                DefaultButton = ContentDialogButton.Primary
+            };
+
+            var result = await dialog.ShowAsync();
+            return result switch
+            {
+                ContentDialogResult.Primary => BackupFailureChoice.SkipPlugin,
+                ContentDialogResult.Secondary => BackupFailureChoice.ContinueWithoutBackup,
+                _ => BackupFailureChoice.AbortSession
+            };
+        });
+    }
+
+    private Task<MessageDialogResult> ShowMessageDialogAsync(
+        string title,
+        string message,
+        MessageDialogButtonConfiguration buttonConfiguration,
+        MessageDialogIcon icon,
+        string? details)
+    {
+        return ShowSerializedAsync(async () =>
+        {
+            if (!windowContextProvider.TryGetContext(out _, out var xamlRoot))
+            {
+                return buttonConfiguration.CloseResult;
+            }
+
+            var dialog = new ContentDialog
+            {
+                XamlRoot = xamlRoot,
+                Title = title,
+                Content = BuildMessageContent(message, icon, details),
+                PrimaryButtonText = buttonConfiguration.PrimaryButtonText,
+                SecondaryButtonText = buttonConfiguration.SecondaryButtonText,
+                CloseButtonText = buttonConfiguration.CloseButtonText,
+                DefaultButton = buttonConfiguration.PrimaryButtonText is not null
+                    ? ContentDialogButton.Primary
+                    : ContentDialogButton.Close
+            };
+
+            var result = await dialog.ShowAsync();
+            return result switch
+            {
+                ContentDialogResult.Primary => buttonConfiguration.PrimaryResult,
+                ContentDialogResult.Secondary => buttonConfiguration.SecondaryResult,
+                _ => buttonConfiguration.CloseResult
+            };
+        });
+    }
+
+    private async Task<T> ShowSerializedAsync<T>(Func<Task<T>> show)
+    {
+        await _dialogLock.WaitAsync();
+        try
+        {
+            T result = default!;
+            await uiDispatcher.InvokeAsync(async () => result = await show());
+            return result;
         }
-
-        var tcs = new TaskCompletionSource<BackupFailureChoice>();
-
-        var window = new Window
+        finally
         {
-            Title = "Backup Failed",
-            Width = 450,
-            Height = 220,
-            CanResize = false,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner
-        };
+            _dialogLock.Release();
+        }
+    }
 
+    private static FrameworkElement BuildMessageContent(
+        string message,
+        MessageDialogIcon icon,
+        string? details)
+    {
         var panel = new StackPanel
         {
-            Margin = new Thickness(20),
+            Spacing = 12,
+            MaxWidth = 520
+        };
+
+        var messagePanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
             Spacing = 12
         };
 
-        panel.Children.Add(new TextBlock
+        var iconGlyph = GetIconGlyph(icon);
+        if (!string.IsNullOrEmpty(iconGlyph))
         {
-            Text = $"Failed to back up '{pluginName}'",
-            FontWeight = Avalonia.Media.FontWeight.Bold,
-            FontSize = 14,
-            TextWrapping = Avalonia.Media.TextWrapping.Wrap
-        });
-
-        panel.Children.Add(new TextBlock
-        {
-            Text = errorMessage,
-            TextWrapping = Avalonia.Media.TextWrapping.Wrap,
-            FontSize = 12
-        });
-
-        panel.Children.Add(new TextBlock
-        {
-            Text = "How would you like to proceed?",
-            Margin = new Thickness(0, 4, 0, 0)
-        });
-
-        var buttonPanel = new StackPanel
-        {
-            Orientation = Avalonia.Layout.Orientation.Horizontal,
-            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
-            Spacing = 8
-        };
-
-        var skipButton = new Button { Content = "Skip Plugin", MinWidth = 100 };
-        skipButton.Click += (_, _) =>
-        {
-            tcs.TrySetResult(BackupFailureChoice.SkipPlugin);
-            window.Close();
-        };
-
-        var continueButton = new Button { Content = "Continue Anyway", MinWidth = 120 };
-        continueButton.Click += (_, _) =>
-        {
-            tcs.TrySetResult(BackupFailureChoice.ContinueWithoutBackup);
-            window.Close();
-        };
-
-        var abortButton = new Button { Content = "Abort Session", MinWidth = 110 };
-        abortButton.Click += (_, _) =>
-        {
-            tcs.TrySetResult(BackupFailureChoice.AbortSession);
-            window.Close();
-        };
-
-        buttonPanel.Children.Add(skipButton);
-        buttonPanel.Children.Add(continueButton);
-        buttonPanel.Children.Add(abortButton);
-
-        panel.Children.Add(buttonPanel);
-        window.Content = panel;
-
-        // Handle window close without button click (X button)
-        window.Closed += (_, _) => tcs.TrySetResult(BackupFailureChoice.SkipPlugin);
-
-        var mainWindow = GetMainWindow();
-        if (mainWindow != null)
-        {
-            await window.ShowDialog(mainWindow);
-        }
-        else
-        {
-            window.Show();
+            messagePanel.Children.Add(new TextBlock
+            {
+                Text = iconGlyph,
+                FontSize = 28,
+                VerticalAlignment = VerticalAlignment.Top
+            });
         }
 
-        return await tcs.Task;
+        messagePanel.Children.Add(new TextBlock
+        {
+            Text = message,
+            TextWrapping = TextWrapping.Wrap,
+            VerticalAlignment = VerticalAlignment.Center
+        });
+        panel.Children.Add(messagePanel);
+
+        if (!string.IsNullOrWhiteSpace(details))
+        {
+            panel.Children.Add(new Expander
+            {
+                Header = "Details",
+                Content = new ScrollViewer
+                {
+                    MaxHeight = 180,
+                    Content = new TextBlock
+                    {
+                        Text = details,
+                        FontFamily = new FontFamily("Consolas"),
+                        TextWrapping = TextWrapping.Wrap
+                    }
+                }
+            });
+        }
+
+        return panel;
     }
 
-    private static Window? GetMainWindow()
-    {
-        if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+    private static FrameworkElement BuildBackupFailureContent(string pluginName, string errorMessage) =>
+        new StackPanel
         {
-            return desktop.MainWindow;
-        }
-        return null;
-    }
+            Spacing = 12,
+            MaxWidth = 520,
+            Children =
+            {
+                new TextBlock
+                {
+                    Text = $"Failed to back up '{pluginName}'",
+                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                    TextWrapping = TextWrapping.Wrap
+                },
+                new TextBlock
+                {
+                    Text = errorMessage,
+                    TextWrapping = TextWrapping.Wrap
+                },
+                new TextBlock
+                {
+                    Text = "How would you like to proceed?",
+                    TextWrapping = TextWrapping.Wrap
+                }
+            }
+        };
+
+    private static string GetIconGlyph(MessageDialogIcon icon) =>
+        icon switch
+        {
+            MessageDialogIcon.Information => "ℹ",
+            MessageDialogIcon.Warning => "⚠",
+            MessageDialogIcon.Error => "❌",
+            MessageDialogIcon.Question => "?",
+            _ => string.Empty
+        };
 }

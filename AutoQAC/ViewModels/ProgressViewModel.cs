@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Threading.Tasks;
+using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.State;
@@ -13,122 +15,157 @@ namespace AutoQAC.ViewModels;
 
 public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
 {
-    private readonly IStateService _stateService;
-    private readonly ICleaningOrchestrator _orchestrator;
-    private readonly IUiDispatcher _uiDispatcher;
-    private readonly List<IDisposable> _subscriptions = new();
+    private readonly ICleaningSession _cleaningSession;
+    private readonly IMessageDialogService _messageDialog;
+    private readonly ILoggingService _logger;
+    private readonly List<IDisposable> _subscriptions = [];
 
     private bool _wasPreviouslyCleaning;
     private bool _hangWarningDismissed;
 
-    [ObservableProperty]
-    private string? _currentPlugin;
+    [ObservableProperty] public partial string? CurrentPlugin { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ProgressText))]
-    private int _progress;
+    public partial int Progress { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ProgressText))]
-    private int _total;
+    public partial int Total { get; set; }
 
-    [ObservableProperty]
-    private int _cleanedCount;
+    [ObservableProperty] public partial int CleanedCount { get; set; }
 
-    [ObservableProperty]
-    private int _skippedCount;
+    [ObservableProperty] public partial int SkippedCount { get; set; }
 
-    [ObservableProperty]
-    private int _failedCount;
+    [ObservableProperty] public partial int FailedCount { get; set; }
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(StopCommand))]
-    private bool _isCleaning;
+    public partial bool IsCleaning { get; set; }
+
+    [ObservableProperty] public partial int CurrentItmCount { get; set; }
+
+    [ObservableProperty] public partial int CurrentUdrCount { get; set; }
+
+    [ObservableProperty] public partial int CurrentNavCount { get; set; }
+
+    [ObservableProperty] public partial bool HasCurrentPluginStats { get; set; }
+
+    public ObservableCollection<PluginCleaningResult> CompletedPlugins { get; } = [];
 
     [ObservableProperty]
-    private int _currentItmCount;
+    [NotifyPropertyChangedFor(nameof(IsResultsSummaryVisible))]
+    public partial bool IsShowingResults { get; set; }
+
+    [ObservableProperty] public partial CleaningSessionResult? SessionResult { get; set; }
+
+    [ObservableProperty] public partial bool WasCancelled { get; set; }
+
+    [ObservableProperty] public partial string SessionSummaryText { get; set; } = string.Empty;
 
     [ObservableProperty]
-    private int _currentUdrCount;
+    [NotifyPropertyChangedFor(nameof(HasStopOutcomeWarning))]
+    public partial string? StopOutcomeWarningText { get; set; }
 
-    [ObservableProperty]
-    private int _currentNavCount;
+    [ObservableProperty] public partial int TotalItmCount { get; set; }
 
-    [ObservableProperty]
-    private bool _hasCurrentPluginStats;
+    [ObservableProperty] public partial int TotalUdrCount { get; set; }
 
-    public ObservableCollection<PluginCleaningResult> CompletedPlugins { get; } = new();
-
-    [ObservableProperty]
-    private bool _isShowingResults;
-
-    [ObservableProperty]
-    private CleaningSessionResult? _sessionResult;
-
-    [ObservableProperty]
-    private bool _wasCancelled;
-
-    [ObservableProperty]
-    private string _sessionSummaryText = string.Empty;
-
-    [ObservableProperty]
-    private int _totalItmCount;
-
-    [ObservableProperty]
-    private int _totalUdrCount;
-
-    [ObservableProperty]
-    private int _totalNavCount;
+    [ObservableProperty] public partial int TotalNavCount { get; set; }
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(StopCommand))]
-    private bool _isTerminating;
+    public partial bool IsTerminating { get; set; }
+
+    [ObservableProperty] public partial bool IsHangWarningVisible { get; set; }
 
     [ObservableProperty]
-    private bool _isHangWarningVisible;
+    [NotifyPropertyChangedFor(nameof(IsResultsSummaryVisible))]
+    public partial bool IsPreviewMode { get; set; }
 
     [ObservableProperty]
-    private bool _isPreviewMode;
+    [NotifyPropertyChangedFor(nameof(ActiveOperationLabel))]
+    [NotifyPropertyChangedFor(nameof(IsBackupOperationActive))]
+    [NotifyPropertyChangedFor(nameof(IsBackupCancelVisible))]
+    [NotifyPropertyChangedFor(nameof(IsCleanupCancelVisible))]
+    [NotifyPropertyChangedFor(nameof(BackupOperationProgressText))]
+    [NotifyCanExecuteChangedFor(nameof(CancelBackupOperationCommand))]
+    public partial BackupOperationState? BackupOperation { get; set; }
 
-    public ObservableCollection<DryRunResult> DryRunResults { get; } = new();
+    public ObservableCollection<DryRunResult> DryRunResults { get; } = [];
 
+    // ReSharper disable once UnusedMember.Global - bound from ProgressWindow.xaml.
     public string PreviewDisclaimer => "Preview only -- does not detect ITMs/UDRs (requires xEdit)";
 
-    [ObservableProperty]
-    private int _willCleanCount;
+    [ObservableProperty] public partial int WillCleanCount { get; set; }
 
-    [ObservableProperty]
-    private int _willSkipCount;
+    [ObservableProperty] public partial int WillSkipCount { get; set; }
 
     public string ProgressText => Total > 0
         ? $"{Progress} / {Total} ({Progress * 100 / Total}%)"
         : "0 / 0 (0%)";
 
+    public string ActiveOperationLabel => BackupOperation is { IsActive: true } operation
+        ? operation.Label
+        : CurrentPlugin is { Length: > 0 } plugin
+            ? $"Cleaning: {plugin}"
+            : "Cleaning:";
+
+    public bool IsBackupOperationActive => BackupOperation is { IsActive: true };
+
+    public bool IsBackupCancelVisible => BackupOperation is
+    {
+        IsActive: true,
+        CanCancel: true,
+        Kind: BackupOperationKind.Backup
+    };
+
+    public bool IsCleanupCancelVisible => BackupOperation is
+    {
+        IsActive: true,
+        CanCancel: true,
+        Kind: BackupOperationKind.RetentionCleanup
+    };
+
+    public string BackupOperationProgressText => FormatBackupOperationProgress(BackupOperation);
+
+    /// <summary>
+    /// Gets whether the completed-cleaning summary panel should be visible instead of the active or preview panels.
+    /// </summary>
+    public bool IsResultsSummaryVisible => IsShowingResults && !IsPreviewMode;
+
+    /// <summary>
+    /// Gets whether a persistent stop outcome warning should remain visible in the results summary.
+    /// </summary>
+    public bool HasStopOutcomeWarning => !string.IsNullOrWhiteSpace(StopOutcomeWarningText);
+
     /// <summary>Event raised when the window should close.</summary>
     public event EventHandler? CloseRequested;
 
-    public ProgressViewModel(IStateService stateService, ICleaningOrchestrator orchestrator, IUiDispatcher uiDispatcher)
+    public ProgressViewModel(IStateService stateService, ICleaningSession cleaningSession,
+        IMessageDialogService messageDialog, ILoggingService logger, IUiDispatcher uiDispatcher)
     {
-        _stateService = stateService;
-        _orchestrator = orchestrator;
-        _uiDispatcher = uiDispatcher;
+        _cleaningSession = cleaningSession;
+        _messageDialog = messageDialog;
+        _logger = logger;
 
-        _subscriptions.Add(_stateService.StateChanged.Subscribe(
-            new CallbackObserver<AppState>(state => _uiDispatcher.Post(() => OnStateChanged(state)))));
+        _subscriptions.Add(stateService.StateChanged.Subscribe(
+            new CallbackObserver<AppState>(state => uiDispatcher.Post(() => OnStateChanged(state)))));
 
-        _subscriptions.Add(_stateService.DetailedPluginResult.Subscribe(
-            new CallbackObserver<PluginCleaningResult>(result => _uiDispatcher.Post(() => OnDetailedResult(result)))));
+        _subscriptions.Add(stateService.DetailedPluginResult.Subscribe(
+            new CallbackObserver<PluginCleaningResult>(result => uiDispatcher.Post(() => OnDetailedResult(result)))));
 
-        _subscriptions.Add(_stateService.CleaningCompleted.Subscribe(
-            new CallbackObserver<CleaningSessionResult>(session => _uiDispatcher.Post(() => OnCleaningCompleted(session)))));
+        _subscriptions.Add(stateService.CleaningCompleted.Subscribe(
+            new CallbackObserver<CleaningSessionResult>(session =>
+                uiDispatcher.Post(() => OnCleaningCompleted(session)))));
 
-        _subscriptions.Add(_orchestrator.HangDetected.Subscribe(
-            new CallbackObserver<bool>(isHung => _uiDispatcher.Post(() => OnHangDetected(isHung)))));
+        _subscriptions.Add(_cleaningSession.HangDetected.Subscribe(
+            new CallbackObserver<bool>(isHung => uiDispatcher.Post(() => OnHangDetected(isHung)))));
 
-        _subscriptions.Add(_stateService.IsTerminatingChanged.Subscribe(
-            new CallbackObserver<bool>(isTerminating => _uiDispatcher.Post(() => IsTerminating = isTerminating))));
+        _subscriptions.Add(stateService.IsTerminatingChanged.Subscribe(
+            new CallbackObserver<bool>(isTerminating => uiDispatcher.Post(() => IsTerminating = isTerminating))));
 
-        OnStateChanged(_stateService.CurrentState);
+        OnStateChanged(stateService.CurrentState);
     }
 
     /// <summary>
@@ -143,6 +180,7 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
         {
             DryRunResults.Add(result);
         }
+
         WillCleanCount = results.Count(r => r.Status == DryRunStatus.WillClean);
         WillSkipCount = results.Count(r => r.Status == DryRunStatus.WillSkip);
         IsShowingResults = true;
@@ -151,7 +189,19 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
     private bool CanStop() => IsCleaning && !IsTerminating;
 
     [RelayCommand(CanExecute = nameof(CanStop))]
-    private async System.Threading.Tasks.Task StopAsync() => await _orchestrator.StopCleaningAsync();
+    private async Task StopAsync()
+    {
+        try
+        {
+            var result = await _cleaningSession.ControlAsync(CleaningSessionControl.RequestStop);
+            await ReportControlWarningIfNeededAsync(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "Progress stop command failed");
+            await ShowForceFailureDialogSafelyAsync();
+        }
+    }
 
     [RelayCommand]
     private void Close() => CloseRequested?.Invoke(this, EventArgs.Empty);
@@ -164,11 +214,64 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
     }
 
     [RelayCommand]
-    private async System.Threading.Tasks.Task KillHungProcessAsync()
+    private async Task KillHungProcessAsync()
     {
-        IsHangWarningVisible = false;
-        await _orchestrator.ForceStopCleaningAsync();
+        try
+        {
+            IsHangWarningVisible = false;
+            var forceResult = await _cleaningSession.ControlAsync(CleaningSessionControl.ForceStop);
+            await ReportControlWarningIfNeededAsync(forceResult);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "Progress hang force-stop command failed");
+            IsHangWarningVisible = false;
+            await ShowForceFailureDialogSafelyAsync();
+        }
     }
+
+    /// <summary>
+    /// Reports control outcomes through the shared safe dialog copy and persistent Progress summary warning.
+    /// </summary>
+    /// <param name="result">The structured control result returned by the Cleaning session.</param>
+    private async Task ReportControlWarningIfNeededAsync(CleaningSessionControlResult result)
+    {
+        if (result.Status == CleaningSessionControlStatus.LeftRunningByUser)
+        {
+            StopOutcomeWarningText = StopTerminationDialogContent.LeftRunningMessage;
+        }
+
+        if (result.Status == CleaningSessionControlStatus.ForceKillFailed)
+        {
+            await ShowForceFailureDialogSafelyAsync();
+        }
+    }
+
+    /// <summary>
+    /// Persists the shared force-failure warning and best-effort displays the matching dialog.
+    /// </summary>
+    private async Task ShowForceFailureDialogSafelyAsync()
+    {
+        StopOutcomeWarningText = StopTerminationDialogContent.ForceFailureMessage;
+        try
+        {
+            await _messageDialog.ShowErrorAsync(
+                StopTerminationDialogContent.ForceFailureTitle,
+                StopTerminationDialogContent.ForceFailureMessage);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "Failed to show Progress stop failure dialog");
+            // The persistent warning remains visible when the modal dialog itself cannot be shown.
+        }
+    }
+
+    /// <summary>
+    /// Requests cancellation of the active backup or retention file operation without using the xEdit Stop path.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanCancelBackupOperation))]
+    private async Task CancelBackupOperationAsync() =>
+        await _cleaningSession.ControlAsync(CleaningSessionControl.CancelBackupOperation);
 
     private void OnStateChanged(AppState state)
     {
@@ -176,15 +279,42 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
         {
             ResetForNewSession();
         }
+
         _wasPreviouslyCleaning = state.IsCleaning;
 
         IsCleaning = state.IsCleaning;
         CurrentPlugin = state.CurrentPlugin;
+        OnPropertyChanged(nameof(ActiveOperationLabel));
         Progress = state.Progress;
         Total = state.TotalPlugins;
         CleanedCount = state.CleanedPlugins.Count;
         SkippedCount = state.SkippedPlugins.Count;
         FailedCount = state.FailedPlugins.Count;
+        BackupOperation = state.BackupOperation is { IsActive: true } operation ? operation : null;
+    }
+
+    private bool CanCancelBackupOperation() => BackupOperation is { IsActive: true, CanCancel: true };
+
+    /// <summary>
+    /// Formats count-only retention progress or byte-aware backup copy progress for the cleaning progress band.
+    /// </summary>
+    /// <param name="operation">The currently active non-xEdit file operation, or null when no file work is active.</param>
+    /// <returns>A concise user-facing progress string; empty when no operation is active.</returns>
+    private static string FormatBackupOperationProgress(BackupOperationState? operation)
+    {
+        if (operation is not { IsActive: true })
+        {
+            return string.Empty;
+        }
+
+        var totalFiles = operation.TotalFiles ?? 0;
+        var countText = totalFiles > 0
+            ? $"{operation.FilesCompleted} / {totalFiles} files"
+            : $"{operation.FilesCompleted} files";
+
+        return operation.TotalBytes is > 0
+            ? $"{countText} — {BackupProgressTextFormatter.FormatBytes(operation.BytesCopied)} / {BackupProgressTextFormatter.FormatBytes(operation.TotalBytes.Value)}"
+            : countText;
     }
 
     private void OnDetailedResult(PluginCleaningResult result)
@@ -245,12 +375,14 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
         SessionResult = null;
         WasCancelled = false;
         SessionSummaryText = string.Empty;
+        StopOutcomeWarningText = null;
         IsPreviewMode = false;
         DryRunResults.Clear();
         WillCleanCount = 0;
         WillSkipCount = 0;
         IsTerminating = false;
         IsHangWarningVisible = false;
+        BackupOperation = null;
         _hangWarningDismissed = false;
     }
 
@@ -260,6 +392,7 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
         {
             sub.Dispose();
         }
+
         _subscriptions.Clear();
     }
 }

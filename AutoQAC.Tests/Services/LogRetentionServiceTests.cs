@@ -141,6 +141,31 @@ public sealed class LogRetentionServiceTests : IDisposable
 
     #endregion
 
+    #region Unknown Retention Mode
+
+    [Fact]
+    public async Task CleanupAsync_UnknownMode_LogsWarningAndDoesNotDeleteFiles()
+    {
+        // Arrange
+        SetupConfig((RetentionMode)999);
+
+        var now = DateTime.UtcNow;
+        var newer = CreateLogFile("autoqac-newer.log", now.AddDays(-10));
+        var older = CreateLogFile("autoqac-older.log", now.AddDays(-20));
+
+        // Act
+        await _sut.CleanupAsync();
+
+        // Assert
+        File.Exists(newer).Should().BeTrue("an unknown retention mode should not delete logs");
+        File.Exists(older).Should().BeTrue("an unknown retention mode should not delete logs");
+        _mockLogger.Received().Warning(
+            Arg.Is<string>(message => message.Contains("Unknown retention mode", StringComparison.Ordinal)),
+            Arg.Any<object[]>());
+    }
+
+    #endregion
+
     #region Active File Protection
 
     [Fact]

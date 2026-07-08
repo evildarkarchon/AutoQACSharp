@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
@@ -54,6 +55,23 @@ public sealed class BackupServiceTests : IDisposable
         // Format: yyyy-MM-dd_HH-mm-ss
         dirName.Should().MatchRegex(@"^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$",
             "directory name should match timestamp format yyyy-MM-dd_HH-mm-ss");
+    }
+
+    [Fact]
+    public void CreateSessionDirectory_WhenBaseNameExists_CreatesUniqueDirectory()
+    {
+        // Arrange
+        var backupRoot = Path.Combine(_testRoot, "backups_unique");
+
+        // Act
+        var firstSessionDir = _sut.CreateSessionDirectory(backupRoot);
+        var secondSessionDir = _sut.CreateSessionDirectory(backupRoot);
+
+        // Assert
+        secondSessionDir.Should().NotBe(firstSessionDir, "each backup session needs isolated files and metadata");
+        Directory.Exists(secondSessionDir).Should().BeTrue();
+        Path.GetFileName(secondSessionDir).Should().MatchRegex(@"^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}(-\d{2})?$",
+            "collisions should preserve the readable timestamp and add a numeric suffix only when needed");
     }
 
     #endregion
@@ -150,6 +168,98 @@ public sealed class BackupServiceTests : IDisposable
         // Assert
         second.Success.Should().BeFalse("File.Copy with overwrite:false throws IOException on duplicate");
         second.Error.Should().NotBeNullOrEmpty();
+    }
+
+    /// <summary>
+    /// Verifies sync backup rejects plugin file names that would escape the selected backup session directory.
+    /// </summary>
+    [Fact]
+    public void BackupPlugin_FileNameTraversal_ReturnsFailureAndDoesNotEscapeSession()
+    {
+        // Arrange
+        var sourceFile = Path.Combine(_testRoot, "TraversalSource.esp");
+        File.WriteAllText(sourceFile, "fake plugin");
+        var plugin = new PluginInfo { FileName = "..\\outside.esp", FullPath = sourceFile };
+        var sessionDir = Path.Combine(_testRoot, "session_traversal_backup");
+        Directory.CreateDirectory(sessionDir);
+        var outsidePath = Path.Combine(_testRoot, "outside.esp");
+
+        // Act
+        var result = _sut.BackupPlugin(plugin, sessionDir);
+
+        // Assert
+        result.Success.Should().BeFalse();
+        result.Error.Should().Be("Invalid plugin file name for backup.");
+        File.Exists(outsidePath).Should().BeFalse("unsafe backup names must not escape the session directory");
+        Directory.GetFiles(sessionDir).Should().BeEmpty("unsafe backup names must not copy into the session either");
+    }
+
+    /// <summary>
+    /// Verifies async backup rejects traversal file names before invoking the copy abstraction.
+    /// </summary>
+    [Fact]
+    public async Task BackupPluginAsync_FileNameTraversal_ReturnsStructuredFailureAndDoesNotCopy()
+    {
+        // Arrange
+        var sourceFile = Path.Combine(_testRoot, "TraversalAsyncSource.esp");
+        await File.WriteAllTextAsync(sourceFile, "fake plugin");
+        var sessionDir = Path.Combine(_testRoot, "session_traversal_backup_async");
+        var copier = new CountingBackupFileCopier(BackupCopyResult.Complete(sourceFile, Path.Combine(sessionDir, "ignored.esp"), 11, 11));
+        var sut = new BackupService(copier, _mockLogger);
+        var plugin = new PluginInfo { FileName = "..\\outside.esp", FullPath = sourceFile };
+
+        // Act
+        var result = await sut.BackupPluginAsync(plugin, sessionDir);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Failed);
+        result.FailureReason.Should().Be(BackupFailureReason.SourceMissing);
+        copier.CallCount.Should().Be(0, "unsafe backup names must be rejected before copying starts");
+        File.Exists(Path.Combine(_testRoot, "outside.esp")).Should().BeFalse();
+    }
+
+    /// <summary>
+    /// Verifies async backup rejects rooted file names before they can override the session destination.
+    /// </summary>
+    [Fact]
+    public async Task BackupPluginAsync_RootedFileName_ReturnsStructuredFailureAndDoesNotCopy()
+    {
+        // Arrange
+        var sourceFile = Path.Combine(_testRoot, "RootedAsyncSource.esp");
+        await File.WriteAllTextAsync(sourceFile, "fake plugin");
+        var rootedDestination = Path.Combine(_testRoot, "rooted-outside.esp");
+        var sessionDir = Path.Combine(_testRoot, "session_rooted_backup_async");
+        var copier = new CountingBackupFileCopier(BackupCopyResult.Complete(sourceFile, rootedDestination, 11, 11));
+        var sut = new BackupService(copier, _mockLogger);
+        var plugin = new PluginInfo { FileName = rootedDestination, FullPath = sourceFile };
+
+        // Act
+        var result = await sut.BackupPluginAsync(plugin, sessionDir);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Failed);
+        result.FailureReason.Should().Be(BackupFailureReason.SourceMissing);
+        copier.CallCount.Should().Be(0, "rooted backup names must be rejected before copying starts");
+        File.Exists(rootedDestination).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task BackupPluginAsync_SessionDirectoryCreationFailure_ReturnsStructuredFailure()
+    {
+        // Arrange
+        var sourceFile = Path.Combine(_testRoot, "AsyncPlugin.esp");
+        await File.WriteAllTextAsync(sourceFile, "fake plugin");
+        var plugin = new PluginInfo { FileName = "AsyncPlugin.esp", FullPath = sourceFile };
+        var copier = new CountingBackupFileCopier(BackupCopyResult.Complete(sourceFile, sourceFile, 0, 0));
+        var sut = new BackupService(copier, _mockLogger);
+
+        // Act
+        var result = await sut.BackupPluginAsync(plugin, Path.Combine(_testRoot, "bad\0session"));
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Failed);
+        result.FailureReason.Should().Be(BackupFailureReason.TargetFolderCreationFailed);
+        copier.CallCount.Should().Be(0, "copying should not start when the backup session directory cannot be created");
     }
 
     #endregion
@@ -269,7 +379,7 @@ public sealed class BackupServiceTests : IDisposable
         };
 
         // Act
-        _sut.RestorePlugin(entry, sessionDir);
+        _sut.RestorePlugin(entry, sessionDir, Path.GetDirectoryName(restorePath)!);
 
         // Assert
         File.Exists(restorePath).Should().BeTrue("file should be restored to original path");
@@ -289,10 +399,532 @@ public sealed class BackupServiceTests : IDisposable
         };
 
         // Act
-        var act = () => _sut.RestorePlugin(entry, sessionDir);
+        var act = () => _sut.RestorePlugin(entry, sessionDir, Path.GetDirectoryName(entry.OriginalPath)!);
 
         // Assert
         act.Should().Throw<FileNotFoundException>();
+    }
+
+    /// <summary>
+    /// Verifies legacy restore validates target metadata before copying mismatched plugin names.
+    /// </summary>
+    [Fact]
+    public void RestorePlugin_FileNameMismatch_ThrowsBeforeCopying()
+    {
+        // Arrange
+        var sessionDir = Path.Combine(_testRoot, "restore_sync_mismatch");
+        Directory.CreateDirectory(sessionDir);
+        File.WriteAllText(Path.Combine(sessionDir, "Backup.esp"), "backup content");
+        var targetPath = Path.Combine(_testRoot, "restore_sync_mismatch_target", "Different.esp");
+        var entry = new BackupPluginEntry
+        {
+            FileName = "Backup.esp",
+            OriginalPath = targetPath,
+            FileSizeBytes = 14
+        };
+
+        // Act
+        var act = () => _sut.RestorePlugin(entry, sessionDir, Path.GetDirectoryName(entry.OriginalPath)!);
+
+        // Assert
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("Backup metadata is not safe to restore.");
+        File.Exists(targetPath).Should().BeFalse("unsafe sync metadata must not be copied");
+        Directory.Exists(Path.GetDirectoryName(targetPath)!).Should().BeFalse("unsafe sync metadata must not create target directories");
+    }
+
+    /// <summary>
+    /// Verifies legacy restore keeps missing-backup compatibility when metadata is otherwise safe.
+    /// </summary>
+    [Fact]
+    public void RestorePlugin_MissingBackupFile_WithSafeMetadata_StillThrowsFileNotFoundException()
+    {
+        // Arrange
+        var sessionDir = Path.Combine(_testRoot, "restore_sync_missing_safe");
+        Directory.CreateDirectory(sessionDir);
+        var entry = new BackupPluginEntry
+        {
+            FileName = "MissingSafe.esp",
+            OriginalPath = Path.Combine(_testRoot, "restore_sync_missing_safe_target", "MissingSafe.esp"),
+            FileSizeBytes = 42
+        };
+
+        // Act
+        var act = () => _sut.RestorePlugin(entry, sessionDir, Path.GetDirectoryName(entry.OriginalPath)!);
+
+        // Assert
+        act.Should().Throw<FileNotFoundException>();
+    }
+
+    [Fact]
+    public async Task RestoreSessionAsync_ContinuesAfterPluginFailure()
+    {
+        // Arrange
+        var sessionDir = Path.Combine(_testRoot, "restore_partial_session");
+        Directory.CreateDirectory(sessionDir);
+        File.WriteAllText(Path.Combine(sessionDir, "Good.esp"), "restored good content");
+
+        var goodTarget = Path.Combine(_testRoot, "restore_partial_targets", "Good.esp");
+        var missingTarget = Path.Combine(_testRoot, "restore_partial_targets", "Missing.esp");
+        var session = new BackupSession
+        {
+            SessionDirectory = sessionDir,
+            Plugins = new List<BackupPluginEntry>
+            {
+                new() { FileName = "Missing.esp", OriginalPath = missingTarget, FileSizeBytes = 128 },
+                new() { FileName = "Good.esp", OriginalPath = goodTarget, FileSizeBytes = 21 }
+            }
+        };
+
+        // Act
+        var result = await _sut.RestoreSessionAsync(session, Path.GetDirectoryName(goodTarget)!);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Partial);
+        result.RestoredCount.Should().Be(1);
+        result.FailedCount.Should().Be(1);
+        result.Rows.Should().Contain(row =>
+            row.FileName == "Missing.esp" &&
+            row.Status == BackupRestoreRowStatus.Failed &&
+            row.DisplayReason == "Missing backup file");
+        File.ReadAllText(goodTarget).Should().Be("restored good content",
+            "Restore All must continue after an earlier plugin failure");
+    }
+
+    /// <summary>
+    /// Verifies a failed row followed by cancellation remains visible as a canceled aggregate restore session.
+    /// </summary>
+    [Fact]
+    public async Task RestoreSessionAsync_FailedThenCanceledRows_ReturnsCanceled()
+    {
+        // Arrange
+        var sessionDir = Path.Combine(_testRoot, "restore_failed_then_canceled_session");
+        Directory.CreateDirectory(sessionDir);
+        File.WriteAllText(Path.Combine(sessionDir, "Fails.esp"), "backup content");
+        File.WriteAllText(Path.Combine(sessionDir, "Canceled.esp"), "backup content");
+        var firstTarget = Path.Combine(_testRoot, "restore_failed_then_canceled_target", "Fails.esp");
+        var secondTarget = Path.Combine(_testRoot, "restore_failed_then_canceled_target", "Canceled.esp");
+        using var cts = new CancellationTokenSource();
+        var copier = new FailingThenCancelingBackupFileCopier(cts);
+        var sut = new BackupService(copier, _mockLogger);
+        var session = new BackupSession
+        {
+            SessionDirectory = sessionDir,
+            Plugins = new List<BackupPluginEntry>
+            {
+                new() { FileName = "Fails.esp", OriginalPath = firstTarget, FileSizeBytes = 14 },
+                new() { FileName = "Canceled.esp", OriginalPath = secondTarget, FileSizeBytes = 14 }
+            }
+        };
+
+        // Act
+        var result = await sut.RestoreSessionAsync(session, Path.GetDirectoryName(firstTarget)!, ct: cts.Token);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Canceled);
+        result.FailedCount.Should().Be(1);
+        result.CanceledCount.Should().Be(1);
+        copier.CallCount.Should().Be(1, "the second row should be added as canceled before copying starts");
+    }
+
+    /// <summary>
+    /// Verifies that structured restore recreates a missing target directory before copying the backup.
+    /// </summary>
+    [Fact]
+    public async Task RestorePluginAsync_MissingTargetDirectory_RecreatesDirectory()
+    {
+        // Arrange
+        var sessionDir = Path.Combine(_testRoot, "restore_missing_target_dir_session");
+        Directory.CreateDirectory(sessionDir);
+        File.WriteAllText(Path.Combine(sessionDir, "Recreate.esp"), "backup content");
+
+        var targetPath = Path.Combine(_testRoot, "missing_target_dir", "nested", "Recreate.esp");
+        var entry = new BackupPluginEntry
+        {
+            FileName = "Recreate.esp",
+            OriginalPath = targetPath,
+            FileSizeBytes = 14
+        };
+
+        // Act
+        var result = await _sut.RestorePluginAsync(entry, sessionDir, Path.GetDirectoryName(targetPath)!);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Complete);
+        Directory.Exists(Path.GetDirectoryName(targetPath)!).Should().BeTrue();
+        File.ReadAllText(targetPath).Should().Be("backup content");
+    }
+
+    [Fact]
+    public async Task RestorePluginAsync_CanceledAtomicRestore_PreservesExistingTarget()
+    {
+        // Arrange
+        var sessionDir = Path.Combine(_testRoot, "restore_canceled_session");
+        Directory.CreateDirectory(sessionDir);
+        File.WriteAllText(Path.Combine(sessionDir, "Existing.esp"), "backup replacement content");
+
+        var targetPath = Path.Combine(_testRoot, "restore_canceled_target", "Existing.esp");
+        Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
+        File.WriteAllText(targetPath, "current plugin content");
+
+        var copier = new CapturingBackupFileCopier(BackupCopyResult.Canceled(
+            Path.Combine(sessionDir, "Existing.esp"),
+            targetPath,
+            bytesCopied: 5,
+            totalBytes: 26));
+        var sut = new BackupService(copier, _mockLogger);
+        var entry = new BackupPluginEntry
+        {
+            FileName = "Existing.esp",
+            OriginalPath = targetPath,
+            FileSizeBytes = 26
+        };
+
+        // Act
+        var result = await sut.RestorePluginAsync(entry, sessionDir, Path.GetDirectoryName(targetPath)!);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Canceled);
+        result.CanceledCount.Should().Be(1);
+        copier.Options.Should().Be(BackupCopyOptions.AtomicReplace,
+            "restore must copy through the atomic replacement policy so existing plugins survive cancellation");
+        File.ReadAllText(targetPath).Should().Be("current plugin content",
+            "a canceled restore overwrite must not truncate or remove the existing plugin file");
+    }
+
+    [Fact]
+    public async Task RestorePluginAsync_TargetFolderCreationFailure_ReturnsFailedRow()
+    {
+        // Arrange
+        var sessionDir = Path.Combine(_testRoot, "restore_bad_target_session");
+        Directory.CreateDirectory(sessionDir);
+        File.WriteAllText(Path.Combine(sessionDir, "BadTarget.esp"), "backup content");
+
+        var entry = new BackupPluginEntry
+        {
+            FileName = "BadTarget.esp",
+            OriginalPath = Path.Combine(_testRoot, "bad\0folder", "BadTarget.esp"),
+            FileSizeBytes = 14
+        };
+
+        // Act
+        var result = await _sut.RestorePluginAsync(entry, sessionDir, _testRoot);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Failed);
+        result.Rows.Single().DisplayReason.Should().Be("Target folder creation failed");
+    }
+
+    /// <summary>
+    /// Verifies restore treats metadata file names as untrusted and rejects traversal before invoking the copier.
+    /// </summary>
+    [Fact]
+    public async Task RestorePluginAsync_FileNameTraversal_ReturnsMissingBackupFileAndDoesNotCopy()
+    {
+        // Arrange
+        var sessionDir = Path.Combine(_testRoot, "restore_traversal_session");
+        Directory.CreateDirectory(sessionDir);
+        var outsideFile = Path.Combine(_testRoot, "outside.esp");
+        File.WriteAllText(outsideFile, "outside backup content");
+        var targetPath = Path.Combine(_testRoot, "restore_traversal_target", "Plugin.esp");
+        var copier = new CountingBackupFileCopier(BackupCopyResult.Complete(outsideFile, targetPath, 22, 22));
+        var sut = new BackupService(copier, _mockLogger);
+        var entry = new BackupPluginEntry
+        {
+            FileName = "..\\outside.esp",
+            OriginalPath = targetPath,
+            FileSizeBytes = 22
+        };
+
+        // Act
+        var result = await sut.RestorePluginAsync(entry, sessionDir, Path.GetDirectoryName(targetPath)!);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Failed);
+        result.Rows.Single().DisplayReason.Should().Be("Missing backup file");
+        copier.CallCount.Should().Be(0, "unsafe metadata must be rejected before copying");
+        File.Exists(targetPath).Should().BeFalse("traversal metadata must not restore into the target path");
+    }
+
+    /// <summary>
+    /// Verifies restore rejects absolute metadata file names before they can escape the selected session directory.
+    /// </summary>
+    [Fact]
+    public async Task RestorePluginAsync_AbsoluteFileName_ReturnsMissingBackupFileAndDoesNotCopy()
+    {
+        // Arrange
+        var sessionDir = Path.Combine(_testRoot, "restore_absolute_session");
+        Directory.CreateDirectory(sessionDir);
+        var absoluteBackup = Path.Combine(_testRoot, "absolute.esp");
+        File.WriteAllText(absoluteBackup, "absolute backup content");
+        var targetPath = Path.Combine(_testRoot, "restore_absolute_target", "Plugin.esp");
+        var copier = new CountingBackupFileCopier(BackupCopyResult.Complete(absoluteBackup, targetPath, 23, 23));
+        var sut = new BackupService(copier, _mockLogger);
+        var entry = new BackupPluginEntry
+        {
+            FileName = absoluteBackup,
+            OriginalPath = targetPath,
+            FileSizeBytes = 23
+        };
+
+        // Act
+        var result = await sut.RestorePluginAsync(entry, sessionDir, Path.GetDirectoryName(targetPath)!);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Failed);
+        result.Rows.Single().DisplayReason.Should().Be("Missing backup file");
+        copier.CallCount.Should().Be(0, "absolute backup metadata must not reach the copier");
+        File.Exists(targetPath).Should().BeFalse("absolute metadata must not restore into the target path");
+    }
+
+    /// <summary>
+    /// Verifies restore rejects unrooted original targets because they cannot be proven safe overwrite destinations.
+    /// </summary>
+    [Fact]
+    public async Task RestorePluginAsync_UnrootedOriginalPath_ReturnsTargetFolderCreationFailed()
+    {
+        // Arrange
+        var sessionDir = Path.Combine(_testRoot, "restore_unrooted_target_session");
+        Directory.CreateDirectory(sessionDir);
+        var backupPath = Path.Combine(sessionDir, "Relative.esp");
+        File.WriteAllText(backupPath, "backup content");
+        var copier = new CountingBackupFileCopier(BackupCopyResult.Complete(backupPath, "relative.esp", 14, 14));
+        var sut = new BackupService(copier, _mockLogger);
+        var entry = new BackupPluginEntry
+        {
+            FileName = "Relative.esp",
+            OriginalPath = "relative.esp",
+            FileSizeBytes = 14
+        };
+
+        // Act
+        var result = await sut.RestorePluginAsync(entry, sessionDir, _testRoot);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Failed);
+        result.Rows.Single().DisplayReason.Should().Be("Target folder creation failed");
+        copier.CallCount.Should().Be(0, "unsafe target metadata must be rejected before copying");
+    }
+
+    /// <summary>
+    /// Verifies restore rejects rooted targets whose file name does not match the backup metadata file name.
+    /// </summary>
+    [Fact]
+    public async Task RestorePluginAsync_OriginalPathFileNameMismatch_ReturnsTargetFolderCreationFailedAndDoesNotCopy()
+    {
+        // Arrange
+        var sessionDir = Path.Combine(_testRoot, "restore_target_mismatch_session");
+        Directory.CreateDirectory(sessionDir);
+        var backupPath = Path.Combine(sessionDir, "Backup.esp");
+        File.WriteAllText(backupPath, "backup content");
+        var targetPath = Path.Combine(_testRoot, "restore_target_mismatch", "Different.esp");
+        var copier = new CountingBackupFileCopier(BackupCopyResult.Complete(backupPath, targetPath, 14, 14));
+        var sut = new BackupService(copier, _mockLogger);
+        var entry = new BackupPluginEntry
+        {
+            FileName = "Backup.esp",
+            OriginalPath = targetPath,
+            FileSizeBytes = 14
+        };
+
+        // Act
+        var result = await sut.RestorePluginAsync(entry, sessionDir, Path.GetDirectoryName(targetPath)!);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Failed);
+        result.Rows.Single().FailureReason.Should().Be(BackupFailureReason.TargetFolderCreationFailed);
+        copier.CallCount.Should().Be(0, "mismatched restore target names must be rejected before copying");
+        File.Exists(targetPath).Should().BeFalse();
+    }
+
+    /// <summary>
+    /// Verifies restore rejects non-plugin target extensions before overwrite attempts.
+    /// </summary>
+    [Fact]
+    public async Task RestorePluginAsync_NonPluginOriginalPathExtension_ReturnsTargetFolderCreationFailedAndDoesNotCopy()
+    {
+        // Arrange
+        var sessionDir = Path.Combine(_testRoot, "restore_target_extension_session");
+        Directory.CreateDirectory(sessionDir);
+        var backupPath = Path.Combine(sessionDir, "Readme.txt");
+        File.WriteAllText(backupPath, "not a plugin");
+        var targetPath = Path.Combine(_testRoot, "restore_target_extension", "Readme.txt");
+        var copier = new CountingBackupFileCopier(BackupCopyResult.Complete(backupPath, targetPath, 12, 12));
+        var sut = new BackupService(copier, _mockLogger);
+        var entry = new BackupPluginEntry
+        {
+            FileName = "Readme.txt",
+            OriginalPath = targetPath,
+            FileSizeBytes = 12
+        };
+
+        // Act
+        var result = await sut.RestorePluginAsync(entry, sessionDir, Path.GetDirectoryName(targetPath)!);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Failed);
+        result.Rows.Single().FailureReason.Should().Be(BackupFailureReason.TargetFolderCreationFailed);
+        copier.CallCount.Should().Be(0, "non-plugin restore targets must be rejected before copying");
+        File.Exists(targetPath).Should().BeFalse();
+    }
+
+    /// <summary>
+    /// Verifies the stricter restore metadata policy still permits normal local plugin restore paths.
+    /// </summary>
+    [Fact]
+    public async Task RestorePluginAsync_NormalPluginPath_StillRestoresSuccessfully()
+    {
+        // Arrange
+        var sessionDir = Path.Combine(_testRoot, "restore_normal_plugin_session");
+        Directory.CreateDirectory(sessionDir);
+        File.WriteAllText(Path.Combine(sessionDir, "Normal.esl"), "backup content");
+        var targetPath = Path.Combine(_testRoot, "restore_normal_plugin_target", "Normal.esl");
+        var entry = new BackupPluginEntry
+        {
+            FileName = "Normal.esl",
+            OriginalPath = targetPath,
+            FileSizeBytes = 14
+        };
+
+        // Act
+        var result = await _sut.RestorePluginAsync(entry, sessionDir, Path.GetDirectoryName(targetPath)!);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Complete);
+        result.RestoredCount.Should().Be(1);
+        File.ReadAllText(targetPath).Should().Be("backup content");
+    }
+
+    /// <summary>
+    /// Verifies restore maps copier access-denied failures to the approved concise row label.
+    /// </summary>
+    [Fact]
+    public async Task RestorePluginAsync_AccessDeniedCopyFailure_ReturnsAccessDenied()
+    {
+        // Arrange
+        var sessionDir = Path.Combine(_testRoot, "restore_access_denied_session");
+        Directory.CreateDirectory(sessionDir);
+        var backupPath = Path.Combine(sessionDir, "Denied.esp");
+        File.WriteAllText(backupPath, "backup content");
+        var targetPath = Path.Combine(_testRoot, "restore_access_denied_target", "Denied.esp");
+        var copier = new CapturingBackupFileCopier(BackupCopyResult.Failed(
+            backupPath,
+            targetPath,
+            BackupFailureReason.AccessDenied));
+        var sut = new BackupService(copier, _mockLogger);
+        var entry = new BackupPluginEntry
+        {
+            FileName = "Denied.esp",
+            OriginalPath = targetPath,
+            FileSizeBytes = 14
+        };
+
+        // Act
+        var result = await sut.RestorePluginAsync(entry, sessionDir, Path.GetDirectoryName(targetPath)!);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Failed);
+        result.Rows.Single().DisplayReason.Should().Be("Access denied");
+    }
+
+    /// <summary>
+    /// Verifies restore rejects same-name plugin metadata that targets a path outside the trusted restore root.
+    /// </summary>
+    [Fact]
+    public async Task RestorePluginAsync_OriginalPathOutsideTrustedRoot_ReturnsTargetFolderCreationFailedAndDoesNotCopy()
+    {
+        // Arrange
+        var sessionDir = Path.Combine(_testRoot, "restore_outside_trusted_root_session");
+        Directory.CreateDirectory(sessionDir);
+        var backupPath = Path.Combine(sessionDir, "Backup.esp");
+        await File.WriteAllTextAsync(backupPath, "backup content");
+        var trustedRoot = Path.Combine(_testRoot, "Data");
+        var outsideTarget = Path.Combine(_testRoot, "Outside", "Backup.esp");
+        var copier = new CountingBackupFileCopier(BackupCopyResult.Complete(backupPath, outsideTarget, 14, 14));
+        var sut = new BackupService(copier, _mockLogger);
+        var entry = new BackupPluginEntry
+        {
+            FileName = "Backup.esp",
+            OriginalPath = outsideTarget,
+            FileSizeBytes = 14
+        };
+
+        // Act
+        var result = await sut.RestorePluginAsync(entry, sessionDir, trustedRoot);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Failed);
+        result.Rows.Single().FailureReason.Should().Be(BackupFailureReason.TargetFolderCreationFailed);
+        copier.CallCount.Should().Be(0, "out-of-root restore targets must be rejected before copying");
+        Directory.Exists(Path.GetDirectoryName(outsideTarget)!).Should().BeFalse("out-of-root restore targets must not create directories");
+        File.Exists(outsideTarget).Should().BeFalse();
+    }
+
+    /// <summary>
+    /// Verifies restore root prefix checks do not allow similarly named sibling directories.
+    /// </summary>
+    [Fact]
+    public async Task RestorePluginAsync_SiblingPrefixTrustedRoot_ReturnsTargetFolderCreationFailedAndDoesNotCopy()
+    {
+        // Arrange
+        var sessionDir = Path.Combine(_testRoot, "restore_sibling_prefix_session");
+        Directory.CreateDirectory(sessionDir);
+        var backupPath = Path.Combine(sessionDir, "Backup.esp");
+        await File.WriteAllTextAsync(backupPath, "backup content");
+        var trustedRoot = Path.Combine(_testRoot, "Data");
+        var siblingTarget = Path.Combine(_testRoot, "Data2", "Backup.esp");
+        var copier = new CountingBackupFileCopier(BackupCopyResult.Complete(backupPath, siblingTarget, 14, 14));
+        var sut = new BackupService(copier, _mockLogger);
+        var entry = new BackupPluginEntry
+        {
+            FileName = "Backup.esp",
+            OriginalPath = siblingTarget,
+            FileSizeBytes = 14
+        };
+
+        // Act
+        var result = await sut.RestorePluginAsync(entry, sessionDir, trustedRoot);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Failed);
+        result.Rows.Single().FailureReason.Should().Be(BackupFailureReason.TargetFolderCreationFailed);
+        copier.CallCount.Should().Be(0, "Data2 must not be considered contained by the Data trusted root");
+        Directory.Exists(Path.GetDirectoryName(siblingTarget)!).Should().BeFalse();
+        File.Exists(siblingTarget).Should().BeFalse();
+    }
+
+    /// <summary>
+    /// Verifies restore fails closed when no trusted restore root is supplied.
+    /// </summary>
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public async Task RestorePluginAsync_MissingTrustedRestoreRoot_ReturnsTargetFolderCreationFailedAndDoesNotCopy(string? trustedRestoreRoot)
+    {
+        // Arrange
+        var sessionDir = Path.Combine(_testRoot, "restore_missing_trusted_root_session", trustedRestoreRoot ?? "null");
+        Directory.CreateDirectory(sessionDir);
+        var backupPath = Path.Combine(sessionDir, "Backup.esp");
+        await File.WriteAllTextAsync(backupPath, "backup content");
+        var targetPath = Path.Combine(_testRoot, "Data", "Backup.esp");
+        var copier = new CountingBackupFileCopier(BackupCopyResult.Complete(backupPath, targetPath, 14, 14));
+        var sut = new BackupService(copier, _mockLogger);
+        var entry = new BackupPluginEntry
+        {
+            FileName = "Backup.esp",
+            OriginalPath = targetPath,
+            FileSizeBytes = 14
+        };
+
+        // Act
+        var result = await sut.RestorePluginAsync(entry, sessionDir, trustedRestoreRoot);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Failed);
+        result.Rows.Single().FailureReason.Should().Be(BackupFailureReason.TargetFolderCreationFailed);
+        copier.CallCount.Should().Be(0, "missing trusted roots must fail before target directory creation or copy");
+        Directory.Exists(Path.GetDirectoryName(targetPath)!).Should().BeFalse();
+        File.Exists(targetPath).Should().BeFalse();
     }
 
     #endregion
@@ -359,6 +991,356 @@ public sealed class BackupServiceTests : IDisposable
         act.Should().NotThrow();
     }
 
+    [Fact]
+    public async Task CleanupOldSessionsAsync_ProtectsCurrentSession()
+    {
+        // Arrange
+        var backupRoot = Path.Combine(_testRoot, "cleanup_async_current");
+        var current = await CreateSessionDirectoryWithMetadata(backupRoot, "2026-01-01_10-00-00");
+        var newer = await CreateSessionDirectoryWithMetadata(backupRoot, "2026-01-03_10-00-00");
+        var deleter = new RecordingBackupSessionDeleter();
+        var sut = CreateBackupService(deleter);
+
+        // Act
+        var result = await sut.CleanupOldSessionsAsync(backupRoot, maxSessionCount: 0, currentSessionDir: current);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Complete);
+        deleter.DeletedDirectories.Should().NotContain(current, "the current session must never be deleted");
+        deleter.DeletedDirectories.Should().Contain(newer, "maxSessionCount 0 keeps no non-current valid sessions");
+        result.Rows.Should().Contain(row => row.SessionDirectory == current && row.Status == BackupRetentionRowStatus.Kept);
+    }
+
+    [Fact]
+    public async Task CleanupOldSessionsAsync_KeepsNewestMaxSessions()
+    {
+        // Arrange
+        var backupRoot = Path.Combine(_testRoot, "cleanup_async_newest");
+        var oldest = await CreateSessionDirectoryWithMetadata(backupRoot, "2026-01-01_10-00-00");
+        var middle = await CreateSessionDirectoryWithMetadata(backupRoot, "2026-01-02_10-00-00");
+        var newest = await CreateSessionDirectoryWithMetadata(backupRoot, "2026-01-03_10-00-00");
+        var deleter = new RecordingBackupSessionDeleter();
+        var sut = CreateBackupService(deleter);
+
+        // Act
+        var result = await sut.CleanupOldSessionsAsync(backupRoot, maxSessionCount: 2);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Complete);
+        deleter.DeletedDirectories.Should().Equal(oldest);
+        result.Rows.Should().Contain(row => row.SessionDirectory == newest && row.Status == BackupRetentionRowStatus.Kept);
+        result.Rows.Should().Contain(row => row.SessionDirectory == middle && row.Status == BackupRetentionRowStatus.Kept);
+    }
+
+    [Fact]
+    public async Task CleanupOldSessionsAsync_SkipsMalformedSessionDirectory()
+    {
+        // Arrange
+        var backupRoot = Path.Combine(_testRoot, "cleanup_async_malformed");
+        var malformed = Path.Combine(backupRoot, "not-a-session");
+        Directory.CreateDirectory(malformed);
+        var valid = await CreateSessionDirectoryWithMetadata(backupRoot, "2026-01-01_10-00-00");
+        var deleter = new RecordingBackupSessionDeleter();
+        var sut = CreateBackupService(deleter);
+
+        // Act
+        var result = await sut.CleanupOldSessionsAsync(backupRoot, maxSessionCount: 0);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Complete);
+        deleter.DeletedDirectories.Should().Contain(valid);
+        deleter.DeletedDirectories.Should().NotContain(malformed, "malformed directories are not valid cleanup candidates");
+        result.Rows.Should().Contain(row => row.SessionDirectory == malformed && row.Status == BackupRetentionRowStatus.Kept);
+    }
+
+    [Fact]
+    public async Task CleanupOldSessionsAsync_RetryDelayCancellation_ReturnsCanceled()
+    {
+        // Arrange
+        var backupRoot = Path.Combine(_testRoot, "cleanup_async_retry_cancel");
+        await CreateSessionDirectoryWithMetadata(backupRoot, "2026-01-01_10-00-00");
+        var deleter = new RecordingBackupSessionDeleter(_ => throw new IOException("locked"));
+        var sut = CreateBackupService(deleter);
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
+
+        // Act
+        var result = await sut.CleanupOldSessionsAsync(backupRoot, maxSessionCount: 0, ct: cts.Token);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Canceled);
+        deleter.Attempts.Should().Be(1, "cancellation during the retry delay should stop before retrying deletion");
+        result.RemainingCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task CleanupOldSessionsAsync_ReportsCanceled()
+    {
+        // Arrange
+        var backupRoot = Path.Combine(_testRoot, "cleanup_async_canceled");
+        await CreateSessionDirectoryWithMetadata(backupRoot, "2026-01-01_10-00-00");
+        await CreateSessionDirectoryWithMetadata(backupRoot, "2026-01-02_10-00-00");
+        var deleter = new RecordingBackupSessionDeleter();
+        var sut = CreateBackupService(deleter);
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        // Act
+        var result = await sut.CleanupOldSessionsAsync(backupRoot, maxSessionCount: 0, ct: cts.Token);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Canceled);
+        result.DeletedCount.Should().Be(0);
+        result.RemainingCount.Should().Be(2);
+        deleter.DeletedDirectories.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// Verifies cancellation after classification but before deleting an old session returns structured rows instead of throwing.
+    /// </summary>
+    [Fact]
+    public async Task CleanupOldSessionsAsync_PreDeleteCancellation_ReturnsCanceledRowsAndCounts()
+    {
+        // Arrange
+        var backupRoot = Path.Combine(_testRoot, "cleanup_async_pre_delete_cancel");
+        var oldSession = await CreateSessionDirectoryWithMetadata(backupRoot, "2026-01-01_10-00-00");
+        var newestSession = await CreateSessionDirectoryWithMetadata(backupRoot, "2026-01-02_10-00-00");
+        var deleter = new RecordingBackupSessionDeleter();
+        var sut = CreateBackupService(deleter);
+        using var cts = new CancellationTokenSource();
+        var progress = new SynchronousProgress<BackupCopyProgress>(update =>
+        {
+            if (update.FilesCompleted == 1)
+            {
+                cts.Cancel();
+            }
+        });
+
+        // Act
+        var result = await sut.CleanupOldSessionsAsync(
+            backupRoot,
+            maxSessionCount: 1,
+            progress: progress,
+            ct: cts.Token);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Canceled);
+        result.RemainingCount.Should().Be(2);
+        deleter.DeletedDirectories.Should().BeEmpty("cancellation before deletion should stop before deleting old sessions");
+        result.Rows.Should().Contain(row =>
+            row.SessionDirectory == newestSession &&
+            row.Status == BackupRetentionRowStatus.Kept &&
+            row.FailureReason == null);
+        result.Rows.Should().Contain(row =>
+            row.SessionDirectory == oldSession &&
+            row.Status == BackupRetentionRowStatus.Kept &&
+            row.DisplayReason == "Canceled");
+    }
+
+    /// <summary>
+    /// Verifies retention cleanup reports a warning row when deletion fails once and then fails again after retry.
+    /// </summary>
+    [Fact]
+    public async Task CleanupOldSessionsAsync_DeletionFailureAfterRetry_ReturnsWarning()
+    {
+        // Arrange
+        var backupRoot = Path.Combine(_testRoot, "cleanup_async_deletion_warning");
+        var oldSession = await CreateSessionDirectoryWithMetadata(backupRoot, "2026-01-01_10-00-00");
+        var deleter = new RecordingBackupSessionDeleter(_ => throw new IOException("locked"));
+        var sut = CreateBackupService(deleter);
+
+        // Act
+        var result = await sut.CleanupOldSessionsAsync(backupRoot, maxSessionCount: 0);
+
+        // Assert
+        result.Status.Should().Be(BackupOperationStatus.Warning);
+        deleter.Attempts.Should().Be(2, "deletion should be retried once after a transient failure");
+        result.Rows.Should().ContainSingle(row =>
+            row.SessionDirectory == oldSession &&
+            row.Status == BackupRetentionRowStatus.Failed &&
+            row.DisplayReason == "Cleanup deletion failed");
+    }
+
+    /// <summary>
+    /// Verifies retention cleanup emits advancing count progress rather than only a static active operation.
+    /// </summary>
+    [Fact]
+    public async Task CleanupOldSessionsAsync_ReportsRetentionCountProgress()
+    {
+        // Arrange
+        var backupRoot = Path.Combine(_testRoot, "cleanup_async_progress");
+        await CreateSessionDirectoryWithMetadata(backupRoot, "2026-01-01_10-00-00");
+        await CreateSessionDirectoryWithMetadata(backupRoot, "2026-01-02_10-00-00");
+        var progressUpdates = new List<BackupCopyProgress>();
+
+        // Act
+        await _sut.CleanupOldSessionsAsync(
+            backupRoot,
+            maxSessionCount: 1,
+            progress: new Progress<BackupCopyProgress>(progressUpdates.Add));
+
+        // Assert
+        progressUpdates.Should().NotBeEmpty("retention cleanup must publish count progress for the UI");
+        progressUpdates.Should().Contain(update => update.TotalFiles == 2 && update.FilesCompleted > 0);
+        progressUpdates[^1].FilesCompleted.Should().Be(2);
+        progressUpdates[^1].TotalFiles.Should().Be(2);
+    }
+
+    #endregion
+
+    #region DeleteSessionAsync
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task DeleteSessionAsync_NullOrEmptyBackupRoot_ReturnsRejectedAndDoesNotInvokeDeleter(string? backupRoot)
+    {
+        // Null/empty/whitespace backupRoot must short-circuit before any deletion.
+        var deleter = new RecordingBackupSessionDeleter();
+        var sut = new BackupService(new CountingBackupFileCopier(BackupCopyResult.Complete("", "", 0, 0)), _mockLogger, deleter);
+        var session = new BackupSession { SessionDirectory = @"C:\Backups\session", Plugins = [] };
+
+        var result = await sut.DeleteSessionAsync(session, backupRoot!, CancellationToken.None);
+
+        result.Status.Should().Be(BackupSessionDeleteStatus.RejectedOutsideBackupRoot);
+        deleter.Attempts.Should().Be(0, "null/empty backup roots must fail before invoking the deleter");
+        deleter.DeletedDirectories.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task DeleteSessionAsync_SessionOutsideBackupRoot_ReturnsRejectedAndDoesNotInvokeDeleter()
+    {
+        var backupRoot = Path.Combine(_testRoot, "Backups");
+        Directory.CreateDirectory(backupRoot);
+        var outsideSession = Path.Combine(_testRoot, "OutsideSession");
+        Directory.CreateDirectory(outsideSession);
+        var deleter = new RecordingBackupSessionDeleter();
+        var sut = new BackupService(new CountingBackupFileCopier(BackupCopyResult.Complete("", "", 0, 0)), _mockLogger, deleter);
+        var session = new BackupSession { SessionDirectory = outsideSession, Plugins = [] };
+
+        var result = await sut.DeleteSessionAsync(session, backupRoot, CancellationToken.None);
+
+        result.Status.Should().Be(BackupSessionDeleteStatus.RejectedOutsideBackupRoot);
+        deleter.Attempts.Should().Be(0);
+        Directory.Exists(outsideSession).Should().BeTrue("rejected sessions must remain on disk");
+    }
+
+    [Fact]
+    public async Task DeleteSessionAsync_SiblingPrefixSession_ReturnsRejected()
+    {
+        // "Backups 2" must not be treated as inside "Backups" even though the string prefix matches
+        // before the trailing-separator normalization runs.
+        var backupRoot = Path.Combine(_testRoot, "Backups");
+        Directory.CreateDirectory(backupRoot);
+        var siblingSession = Path.Combine(_testRoot, "Backups 2", "2026-01-01_10-00-00");
+        Directory.CreateDirectory(siblingSession);
+        var deleter = new RecordingBackupSessionDeleter();
+        var sut = new BackupService(new CountingBackupFileCopier(BackupCopyResult.Complete("", "", 0, 0)), _mockLogger, deleter);
+        var session = new BackupSession { SessionDirectory = siblingSession, Plugins = [] };
+
+        var result = await sut.DeleteSessionAsync(session, backupRoot, CancellationToken.None);
+
+        result.Status.Should().Be(BackupSessionDeleteStatus.RejectedOutsideBackupRoot);
+        deleter.Attempts.Should().Be(0);
+        Directory.Exists(siblingSession).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task DeleteSessionAsync_TraversalNormalizationEscapesBackupRoot_ReturnsRejected()
+    {
+        // After Path.GetFullPath, a `..` segment that escapes the backup root must be rejected.
+        var backupRoot = Path.Combine(_testRoot, "Backups");
+        Directory.CreateDirectory(backupRoot);
+        var traversalPath = Path.Combine(backupRoot, "..", "OutsideSession");
+        Directory.CreateDirectory(Path.GetFullPath(traversalPath));
+        var deleter = new RecordingBackupSessionDeleter();
+        var sut = new BackupService(new CountingBackupFileCopier(BackupCopyResult.Complete("", "", 0, 0)), _mockLogger, deleter);
+        var session = new BackupSession { SessionDirectory = traversalPath, Plugins = [] };
+
+        var result = await sut.DeleteSessionAsync(session, backupRoot, CancellationToken.None);
+
+        result.Status.Should().Be(BackupSessionDeleteStatus.RejectedOutsideBackupRoot);
+        deleter.Attempts.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task DeleteSessionAsync_ContainedSession_InvokesDeleterAndReturnsDeleted()
+    {
+        var backupRoot = Path.Combine(_testRoot, "Backups");
+        var sessionDir = Path.Combine(backupRoot, "2026-04-29_07-30-00");
+        Directory.CreateDirectory(sessionDir);
+        // The recording deleter performs the actual delete so disk-state post-conditions can be observed.
+        var deleter = new RecordingBackupSessionDeleter(onDelete: dir =>
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        });
+        var sut = new BackupService(new CountingBackupFileCopier(BackupCopyResult.Complete("", "", 0, 0)), _mockLogger, deleter);
+        var session = new BackupSession { SessionDirectory = sessionDir, Plugins = [] };
+
+        var result = await sut.DeleteSessionAsync(session, backupRoot, CancellationToken.None);
+
+        result.Status.Should().Be(BackupSessionDeleteStatus.Deleted);
+        deleter.DeletedDirectories.Should().ContainSingle().Which.Should().Be(sessionDir);
+        Directory.Exists(sessionDir).Should().BeFalse("contained sessions must be deleted via the deleter seam");
+    }
+
+    [Fact]
+    public async Task DeleteSessionAsync_SingleArgConstructor_UsesDirectoryBackupSessionDeleter()
+    {
+        var backupRoot = Path.Combine(_testRoot, "Backups");
+        var sessionDir = Path.Combine(backupRoot, "2026-04-29_08-00-00");
+        Directory.CreateDirectory(sessionDir);
+        var sut = new BackupService(_mockLogger);
+        var session = new BackupSession { SessionDirectory = sessionDir, Plugins = [] };
+
+        var result = await sut.DeleteSessionAsync(session, backupRoot, CancellationToken.None);
+
+        result.Status.Should().Be(BackupSessionDeleteStatus.Deleted);
+        Directory.Exists(sessionDir).Should().BeFalse("the convenience constructor must still wire the default directory deleter");
+    }
+
+    [Fact]
+    public async Task DeleteSessionAsync_AlreadyCanceledToken_ThrowsBeforeValidation()
+    {
+        var backupRoot = Path.Combine(_testRoot, "Backups");
+        var outsideSession = Path.Combine(_testRoot, "OutsideSession");
+        var deleter = new RecordingBackupSessionDeleter();
+        var sut = new BackupService(new CountingBackupFileCopier(BackupCopyResult.Complete("", "", 0, 0)), _mockLogger, deleter);
+        var session = new BackupSession { SessionDirectory = outsideSession, Plugins = [] };
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        var act = () => sut.DeleteSessionAsync(session, backupRoot, cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        deleter.Attempts.Should().Be(0, "already-canceled deletes must stop before validation or logging");
+        _mockLogger.DidNotReceive().Warning(Arg.Any<string>(), Arg.Any<object[]>());
+    }
+
+    [Fact]
+    public async Task DeleteSessionAsync_DeleterThrowsIOException_ReturnsFailedAndLogsTechnicalDetails()
+    {
+        var backupRoot = Path.Combine(_testRoot, "Backups");
+        var sessionDir = Path.Combine(backupRoot, "2026-04-29_07-30-00");
+        Directory.CreateDirectory(sessionDir);
+        var ioException = new IOException("simulated lock");
+        // The recording deleter rethrows the configured exception on first call to simulate
+        // a Windows AV/Explorer lock or transient IO failure.
+        var deleter = new ThrowingBackupSessionDeleter(ioException);
+        var sut = new BackupService(new CountingBackupFileCopier(BackupCopyResult.Complete("", "", 0, 0)), _mockLogger, deleter);
+        var session = new BackupSession { SessionDirectory = sessionDir, Plugins = [] };
+
+        var result = await sut.DeleteSessionAsync(session, backupRoot, CancellationToken.None);
+
+        result.Status.Should().Be(BackupSessionDeleteStatus.Failed);
+        // Log call must reference the exception so on-call diagnostics can correlate the failure.
+        // Use object[] (non-nullable) to match the ILoggingService.Error params signature exactly.
+        _mockLogger.Received().Error(Arg.Is<Exception>(e => ReferenceEquals(e, ioException)), Arg.Any<string>(), Arg.Any<object[]>());
+    }
+
     #endregion
 
     #region GetBackupRoot
@@ -393,6 +1375,123 @@ public sealed class BackupServiceTests : IDisposable
         var path = Path.Combine(dir, "session.json");
         var json = JsonSerializer.Serialize(session, new JsonSerializerOptions { WriteIndented = true });
         await File.WriteAllTextAsync(path, json);
+    }
+
+    private BackupService CreateBackupService(IBackupSessionDeleter deleter) =>
+        new(new BackupFileCopier(_mockLogger), _mockLogger, deleter);
+
+    private static async Task<string> CreateSessionDirectoryWithMetadata(string backupRoot, string directoryName)
+    {
+        var dir = Path.Combine(backupRoot, directoryName);
+        Directory.CreateDirectory(dir);
+        await WriteSessionJson(dir, new BackupSession
+        {
+            Timestamp = DateTime.ParseExact(directoryName, "yyyy-MM-dd_HH-mm-ss", CultureInfo.InvariantCulture),
+            GameType = "SSE"
+        });
+        return dir;
+    }
+
+    private sealed class CapturingBackupFileCopier(BackupCopyResult result) : IBackupFileCopier
+    {
+        public BackupCopyOptions? Options { get; private set; }
+
+        /// <inheritdoc />
+        public Task<BackupCopyResult> CopyAsync(
+            string sourcePath,
+            string destinationPath,
+            BackupCopyOptions options,
+            IProgress<BackupCopyProgress>? progress,
+            CancellationToken cancellationToken)
+        {
+            Options = options;
+            return Task.FromResult(result);
+        }
+    }
+
+    private sealed class CountingBackupFileCopier(BackupCopyResult result) : IBackupFileCopier
+    {
+        public int CallCount { get; private set; }
+
+        /// <inheritdoc />
+        public Task<BackupCopyResult> CopyAsync(
+            string sourcePath,
+            string destinationPath,
+            BackupCopyOptions options,
+            IProgress<BackupCopyProgress>? progress,
+            CancellationToken cancellationToken)
+        {
+            CallCount++;
+            return Task.FromResult(result);
+        }
+    }
+
+    private sealed class FailingThenCancelingBackupFileCopier(CancellationTokenSource cancellationSource) : IBackupFileCopier
+    {
+        private readonly CancellationTokenSource _cancellationSource = cancellationSource;
+
+        public int CallCount { get; private set; }
+
+        /// <inheritdoc />
+        public Task<BackupCopyResult> CopyAsync(
+            string sourcePath,
+            string destinationPath,
+            BackupCopyOptions options,
+            IProgress<BackupCopyProgress>? progress,
+            CancellationToken cancellationToken)
+        {
+            CallCount++;
+            _cancellationSource.Cancel();
+            return Task.FromResult(BackupCopyResult.Failed(
+                sourcePath,
+                destinationPath,
+                BackupFailureReason.TargetWriteFailed));
+        }
+    }
+
+    private sealed class RecordingBackupSessionDeleter(Action<string>? onDelete = null) : IBackupSessionDeleter
+    {
+        private readonly Action<string>? _onDelete = onDelete;
+
+        public List<string> DeletedDirectories { get; } = [];
+
+        public int Attempts { get; private set; }
+
+        /// <inheritdoc />
+        public Task DeleteAsync(string sessionDirectory, CancellationToken ct)
+        {
+            Attempts++;
+            ct.ThrowIfCancellationRequested();
+            _onDelete?.Invoke(sessionDirectory);
+            DeletedDirectories.Add(sessionDirectory);
+            return Task.CompletedTask;
+        }
+    }
+
+    /// <summary>
+    /// Test deleter that throws a configured exception on every call. Used by Plan 07-13
+    /// DeleteSessionAsync RED tests to assert that BackupService maps expected IO failures
+    /// to <see cref="BackupSessionDeleteStatus.Failed"/> without leaking exception text.
+    /// </summary>
+    private sealed class ThrowingBackupSessionDeleter(Exception toThrow) : IBackupSessionDeleter
+    {
+        private readonly Exception _toThrow = toThrow;
+
+        public int Attempts { get; private set; }
+
+        /// <inheritdoc />
+        public Task DeleteAsync(string sessionDirectory, CancellationToken ct)
+        {
+            Attempts++;
+            ct.ThrowIfCancellationRequested();
+            throw _toThrow;
+        }
+    }
+
+    private sealed class SynchronousProgress<T>(Action<T> onReport) : IProgress<T>
+    {
+        /// <inheritdoc />
+        public void Report(T value) => onReport(value);
     }
 
     #endregion

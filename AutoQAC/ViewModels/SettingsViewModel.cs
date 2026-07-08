@@ -13,13 +13,19 @@ namespace AutoQAC.ViewModels;
 
 public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
 {
-    private readonly IConfigurationService _configService;
-    private readonly ILoggingService _logger;
-    private readonly IUiDispatcher _uiDispatcher;
+    private const string SaveFailureBanner =
+        "Could not save settings. Active settings were restored to last saved values; your edits are still shown.";
+
+    private readonly IConfigurationService? _configService;
+    private readonly ILoggingService? _logger;
     private readonly IFileDialogService? _fileDialog;
+    private IDisposable? _failuresSubscription;
+    private IDisposable? _resultsSubscription;
+    private IDisposable? _configChangedClearSubscription;
 
     // Loading flag to suppress validation during initial property population
     private bool _isLoading;
+    private bool _loadSucceeded;
 
     // Original values for tracking unsaved changes
     private AutoQacSettings _originalSettings = new();
@@ -38,92 +44,90 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
     [NotifyPropertyChangedFor(nameof(HasUnsavedChanges))]
     [NotifyPropertyChangedFor(nameof(HasValidationErrors))]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
-    private int _journalExpiration;
+    public partial int JournalExpiration { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasUnsavedChanges))]
     [NotifyPropertyChangedFor(nameof(HasValidationErrors))]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
-    private int _cleaningTimeout;
+    public partial int CleaningTimeout { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasUnsavedChanges))]
     [NotifyPropertyChangedFor(nameof(HasValidationErrors))]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
-    private int _cpuThreshold;
+    public partial int CpuThreshold { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasUnsavedChanges))]
-    private bool _mo2Mode;
+    public partial bool Mo2Mode { get; set; }
 
-    [ObservableProperty]
-    private string? _cleaningTimeoutError;
+    [ObservableProperty] public partial string? CleaningTimeoutError { get; set; }
 
-    [ObservableProperty]
-    private string? _journalExpirationError;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasUnsavedChanges))]
-    private string? _xEditPath;
+    [ObservableProperty] public partial string? JournalExpirationError { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasUnsavedChanges))]
-    private string? _mo2Path;
+    public partial string? XEditPath { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasUnsavedChanges))]
-    private string? _loadOrderPath;
-
-    [ObservableProperty]
-    private bool? _isXEditPathValid;
-
-    [ObservableProperty]
-    private bool? _isMo2PathValid;
-
-    [ObservableProperty]
-    private bool? _isLoadOrderPathValid;
+    public partial string? Mo2Path { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasUnsavedChanges))]
-    private int _retentionMode;
+    public partial string? LoadOrderPath { get; set; }
+
+    [ObservableProperty] public partial bool? IsXEditPathValid { get; set; }
+
+    [ObservableProperty] public partial bool? IsMo2PathValid { get; set; }
+
+    [ObservableProperty] public partial bool? IsLoadOrderPathValid { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasUnsavedChanges))]
+    public partial int RetentionMode { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasUnsavedChanges))]
     [NotifyPropertyChangedFor(nameof(HasValidationErrors))]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
-    private int _maxAgeDays;
+    public partial int MaxAgeDays { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasUnsavedChanges))]
     [NotifyPropertyChangedFor(nameof(HasValidationErrors))]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
-    private int _maxFileCount;
+    public partial int MaxFileCount { get; set; }
 
-    [ObservableProperty]
-    private bool _isAgeBasedMode = true;
+    [ObservableProperty] public partial bool IsAgeBasedMode { get; set; } = true;
 
-    [ObservableProperty]
-    private bool _isCountBasedMode;
+    [ObservableProperty] public partial bool IsCountBasedMode { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasUnsavedChanges))]
-    private bool _backupEnabled = true;
+    public partial bool BackupEnabled { get; set; } = true;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasUnsavedChanges))]
     [NotifyPropertyChangedFor(nameof(HasValidationErrors))]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
-    private int _backupMaxSessions = 10;
+    public partial int BackupMaxSessions { get; set; } = 10;
+
+    [ObservableProperty] public partial string? BackupMaxSessionsError { get; set; }
 
     [ObservableProperty]
-    private string? _backupMaxSessionsError;
+    [NotifyPropertyChangedFor(nameof(HasPersistenceBanner))]
+    public partial string? PersistenceBannerText { get; set; }
+
+    public bool HasPersistenceBanner => !string.IsNullOrWhiteSpace(PersistenceBannerText);
 
     public bool HasValidationErrors =>
         !ValidateCleaningTimeout(CleaningTimeout)
         || !ValidateJournalExpiration(JournalExpiration)
-        || !(CpuThreshold is >= 1 and <= 100)
+        || CpuThreshold is < 1 or > 100
         || !(MaxAgeDays >= 1 && MaxFileCount >= 1)
-        || !(BackupMaxSessions is >= 1 and <= 100);
+        || BackupMaxSessions is < 1 or > 100;
 
     public bool HasUnsavedChanges =>
         JournalExpiration != _originalSettings.JournalExpiration ||
@@ -143,7 +147,24 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
     public event Action<bool>? CloseRequested;
 
     /// <summary>Design-time constructor (parameterless for XAML previewer).</summary>
-    public SettingsViewModel() : this(null!, null!, new SynchronousFallbackDispatcher(), null) { }
+    public SettingsViewModel() : this(new SynchronousFallbackDispatcher())
+    {
+    }
+
+    private SettingsViewModel(IUiDispatcher uiDispatcher)
+    {
+        ArgumentNullException.ThrowIfNull(uiDispatcher);
+
+        _configService = null;
+        _logger = null;
+        _fileDialog = null;
+
+        _xEditValidate = new DebouncedAction(uiDispatcher, TimeSpan.FromMilliseconds(400));
+        _mo2Validate = new DebouncedAction(uiDispatcher, TimeSpan.FromMilliseconds(400));
+        _loadOrderValidate = new DebouncedAction(uiDispatcher, TimeSpan.FromMilliseconds(400));
+
+        ResetToDefaults();
+    }
 
     public SettingsViewModel(
         IConfigurationService configService,
@@ -151,14 +172,87 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
         IUiDispatcher uiDispatcher,
         IFileDialogService? fileDialog = null)
     {
+        ArgumentNullException.ThrowIfNull(configService);
+        ArgumentNullException.ThrowIfNull(logger);
+        ArgumentNullException.ThrowIfNull(uiDispatcher);
+
         _configService = configService;
         _logger = logger;
-        _uiDispatcher = uiDispatcher;
         _fileDialog = fileDialog;
 
         _xEditValidate = new DebouncedAction(uiDispatcher, TimeSpan.FromMilliseconds(400));
         _mo2Validate = new DebouncedAction(uiDispatcher, TimeSpan.FromMilliseconds(400));
         _loadOrderValidate = new DebouncedAction(uiDispatcher, TimeSpan.FromMilliseconds(400));
+
+        // Phase 10 D-24/D-27: typed failure stream feeds a concise banner; clears on next success.
+        // Per AGENTS.md, ViewModels must not import System.Reactive — use CallbackObserver + IUiDispatcher.
+        _failuresSubscription = _configService.Failures.Subscribe(
+            new CallbackObserver<ConfigPersistenceFailure>(failure =>
+                uiDispatcher.Post(() => OnPersistenceFailureReceived(failure))));
+        _resultsSubscription = _configService.PersistenceResults.Subscribe(
+            new CallbackObserver<ConfigPersistenceResult>(result =>
+                uiDispatcher.Post(() => OnPersistenceResultReceived(result))));
+        _configChangedClearSubscription = _configService.UserConfigurationChanged.Subscribe(
+            new CallbackObserver<UserConfiguration>(_ =>
+                uiDispatcher.Post(ClearPersistenceBanner)));
+    }
+
+    /// <summary>
+    /// Maps safe configuration persistence failures to a text-only Settings banner.
+    /// Watcher echo skips are filtered before the failure stream, so every value here is actionable.
+    /// </summary>
+    /// <param name="failure">The typed, safe failure payload from the configuration service.</param>
+    private void OnPersistenceFailureReceived(ConfigPersistenceFailure failure)
+    {
+        // D-25: Watcher silent skips never reach Failures; only actionable failures arrive here.
+        // D-29: text-only banner, no modal dialog.
+        PersistenceBannerText = MapFailureToBanner(failure);
+    }
+
+    /// <summary>
+    /// Clears stale persistence failure text when the persistence coordinator reports a successful barrier.
+    /// </summary>
+    /// <param name="result">The typed persistence result emitted by the configuration service.</param>
+    private void OnPersistenceResultReceived(ConfigPersistenceResult result)
+    {
+        if (result.Status is ConfigPersistenceStatusKind.Success or ConfigPersistenceStatusKind.NoOp)
+        {
+            ClearPersistenceBanner();
+        }
+    }
+
+    /// <summary>
+    /// Converts safe failure categories into concise user-facing Settings banner text.
+    /// </summary>
+    /// <param name="failure">The typed safe failure payload to present.</param>
+    /// <returns>A text-only banner message shorter than the Settings dialog copy budget.</returns>
+    private static string MapFailureToBanner(ConfigPersistenceFailure failure) => failure switch
+    {
+        // D-30: failed optimistic save explicitly tells user settings were restored.
+        { Operation: ConfigPersistenceOperationKind.Save, Kind: ConfigPersistenceFailureKind.WriteFailed }
+            => failure.SafeSummary,
+        { Operation: ConfigPersistenceOperationKind.Flush, Kind: ConfigPersistenceFailureKind.WriteFailed }
+            => "Could not save settings before cleaning. Cleaning was blocked. Settings were restored to last saved values.",
+        { Operation: ConfigPersistenceOperationKind.Flush }
+            => "Could not save settings (flush). Cleaning was blocked.",
+        { Kind: ConfigPersistenceFailureKind.InvalidExternalYaml }
+            => "External settings file has invalid YAML. Active settings were not changed.",
+        { Kind: ConfigPersistenceFailureKind.MissingFile }
+            => "Settings file is missing or unreadable. Active settings were not changed.",
+        { Kind: ConfigPersistenceFailureKind.ReadFailed }
+            => failure.SafeSummary,
+        _ => $"Could not persist settings: {failure.SafeSummary}",
+    };
+
+    /// <summary>
+    /// Clears the visible persistence banner if one is currently displayed.
+    /// </summary>
+    private void ClearPersistenceBanner()
+    {
+        if (PersistenceBannerText != null)
+        {
+            PersistenceBannerText = null;
+        }
     }
 
     partial void OnCleaningTimeoutChanged(int value) =>
@@ -191,22 +285,33 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
     partial void OnMo2PathChanged(string? value)
     {
         if (_isLoading) return;
-        _mo2Validate.Trigger(() => IsMo2PathValid = string.IsNullOrWhiteSpace(value) ? null : ValidateExecutablePath(value));
+        _mo2Validate.Trigger(() =>
+            IsMo2PathValid = string.IsNullOrWhiteSpace(value) ? null : ValidateExecutablePath(value));
     }
 
     partial void OnLoadOrderPathChanged(string? value)
     {
         if (_isLoading) return;
-        _loadOrderValidate.Trigger(() => IsLoadOrderPathValid = string.IsNullOrWhiteSpace(value) ? null : ValidateFilePath(value));
+        _loadOrderValidate.Trigger(() =>
+            IsLoadOrderPathValid = string.IsNullOrWhiteSpace(value) ? null : ValidateFilePath(value));
     }
 
     public async Task LoadSettingsAsync()
     {
+        var configService = _configService;
+
         try
         {
             _isLoading = true;
+            _loadSucceeded = false;
 
-            var config = await _configService.LoadUserConfigAsync();
+            if (configService is null)
+            {
+                ResetToDefaults();
+                return;
+            }
+
+            var config = await configService.LoadUserConfigAsync();
             _originalSettings = config.Settings;
             _originalRetention = config.LogRetention;
 
@@ -229,11 +334,26 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
             _originalBackupSettings = config.Backup;
             BackupEnabled = config.Backup.Enabled;
             BackupMaxSessions = config.Backup.MaxSessions;
+
+            _loadSucceeded = true;
         }
         catch (Exception ex)
         {
-            _logger.Error(ex, "Failed to load settings");
+            _logger?.Error(ex, "Failed to load settings");
+            _originalSettings = new AutoQacSettings();
+            _originalRetention = new RetentionSettings();
+            _originalBackupSettings = new BackupSettings();
+            _originalXEditPath = null;
+            _originalMo2Path = null;
+            _originalLoadOrderPath = null;
             ResetToDefaults();
+            XEditPath = null;
+            Mo2Path = null;
+            LoadOrderPath = null;
+            IsXEditPathValid = null;
+            IsMo2PathValid = null;
+            IsLoadOrderPathValid = null;
+            PersistenceBannerText = "Could not load settings. Save is disabled until settings are loaded successfully.";
         }
         finally
         {
@@ -257,14 +377,17 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
             IsLoadOrderPathValid = ValidateFilePath(LoadOrderPath);
     }
 
-    private bool CanSave() => !HasValidationErrors;
+    private bool CanSave() => _configService is not null && _loadSucceeded && !HasValidationErrors;
 
     [RelayCommand(CanExecute = nameof(CanSave))]
     private async Task SaveAsync()
     {
+        var configService = _configService;
+        if (configService is null || !_loadSucceeded || HasValidationErrors) return;
+
         try
         {
-            var config = await _configService.LoadUserConfigAsync();
+            var config = await configService.LoadUserConfigAsync();
 
             config.Settings.JournalExpiration = JournalExpiration;
             config.Settings.CleaningTimeout = CleaningTimeout;
@@ -282,16 +405,48 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
             config.Backup.Enabled = BackupEnabled;
             config.Backup.MaxSessions = BackupMaxSessions;
 
-            await _configService.SaveUserConfigAsync(config);
-            _logger.Information("Settings saved successfully");
+            await configService.SaveUserConfigAsync(config);
+            var flushResult = await configService.FlushPendingSavesAsync();
+            if (flushResult.Status is ConfigPersistenceStatusKind.Failed or ConfigPersistenceStatusKind.Rejected)
+            {
+                PersistenceBannerText = MapExplicitSaveFlushFailureToBanner(flushResult.Failure);
+                return;
+            }
+
+            _logger?.Information("Settings saved successfully");
+
+            // D-27: explicit Settings Save only closes after the flush barrier proves disk persistence
+            // succeeded (Success/NoOp). Otherwise a later async failure could surface after close.
+            ClearPersistenceBanner();
 
             CloseRequested?.Invoke(true);
         }
         catch (Exception ex)
         {
-            _logger.Error(ex, "Failed to save settings");
-            CloseRequested?.Invoke(false);
+            _logger?.Error(ex, "Failed to save settings");
+            // Synchronous save failures may occur before the coordinator publishes Failures.
+            if (string.IsNullOrEmpty(PersistenceBannerText))
+            {
+                PersistenceBannerText = SaveFailureBanner;
+            }
         }
+    }
+
+    /// <summary>
+    /// Maps the Settings dialog's explicit save barrier failure without using cleaning-specific copy.
+    /// </summary>
+    /// <param name="failure">Optional coordinator failure payload returned by the flush barrier.</param>
+    /// <returns>User-facing banner text for the Settings Save command.</returns>
+    private static string MapExplicitSaveFlushFailureToBanner(ConfigPersistenceFailure? failure)
+    {
+        if (failure is { Kind: ConfigPersistenceFailureKind.WriteFailed })
+        {
+            return SaveFailureBanner;
+        }
+
+        return failure is not null
+            ? MapFailureToBanner(failure)
+            : SaveFailureBanner;
     }
 
     [RelayCommand]
@@ -372,17 +527,14 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
     internal static bool ValidateFilePath(string? path)
         => !string.IsNullOrWhiteSpace(path) && File.Exists(path);
 
-    internal static bool ValidateDirectoryPath(string? path)
-        => !string.IsNullOrWhiteSpace(path) && Directory.Exists(path);
-
-    internal static bool ValidateOptionalPath(string? path, Func<string?, bool> validator)
-        => string.IsNullOrWhiteSpace(path) || validator(path);
-
     private static bool ValidateCleaningTimeout(int value) => value is >= 30 and <= 3600;
     private static bool ValidateJournalExpiration(int value) => value is >= 1 and <= 365;
 
     public void Dispose()
     {
+        _failuresSubscription?.Dispose();
+        _resultsSubscription?.Dispose();
+        _configChangedClearSubscription?.Dispose();
         _xEditValidate.Dispose();
         _mo2Validate.Dispose();
         _loadOrderValidate.Dispose();
@@ -393,17 +545,9 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
     /// <c>WhenAnyValue(...).Throttle(...).ObserveOn(MainThreadScheduler)</c> for
     /// path-validation pipelines without pulling in System.Reactive.
     /// </summary>
-    private sealed class DebouncedAction : IDisposable
+    private sealed class DebouncedAction(IUiDispatcher dispatcher, TimeSpan delay) : IDisposable
     {
-        private readonly IUiDispatcher _dispatcher;
-        private readonly TimeSpan _delay;
         private CancellationTokenSource? _cts;
-
-        public DebouncedAction(IUiDispatcher dispatcher, TimeSpan delay)
-        {
-            _dispatcher = dispatcher;
-            _delay = delay;
-        }
 
         public void Trigger(Action action)
         {
@@ -415,8 +559,8 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
             {
                 try
                 {
-                    await Task.Delay(_delay, ct).ConfigureAwait(false);
-                    _dispatcher.Post(action);
+                    await Task.Delay(delay, ct).ConfigureAwait(false);
+                    dispatcher.Post(action);
                 }
                 catch (OperationCanceledException)
                 {

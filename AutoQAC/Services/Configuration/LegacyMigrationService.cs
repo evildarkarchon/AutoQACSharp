@@ -20,6 +20,10 @@ public sealed class LegacyMigrationService : ILegacyMigrationService
     private const string LegacyConfigFile = "AutoQAC Config.yaml";
     private const string CurrentConfigFile = "AutoQAC Settings.yaml";
     private const string BackupSubdirectory = "migration_backup";
+    private const string ParseFailureWarning = "Legacy config could not be migrated because it could not be parsed. See the latest AutoQAC log for technical details.";
+    private const string WriteFailureWarning = "Legacy config could not be migrated because the new settings file could not be written. See the latest AutoQAC log for technical details.";
+    private const string BackupFailureWarning = "Legacy config was migrated, but AutoQAC could not back up the original file. Original file was kept for safety. See the latest AutoQAC log for technical details.";
+    private const string DeleteFailureWarning = "Legacy config was migrated, but AutoQAC could not remove the original legacy file. See the latest AutoQAC log for technical details.";
 
     private readonly ISerializer _serializer;
     private readonly IDeserializer _deserializer;
@@ -88,7 +92,7 @@ public sealed class LegacyMigrationService : ILegacyMigrationService
                 return new MigrationResult(
                     Attempted: true,
                     Success: false,
-                    WarningMessage: "Legacy config file was empty or could not be parsed.",
+                    WarningMessage: ParseFailureWarning,
                     FailedFiles: [LegacyConfigFile]);
             }
 
@@ -100,7 +104,7 @@ public sealed class LegacyMigrationService : ILegacyMigrationService
             return new MigrationResult(
                 Attempted: true,
                 Success: false,
-                WarningMessage: $"Failed to parse legacy config: {ex.Message}",
+                WarningMessage: ParseFailureWarning,
                 FailedFiles: [LegacyConfigFile]);
         }
 
@@ -117,7 +121,7 @@ public sealed class LegacyMigrationService : ILegacyMigrationService
             return new MigrationResult(
                 Attempted: true,
                 Success: false,
-                WarningMessage: $"Failed to write migrated config: {ex.Message}",
+                WarningMessage: WriteFailureWarning,
                 FailedFiles: [LegacyConfigFile]);
         }
 
@@ -139,7 +143,7 @@ public sealed class LegacyMigrationService : ILegacyMigrationService
             return new MigrationResult(
                 Attempted: true,
                 Success: false,
-                WarningMessage: $"Migration partially succeeded: config was migrated but backup of original failed ({ex.Message}). Original file was kept for safety.",
+                WarningMessage: BackupFailureWarning,
                 MigratedFiles: [LegacyConfigFile]);
         }
 
@@ -156,7 +160,7 @@ public sealed class LegacyMigrationService : ILegacyMigrationService
             return new MigrationResult(
                 Attempted: true,
                 Success: true,
-                WarningMessage: $"Migration succeeded but could not remove the original legacy file: {ex.Message}",
+                WarningMessage: DeleteFailureWarning,
                 MigratedFiles: [LegacyConfigFile]);
         }
 
