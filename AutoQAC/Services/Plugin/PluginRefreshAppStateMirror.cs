@@ -186,7 +186,7 @@ internal sealed class PluginRefreshAppStateMirror
     }
 
     /// <summary>
-    /// Marks approximation targets unavailable in AppState when no accepted publication can be updated.
+    /// Marks still-pending approximation targets unavailable in AppState when no accepted publication can be updated.
     /// </summary>
     /// <param name="targetLookup">Lookup used to identify target rows.</param>
     /// <param name="canUpdate">Visibility guard supplied by the active refresh generation.</param>
@@ -202,7 +202,8 @@ internal sealed class PluginRefreshAppStateMirror
             }
 
             var rows = state.PluginsToClean.Select(plugin =>
-                targetLookup.Contains(plugin)
+                targetLookup.Contains(plugin) &&
+                plugin.Approximation.Status == PluginIssueApproximationStatus.Pending
                     ? plugin with { Approximation = PluginIssueApproximation.Unavailable }
                     : plugin).ToList();
 

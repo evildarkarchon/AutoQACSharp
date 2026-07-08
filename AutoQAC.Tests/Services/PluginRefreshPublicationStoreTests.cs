@@ -176,7 +176,7 @@ public sealed class PluginRefreshPublicationStoreTests
     }
 
     [Fact]
-    public void ApproximationUpdates_ShouldUseSelectedTargetsAndMirrorPublicationRows()
+    public void ApproximationUpdates_ShouldPreserveCompletedTargetsWhenMarkingPendingTargetsUnavailable()
     {
         var stateService = new StateService();
         using var sut = CreateStore(stateService);
@@ -187,7 +187,11 @@ public sealed class PluginRefreshPublicationStoreTests
             plan,
             CreateFreshnessToken(),
             plan.Configuration,
-            [Published("Target.esp", approximation: PluginIssueApproximation.Unavailable), Published("Other.esp")],
+            [
+                Published("Target.esp", approximation: PluginIssueApproximation.Unavailable),
+                Published("PendingOnly.esp", approximation: PluginIssueApproximation.Unavailable),
+                Published("Other.esp")
+            ],
             new PluginRefreshActivity(false, false),
             "Loaded",
             Affordance());
@@ -209,7 +213,7 @@ public sealed class PluginRefreshPublicationStoreTests
             Result("Other.esp", PluginIssueApproximation.Available(9, 9, 9)),
             () => true);
 
-        targets.Targets.Should().ContainSingle().Which.FileName.Should().Be("Target.esp");
+        targets.Targets.Select(target => target.FileName).Should().Equal("Target.esp", "PendingOnly.esp");
         matched.Should().BeTrue();
         nonTargetMatched.Should().BeFalse();
         sut.GetFreshnessInspection().Publication.Rows.Should().Contain(row =>
@@ -224,7 +228,45 @@ public sealed class PluginRefreshPublicationStoreTests
 
         sut.GetFreshnessInspection().Publication.Rows.Should().Contain(row =>
             row.Plugin.FileName == "Target.esp" &&
+            row.Plugin.Approximation.Status == PluginIssueApproximationStatus.Available &&
+            row.Plugin.Approximation.ItmCount == 3);
+        sut.GetFreshnessInspection().Publication.Rows.Should().Contain(row =>
+            row.Plugin.FileName == "PendingOnly.esp" &&
             row.Plugin.Approximation.Status == PluginIssueApproximationStatus.Unavailable);
+        stateService.CurrentState.PluginsToClean.Should().Contain(plugin =>
+            plugin.FileName == "Target.esp" &&
+            plugin.Approximation.Status == PluginIssueApproximationStatus.Available);
+        stateService.CurrentState.PluginsToClean.Should().Contain(plugin =>
+            plugin.FileName == "PendingOnly.esp" &&
+            plugin.Approximation.Status == PluginIssueApproximationStatus.Unavailable);
+    }
+
+    [Fact]
+    public void MarkTargetsUnavailable_WhenPublicationMissing_ShouldOnlyDowngradePendingAppStateTargets()
+    {
+        var stateService = CreateStateWithRows(
+            Plugin("Completed.esp", approximation: PluginIssueApproximation.Available(5, 4, 3)),
+            Plugin("Pending.esp", approximation: PluginIssueApproximation.Pending),
+            Plugin("Other.esp", approximation: PluginIssueApproximation.Pending));
+        using var sut = CreateStore(stateService);
+        var targetLookup = PluginRefreshPublicationRows.CreateTargetLookup(
+            [
+                new PluginRefreshRowKey("Completed.esp", @"C:\Data\Completed.esp"),
+                new PluginRefreshRowKey("Pending.esp", @"C:\Data\Pending.esp")
+            ]);
+
+        sut.MarkTargetsUnavailable(GameType.SkyrimSe, targetLookup, () => true);
+
+        stateService.CurrentState.PluginsToClean.Should().Contain(plugin =>
+            plugin.FileName == "Completed.esp" &&
+            plugin.Approximation.Status == PluginIssueApproximationStatus.Available &&
+            plugin.Approximation.ItmCount == 5);
+        stateService.CurrentState.PluginsToClean.Should().Contain(plugin =>
+            plugin.FileName == "Pending.esp" &&
+            plugin.Approximation.Status == PluginIssueApproximationStatus.Unavailable);
+        stateService.CurrentState.PluginsToClean.Should().Contain(plugin =>
+            plugin.FileName == "Other.esp" &&
+            plugin.Approximation.Status == PluginIssueApproximationStatus.Pending);
     }
 
     private static PluginRefreshPublicationStore CreateStore(

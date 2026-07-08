@@ -221,6 +221,22 @@ internal static class PluginRefreshPublicationRows
             row => row with { Plugin = row.Plugin with { Approximation = approximation } });
 
     /// <summary>
+    /// Marks target rows that are still pending unavailable while preserving completed target results.
+    /// </summary>
+    /// <param name="rows">Full publication rows.</param>
+    /// <param name="targetLookup">Target set used to identify rows.</param>
+    /// <returns>An update result that reports whether any target row matched.</returns>
+    internal static PluginRefreshPublicationRowsUpdate ApplyUnavailableToPendingTargets(
+        IReadOnlyList<PluginRefreshPublishedRow> rows,
+        TargetLookup targetLookup) =>
+        UpdateRows(
+            rows,
+            row => targetLookup.Contains(row.Plugin),
+            row => row.Plugin.Approximation.Status == PluginIssueApproximationStatus.Pending
+                ? row with { Plugin = row.Plugin with { Approximation = PluginIssueApproximation.Unavailable } }
+                : row);
+
+    /// <summary>
     /// Applies one issue approximation result to its matching publication row.
     /// </summary>
     /// <param name="rows">Full publication rows.</param>

@@ -460,6 +460,31 @@ public sealed class PluginRefreshModuleTests
     }
 
     [Fact]
+    public async Task RecoverableApproximationFailure_PreservesCompletedResultsAndMarksPendingTargetsUnavailable()
+    {
+        var stateService = new StateService();
+        var approximationService = new ResultIssueApproximationService(
+            [Result("Completed.esp")],
+            throwAfterResults: true);
+        using var sut = CreateModule(stateService, approximationService: approximationService);
+
+        var final = await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+
+        stateService.CurrentState.PluginsToClean.Should().Contain(plugin =>
+            plugin.FileName == "Completed.esp" &&
+            plugin.Approximation.Status == PluginIssueApproximationStatus.Available &&
+            plugin.Approximation.ItmCount == 1);
+        stateService.CurrentState.PluginsToClean.Should().Contain(plugin =>
+            plugin.FileName == "Selected.esp" &&
+            plugin.Approximation.Status == PluginIssueApproximationStatus.Unavailable);
+        stateService.CurrentState.PluginsToClean.Should().Contain(plugin =>
+            plugin.FileName == "NotStarted.esp" &&
+            plugin.Approximation.Status == PluginIssueApproximationStatus.Unavailable);
+        final.Activity.IsIssueApproximationRefreshRunning.Should().BeFalse();
+        final.StatusText.Should().Be("Approximation refresh failed.");
+    }
+
+    [Fact]
     public async Task RefreshGame_WhenEnderalVariantDetected_RequestsEnderalSkipList()
     {
         var stateService = new StateService();
@@ -757,13 +782,16 @@ public sealed class PluginRefreshModuleTests
     {
         private readonly IReadOnlyList<PluginIssueApproximationResult> _results;
         private readonly bool _delayBetweenResults;
+        private readonly bool _throwAfterResults;
 
         public ResultIssueApproximationService(
             IReadOnlyList<PluginIssueApproximationResult> results,
-            bool delayBetweenResults = false)
+            bool delayBetweenResults = false,
+            bool throwAfterResults = false)
         {
             _results = results;
             _delayBetweenResults = delayBetweenResults;
+            _throwAfterResults = throwAfterResults;
         }
 
         public int CallCount { get; private set; }
@@ -786,6 +814,11 @@ public sealed class PluginRefreshModuleTests
                 {
                     await Task.Delay(TimeSpan.FromMinutes(5), ct);
                 }
+            }
+
+            if (_throwAfterResults)
+            {
+                throw new InvalidOperationException("Synthetic approximation failure");
             }
 
             return _results;

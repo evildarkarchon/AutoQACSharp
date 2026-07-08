@@ -337,10 +337,9 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
     {
         if (TryUpdateAcceptedPublicationRows(
                 gameType,
-                rows => PluginRefreshPublicationRows.ApplyApproximationToTargets(
+                rows => PluginRefreshPublicationRows.ApplyUnavailableToPendingTargets(
                     rows,
-                    targetLookup,
-                    PluginIssueApproximation.Unavailable),
+                    targetLookup),
                 canUpdate))
         {
             return;
