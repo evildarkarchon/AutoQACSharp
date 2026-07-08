@@ -212,5 +212,4 @@ public sealed class CleaningPreflight(
             or PreflightSkipReason.ZeroByte
             or PreflightSkipReason.MalformedEntry
             or PreflightSkipReason.InvalidExtension;
-
 }

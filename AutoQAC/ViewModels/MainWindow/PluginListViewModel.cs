@@ -13,10 +13,8 @@ namespace AutoQAC.ViewModels.MainWindow;
 /// <summary>
 /// Manages the plugin collection and plugin-refresh commands from module snapshots.
 /// </summary>
-public sealed partial class PluginListViewModel : ViewModelBase, IDisposable
+public sealed partial class PluginListViewModel(IPluginRefreshModule pluginRefreshModule) : ViewModelBase, IDisposable
 {
-    private readonly IPluginRefreshModule _pluginRefreshModule;
-
     public ObservableCollection<PluginListItem> PluginsToClean { get; } = [];
 
     [ObservableProperty] public partial PluginListItem? SelectedPlugin { get; set; }
@@ -65,11 +63,6 @@ public sealed partial class PluginListViewModel : ViewModelBase, IDisposable
 
     public bool CanRefreshApproximations => CanRefreshSelectedIssueApproximations;
 
-    public PluginListViewModel(IPluginRefreshModule pluginRefreshModule)
-    {
-        _pluginRefreshModule = pluginRefreshModule;
-    }
-
     private bool CanSelectAll() => CanSelectAllPlugins;
 
     private bool CanDeselectAll() => CanDeselectAllPlugins;
@@ -80,12 +73,12 @@ public sealed partial class PluginListViewModel : ViewModelBase, IDisposable
 
     [RelayCommand(CanExecute = nameof(CanSelectAll))]
     private Task SelectAllAsync() =>
-        _pluginRefreshModule.ExecuteAsync(
+        pluginRefreshModule.ExecuteAsync(
             new PluginRefreshIntent.ChangeSelection(new PluginSelectionChange.SelectAllVisible()));
 
     [RelayCommand(CanExecute = nameof(CanDeselectAll))]
     private Task DeselectAllAsync() =>
-        _pluginRefreshModule.ExecuteAsync(
+        pluginRefreshModule.ExecuteAsync(
             new PluginRefreshIntent.ChangeSelection(new PluginSelectionChange.DeselectAllVisible()));
 
     /// <summary>
@@ -94,7 +87,7 @@ public sealed partial class PluginListViewModel : ViewModelBase, IDisposable
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanRefreshSelectedApproximations))]
     private Task RefreshSelectedApproximationsAsync() =>
-        _pluginRefreshModule.ExecuteAsync(new PluginRefreshIntent.RefreshSelectedIssueApproximations());
+        pluginRefreshModule.ExecuteAsync(new PluginRefreshIntent.RefreshSelectedIssueApproximations());
 
     /// <summary>
     /// Cancels active Plugin refresh work without prompting the user.
@@ -102,7 +95,7 @@ public sealed partial class PluginListViewModel : ViewModelBase, IDisposable
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanCancelApproximationRefresh))]
     private Task CancelApproximationRefreshAsync() =>
-        _pluginRefreshModule.ExecuteAsync(new PluginRefreshIntent.Cancel(PluginRefreshCancelReason.Manual));
+        pluginRefreshModule.ExecuteAsync(new PluginRefreshIntent.Cancel(PluginRefreshCancelReason.Manual));
 
     /// <summary>
     /// Applies the whole Plugin refresh snapshot published by the module.
@@ -114,7 +107,8 @@ public sealed partial class PluginListViewModel : ViewModelBase, IDisposable
         IsCleaning = !snapshot.Commands.CanSelectAll && HasPlugins;
         CurrentGameType = snapshot.GameType;
         HasSelectedVisiblePlugin = snapshot.Rows.Any(row => row.IsSelected);
-        IsApproximationRefreshRunning = snapshot.Activity.IsIssueApproximationRefreshRunning || snapshot.Commands.CanCancelRefresh;
+        IsApproximationRefreshRunning =
+            snapshot.Activity.IsIssueApproximationRefreshRunning || snapshot.Commands.CanCancelRefresh;
         CanSelectAllPlugins = snapshot.Commands.CanSelectAll;
         CanDeselectAllPlugins = snapshot.Commands.CanDeselectAll;
         CanRefreshSelectedIssueApproximations = snapshot.Commands.CanRefreshSelectedIssueApproximations;
@@ -183,7 +177,7 @@ public sealed partial class PluginListViewModel : ViewModelBase, IDisposable
 
     private void OnRowSelectionToggled(PluginListItem item, bool isSelected)
     {
-        _ = _pluginRefreshModule.ExecuteAsync(
+        _ = pluginRefreshModule.ExecuteAsync(
             new PluginRefreshIntent.ChangeSelection(
                 new PluginSelectionChange.SetOne(item.Key, isSelected)));
     }

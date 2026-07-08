@@ -241,7 +241,8 @@ public sealed class CleaningSession(
         {
             CleaningSessionControl.RequestStop => await RequestStopAsync(ct).ConfigureAwait(false),
             CleaningSessionControl.ForceStop => await ForceStopAsync().ConfigureAwait(false),
-            CleaningSessionControl.CancelBackupOperation => await HandleCancelBackupOperationAsync().ConfigureAwait(false),
+            CleaningSessionControl.CancelBackupOperation => await HandleCancelBackupOperationAsync()
+                .ConfigureAwait(false),
             _ => throw new ArgumentOutOfRangeException(nameof(control), control, "Unknown Cleaning session control.")
         };
     }
@@ -345,10 +346,7 @@ public sealed class CleaningSession(
         if (decision == CleaningSessionStopDecision.ForceTerminate)
         {
             var forceResult = await ForceStopAsync().ConfigureAwait(false);
-            return new CleaningSessionControlResult(
-                CleaningSessionControl.RequestStop,
-                forceResult.Status,
-                forceResult.TerminationResult);
+            return forceResult with { Control = CleaningSessionControl.RequestStop };
         }
 
         var leftRunningResult = terminationCoordinator.MarkLeftRunningByUser();
@@ -423,7 +421,6 @@ public sealed class CleaningSession(
             TerminationResult.ForceKilled => CleaningSessionControlStatus.ForceStopped,
             TerminationResult.ForceKillFailed => CleaningSessionControlStatus.ForceKillFailed,
             TerminationResult.LeftRunningByUser => CleaningSessionControlStatus.LeftRunningByUser,
-            TerminationResult.GracePeriodExpired => CleaningSessionControlStatus.StopRequested,
             _ => CleaningSessionControlStatus.StopRequested
         };
 

@@ -3,7 +3,6 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Models;
-using AutoQAC.Models.Configuration;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Services.State;
 

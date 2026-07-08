@@ -144,7 +144,6 @@ public sealed class XEditCommandBuilder(IStateService stateService) : IXEditComm
                     formatted.Append('"');
                     backslashes = 0;
                     continue;
-
             }
 
             formatted.Append('\\', backslashes);

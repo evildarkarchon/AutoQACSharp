@@ -55,39 +55,48 @@ public sealed class BackupFileCopier(ILoggingService logger) : IBackupFileCopier
                 File.Move(actualOutputPath, destinationPath, overwrite: true);
             }
 
-            logger.Debug("Copied {SourcePath} to {DestinationPath} ({BytesCopied} bytes)", sourcePath, destinationPath, copiedBytes);
+            logger.Debug("Copied {SourcePath} to {DestinationPath} ({BytesCopied} bytes)", sourcePath, destinationPath,
+                copiedBytes);
             return BackupCopyResult.Complete(sourcePath, destinationPath, copiedBytes, totalBytes);
         }
         catch (FileNotFoundException ex)
         {
             DeletePartialOutput(actualOutputPath, sourcePath, destinationPath, createdOutput);
-            logger.Warning("Backup copy source disappeared while copying {SourcePath} to {DestinationPath}: {Error}", sourcePath, destinationPath, ex.Message);
-            return BackupCopyResult.Failed(sourcePath, destinationPath, BackupFailureReason.SourceMissing, copiedBytes, totalBytes);
+            logger.Warning("Backup copy source disappeared while copying {SourcePath} to {DestinationPath}: {Error}",
+                sourcePath, destinationPath, ex.Message);
+            return BackupCopyResult.Failed(sourcePath, destinationPath, BackupFailureReason.SourceMissing, copiedBytes,
+                totalBytes);
         }
         catch (DirectoryNotFoundException ex)
         {
             DeletePartialOutput(actualOutputPath, sourcePath, destinationPath, createdOutput);
             var reason = totalBytes is null ? BackupFailureReason.SourceMissing : BackupFailureReason.TargetWriteFailed;
-            logger.Warning("Directory disappeared while copying {SourcePath} to {DestinationPath}: {Error}", sourcePath, destinationPath, ex.Message);
+            logger.Warning("Directory disappeared while copying {SourcePath} to {DestinationPath}: {Error}", sourcePath,
+                destinationPath, ex.Message);
             return BackupCopyResult.Failed(sourcePath, destinationPath, reason, copiedBytes, totalBytes);
         }
         catch (OperationCanceledException)
         {
             DeletePartialOutput(actualOutputPath, sourcePath, destinationPath, createdOutput);
-            logger.Information("Backup copy canceled for {SourcePath} to {DestinationPath}", sourcePath, destinationPath);
+            logger.Information("Backup copy canceled for {SourcePath} to {DestinationPath}", sourcePath,
+                destinationPath);
             return BackupCopyResult.Canceled(sourcePath, destinationPath, copiedBytes, totalBytes);
         }
         catch (UnauthorizedAccessException ex)
         {
             DeletePartialOutput(actualOutputPath, sourcePath, destinationPath, createdOutput);
-            logger.Warning("Access denied copying {SourcePath} to {DestinationPath}: {Error}", sourcePath, destinationPath, ex.Message);
-            return BackupCopyResult.Failed(sourcePath, destinationPath, BackupFailureReason.AccessDenied, copiedBytes, totalBytes);
+            logger.Warning("Access denied copying {SourcePath} to {DestinationPath}: {Error}", sourcePath,
+                destinationPath, ex.Message);
+            return BackupCopyResult.Failed(sourcePath, destinationPath, BackupFailureReason.AccessDenied, copiedBytes,
+                totalBytes);
         }
         catch (IOException ex)
         {
             DeletePartialOutput(actualOutputPath, sourcePath, destinationPath, createdOutput);
-            logger.Warning("I/O failure copying {SourcePath} to {DestinationPath}: {Error}", sourcePath, destinationPath, ex.Message);
-            return BackupCopyResult.Failed(sourcePath, destinationPath, BackupFailureReason.TargetWriteFailed, copiedBytes, totalBytes);
+            logger.Warning("I/O failure copying {SourcePath} to {DestinationPath}: {Error}", sourcePath,
+                destinationPath, ex.Message);
+            return BackupCopyResult.Failed(sourcePath, destinationPath, BackupFailureReason.TargetWriteFailed,
+                copiedBytes, totalBytes);
         }
     }
 
@@ -118,8 +127,10 @@ public sealed class BackupFileCopier(ILoggingService logger) : IBackupFileCopier
         var stopwatch = Stopwatch.StartNew();
         var lastProgressAt = TimeSpan.MinValue;
 
-        await using var source = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read, BufferSize, useAsync: true);
-        await using var destination = new FileStream(actualOutputPath, fileMode, FileAccess.Write, FileShare.None, BufferSize, useAsync: true);
+        await using var source = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read, BufferSize,
+            useAsync: true);
+        await using var destination = new FileStream(actualOutputPath, fileMode, FileAccess.Write, FileShare.None,
+            BufferSize, useAsync: true);
         onDestinationOpened?.Invoke(true);
 
         while (true)
@@ -161,7 +172,8 @@ public sealed class BackupFileCopier(ILoggingService logger) : IBackupFileCopier
     /// <summary>
     /// Deletes an incomplete output only when the active copy attempt owns the output path.
     /// </summary>
-    private void DeletePartialOutput(string actualOutputPath, string sourcePath, string destinationPath, bool createdOutput)
+    private void DeletePartialOutput(string actualOutputPath, string sourcePath, string destinationPath,
+        bool createdOutput)
     {
         try
         {
@@ -179,7 +191,8 @@ public sealed class BackupFileCopier(ILoggingService logger) : IBackupFileCopier
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // Cleanup failures are logged but not surfaced as raw exception text in user-facing copy results.
-            logger.Warning("Failed to delete partial backup copy {PartialPath} for {SourcePath} to {DestinationPath}: {Error}",
+            logger.Warning(
+                "Failed to delete partial backup copy {PartialPath} for {SourcePath} to {DestinationPath}: {Error}",
                 actualOutputPath,
                 sourcePath,
                 destinationPath,

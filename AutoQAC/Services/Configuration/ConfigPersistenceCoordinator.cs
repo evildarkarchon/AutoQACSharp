@@ -111,6 +111,7 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
         {
             await _autoFlushCts.CancelAsync().ConfigureAwait(false);
         }
+
         _cleaningSubscription?.Dispose();
 
         if (_consumerTask == null)
@@ -144,6 +145,7 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
             {
                 await _consumerCts.CancelAsync().ConfigureAwait(false);
             }
+
             _logger.Warning("[ConfigPersistence] Coordinator consumer did not drain before shutdown timeout");
         }
 

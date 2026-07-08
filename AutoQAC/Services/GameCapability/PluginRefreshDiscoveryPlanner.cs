@@ -162,9 +162,10 @@ public sealed class PluginRefreshDiscoveryPlanner : IPluginRefreshDiscoveryPlann
                     return new PluginRefreshDiscoveredPlugins(plan, plugins, null);
                 }
 
-                var mappedPlugins = plugins.Select(plugin => plan.Mo2PathMap.TryGetValue(plugin.FileName, out var fullPath)
-                        ? plugin with { FullPath = fullPath }
-                        : plugin)
+                var mappedPlugins = plugins.Select(plugin =>
+                        plan.Mo2PathMap.TryGetValue(plugin.FileName, out var fullPath)
+                            ? plugin with { FullPath = fullPath }
+                            : plugin)
                     .ToList();
                 return new PluginRefreshDiscoveredPlugins(plan, mappedPlugins, null);
             }
@@ -189,7 +190,9 @@ public sealed class PluginRefreshDiscoveryPlanner : IPluginRefreshDiscoveryPlann
             NormalizePath(current.Mo2ModeEnabled ? userConfig.ModOrganizer.Binary : null),
             NormalizePath(current.Mo2ModeEnabled ? null : current.LoadOrderPath),
             NormalizePath(gameDataFolderOverride),
-            NormalizePath(current.Mo2ModeEnabled ? GetConfiguredMo2InstancePath(userConfig, publicationGameType) : null),
+            NormalizePath(current.Mo2ModeEnabled
+                ? GetConfiguredMo2InstancePath(userConfig, publicationGameType)
+                : null),
             NormalizeText(current.Mo2ModeEnabled ? current.Mo2Profile : null),
             userConfig.Settings.DisableSkipLists,
             NormalizeSkipLists(userConfig));

@@ -41,6 +41,7 @@ public interface IStateService
     /// identity prevents stale exclusions leaking when the visible plugin list changes.
     /// </summary>
     void UpdateExcludedPlugins(Func<IReadOnlySet<string>, IReadOnlySet<string>> updater);
+
     void FinishCleaning();
     void AddCleaningResult(string plugin, CleaningStatus status);
     void UpdateProgress(int current, int total);

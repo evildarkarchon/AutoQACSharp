@@ -278,7 +278,9 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                 plan.GameType,
                 configuration,
                 issueActivity,
-                targets.Count == 0 ? "Refreshed 0 plugin approximations." : $"Analyzing 0 of {targets.Count} selected plugins.");
+                targets.Count == 0
+                    ? "Refreshed 0 plugin approximations."
+                    : $"Analyzing 0 of {targets.Count} selected plugins.");
 
             try
             {
@@ -333,7 +335,8 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         return GetCurrentSnapshot();
     }
 
-    private async Task<PluginRefreshSnapshot> RefreshSelectedIssueApproximationsAsync(CancellationToken cancellationToken)
+    private async Task<PluginRefreshSnapshot> RefreshSelectedIssueApproximationsAsync(
+        CancellationToken cancellationToken)
     {
         var acceptedSnapshot = GetCurrentSnapshot();
         var selectedTargets = acceptedSnapshot.Rows
@@ -1139,10 +1142,10 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         var canUseRows = hasRows && !isCleaning;
         var affordance = _discoveryPlanner.GetAffordance(gameType, configuration.Mo2ModeEnabled);
         var canRefreshApproximations = canUseRows &&
-                                      !isRunning &&
-                                      rows.Any(row => row.IsSelected) &&
-                                      gameType != GameType.Unknown &&
-                                      affordance.CanAttemptIssueApproximation;
+                                       !isRunning &&
+                                       rows.Any(row => row.IsSelected) &&
+                                       gameType != GameType.Unknown &&
+                                       affordance.CanAttemptIssueApproximation;
 
         return new PluginRefreshCommandAvailability(
             CanSelectAll: canUseRows,

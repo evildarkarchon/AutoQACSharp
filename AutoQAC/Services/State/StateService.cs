@@ -40,13 +40,13 @@ public sealed class StateService : IStateService, IDisposable
 
     public IObservable<AppState> StateChanged => _stateSubject.AsObservable();
 
-    public IObservable<bool> ConfigurationValidChanged => 
+    public IObservable<bool> ConfigurationValidChanged =>
         _stateSubject.Select(s => s is { IsLoadOrderConfigured: true, IsXEditConfigured: true })
-                     .DistinctUntilChanged();
+            .DistinctUntilChanged();
 
     public IObservable<(int current, int total)> ProgressChanged =>
         _stateSubject.Select(s => (s.Progress, s.TotalPlugins))
-                     .DistinctUntilChanged();
+            .DistinctUntilChanged();
 
     public IObservable<(string plugin, CleaningStatus status)> PluginProcessed =>
         _pluginProcessedSubject.AsObservable();
@@ -72,6 +72,7 @@ public sealed class StateService : IStateService, IDisposable
             newState = updateFunc(_currentState);
             _currentState = newState;
         }
+
         // Emit OUTSIDE the lock -- subscribers can safely read CurrentState
         _stateSubject.OnNext(newState);
     }

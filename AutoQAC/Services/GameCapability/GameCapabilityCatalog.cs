@@ -20,7 +20,10 @@ internal static class GameCapabilityCatalog
             { GameType.Fallout4Vr, new GameCapability(GameType.Fallout4Vr, PluginDiscoveryMode.Automatic, true) },
             { GameType.Oblivion, new GameCapability(GameType.Oblivion, PluginDiscoveryMode.LoadOrderFile, false) },
             { GameType.Fallout3, new GameCapability(GameType.Fallout3, PluginDiscoveryMode.LoadOrderFile, false) },
-            { GameType.FalloutNewVegas, new GameCapability(GameType.FalloutNewVegas, PluginDiscoveryMode.LoadOrderFile, false) }
+            {
+                GameType.FalloutNewVegas,
+                new GameCapability(GameType.FalloutNewVegas, PluginDiscoveryMode.LoadOrderFile, false)
+            }
         };
 
     /// <summary>

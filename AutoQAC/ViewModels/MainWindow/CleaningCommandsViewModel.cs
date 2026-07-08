@@ -39,8 +39,6 @@ public sealed partial class CleaningCommandsViewModel(
     Interaction<Unit, Unit> showAboutInteraction)
     : ViewModelBase, IDisposable
 {
-    private readonly IPluginRefreshModule _pluginRefreshModule = pluginRefreshModule;
-    private readonly ICleaningCommandReadiness _cleaningCommandReadiness = cleaningCommandReadiness;
     private CancellationTokenSource? _readinessCts;
     private int _readinessRequestId;
     private CleaningPreflightFailureKind? _currentReadinessFailureKind;
@@ -111,7 +109,7 @@ public sealed partial class CleaningCommandsViewModel(
 
         try
         {
-            await _pluginRefreshModule.ExecuteAsync(
+            await pluginRefreshModule.ExecuteAsync(
                 new PluginRefreshIntent.Cancel(PluginRefreshCancelReason.CleaningStarted));
             await showProgressInteraction.Handle(cleaningSession);
 
@@ -377,7 +375,7 @@ public sealed partial class CleaningCommandsViewModel(
 
     private async Task<bool> ValidatePreCleanAsync()
     {
-        var readiness = await _cleaningCommandReadiness.EvaluateAsync().ConfigureAwait(true);
+        var readiness = await cleaningCommandReadiness.EvaluateAsync().ConfigureAwait(true);
         ApplyReadiness(readiness, projectFailure: true);
         return readiness.CanStartOrPreview;
     }
@@ -400,7 +398,7 @@ public sealed partial class CleaningCommandsViewModel(
     {
         try
         {
-            var readiness = await _cleaningCommandReadiness.EvaluateAsync(ct).ConfigureAwait(true);
+            var readiness = await cleaningCommandReadiness.EvaluateAsync(ct).ConfigureAwait(true);
             if (ct.IsCancellationRequested || requestId != Volatile.Read(ref _readinessRequestId))
             {
                 return;
@@ -471,7 +469,8 @@ public sealed partial class CleaningCommandsViewModel(
             CleaningPreflightFailureKind.MissingPluginRefreshPublication =>
                 ("Plugins not refreshed", "Select a game and refresh plugins before cleaning."),
             CleaningPreflightFailureKind.StalePluginRefreshPublication =>
-                ("Plugins need refresh", "Refresh plugins after changing game, load order, MO2, or skip list settings."),
+                ("Plugins need refresh",
+                    "Refresh plugins after changing game, load order, MO2, or skip list settings."),
             CleaningPreflightFailureKind.NoGameSelected =>
                 ("No game selected", "Select a game before cleaning."),
             CleaningPreflightFailureKind.XEditNotConfigured =>

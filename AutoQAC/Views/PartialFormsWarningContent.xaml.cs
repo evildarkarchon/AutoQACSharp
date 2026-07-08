@@ -1,8 +1,6 @@
-using Microsoft.UI.Xaml.Controls;
-
 namespace AutoQAC.Views;
 
-public sealed partial class PartialFormsWarningContent : UserControl
+public sealed partial class PartialFormsWarningContent
 {
     public PartialFormsWarningContent()
     {

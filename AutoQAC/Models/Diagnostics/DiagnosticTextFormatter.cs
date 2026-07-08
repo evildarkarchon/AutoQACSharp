@@ -9,7 +9,7 @@ namespace AutoQAC.Models.Diagnostics;
 /// <summary>
 /// Formats shared user-facing diagnostic text while keeping paths, command fragments, and raw exception details out of UI/export copy.
 /// </summary>
-public static class DiagnosticTextFormatter
+public static partial class DiagnosticTextFormatter
 {
     /// <summary>
     /// Safe details sentence for user-facing dialogs when technical data was written to the latest AutoQAC log.
@@ -26,16 +26,14 @@ public static class DiagnosticTextFormatter
 
     private static readonly char[] ExplicitUnsafeNameCharacters = ['\'', '"', '`', '|', '&', ';', '<', '>'];
     private static readonly HashSet<char> InvalidFileNameCharacters = Path.GetInvalidFileNameChars().ToHashSet();
-    private static readonly Regex DriveRootedPathPattern = new(@"[A-Za-z]:[\\/]", RegexOptions.Compiled);
+    private static readonly Regex DriveRootedPathPattern = DriveRootedPathPatternRegex();
 
-    private static readonly Regex NamespaceStackFramePattern = new(@"\bat\s+[A-Za-z_][\w]*(\.[A-Za-z_][\w]*)+",
-        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex NamespaceStackFramePattern = NamespaceStackFramePatternRegex();
 
     private static readonly Regex ExeCommandMarkerPattern =
-        new(@"\.exe(?=$|[\s""'`])", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        ExeCommandMarkerPatternRegex();
 
-    private static readonly Regex PluginCommandFlagPattern = new(@"(?:[\s_-]*(?:-QAC|-autoload))+(?=\.[^./\\]+$|$)",
-        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex PluginCommandFlagPattern = PluginCommandFlagPatternRegex();
 
     /// <summary>
     /// Builds operation-specific unexpected-failure copy with latest-log guidance and no raw technical detail.
@@ -155,4 +153,18 @@ public static class DiagnosticTextFormatter
 
         return string.IsNullOrWhiteSpace(sanitized) ? fallback : sanitized;
     }
+
+    [GeneratedRegex(@"[A-Za-z]:[\\/]", RegexOptions.Compiled)]
+    private static partial Regex DriveRootedPathPatternRegex();
+
+    [GeneratedRegex(@"\bat\s+[A-Za-z_][\w]*(\.[A-Za-z_][\w]*)+", RegexOptions.IgnoreCase | RegexOptions.Compiled,
+        "en-US")]
+    private static partial Regex NamespaceStackFramePatternRegex();
+
+    [GeneratedRegex(@"\.exe(?=$|[\s""'`])", RegexOptions.IgnoreCase | RegexOptions.Compiled, "en-US")]
+    private static partial Regex ExeCommandMarkerPatternRegex();
+
+    [GeneratedRegex(@"(?:[\s_-]*(?:-QAC|-autoload))+(?=\.[^./\\]+$|$)", RegexOptions.IgnoreCase | RegexOptions.Compiled,
+        "en-US")]
+    private static partial Regex PluginCommandFlagPatternRegex();
 }

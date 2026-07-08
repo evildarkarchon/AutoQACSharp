@@ -85,7 +85,8 @@ public interface IMessageDialogService
     /// <param name="icon">Icon shown with the dialog.</param>
     /// <param name="details">Optional details text.</param>
     /// <returns>The selected choice result.</returns>
-    Task<MessageDialogResult> ShowChoiceAsync(string title, string message, string primaryButtonText, string secondaryButtonText, MessageDialogIcon icon = MessageDialogIcon.Question, string? details = null);
+    Task<MessageDialogResult> ShowChoiceAsync(string title, string message, string primaryButtonText,
+        string secondaryButtonText, MessageDialogIcon icon = MessageDialogIcon.Question, string? details = null);
 
     /// <summary>
     /// Shows a retry dialog.

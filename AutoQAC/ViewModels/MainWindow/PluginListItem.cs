@@ -22,11 +22,9 @@ public sealed partial class PluginListItem : ObservableObject
         IsSelected = isSelected;
     }
 
-    [ObservableProperty]
-    public partial PluginRefreshRow Info { get; set; }
+    [ObservableProperty] public partial PluginRefreshRow Info { get; set; }
 
-    [ObservableProperty]
-    public partial bool IsSelected { get; set; }
+    [ObservableProperty] public partial bool IsSelected { get; set; }
 
     public string FileName => Info.FileName;
     public string FullPath => Info.FullPath;

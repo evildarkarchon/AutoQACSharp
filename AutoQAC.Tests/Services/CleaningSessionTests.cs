@@ -15,14 +15,13 @@ using AutoQAC.Services.State;
 using AutoQAC.Tests.TestInfrastructure;
 using FluentAssertions;
 using NSubstitute;
-using NSubstitute.ExceptionExtensions;
 using System.Diagnostics;
 using System.Reflection;
 using System.Reactive.Subjects;
 
 namespace AutoQAC.Tests.Services;
 
-public sealed class CleaningSessionTests : IDisposable
+public sealed partial class CleaningSessionTests : IDisposable
 {
     private readonly ICleaningService _cleaningServiceMock;
     private readonly IPluginValidationService _pluginServiceMock;
@@ -36,7 +35,6 @@ public sealed class CleaningSessionTests : IDisposable
     private readonly IBackupService _backupServiceMock;
     private readonly IHangDetectionService _hangDetectionMock;
     private readonly IMo2ValidationService _mo2ValidationServiceMock;
-    private readonly IMo2InstanceService _mo2InstanceServiceMock;
     private readonly ICleaningSessionDecisionAdapter _decisionsMock;
     private readonly string _mo2LoadOrderPath;
     private readonly string _mo2InstancePath;
@@ -59,7 +57,7 @@ public sealed class CleaningSessionTests : IDisposable
         _backupServiceMock = Substitute.For<IBackupService>();
         _hangDetectionMock = Substitute.For<IHangDetectionService>();
         _mo2ValidationServiceMock = Substitute.For<IMo2ValidationService>();
-        _mo2InstanceServiceMock = Substitute.For<IMo2InstanceService>();
+        var mo2InstanceServiceMock = Substitute.For<IMo2InstanceService>();
         _decisionsMock = Substitute.For<ICleaningSessionDecisionAdapter>();
         _mo2LoadOrderPath = Path.GetTempFileName();
         _mo2InstancePath = Directory.CreateTempSubdirectory().FullName;
@@ -83,7 +81,7 @@ public sealed class CleaningSessionTests : IDisposable
                 Arg.Any<GameType>(),
                 Arg.Any<GameVariant>(),
                 Arg.Any<CancellationToken>())
-            .Returns(new List<string>());
+            .Returns([]);
 
         // Default mock setup for LoadUserConfigAsync to return default config (DisableSkipLists = false)
         _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>())
@@ -100,7 +98,7 @@ public sealed class CleaningSessionTests : IDisposable
                 Arg.Any<string>(), Arg.Any<GameType>(),
                 Arg.Any<long>(), Arg.Any<long>(),
                 Arg.Any<CancellationToken>())
-            .Returns(new LogReadResult { LogLines = new List<string>() });
+            .Returns(new LogReadResult { LogLines = [] });
         _mo2ValidationServiceMock.ValidateMo2ExecutableAsync(Arg.Any<string>()).Returns(true);
         var mo2Instance = new Mo2InstanceInfo(
             @"C:\MO2\Instances\SSE",
@@ -111,14 +109,15 @@ public sealed class CleaningSessionTests : IDisposable
             "Skyrim Special Edition",
             true,
             null);
-        _mo2InstanceServiceMock.ResolveInstanceAsync(
+        mo2InstanceServiceMock.ResolveInstanceAsync(
                 Arg.Any<GameType>(),
                 Arg.Any<string?>(),
                 Arg.Any<string?>(),
                 Arg.Any<CancellationToken>())
             .Returns(mo2Instance);
-        _mo2InstanceServiceMock.GetProfiles(Arg.Any<Mo2InstanceInfo>()).Returns(["Default"]);
-        _mo2InstanceServiceMock.GetLoadOrderPath(Arg.Any<Mo2InstanceInfo>(), Arg.Any<string>()).Returns(_mo2LoadOrderPath);
+        mo2InstanceServiceMock.GetProfiles(Arg.Any<Mo2InstanceInfo>()).Returns(["Default"]);
+        mo2InstanceServiceMock.GetLoadOrderPath(Arg.Any<Mo2InstanceInfo>(), Arg.Any<string>())
+            .Returns(_mo2LoadOrderPath);
 
         _decisionsMock.ShouldRetryTimedOutPluginAsync(
                 Arg.Any<string>(),
@@ -313,7 +312,7 @@ public sealed class CleaningSessionTests : IDisposable
         }
 
         var cancellationSignal = CreateSignal();
-        using var registration = ct.Register(() => cancellationSignal.TrySetResult(true));
+        await using var registration = ct.Register(() => cancellationSignal.TrySetResult(true));
         await WaitForSignalAsync(cancellationSignal.Task, "expected cancellation token to be canceled");
         ct.IsCancellationRequested.Should().BeTrue("the token should be canceled before the helper returns");
     }
@@ -403,7 +402,7 @@ public sealed class CleaningSessionTests : IDisposable
         });
 
         process.Should().NotBeNull("a real external process is needed to exercise termination paths safely");
-        return process!;
+        return process;
     }
 
     private static void KillProcessIfRunning(Process? process)
@@ -480,15 +479,18 @@ public sealed class CleaningSessionTests : IDisposable
         _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>())
             .Returns(true);
 
-        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<System.Diagnostics.Process>?>(), Arg.Any<CancellationToken>())
+        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<Process>?>(),
+                Arg.Any<CancellationToken>())
             .Returns(new CleaningResult { Status = CleaningStatus.Cleaned });
 
         // Act
         await _cleaningSession.StartAsync();
 
         // Assert
-        await _cleaningServiceMock.Received(1).CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Plugin1.esp"), Arg.Any<Action<System.Diagnostics.Process>?>(), Arg.Any<CancellationToken>());
-        await _cleaningServiceMock.Received(1).CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Plugin2.esp"), Arg.Any<Action<System.Diagnostics.Process>?>(), Arg.Any<CancellationToken>());
+        await _cleaningServiceMock.Received(1).CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Plugin1.esp"),
+            Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>());
+        await _cleaningServiceMock.Received(1).CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Plugin2.esp"),
+            Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>());
         _stateServiceMock.Received(1).StartCleaning(Arg.Any<List<PluginInfo>>());
         _stateServiceMock.Received(1).FinishCleaningWithResults(Arg.Any<CleaningSessionResult>());
     }
@@ -533,7 +535,8 @@ public sealed class CleaningSessionTests : IDisposable
 
         // Assert
         await act.Should().ThrowAsync<InvalidOperationException>();
-        _stateServiceMock.Received(1).FinishCleaningWithResults(Arg.Any<CleaningSessionResult>()); // It calls Finish in catch block
+        _stateServiceMock.Received(1)
+            .FinishCleaningWithResults(Arg.Any<CleaningSessionResult>()); // It calls Finish in catch block
     }
 
     [Fact]
@@ -559,7 +562,7 @@ public sealed class CleaningSessionTests : IDisposable
 
         _cleaningServiceMock.CleanPluginAsync(
                 Arg.Any<PluginInfo>(),
-                Arg.Any<Action<System.Diagnostics.Process>?>(),
+                Arg.Any<Action<Process>?>(),
                 Arg.Any<CancellationToken>())
             .Returns(new CleaningResult { Status = CleaningStatus.Cleaned, Success = true });
 
@@ -570,7 +573,7 @@ public sealed class CleaningSessionTests : IDisposable
         await act.Should().NotThrowAsync();
         await _cleaningServiceMock.Received(1).CleanPluginAsync(
             Arg.Any<PluginInfo>(),
-            Arg.Any<Action<System.Diagnostics.Process>?>(),
+            Arg.Any<Action<Process>?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -604,7 +607,7 @@ public sealed class CleaningSessionTests : IDisposable
         await act.Should().ThrowAsync<InvalidOperationException>();
         await _cleaningServiceMock.DidNotReceive().CleanPluginAsync(
             Arg.Any<PluginInfo>(),
-            Arg.Any<Action<System.Diagnostics.Process>?>(),
+            Arg.Any<Action<Process>?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -648,7 +651,8 @@ public sealed class CleaningSessionTests : IDisposable
         var cts = new CancellationTokenSource();
 
         // After cleaning 2 plugins, request cancellation
-        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<System.Diagnostics.Process>?>(), Arg.Any<CancellationToken>())
+        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<Process>?>(),
+                Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 cleanedCount++;
@@ -657,6 +661,7 @@ public sealed class CleaningSessionTests : IDisposable
                     // Simulate user clicking "Stop"
                     cts.Cancel();
                 }
+
                 return new CleaningResult { Status = CleaningStatus.Cleaned };
             });
 
@@ -706,16 +711,16 @@ public sealed class CleaningSessionTests : IDisposable
                 Arg.Any<GameType>(),
                 Arg.Any<GameVariant>(),
                 Arg.Any<CancellationToken>())
-            .Returns(new List<string>());
+            .Returns([]);
 
         _pluginServiceMock.FilterSkippedPlugins(plugins, Arg.Any<List<string>>())
             .Returns(plugins);
 
         // Configure cleaning results: BadPlugin fails, others succeed
         _cleaningServiceMock.CleanPluginAsync(
-            Arg.Is<PluginInfo>(p => p.FileName == "BadPlugin.esp"),
-            Arg.Any<Action<System.Diagnostics.Process>?>(),
-            Arg.Any<CancellationToken>())
+                Arg.Is<PluginInfo>(p => p.FileName == "BadPlugin.esp"),
+                Arg.Any<Action<Process>?>(),
+                Arg.Any<CancellationToken>())
             .Returns(new CleaningResult
             {
                 Status = CleaningStatus.Failed,
@@ -724,9 +729,9 @@ public sealed class CleaningSessionTests : IDisposable
             });
 
         _cleaningServiceMock.CleanPluginAsync(
-            Arg.Is<PluginInfo>(p => p.FileName != "BadPlugin.esp"),
-            Arg.Any<Action<System.Diagnostics.Process>?>(),
-            Arg.Any<CancellationToken>())
+                Arg.Is<PluginInfo>(p => p.FileName != "BadPlugin.esp"),
+                Arg.Any<Action<Process>?>(),
+                Arg.Any<CancellationToken>())
             .Returns(new CleaningResult
             {
                 Status = CleaningStatus.Cleaned,
@@ -738,11 +743,14 @@ public sealed class CleaningSessionTests : IDisposable
 
         // Assert
         // All 5 plugins should have been processed
-        await _cleaningServiceMock.Received(5).CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<System.Diagnostics.Process>?>(), Arg.Any<CancellationToken>());
+        await _cleaningServiceMock.Received(5).CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<Process>?>(),
+            Arg.Any<CancellationToken>());
 
         // State should have been updated for all plugins via AddDetailedCleaningResult
-        _stateServiceMock.Received(1).AddDetailedCleaningResult(Arg.Is<PluginCleaningResult>(r => r.PluginName == "BadPlugin.esp" && r.Status == CleaningStatus.Failed));
-        _stateServiceMock.Received(4).AddDetailedCleaningResult(Arg.Is<PluginCleaningResult>(r => r.PluginName != "BadPlugin.esp" && r.Status == CleaningStatus.Cleaned));
+        _stateServiceMock.Received(1).AddDetailedCleaningResult(
+            Arg.Is<PluginCleaningResult>(r => r.PluginName == "BadPlugin.esp" && r.Status == CleaningStatus.Failed));
+        _stateServiceMock.Received(4).AddDetailedCleaningResult(Arg.Is<PluginCleaningResult>(r =>
+            r.PluginName != "BadPlugin.esp" && r.Status == CleaningStatus.Cleaned));
 
         // FinishCleaning should be called
         _stateServiceMock.Received(1).FinishCleaningWithResults(Arg.Any<CleaningSessionResult>());
@@ -781,7 +789,8 @@ public sealed class CleaningSessionTests : IDisposable
         var currentlyExecuting = 0;
         var maxConcurrent = 0;
 
-        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<System.Diagnostics.Process>?>(), Arg.Any<CancellationToken>())
+        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<Process>?>(),
+                Arg.Any<CancellationToken>())
             .Returns(callInfo =>
             {
                 var plugin = callInfo.Arg<PluginInfo>();
@@ -861,7 +870,8 @@ public sealed class CleaningSessionTests : IDisposable
         var cleanedPlugins = new List<string>();
         var cleaningStartedEvent = CreateSignal();
 
-        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<System.Diagnostics.Process>?>(), Arg.Any<CancellationToken>())
+        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<Process>?>(),
+                Arg.Any<CancellationToken>())
             .Returns(async callInfo =>
             {
                 var plugin = callInfo.Arg<PluginInfo>();
@@ -902,8 +912,9 @@ public sealed class CleaningSessionTests : IDisposable
     {
         var preflightSub = Substitute.For<ICleaningPreflight>();
         var preflightReached = CreateSignal();
-        var releaseTcs = new TaskCompletionSource<CleaningPreflightPlan>(TaskCreationOptions.RunContinuationsAsynchronously);
-        CancellationToken capturedToken = default;
+        var releaseTcs =
+            new TaskCompletionSource<CleaningPreflightPlan>(TaskCreationOptions.RunContinuationsAsynchronously);
+        CancellationToken capturedToken = CancellationToken.None;
 
         _processServiceMock.CleanOrphanedProcessesAsync(Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
@@ -913,7 +924,7 @@ public sealed class CleaningSessionTests : IDisposable
             {
                 // Signal once the orchestrator reaches preflight, then wait for cancellation/release.
                 preflightReached.TrySetResult(true);
-                using var reg = capturedToken.Register(() => releaseTcs.TrySetCanceled(capturedToken));
+                await using var reg = capturedToken.Register(() => releaseTcs.TrySetCanceled(capturedToken));
                 return await releaseTcs.Task.ConfigureAwait(false);
             });
 
@@ -933,7 +944,7 @@ public sealed class CleaningSessionTests : IDisposable
         try
         {
             await WaitForSignalAsync(preflightReached);
-            await orchestrator.ControlAsync(CleaningSessionControl.RequestStop);
+            await orchestrator.ControlAsync(CleaningSessionControl.RequestStop, CancellationToken.None);
             await WaitForCancellationAsync(capturedToken);
 
             releaseTcs.TrySetCanceled(capturedToken);
@@ -961,18 +972,19 @@ public sealed class CleaningSessionTests : IDisposable
     }
 
     [Fact]
-    public async Task StopCleaningAsync_DuringOrphanCleanup_CancelsSessionBeforePreflightAndDoesNotInvokeCleaningService()
+    public async Task
+        StopCleaningAsync_DuringOrphanCleanup_CancelsSessionBeforePreflightAndDoesNotInvokeCleaningService()
     {
         var orphanReached = CreateSignal();
         var releaseOrphanCleanup = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        CancellationToken capturedToken = default;
+        CancellationToken capturedToken = CancellationToken.None;
 
         _processServiceMock.CleanOrphanedProcessesAsync(Arg.Do<CancellationToken>(t => capturedToken = t))
             .Returns(async _ =>
             {
                 // Signal once the orchestrator reaches the first startup await, then wait for cancellation/release.
                 orphanReached.TrySetResult(true);
-                using var reg = capturedToken.Register(() => releaseOrphanCleanup.TrySetCanceled(capturedToken));
+                await using var reg = capturedToken.Register(() => releaseOrphanCleanup.TrySetCanceled(capturedToken));
                 await releaseOrphanCleanup.Task.ConfigureAwait(false);
             });
 
@@ -992,7 +1004,7 @@ public sealed class CleaningSessionTests : IDisposable
         try
         {
             await WaitForSignalAsync(orphanReached);
-            await orchestrator.ControlAsync(CleaningSessionControl.RequestStop);
+            await orchestrator.ControlAsync(CleaningSessionControl.RequestStop, capturedToken);
             await WaitForCancellationAsync(capturedToken);
             try
             {
@@ -1018,7 +1030,8 @@ public sealed class CleaningSessionTests : IDisposable
     }
 
     [Fact]
-    public async Task StartCleaningAsync_WhenSessionAlreadyActive_ShouldRejectSecondStartAndKeepFirstSessionCancellable()
+    public async Task
+        StartCleaningAsync_WhenSessionAlreadyActive_ShouldRejectSecondStartAndKeepFirstSessionCancellable()
     {
         var plugins = new List<PluginInfo>
         {
@@ -1036,7 +1049,7 @@ public sealed class CleaningSessionTests : IDisposable
         _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>()).Returns(true);
 
         var firstPluginStarted = CreateSignal();
-        CancellationToken firstSessionToken = default;
+        CancellationToken firstSessionToken = CancellationToken.None;
         var cleanCalls = 0;
         _cleaningServiceMock.CleanPluginAsync(
                 Arg.Any<PluginInfo>(),
@@ -1055,10 +1068,10 @@ public sealed class CleaningSessionTests : IDisposable
                 return new CleaningResult { Status = CleaningStatus.Failed, Message = "Cancelled" };
             });
 
-        var firstStartTask = _cleaningSession.StartAsync();
+        var firstStartTask = _cleaningSession.StartAsync(firstSessionToken);
         await WaitForSignalAsync(firstPluginStarted);
 
-        var secondStart = () => _cleaningSession.StartAsync();
+        var secondStart = () => _cleaningSession.StartAsync(firstSessionToken);
         await secondStart.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*already in progress*");
 
@@ -1068,7 +1081,7 @@ public sealed class CleaningSessionTests : IDisposable
             Arg.Any<Action<Process>?>(),
             Arg.Any<CancellationToken>());
 
-        await _cleaningSession.ControlAsync(CleaningSessionControl.RequestStop);
+        await _cleaningSession.ControlAsync(CleaningSessionControl.RequestStop, firstSessionToken);
         await WaitForCancellationAsync(firstSessionToken);
         await firstStartTask;
     }
@@ -1620,7 +1633,8 @@ public sealed class CleaningSessionTests : IDisposable
         var thrown = await act.Should().ThrowAsync<CleaningPreflightException>();
         thrown.Which.Failure.Kind.Should().Be(CleaningPreflightFailureKind.NoPluginsLoaded);
         // No cleaning should have been attempted
-        await _cleaningServiceMock.DidNotReceive().CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<System.Diagnostics.Process>?>(), Arg.Any<CancellationToken>());
+        await _cleaningServiceMock.DidNotReceive().CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<Process>?>(),
+            Arg.Any<CancellationToken>());
 
         // The session still publishes a terminal result from its error path.
         _stateServiceMock.DidNotReceive().StartCleaning(Arg.Any<List<PluginInfo>>());
@@ -1652,7 +1666,8 @@ public sealed class CleaningSessionTests : IDisposable
         _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>())
             .Returns(true);
 
-        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<System.Diagnostics.Process>?>(), Arg.Any<CancellationToken>())
+        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<Process>?>(),
+                Arg.Any<CancellationToken>())
             .Returns(new CleaningResult { Status = CleaningStatus.Cleaned });
 
         // Act
@@ -1679,9 +1694,9 @@ public sealed class CleaningSessionTests : IDisposable
         // Arrange
         var plugins = new List<PluginInfo>
         {
-            new() { FileName = "Skyrim.esm", FullPath = "Skyrim.esm" },  // In skip list
-            new() { FileName = "Update.esm", FullPath = "Update.esm" },  // In skip list
-            new() { FileName = "UserMod.esp", FullPath = "UserMod.esp" }   // Not in skip list
+            new() { FileName = "Skyrim.esm", FullPath = "Skyrim.esm" }, // In skip list
+            new() { FileName = "Update.esm", FullPath = "Update.esm" }, // In skip list
+            new() { FileName = "UserMod.esp", FullPath = "UserMod.esp" } // Not in skip list
         };
 
         var appState = new AppState
@@ -1696,7 +1711,8 @@ public sealed class CleaningSessionTests : IDisposable
         _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>())
             .Returns(true);
 
-        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<System.Diagnostics.Process>?>(), Arg.Any<CancellationToken>())
+        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<Process>?>(),
+                Arg.Any<CancellationToken>())
             .Returns(new CleaningResult { Status = CleaningStatus.Cleaned });
 
         // Skip list contains base game ESMs
@@ -1704,7 +1720,7 @@ public sealed class CleaningSessionTests : IDisposable
                 GameType.SkyrimSe,
                 Arg.Any<GameVariant>(),
                 Arg.Any<CancellationToken>())
-            .Returns(new List<string> { "Skyrim.esm", "Update.esm" });
+            .Returns(["Skyrim.esm", "Update.esm"]);
 
         // DisableSkipLists is ENABLED
         var userConfig = new UserConfiguration
@@ -1718,9 +1734,12 @@ public sealed class CleaningSessionTests : IDisposable
         await _cleaningSession.StartAsync();
 
         // Assert - ALL 3 plugins should be cleaned, including those in skip list
-        await _cleaningServiceMock.Received(1).CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Skyrim.esm"), Arg.Any<Action<System.Diagnostics.Process>?>(), Arg.Any<CancellationToken>());
-        await _cleaningServiceMock.Received(1).CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Update.esm"), Arg.Any<Action<System.Diagnostics.Process>?>(), Arg.Any<CancellationToken>());
-        await _cleaningServiceMock.Received(1).CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "UserMod.esp"), Arg.Any<Action<System.Diagnostics.Process>?>(), Arg.Any<CancellationToken>());
+        await _cleaningServiceMock.Received(1).CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Skyrim.esm"),
+            Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>());
+        await _cleaningServiceMock.Received(1).CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Update.esm"),
+            Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>());
+        await _cleaningServiceMock.Received(1).CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "UserMod.esp"),
+            Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>());
     }
 
     /// <summary>
@@ -1732,9 +1751,9 @@ public sealed class CleaningSessionTests : IDisposable
         // Arrange
         var plugins = new List<PluginInfo>
         {
-            new() { FileName = "Skyrim.esm", FullPath = "Skyrim.esm" },  // In skip list
-            new() { FileName = "Update.esm", FullPath = "Update.esm" },  // In skip list
-            new() { FileName = "UserMod.esp", FullPath = "UserMod.esp" }   // Not in skip list
+            new() { FileName = "Skyrim.esm", FullPath = "Skyrim.esm" }, // In skip list
+            new() { FileName = "Update.esm", FullPath = "Update.esm" }, // In skip list
+            new() { FileName = "UserMod.esp", FullPath = "UserMod.esp" } // Not in skip list
         };
 
         var appState = new AppState
@@ -1749,7 +1768,8 @@ public sealed class CleaningSessionTests : IDisposable
         _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>())
             .Returns(true);
 
-        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<System.Diagnostics.Process>?>(), Arg.Any<CancellationToken>())
+        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<Process>?>(),
+                Arg.Any<CancellationToken>())
             .Returns(new CleaningResult { Status = CleaningStatus.Cleaned });
 
         // Skip list contains base game ESMs
@@ -1757,7 +1777,7 @@ public sealed class CleaningSessionTests : IDisposable
                 GameType.SkyrimSe,
                 Arg.Any<GameVariant>(),
                 Arg.Any<CancellationToken>())
-            .Returns(new List<string> { "Skyrim.esm", "Update.esm" });
+            .Returns(["Skyrim.esm", "Update.esm"]);
 
         // DisableSkipLists is DISABLED (default)
         var userConfig = new UserConfiguration
@@ -1771,9 +1791,12 @@ public sealed class CleaningSessionTests : IDisposable
         await _cleaningSession.StartAsync();
 
         // Assert - Only UserMod.esp should be cleaned
-        await _cleaningServiceMock.DidNotReceive().CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Skyrim.esm"), Arg.Any<Action<System.Diagnostics.Process>?>(), Arg.Any<CancellationToken>());
-        await _cleaningServiceMock.DidNotReceive().CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Update.esm"), Arg.Any<Action<System.Diagnostics.Process>?>(), Arg.Any<CancellationToken>());
-        await _cleaningServiceMock.Received(1).CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "UserMod.esp"), Arg.Any<Action<System.Diagnostics.Process>?>(), Arg.Any<CancellationToken>());
+        await _cleaningServiceMock.DidNotReceive().CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Skyrim.esm"),
+            Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>());
+        await _cleaningServiceMock.DidNotReceive().CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Update.esm"),
+            Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>());
+        await _cleaningServiceMock.Received(1).CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "UserMod.esp"),
+            Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>());
     }
 
     #endregion
@@ -1856,7 +1879,8 @@ public sealed class CleaningSessionTests : IDisposable
             _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>())
                 .Returns(true);
 
-            _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<System.Diagnostics.Process>?>(), Arg.Any<CancellationToken>())
+            _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<Process>?>(),
+                    Arg.Any<CancellationToken>())
                 .Returns(new CleaningResult { Status = CleaningStatus.Cleaned });
 
             // MO2 mode enabled in user config
@@ -1908,7 +1932,8 @@ public sealed class CleaningSessionTests : IDisposable
         _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>())
             .Returns(true);
 
-        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<System.Diagnostics.Process>?>(), Arg.Any<CancellationToken>())
+        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<Process>?>(),
+                Arg.Any<CancellationToken>())
             .Returns(new CleaningResult { Status = CleaningStatus.Cleaned });
 
         // MO2 mode disabled in user config
@@ -1932,7 +1957,9 @@ public sealed class CleaningSessionTests : IDisposable
         _pluginServiceMock.Received().ValidatePluginFile(Arg.Any<PluginInfo>());
 
         // Missing.esp should NOT be cleaned (removed from list)
-        await _cleaningServiceMock.DidNotReceive().CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Missing.esp"), Arg.Any<Action<System.Diagnostics.Process>?>(), Arg.Any<CancellationToken>());
+        await _cleaningServiceMock.DidNotReceive().CleanPluginAsync(
+            Arg.Is<PluginInfo>(p => p.FileName == "Missing.esp"), Arg.Any<Action<Process>?>(),
+            Arg.Any<CancellationToken>());
     }
 
     /// <summary>
@@ -1965,24 +1992,30 @@ public sealed class CleaningSessionTests : IDisposable
                 Arg.Any<string>(),
                 Arg.Any<IProgress<BackupCopyProgress>?>(),
                 Arg.Any<CancellationToken>())
-            .Returns(new BackupCreateResult(BackupOperationStatus.Canceled, "Canceled.esp", 10, 100, BackupFailureReason.Canceled));
+            .Returns(new BackupCreateResult(BackupOperationStatus.Canceled, "Canceled.esp", 10, 100,
+                BackupFailureReason.Canceled));
         _backupServiceMock.BackupPluginAsync(
                 Arg.Is<PluginInfo>(p => p.FileName == "Next.esp"),
                 Arg.Any<string>(),
                 Arg.Any<IProgress<BackupCopyProgress>?>(),
                 Arg.Any<CancellationToken>())
             .Returns(new BackupCreateResult(BackupOperationStatus.Complete, "Next.esp", 100, 100, null));
-        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>())
+        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<Process>?>(),
+                Arg.Any<CancellationToken>())
             .Returns(new CleaningResult { Status = CleaningStatus.Cleaned, Success = true });
-        _backupServiceMock.CleanupOldSessionsAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<IProgress<BackupCopyProgress>?>(), Arg.Any<CancellationToken>())
-            .Returns(new BackupRetentionCleanupResult(BackupOperationStatus.Complete, Array.Empty<BackupRetentionRowResult>()));
+        _backupServiceMock.CleanupOldSessionsAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string?>(),
+                Arg.Any<IProgress<BackupCopyProgress>?>(), Arg.Any<CancellationToken>())
+            .Returns(new BackupRetentionCleanupResult(BackupOperationStatus.Complete, []));
 
         // Act
         await _cleaningSession.StartAsync();
 
         // Assert
-        await _cleaningServiceMock.DidNotReceive().CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Canceled.esp"), Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>());
-        await _cleaningServiceMock.Received(1).CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Next.esp"), Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>());
+        await _cleaningServiceMock.DidNotReceive().CleanPluginAsync(
+            Arg.Is<PluginInfo>(p => p.FileName == "Canceled.esp"), Arg.Any<Action<Process>?>(),
+            Arg.Any<CancellationToken>());
+        await _cleaningServiceMock.Received(1).CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Next.esp"),
+            Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>());
         _stateServiceMock.Received(1).AddDetailedCleaningResult(Arg.Is<PluginCleaningResult>(r =>
             r.PluginName == "Canceled.esp" &&
             r.Status == CleaningStatus.Skipped &&
@@ -2008,7 +2041,8 @@ public sealed class CleaningSessionTests : IDisposable
 
         var processStarted = CreateSignal();
         var releasePlugin = CreateSignal();
-        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>())
+        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<Process>?>(),
+                Arg.Any<CancellationToken>())
             .Returns(async callInfo =>
             {
                 callInfo.ArgAt<Action<Process>?>(1)?.Invoke(Process.GetCurrentProcess());
@@ -2025,7 +2059,8 @@ public sealed class CleaningSessionTests : IDisposable
         await cleaningTask;
 
         // Assert
-        await _processServiceMock.DidNotReceive().TerminateProcessAsync(Arg.Any<Process>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
+        await _processServiceMock.DidNotReceive()
+            .TerminateProcessAsync(Arg.Any<Process>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
     }
 
     /// <summary>
@@ -2048,8 +2083,10 @@ public sealed class CleaningSessionTests : IDisposable
             .Returns(new UserConfiguration { Backup = new BackupSettings { Enabled = true, MaxSessions = 3 } });
         _backupServiceMock.GetBackupRoot(Arg.Any<string>()).Returns(@"C:\Games\AutoQAC Backups");
         _backupServiceMock.CreateSessionDirectory(Arg.Any<string>()).Returns(@"C:\Games\AutoQAC Backups\session");
-        _backupServiceMock.BackupPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<string>(), Arg.Any<IProgress<BackupCopyProgress>?>(), Arg.Any<CancellationToken>())
-            .Returns(new BackupCreateResult(BackupOperationStatus.Failed, "Failure.esp", 0, 100, BackupFailureReason.AccessDenied));
+        _backupServiceMock.BackupPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<string>(),
+                Arg.Any<IProgress<BackupCopyProgress>?>(), Arg.Any<CancellationToken>())
+            .Returns(new BackupCreateResult(BackupOperationStatus.Failed, "Failure.esp", 0, 100,
+                BackupFailureReason.AccessDenied));
 
         var decisionErrors = new List<string>();
         _decisionsMock.ChooseBackupFailureAsync(
@@ -2061,7 +2098,8 @@ public sealed class CleaningSessionTests : IDisposable
                 decisionErrors.Add(callInfo.ArgAt<string>(1));
                 return Task.FromResult(BackupFailureChoice.ContinueWithoutBackup);
             });
-        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>())
+        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<Process>?>(),
+                Arg.Any<CancellationToken>())
             .Returns(new CleaningResult { Status = CleaningStatus.Cleaned, Success = true });
 
         // Act
@@ -2069,7 +2107,8 @@ public sealed class CleaningSessionTests : IDisposable
 
         // Assert
         decisionErrors.Should().ContainSingle().Which.Should().Be("Access denied");
-        await _cleaningServiceMock.Received(1).CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Failure.esp"), Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>());
+        await _cleaningServiceMock.Received(1).CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Failure.esp"),
+            Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>());
     }
 
     /// <summary>
@@ -2097,7 +2136,8 @@ public sealed class CleaningSessionTests : IDisposable
                 Arg.Any<string>(),
                 Arg.Any<IProgress<BackupCopyProgress>?>(),
                 Arg.Any<CancellationToken>())
-            .Returns(new BackupCreateResult(BackupOperationStatus.Failed, "BackupFails.esp", 0, null, BackupFailureReason.TargetWriteFailed));
+            .Returns(new BackupCreateResult(BackupOperationStatus.Failed, "BackupFails.esp", 0, null,
+                BackupFailureReason.TargetWriteFailed));
 
         _decisionsMock.ChooseBackupFailureAsync(
                 Arg.Any<string>(),
@@ -2161,8 +2201,10 @@ public sealed class CleaningSessionTests : IDisposable
                 Arg.Any<string>(),
                 Arg.Any<IProgress<BackupCopyProgress>?>(),
                 Arg.Any<CancellationToken>())
-            .Returns(new BackupCreateResult(BackupOperationStatus.Failed, "BackupFails.esp", 0, null, BackupFailureReason.TargetWriteFailed));
-        _backupServiceMock.WriteSessionMetadataAsync(Arg.Any<string>(), Arg.Any<BackupSession>(), Arg.Any<CancellationToken>())
+            .Returns(new BackupCreateResult(BackupOperationStatus.Failed, "BackupFails.esp", 0, null,
+                BackupFailureReason.TargetWriteFailed));
+        _backupServiceMock
+            .WriteSessionMetadataAsync(Arg.Any<string>(), Arg.Any<BackupSession>(), Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
         _cleaningServiceMock.CleanPluginAsync(
                 Arg.Is<PluginInfo>(p => p.FileName == "AlreadyCleaned.esp"),
@@ -2224,14 +2266,16 @@ public sealed class CleaningSessionTests : IDisposable
                     Backup = new BackupSettings { Enabled = true, MaxSessions = 3 },
                     Settings = new AutoQacSettings { Mo2Mode = true }
                 });
-            _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>())
+            _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<Process>?>(),
+                    Arg.Any<CancellationToken>())
                 .Returns(new CleaningResult { Status = CleaningStatus.Cleaned, Success = true });
 
             // Act
             await _cleaningSession.StartAsync();
 
             // Assert
-            await _backupServiceMock.DidNotReceive().BackupPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<string>(), Arg.Any<IProgress<BackupCopyProgress>?>(), Arg.Any<CancellationToken>());
+            await _backupServiceMock.DidNotReceive().BackupPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<string>(),
+                Arg.Any<IProgress<BackupCopyProgress>?>(), Arg.Any<CancellationToken>());
         }
         finally
         {
@@ -2280,7 +2324,8 @@ public sealed class CleaningSessionTests : IDisposable
         // Assert
         var ex = await act.Should().ThrowAsync<CleaningPreflightException>();
         ex.Which.Failure.Kind.Should().Be(CleaningPreflightFailureKind.Mo2NotConfigured);
-        ex.Which.Failure.ActionHint.Should().Contain("ModOrganizer.exe", "the action hint should guide the user to the MO2 executable setting");
+        ex.Which.Failure.ActionHint.Should().Contain("ModOrganizer.exe",
+            "the action hint should guide the user to the MO2 executable setting");
     }
 
     /// <summary>
@@ -2324,7 +2369,8 @@ public sealed class CleaningSessionTests : IDisposable
         // Assert
         var ex = await act.Should().ThrowAsync<CleaningPreflightException>();
         ex.Which.Failure.Kind.Should().Be(CleaningPreflightFailureKind.Mo2NotFound);
-        ex.Which.Failure.ActionHint.Should().Contain("ModOrganizer.exe", "the action hint should guide the user to the MO2 executable setting");
+        ex.Which.Failure.ActionHint.Should().Contain("ModOrganizer.exe",
+            "the action hint should guide the user to the MO2 executable setting");
     }
 
     #endregion
@@ -2460,7 +2506,7 @@ public sealed class CleaningSessionTests : IDisposable
                 Arg.Any<CancellationToken>())
             .Returns(new LogReadResult
             {
-                LogLines = new List<string>(),
+                LogLines = [],
                 ExceptionContent = "Access violation at 0x00400000"
             });
 
@@ -2597,13 +2643,19 @@ public sealed class CleaningSessionTests : IDisposable
             .Returns(new UserConfiguration { Backup = new BackupSettings { Enabled = true, MaxSessions = 3 } });
         _backupServiceMock.GetBackupRoot(Arg.Any<string>()).Returns(@"C:\Games\AutoQAC Backups");
         _backupServiceMock.CreateSessionDirectory(Arg.Any<string>()).Returns(@"C:\Games\AutoQAC Backups\session");
-        _backupServiceMock.BackupPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<string>(), Arg.Any<IProgress<BackupCopyProgress>?>(), Arg.Any<CancellationToken>())
+        _backupServiceMock.BackupPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<string>(),
+                Arg.Any<IProgress<BackupCopyProgress>?>(), Arg.Any<CancellationToken>())
             .Returns(new BackupCreateResult(BackupOperationStatus.Complete, "Retained.esp", 100, 100, null));
-        _backupServiceMock.CleanupOldSessionsAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<IProgress<BackupCopyProgress>?>(), Arg.Any<CancellationToken>())
+        _backupServiceMock.CleanupOldSessionsAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string?>(),
+                Arg.Any<IProgress<BackupCopyProgress>?>(), Arg.Any<CancellationToken>())
             .Returns(new BackupRetentionCleanupResult(
                 BackupOperationStatus.Warning,
-                new[] { new BackupRetentionRowResult(@"C:\Games\AutoQAC Backups\old", BackupRetentionRowStatus.Failed, BackupFailureReason.CleanupDeletionFailed) }));
-        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>())
+                [
+                    new BackupRetentionRowResult(@"C:\Games\AutoQAC Backups\old", BackupRetentionRowStatus.Failed,
+                        BackupFailureReason.CleanupDeletionFailed)
+                ]));
+        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<Process>?>(),
+                Arg.Any<CancellationToken>())
             .Returns(new CleaningResult { Status = CleaningStatus.Cleaned, Success = true });
 
         // Act
@@ -2621,7 +2673,8 @@ public sealed class CleaningSessionTests : IDisposable
     public async Task Retention_WhenCanceledResultReturned_SessionResultIncludesCanceledBackupCleanup()
     {
         // Arrange
-        var plugin = new PluginInfo { FileName = "CanceledCleanup.esp", FullPath = @"C:\Games\Data\CanceledCleanup.esp" };
+        var plugin = new PluginInfo
+            { FileName = "CanceledCleanup.esp", FullPath = @"C:\Games\Data\CanceledCleanup.esp" };
         _stateServiceMock.CurrentState.Returns(new AppState
         {
             LoadOrderPath = "plugins.txt",
@@ -2634,13 +2687,19 @@ public sealed class CleaningSessionTests : IDisposable
             .Returns(new UserConfiguration { Backup = new BackupSettings { Enabled = true, MaxSessions = 3 } });
         _backupServiceMock.GetBackupRoot(Arg.Any<string>()).Returns(@"C:\Games\AutoQAC Backups");
         _backupServiceMock.CreateSessionDirectory(Arg.Any<string>()).Returns(@"C:\Games\AutoQAC Backups\session");
-        _backupServiceMock.BackupPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<string>(), Arg.Any<IProgress<BackupCopyProgress>?>(), Arg.Any<CancellationToken>())
+        _backupServiceMock.BackupPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<string>(),
+                Arg.Any<IProgress<BackupCopyProgress>?>(), Arg.Any<CancellationToken>())
             .Returns(new BackupCreateResult(BackupOperationStatus.Complete, "CanceledCleanup.esp", 100, 100, null));
-        _backupServiceMock.CleanupOldSessionsAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<IProgress<BackupCopyProgress>?>(), Arg.Any<CancellationToken>())
+        _backupServiceMock.CleanupOldSessionsAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string?>(),
+                Arg.Any<IProgress<BackupCopyProgress>?>(), Arg.Any<CancellationToken>())
             .Returns(new BackupRetentionCleanupResult(
                 BackupOperationStatus.Canceled,
-                new[] { new BackupRetentionRowResult(@"C:\Games\AutoQAC Backups\old", BackupRetentionRowStatus.Kept, BackupFailureReason.Canceled) }));
-        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>())
+                [
+                    new BackupRetentionRowResult(@"C:\Games\AutoQAC Backups\old", BackupRetentionRowStatus.Kept,
+                        BackupFailureReason.Canceled)
+                ]));
+        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<Process>?>(),
+                Arg.Any<CancellationToken>())
             .Returns(new CleaningResult { Status = CleaningStatus.Cleaned, Success = true });
 
         // Act
@@ -2677,12 +2736,13 @@ public sealed class CleaningSessionTests : IDisposable
         _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>())
             .Returns(new UserConfiguration { Backup = new BackupSettings { Enabled = false } });
         _configServiceMock.GetSkipListAsync(GameType.SkyrimSe, Arg.Any<GameVariant>(), Arg.Any<CancellationToken>())
-            .Returns(new List<string> { "SkipMe.esp" });
+            .Returns(["SkipMe.esp"]);
         _pluginServiceMock.ValidatePluginFile(Arg.Is<PluginInfo>(p => p.FileName == "Zero.esp"))
             .Returns(PluginWarningKind.ZeroByte);
         _pluginServiceMock.ValidatePluginFile(Arg.Is<PluginInfo>(p => p.FileName != "Zero.esp"))
             .Returns(PluginWarningKind.None);
-        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>())
+        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<Process>?>(),
+                Arg.Any<CancellationToken>())
             .Returns(new CleaningResult { Status = CleaningStatus.Cleaned, Success = true });
 
         // Act
@@ -2729,7 +2789,8 @@ public sealed class CleaningSessionTests : IDisposable
                 Arg.Any<string>(),
                 Arg.Any<IProgress<BackupCopyProgress>?>(),
                 Arg.Any<CancellationToken>())
-            .Returns(new BackupCreateResult(BackupOperationStatus.Failed, "Failure.esp", 0, 100, BackupFailureReason.AccessDenied));
+            .Returns(new BackupCreateResult(BackupOperationStatus.Failed, "Failure.esp", 0, 100,
+                BackupFailureReason.AccessDenied));
         _backupServiceMock.BackupPluginAsync(
                 Arg.Is<PluginInfo>(p => p.FileName == "BackedUp.esp"),
                 Arg.Any<string>(),
@@ -2741,15 +2802,18 @@ public sealed class CleaningSessionTests : IDisposable
                 Arg.Any<string>(),
                 Arg.Any<CancellationToken>())
             .Returns(BackupFailureChoice.ContinueWithoutBackup);
-        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>())
+        _cleaningServiceMock.CleanPluginAsync(Arg.Any<PluginInfo>(), Arg.Any<Action<Process>?>(),
+                Arg.Any<CancellationToken>())
             .Returns(new CleaningResult { Status = CleaningStatus.Cleaned, Success = true });
 
         // Act
         await _cleaningSession.StartAsync();
 
         // Assert
-        await _cleaningServiceMock.Received(1).CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Failure.esp"), Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>());
-        await _cleaningServiceMock.Received(1).CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "BackedUp.esp"), Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>());
+        await _cleaningServiceMock.Received(1).CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "Failure.esp"),
+            Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>());
+        await _cleaningServiceMock.Received(1).CleanPluginAsync(Arg.Is<PluginInfo>(p => p.FileName == "BackedUp.esp"),
+            Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>());
         await _backupServiceMock.Received(1).WriteSessionMetadataAsync(
             Arg.Any<string>(),
             Arg.Is<BackupSession>(session =>
@@ -2760,7 +2824,8 @@ public sealed class CleaningSessionTests : IDisposable
     }
 
     [Fact]
-    public async Task StartCleaningAsync_AfterGracePeriodExpiredAndDetach_PreservesPendingTargetForForceStopAfterFinalization()
+    public async Task
+        StartCleaningAsync_AfterGracePeriodExpiredAndDetach_PreservesPendingTargetForForceStopAfterFinalization()
     {
         // Arrange
         Process? sleeper = null;
@@ -2785,11 +2850,9 @@ public sealed class CleaningSessionTests : IDisposable
                 var process = callInfo.ArgAt<Process>(0);
                 forceProcessId = process.Id;
                 forceUsedDisposedOriginalHandle = ReferenceEquals(process, disposedOriginalHandle);
-                if (!process.HasExited)
-                {
-                    process.Kill(entireProcessTree: true);
-                    process.WaitForExit(2000);
-                }
+                if (process.HasExited) return TerminationResult.ForceKilled;
+                process.Kill(entireProcessTree: true);
+                process.WaitForExit(2000);
 
                 return TerminationResult.ForceKilled;
             });
@@ -2815,7 +2878,9 @@ public sealed class CleaningSessionTests : IDisposable
                 });
 
             var decisionRequested = CreateSignal();
-            var stopDecision = new TaskCompletionSource<CleaningSessionStopDecision>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var stopDecision =
+                new TaskCompletionSource<CleaningSessionStopDecision>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
             _decisionsMock.ChooseAfterGracePeriodExpiredAsync(
                     Arg.Any<TerminationResult>(),
                     Arg.Any<CancellationToken>())
@@ -2847,7 +2912,9 @@ public sealed class CleaningSessionTests : IDisposable
                 "normal finalization must preserve durable identity for confirmed force stop after the original handle is disposed");
             forceResult.Status.Should().Be(CleaningSessionControlStatus.ForceStopped);
             forceProcessId.Should().Be(sleeperId);
-            forceUsedDisposedOriginalHandle.Should().BeFalse("confirmed force stop must reopen a fresh process handle instead of reusing the disposed original");
+            forceUsedDisposedOriginalHandle.Should()
+                .BeFalse(
+                    "confirmed force stop must reopen a fresh process handle instead of reusing the disposed original");
             await _processServiceMock.Received(1).TerminateProcessAsync(
                 Arg.Any<Process>(),
                 forceKill: true,
@@ -2861,7 +2928,8 @@ public sealed class CleaningSessionTests : IDisposable
     }
 
     [Fact]
-    public async Task StartCleaningAsync_AfterUnresolvedGracePeriodExpiredAndDetach_NextSessionResetClearsStalePendingTarget()
+    public async Task
+        StartCleaningAsync_AfterUnresolvedGracePeriodExpiredAndDetach_NextSessionResetClearsStalePendingTarget()
     {
         // Arrange
         Process? sleeper = null;
@@ -2915,10 +2983,7 @@ public sealed class CleaningSessionTests : IDisposable
                     Arg.Any<PluginInfo>(),
                     Arg.Any<Action<Process>?>(),
                     Arg.Any<CancellationToken>())
-                .Returns(_ =>
-                {
-                    return Task.FromResult(new CleaningResult { Status = CleaningStatus.Cleaned, Success = true });
-                });
+                .Returns(_ => Task.FromResult(new CleaningResult { Status = CleaningStatus.Cleaned, Success = true }));
 
             // Act
             await _cleaningSession.StartAsync();
@@ -2990,10 +3055,7 @@ public sealed class CleaningSessionTests : IDisposable
                     Arg.Any<PluginInfo>(),
                     Arg.Any<Action<Process>?>(),
                     Arg.Any<CancellationToken>())
-                .Returns(ci =>
-                {
-                    return Task.FromResult(new CleaningResult { Status = CleaningStatus.Cleaned, Success = true });
-                });
+                .Returns(_ => Task.FromResult(new CleaningResult { Status = CleaningStatus.Cleaned, Success = true }));
 
             // Act
             await _cleaningSession.StartAsync();
@@ -3047,11 +3109,12 @@ public sealed class CleaningSessionTests : IDisposable
     {
         return member switch
         {
-            MethodInfo m when !m.IsSpecialName =>
+            MethodInfo { IsSpecialName: false } m =>
                 $"{FormatTypeName(m.ReturnType)} {m.Name}({string.Join(", ", m.GetParameters().Select(p => FormatTypeName(p.ParameterType)))})",
             PropertyInfo p =>
                 // Properties on interfaces are always abstract; reflect only the declared accessors.
-                $"{FormatTypeName(p.PropertyType)} {p.Name} {{ {(p.CanRead ? "get; " : string.Empty)}{(p.CanWrite ? "set; " : string.Empty)}}}".TrimEnd(),
+                $"{FormatTypeName(p.PropertyType)} {p.Name} {{ {(p.CanRead ? "get; " : string.Empty)}{(p.CanWrite ? "set; " : string.Empty)}}}"
+                    .TrimEnd(),
             _ => string.Empty
         };
     }
@@ -3099,16 +3162,20 @@ public sealed class CleaningSessionTests : IDisposable
     {
         // Arrange
         var source = File.ReadAllText(GetSourcePath("AutoQAC", "Services", "Cleaning", "CleaningSession.cs"));
-        var pluginCleaningSource = File.ReadAllText(GetSourcePath("AutoQAC", "Services", "Cleaning", "PluginCleaning.cs"));
-        var runnerSource = File.ReadAllText(GetSourcePath("AutoQAC", "Services", "Cleaning", "PluginCleaningRunner.cs"));
-        var finalizerSource = File.ReadAllText(GetSourcePath("AutoQAC", "Services", "Cleaning", "PluginResultFinalizer.cs"));
+        var pluginCleaningSource =
+            File.ReadAllText(GetSourcePath("AutoQAC", "Services", "Cleaning", "PluginCleaning.cs"));
+        var runnerSource =
+            File.ReadAllText(GetSourcePath("AutoQAC", "Services", "Cleaning", "PluginCleaningRunner.cs"));
+        var finalizerSource =
+            File.ReadAllText(GetSourcePath("AutoQAC", "Services", "Cleaning", "PluginResultFinalizer.cs"));
 
         // Act & Assert
         foreach (var cleaningSource in new[] { source, pluginCleaningSource, runnerSource, finalizerSource })
         {
             cleaningSource.Should().NotContain("Task.WhenAll", "plugin cleaning must remain sequential");
             cleaningSource.Should().NotContain("Parallel.ForEachAsync", "plugin cleaning must remain sequential");
-            cleaningSource.Should().NotContain("Task.Run", "plugin-loop work must not be parallelized through task scheduling");
+            cleaningSource.Should().NotContain("Task.Run",
+                "plugin-loop work must not be parallelized through task scheduling");
         }
 
         source.IndexOf("RunPluginBackupAsync", StringComparison.Ordinal).Should().BeLessThan(
@@ -3165,7 +3232,7 @@ public sealed class CleaningSessionTests : IDisposable
         }
 
         directory.Should().NotBeNull("tests should run under the repository root");
-        return Path.Combine(new[] { directory!.FullName }.Concat(segments).ToArray());
+        return Path.Combine(new[] { directory.FullName }.Concat(segments).ToArray());
     }
 
     #endregion
@@ -3196,7 +3263,7 @@ public sealed class CleaningSessionTests : IDisposable
         orchestrator.Dispose();
 
         // Multiple disposal should be safe
-        FluentActions.Invoking(() => orchestrator.Dispose())
+        FluentActions.Invoking(orchestrator.Dispose)
             .Should().NotThrow("multiple disposal should be safe");
     }
 
