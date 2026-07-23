@@ -131,8 +131,8 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         _stateSubscription.Dispose();
         _userConfigurationSubscription?.Dispose();
         _skipListSubscription?.Dispose();
+        CancelActiveRefresh(PluginRefreshCancelReason.Disposed);
         var cts = Interlocked.Exchange(ref _activeRefreshCts, null);
-        cts?.Cancel();
         cts?.Dispose();
         _publicationStore.Dispose();
     }
@@ -288,7 +288,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
 
             try
             {
-                var dataFolder = ResolveDataFolder(plan, rows);
+                var dataFolder = ResolveDataFolder(plan, rows.FirstOrDefault()?.FullPath);
                 var request = CreateInitialApproximationRequest(
                     plan,
                     dataFolder,
@@ -346,115 +346,144 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         return _publicationStore.GetCurrentSnapshot();
     }
 
+    /// <summary>
+    /// Reanalyzes selected rows from one fresh accepted publication and preserves terminal row state.
+    /// </summary>
+    /// <param name="cancellationToken">Token that cancels the active selected-reanalysis generation.</param>
+    /// <returns>The current visible snapshot after rejection, completion, failure, or cancellation.</returns>
     private async Task<PluginRefreshSnapshot> RefreshSelectedIssueApproximationsAsync(
         CancellationToken cancellationToken)
     {
-        var targetSelection = _publicationStore.GetSelectedIssueApproximationTargets();
-        var acceptedSnapshot = targetSelection.Snapshot;
-        var selectedTargets = targetSelection.Targets;
-
-        if (selectedTargets.Count == 0)
-        {
-            return _publicationStore.PublishSnapshot(acceptedSnapshot with
-            {
-                Activity = IdleActivity,
-                StatusText = "Select plugins to refresh."
-            }, GetAffordance(acceptedSnapshot));
-        }
-
         using var linkedCts = CreateAndActivateGeneration(cancellationToken, out var generation);
         var token = linkedCts.Token;
+        var freshnessVersion = Volatile.Read(ref _freshnessRefreshVersion);
 
         try
         {
-            var planResult = await GetPlanForSelectedRefreshAsync(token).ConfigureAwait(false);
-            if (planResult.Plan is null)
+            // Selected reanalysis must prove the accepted row identities are still current before
+            // any row becomes Pending; rebuilding a plan here would combine new facts with old keys.
+            var publication = await GetCurrentPublicationWithFreshnessAsync(
+                    publishIfChanged: true,
+                    token)
+                .ConfigureAwait(false);
+            if (!IsVisible(generation, token))
             {
-                _publicationStore.PublishSnapshot(acceptedSnapshot with
-                {
-                    Generation = generation,
-                    Activity = IdleActivity,
-                    Configuration = planResult.Configuration,
-                    StatusText = planResult.Status == PluginRefreshDiscoveryPlanStatus.NoGameSelected
-                        ? "Approximation refresh is not available for this game."
-                        : GetPlanStatusText(planResult, _stateService.CurrentState.CurrentGameType)
-                }, GetAffordance(acceptedSnapshot.GameType, planResult.Configuration));
                 return _publicationStore.GetCurrentSnapshot();
             }
 
-            var plan = planResult.Plan;
-            var configuration = planResult.Configuration;
+            var hasFreshnessLease =
+                freshnessVersion == Volatile.Read(ref _freshnessRefreshVersion);
+            if (!hasFreshnessLease ||
+                !publication.Freshness.IsFresh ||
+                publication.DiscoveryPlan is null)
+            {
+                _publicationStore.TryPublishSelectedIdleStatus(
+                    generation,
+                    "Run a full Plugin refresh before refreshing selected approximations.",
+                    GetAffordance(publication),
+                    () => IsVisible(generation, token),
+                    out _);
+                return _publicationStore.GetCurrentSnapshot();
+            }
+
+            var plan = publication.DiscoveryPlan;
+            var configuration = publication.Configuration;
             if (!plan.CanAttemptIssueApproximation)
             {
-                _publicationStore.PublishCurrentPublication(
+                _publicationStore.TryPublishSelectedIdleStatus(
                     generation,
-                    plan.GameType,
-                    configuration,
-                    IdleActivity,
                     "Approximation refresh is not available for this game.",
-                    GetAffordance(plan.GameType, configuration));
+                    GetAffordance(plan.GameType, configuration),
+                    () =>
+                        IsVisible(generation, token) &&
+                        freshnessVersion == Volatile.Read(ref _freshnessRefreshVersion),
+                    out _);
                 return _publicationStore.GetCurrentSnapshot();
             }
 
-            var targetLookup = PluginRefreshPublicationRows.CreateTargetLookup(selectedTargets);
-            _publicationStore.MarkTargetsPending(plan.GameType, selectedTargets, targetLookup);
-            var issueActivity = new PluginRefreshActivity(
-                IsPluginRefreshRunning: false,
-                IsIssueApproximationRefreshRunning: true);
-            _publicationStore.PublishCurrentPublication(
+            var start = _publicationStore.TryBeginSelectedIssueApproximation(
+                publication,
                 generation,
-                plan.GameType,
-                configuration,
-                issueActivity,
-                $"Analyzing 0 of {selectedTargets.Count} selected plugins.",
-                GetAffordance(plan.GameType, configuration));
+                GetAffordance(plan.GameType, configuration),
+                () =>
+                    IsVisible(generation, token) &&
+                    freshnessVersion == Volatile.Read(ref _freshnessRefreshVersion));
+            if (start.Status == PluginRefreshSelectedIssueApproximationStartStatus.Rejected)
+            {
+                _publicationStore.TryPublishSelectedIdleStatus(
+                    generation,
+                    "Run a full Plugin refresh before refreshing selected approximations.",
+                    GetAffordance(plan.GameType, configuration),
+                    () => IsVisible(generation, token),
+                    out _);
+                return _publicationStore.GetCurrentSnapshot();
+            }
 
-            var dataFolder = ResolveDataFolder(
-                plan,
-                PluginRefreshPublicationRows.CreateRowsFromTargets(plan.GameType, selectedTargets));
+            if (start.Status == PluginRefreshSelectedIssueApproximationStartStatus.NoTargets)
+            {
+                _publicationStore.TryPublishSelectedIdleStatus(
+                    generation,
+                    "Select plugins to refresh.",
+                    GetAffordance(plan.GameType, configuration),
+                    () =>
+                        IsVisible(generation, token) &&
+                        freshnessVersion == Volatile.Read(ref _freshnessRefreshVersion),
+                    out _);
+                return _publicationStore.GetCurrentSnapshot();
+            }
+
+            var operation = start.Operation!;
+            var request = CreateSelectedApproximationRequest(operation);
             var updatedCount = 0;
-            await AnalyzeTargetsAsync(
-                    plan,
-                    dataFolder,
-                    selectedTargets,
-                    result => PublishApproximationResult(
-                        generation,
-                        token,
-                        plan.GameType,
-                        configuration,
-                        issueActivity,
-                        targetLookup,
-                        result,
-                        ref updatedCount),
+            await _pluginIssueApproximationModule.AnalyzeAsync(
+                    request,
+                    result =>
+                    {
+                        if (_publicationStore.TryPublishSelectedApproximationResult(
+                                generation,
+                                result,
+                                GetAffordance(plan.GameType, configuration),
+                                () => IsVisible(generation, token)))
+                        {
+                            Interlocked.Increment(ref updatedCount);
+                        }
+                    },
                     token)
                 .ConfigureAwait(false);
 
             if (IsVisible(generation, token))
             {
-                _publicationStore.PublishCurrentPublication(
+                _publicationStore.TryFinalizeSelectedIssueApproximation(
                     generation,
-                    plan.GameType,
-                    configuration,
-                    IdleActivity,
+                    PluginRefreshSelectedIssueApproximationDisposition.Unavailable,
                     $"Updated {Volatile.Read(ref updatedCount)} selected plugin approximations.",
-                    GetAffordance(plan.GameType, configuration));
+                    GetAffordance(plan.GameType, configuration),
+                    () => IsVisible(generation, token),
+                    out _);
             }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
-            // Manual cancellation publishes the visible canceled snapshot in CancelActiveRefresh.
+            var snapshot = _publicationStore.GetCurrentSnapshot();
+            _publicationStore.TryFinalizeSelectedIssueApproximation(
+                generation,
+                PluginRefreshSelectedIssueApproximationDisposition.RestorePrior,
+                "Approximation refresh canceled.",
+                GetAffordance(snapshot),
+                () => generation == Volatile.Read(ref _activeGeneration),
+                out _);
         }
         catch (Exception ex)
         {
             _logger?.Error(ex, "Failed to refresh selected plugin issue approximations");
             var snapshot = _publicationStore.GetCurrentSnapshot();
-            PublishApproximationFailure(
+            _publicationStore.TryFinalizeSelectedIssueApproximation(
                 generation,
-                token,
-                snapshot.GameType,
-                snapshot.Configuration,
-                PluginRefreshPublicationRows.CreateTargetLookup(selectedTargets),
-                "Approximation refresh failed.");
+                PluginRefreshSelectedIssueApproximationDisposition.Unavailable,
+                "Approximation refresh failed.",
+                GetAffordance(snapshot),
+                () => IsVisible(generation, token),
+                out _);
         }
         finally
         {
@@ -486,14 +515,22 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         }
 
         var snapshot = _publicationStore.GetCurrentSnapshot();
-        if (reason == PluginRefreshCancelReason.Disposed)
-        {
-            return snapshot;
-        }
-
         var statusText = reason == PluginRefreshCancelReason.Manual
             ? "Approximation refresh canceled."
             : snapshot.StatusText;
+        if (!snapshot.Activity.IsPluginRefreshRunning &&
+            snapshot.Activity.IsIssueApproximationRefreshRunning &&
+            _publicationStore.TryFinalizeSelectedIssueApproximation(
+                snapshot.Generation,
+                PluginRefreshSelectedIssueApproximationDisposition.RestorePrior,
+                statusText,
+                GetAffordance(snapshot),
+                () => snapshot.Generation == Volatile.Read(ref _activeGeneration),
+                out var finalizedSelected))
+        {
+            return finalizedSelected;
+        }
+
         if (snapshot.Activity.IsPluginRefreshRunning &&
             snapshot.Activity.IsIssueApproximationRefreshRunning &&
             _publicationStore.TryFinalizeInitialApproximation(
@@ -504,6 +541,11 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                 out var finalized))
         {
             return finalized;
+        }
+
+        if (reason == PluginRefreshCancelReason.Disposed)
+        {
+            return _publicationStore.GetCurrentSnapshot();
         }
 
         return _publicationStore.PublishCurrentPublication(
@@ -538,6 +580,14 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         generation = activatedGeneration;
         var previous = Interlocked.Exchange(ref _activeRefreshCts, cts);
         previous?.Cancel(); // do not dispose another generation's live token source
+        var snapshot = _publicationStore.GetCurrentSnapshot();
+        _publicationStore.TryFinalizeSelectedIssueApproximation(
+            snapshot.Generation,
+            PluginRefreshSelectedIssueApproximationDisposition.RestorePrior,
+            snapshot.StatusText,
+            GetAffordance(snapshot),
+            () => activatedGeneration == Volatile.Read(ref _activeGeneration),
+            out _);
         // The generation flip blocks old callbacks before retained rows are terminalized for the
         // replacement snapshot, preventing an inactive Pending estimate from surviving supersession.
         _publicationStore.FinalizePendingRowsForSupersession(
@@ -628,6 +678,34 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                 dataFolder,
                 publicationRows.Select(row => row.Key).ToList());
         return new PluginIssueApproximationModuleRequest(plan.GameType, source, targets);
+    }
+
+    /// <summary>
+    /// Builds selected reanalysis from the accepted plan, complete source rows, and ordered selected targets.
+    /// </summary>
+    /// <param name="operation">Atomic selected-reanalysis facts captured from one fresh publication.</param>
+    /// <returns>An authoritative keyed module request.</returns>
+    private static PluginIssueApproximationModuleRequest CreateSelectedApproximationRequest(
+        PluginRefreshSelectedIssueApproximationOperation operation)
+    {
+        var dataFolder = ResolveDataFolder(
+            operation.Plan,
+            operation.SourceRows.FirstOrDefault()?.FullPath);
+        if (string.IsNullOrWhiteSpace(dataFolder))
+        {
+            throw new InvalidOperationException(
+                "The accepted Plugin refresh publication did not resolve an Issue approximation data folder.");
+        }
+
+        // A resolved source is used for direct and MO2 publications alike so no filesystem
+        // re-enumeration can replace accepted dependency rows or conflict-winning paths.
+        var source = new PluginIssueApproximationModuleSource.ResolvedLoadOrder(
+            dataFolder,
+            operation.SourceRows);
+        return new PluginIssueApproximationModuleRequest(
+            operation.Plan.GameType,
+            source,
+            operation.Targets.Select(target => target.Key).ToList());
     }
 
     private async Task AnalyzeTargetsAsync(
@@ -782,7 +860,42 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         }
 
         var requestId = Interlocked.Increment(ref _freshnessRefreshVersion);
+        CancelSelectedApproximationForStaleness();
         _ = RefreshPublicationFreshnessAsync(requestId);
+    }
+
+    /// <summary>
+    /// Restores unfinished selected targets when Discovery-affecting settings invalidate their freshness lease.
+    /// </summary>
+    private void CancelSelectedApproximationForStaleness()
+    {
+        var snapshot = _publicationStore.GetCurrentSnapshot();
+        if (snapshot.Activity.IsPluginRefreshRunning ||
+            !snapshot.Activity.IsIssueApproximationRefreshRunning)
+        {
+            return;
+        }
+
+        var cts = Volatile.Read(ref _activeRefreshCts);
+        if (cts is not null)
+        {
+            try
+            {
+                cts.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // A selected generation can finish while its settings-change notification is being dispatched.
+            }
+        }
+
+        _publicationStore.TryFinalizeSelectedIssueApproximation(
+            snapshot.Generation,
+            PluginRefreshSelectedIssueApproximationDisposition.RestorePrior,
+            "Run a full Plugin refresh before refreshing selected approximations.",
+            GetAffordance(snapshot),
+            () => snapshot.Generation == Volatile.Read(ref _activeGeneration),
+            out _);
     }
 
     private async Task RefreshPublicationFreshnessAsync(int requestId)
@@ -807,7 +920,15 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             state.LoadOrderPath,
             state.Mo2Profile);
 
-    private static string? ResolveDataFolder(PluginRefreshDiscoveryPlan plan, IReadOnlyList<PluginInfo> rows)
+    /// <summary>
+    /// Resolves the accepted plan's analysis root, using a publication path only as a direct-mode fallback.
+    /// </summary>
+    /// <param name="plan">Accepted discovery plan that owns the analysis source.</param>
+    /// <param name="firstPublicationPath">First accepted row path, when the plan has no explicit direct data folder.</param>
+    /// <returns>The resolved analysis data folder, or null when the accepted publication has no usable root.</returns>
+    private static string? ResolveDataFolder(
+        PluginRefreshDiscoveryPlan plan,
+        string? firstPublicationPath)
     {
         if (plan.Mode == PluginRefreshDiscoveryMode.Mo2LoadOrderFile)
         {
@@ -819,8 +940,9 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             return plan.DataFolderPath;
         }
 
-        var firstPath = rows.FirstOrDefault()?.FullPath;
-        return string.IsNullOrWhiteSpace(firstPath) ? null : Path.GetDirectoryName(firstPath);
+        return string.IsNullOrWhiteSpace(firstPublicationPath)
+            ? null
+            : Path.GetDirectoryName(firstPublicationPath);
     }
 
     private static string GetPlanStatusText(PluginRefreshDiscoveryPlanResult result, GameType gameType) =>

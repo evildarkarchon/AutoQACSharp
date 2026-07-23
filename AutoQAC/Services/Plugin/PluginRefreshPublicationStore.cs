@@ -23,6 +23,7 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
     private PluginRefreshSnapshot _currentSnapshot;
     private PluginRefreshPublication _currentPublication;
     private PluginRefreshDiscoveryFreshnessToken? _currentPublicationFreshnessToken;
+    private ActiveSelectedIssueApproximation? _activeSelectedIssueApproximation;
     private bool _disposed;
 
     /// <summary>
@@ -124,6 +125,97 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
             .Select(row => row.Key)
             .ToList();
         return new PluginRefreshSelectedIssueApproximationTargets(snapshot, targets);
+    }
+
+    /// <summary>
+    /// Atomically validates and starts selected Issue approximation from one accepted publication.
+    /// </summary>
+    /// <param name="observedPublication">Fresh publication observed before entering the store lock.</param>
+    /// <param name="generation">Generation that will own selected reanalysis.</param>
+    /// <param name="affordance">Game affordance facts for command projection.</param>
+    /// <param name="canUpdate">Guard proving the selected generation is still active.</param>
+    /// <returns>The start outcome, including immutable source, target, and prior-estimate facts when started.</returns>
+    internal PluginRefreshSelectedIssueApproximationStartResult TryBeginSelectedIssueApproximation(
+        PluginRefreshPublication observedPublication,
+        long generation,
+        PluginRefreshGameAffordance affordance,
+        Func<bool> canUpdate)
+    {
+        PluginRefreshSnapshot? snapshot = null;
+        PluginRefreshSelectedIssueApproximationOperation? operation = null;
+        lock (_snapshotLock)
+        {
+            if (_disposed ||
+                !canUpdate() ||
+                !observedPublication.Freshness.IsFresh ||
+                !ReferenceEquals(_currentPublication.Rows, observedPublication.Rows) ||
+                _currentPublication.Generation != observedPublication.Generation ||
+                _currentPublication.DiscoveryPlan is null ||
+                _currentPublication.DiscoveryPlan != observedPublication.DiscoveryPlan ||
+                _currentPublicationFreshnessToken is null ||
+                !_currentPublication.Freshness.IsFresh)
+            {
+                return new PluginRefreshSelectedIssueApproximationStartResult(
+                    PluginRefreshSelectedIssueApproximationStartStatus.Rejected,
+                    null);
+            }
+
+            var targets = _currentPublication.Rows
+                .Where(row => row.IsVisible && row.IsSelected && !row.IsSkippedByPolicy)
+                .Select(row => new PluginRefreshSelectedIssueApproximationTarget(
+                    row.Key,
+                    row.Plugin.Approximation.Status == PluginIssueApproximationStatus.Pending
+                        ? PluginIssueApproximation.Unavailable
+                        : row.Plugin.Approximation))
+                .ToList();
+            if (targets.Count == 0)
+            {
+                return new PluginRefreshSelectedIssueApproximationStartResult(
+                    PluginRefreshSelectedIssueApproximationStartStatus.NoTargets,
+                    null);
+            }
+
+            var targetKeys = targets.Select(target => target.Key).ToList();
+            var targetLookup = PluginRefreshPublicationRows.CreateTargetLookup(targetKeys);
+            var rowUpdate = PluginRefreshPublicationRows.ApplyApproximationToTargets(
+                _currentPublication.Rows,
+                targetLookup,
+                PluginIssueApproximation.Pending);
+            operation = new PluginRefreshSelectedIssueApproximationOperation(
+                generation,
+                _currentPublication.DiscoveryPlan,
+                _currentPublication.Rows.Select(row => row.Key).ToList(),
+                targets);
+            _activeSelectedIssueApproximation = new ActiveSelectedIssueApproximation(operation);
+
+            var nextPublication = _currentPublication with
+            {
+                Generation = generation,
+                Rows = rowUpdate.Commit.Rows,
+                VisibleRows = rowUpdate.Commit.VisibleRows,
+                Activity = new PluginRefreshActivity(
+                    IsPluginRefreshRunning: false,
+                    IsIssueApproximationRefreshRunning: true),
+                StatusText = $"Analyzing 0 of {targets.Count} selected plugins."
+            };
+            var commands = CreateCommandAvailability(
+                nextPublication.GameType,
+                nextPublication.VisibleRows,
+                nextPublication.Activity,
+                nextPublication.Configuration,
+                _appStateMirror.CurrentState.IsCleaning,
+                affordance);
+            _currentPublication = nextPublication with { Commands = commands };
+            _currentSnapshot = ToSnapshot(_currentPublication);
+            snapshot = _currentSnapshot;
+            // Starting activity, Pending rows, and the compatibility projection form one publication commit.
+            _appStateMirror.MirrorRows(rowUpdate.Commit.Mirror);
+        }
+
+        _snapshots.OnNext(snapshot!);
+        return new PluginRefreshSelectedIssueApproximationStartResult(
+            PluginRefreshSelectedIssueApproximationStartStatus.Started,
+            operation);
     }
 
     /// <summary>
@@ -283,6 +375,52 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
     }
 
     /// <summary>
+    /// Publishes an idle selected-refresh status only while its generation remains current.
+    /// </summary>
+    /// <param name="generation">Selected-refresh generation that owns the status.</param>
+    /// <param name="statusText">User-facing terminal or rejection status.</param>
+    /// <param name="affordance">Game affordance facts for command projection.</param>
+    /// <param name="canUpdate">Guard that rejects canceled or superseded generations.</param>
+    /// <param name="snapshot">Committed snapshot when the update succeeds.</param>
+    /// <returns>True when the status was committed by the active generation.</returns>
+    internal bool TryPublishSelectedIdleStatus(
+        long generation,
+        string statusText,
+        PluginRefreshGameAffordance affordance,
+        Func<bool> canUpdate,
+        out PluginRefreshSnapshot snapshot)
+    {
+        lock (_snapshotLock)
+        {
+            if (_disposed || !canUpdate())
+            {
+                snapshot = _currentSnapshot;
+                return false;
+            }
+
+            var nextPublication = _currentPublication with
+            {
+                Generation = generation,
+                Activity = new PluginRefreshActivity(false, false),
+                StatusText = statusText
+            };
+            var commands = CreateCommandAvailability(
+                nextPublication.GameType,
+                nextPublication.VisibleRows,
+                nextPublication.Activity,
+                nextPublication.Configuration,
+                _appStateMirror.CurrentState.IsCleaning,
+                affordance);
+            _currentPublication = nextPublication with { Commands = commands };
+            _currentSnapshot = ToSnapshot(_currentPublication);
+            snapshot = _currentSnapshot;
+        }
+
+        _snapshots.OnNext(snapshot);
+        return true;
+    }
+
+    /// <summary>
     /// Applies a visible selection change to the accepted publication or AppState fallback rows.
     /// </summary>
     /// <param name="change">Selection change requested by the UI.</param>
@@ -437,6 +575,140 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
             // Mirror inside the same commit lock so a superseding generation cannot publish newer
             // rows and then be overwritten by this generation's delayed compatibility projection.
             _appStateMirror.MirrorRows(rowUpdate.Commit.Mirror);
+        }
+
+        _snapshots.OnNext(snapshot);
+        return true;
+    }
+
+    /// <summary>
+    /// Publishes the next exact selected-reanalysis result and its progress as one guarded commit.
+    /// </summary>
+    /// <param name="generation">Selected-reanalysis generation that owns the callback.</param>
+    /// <param name="result">Exact keyed result returned by the Issue approximation module.</param>
+    /// <param name="affordance">Game affordance facts for command projection.</param>
+    /// <param name="canUpdate">Guard that rejects canceled or superseded generations.</param>
+    /// <returns>True when the result was the next ordered target and was committed.</returns>
+    internal bool TryPublishSelectedApproximationResult(
+        long generation,
+        PluginIssueApproximationModuleResult result,
+        PluginRefreshGameAffordance affordance,
+        Func<bool> canUpdate)
+    {
+        PluginRefreshSnapshot snapshot;
+        lock (_snapshotLock)
+        {
+            var active = _activeSelectedIssueApproximation;
+            if (_disposed ||
+                !canUpdate() ||
+                active is null ||
+                active.Operation.Generation != generation ||
+                _currentPublication.Generation != generation ||
+                _currentPublication.Activity.IsPluginRefreshRunning ||
+                !_currentPublication.Activity.IsIssueApproximationRefreshRunning ||
+                active.NextTargetIndex >= active.Operation.Targets.Count ||
+                !PluginRefreshPublicationRows.IsExactMatch(
+                    active.Operation.Targets[active.NextTargetIndex].Key,
+                    result.Target))
+            {
+                return false;
+            }
+
+            var rowUpdate = PluginRefreshPublicationRows.ApplyApproximationResult(
+                _currentPublication.Rows,
+                result);
+            if (!rowUpdate.Matched)
+            {
+                return false;
+            }
+
+            active.NextTargetIndex++;
+            var nextPublication = _currentPublication with
+            {
+                Rows = rowUpdate.Commit.Rows,
+                VisibleRows = rowUpdate.Commit.VisibleRows,
+                StatusText =
+                    $"Analyzing {active.NextTargetIndex} of {active.Operation.Targets.Count} selected plugins."
+            };
+            var commands = CreateCommandAvailability(
+                nextPublication.GameType,
+                nextPublication.VisibleRows,
+                nextPublication.Activity,
+                nextPublication.Configuration,
+                _appStateMirror.CurrentState.IsCleaning,
+                affordance);
+            _currentPublication = nextPublication with { Commands = commands };
+            _currentSnapshot = ToSnapshot(_currentPublication);
+            snapshot = _currentSnapshot;
+            // The keyed row result and its progress count must remain one generation-owned commit.
+            _appStateMirror.MirrorRows(rowUpdate.Commit.Mirror);
+        }
+
+        _snapshots.OnNext(snapshot);
+        return true;
+    }
+
+    /// <summary>
+    /// Finalizes selected reanalysis while preserving completed results and terminalizing unfinished targets.
+    /// </summary>
+    /// <param name="generation">Selected-reanalysis generation to finalize.</param>
+    /// <param name="disposition">Whether unfinished targets restore their prior estimate or become unavailable.</param>
+    /// <param name="statusText">Terminal user-facing status.</param>
+    /// <param name="affordance">Game affordance facts for command projection.</param>
+    /// <param name="canUpdate">Guard proving the requested terminalization is still current.</param>
+    /// <param name="snapshot">Committed terminal snapshot when finalization succeeds.</param>
+    /// <returns>True when the active selected operation was finalized.</returns>
+    internal bool TryFinalizeSelectedIssueApproximation(
+        long generation,
+        PluginRefreshSelectedIssueApproximationDisposition disposition,
+        string statusText,
+        PluginRefreshGameAffordance affordance,
+        Func<bool> canUpdate,
+        out PluginRefreshSnapshot snapshot)
+    {
+        lock (_snapshotLock)
+        {
+            var active = _activeSelectedIssueApproximation;
+            if (_disposed ||
+                !canUpdate() ||
+                active is null ||
+                active.Operation.Generation != generation ||
+                _currentPublication.Generation != generation ||
+                _currentPublication.Activity.IsPluginRefreshRunning ||
+                !_currentPublication.Activity.IsIssueApproximationRefreshRunning)
+            {
+                snapshot = _currentSnapshot;
+                return false;
+            }
+
+            var rowUpdate = disposition == PluginRefreshSelectedIssueApproximationDisposition.RestorePrior
+                ? PluginRefreshPublicationRows.RestorePendingTargetApproximations(
+                    _currentPublication.Rows,
+                    active.Operation.Targets)
+                : PluginRefreshPublicationRows.ApplyUnavailableToPendingRows(_currentPublication.Rows);
+            var rowCommit = rowUpdate.Matched
+                ? rowUpdate.Commit
+                : PluginRefreshPublicationRows.Commit(_currentPublication.Rows);
+            var nextPublication = _currentPublication with
+            {
+                Rows = rowCommit.Rows,
+                VisibleRows = rowCommit.VisibleRows,
+                Activity = new PluginRefreshActivity(false, false),
+                StatusText = statusText
+            };
+            var commands = CreateCommandAvailability(
+                nextPublication.GameType,
+                nextPublication.VisibleRows,
+                nextPublication.Activity,
+                nextPublication.Configuration,
+                _appStateMirror.CurrentState.IsCleaning,
+                affordance);
+            _currentPublication = nextPublication with { Commands = commands };
+            _currentSnapshot = ToSnapshot(_currentPublication);
+            snapshot = _currentSnapshot;
+            _activeSelectedIssueApproximation = null;
+            // Terminal rows, idle activity, and the compatibility mirror must become visible together.
+            _appStateMirror.MirrorRows(rowCommit.Mirror);
         }
 
         _snapshots.OnNext(snapshot);
@@ -914,7 +1186,65 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
             snapshot.Activity,
             snapshot.Commands,
             snapshot.StatusText);
+
+    private sealed class ActiveSelectedIssueApproximation(
+        PluginRefreshSelectedIssueApproximationOperation operation)
+    {
+        internal PluginRefreshSelectedIssueApproximationOperation Operation { get; } = operation;
+
+        internal int NextTargetIndex { get; set; }
+    }
 }
+
+/// <summary>
+/// Outcome kinds from atomically starting selected Issue approximation.
+/// </summary>
+internal enum PluginRefreshSelectedIssueApproximationStartStatus
+{
+    Started,
+    NoTargets,
+    Rejected
+}
+
+/// <summary>
+/// Determines how unfinished selected-reanalysis targets become terminal.
+/// </summary>
+internal enum PluginRefreshSelectedIssueApproximationDisposition
+{
+    Unavailable,
+    RestorePrior
+}
+
+/// <summary>
+/// Immutable accepted-publication facts owned by one selected Issue approximation generation.
+/// </summary>
+/// <param name="Generation">Generation that owns the operation.</param>
+/// <param name="Plan">Accepted discovery plan reused without replanning.</param>
+/// <param name="SourceRows">Complete ordered publication row identities used as dependency context.</param>
+/// <param name="Targets">Ordered selected targets and their prior estimates.</param>
+internal sealed record PluginRefreshSelectedIssueApproximationOperation(
+    long Generation,
+    PluginRefreshDiscoveryPlan Plan,
+    IReadOnlyList<PluginRefreshRowKey> SourceRows,
+    IReadOnlyList<PluginRefreshSelectedIssueApproximationTarget> Targets);
+
+/// <summary>
+/// One selected target together with the estimate restored if cancellation occurs before its result.
+/// </summary>
+/// <param name="Key">Exact accepted publication row identity.</param>
+/// <param name="PreviousApproximation">Terminal estimate visible before selected reanalysis began.</param>
+internal sealed record PluginRefreshSelectedIssueApproximationTarget(
+    PluginRefreshRowKey Key,
+    PluginIssueApproximation PreviousApproximation);
+
+/// <summary>
+/// Result of attempting to start selected Issue approximation from an observed publication.
+/// </summary>
+/// <param name="Status">Whether the operation started, had no targets, or lost its publication race.</param>
+/// <param name="Operation">Accepted operation facts when started.</param>
+internal sealed record PluginRefreshSelectedIssueApproximationStartResult(
+    PluginRefreshSelectedIssueApproximationStartStatus Status,
+    PluginRefreshSelectedIssueApproximationOperation? Operation);
 
 /// <summary>
 /// Current publication facts captured before a planner freshness check.

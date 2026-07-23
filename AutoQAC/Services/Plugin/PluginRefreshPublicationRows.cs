@@ -237,6 +237,33 @@ internal static class PluginRefreshPublicationRows
                 : row);
 
     /// <summary>
+    /// Restores prior estimates for selected-reanalysis targets that never produced a result.
+    /// </summary>
+    /// <param name="rows">Full publication rows.</param>
+    /// <param name="targets">Selected targets and their estimates from before reanalysis began.</param>
+    /// <returns>An update containing restored rows while preserving completed target results.</returns>
+    internal static PluginRefreshPublicationRowsUpdate RestorePendingTargetApproximations(
+        IReadOnlyList<PluginRefreshPublishedRow> rows,
+        IReadOnlyList<PluginRefreshSelectedIssueApproximationTarget> targets)
+    {
+        var priorByPath = targets.ToDictionary(
+            target => target.Key.FullPath,
+            target => target,
+            StringComparer.OrdinalIgnoreCase);
+        return UpdateRows(
+            rows,
+            row =>
+                row.Plugin.Approximation.Status == PluginIssueApproximationStatus.Pending &&
+                priorByPath.TryGetValue(row.Key.FullPath, out var target) &&
+                string.Equals(row.Key.FileName, target.Key.FileName, StringComparison.OrdinalIgnoreCase),
+            row =>
+            {
+                var prior = priorByPath[row.Key.FullPath].PreviousApproximation;
+                return row with { Plugin = row.Plugin with { Approximation = prior } };
+            });
+    }
+
+    /// <summary>
     /// Marks every still-pending row unavailable while preserving completed results.
     /// </summary>
     /// <param name="rows">Full publication rows.</param>
@@ -333,7 +360,7 @@ internal static class PluginRefreshPublicationRows
         return string.Equals(row.FileName, target.FileName, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool IsExactMatch(PluginRefreshRowKey row, PluginRefreshRowKey target) =>
+    internal static bool IsExactMatch(PluginRefreshRowKey row, PluginRefreshRowKey target) =>
         string.Equals(row.FileName, target.FileName, StringComparison.OrdinalIgnoreCase) &&
         string.Equals(row.FullPath, target.FullPath, StringComparison.OrdinalIgnoreCase);
 
