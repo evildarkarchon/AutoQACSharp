@@ -14,6 +14,7 @@ using AutoQAC.ViewModels;
 using AutoQAC.Views;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Dispatching;
+using QueryPlugins;
 
 namespace AutoQAC.Infrastructure;
 
@@ -56,6 +57,8 @@ public static class ServiceCollectionExtensions
             services.AddSingleton<IPluginLoadingService, PluginLoadingService>();
             services.AddSingleton<IPluginIssueApproximationService>(sp => new PluginIssueApproximationService(
                 sp.GetRequiredService<ILoggingService>()));
+            services.AddSingleton<IPluginQueryService>(_ => PluginQueryService.Default);
+            services.AddSingleton<IPluginIssueApproximationModule, PluginIssueApproximationModule>();
             services.AddSingleton<ISkipListPolicy, SkipListPolicy>();
             services.AddSingleton<IPluginRefreshDiscoveryPlanner, PluginRefreshDiscoveryPlanner>();
             services.AddSingleton(sp => new PluginRefreshAppStateMirror(

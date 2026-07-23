@@ -68,6 +68,7 @@ public sealed class DependencyInjectionTests
         provider.GetService<IDiscoverySettingsModule>().Should().NotBeNull();
         provider.GetService<IPluginValidationService>().Should().NotBeNull();
         provider.GetService<IPluginLoadingService>().Should().NotBeNull();
+        provider.GetService<IPluginIssueApproximationModule>().Should().NotBeNull();
         provider.GetService<IPluginRefreshModule>().Should().NotBeNull();
         provider.GetService<IProcessExecutionService>().Should().NotBeNull();
         provider.GetService<IXEditCommandBuilder>().Should().NotBeNull();
