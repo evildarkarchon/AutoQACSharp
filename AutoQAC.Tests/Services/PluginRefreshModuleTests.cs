@@ -15,6 +15,283 @@ namespace AutoQAC.Tests.Services;
 
 public sealed class PluginRefreshModuleTests
 {
+    /// <summary>
+    /// Verifies direct full refresh reuses accepted targets and publishes deterministic incremental progress.
+    /// </summary>
+    [Fact]
+    public async Task RefreshGame_DirectMode_UsesAcceptedTargetsAndPublishesOrderedProgress()
+    {
+        var stateService = CreateStateWithRows(
+            Plugin("Selected.esp"),
+            Plugin("Completed.esp"),
+            Plugin("NotStarted.esp"));
+        stateService.UpdateExcludedPlugins(_ => new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            @"C:\Game\Data\NotStarted.esp"
+        });
+        var configurationService = CreateConfigurationServiceWithSkipList(
+            GameType.SkyrimSe,
+            ["Completed.esp"]);
+        var approximationModule = new ResultPluginIssueApproximationModule();
+        using var sut = CreateModule(
+            stateService,
+            configurationService: configurationService,
+            approximationModule: approximationModule);
+        var snapshots = new List<PluginRefreshSnapshot>();
+        using var subscription = sut.Snapshots.Subscribe(snapshots.Add);
+
+        var final = await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+        var publication = await sut.GetCurrentPublicationAsync();
+
+        var request = approximationModule.Requests.Should().ContainSingle().Subject;
+        var source = request.Source.Should()
+            .BeOfType<PluginIssueApproximationModuleSource.ResolvedLoadOrder>()
+            .Subject;
+        source.BaseDataFolder.Should().Be(@"C:\Game\Data");
+        source.Rows.Should().HaveCount(3);
+        for (var index = 0; index < source.Rows.Count; index++)
+        {
+            source.Rows[index].Should().BeSameAs(publication.Rows[index].Key);
+        }
+
+        request.Targets.Should().HaveCount(2);
+        request.Targets[0].Should().BeSameAs(
+            publication.Rows.Single(row => row.Plugin.FileName == "Selected.esp").Key);
+        request.Targets[1].Should().BeSameAs(
+            publication.Rows.Single(row => row.Plugin.FileName == "NotStarted.esp").Key);
+        publication.Rows.Should().Contain(row =>
+            row.Plugin.FileName == "Completed.esp" &&
+            row.IsSkippedByPolicy &&
+            !row.IsVisible &&
+            row.Plugin.Approximation.Status == PluginIssueApproximationStatus.Unavailable);
+        publication.Rows.Should().Contain(row =>
+            row.Plugin.FileName == "NotStarted.esp" &&
+            !row.IsSelected &&
+            row.Plugin.Approximation.Status == PluginIssueApproximationStatus.Available);
+        publication.Rows.Should().NotContain(row =>
+            row.Plugin.Approximation.Status == PluginIssueApproximationStatus.Pending);
+        snapshots
+            .Where(snapshot => snapshot.StatusText.StartsWith("Analyzing ", StringComparison.Ordinal))
+            .Select(snapshot => snapshot.StatusText)
+            .Should()
+            .Equal(
+                "Analyzing 0 of 2 plugins.",
+                "Analyzing 1 of 2 plugins.",
+                "Analyzing 2 of 2 plugins.");
+        final.StatusText.Should().Be("Refreshed 2 plugin approximations.");
+    }
+
+    /// <summary>
+    /// Verifies MO2 full refresh retains every accepted conflict-winning row as resolved dependency context.
+    /// </summary>
+    [Fact]
+    public async Task RefreshGame_Mo2Mode_UsesCompleteAcceptedResolvedSource()
+    {
+        var stateService = new StateService();
+        var configurationService = CreateConfigurationServiceWithSkipList(
+            GameType.SkyrimSe,
+            ["Hidden.esm"]);
+        var configuration = new PluginRefreshConfigurationProjection(
+            LoadOrderPath: null,
+            GameDataFolder: @"C:\Skyrim\Data",
+            HasGameDataFolderOverride: true,
+            XEditPath: null,
+            Mo2Path: @"C:\MO2\ModOrganizer.exe",
+            Mo2ModeEnabled: true,
+            Mo2InstancePath: @"C:\MO2",
+            IsMo2InstanceOverride: true,
+            IsMo2InstanceValid: true,
+            AvailableProfiles: ["Default"],
+            SelectedProfile: "Default",
+            CleaningTimeout: 300);
+        var plan = new PluginRefreshDiscoveryPlan(
+            GameType.SkyrimSe,
+            PluginRefreshDiscoveryMode.Mo2LoadOrderFile,
+            configuration,
+            DisableSkipLists: false,
+            CanAttemptIssueApproximation: true,
+            DataFolderPath: @"C:\Skyrim\Data",
+            LoadOrderPath: null,
+            Mo2LoadOrderPath: @"C:\MO2\profiles\Default\loadorder.txt",
+            Mo2PathMap: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+            Mo2BaseDataFolder: @"C:\Skyrim\Data");
+        var loadedRows = new[]
+        {
+            Plugin("First.esm", @"C:\MO2\mods\WinnerA\First.esm"),
+            Plugin("Hidden.esm", @"C:\MO2\mods\WinnerB\Hidden.esm"),
+            Plugin("Last.esp", @"C:\MO2\overwrite\Last.esp")
+        };
+        var approximationModule = new ResultPluginIssueApproximationModule();
+        using var sut = CreateModule(
+            stateService,
+            configurationService: configurationService,
+            approximationModule: approximationModule,
+            discoveryPlanner: CreateReadyDiscoveryPlanner(plan, loadedRows));
+
+        await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+        var publication = await sut.GetCurrentPublicationAsync();
+
+        var request = approximationModule.Requests.Should().ContainSingle().Subject;
+        var source = request.Source.Should()
+            .BeOfType<PluginIssueApproximationModuleSource.ResolvedLoadOrder>()
+            .Subject;
+        source.BaseDataFolder.Should().Be(@"C:\Skyrim\Data");
+        source.Rows.Should().HaveCount(3);
+        for (var index = 0; index < source.Rows.Count; index++)
+        {
+            source.Rows[index].Should().BeSameAs(publication.Rows[index].Key);
+        }
+
+        request.Targets.Should().HaveCount(2);
+        request.Targets[0].Should().BeSameAs(publication.Rows[0].Key);
+        request.Targets[1].Should().BeSameAs(publication.Rows[2].Key);
+        source.Rows.Select(row => row.FullPath).Should().Equal(
+            @"C:\MO2\mods\WinnerA\First.esm",
+            @"C:\MO2\mods\WinnerB\Hidden.esm",
+            @"C:\MO2\overwrite\Last.esp");
+        publication.Rows.Should().NotContain(row =>
+            row.Plugin.Approximation.Status == PluginIssueApproximationStatus.Pending);
+    }
+
+    /// <summary>
+    /// Verifies an operation failure preserves completed results and terminalizes every unfinished target.
+    /// </summary>
+    [Fact]
+    public async Task RefreshGame_WhenApproximationOperationFails_PreservesCompletedAndFinalizesUnfinished()
+    {
+        var stateService = new StateService();
+        var approximationModule = new ResultPluginIssueApproximationModule(
+            (request, onResult, _) =>
+            {
+                onResult(new PluginIssueApproximationModuleResult(
+                    request.Targets[0],
+                    PluginIssueApproximation.Available(7, 8, 9)));
+                throw new InvalidOperationException("Synthetic approximation failure");
+            });
+        using var sut = CreateModule(stateService, approximationModule: approximationModule);
+
+        var final = await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+        var publication = await sut.GetCurrentPublicationAsync();
+
+        publication.Rows.Should().Contain(row =>
+            row.Plugin.FileName == "Selected.esp" &&
+            row.Plugin.Approximation == PluginIssueApproximation.Available(7, 8, 9));
+        publication.Rows
+            .Where(row => row.Plugin.FileName != "Selected.esp")
+            .Should()
+            .OnlyContain(row => row.Plugin.Approximation.Status == PluginIssueApproximationStatus.Unavailable);
+        publication.Rows.Should().NotContain(row =>
+            row.Plugin.Approximation.Status == PluginIssueApproximationStatus.Pending);
+        final.Activity.Should().Be(new PluginRefreshActivity(false, false));
+        final.StatusText.Should().Be("Approximation refresh failed.");
+    }
+
+    /// <summary>
+    /// Verifies initial-refresh cancellation preserves completed results and rejects late callback publication.
+    /// </summary>
+    [Fact]
+    public async Task RefreshGame_WhenInitialApproximationCanceled_PreservesCompletedAndFinalizesUnstarted()
+    {
+        var stateService = new StateService();
+        var configurationService = CreateConfigurationServiceWithSkipList(
+            GameType.SkyrimSe,
+            ["Completed.esp"]);
+        var firstResultPublished = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        Action<PluginIssueApproximationModuleResult>? capturedCallback = null;
+        PluginIssueApproximationModuleRequest? capturedRequest = null;
+        var approximationModule = new ResultPluginIssueApproximationModule(
+            async (request, onResult, ct) =>
+            {
+                capturedRequest = request;
+                capturedCallback = onResult;
+                onResult(new PluginIssueApproximationModuleResult(
+                    request.Targets[0],
+                    PluginIssueApproximation.Available(4, 5, 6)));
+                firstResultPublished.TrySetResult();
+                await Task.Delay(TimeSpan.FromMinutes(5), ct);
+            });
+        using var sut = CreateModule(
+            stateService,
+            configurationService: configurationService,
+            approximationModule: approximationModule);
+
+        var refresh = sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+        await firstResultPublished.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var canceled = await sut.ExecuteAsync(new PluginRefreshIntent.Cancel(PluginRefreshCancelReason.Manual));
+        await refresh.WaitAsync(TimeSpan.FromSeconds(5));
+
+        capturedCallback!.Invoke(new PluginIssueApproximationModuleResult(
+            capturedRequest!.Targets[1],
+            PluginIssueApproximation.Available(99, 99, 99)));
+        var publication = await sut.GetCurrentPublicationAsync();
+
+        publication.Rows.Should().Contain(row =>
+            row.Plugin.FileName == "Selected.esp" &&
+            row.Plugin.Approximation == PluginIssueApproximation.Available(4, 5, 6));
+        publication.Rows
+            .Where(row => row.Plugin.FileName != "Selected.esp")
+            .Should()
+            .OnlyContain(row => row.Plugin.Approximation.Status == PluginIssueApproximationStatus.Unavailable);
+        publication.Rows.Should().NotContain(row =>
+            row.Plugin.Approximation.Status == PluginIssueApproximationStatus.Pending);
+        canceled.Activity.Should().Be(new PluginRefreshActivity(false, false));
+        canceled.StatusText.Should().Be("Approximation refresh canceled.");
+    }
+
+    /// <summary>
+    /// Verifies a superseded generation cannot publish a late authoritative result.
+    /// </summary>
+    [Fact]
+    public async Task RefreshGame_WhenSuperseded_IgnoresLateAuthoritativeResult()
+    {
+        var stateService = new StateService();
+        var firstResultPublished = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        Action<PluginIssueApproximationModuleResult>? firstCallback = null;
+        PluginIssueApproximationModuleRequest? firstRequest = null;
+        var invocation = 0;
+        var approximationModule = new ResultPluginIssueApproximationModule(
+            async (request, onResult, ct) =>
+            {
+                if (Interlocked.Increment(ref invocation) == 1)
+                {
+                    firstRequest = request;
+                    firstCallback = onResult;
+                    onResult(new PluginIssueApproximationModuleResult(
+                        request.Targets[0],
+                        PluginIssueApproximation.Available(1, 1, 1)));
+                    firstResultPublished.TrySetResult();
+                    await Task.Delay(TimeSpan.FromMinutes(5), ct);
+                    return;
+                }
+
+                foreach (var target in request.Targets)
+                {
+                    onResult(new PluginIssueApproximationModuleResult(
+                        target,
+                        PluginIssueApproximation.Available(9, 9, 9)));
+                }
+            });
+        using var sut = CreateModule(stateService, approximationModule: approximationModule);
+
+        var firstRefresh = sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+        await firstResultPublished.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+        await firstRefresh.WaitAsync(TimeSpan.FromSeconds(5));
+
+        firstCallback!.Invoke(new PluginIssueApproximationModuleResult(
+            firstRequest!.Targets[1],
+            PluginIssueApproximation.Available(99, 99, 99)));
+        var publication = await sut.GetCurrentPublicationAsync();
+
+        publication.Rows.Should().OnlyContain(row =>
+            row.Plugin.Approximation == PluginIssueApproximation.Available(9, 9, 9));
+        publication.Rows.Should().NotContain(row =>
+            row.Plugin.Approximation.Status == PluginIssueApproximationStatus.Pending);
+        publication.StatusText.Should().Be("Refreshed 3 plugin approximations.");
+    }
+
     [Fact]
     public async Task RefreshGame_EmitsSnapshotsAndWritesFullRowsToAppState()
     {
@@ -448,7 +725,8 @@ public sealed class PluginRefreshModuleTests
         var stateService = new StateService();
         using var sut = CreateModule(
             stateService,
-            approximationService: new ThrowingPluginIssueApproximationService());
+            approximationModule: new ResultPluginIssueApproximationModule(
+                (_, _, _) => throw new InvalidOperationException("Synthetic approximation failure")));
 
         var final = await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
 
@@ -463,10 +741,16 @@ public sealed class PluginRefreshModuleTests
     public async Task RecoverableApproximationFailure_PreservesCompletedResultsAndMarksPendingTargetsUnavailable()
     {
         var stateService = new StateService();
-        var approximationService = new ResultIssueApproximationService(
-            [Result("Completed.esp")],
-            throwAfterResults: true);
-        using var sut = CreateModule(stateService, approximationService: approximationService);
+        var approximationModule = new ResultPluginIssueApproximationModule(
+            (request, onResult, _) =>
+            {
+                var completed = request.Targets.Single(target => target.FileName == "Completed.esp");
+                onResult(new PluginIssueApproximationModuleResult(
+                    completed,
+                    PluginIssueApproximation.Available(1, 2, 3)));
+                throw new InvalidOperationException("Synthetic approximation failure");
+            });
+        using var sut = CreateModule(stateService, approximationModule: approximationModule);
 
         var final = await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
 
@@ -512,6 +796,7 @@ public sealed class PluginRefreshModuleTests
         IConfigurationService? configurationService = null,
         IPluginLoadingService? pluginLoadingService = null,
         IPluginIssueApproximationService? approximationService = null,
+        IPluginIssueApproximationModule? approximationModule = null,
         IGameDetectionService? gameDetectionService = null,
         IPluginRefreshDiscoveryPlanner? discoveryPlanner = null)
     {
@@ -532,6 +817,7 @@ public sealed class PluginRefreshModuleTests
         return new PluginRefreshModule(
             discoveryPlanner,
             approximationService ?? new ResultIssueApproximationService(CreateDefaultResults()),
+            approximationModule ?? new ResultPluginIssueApproximationModule(),
             stateService,
             new SkipListPolicy(configurationService, gameDetectionService),
             publicationStore,
@@ -651,6 +937,42 @@ public sealed class PluginRefreshModuleTests
                 Arg.Any<PluginRefreshDiscoveryFreshnessContext>(),
                 Arg.Any<CancellationToken>())
             .Returns(new PluginRefreshFreshness(false, stalenessReason));
+        return discoveryPlanner;
+    }
+
+    private static IPluginRefreshDiscoveryPlanner CreateReadyDiscoveryPlanner(
+        PluginRefreshDiscoveryPlan plan,
+        IReadOnlyList<PluginInfo> plugins)
+    {
+        var freshnessToken = new PluginRefreshDiscoveryFreshnessToken(
+            plan.GameType,
+            plan.Configuration.Mo2ModeEnabled,
+            plan.Configuration.Mo2Path,
+            plan.LoadOrderPath,
+            plan.DataFolderPath,
+            plan.Configuration.Mo2InstancePath,
+            plan.Configuration.SelectedProfile,
+            plan.DisableSkipLists,
+            new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase));
+        var discoveryPlanner = Substitute.For<IPluginRefreshDiscoveryPlanner>();
+        discoveryPlanner.GetAffordance(Arg.Any<GameType>(), Arg.Any<bool>())
+            .Returns(call => new PluginRefreshGameAffordance(call.ArgAt<GameType>(0), true, false, true));
+        discoveryPlanner.CreatePlanAsync(
+                Arg.Any<PluginRefreshDiscoveryPlanRequest>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new PluginRefreshDiscoveryPlanResult(
+                PluginRefreshDiscoveryPlanStatus.Ready,
+                plan,
+                plan.Configuration));
+        discoveryPlanner.CreateFreshnessTokenAsync(plan, Arg.Any<CancellationToken>())
+            .Returns(freshnessToken);
+        discoveryPlanner.LoadPluginsAsync(plan, Arg.Any<CancellationToken>())
+            .Returns(new PluginRefreshDiscoveredPlugins(plan, plugins, null));
+        discoveryPlanner.CheckFreshnessAsync(
+                freshnessToken,
+                Arg.Any<PluginRefreshDiscoveryFreshnessContext>(),
+                Arg.Any<CancellationToken>())
+            .Returns(PluginRefreshFreshness.Fresh);
         return discoveryPlanner;
     }
 
@@ -822,6 +1144,50 @@ public sealed class PluginRefreshModuleTests
             }
 
             return _results;
+        }
+    }
+
+    private sealed class ResultPluginIssueApproximationModule : IPluginIssueApproximationModule
+    {
+        private readonly Func<
+            PluginIssueApproximationModuleRequest,
+            Action<PluginIssueApproximationModuleResult>,
+            CancellationToken,
+            Task>? _handler;
+
+        public ResultPluginIssueApproximationModule(
+            Func<
+                PluginIssueApproximationModuleRequest,
+                Action<PluginIssueApproximationModuleResult>,
+                CancellationToken,
+                Task>? handler = null)
+        {
+            _handler = handler;
+        }
+
+        public List<PluginIssueApproximationModuleRequest> Requests { get; } = [];
+
+        /// <inheritdoc />
+        public Task AnalyzeAsync(
+            PluginIssueApproximationModuleRequest request,
+            Action<PluginIssueApproximationModuleResult> onResult,
+            CancellationToken ct = default)
+        {
+            Requests.Add(request);
+            if (_handler is not null)
+            {
+                return _handler(request, onResult, ct);
+            }
+
+            foreach (var target in request.Targets)
+            {
+                ct.ThrowIfCancellationRequested();
+                onResult(new PluginIssueApproximationModuleResult(
+                    target,
+                    PluginIssueApproximation.Available(1, 2, 3)));
+            }
+
+            return Task.CompletedTask;
         }
     }
 

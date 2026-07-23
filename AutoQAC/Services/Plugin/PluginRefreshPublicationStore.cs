@@ -380,6 +380,159 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
     }
 
     /// <summary>
+    /// Applies one authoritative keyed result and publishes its progress snapshot as one generation-guarded commit.
+    /// </summary>
+    /// <param name="generation">Accepted full-refresh generation.</param>
+    /// <param name="targetLookup">Authoritative target set for the generation.</param>
+    /// <param name="result">Exact keyed result returned by the Issue approximation module.</param>
+    /// <param name="statusText">Deterministic progress text for the accepted result.</param>
+    /// <param name="affordance">Game affordance facts for command projection.</param>
+    /// <param name="canUpdate">Guard that rejects canceled or superseded generations.</param>
+    /// <returns>True when the exact target result and progress snapshot were committed.</returns>
+    internal bool TryPublishInitialApproximationResult(
+        long generation,
+        PluginRefreshPublicationRows.TargetLookup targetLookup,
+        PluginIssueApproximationModuleResult result,
+        string statusText,
+        PluginRefreshGameAffordance affordance,
+        Func<bool> canUpdate)
+    {
+        PluginRefreshSnapshot snapshot;
+        lock (_snapshotLock)
+        {
+            if (_disposed ||
+                !canUpdate() ||
+                _currentPublication.Generation != generation ||
+                !_currentPublication.Activity.IsPluginRefreshRunning ||
+                !_currentPublication.Activity.IsIssueApproximationRefreshRunning ||
+                !targetLookup.Contains(result.Target))
+            {
+                return false;
+            }
+
+            var rowUpdate = PluginRefreshPublicationRows.ApplyApproximationResult(
+                _currentPublication.Rows,
+                result);
+            if (!rowUpdate.Matched)
+            {
+                return false;
+            }
+
+            var nextPublication = _currentPublication with
+            {
+                Rows = rowUpdate.Commit.Rows,
+                VisibleRows = rowUpdate.Commit.VisibleRows,
+                StatusText = statusText
+            };
+            var commands = CreateCommandAvailability(
+                nextPublication.GameType,
+                nextPublication.VisibleRows,
+                nextPublication.Activity,
+                nextPublication.Configuration,
+                _appStateMirror.CurrentState.IsCleaning,
+                affordance);
+            _currentPublication = nextPublication with { Commands = commands };
+            _currentSnapshot = ToSnapshot(_currentPublication);
+            snapshot = _currentSnapshot;
+            // Mirror inside the same commit lock so a superseding generation cannot publish newer
+            // rows and then be overwritten by this generation's delayed compatibility projection.
+            _appStateMirror.MirrorRows(rowUpdate.Commit.Mirror);
+        }
+
+        _snapshots.OnNext(snapshot);
+        return true;
+    }
+
+    /// <summary>
+    /// Finalizes an active full-refresh approximation without allowing a stale generation to publish.
+    /// </summary>
+    /// <param name="generation">Accepted full-refresh generation.</param>
+    /// <param name="statusText">Terminal status text.</param>
+    /// <param name="affordance">Game affordance facts for command projection.</param>
+    /// <param name="canUpdate">Guard that accepts cancellation cleanup only for the current generation.</param>
+    /// <param name="snapshot">Committed terminal snapshot when the operation was current.</param>
+    /// <returns>True when the current full-refresh approximation was finalized.</returns>
+    internal bool TryFinalizeInitialApproximation(
+        long generation,
+        string statusText,
+        PluginRefreshGameAffordance affordance,
+        Func<bool> canUpdate,
+        out PluginRefreshSnapshot snapshot)
+    {
+        lock (_snapshotLock)
+        {
+            if (_disposed ||
+                !canUpdate() ||
+                _currentPublication.Generation != generation ||
+                !_currentPublication.Activity.IsPluginRefreshRunning ||
+                !_currentPublication.Activity.IsIssueApproximationRefreshRunning)
+            {
+                snapshot = _currentSnapshot;
+                return false;
+            }
+
+            var rowUpdate = PluginRefreshPublicationRows.ApplyUnavailableToPendingRows(
+                _currentPublication.Rows);
+            var nextPublication = _currentPublication with
+            {
+                Rows = rowUpdate.Commit.Rows,
+                VisibleRows = rowUpdate.Commit.VisibleRows,
+                Activity = new PluginRefreshActivity(false, false),
+                StatusText = statusText
+            };
+            var commands = CreateCommandAvailability(
+                nextPublication.GameType,
+                nextPublication.VisibleRows,
+                nextPublication.Activity,
+                nextPublication.Configuration,
+                _appStateMirror.CurrentState.IsCleaning,
+                affordance);
+            _currentPublication = nextPublication with { Commands = commands };
+            _currentSnapshot = ToSnapshot(_currentPublication);
+            snapshot = _currentSnapshot;
+            // Cancellation/failure terminalization and its compatibility mirror must remain one
+            // generation-owned commit; otherwise a replacement refresh can be clobbered afterward.
+            _appStateMirror.MirrorRows(rowUpdate.Commit.Mirror);
+        }
+
+        _snapshots.OnNext(snapshot);
+        return true;
+    }
+
+    /// <summary>
+    /// Makes pending rows terminal after their owning generation has been superseded.
+    /// </summary>
+    /// <param name="canUpdate">Guard proving the replacement generation is still current.</param>
+    internal void FinalizePendingRowsForSupersession(Func<bool> canUpdate)
+    {
+        lock (_snapshotLock)
+        {
+            if (_disposed ||
+                !canUpdate() ||
+                _currentPublicationFreshnessToken is null ||
+                _currentPublication.DiscoveryPlan is null)
+            {
+                return;
+            }
+
+            var rowUpdate = PluginRefreshPublicationRows.ApplyUnavailableToPendingRows(
+                _currentPublication.Rows);
+            if (!rowUpdate.Matched)
+            {
+                return;
+            }
+
+            _currentPublication = _currentPublication with
+            {
+                Rows = rowUpdate.Commit.Rows,
+                VisibleRows = rowUpdate.Commit.VisibleRows
+            };
+            _currentSnapshot = ToSnapshot(_currentPublication);
+            _appStateMirror.MirrorRows(rowUpdate.Commit.Mirror);
+        }
+    }
+
+    /// <summary>
     /// Updates command availability after AppState cleaning state changes.
     /// </summary>
     /// <param name="state">Current AppState.</param>

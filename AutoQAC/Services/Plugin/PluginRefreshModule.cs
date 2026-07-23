@@ -22,6 +22,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
 
     private readonly IPluginRefreshDiscoveryPlanner _discoveryPlanner;
     private readonly IPluginIssueApproximationService _pluginIssueApproximationService;
+    private readonly IPluginIssueApproximationModule _pluginIssueApproximationModule;
     private readonly IStateService _stateService;
     private readonly ISkipListPolicy _skipListPolicy;
     private readonly ILoggingService? _logger;
@@ -43,6 +44,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
     internal PluginRefreshModule(
         IPluginRefreshDiscoveryPlanner discoveryPlanner,
         IPluginIssueApproximationService pluginIssueApproximationService,
+        IPluginIssueApproximationModule pluginIssueApproximationModule,
         IStateService stateService,
         ISkipListPolicy skipListPolicy,
         PluginRefreshPublicationStore publicationStore,
@@ -51,6 +53,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
     {
         _discoveryPlanner = discoveryPlanner;
         _pluginIssueApproximationService = pluginIssueApproximationService;
+        _pluginIssueApproximationModule = pluginIssueApproximationModule;
         _stateService = stateService;
         _skipListPolicy = skipListPolicy;
         _logger = logger;
@@ -224,14 +227,32 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                 .ConfigureAwait(false);
             if (!IsVisible(generation, token)) return _publicationStore.GetCurrentSnapshot();
 
-            var initialApproximation = plan.CanAttemptIssueApproximation
-                ? PluginIssueApproximation.Pending
-                : PluginIssueApproximation.Unavailable;
-            var publishedRows = PluginRefreshPublicationRows.Accept(
+            // Hidden Skip-list rows remain dependency context but never become targets, so begin
+            // every row terminal and mark only this generation's authoritative targets Pending.
+            var acceptedRows = PluginRefreshPublicationRows.Accept(
                 skipEvaluation.Decisions,
-                initialApproximation,
+                PluginIssueApproximation.Unavailable,
                 _stateService.CurrentState.ExcludedPluginPaths);
+            // Reuse accepted row keys verbatim so result publication cannot drift back to filename correlation.
+            var targets = plan.CanAttemptIssueApproximation
+                ? acceptedRows.Rows
+                    .Where(row => !row.IsSkippedByPolicy)
+                    .Select(row => row.Key)
+                    .ToList()
+                : [];
+            var targetLookup = PluginRefreshPublicationRows.CreateTargetLookup(targets);
+            var publishedRows = targets.Count == 0
+                ? acceptedRows
+                : PluginRefreshPublicationRows.ApplyApproximationToTargets(
+                    acceptedRows.Rows,
+                    targetLookup,
+                    PluginIssueApproximation.Pending).Commit;
             var rows = publishedRows.Rows.Select(row => row.Plugin).ToList();
+            var issueActivity = targets.Count == 0
+                ? IdleActivity
+                : new PluginRefreshActivity(
+                    IsPluginRefreshRunning: true,
+                    IsIssueApproximationRefreshRunning: true);
 
             _publicationStore.PublishAcceptedPublication(
                 generation,
@@ -240,8 +261,12 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                 freshnessToken,
                 configuration,
                 publishedRows.Rows,
-                new PluginRefreshActivity(IsPluginRefreshRunning: true, IsIssueApproximationRefreshRunning: false),
-                $"Loading plugins for {plan.GameType}...",
+                issueActivity,
+                plan.CanAttemptIssueApproximation
+                    ? targets.Count == 0
+                        ? "Refreshed 0 plugin approximations."
+                        : $"Analyzing 0 of {targets.Count} plugins."
+                    : $"Loading plugins for {plan.GameType}...",
                 GetAffordance(plan.GameType, configuration));
 
             if (!plan.CanAttemptIssueApproximation)
@@ -256,40 +281,25 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                 return _publicationStore.GetCurrentSnapshot();
             }
 
-            var dataFolder = ResolveDataFolder(plan, rows);
-            var targets = skipEvaluation.Decisions
-                .Where(decision => !decision.ShouldSkipByPolicy)
-                .Select(decision => new PluginRefreshRowKey(
-                    decision.Plugin.FileName,
-                    decision.Plugin.FullPath))
-                .ToList();
-            var targetLookup = PluginRefreshPublicationRows.CreateTargetLookup(targets);
-            var issueActivity = new PluginRefreshActivity(
-                IsPluginRefreshRunning: true,
-                IsIssueApproximationRefreshRunning: true);
-            _publicationStore.PublishCurrentPublication(
-                generation,
-                plan.GameType,
-                configuration,
-                issueActivity,
-                targets.Count == 0
-                    ? "Refreshed 0 plugin approximations."
-                    : $"Analyzing 0 of {targets.Count} selected plugins.",
-                GetAffordance(plan.GameType, configuration));
+            if (targets.Count == 0)
+            {
+                return _publicationStore.GetCurrentSnapshot();
+            }
 
             try
             {
+                var dataFolder = ResolveDataFolder(plan, rows);
+                var request = CreateInitialApproximationRequest(
+                    plan,
+                    dataFolder,
+                    publishedRows.Rows,
+                    targets);
                 var updatedCount = 0;
-                await AnalyzeTargetsAsync(
-                        plan,
-                        dataFolder,
-                        targets,
-                        result => PublishApproximationResult(
+                await _pluginIssueApproximationModule.AnalyzeAsync(
+                        request,
+                        result => PublishInitialApproximationResult(
                             generation,
                             token,
-                            plan.GameType,
-                            configuration,
-                            issueActivity,
                             targetLookup,
                             result,
                             ref updatedCount),
@@ -298,30 +308,35 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
 
                 if (IsVisible(generation, token))
                 {
-                    _publicationStore.PublishCurrentPublication(
+                    _publicationStore.TryFinalizeInitialApproximation(
                         generation,
-                        plan.GameType,
-                        configuration,
-                        IdleActivity,
                         $"Refreshed {Volatile.Read(ref updatedCount)} plugin approximations.",
-                        GetAffordance(plan.GameType, configuration));
+                        GetAffordance(plan.GameType, configuration),
+                        () => IsVisible(generation, token),
+                        out _);
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 _logger?.Error(ex, "Failed to refresh plugin issue approximations");
-                PublishApproximationFailure(
+                _publicationStore.TryFinalizeInitialApproximation(
                     generation,
-                    token,
-                    plan.GameType,
-                    configuration,
-                    targetLookup,
-                    "Approximation refresh failed.");
+                    "Approximation refresh failed.",
+                    GetAffordance(plan.GameType, configuration),
+                    () => IsVisible(generation, token),
+                    out _);
             }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
             // Superseded and lifecycle cancellations are ordinary Plugin refresh control flow.
+            var snapshot = _publicationStore.GetCurrentSnapshot();
+            _publicationStore.TryFinalizeInitialApproximation(
+                generation,
+                snapshot.StatusText,
+                GetAffordance(snapshot),
+                () => generation == Volatile.Read(ref _activeGeneration),
+                out _);
         }
         finally
         {
@@ -476,14 +491,27 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             return snapshot;
         }
 
+        var statusText = reason == PluginRefreshCancelReason.Manual
+            ? "Approximation refresh canceled."
+            : snapshot.StatusText;
+        if (snapshot.Activity.IsPluginRefreshRunning &&
+            snapshot.Activity.IsIssueApproximationRefreshRunning &&
+            _publicationStore.TryFinalizeInitialApproximation(
+                snapshot.Generation,
+                statusText,
+                GetAffordance(snapshot),
+                () => snapshot.Generation == Volatile.Read(ref _activeGeneration),
+                out var finalized))
+        {
+            return finalized;
+        }
+
         return _publicationStore.PublishCurrentPublication(
             snapshot.Generation,
             snapshot.GameType,
             snapshot.Configuration,
             IdleActivity,
-            reason == PluginRefreshCancelReason.Manual
-                ? "Approximation refresh canceled."
-                : snapshot.StatusText,
+            statusText,
             GetAffordance(snapshot));
     }
 
@@ -506,9 +534,14 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         out long generation)
     {
         var cts = CancellationTokenSource.CreateLinkedTokenSource(externalToken);
-        generation = Interlocked.Increment(ref _activeGeneration);
+        var activatedGeneration = Interlocked.Increment(ref _activeGeneration);
+        generation = activatedGeneration;
         var previous = Interlocked.Exchange(ref _activeRefreshCts, cts);
         previous?.Cancel(); // do not dispose another generation's live token source
+        // The generation flip blocks old callbacks before retained rows are terminalized for the
+        // replacement snapshot, preventing an inactive Pending estimate from surviving supersession.
+        _publicationStore.FinalizePendingRowsForSupersession(
+            () => activatedGeneration == Volatile.Read(ref _activeGeneration));
         return cts;
     }
 
@@ -568,6 +601,35 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         });
     }
 
+    /// <summary>
+    /// Builds one full-refresh analysis request from the accepted discovery plan and publication rows.
+    /// </summary>
+    /// <param name="plan">Discovery plan accepted by the active generation.</param>
+    /// <param name="dataFolder">Resolved base data folder for import context.</param>
+    /// <param name="publicationRows">Complete ordered publication rows, including hidden Skip-list context.</param>
+    /// <param name="targets">Ordered non-Skip-list row keys to analyze.</param>
+    /// <returns>An authoritative module request that keeps source context separate from targets.</returns>
+    private static PluginIssueApproximationModuleRequest CreateInitialApproximationRequest(
+        PluginRefreshDiscoveryPlan plan,
+        string? dataFolder,
+        IReadOnlyList<PluginRefreshPublishedRow> publicationRows,
+        IReadOnlyList<PluginRefreshRowKey> targets)
+    {
+        if (string.IsNullOrWhiteSpace(dataFolder))
+        {
+            throw new InvalidOperationException(
+                "The accepted Plugin refresh plan did not resolve an Issue approximation data folder.");
+        }
+
+        // Full refresh already accepted one ordered source. Reusing those exact keys prevents a
+        // later direct-load-order enumeration or MO2 conflict change from replacing its context.
+        PluginIssueApproximationModuleSource source =
+            new PluginIssueApproximationModuleSource.ResolvedLoadOrder(
+                dataFolder,
+                publicationRows.Select(row => row.Key).ToList());
+        return new PluginIssueApproximationModuleRequest(plan.GameType, source, targets);
+    }
+
     private async Task AnalyzeTargetsAsync(
         PluginRefreshDiscoveryPlan plan,
         string? dataFolder,
@@ -600,6 +662,34 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                     new PluginIssueApproximationSource.DirectDataFolder(dataFolder)),
                 onApproximationReady,
                 ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Publishes one exact keyed result with its deterministic progress count.
+    /// </summary>
+    /// <param name="generation">Generation that owns the result.</param>
+    /// <param name="token">Cancellation boundary for the generation.</param>
+    /// <param name="targetLookup">Authoritative target set.</param>
+    /// <param name="result">Exact keyed terminal result.</param>
+    /// <param name="updatedCount">Count of results already accepted for publication.</param>
+    private void PublishInitialApproximationResult(
+        long generation,
+        CancellationToken token,
+        PluginRefreshPublicationRows.TargetLookup targetLookup,
+        PluginIssueApproximationModuleResult result,
+        ref int updatedCount)
+    {
+        var nextCount = Volatile.Read(ref updatedCount) + 1;
+        if (_publicationStore.TryPublishInitialApproximationResult(
+                generation,
+                targetLookup,
+                result,
+                $"Analyzing {nextCount} of {targetLookup.Count} plugins.",
+                GetAffordance(_publicationStore.GetCurrentSnapshot()),
+                () => IsVisible(generation, token)))
+        {
+            Volatile.Write(ref updatedCount, nextCount);
         }
     }
 

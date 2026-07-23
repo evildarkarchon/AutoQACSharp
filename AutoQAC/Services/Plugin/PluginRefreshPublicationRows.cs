@@ -237,6 +237,18 @@ internal static class PluginRefreshPublicationRows
                 : row);
 
     /// <summary>
+    /// Marks every still-pending row unavailable while preserving completed results.
+    /// </summary>
+    /// <param name="rows">Full publication rows.</param>
+    /// <returns>An update result containing terminal rows.</returns>
+    internal static PluginRefreshPublicationRowsUpdate ApplyUnavailableToPendingRows(
+        IReadOnlyList<PluginRefreshPublishedRow> rows) =>
+        UpdateRows(
+            rows,
+            row => row.Plugin.Approximation.Status == PluginIssueApproximationStatus.Pending,
+            row => row with { Plugin = row.Plugin with { Approximation = PluginIssueApproximation.Unavailable } });
+
+    /// <summary>
     /// Applies one issue approximation result to its matching publication row.
     /// </summary>
     /// <param name="rows">Full publication rows.</param>
@@ -248,6 +260,20 @@ internal static class PluginRefreshPublicationRows
         UpdateRows(
             rows,
             row => IsMatch(row.Plugin, result),
+            row => row with { Plugin = row.Plugin with { Approximation = result.Approximation } });
+
+    /// <summary>
+    /// Applies an authoritative keyed result to its exact publication row.
+    /// </summary>
+    /// <param name="rows">Full publication rows.</param>
+    /// <param name="result">Keyed approximation result returned by the deep module.</param>
+    /// <returns>An update result that reports whether the exact row key matched.</returns>
+    internal static PluginRefreshPublicationRowsUpdate ApplyApproximationResult(
+        IReadOnlyList<PluginRefreshPublishedRow> rows,
+        PluginIssueApproximationModuleResult result) =>
+        UpdateRows(
+            rows,
+            row => IsExactMatch(row.Key, result.Target),
             row => row with { Plugin = row.Plugin with { Approximation = result.Approximation } });
 
     /// <summary>
@@ -306,6 +332,10 @@ internal static class PluginRefreshPublicationRows
 
         return string.Equals(row.FileName, target.FileName, StringComparison.OrdinalIgnoreCase);
     }
+
+    private static bool IsExactMatch(PluginRefreshRowKey row, PluginRefreshRowKey target) =>
+        string.Equals(row.FileName, target.FileName, StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(row.FullPath, target.FullPath, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Determines whether an approximation result identifies a plugin row.
@@ -415,6 +445,13 @@ internal static class PluginRefreshPublicationRows
         /// <param name="result">Approximation result to test.</param>
         /// <returns>True when the result matches by full path or pathless file-name fallback.</returns>
         internal bool Contains(PluginIssueApproximationResult result) => Contains(result.FileName, result.FullPath);
+
+        /// <summary>
+        /// Determines whether an authoritative row key belongs to this target set.
+        /// </summary>
+        /// <param name="target">Row key to test.</param>
+        /// <returns>True when the rooted target path belongs to the original target collection.</returns>
+        internal bool Contains(PluginRefreshRowKey target) => Contains(target.FileName, target.FullPath);
 
         private bool Contains(string fileName, string? fullPath) =>
             HasUsablePath(fullPath)

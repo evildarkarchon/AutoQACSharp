@@ -121,9 +121,19 @@ public sealed class MainWindowViewModelTests
 
     private PluginRefreshModule CreatePluginRefreshModule(
         IPluginIssueApproximationService approximationService,
-        IStateService? stateService = null)
+        IStateService? stateService = null,
+        IPluginIssueApproximationModule? approximationModule = null)
     {
         var effectiveStateService = stateService ?? _stateServiceMock;
+        if (approximationModule is null)
+        {
+            approximationModule = Substitute.For<IPluginIssueApproximationModule>();
+            approximationModule.AnalyzeAsync(
+                    Arg.Any<PluginIssueApproximationModuleRequest>(),
+                    Arg.Any<Action<PluginIssueApproximationModuleResult>>(),
+                    Arg.Any<CancellationToken>())
+                .Returns(Task.CompletedTask);
+        }
         var gameDetectionService = Substitute.For<AutoQAC.Services.GameDetection.IGameDetectionService>();
         gameDetectionService
             .DetectVariant(Arg.Any<GameType>(), Arg.Any<IReadOnlyList<string>>())
@@ -143,6 +153,7 @@ public sealed class MainWindowViewModelTests
         return new PluginRefreshModule(
             discoveryPlanner,
             approximationService,
+            approximationModule,
             effectiveStateService,
             new SkipListPolicy(_configServiceMock, gameDetectionService),
             publicationStore,
@@ -170,6 +181,14 @@ public sealed class MainWindowViewModelTests
         request.GameType == gameType &&
         request.Source is PluginIssueApproximationSource.DirectDataFolder direct &&
         direct.DataFolder == dataFolder;
+
+    private static bool IsDirectApproximationRequest(
+        PluginIssueApproximationModuleRequest request,
+        GameType gameType,
+        string dataFolder) =>
+        request.GameType == gameType &&
+        request.Source is PluginIssueApproximationModuleSource.ResolvedLoadOrder resolved &&
+        resolved.BaseDataFolder == dataFolder;
 
     private static async Task WaitForSignalAsync(Task signalTask, string because)
     {
@@ -1518,17 +1537,21 @@ public sealed class MainWindowViewModelTests
 
         // Assert
         await _pluginLoadingServiceMock.Received(1).TryGetPluginsAsync(GameType.SkyrimSe, Arg.Any<string?>(), Arg.Any<CancellationToken>());
-        _stateServiceMock.Received(1).SetPluginsToClean(Arg.Is<List<PluginInfo>>(list =>
+        _stateServiceMock.Received().SetPluginsToClean(Arg.Is<List<PluginInfo>>(list =>
             list.Count == 2 &&
             list.Any(p => p.FileName == "Plugin1.esp") &&
             list.Any(p => p.FileName == "Plugin2.esp")));
     }
 
+    /// <summary>
+    /// Verifies a selected game publishes Pending rows before merging authoritative results incrementally.
+    /// </summary>
     [Fact]
     public async Task SelectedGame_ShouldPublishPendingApproximationsThenMergeBackgroundResults()
     {
         EnableSelectedGameSideEffects();
         var approximationServiceMock = Substitute.For<IPluginIssueApproximationService>();
+        var approximationModuleMock = Substitute.For<IPluginIssueApproximationModule>();
         var pendingPluginsPublished = CreateSignal();
         var approximationMergedBeforeCompletion = CreateSignal();
         var allowApproximationCompletion = CreateSignal();
@@ -1545,34 +1568,22 @@ public sealed class MainWindowViewModelTests
                 DataFolder = @"C:\Games\SkyrimSE\Data"
             });
 
-        approximationServiceMock
-            .GetApproximationsAsync(
-                Arg.Is<PluginIssueApproximationRequest>(request =>
+        approximationModuleMock
+            .AnalyzeAsync(
+                Arg.Is<PluginIssueApproximationModuleRequest>(request =>
                     IsDirectApproximationRequest(request, GameType.SkyrimSe, @"C:\Games\SkyrimSE\Data")),
-                Arg.Any<Action<PluginIssueApproximationResult>>(),
+                Arg.Any<Action<PluginIssueApproximationModuleResult>>(),
                 Arg.Any<CancellationToken>())
             .Returns(async callInfo =>
             {
-                var callback = callInfo.ArgAt<Action<PluginIssueApproximationResult>>(1);
-                callback(new PluginIssueApproximationResult
-                {
-                    FileName = "Plugin1.esp",
-                    FullPath = @"C:\Games\SkyrimSE\Data\Plugin1.esp",
-                    Approximation = PluginIssueApproximation.Available(3, 2, 1)
-                });
+                var request = callInfo.ArgAt<PluginIssueApproximationModuleRequest>(0);
+                var callback = callInfo.ArgAt<Action<PluginIssueApproximationModuleResult>>(1);
+                callback(new PluginIssueApproximationModuleResult(
+                    request.Targets.Single(),
+                    PluginIssueApproximation.Available(3, 2, 1)));
 
                 await WaitForSignalAsync(approximationMergedBeforeCompletion.Task, "expected incremental approximation merge before completion");
                 await allowApproximationCompletion.Task;
-
-                return
-                [
-                    new PluginIssueApproximationResult
-                    {
-                        FileName = "Plugin1.esp",
-                        FullPath = @"C:\Games\SkyrimSE\Data\Plugin1.esp",
-                        Approximation = PluginIssueApproximation.Available(3, 2, 1)
-                    }
-                ];
             });
 
         _configServiceMock.GetSkipListAsync(
@@ -1601,7 +1612,10 @@ public sealed class MainWindowViewModelTests
             }
         });
 
-        using var refreshModule = CreatePluginRefreshModule(approximationServiceMock, stateService);
+        using var refreshModule = CreatePluginRefreshModule(
+            approximationServiceMock,
+            stateService,
+            approximationModuleMock);
 
         var vm = new MainWindowViewModel(
             _configServiceMock,
@@ -1627,19 +1641,23 @@ public sealed class MainWindowViewModelTests
             plugin.FileName == "Plugin1.esp" &&
             plugin.Approximation.Status == PluginIssueApproximationStatus.Available &&
             plugin.Approximation.ItmCount == 3);
-        await approximationServiceMock.Received(1)
-            .GetApproximationsAsync(
-                Arg.Is<PluginIssueApproximationRequest>(request =>
+        await approximationModuleMock.Received(1)
+            .AnalyzeAsync(
+                Arg.Is<PluginIssueApproximationModuleRequest>(request =>
                     IsDirectApproximationRequest(request, GameType.SkyrimSe, @"C:\Games\SkyrimSE\Data")),
-                Arg.Any<Action<PluginIssueApproximationResult>>(),
+                Arg.Any<Action<PluginIssueApproximationModuleResult>>(),
                 Arg.Any<CancellationToken>());
     }
 
+    /// <summary>
+    /// Verifies an Issue approximation failure leaves the discovered Plugin list loaded and terminal.
+    /// </summary>
     [Fact]
     public async Task SelectedGame_ShouldKeepPluginListLoadedWhenApproximationFails()
     {
         EnableSelectedGameSideEffects();
         var approximationServiceMock = Substitute.For<IPluginIssueApproximationService>();
+        var approximationModuleMock = Substitute.For<IPluginIssueApproximationModule>();
         var pluginsLoaded = CreateSignal();
         var unavailableMerged = CreateSignal();
         var expectedPlugins = new List<PluginInfo>
@@ -1655,11 +1673,11 @@ public sealed class MainWindowViewModelTests
                 DataFolder = @"C:\Games\SkyrimSE\Data"
             });
 
-        approximationServiceMock
-            .GetApproximationsAsync(
-                Arg.Is<PluginIssueApproximationRequest>(request =>
+        approximationModuleMock
+            .AnalyzeAsync(
+                Arg.Is<PluginIssueApproximationModuleRequest>(request =>
                     IsDirectApproximationRequest(request, GameType.SkyrimSe, @"C:\Games\SkyrimSE\Data")),
-                Arg.Any<Action<PluginIssueApproximationResult>>(),
+                Arg.Any<Action<PluginIssueApproximationModuleResult>>(),
                 Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("Approximation failed"));
 
@@ -1684,7 +1702,10 @@ public sealed class MainWindowViewModelTests
             }
         });
 
-        using var refreshModule = CreatePluginRefreshModule(approximationServiceMock, stateService);
+        using var refreshModule = CreatePluginRefreshModule(
+            approximationServiceMock,
+            stateService,
+            approximationModuleMock);
 
         var vm = new MainWindowViewModel(
             _configServiceMock,
@@ -1710,11 +1731,15 @@ public sealed class MainWindowViewModelTests
             plugin.Approximation.Status == PluginIssueApproximationStatus.Unavailable);
     }
 
+    /// <summary>
+    /// Verifies a superseded Plugin load cannot publish rows or begin authoritative approximation.
+    /// </summary>
     [Fact]
     public async Task SelectedGame_StalePluginLoad_DoesNotOverwriteCurrentListOrStartApproximation()
     {
         EnableSelectedGameSideEffects();
         var approximationServiceMock = Substitute.For<IPluginIssueApproximationService>();
+        var approximationModuleMock = Substitute.For<IPluginIssueApproximationModule>();
         var approximationAttempted = CreateSignal();
         var firstLoadStarted = CreateSignal();
         var unknownSelectionApplied = CreateSignal();
@@ -1739,15 +1764,15 @@ public sealed class MainWindowViewModelTests
                 Arg.Any<CancellationToken>())
             .Returns(new List<string>());
 
-        approximationServiceMock
-            .GetApproximationsAsync(
-                Arg.Any<PluginIssueApproximationRequest>(),
-                Arg.Any<Action<PluginIssueApproximationResult>>(),
+        approximationModuleMock
+            .AnalyzeAsync(
+                Arg.Any<PluginIssueApproximationModuleRequest>(),
+                Arg.Any<Action<PluginIssueApproximationModuleResult>>(),
                 Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 approximationAttempted.TrySetResult(true);
-                return Task.FromResult<IReadOnlyList<PluginIssueApproximationResult>>([]);
+                return Task.CompletedTask;
             });
 
         _stateServiceMock.When(x => x.SetPluginsToClean(Arg.Any<List<PluginInfo>>()))
@@ -1771,7 +1796,9 @@ public sealed class MainWindowViewModelTests
         _stateServiceMock.StateChanged.Returns(stateSubject);
         _stateServiceMock.CurrentState.Returns(new AppState());
 
-        using var refreshModule = CreatePluginRefreshModule(approximationServiceMock);
+        using var refreshModule = CreatePluginRefreshModule(
+            approximationServiceMock,
+            approximationModule: approximationModuleMock);
 
         var vm = new MainWindowViewModel(
             _configServiceMock,
@@ -1810,10 +1837,10 @@ public sealed class MainWindowViewModelTests
             "stale plugin loads must not overwrite the current game's plugin list");
         approximationAttempted.Task.IsCompleted.Should().BeFalse(
             "stale plugin loads should not start a background approximation refresh");
-        await approximationServiceMock.DidNotReceive()
-            .GetApproximationsAsync(
-                Arg.Any<PluginIssueApproximationRequest>(),
-                Arg.Any<Action<PluginIssueApproximationResult>>(),
+        await approximationModuleMock.DidNotReceive()
+            .AnalyzeAsync(
+                Arg.Any<PluginIssueApproximationModuleRequest>(),
+                Arg.Any<Action<PluginIssueApproximationModuleResult>>(),
                 Arg.Any<CancellationToken>());
     }
 

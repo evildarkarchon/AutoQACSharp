@@ -78,6 +78,7 @@ public static class ServiceCollectionExtensions
             services.AddSingleton<IPluginRefreshModule>(sp => new PluginRefreshModule(
                 sp.GetRequiredService<IPluginRefreshDiscoveryPlanner>(),
                 sp.GetRequiredService<IPluginIssueApproximationService>(),
+                sp.GetRequiredService<IPluginIssueApproximationModule>(),
                 sp.GetRequiredService<IStateService>(),
                 sp.GetRequiredService<ISkipListPolicy>(),
                 sp.GetRequiredService<PluginRefreshPublicationStore>(),
