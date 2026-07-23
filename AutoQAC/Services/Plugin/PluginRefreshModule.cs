@@ -21,7 +21,6 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
     private static readonly PluginRefreshActivity IdleActivity = new(false, false);
 
     private readonly IPluginRefreshDiscoveryPlanner _discoveryPlanner;
-    private readonly IPluginIssueApproximationService _pluginIssueApproximationService;
     private readonly IPluginIssueApproximationModule _pluginIssueApproximationModule;
     private readonly IStateService _stateService;
     private readonly ISkipListPolicy _skipListPolicy;
@@ -43,7 +42,6 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
     /// </summary>
     internal PluginRefreshModule(
         IPluginRefreshDiscoveryPlanner discoveryPlanner,
-        IPluginIssueApproximationService pluginIssueApproximationService,
         IPluginIssueApproximationModule pluginIssueApproximationModule,
         IStateService stateService,
         ISkipListPolicy skipListPolicy,
@@ -52,7 +50,6 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         IConfigurationService? configurationService = null)
     {
         _discoveryPlanner = discoveryPlanner;
-        _pluginIssueApproximationService = pluginIssueApproximationService;
         _pluginIssueApproximationModule = pluginIssueApproximationModule;
         _stateService = stateService;
         _skipListPolicy = skipListPolicy;
@@ -708,41 +705,6 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             operation.Targets.Select(target => target.Key).ToList());
     }
 
-    private async Task AnalyzeTargetsAsync(
-        PluginRefreshDiscoveryPlan plan,
-        string? dataFolder,
-        IReadOnlyList<PluginRefreshRowKey> targets,
-        Action<PluginIssueApproximationResult> onApproximationReady,
-        CancellationToken ct)
-    {
-        if (string.IsNullOrWhiteSpace(dataFolder) || targets.Count == 0)
-        {
-            return;
-        }
-
-        if (plan.Mode == PluginRefreshDiscoveryMode.Mo2LoadOrderFile)
-        {
-            await _pluginIssueApproximationService.GetApproximationsAsync(
-                new PluginIssueApproximationRequest(
-                    plan.GameType,
-                    new PluginIssueApproximationSource.ResolvedLoadOrder(
-                        dataFolder,
-                        targets.Select(target => target.FileName).ToList(),
-                        plan.Mo2PathMap)),
-                onApproximationReady,
-                ct).ConfigureAwait(false);
-        }
-        else
-        {
-            await _pluginIssueApproximationService.GetApproximationsAsync(
-                new PluginIssueApproximationRequest(
-                    plan.GameType,
-                    new PluginIssueApproximationSource.DirectDataFolder(dataFolder)),
-                onApproximationReady,
-                ct).ConfigureAwait(false);
-        }
-    }
-
     /// <summary>
     /// Publishes one exact keyed result with its deterministic progress count.
     /// </summary>
@@ -769,59 +731,6 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         {
             Volatile.Write(ref updatedCount, nextCount);
         }
-    }
-
-    private void PublishApproximationResult(
-        long generation,
-        CancellationToken token,
-        GameType gameType,
-        PluginRefreshConfigurationProjection configuration,
-        PluginRefreshActivity activity,
-        PluginRefreshPublicationRows.TargetLookup targetLookup,
-        PluginIssueApproximationResult result,
-        ref int updatedCount)
-    {
-        var matchedRow = _publicationStore.TryApplyApproximationResult(
-            gameType,
-            targetLookup,
-            result,
-            () => IsVisible(generation, token));
-        if (!matchedRow || !IsVisible(generation, token))
-        {
-            return;
-        }
-
-        var updated = Interlocked.Increment(ref updatedCount);
-        _publicationStore.PublishCurrentPublication(
-            generation,
-            gameType,
-            configuration,
-            activity,
-            $"Analyzing {updated} of {targetLookup.Count} selected plugins.",
-            GetAffordance(gameType, configuration));
-    }
-
-    private void PublishApproximationFailure(
-        long generation,
-        CancellationToken token,
-        GameType gameType,
-        PluginRefreshConfigurationProjection configuration,
-        PluginRefreshPublicationRows.TargetLookup targetLookup,
-        string message)
-    {
-        if (!IsVisible(generation, token))
-        {
-            return;
-        }
-
-        _publicationStore.MarkTargetsUnavailable(gameType, targetLookup, () => IsVisible(generation, token));
-        _publicationStore.PublishCurrentPublication(
-            generation,
-            gameType,
-            configuration,
-            IdleActivity,
-            message,
-            GetAffordance(gameType, configuration));
     }
 
     private void OnAppStateChanged(AppState state)

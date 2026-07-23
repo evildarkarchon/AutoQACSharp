@@ -55,8 +55,6 @@ public static class ServiceCollectionExtensions
             services.AddSingleton<IGameDetectionService, GameDetectionService>();
             services.AddSingleton<IPluginValidationService, PluginValidationService>();
             services.AddSingleton<IPluginLoadingService, PluginLoadingService>();
-            services.AddSingleton<IPluginIssueApproximationService>(sp => new PluginIssueApproximationService(
-                sp.GetRequiredService<ILoggingService>()));
             services.AddSingleton<IPluginQueryService>(_ => PluginQueryService.Default);
             services.AddSingleton<IPluginIssueApproximationModule, PluginIssueApproximationModule>();
             services.AddSingleton<ISkipListPolicy, SkipListPolicy>();
@@ -77,7 +75,6 @@ public static class ServiceCollectionExtensions
             });
             services.AddSingleton<IPluginRefreshModule>(sp => new PluginRefreshModule(
                 sp.GetRequiredService<IPluginRefreshDiscoveryPlanner>(),
-                sp.GetRequiredService<IPluginIssueApproximationService>(),
                 sp.GetRequiredService<IPluginIssueApproximationModule>(),
                 sp.GetRequiredService<IStateService>(),
                 sp.GetRequiredService<ISkipListPolicy>(),

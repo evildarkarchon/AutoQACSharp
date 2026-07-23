@@ -19,8 +19,6 @@ public interface IStateService
     void UpdateConfigurationPaths(string? loadOrder, string? mo2, string? xEdit);
     void UpdateConfigurationPaths(string? loadOrder, string? mo2, string? xEdit, string? mo2Profile);
     void SetPluginsToClean(List<PluginInfo> plugins);
-    void MergePluginApproximation(PluginIssueApproximationResult approximation);
-    void MergePluginApproximations(IReadOnlyList<PluginIssueApproximationResult> approximations);
     void StartCleaning(List<PluginInfo> plugins);
 
     /// <summary>

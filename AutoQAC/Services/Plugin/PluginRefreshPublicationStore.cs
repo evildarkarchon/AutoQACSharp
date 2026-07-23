@@ -439,85 +439,6 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
     }
 
     /// <summary>
-    /// Marks selected issue approximation targets pending.
-    /// </summary>
-    /// <param name="gameType">Game context for the targets.</param>
-    /// <param name="targets">Target row identities.</param>
-    /// <param name="targetLookup">Lookup used to identify target rows.</param>
-    internal void MarkTargetsPending(
-        GameType gameType,
-        IReadOnlyList<PluginRefreshRowKey> targets,
-        PluginRefreshPublicationRows.TargetLookup targetLookup)
-    {
-        if (TryUpdateAcceptedPublicationRows(
-                gameType,
-                rows => PluginRefreshPublicationRows.ApplyApproximationToTargets(
-                    rows,
-                    targetLookup,
-                    PluginIssueApproximation.Pending)))
-        {
-            return;
-        }
-
-        _appStateMirror.MarkTargetsPending(gameType, targets, targetLookup);
-    }
-
-    /// <summary>
-    /// Marks selected issue approximation targets unavailable.
-    /// </summary>
-    /// <param name="gameType">Game context for the targets.</param>
-    /// <param name="targetLookup">Lookup used to identify target rows.</param>
-    /// <param name="canUpdate">Visibility guard supplied by the active refresh generation.</param>
-    internal void MarkTargetsUnavailable(
-        GameType gameType,
-        PluginRefreshPublicationRows.TargetLookup targetLookup,
-        Func<bool> canUpdate)
-    {
-        if (TryUpdateAcceptedPublicationRows(
-                gameType,
-                rows => PluginRefreshPublicationRows.ApplyUnavailableToPendingTargets(
-                    rows,
-                    targetLookup),
-                canUpdate))
-        {
-            return;
-        }
-
-        _appStateMirror.MarkTargetsUnavailable(targetLookup, canUpdate);
-    }
-
-    /// <summary>
-    /// Applies one issue approximation result to the current publication or AppState fallback rows.
-    /// </summary>
-    /// <param name="gameType">Game context for the result.</param>
-    /// <param name="targetLookup">Lookup containing the active analysis targets.</param>
-    /// <param name="result">Approximation result to merge.</param>
-    /// <param name="canUpdate">Visibility guard supplied by the active refresh generation.</param>
-    /// <returns>True when a publication or AppState row matched the result.</returns>
-    internal bool TryApplyApproximationResult(
-        GameType gameType,
-        PluginRefreshPublicationRows.TargetLookup targetLookup,
-        PluginIssueApproximationResult result,
-        Func<bool> canUpdate)
-    {
-        if (!canUpdate() || !targetLookup.Contains(result))
-        {
-            return false;
-        }
-
-        var matchedRow = TryUpdateAcceptedPublicationRows(
-            gameType,
-            rows => PluginRefreshPublicationRows.ApplyApproximationResult(rows, result),
-            canUpdate);
-        if (!matchedRow)
-        {
-            matchedRow = _appStateMirror.TryApplyApproximationResult(canUpdate, result);
-        }
-
-        return matchedRow;
-    }
-
-    /// <summary>
     /// Applies one authoritative keyed result and publishes its progress snapshot as one generation-guarded commit.
     /// </summary>
     /// <param name="generation">Accepted full-refresh generation.</param>
@@ -969,46 +890,6 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
             snapshot.Activity,
             snapshot.StatusText,
             affordance);
-    }
-
-    private bool TryUpdateAcceptedPublicationRows(
-        GameType gameType,
-        Func<IReadOnlyList<PluginRefreshPublishedRow>, PluginRefreshPublicationRowsUpdate> updateRows,
-        Func<bool>? canUpdate = null)
-    {
-        PluginRefreshPublicationRowsMirror mirror;
-        lock (_snapshotLock)
-        {
-            if (canUpdate is not null && !canUpdate())
-            {
-                return false;
-            }
-
-            if (_currentPublicationFreshnessToken is null ||
-                _currentPublication.DiscoveryPlan is null ||
-                _currentPublication.DiscoveryPlan.GameType != gameType ||
-                _currentPublication.Rows.Count == 0)
-            {
-                return false;
-            }
-
-            var result = updateRows(_currentPublication.Rows);
-            if (!result.Matched)
-            {
-                return false;
-            }
-
-            _currentPublication = _currentPublication with
-            {
-                Rows = result.Commit.Rows,
-                VisibleRows = result.Commit.VisibleRows
-            };
-            _currentSnapshot = ToSnapshot(_currentPublication);
-            mirror = result.Commit.Mirror;
-        }
-
-        _appStateMirror.MirrorRows(mirror);
-        return true;
     }
 
     private PluginRefreshSnapshot PublishPublicationWithMirroredRows(

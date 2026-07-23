@@ -117,69 +117,6 @@ public sealed class StateService : IStateService, IDisposable
         });
     }
 
-    public void MergePluginApproximations(IReadOnlyList<PluginIssueApproximationResult> approximations)
-    {
-        UpdateState(s =>
-        {
-            if (s.PluginsToClean.Count == 0)
-            {
-                return s;
-            }
-
-            var byFullPath = approximations
-                .GroupBy(a => a.FullPath, StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(g => g.Key, g => g.Last(), StringComparer.OrdinalIgnoreCase);
-            var byFileName = approximations
-                .GroupBy(a => a.FileName, StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(g => g.Key, g => g.Last(), StringComparer.OrdinalIgnoreCase);
-
-            var merged = s.PluginsToClean
-                .Select(plugin =>
-                {
-                    if (TryGetApproximationMatch(plugin, byFullPath, byFileName, out var approximationMatch))
-                    {
-                        return plugin with
-                        {
-                            Approximation = approximationMatch.Approximation
-                        };
-                    }
-
-                    return plugin with
-                    {
-                        Approximation = PluginIssueApproximation.Unavailable
-                    };
-                })
-                .ToList();
-
-            return s with
-            {
-                PluginsToClean = merged.AsReadOnly()
-            };
-        });
-    }
-
-    public void MergePluginApproximation(PluginIssueApproximationResult approximation)
-    {
-        UpdateState(s =>
-        {
-            if (s.PluginsToClean.Count == 0)
-            {
-                return s;
-            }
-
-            var merged = s.PluginsToClean
-                .Select(plugin => IsApproximationMatch(plugin, approximation)
-                    ? plugin with { Approximation = approximation.Approximation }
-                    : plugin)
-                .ToList();
-
-            return s with
-            {
-                PluginsToClean = merged.AsReadOnly()
-            };
-        });
-    }
-
     public void UpdateExcludedPlugins(Func<IReadOnlySet<string>, IReadOnlySet<string>> updater)
     {
         UpdateState(s => s with { ExcludedPluginPaths = updater(s.ExcludedPluginPaths) });
@@ -305,37 +242,4 @@ public sealed class StateService : IStateService, IDisposable
         _isTerminatingSubject.Dispose();
     }
 
-    private static bool TryGetApproximationMatch(
-        PluginInfo plugin,
-        IReadOnlyDictionary<string, PluginIssueApproximationResult> byFullPath,
-        IReadOnlyDictionary<string, PluginIssueApproximationResult> byFileName,
-        out PluginIssueApproximationResult approximation)
-    {
-        if (byFullPath.TryGetValue(plugin.FullPath, out var fullPathMatch))
-        {
-            approximation = fullPathMatch;
-            return true;
-        }
-
-        // Only fall back to file name when the plugin has no usable path
-        if (string.IsNullOrWhiteSpace(plugin.FullPath) &&
-            byFileName.TryGetValue(plugin.FileName, out var fileNameMatch))
-        {
-            approximation = fileNameMatch;
-            return true;
-        }
-
-        approximation = null!;
-        return false;
-    }
-
-    private static bool IsApproximationMatch(PluginInfo plugin, PluginIssueApproximationResult approximation)
-    {
-        // Prefer full path when both sides have one
-        if (!string.IsNullOrWhiteSpace(plugin.FullPath) && !string.IsNullOrWhiteSpace(approximation.FullPath))
-            return string.Equals(plugin.FullPath, approximation.FullPath, StringComparison.OrdinalIgnoreCase);
-
-        // Fall back to file name only when one side has no usable path
-        return string.Equals(plugin.FileName, approximation.FileName, StringComparison.OrdinalIgnoreCase);
-    }
 }

@@ -120,7 +120,6 @@ public sealed class MainWindowViewModelTests
     }
 
     private PluginRefreshModule CreatePluginRefreshModule(
-        IPluginIssueApproximationService approximationService,
         IStateService? stateService = null,
         IPluginIssueApproximationModule? approximationModule = null)
     {
@@ -152,7 +151,6 @@ public sealed class MainWindowViewModelTests
                 initialConfiguration.Mo2ModeEnabled));
         return new PluginRefreshModule(
             discoveryPlanner,
-            approximationService,
             approximationModule,
             effectiveStateService,
             new SkipListPolicy(_configServiceMock, gameDetectionService),
@@ -173,14 +171,6 @@ public sealed class MainWindowViewModelTests
     {
         return WaitForSignalAsync(signal.Task, "expected asynchronous test signal to be observed");
     }
-
-    private static bool IsDirectApproximationRequest(
-        PluginIssueApproximationRequest request,
-        GameType gameType,
-        string dataFolder) =>
-        request.GameType == gameType &&
-        request.Source is PluginIssueApproximationSource.DirectDataFolder direct &&
-        direct.DataFolder == dataFolder;
 
     private static bool IsDirectApproximationRequest(
         PluginIssueApproximationModuleRequest request,
@@ -1507,13 +1497,7 @@ public sealed class MainWindowViewModelTests
                     pluginsLoaded.TrySetResult(true);
                 }
             });
-        var approximationService = Substitute.For<IPluginIssueApproximationService>();
-        approximationService.GetApproximationsAsync(
-                Arg.Any<PluginIssueApproximationRequest>(),
-                Arg.Any<Action<PluginIssueApproximationResult>?>(),
-                Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<IReadOnlyList<PluginIssueApproximationResult>>([]));
-        using var refreshModule = CreatePluginRefreshModule(approximationService);
+        using var refreshModule = CreatePluginRefreshModule();
 
         var vm = new MainWindowViewModel(
             _configServiceMock,
@@ -1550,7 +1534,6 @@ public sealed class MainWindowViewModelTests
     public async Task SelectedGame_ShouldPublishPendingApproximationsThenMergeBackgroundResults()
     {
         EnableSelectedGameSideEffects();
-        var approximationServiceMock = Substitute.For<IPluginIssueApproximationService>();
         var approximationModuleMock = Substitute.For<IPluginIssueApproximationModule>();
         var pendingPluginsPublished = CreateSignal();
         var approximationMergedBeforeCompletion = CreateSignal();
@@ -1613,7 +1596,6 @@ public sealed class MainWindowViewModelTests
         });
 
         using var refreshModule = CreatePluginRefreshModule(
-            approximationServiceMock,
             stateService,
             approximationModuleMock);
 
@@ -1656,7 +1638,6 @@ public sealed class MainWindowViewModelTests
     public async Task SelectedGame_ShouldKeepPluginListLoadedWhenApproximationFails()
     {
         EnableSelectedGameSideEffects();
-        var approximationServiceMock = Substitute.For<IPluginIssueApproximationService>();
         var approximationModuleMock = Substitute.For<IPluginIssueApproximationModule>();
         var pluginsLoaded = CreateSignal();
         var unavailableMerged = CreateSignal();
@@ -1703,7 +1684,6 @@ public sealed class MainWindowViewModelTests
         });
 
         using var refreshModule = CreatePluginRefreshModule(
-            approximationServiceMock,
             stateService,
             approximationModuleMock);
 
@@ -1738,7 +1718,6 @@ public sealed class MainWindowViewModelTests
     public async Task SelectedGame_StalePluginLoad_DoesNotOverwriteCurrentListOrStartApproximation()
     {
         EnableSelectedGameSideEffects();
-        var approximationServiceMock = Substitute.For<IPluginIssueApproximationService>();
         var approximationModuleMock = Substitute.For<IPluginIssueApproximationModule>();
         var approximationAttempted = CreateSignal();
         var firstLoadStarted = CreateSignal();
@@ -1797,7 +1776,6 @@ public sealed class MainWindowViewModelTests
         _stateServiceMock.CurrentState.Returns(new AppState());
 
         using var refreshModule = CreatePluginRefreshModule(
-            approximationServiceMock,
             approximationModule: approximationModuleMock);
 
         var vm = new MainWindowViewModel(
@@ -2229,13 +2207,7 @@ public sealed class MainWindowViewModelTests
                     emptyPluginListPublished.TrySetResult(true);
                 }
             });
-        var approximationService = Substitute.For<IPluginIssueApproximationService>();
-        approximationService.GetApproximationsAsync(
-                Arg.Any<PluginIssueApproximationRequest>(),
-                Arg.Any<Action<PluginIssueApproximationResult>?>(),
-                Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<IReadOnlyList<PluginIssueApproximationResult>>([]));
-        using var refreshModule = CreatePluginRefreshModule(approximationService);
+        using var refreshModule = CreatePluginRefreshModule();
 
         var vm = new MainWindowViewModel(
             _configServiceMock,

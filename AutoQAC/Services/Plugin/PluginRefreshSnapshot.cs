@@ -69,8 +69,8 @@ public sealed record PluginRefreshRow(
 /// <summary>
 /// Immutable identity for a visible Plugin refresh row.
 /// </summary>
-/// <param name="FileName">Plugin file name fallback identity.</param>
-/// <param name="FullPath">Resolved full path primary identity.</param>
+/// <param name="FileName">Plugin filename component of the row identity.</param>
+/// <param name="FullPath">Resolved full-path component of the row identity.</param>
 public sealed record PluginRefreshRowKey(string FileName, string FullPath);
 
 /// <summary>

@@ -70,6 +70,9 @@ public sealed class PluginRefreshModuleTests
             row.Plugin.Approximation.Status == PluginIssueApproximationStatus.Available);
         publication.Rows.Should().NotContain(row =>
             row.Plugin.Approximation.Status == PluginIssueApproximationStatus.Pending);
+        stateService.CurrentState.PluginsToClean.Should().Equal(
+            publication.Rows.Select(row => row.Plugin),
+            "the accepted keyed results must be mirrored into AppState compatibility rows");
         snapshots
             .Where(snapshot => snapshot.StatusText.StartsWith("Analyzing ", StringComparison.Ordinal))
             .Select(snapshot => snapshot.StatusText)
@@ -79,6 +82,42 @@ public sealed class PluginRefreshModuleTests
                 "Analyzing 1 of 2 plugins.",
                 "Analyzing 2 of 2 plugins.");
         final.StatusText.Should().Be("Refreshed 2 plugin approximations.");
+    }
+
+    /// <summary>
+    /// Verifies a module result assembled from parts of two targets cannot correlate to either publication row.
+    /// </summary>
+    [Fact]
+    public async Task RefreshGame_WhenModuleReturnsMixedTargetIdentity_IgnoresResultAndFinalizesTargetsUnavailable()
+    {
+        var stateService = new StateService();
+        var approximationModule = new ResultPluginIssueApproximationModule(
+            (request, onResult, _) =>
+            {
+                onResult(new PluginIssueApproximationModuleResult(
+                    new PluginRefreshRowKey(
+                        request.Targets[0].FileName,
+                        request.Targets[1].FullPath),
+                    PluginIssueApproximation.Available(9, 9, 9)));
+                return Task.CompletedTask;
+            });
+        using var sut = CreateModule(stateService, approximationModule: approximationModule);
+        var snapshots = new List<PluginRefreshSnapshot>();
+        using var subscription = sut.Snapshots.Subscribe(snapshots.Add);
+
+        var final = await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+        var publication = await sut.GetCurrentPublicationAsync();
+
+        publication.Rows.Should().OnlyContain(row =>
+            row.Plugin.Approximation.Status == PluginIssueApproximationStatus.Unavailable);
+        stateService.CurrentState.PluginsToClean.Should().OnlyContain(plugin =>
+            plugin.Approximation.Status == PluginIssueApproximationStatus.Unavailable);
+        snapshots
+            .Where(snapshot => snapshot.StatusText.StartsWith("Analyzing ", StringComparison.Ordinal))
+            .Select(snapshot => snapshot.StatusText)
+            .Should()
+            .Equal("Analyzing 0 of 3 plugins.");
+        final.StatusText.Should().Be("Refreshed 0 plugin approximations.");
     }
 
     /// <summary>
@@ -598,11 +637,9 @@ public sealed class PluginRefreshModuleTests
             DataFolderPath = @"C:\Game\Data"
         };
         var discoveryPlanner = CreateReadyDiscoveryPlanner(plan, [Plugin("Selected.esp")]);
-        var approximationService = new ResultIssueApproximationService([Result("Selected.esp")]);
         var approximationModule = new ResultPluginIssueApproximationModule();
         using var sut = CreateModule(
             stateService,
-            approximationService: approximationService,
             approximationModule: approximationModule,
             discoveryPlanner: discoveryPlanner);
         var snapshots = new List<PluginRefreshSnapshot>();
@@ -618,7 +655,6 @@ public sealed class PluginRefreshModuleTests
             row.Approximation == PluginIssueApproximation.Available(3, 2, 1));
         snapshots.Should().NotContain(snapshot =>
             snapshot.Rows.Any(row => row.Approximation.Status == PluginIssueApproximationStatus.Pending));
-        approximationService.CallCount.Should().Be(0);
         approximationModule.Requests.Should().BeEmpty();
         await discoveryPlanner.DidNotReceive()
             .CreatePlanAsync(
@@ -1270,7 +1306,6 @@ public sealed class PluginRefreshModuleTests
         IStateService stateService,
         IConfigurationService? configurationService = null,
         IPluginLoadingService? pluginLoadingService = null,
-        IPluginIssueApproximationService? approximationService = null,
         IPluginIssueApproximationModule? approximationModule = null,
         IGameDetectionService? gameDetectionService = null,
         IPluginRefreshDiscoveryPlanner? discoveryPlanner = null)
@@ -1291,7 +1326,6 @@ public sealed class PluginRefreshModuleTests
                 initialConfiguration.Mo2ModeEnabled));
         return new PluginRefreshModule(
             discoveryPlanner,
-            approximationService ?? new ResultIssueApproximationService(CreateDefaultResults()),
             approximationModule ?? new ResultPluginIssueApproximationModule(),
             stateService,
             new SkipListPolicy(configurationService, gameDetectionService),
@@ -1356,13 +1390,6 @@ public sealed class PluginRefreshModuleTests
             .Returns(GameVariant.None);
         return gameDetectionService;
     }
-
-    private static IReadOnlyList<PluginIssueApproximationResult> CreateDefaultResults() =>
-    [
-        Result("Completed.esp"),
-        Result("Selected.esp"),
-        Result("NotStarted.esp")
-    ];
 
     private static PluginRefreshDiscoveryPlan CreateWiringPlan()
     {
@@ -1461,14 +1488,6 @@ public sealed class PluginRefreshModuleTests
             FullPath = fullPath ?? $@"C:\Game\Data\{fileName}",
             DetectedGameType = GameType.SkyrimSe,
             Approximation = approximation ?? PluginIssueApproximation.Unavailable
-        };
-
-    private static PluginIssueApproximationResult Result(string fileName, string? fullPath = null) =>
-        new()
-        {
-            FileName = fileName,
-            FullPath = fullPath ?? $@"C:\Game\Data\{fileName}",
-            Approximation = PluginIssueApproximation.Available(1, 2, 3)
         };
 
     private sealed class TestPluginLoadingService : IPluginLoadingService
@@ -1575,53 +1594,6 @@ public sealed class PluginRefreshModuleTests
         }
     }
 
-    private sealed class ResultIssueApproximationService : IPluginIssueApproximationService
-    {
-        private readonly IReadOnlyList<PluginIssueApproximationResult> _results;
-        private readonly bool _delayBetweenResults;
-        private readonly bool _throwAfterResults;
-
-        public ResultIssueApproximationService(
-            IReadOnlyList<PluginIssueApproximationResult> results,
-            bool delayBetweenResults = false,
-            bool throwAfterResults = false)
-        {
-            _results = results;
-            _delayBetweenResults = delayBetweenResults;
-            _throwAfterResults = throwAfterResults;
-        }
-
-        public int CallCount { get; private set; }
-
-        public TaskCompletionSource FirstResultPublished { get; } =
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        public async Task<IReadOnlyList<PluginIssueApproximationResult>> GetApproximationsAsync(
-            PluginIssueApproximationRequest request,
-            Action<PluginIssueApproximationResult>? onApproximationReady = null,
-            CancellationToken ct = default)
-        {
-            CallCount++;
-            foreach (var result in _results)
-            {
-                ct.ThrowIfCancellationRequested();
-                onApproximationReady?.Invoke(result);
-                FirstResultPublished.TrySetResult();
-                if (_delayBetweenResults)
-                {
-                    await Task.Delay(TimeSpan.FromMinutes(5), ct);
-                }
-            }
-
-            if (_throwAfterResults)
-            {
-                throw new InvalidOperationException("Synthetic approximation failure");
-            }
-
-            return _results;
-        }
-    }
-
     private sealed class ResultPluginIssueApproximationModule : IPluginIssueApproximationModule
     {
         private readonly Func<
@@ -1666,12 +1638,4 @@ public sealed class PluginRefreshModuleTests
         }
     }
 
-    private sealed class ThrowingPluginIssueApproximationService : IPluginIssueApproximationService
-    {
-        public Task<IReadOnlyList<PluginIssueApproximationResult>> GetApproximationsAsync(
-            PluginIssueApproximationRequest request,
-            Action<PluginIssueApproximationResult>? onApproximationReady = null,
-            CancellationToken ct = default) =>
-            throw new InvalidOperationException("Synthetic approximation failure");
-    }
 }

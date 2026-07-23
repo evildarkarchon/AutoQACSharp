@@ -286,7 +286,7 @@ AutoQAC is a Windows-only WinUI 3 desktop app that runs xEdit Quick Auto Clean (
 - Constructor injection everywhere; no service locator pattern
 - Primary constructors for simple services: `public sealed class ProcessExecutionService(ILoggingService logger)`
 - Traditional constructors for complex setup: `ConfigurationService`, `CleaningOrchestrator`
-- Optional dependencies with `= null` default: `IPluginIssueApproximationService? pluginIssueApproximationService = null`
+- Optional dependencies with `= null` default only where an existing fallback requires them, such as `IConfigurationService? configurationService = null` in `PluginRefreshModule`
 ## MVVM Conventions
 - Own observable properties, commands, and business logic coordination
 - Never reference WinUI control types directly for business logic; keep UI in Views
@@ -390,7 +390,7 @@ AutoQAC is a Windows-only WinUI 3 desktop app that runs xEdit Quick Auto Clean (
 - `IStateService` / `StateService` -- Central state hub. Owns `AppState` (immutable record), provides thread-safe `UpdateState(Func<AppState, AppState>)` with lock-protected read-modify-write. Emits state changes via `BehaviorSubject`. File: `AutoQAC/Services/State/StateService.cs`
 - `IPluginLoadingService` / `PluginLoadingService` -- Loads plugins via Mutagen for supported games (SkyrimLE/SE/VR, Fallout4/4VR) or from load order text files for older games (Oblivion, FO3, FNV). File: `AutoQAC/Services/Plugin/PluginLoadingService.cs`
 - `IPluginValidationService` / `PluginValidationService` -- Validates plugin files on disk (existence, readability, extension, zero-byte). File: `AutoQAC/Services/Plugin/PluginValidationService.cs`
-- `IPluginIssueApproximationService` / `PluginIssueApproximationService` -- Uses `QueryPlugins.IPluginQueryService` to run Mutagen-based ITM/UDR/navmesh analysis for preview counts. Streams results per-plugin via callback. File: `AutoQAC/Services/Plugin/PluginIssueApproximationService.cs`
+- `IPluginIssueApproximationModule` / `PluginIssueApproximationModule` -- Builds authoritative dependency context and uses `QueryPlugins.IPluginQueryService` to run sequential Mutagen-based ITM/UDR/navmesh analysis for exact `PluginRefreshRowKey` targets. Streams keyed terminal results through `AnalyzeAsync`. File: `AutoQAC/Services/Plugin/PluginIssueApproximationModule.cs`
 - `ICleaningOrchestrator` / `CleaningOrchestrator` -- End-to-end session coordinator. Steps: flush pending config, validate environment, detect game/variant, apply skip lists, backup plugins, launch xEdit sequentially, parse results, finalize session. File: `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs`
 - `ICleaningService` / `CleaningService` -- Cleans a single plugin by building xEdit command and executing via ProcessExecutionService. File: `AutoQAC/Services/Cleaning/CleaningService.cs`
 - `IXEditCommandBuilder` / `XEditCommandBuilder` -- Builds `ProcessStartInfo` for xEdit with correct flags (-QAC, -autoexit, -autoload, game type flag, MO2 wrapping, partial forms). File: `AutoQAC/Services/Cleaning/XEditCommandBuilder.cs`
@@ -408,7 +408,7 @@ AutoQAC is a Windows-only WinUI 3 desktop app that runs xEdit Quick Auto Clean (
 - `CleaningOrchestrator` is the primary coordinator -- it depends on most other services and orchestrates the full cleaning session
 - `ConfigurationService` uses a debounced save pipeline (Rx `Throttle` + `Switch`) to coalesce rapid config changes
 - `ConfigWatcherService` monitors the YAML file for external edits and triggers `ReloadFromDiskAsync` on `ConfigurationService`
-- `PluginIssueApproximationService` bridges `AutoQAC` and `QueryPlugins` by creating Mutagen load order contexts and delegating to `IPluginQueryService`
+- `PluginIssueApproximationModule` bridges `AutoQAC` and `QueryPlugins` by building one authoritative load-order context and delegating exact keyed targets to `IPluginQueryService.Analyse`
 ## State Management
 ### AppState Record
 - Configuration paths: `LoadOrderPath`, `Mo2ExecutablePath`, `XEditExecutablePath`

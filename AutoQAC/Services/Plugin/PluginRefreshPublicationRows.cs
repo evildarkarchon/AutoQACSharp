@@ -221,22 +221,6 @@ internal static class PluginRefreshPublicationRows
             row => row with { Plugin = row.Plugin with { Approximation = approximation } });
 
     /// <summary>
-    /// Marks target rows that are still pending unavailable while preserving completed target results.
-    /// </summary>
-    /// <param name="rows">Full publication rows.</param>
-    /// <param name="targetLookup">Target set used to identify rows.</param>
-    /// <returns>An update result that reports whether any target row matched.</returns>
-    internal static PluginRefreshPublicationRowsUpdate ApplyUnavailableToPendingTargets(
-        IReadOnlyList<PluginRefreshPublishedRow> rows,
-        TargetLookup targetLookup) =>
-        UpdateRows(
-            rows,
-            row => targetLookup.Contains(row.Plugin),
-            row => row.Plugin.Approximation.Status == PluginIssueApproximationStatus.Pending
-                ? row with { Plugin = row.Plugin with { Approximation = PluginIssueApproximation.Unavailable } }
-                : row);
-
-    /// <summary>
     /// Restores prior estimates for selected-reanalysis targets that never produced a result.
     /// </summary>
     /// <param name="rows">Full publication rows.</param>
@@ -276,20 +260,6 @@ internal static class PluginRefreshPublicationRows
             row => row with { Plugin = row.Plugin with { Approximation = PluginIssueApproximation.Unavailable } });
 
     /// <summary>
-    /// Applies one issue approximation result to its matching publication row.
-    /// </summary>
-    /// <param name="rows">Full publication rows.</param>
-    /// <param name="result">Approximation result to merge.</param>
-    /// <returns>An update result that reports whether any row matched.</returns>
-    internal static PluginRefreshPublicationRowsUpdate ApplyApproximationResult(
-        IReadOnlyList<PluginRefreshPublishedRow> rows,
-        PluginIssueApproximationResult result) =>
-        UpdateRows(
-            rows,
-            row => IsMatch(row.Plugin, result),
-            row => row with { Plugin = row.Plugin with { Approximation = result.Approximation } });
-
-    /// <summary>
     /// Applies an authoritative keyed result to its exact publication row.
     /// </summary>
     /// <param name="rows">Full publication rows.</param>
@@ -304,29 +274,12 @@ internal static class PluginRefreshPublicationRows
             row => row with { Plugin = row.Plugin with { Approximation = result.Approximation } });
 
     /// <summary>
-    /// Creates a lookup optimized for matching approximation targets and results.
+    /// Creates a lookup optimized for exact approximation target identity.
     /// </summary>
     /// <param name="targets">Target row identities.</param>
-    /// <returns>A lookup that preserves the publication row identity fallback rules.</returns>
+    /// <returns>A lookup that compares both filename and full path case-insensitively.</returns>
     internal static TargetLookup CreateTargetLookup(IReadOnlyList<PluginRefreshRowKey> targets) =>
         TargetLookup.Create(targets);
-
-    /// <summary>
-    /// Creates minimal plugin rows from approximation targets for fallback state updates.
-    /// </summary>
-    /// <param name="gameType">Game type assigned to generated rows.</param>
-    /// <param name="targets">Target row identities.</param>
-    /// <returns>Pending plugin rows for the supplied targets.</returns>
-    internal static IReadOnlyList<PluginInfo> CreateRowsFromTargets(
-        GameType gameType,
-        IReadOnlyList<PluginRefreshRowKey> targets) =>
-        targets.Select(target => new PluginInfo
-        {
-            FileName = target.FileName,
-            FullPath = target.FullPath,
-            DetectedGameType = gameType,
-            Approximation = PluginIssueApproximation.Pending
-        }).ToList();
 
     /// <summary>
     /// Determines whether a visible row identity matches a requested row key.
@@ -363,22 +316,6 @@ internal static class PluginRefreshPublicationRows
     internal static bool IsExactMatch(PluginRefreshRowKey row, PluginRefreshRowKey target) =>
         string.Equals(row.FileName, target.FileName, StringComparison.OrdinalIgnoreCase) &&
         string.Equals(row.FullPath, target.FullPath, StringComparison.OrdinalIgnoreCase);
-
-    /// <summary>
-    /// Determines whether an approximation result identifies a plugin row.
-    /// </summary>
-    /// <param name="plugin">Publication plugin row.</param>
-    /// <param name="result">Approximation result.</param>
-    /// <returns>True when the full path matches, or when either side lacks a path and names match.</returns>
-    internal static bool IsMatch(PluginInfo plugin, PluginIssueApproximationResult result)
-    {
-        if (HasUsablePath(plugin.FullPath) && HasUsablePath(result.FullPath))
-        {
-            return string.Equals(plugin.FullPath, result.FullPath, StringComparison.OrdinalIgnoreCase);
-        }
-
-        return string.Equals(plugin.FileName, result.FileName, StringComparison.OrdinalIgnoreCase);
-    }
 
     private static PluginRefreshPublicationRowsMirror CreateMirror(
         IReadOnlyList<PluginRefreshPublishedRow> rows)
@@ -417,23 +354,15 @@ internal static class PluginRefreshPublicationRows
     private static bool HasUsablePath(string? path) => !string.IsNullOrWhiteSpace(path);
 
     /// <summary>
-    /// Lookup for publication row targets that preserves path-first, name-fallback identity.
+    /// Lookup for authoritative approximation targets using exact publication-row identity.
     /// </summary>
     internal sealed class TargetLookup
     {
-        private readonly IReadOnlySet<string> _fullPaths;
-        private readonly IReadOnlySet<string> _fileNames;
-        private readonly IReadOnlySet<string> _pathlessFileNames;
+        private readonly IReadOnlySet<PluginRefreshRowKey> _targets;
 
-        private TargetLookup(
-            IReadOnlySet<string> fullPaths,
-            IReadOnlySet<string> fileNames,
-            IReadOnlySet<string> pathlessFileNames,
-            int count)
+        private TargetLookup(IReadOnlySet<PluginRefreshRowKey> targets, int count)
         {
-            _fullPaths = fullPaths;
-            _fileNames = fileNames;
-            _pathlessFileNames = pathlessFileNames;
+            _targets = targets;
             Count = count;
         }
 
@@ -446,44 +375,42 @@ internal static class PluginRefreshPublicationRows
         /// Creates a target lookup from row identities.
         /// </summary>
         /// <param name="targets">Target row identities.</param>
-        /// <returns>A lookup keyed by full path and file name fallback.</returns>
+        /// <returns>A lookup keyed by the complete row identity.</returns>
         internal static TargetLookup Create(IReadOnlyList<PluginRefreshRowKey> targets) =>
             new(
-                targets.Where(target => HasUsablePath(target.FullPath))
-                    .Select(target => target.FullPath)
-                    .ToFrozenSet(StringComparer.OrdinalIgnoreCase),
-                targets.Select(target => target.FileName)
-                    .ToFrozenSet(StringComparer.OrdinalIgnoreCase),
-                targets.Where(target => !HasUsablePath(target.FullPath))
-                    .Select(target => target.FileName)
-                    .ToFrozenSet(StringComparer.OrdinalIgnoreCase),
+                targets.ToFrozenSet(PluginRefreshRowKeyComparer.Instance),
                 targets.Count);
 
         /// <summary>
         /// Determines whether a plugin row belongs to this target set.
         /// </summary>
         /// <param name="plugin">Plugin row to test.</param>
-        /// <returns>True when the plugin matches by full path or pathless file-name fallback.</returns>
-        internal bool Contains(PluginInfo plugin) => Contains(plugin.FileName, plugin.FullPath);
-
-        /// <summary>
-        /// Determines whether an approximation result belongs to this target set.
-        /// </summary>
-        /// <param name="result">Approximation result to test.</param>
-        /// <returns>True when the result matches by full path or pathless file-name fallback.</returns>
-        internal bool Contains(PluginIssueApproximationResult result) => Contains(result.FileName, result.FullPath);
+        /// <returns>True when the plugin has the same filename and full path as an original target.</returns>
+        internal bool Contains(PluginInfo plugin) =>
+            Contains(new PluginRefreshRowKey(plugin.FileName, plugin.FullPath));
 
         /// <summary>
         /// Determines whether an authoritative row key belongs to this target set.
         /// </summary>
         /// <param name="target">Row key to test.</param>
-        /// <returns>True when the rooted target path belongs to the original target collection.</returns>
-        internal bool Contains(PluginRefreshRowKey target) => Contains(target.FileName, target.FullPath);
+        /// <returns>True when the complete row key belongs to the original target collection.</returns>
+        internal bool Contains(PluginRefreshRowKey target) => _targets.Contains(target);
 
-        private bool Contains(string fileName, string? fullPath) =>
-            HasUsablePath(fullPath)
-                ? _fullPaths.Contains(fullPath!) || _pathlessFileNames.Contains(fileName)
-                : _fileNames.Contains(fileName);
+        private sealed class PluginRefreshRowKeyComparer : IEqualityComparer<PluginRefreshRowKey>
+        {
+            internal static PluginRefreshRowKeyComparer Instance { get; } = new();
+
+            public bool Equals(PluginRefreshRowKey? x, PluginRefreshRowKey? y) =>
+                ReferenceEquals(x, y) ||
+                x is not null &&
+                y is not null &&
+                IsExactMatch(x, y);
+
+            public int GetHashCode(PluginRefreshRowKey obj) =>
+                HashCode.Combine(
+                    StringComparer.OrdinalIgnoreCase.GetHashCode(obj.FileName),
+                    StringComparer.OrdinalIgnoreCase.GetHashCode(obj.FullPath));
+        }
     }
 }
 

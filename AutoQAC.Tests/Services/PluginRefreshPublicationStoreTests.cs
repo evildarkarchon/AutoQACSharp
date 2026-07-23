@@ -175,8 +175,11 @@ public sealed class PluginRefreshPublicationStoreTests
         during.Rows.Select(row => row.FileName).Should().Equal(before.Rows.Select(row => row.FileName));
     }
 
+    /// <summary>
+    /// Verifies initial keyed results and unfinished-target terminalization commit through the AppState mirror.
+    /// </summary>
     [Fact]
-    public void ApproximationUpdates_ShouldPreserveCompletedTargetsWhenMarkingPendingTargetsUnavailable()
+    public void InitialApproximationPublication_ShouldMirrorExactResultsAndFinalizeUnfinishedTargets()
     {
         var stateService = new StateService();
         using var sut = CreateStore(stateService);
@@ -192,8 +195,8 @@ public sealed class PluginRefreshPublicationStoreTests
                 Published("PendingOnly.esp", approximation: PluginIssueApproximation.Unavailable),
                 Published("Other.esp")
             ],
-            new PluginRefreshActivity(false, false),
-            "Loaded",
+            new PluginRefreshActivity(true, true),
+            "Analyzing 0 of 2 plugins.",
             Affordance());
         sut.ApplySelectionChange(
             new PluginSelectionChange.SetOne(new PluginRefreshRowKey("Other.esp", @"C:\Data\Other.esp"), false),
@@ -201,16 +204,24 @@ public sealed class PluginRefreshPublicationStoreTests
         var targets = sut.GetSelectedIssueApproximationTargets();
         var targetLookup = PluginRefreshPublicationRows.CreateTargetLookup(targets.Targets);
 
-        sut.MarkTargetsPending(GameType.SkyrimSe, targets.Targets, targetLookup);
-        var matched = sut.TryApplyApproximationResult(
-            GameType.SkyrimSe,
+        var target = targets.Targets.Single(key => key.FileName == "Target.esp");
+        var matched = sut.TryPublishInitialApproximationResult(
+            generation: 1,
             targetLookup,
-            Result("Target.esp", PluginIssueApproximation.Available(3, 2, 1)),
+            new PluginIssueApproximationModuleResult(
+                target,
+                PluginIssueApproximation.Available(3, 2, 1)),
+            "Analyzing 1 of 2 plugins.",
+            Affordance(),
             () => true);
-        var nonTargetMatched = sut.TryApplyApproximationResult(
-            GameType.SkyrimSe,
+        var nonTargetMatched = sut.TryPublishInitialApproximationResult(
+            generation: 1,
             targetLookup,
-            Result("Other.esp", PluginIssueApproximation.Available(9, 9, 9)),
+            new PluginIssueApproximationModuleResult(
+                new PluginRefreshRowKey("Other.esp", @"C:\Data\Other.esp"),
+                PluginIssueApproximation.Available(9, 9, 9)),
+            "Analyzing 2 of 2 plugins.",
+            Affordance(),
             () => true);
 
         targets.Targets.Select(target => target.FileName).Should().Equal("Target.esp", "PendingOnly.esp");
@@ -224,7 +235,12 @@ public sealed class PluginRefreshPublicationStoreTests
             plugin.FileName == "Target.esp" &&
             plugin.Approximation.Status == PluginIssueApproximationStatus.Available);
 
-        sut.MarkTargetsUnavailable(GameType.SkyrimSe, targetLookup, () => true);
+        sut.TryFinalizeInitialApproximation(
+            generation: 1,
+            "Refreshed 1 plugin approximations.",
+            Affordance(),
+            () => true,
+            out _).Should().BeTrue();
 
         sut.GetFreshnessInspection().Publication.Rows.Should().Contain(row =>
             row.Plugin.FileName == "Target.esp" &&
@@ -239,34 +255,6 @@ public sealed class PluginRefreshPublicationStoreTests
         stateService.CurrentState.PluginsToClean.Should().Contain(plugin =>
             plugin.FileName == "PendingOnly.esp" &&
             plugin.Approximation.Status == PluginIssueApproximationStatus.Unavailable);
-    }
-
-    [Fact]
-    public void MarkTargetsUnavailable_WhenPublicationMissing_ShouldOnlyDowngradePendingAppStateTargets()
-    {
-        var stateService = CreateStateWithRows(
-            Plugin("Completed.esp", approximation: PluginIssueApproximation.Available(5, 4, 3)),
-            Plugin("Pending.esp", approximation: PluginIssueApproximation.Pending),
-            Plugin("Other.esp", approximation: PluginIssueApproximation.Pending));
-        using var sut = CreateStore(stateService);
-        var targetLookup = PluginRefreshPublicationRows.CreateTargetLookup(
-            [
-                new PluginRefreshRowKey("Completed.esp", @"C:\Data\Completed.esp"),
-                new PluginRefreshRowKey("Pending.esp", @"C:\Data\Pending.esp")
-            ]);
-
-        sut.MarkTargetsUnavailable(GameType.SkyrimSe, targetLookup, () => true);
-
-        stateService.CurrentState.PluginsToClean.Should().Contain(plugin =>
-            plugin.FileName == "Completed.esp" &&
-            plugin.Approximation.Status == PluginIssueApproximationStatus.Available &&
-            plugin.Approximation.ItmCount == 5);
-        stateService.CurrentState.PluginsToClean.Should().Contain(plugin =>
-            plugin.FileName == "Pending.esp" &&
-            plugin.Approximation.Status == PluginIssueApproximationStatus.Unavailable);
-        stateService.CurrentState.PluginsToClean.Should().Contain(plugin =>
-            plugin.FileName == "Other.esp" &&
-            plugin.Approximation.Status == PluginIssueApproximationStatus.Pending);
     }
 
     private static PluginRefreshPublicationStore CreateStore(
@@ -370,13 +358,4 @@ public sealed class PluginRefreshPublicationStoreTests
             Approximation = approximation ?? PluginIssueApproximation.Unavailable
         };
 
-    private static PluginIssueApproximationResult Result(
-        string fileName,
-        PluginIssueApproximation approximation) =>
-        new()
-        {
-            FileName = fileName,
-            FullPath = $@"C:\Data\{fileName}",
-            Approximation = approximation
-        };
 }
