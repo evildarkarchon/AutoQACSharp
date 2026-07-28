@@ -1,0 +1,184 @@
+{
+  "node_count": 3873,
+  "unverified_node_count": 0,
+  "raw_edge_count": 12305,
+  "non_object_edges": 0,
+  "missing_endpoint_edges": 0,
+  "dangling_endpoint_edges": 716,
+  "self_loop_edges": 0,
+  "valid_candidate_edges": 11589,
+  "exact_duplicate_edges": 186,
+  "directed_unique_endpoint_pairs": 11181,
+  "directed_same_endpoint_collapsed_edges": 408,
+  "undirected_unique_endpoint_pairs": 11142,
+  "undirected_same_endpoint_collapsed_edges": 447,
+  "same_endpoint_group_count": 210,
+  "relation_variant_groups": 5,
+  "source_file_variant_groups": 0,
+  "source_location_variant_groups": 112,
+  "context_variant_groups": 41,
+  "post_build_graph_type": "Graph",
+  "post_build_node_count": 3873,
+  "post_build_edge_count": 11145,
+  "post_build_error": "",
+  "producer_suppression": {
+    "path": "C:\\Users\\evild\\AppData\\Roaming\\uv\\tools\\graphifyy\\lib\\site-packages\\graphify\\extract.py",
+    "total_sites": 10,
+    "sites": [
+      {
+        "line": 1076,
+        "name": "seen_ids",
+        "tuple_arity": 0,
+        "sample": "seen_ids = {n[\"id\"] for n in nodes}"
+      },
+      {
+        "line": 1226,
+        "name": "seen_ids",
+        "tuple_arity": 0,
+        "sample": "seen_ids = {n[\"id\"] for n in nodes}"
+      },
+      {
+        "line": 1228,
+        "name": "seen_doc_refs",
+        "tuple_arity": 0,
+        "sample": "seen_doc_refs: set[str] = set()"
+      },
+      {
+        "line": 1569,
+        "name": "seen_ids",
+        "tuple_arity": 0,
+        "sample": "seen_ids: set[str] = {n[\"id\"] for n in nodes}"
+      },
+      {
+        "line": 2038,
+        "name": "seen_keys",
+        "tuple_arity": 0,
+        "sample": "seen_keys: set[tuple] = set()"
+      },
+      {
+        "line": 3076,
+        "name": "seen_ids",
+        "tuple_arity": 0,
+        "sample": "seen_ids: set[str] = set()"
+      },
+      {
+        "line": 3184,
+        "name": "seen_ids",
+        "tuple_arity": 0,
+        "sample": "seen_ids: set[str] = set()"
+      },
+      {
+        "line": 3263,
+        "name": "seen_ids",
+        "tuple_arity": 0,
+        "sample": "seen_ids: set[str] = set()"
+      },
+      {
+        "line": 3778,
+        "name": "seen_ids",
+        "tuple_arity": 0,
+        "sample": "seen_ids: set[str] = set()"
+      },
+      {
+        "line": 3779,
+        "name": "seen_edges",
+        "tuple_arity": 4,
+        "sample": "seen_edges: set[tuple[str, str, str, str | None]] = set()"
+      }
+    ],
+    "error": ""
+  },
+  "examples": [
+    {
+      "source": "autoqac_tests_services_gamedetectionservicetests_autoqac_tests_services_gamedetectionservicetests_detectfromexecutable_shouldreturncorrectgametype",
+      "target": "autoqac_tests_services_gamedetectionservicetests_cs_inlinedata",
+      "edge_count": 12,
+      "relations": [
+        "references"
+      ],
+      "source_files": [
+        "AutoQAC.Tests/Services/GameDetectionServiceTests.cs"
+      ],
+      "source_locations": [
+        "L11"
+      ],
+      "contexts": [
+        "attribute"
+      ]
+    },
+    {
+      "source": "autoqac_tests_models_diagnostictextformattertests_autoqac_tests_models_diagnostictextformattertests_safefailuresummary_whencandidatematchesunsafecaseinsensitivepatterns_returnsfallback",
+      "target": "autoqac_tests_models_diagnostictextformattertests_cs_inlinedata",
+      "edge_count": 10,
+      "relations": [
+        "references"
+      ],
+      "source_files": [
+        "AutoQAC.Tests/Models/DiagnosticTextFormatterTests.cs"
+      ],
+      "source_locations": [
+        "L161"
+      ],
+      "contexts": [
+        "attribute"
+      ]
+    },
+    {
+      "source": "autoqac_tests_viewmodels_skiplistviewmodeltests_autoqac_tests_viewmodels_skiplistviewmodeltests_manualentryvalidation_shouldshowcorrecterror",
+      "target": "autoqac_tests_viewmodels_skiplistviewmodeltests_cs_inlinedata",
+      "edge_count": 10,
+      "relations": [
+        "references"
+      ],
+      "source_files": [
+        "AutoQAC.Tests/ViewModels/SkipListViewModelTests.cs"
+      ],
+      "source_locations": [
+        "L504"
+      ],
+      "contexts": [
+        "attribute"
+      ]
+    },
+    {
+      "source": "autoqac_viewmodels_mainwindowviewmodel_autoqac_viewmodels_mainwindowviewmodel",
+      "target": "autoqac_services_ui_interactions_unit_autoqac_services_ui_interactions_unit",
+      "edge_count": 9,
+      "relations": [
+        "references"
+      ],
+      "source_files": [
+        "AutoQAC/ViewModels/MainWindowViewModel.cs"
+      ],
+      "source_locations": [
+        "L30",
+        "L31",
+        "L32",
+        "L33",
+        "L34",
+        "L35",
+        "L36"
+      ],
+      "contexts": [
+        "generic_arg"
+      ]
+    },
+    {
+      "source": "autoqac_tests_models_appstatetests_autoqac_tests_models_appstatetests_currentgametype_shouldacceptallgametypes",
+      "target": "autoqac_tests_models_appstatetests_cs_inlinedata",
+      "edge_count": 9,
+      "relations": [
+        "references"
+      ],
+      "source_files": [
+        "AutoQAC.Tests/Models/AppStateTests.cs"
+      ],
+      "source_locations": [
+        "L316"
+      ],
+      "contexts": [
+        "attribute"
+      ]
+    }
+  ]
+}
