@@ -2,7 +2,6 @@ using System;
 using System.Collections.ObjectModel;
 using System.Collections.Generic;
 using System.IO;
-using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
@@ -304,10 +303,7 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         {
             var result = await _discoverySettingsModule.ExecuteAsync(
                 new DiscoverySettingsIntent.SetLoadOrderPath(SelectedGame, path));
-            if (!await ApplyDiscoverySettingsResultAsync(result))
-            {
-                return;
-            }
+            await ApplyDiscoverySettingsResultAsync(result);
         }
         catch (FileNotFoundException ex)
         {
@@ -318,7 +314,6 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
                 "File Not Found",
                 $"{loadOrderIdentifier} is missing. Choose the current plugins.txt or loadorder.txt file.");
             StatusText = $"{loadOrderIdentifier} is missing.";
-            return;
         }
         catch (IOException ex)
         {
@@ -330,7 +325,6 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
                 $"{loadOrderIdentifier} could not be read. See the latest AutoQAC log for technical details.",
                 DiagnosticTextFormatter.LatestLogDetails);
             StatusText = $"{loadOrderIdentifier} could not be read. See the latest AutoQAC log for technical details.";
-            return;
         }
         catch (Exception ex)
         {
@@ -343,7 +337,6 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
                 $"{loadOrderIdentifier} could not be applied. {failureMessage}",
                 DiagnosticTextFormatter.LatestLogDetails);
             StatusText = failureMessage;
-            return;
         }
     }
 

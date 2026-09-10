@@ -16,19 +16,19 @@ using Microsoft.UI.Xaml;
 
 namespace AutoQAC.Views;
 
-public sealed partial class MainWindow : Window
+public sealed partial class MainWindow
 {
     private readonly List<IDisposable> _interactionRegistrations = [];
-    private ILoggingService? _logger;
-    private IFileDialogService? _fileDialog;
-    private IConfigurationService? _configService;
-    private IStateService? _stateService;
-    private ICleaningSession? _cleaningSession;
-    private IBackupService? _backupService;
-    private IMessageDialogService? _messageDialog;
-    private IUiDispatcher? _uiDispatcher;
-    private IUiFrameworkVersionProvider? _uiFrameworkVersionProvider;
-    private IWindowContextProvider? _windowContextProvider;
+    private readonly ILoggingService? _logger;
+    private readonly IFileDialogService? _fileDialog;
+    private readonly IConfigurationService? _configService;
+    private readonly IStateService? _stateService;
+    private readonly ICleaningSession? _cleaningSession;
+    private readonly IBackupService? _backupService;
+    private readonly IMessageDialogService? _messageDialog;
+    private readonly IUiDispatcher? _uiDispatcher;
+    private readonly IUiFrameworkVersionProvider? _uiFrameworkVersionProvider;
+    private readonly IWindowContextProvider? _windowContextProvider;
 
     public MainWindow()
     {

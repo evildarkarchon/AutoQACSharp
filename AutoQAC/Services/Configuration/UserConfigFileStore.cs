@@ -90,7 +90,8 @@ internal sealed class UserConfigFileStore : IUserConfigFileStore
             catch (Exception cleanupEx)
             {
                 // Temp cleanup is best-effort; preserving the original replace/move exception is more important.
-                _logger.Debug("[ConfigPersistence] Failed to delete temp settings file after write failure: {Message}", cleanupEx.Message);
+                _logger.Debug("[ConfigPersistence] Failed to delete temp settings file after write failure: {Message}",
+                    cleanupEx.Message);
             }
 
             throw;

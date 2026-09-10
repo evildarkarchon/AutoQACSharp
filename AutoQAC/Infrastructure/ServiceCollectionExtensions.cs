@@ -14,6 +14,7 @@ using AutoQAC.ViewModels;
 using AutoQAC.Views;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Dispatching;
+using QueryPlugins;
 
 namespace AutoQAC.Infrastructure;
 
@@ -54,11 +55,32 @@ public static class ServiceCollectionExtensions
             services.AddSingleton<IGameDetectionService, GameDetectionService>();
             services.AddSingleton<IPluginValidationService, PluginValidationService>();
             services.AddSingleton<IPluginLoadingService, PluginLoadingService>();
-            services.AddSingleton<IPluginIssueApproximationService>(sp => new PluginIssueApproximationService(
-                sp.GetRequiredService<ILoggingService>()));
+            services.AddSingleton<IPluginQueryService>(_ => PluginQueryService.Default);
+            services.AddSingleton<IPluginIssueApproximationModule, PluginIssueApproximationModule>();
             services.AddSingleton<ISkipListPolicy, SkipListPolicy>();
             services.AddSingleton<IPluginRefreshDiscoveryPlanner, PluginRefreshDiscoveryPlanner>();
-            services.AddSingleton<IPluginRefreshModule, PluginRefreshModule>();
+            services.AddSingleton(sp => new PluginRefreshAppStateMirror(
+                sp.GetRequiredService<IStateService>()));
+            services.AddSingleton(_ => new PluginRefreshCommandAvailabilityPolicy());
+            services.AddSingleton<PluginRefreshPublicationStore>(sp =>
+            {
+                var state = sp.GetRequiredService<IStateService>().CurrentState;
+                var configuration = PluginRefreshAppStateMirror.CreateConfigurationProjection(state);
+                var initialAffordance = sp.GetRequiredService<IPluginRefreshDiscoveryPlanner>()
+                    .GetAffordance(state.CurrentGameType, configuration.Mo2ModeEnabled);
+                return new PluginRefreshPublicationStore(
+                    sp.GetRequiredService<PluginRefreshAppStateMirror>(),
+                    sp.GetRequiredService<PluginRefreshCommandAvailabilityPolicy>(),
+                    initialAffordance);
+            });
+            services.AddSingleton<IPluginRefreshModule>(sp => new PluginRefreshModule(
+                sp.GetRequiredService<IPluginRefreshDiscoveryPlanner>(),
+                sp.GetRequiredService<IPluginIssueApproximationModule>(),
+                sp.GetRequiredService<IStateService>(),
+                sp.GetRequiredService<ISkipListPolicy>(),
+                sp.GetRequiredService<PluginRefreshPublicationStore>(),
+                sp.GetRequiredService<ILoggingService>(),
+                sp.GetRequiredService<IConfigurationService>()));
             services.AddSingleton<IDiscoverySettingsModule, DiscoverySettingsModule>();
             services.AddSingleton<IPidStorePathProvider, DefaultPidStorePathProvider>();
             services.AddSingleton<IProcessSessionIdProvider, ProcessSessionIdProvider>();
@@ -89,6 +111,7 @@ public static class ServiceCollectionExtensions
             services.AddSingleton<ICleaningTerminationCoordinator, CleaningTerminationCoordinator>();
             services.AddSingleton<IPluginCleaningRunner, PluginCleaningRunner>();
             services.AddSingleton<IPluginResultFinalizer, PluginResultFinalizer>();
+            services.AddSingleton<IPluginCleaning, PluginCleaning>();
             services.AddSingleton<ICleaningSessionStatePublisher, StateServiceCleaningSessionStatePublisher>();
             services.AddSingleton<ICleaningSessionDecisionAdapter, CleaningSessionDialogDecisionAdapter>();
             services.AddSingleton<ICleaningSession, CleaningSession>();

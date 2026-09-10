@@ -40,13 +40,13 @@ public sealed class StateService : IStateService, IDisposable
 
     public IObservable<AppState> StateChanged => _stateSubject.AsObservable();
 
-    public IObservable<bool> ConfigurationValidChanged => 
+    public IObservable<bool> ConfigurationValidChanged =>
         _stateSubject.Select(s => s is { IsLoadOrderConfigured: true, IsXEditConfigured: true })
-                     .DistinctUntilChanged();
+            .DistinctUntilChanged();
 
     public IObservable<(int current, int total)> ProgressChanged =>
         _stateSubject.Select(s => (s.Progress, s.TotalPlugins))
-                     .DistinctUntilChanged();
+            .DistinctUntilChanged();
 
     public IObservable<(string plugin, CleaningStatus status)> PluginProcessed =>
         _pluginProcessedSubject.AsObservable();
@@ -72,6 +72,7 @@ public sealed class StateService : IStateService, IDisposable
             newState = updateFunc(_currentState);
             _currentState = newState;
         }
+
         // Emit OUTSIDE the lock -- subscribers can safely read CurrentState
         _stateSubject.OnNext(newState);
     }
@@ -112,69 +113,6 @@ public sealed class StateService : IStateService, IDisposable
             {
                 PluginsToClean = new List<PluginInfo>(plugins).AsReadOnly(),
                 ExcludedPluginPaths = pruned
-            };
-        });
-    }
-
-    public void MergePluginApproximations(IReadOnlyList<PluginIssueApproximationResult> approximations)
-    {
-        UpdateState(s =>
-        {
-            if (s.PluginsToClean.Count == 0)
-            {
-                return s;
-            }
-
-            var byFullPath = approximations
-                .GroupBy(a => a.FullPath, StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(g => g.Key, g => g.Last(), StringComparer.OrdinalIgnoreCase);
-            var byFileName = approximations
-                .GroupBy(a => a.FileName, StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(g => g.Key, g => g.Last(), StringComparer.OrdinalIgnoreCase);
-
-            var merged = s.PluginsToClean
-                .Select(plugin =>
-                {
-                    if (TryGetApproximationMatch(plugin, byFullPath, byFileName, out var approximationMatch))
-                    {
-                        return plugin with
-                        {
-                            Approximation = approximationMatch.Approximation
-                        };
-                    }
-
-                    return plugin with
-                    {
-                        Approximation = PluginIssueApproximation.Unavailable
-                    };
-                })
-                .ToList();
-
-            return s with
-            {
-                PluginsToClean = merged.AsReadOnly()
-            };
-        });
-    }
-
-    public void MergePluginApproximation(PluginIssueApproximationResult approximation)
-    {
-        UpdateState(s =>
-        {
-            if (s.PluginsToClean.Count == 0)
-            {
-                return s;
-            }
-
-            var merged = s.PluginsToClean
-                .Select(plugin => IsApproximationMatch(plugin, approximation)
-                    ? plugin with { Approximation = approximation.Approximation }
-                    : plugin)
-                .ToList();
-
-            return s with
-            {
-                PluginsToClean = merged.AsReadOnly()
             };
         });
     }
@@ -304,37 +242,4 @@ public sealed class StateService : IStateService, IDisposable
         _isTerminatingSubject.Dispose();
     }
 
-    private static bool TryGetApproximationMatch(
-        PluginInfo plugin,
-        IReadOnlyDictionary<string, PluginIssueApproximationResult> byFullPath,
-        IReadOnlyDictionary<string, PluginIssueApproximationResult> byFileName,
-        out PluginIssueApproximationResult approximation)
-    {
-        if (byFullPath.TryGetValue(plugin.FullPath, out var fullPathMatch))
-        {
-            approximation = fullPathMatch;
-            return true;
-        }
-
-        // Only fall back to file name when the plugin has no usable path
-        if (string.IsNullOrWhiteSpace(plugin.FullPath) &&
-            byFileName.TryGetValue(plugin.FileName, out var fileNameMatch))
-        {
-            approximation = fileNameMatch;
-            return true;
-        }
-
-        approximation = null!;
-        return false;
-    }
-
-    private static bool IsApproximationMatch(PluginInfo plugin, PluginIssueApproximationResult approximation)
-    {
-        // Prefer full path when both sides have one
-        if (!string.IsNullOrWhiteSpace(plugin.FullPath) && !string.IsNullOrWhiteSpace(approximation.FullPath))
-            return string.Equals(plugin.FullPath, approximation.FullPath, StringComparison.OrdinalIgnoreCase);
-
-        // Fall back to file name only when one side has no usable path
-        return string.Equals(plugin.FileName, approximation.FileName, StringComparison.OrdinalIgnoreCase);
-    }
 }

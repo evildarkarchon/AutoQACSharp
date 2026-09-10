@@ -17,8 +17,7 @@ public sealed class CleaningSession(
     ICleaningPreflight preflight,
     IBackupSessionCoordinator backupCoordinator,
     ICleaningTerminationCoordinator terminationCoordinator,
-    IPluginCleaningRunner runner,
-    IPluginResultFinalizer finalizer,
+    IPluginCleaning pluginCleaning,
     ICleaningSessionStatePublisher statePublisher,
     ICleaningSessionDecisionAdapter decisions,
     ILoggingService logger,
@@ -166,18 +165,15 @@ public sealed class CleaningSession(
                 }
             }
 
-            // RunPluginBackupAsync is handled above via HandleBackupOutcomeAsync; keep backup before runner.RunAsync.
-            var runnerOutput = await runner.RunAsync(
-                plugin, plan.DetectedGameType, plan.XEditDirectory, decisions,
-                plan.CleaningTimeoutSeconds, retryLimit,
-                attachProcess: terminationCoordinator.AttachProcess,
-                detachProcess: terminationCoordinator.DetachProcess, cancellationToken).ConfigureAwait(false);
-
-            // Snapshot termination context after detach so ProcessMayStillBeRunning reflects final state.
-            var terminationContext = new TerminationFinalizeContext(terminationCoordinator.ProcessMayStillBeRunning,
-                terminationCoordinator.IsStopRequested);
-            var result = await finalizer.FinalizeAsync(plugin, plan.DetectedGameType,
-                    plan.XEditDirectory, runnerOutput, terminationContext, cancellationToken)
+            // RunPluginBackupAsync is handled above via HandleBackupOutcomeAsync; keep backup before Plugin cleaning.
+            var result = await pluginCleaning.CleanAsync(
+                    new PluginCleaningContext(
+                        plugin,
+                        plan.DetectedGameType,
+                        plan.XEditDirectory,
+                        plan.CleaningTimeoutSeconds,
+                        retryLimit),
+                    cancellationToken)
                 .ConfigureAwait(false);
 
             contextSnapshot.Results.Add(result);
@@ -245,7 +241,8 @@ public sealed class CleaningSession(
         {
             CleaningSessionControl.RequestStop => await RequestStopAsync(ct).ConfigureAwait(false),
             CleaningSessionControl.ForceStop => await ForceStopAsync().ConfigureAwait(false),
-            CleaningSessionControl.CancelBackupOperation => await HandleCancelBackupOperationAsync().ConfigureAwait(false),
+            CleaningSessionControl.CancelBackupOperation => await HandleCancelBackupOperationAsync()
+                .ConfigureAwait(false),
             _ => throw new ArgumentOutOfRangeException(nameof(control), control, "Unknown Cleaning session control.")
         };
     }
@@ -349,10 +346,7 @@ public sealed class CleaningSession(
         if (decision == CleaningSessionStopDecision.ForceTerminate)
         {
             var forceResult = await ForceStopAsync().ConfigureAwait(false);
-            return new CleaningSessionControlResult(
-                CleaningSessionControl.RequestStop,
-                forceResult.Status,
-                forceResult.TerminationResult);
+            return forceResult with { Control = CleaningSessionControl.RequestStop };
         }
 
         var leftRunningResult = terminationCoordinator.MarkLeftRunningByUser();
@@ -427,7 +421,6 @@ public sealed class CleaningSession(
             TerminationResult.ForceKilled => CleaningSessionControlStatus.ForceStopped,
             TerminationResult.ForceKillFailed => CleaningSessionControlStatus.ForceKillFailed,
             TerminationResult.LeftRunningByUser => CleaningSessionControlStatus.LeftRunningByUser,
-            TerminationResult.GracePeriodExpired => CleaningSessionControlStatus.StopRequested,
             _ => CleaningSessionControlStatus.StopRequested
         };
 

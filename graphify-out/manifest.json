@@ -1,0 +1,1372 @@
+{
+  "AutoQAC/AutoQAC Data/AutoQAC Main.yaml": {
+    "mtime": 1765861445.2318423,
+    "ast_hash": "d5f4311d12b791b9178a9352a7cb8f21",
+    "semantic_hash": "d5f4311d12b791b9178a9352a7cb8f21"
+  },
+  "AutoQAC/AutoQAC Data/AutoQAC Settings.yaml": {
+    "mtime": 1770446847.5420253,
+    "ast_hash": "bbc4e2976966342ee6124a19ba9f7981",
+    "semantic_hash": "bbc4e2976966342ee6124a19ba9f7981"
+  },
+  "AutoQAC/Assets/Square150x150Logo.png": {
+    "mtime": 1783481428.647736,
+    "ast_hash": "7614e2b2ca3094e5e76e5799bd86327b",
+    "semantic_hash": "7614e2b2ca3094e5e76e5799bd86327b"
+  },
+  "AutoQAC/Assets/Square44x44Logo.png": {
+    "mtime": 1783481428.647736,
+    "ast_hash": "569620ff177754a616af3c9473aaf179",
+    "semantic_hash": "569620ff177754a616af3c9473aaf179"
+  },
+  "AutoQAC/Assets/StoreLogo.png": {
+    "mtime": 1783481428.647736,
+    "ast_hash": "128993ca9f3dfdc4c8f7f76f9ec21335",
+    "semantic_hash": "128993ca9f3dfdc4c8f7f76f9ec21335"
+  },
+  "AutoQAC/App.xaml": {
+    "mtime": 1783481428.6467276,
+    "ast_hash": "297ba29613bb6a02b25cdf0bc49b84d6",
+    "semantic_hash": "297ba29613bb6a02b25cdf0bc49b84d6"
+  },
+  "AutoQAC/App.xaml.cs": {
+    "mtime": 1783481428.647228,
+    "ast_hash": "1eee2ddd9f07651e54b2af2380d9b966",
+    "semantic_hash": "1eee2ddd9f07651e54b2af2380d9b966"
+  },
+  "AutoQAC/AutoQAC.csproj": {
+    "mtime": 1783481428.648235,
+    "ast_hash": "8582301d5a3b7a42646db9cd9da17162",
+    "semantic_hash": "8582301d5a3b7a42646db9cd9da17162"
+  },
+  "AutoQAC/Infrastructure/Logging/ILoggingService.cs": {
+    "mtime": 1783481428.6487398,
+    "ast_hash": "b18288c7f5912f15b78a297fd354896d",
+    "semantic_hash": "b18288c7f5912f15b78a297fd354896d"
+  },
+  "AutoQAC/Infrastructure/Logging/LogFilePaths.cs": {
+    "mtime": 1773283290.954662,
+    "ast_hash": "4db57f630eb43bd991d0b81cfb771c04",
+    "semantic_hash": "4db57f630eb43bd991d0b81cfb771c04"
+  },
+  "AutoQAC/Infrastructure/Logging/LoggingService.cs": {
+    "mtime": 1783481428.6487398,
+    "ast_hash": "b4e7c07b7fad25fe145073d17c135741",
+    "semantic_hash": "b4e7c07b7fad25fe145073d17c135741"
+  },
+  "AutoQAC/Infrastructure/ServiceCollectionExtensions.cs": {
+    "mtime": 1784800354.7411275,
+    "ast_hash": "256f72a5858f2a7f46779090dcbdb564",
+    "semantic_hash": "256f72a5858f2a7f46779090dcbdb564"
+  },
+  "AutoQAC/Models/AppState.cs": {
+    "mtime": 1783481428.649236,
+    "ast_hash": "dc8a94f84f6362538e2b0d44290cd7c5",
+    "semantic_hash": "dc8a94f84f6362538e2b0d44290cd7c5"
+  },
+  "AutoQAC/Models/BackupOperationResults.cs": {
+    "mtime": 1783481428.649236,
+    "ast_hash": "6dfb34cda58dc3de3cd7ca943f9e2131",
+    "semantic_hash": "6dfb34cda58dc3de3cd7ca943f9e2131"
+  },
+  "AutoQAC/Models/BackupResult.cs": {
+    "mtime": 1783481428.6502469,
+    "ast_hash": "73c33b5c4aa737c8480c6ce6e69f0a0e",
+    "semantic_hash": "73c33b5c4aa737c8480c6ce6e69f0a0e"
+  },
+  "AutoQAC/Models/BackupSession.cs": {
+    "mtime": 1783481428.6502469,
+    "ast_hash": "0cf6fe56c382300157d8b1278c9d1537",
+    "semantic_hash": "0cf6fe56c382300157d8b1278c9d1537"
+  },
+  "AutoQAC/Models/CleaningResult.cs": {
+    "mtime": 1783481428.6507516,
+    "ast_hash": "19283cb5490018ee38e8a1cd0dd25f35",
+    "semantic_hash": "19283cb5490018ee38e8a1cd0dd25f35"
+  },
+  "AutoQAC/Models/CleaningSessionResult.cs": {
+    "mtime": 1783481428.6512508,
+    "ast_hash": "fcedd067bd07d4cb89f8aec4aeba348c",
+    "semantic_hash": "fcedd067bd07d4cb89f8aec4aeba348c"
+  },
+  "AutoQAC/Models/Configuration/BackupSettings.cs": {
+    "mtime": 1783481428.6512508,
+    "ast_hash": "fa329cbc5cfc0ea70976fe8fba689977",
+    "semantic_hash": "fa329cbc5cfc0ea70976fe8fba689977"
+  },
+  "AutoQAC/Models/Configuration/MainConfiguration.cs": {
+    "mtime": 1768891428.177892,
+    "ast_hash": "f025fa270ede3036aa609d562f62223b",
+    "semantic_hash": "f025fa270ede3036aa609d562f62223b"
+  },
+  "AutoQAC/Models/Configuration/RetentionSettings.cs": {
+    "mtime": 1783481428.6517553,
+    "ast_hash": "d139a9e4b92cf9d3e5719d8d75170a81",
+    "semantic_hash": "d139a9e4b92cf9d3e5719d8d75170a81"
+  },
+  "AutoQAC/Models/Configuration/UserConfiguration.cs": {
+    "mtime": 1783481428.652259,
+    "ast_hash": "b31313ffa0b5f152a4bdb1a460a5196e",
+    "semantic_hash": "b31313ffa0b5f152a4bdb1a460a5196e"
+  },
+  "AutoQAC/Models/Diagnostics/DiagnosticTextFormatter.cs": {
+    "mtime": 1783494790.5754874,
+    "ast_hash": "1e711b72ec2f6cb564a0071ca1eaf0a0",
+    "semantic_hash": "1e711b72ec2f6cb564a0071ca1eaf0a0"
+  },
+  "AutoQAC/Models/DryRunResult.cs": {
+    "mtime": 1770443158.7805512,
+    "ast_hash": "7ec9821d34e52e00af4d650583558ca2",
+    "semantic_hash": "7ec9821d34e52e00af4d650583558ca2"
+  },
+  "AutoQAC/Models/GameType.cs": {
+    "mtime": 1783481428.6527517,
+    "ast_hash": "7cf4c14665726d19e86b16e68794e59f",
+    "semantic_hash": "7cf4c14665726d19e86b16e68794e59f"
+  },
+  "AutoQAC/Models/GameVariant.cs": {
+    "mtime": 1772187043.1418092,
+    "ast_hash": "0a0627f094f5e21ccf7b7522328e43dc",
+    "semantic_hash": "0a0627f094f5e21ccf7b7522328e43dc"
+  },
+  "AutoQAC/Models/LogReadResult.cs": {
+    "mtime": 1774935343.8967166,
+    "ast_hash": "c34a48bef92885413a63712260cba542",
+    "semantic_hash": "c34a48bef92885413a63712260cba542"
+  },
+  "AutoQAC/Models/PluginCleaningResult.cs": {
+    "mtime": 1783481428.653252,
+    "ast_hash": "f320d59dea3bed3f4d7931f321978ffe",
+    "semantic_hash": "f320d59dea3bed3f4d7931f321978ffe"
+  },
+  "AutoQAC/Models/PluginInfo.cs": {
+    "mtime": 1783490595.6973448,
+    "ast_hash": "7c13eeeefec79aa5ff3cd9344899805b",
+    "semantic_hash": "7c13eeeefec79aa5ff3cd9344899805b"
+  },
+  "AutoQAC/Models/PluginIssueApproximation.cs": {
+    "mtime": 1784800353.1692295,
+    "ast_hash": "99e447b2b4e742795948dd264ca499f6",
+    "semantic_hash": "99e447b2b4e742795948dd264ca499f6"
+  },
+  "AutoQAC/Models/PluginLoadingResult.cs": {
+    "mtime": 1772331423.225335,
+    "ast_hash": "ca7743e0ebd06dbb8a0892d606babd9e",
+    "semantic_hash": "ca7743e0ebd06dbb8a0892d606babd9e"
+  },
+  "AutoQAC/Models/StopTerminationDialogContent.cs": {
+    "mtime": 1783481428.653252,
+    "ast_hash": "a620554d4f75e5b68597c6000fa10d73",
+    "semantic_hash": "a620554d4f75e5b68597c6000fa10d73"
+  },
+  "AutoQAC/Models/TerminationResult.cs": {
+    "mtime": 1783492029.941172,
+    "ast_hash": "4404bc436efa2101ce077b53b4bd7d16",
+    "semantic_hash": "4404bc436efa2101ce077b53b4bd7d16"
+  },
+  "AutoQAC/Models/TrackedProcess.cs": {
+    "mtime": 1783492044.2399,
+    "ast_hash": "47582c9e950b5ccf3d1cfa08a07e1848",
+    "semantic_hash": "47582c9e950b5ccf3d1cfa08a07e1848"
+  },
+  "AutoQAC/Models/ValidationError.cs": {
+    "mtime": 1770426040.4636745,
+    "ast_hash": "19f6a3d81e92a8e3823fc824f41e7f57",
+    "semantic_hash": "19f6a3d81e92a8e3823fc824f41e7f57"
+  },
+  "AutoQAC/Program.cs": {
+    "mtime": 1783481428.6537514,
+    "ast_hash": "f457a1ad83ca557671cd6e83743de55c",
+    "semantic_hash": "f457a1ad83ca557671cd6e83743de55c"
+  },
+  "AutoQAC/Properties/launchSettings.json": {
+    "mtime": 1783481428.6542513,
+    "ast_hash": "3bbf53a64dec170752b0a1cfc9cc26c4",
+    "semantic_hash": "3bbf53a64dec170752b0a1cfc9cc26c4"
+  },
+  "AutoQAC/Services/Cleaning/BackupSessionCoordinator.cs": {
+    "mtime": 1783481428.6562598,
+    "ast_hash": "4dea5862820d4af03a457135fefc73ce",
+    "semantic_hash": "4dea5862820d4af03a457135fefc73ce"
+  },
+  "AutoQAC/Services/Cleaning/BackupSessionModels.cs": {
+    "mtime": 1783481428.6562598,
+    "ast_hash": "b57f49cef519f13558e78b636dda1bba",
+    "semantic_hash": "b57f49cef519f13558e78b636dda1bba"
+  },
+  "AutoQAC/Services/Cleaning/CleaningCommandReadiness.cs": {
+    "mtime": 1783481428.6567512,
+    "ast_hash": "f19bfe34a78787d3c41747be00525a73",
+    "semantic_hash": "f19bfe34a78787d3c41747be00525a73"
+  },
+  "AutoQAC/Services/Cleaning/CleaningLaunchBlockerValidator.cs": {
+    "mtime": 1783492166.137551,
+    "ast_hash": "94b6e59b67932c307b5e351e4abe2752",
+    "semantic_hash": "94b6e59b67932c307b5e351e4abe2752"
+  },
+  "AutoQAC/Services/Cleaning/CleaningPreflight.cs": {
+    "mtime": 1783492179.0787885,
+    "ast_hash": "fbdb61a8e84e710f5f4fee30c221ef10",
+    "semantic_hash": "fbdb61a8e84e710f5f4fee30c221ef10"
+  },
+  "AutoQAC/Services/Cleaning/CleaningPreflightModels.cs": {
+    "mtime": 1783481428.6577592,
+    "ast_hash": "42c9cef222668db9857f224837490a4b",
+    "semantic_hash": "42c9cef222668db9857f224837490a4b"
+  },
+  "AutoQAC/Services/Cleaning/CleaningService.cs": {
+    "mtime": 1783481428.6577592,
+    "ast_hash": "0ec0bd8900736b178cba176458bea06a",
+    "semantic_hash": "0ec0bd8900736b178cba176458bea06a"
+  },
+  "AutoQAC/Services/Cleaning/CleaningSession.cs": {
+    "mtime": 1783492224.2359757,
+    "ast_hash": "124319c4eb24c9dcc5cf85c413977926",
+    "semantic_hash": "124319c4eb24c9dcc5cf85c413977926"
+  },
+  "AutoQAC/Services/Cleaning/CleaningSessionControlModels.cs": {
+    "mtime": 1783481428.6582654,
+    "ast_hash": "856cdd7d713b8819b22af3827273187c",
+    "semantic_hash": "856cdd7d713b8819b22af3827273187c"
+  },
+  "AutoQAC/Services/Cleaning/CleaningTerminationCoordinator.cs": {
+    "mtime": 1783481428.6587589,
+    "ast_hash": "214623afd1d3bcb6877b35fb9840af11",
+    "semantic_hash": "214623afd1d3bcb6877b35fb9840af11"
+  },
+  "AutoQAC/Services/Cleaning/IBackupSessionCoordinator.cs": {
+    "mtime": 1783481428.6587589,
+    "ast_hash": "2b50326c4d1ca33bcf8e190835aae9d9",
+    "semantic_hash": "2b50326c4d1ca33bcf8e190835aae9d9"
+  },
+  "AutoQAC/Services/Cleaning/ICleaningCommandReadiness.cs": {
+    "mtime": 1783481428.6592581,
+    "ast_hash": "c86187f1a6f6e605a61048c91b667a59",
+    "semantic_hash": "c86187f1a6f6e605a61048c91b667a59"
+  },
+  "AutoQAC/Services/Cleaning/ICleaningPreflight.cs": {
+    "mtime": 1783481428.6592581,
+    "ast_hash": "7e3268c7bbfe4b070f57598525226da2",
+    "semantic_hash": "7e3268c7bbfe4b070f57598525226da2"
+  },
+  "AutoQAC/Services/Cleaning/ICleaningService.cs": {
+    "mtime": 1783481428.6592581,
+    "ast_hash": "8a7f15796e13558c5f719e0ed463dc7e",
+    "semantic_hash": "8a7f15796e13558c5f719e0ed463dc7e"
+  },
+  "AutoQAC/Services/Cleaning/ICleaningSession.cs": {
+    "mtime": 1783481428.6592581,
+    "ast_hash": "1dabb4f49f3d5c7f3fb19218e1c681f7",
+    "semantic_hash": "1dabb4f49f3d5c7f3fb19218e1c681f7"
+  },
+  "AutoQAC/Services/Cleaning/ICleaningSessionDecisionAdapter.cs": {
+    "mtime": 1783481428.6602685,
+    "ast_hash": "83b5ba2762af7e191b462433f69e073c",
+    "semantic_hash": "83b5ba2762af7e191b462433f69e073c"
+  },
+  "AutoQAC/Services/Cleaning/ICleaningSessionStatePublisher.cs": {
+    "mtime": 1783481428.6602685,
+    "ast_hash": "b8d5a4d6d5c84ac82c4f3aac0646c786",
+    "semantic_hash": "b8d5a4d6d5c84ac82c4f3aac0646c786"
+  },
+  "AutoQAC/Services/Cleaning/ICleaningTerminationCoordinator.cs": {
+    "mtime": 1783481428.6602685,
+    "ast_hash": "07173c028e3ee3bb62f7076964ec47b0",
+    "semantic_hash": "07173c028e3ee3bb62f7076964ec47b0"
+  },
+  "AutoQAC/Services/Cleaning/IPluginCleaning.cs": {
+    "mtime": 1783489238.6831207,
+    "ast_hash": "0f59e63d75a43b1f24e6ae87666c95b3",
+    "semantic_hash": "0f59e63d75a43b1f24e6ae87666c95b3"
+  },
+  "AutoQAC/Services/Cleaning/IPluginCleaningRunner.cs": {
+    "mtime": 1783481428.6607804,
+    "ast_hash": "333700ef29a27bc96bf019a7d7bebbb7",
+    "semantic_hash": "333700ef29a27bc96bf019a7d7bebbb7"
+  },
+  "AutoQAC/Services/Cleaning/IPluginResultFinalizer.cs": {
+    "mtime": 1783481428.6607804,
+    "ast_hash": "767d175868633208702f5312e0501597",
+    "semantic_hash": "767d175868633208702f5312e0501597"
+  },
+  "AutoQAC/Services/Cleaning/IXEditLogFileService.cs": {
+    "mtime": 1774942164.0025733,
+    "ast_hash": "c533bad2defc1cd5ee5cdbfee8c0c5a7",
+    "semantic_hash": "c533bad2defc1cd5ee5cdbfee8c0c5a7"
+  },
+  "AutoQAC/Services/Cleaning/PluginCleaning.cs": {
+    "mtime": 1783489110.8596535,
+    "ast_hash": "e07d02335dac498378854d8bafeb4fc3",
+    "semantic_hash": "e07d02335dac498378854d8bafeb4fc3"
+  },
+  "AutoQAC/Services/Cleaning/PluginCleaningContext.cs": {
+    "mtime": 1783489238.6831207,
+    "ast_hash": "5cab40c22c666a5c19d3e7df4757d2f9",
+    "semantic_hash": "5cab40c22c666a5c19d3e7df4757d2f9"
+  },
+  "AutoQAC/Services/Cleaning/PluginCleaningRunner.cs": {
+    "mtime": 1783481428.6607804,
+    "ast_hash": "b34edc8eb41f6e84a1b991b750706e8f",
+    "semantic_hash": "b34edc8eb41f6e84a1b991b750706e8f"
+  },
+  "AutoQAC/Services/Cleaning/PluginResultFinalizer.cs": {
+    "mtime": 1783481428.6612768,
+    "ast_hash": "ff7bee1beac06962a28e123efbc75a04",
+    "semantic_hash": "ff7bee1beac06962a28e123efbc75a04"
+  },
+  "AutoQAC/Services/Cleaning/RunnerFinalizerModels.cs": {
+    "mtime": 1783481428.6612768,
+    "ast_hash": "dd6765dee3804a01b104f29fd6226402",
+    "semantic_hash": "dd6765dee3804a01b104f29fd6226402"
+  },
+  "AutoQAC/Services/Cleaning/StateServiceCleaningSessionStatePublisher.cs": {
+    "mtime": 1783481428.661781,
+    "ast_hash": "b0f910dec0367aa20bdc2662c8d52576",
+    "semantic_hash": "b0f910dec0367aa20bdc2662c8d52576"
+  },
+  "AutoQAC/Services/Cleaning/StopCleaningResult.cs": {
+    "mtime": 1777429930.771212,
+    "ast_hash": "9ca373360787d484e42fbd08441a2f1a",
+    "semantic_hash": "9ca373360787d484e42fbd08441a2f1a"
+  },
+  "AutoQAC/Services/Cleaning/XEditCommandBuilder.cs": {
+    "mtime": 1783492345.1832807,
+    "ast_hash": "f432dde32b72303c27748c7b8b38016c",
+    "semantic_hash": "f432dde32b72303c27748c7b8b38016c"
+  },
+  "AutoQAC/Services/Cleaning/XEditLogFileService.cs": {
+    "mtime": 1783481428.6622806,
+    "ast_hash": "52b13abf1aa7d7561b272e653300be9f",
+    "semantic_hash": "52b13abf1aa7d7561b272e653300be9f"
+  },
+  "AutoQAC/Services/Cleaning/XEditOutputParser.cs": {
+    "mtime": 1767955981.6493027,
+    "ast_hash": "3c3b9d76ff483917e0c4ab1a77af4166",
+    "semantic_hash": "3c3b9d76ff483917e0c4ab1a77af4166"
+  },
+  "AutoQAC/Services/Configuration/ConfigPersistenceCoordinator.cs": {
+    "mtime": 1783492389.8544703,
+    "ast_hash": "93a6429ccc0389bd4c4dcb2ff3a27279",
+    "semantic_hash": "93a6429ccc0389bd4c4dcb2ff3a27279"
+  },
+  "AutoQAC/Services/Configuration/ConfigPersistenceOperation.cs": {
+    "mtime": 1783481428.662781,
+    "ast_hash": "e7354b31239de96549f86308d2a57122",
+    "semantic_hash": "e7354b31239de96549f86308d2a57122"
+  },
+  "AutoQAC/Services/Configuration/ConfigPersistenceStatus.cs": {
+    "mtime": 1783481428.663279,
+    "ast_hash": "2dfd966f4a7f732cebddad8986aec905",
+    "semantic_hash": "2dfd966f4a7f732cebddad8986aec905"
+  },
+  "AutoQAC/Services/Configuration/ConfigWatcherService.cs": {
+    "mtime": 1783481428.663279,
+    "ast_hash": "9c49f47d39eab85f64ad2a82a9fc290e",
+    "semantic_hash": "9c49f47d39eab85f64ad2a82a9fc290e"
+  },
+  "AutoQAC/Services/Configuration/ConfigurationService.cs": {
+    "mtime": 1783481428.663781,
+    "ast_hash": "4d47525b04820e0ce8a79e6a4b2bedee",
+    "semantic_hash": "4d47525b04820e0ce8a79e6a4b2bedee"
+  },
+  "AutoQAC/Services/Configuration/DiscoverySettingsChangeResult.cs": {
+    "mtime": 1783481428.663781,
+    "ast_hash": "a8b61f11e85e72a56d1d1839764c0a53",
+    "semantic_hash": "a8b61f11e85e72a56d1d1839764c0a53"
+  },
+  "AutoQAC/Services/Configuration/DiscoverySettingsIntent.cs": {
+    "mtime": 1783481428.663781,
+    "ast_hash": "e82f283f91c18d3bf216d351c5b3b2a9",
+    "semantic_hash": "e82f283f91c18d3bf216d351c5b3b2a9"
+  },
+  "AutoQAC/Services/Configuration/DiscoverySettingsModule.cs": {
+    "mtime": 1783492443.9088461,
+    "ast_hash": "76b0bf3ae153ab74076088b18723a535",
+    "semantic_hash": "76b0bf3ae153ab74076088b18723a535"
+  },
+  "AutoQAC/Services/Configuration/IConfigPersistenceCoordinator.cs": {
+    "mtime": 1783481428.6647902,
+    "ast_hash": "fcfc1d9ab05a1adaeeee94763e6d2d95",
+    "semantic_hash": "fcfc1d9ab05a1adaeeee94763e6d2d95"
+  },
+  "AutoQAC/Services/Configuration/IConfigWatcherService.cs": {
+    "mtime": 1770432822.7209296,
+    "ast_hash": "a57b15951f94c3653ec9b827d2f601e5",
+    "semantic_hash": "a57b15951f94c3653ec9b827d2f601e5"
+  },
+  "AutoQAC/Services/Configuration/IConfigurationService.cs": {
+    "mtime": 1783481428.6647902,
+    "ast_hash": "840d53b286bad9610f7b227630996b83",
+    "semantic_hash": "840d53b286bad9610f7b227630996b83"
+  },
+  "AutoQAC/Services/Configuration/IDiscoverySettingsModule.cs": {
+    "mtime": 1783481428.6653025,
+    "ast_hash": "51374a816e85e809c367f9cde6ceae9f",
+    "semantic_hash": "51374a816e85e809c367f9cde6ceae9f"
+  },
+  "AutoQAC/Services/Configuration/ILegacyMigrationService.cs": {
+    "mtime": 1770432931.880703,
+    "ast_hash": "2fe498cae3c27633f60a50ef34c0210d",
+    "semantic_hash": "2fe498cae3c27633f60a50ef34c0210d"
+  },
+  "AutoQAC/Services/Configuration/ILogRetentionService.cs": {
+    "mtime": 1770433450.6301074,
+    "ast_hash": "927ae6ffa3a0e81fdd172e847e378832",
+    "semantic_hash": "927ae6ffa3a0e81fdd172e847e378832"
+  },
+  "AutoQAC/Services/Configuration/IUserConfigFileStore.cs": {
+    "mtime": 1783481428.6653025,
+    "ast_hash": "cec83346e1d3cd98bd5ff799e1734de9",
+    "semantic_hash": "cec83346e1d3cd98bd5ff799e1734de9"
+  },
+  "AutoQAC/Services/Configuration/LegacyMigrationService.cs": {
+    "mtime": 1783492490.2058778,
+    "ast_hash": "77ce688de8ed479919eabcca0d74c6ec",
+    "semantic_hash": "77ce688de8ed479919eabcca0d74c6ec"
+  },
+  "AutoQAC/Services/Configuration/LogRetentionService.cs": {
+    "mtime": 1783481428.6663005,
+    "ast_hash": "9588599c1590daaef132c56a8eaa0e50",
+    "semantic_hash": "9588599c1590daaef132c56a8eaa0e50"
+  },
+  "AutoQAC/Services/Configuration/UserConfigFileStore.cs": {
+    "mtime": 1783492510.759619,
+    "ast_hash": "314cb7f271abe4cfb8aa0b23f65588ec",
+    "semantic_hash": "314cb7f271abe4cfb8aa0b23f65588ec"
+  },
+  "AutoQAC/Services/GameCapability/GameCapability.cs": {
+    "mtime": 1783481428.6667945,
+    "ast_hash": "cb508e23e0f26e2a31ef33fb15860cbf",
+    "semantic_hash": "cb508e23e0f26e2a31ef33fb15860cbf"
+  },
+  "AutoQAC/Services/GameCapability/GameCapabilityCatalog.cs": {
+    "mtime": 1783492520.3272507,
+    "ast_hash": "c53f06d65426bf64d02308289b56476c",
+    "semantic_hash": "c53f06d65426bf64d02308289b56476c"
+  },
+  "AutoQAC/Services/GameCapability/IPluginRefreshDiscoveryPlanner.cs": {
+    "mtime": 1783481428.6672943,
+    "ast_hash": "b3870c0b365684d0c1553070b8f3ad73",
+    "semantic_hash": "b3870c0b365684d0c1553070b8f3ad73"
+  },
+  "AutoQAC/Services/GameCapability/PluginDiscoveryMode.cs": {
+    "mtime": 1783481428.6677952,
+    "ast_hash": "71565ea56ee48c4f5527828fee52315a",
+    "semantic_hash": "71565ea56ee48c4f5527828fee52315a"
+  },
+  "AutoQAC/Services/GameCapability/PluginRefreshDiscoveryFreshness.cs": {
+    "mtime": 1783481428.6682947,
+    "ast_hash": "a270f631f87295b70258f7dbbe903074",
+    "semantic_hash": "a270f631f87295b70258f7dbbe903074"
+  },
+  "AutoQAC/Services/GameCapability/PluginRefreshDiscoveryPlanModels.cs": {
+    "mtime": 1783481428.6682947,
+    "ast_hash": "5d7a2ff90bfff80f31b9d05d6ecf29a0",
+    "semantic_hash": "5d7a2ff90bfff80f31b9d05d6ecf29a0"
+  },
+  "AutoQAC/Services/GameCapability/PluginRefreshDiscoveryPlanner.cs": {
+    "mtime": 1783492551.1324668,
+    "ast_hash": "13ed526dc9c3eb199dbd4bee6a8f40a6",
+    "semantic_hash": "13ed526dc9c3eb199dbd4bee6a8f40a6"
+  },
+  "AutoQAC/Services/GameDetection/GameDetectionService.cs": {
+    "mtime": 1783481428.6687946,
+    "ast_hash": "bbbc093239690b1fb16629918decebb5",
+    "semantic_hash": "bbbc093239690b1fb16629918decebb5"
+  },
+  "AutoQAC/Services/GameDetection/IGameDetectionService.cs": {
+    "mtime": 1772189055.4045486,
+    "ast_hash": "e27f5f626bf1b6cb6495b47c49831668",
+    "semantic_hash": "e27f5f626bf1b6cb6495b47c49831668"
+  },
+  "AutoQAC/Services/MO2/IMO2ValidationService.cs": {
+    "mtime": 1767179637.9397984,
+    "ast_hash": "077812ed0e5e67c6a6fc9c51718c6e24",
+    "semantic_hash": "077812ed0e5e67c6a6fc9c51718c6e24"
+  },
+  "AutoQAC/Services/MO2/IMo2InstanceService.cs": {
+    "mtime": 1783481428.6687946,
+    "ast_hash": "8e796a95e82a4d7949a746b213fc5e51",
+    "semantic_hash": "8e796a95e82a4d7949a746b213fc5e51"
+  },
+  "AutoQAC/Services/MO2/MO2ValidationService.cs": {
+    "mtime": 1783481428.6697998,
+    "ast_hash": "e1ab82dec5873f47fe748e4ff2061578",
+    "semantic_hash": "e1ab82dec5873f47fe748e4ff2061578"
+  },
+  "AutoQAC/Services/MO2/Mo2ExecutablePathValidator.cs": {
+    "mtime": 1783481428.6697998,
+    "ast_hash": "10cd1ec7dad6b3aad987475a1b2cf6c6",
+    "semantic_hash": "10cd1ec7dad6b3aad987475a1b2cf6c6"
+  },
+  "AutoQAC/Services/MO2/Mo2InstanceInfo.cs": {
+    "mtime": 1783481428.670305,
+    "ast_hash": "864b457785d6c20a70ed0a4535a129f9",
+    "semantic_hash": "864b457785d6c20a70ed0a4535a129f9"
+  },
+  "AutoQAC/Services/MO2/Mo2InstanceService.cs": {
+    "mtime": 1783481428.670305,
+    "ast_hash": "7c0d31e6e6676b11836b3f786bec0058",
+    "semantic_hash": "7c0d31e6e6676b11836b3f786bec0058"
+  },
+  "AutoQAC/Services/Monitoring/HangDetectionService.cs": {
+    "mtime": 1783481428.6708052,
+    "ast_hash": "4821bf7b5b00bfa36425ea648346cd68",
+    "semantic_hash": "4821bf7b5b00bfa36425ea648346cd68"
+  },
+  "AutoQAC/Services/Monitoring/IHangDetectionService.cs": {
+    "mtime": 1770451921.0698383,
+    "ast_hash": "8e0be868150f17597c5d51ab28806566",
+    "semantic_hash": "8e0be868150f17597c5d51ab28806566"
+  },
+  "AutoQAC/Services/Plugin/IPluginIssueApproximationModule.cs": {
+    "mtime": 1784794359.9170742,
+    "ast_hash": "24989d021743e8d1b6b3e197cd61acff",
+    "semantic_hash": "24989d021743e8d1b6b3e197cd61acff"
+  },
+  "AutoQAC/Services/Plugin/IPluginLoadingService.cs": {
+    "mtime": 1783481428.6718128,
+    "ast_hash": "2f3cead1f36744ff7595e21fcfbec972",
+    "semantic_hash": "2f3cead1f36744ff7595e21fcfbec972"
+  },
+  "AutoQAC/Services/Plugin/IPluginRefreshModule.cs": {
+    "mtime": 1783481428.6718128,
+    "ast_hash": "a4d138c2d7dc72bfdc4376f127967d71",
+    "semantic_hash": "a4d138c2d7dc72bfdc4376f127967d71"
+  },
+  "AutoQAC/Services/Plugin/IPluginValidationService.cs": {
+    "mtime": 1770421753.3631604,
+    "ast_hash": "e2882cfeafbe2eb596225bfd3387ca70",
+    "semantic_hash": "e2882cfeafbe2eb596225bfd3387ca70"
+  },
+  "AutoQAC/Services/Plugin/ISkipListPolicy.cs": {
+    "mtime": 1783481428.6723092,
+    "ast_hash": "1704fab2e0834deacb6d279b5f4532e2",
+    "semantic_hash": "1704fab2e0834deacb6d279b5f4532e2"
+  },
+  "AutoQAC/Services/Plugin/PluginIssueApproximationModule.cs": {
+    "mtime": 1784795097.034261,
+    "ast_hash": "3fcd2786d21dcf181443b3c4f44db584",
+    "semantic_hash": "3fcd2786d21dcf181443b3c4f44db584"
+  },
+  "AutoQAC/Services/Plugin/PluginLoadingService.cs": {
+    "mtime": 1783481428.6728098,
+    "ast_hash": "5bb957c6350090c5e6e6e47284bca5b2",
+    "semantic_hash": "5bb957c6350090c5e6e6e47284bca5b2"
+  },
+  "AutoQAC/Services/Plugin/PluginRefreshAppStateMirror.cs": {
+    "mtime": 1784800544.3492105,
+    "ast_hash": "816bcb32e4f6a6b25f3f71323f6f27ec",
+    "semantic_hash": "816bcb32e4f6a6b25f3f71323f6f27ec"
+  },
+  "AutoQAC/Services/Plugin/PluginRefreshCommandAvailabilityPolicy.cs": {
+    "mtime": 1783496170.4002237,
+    "ast_hash": "8377f4096f1ff73d0c2ee3bef279fcf1",
+    "semantic_hash": "8377f4096f1ff73d0c2ee3bef279fcf1"
+  },
+  "AutoQAC/Services/Plugin/PluginRefreshIntent.cs": {
+    "mtime": 1783481428.6733086,
+    "ast_hash": "8673d8a039e1fbc90c49e41213b278e4",
+    "semantic_hash": "8673d8a039e1fbc90c49e41213b278e4"
+  },
+  "AutoQAC/Services/Plugin/PluginRefreshModule.cs": {
+    "mtime": 1784800356.2596695,
+    "ast_hash": "a46da6efe9f36447057cc11592009731",
+    "semantic_hash": "a46da6efe9f36447057cc11592009731"
+  },
+  "AutoQAC/Services/Plugin/PluginRefreshPublication.cs": {
+    "mtime": 1783481428.6738098,
+    "ast_hash": "be9fa1ef1e513ad167d58ecc21e1624e",
+    "semantic_hash": "be9fa1ef1e513ad167d58ecc21e1624e"
+  },
+  "AutoQAC/Services/Plugin/PluginRefreshPublicationRows.cs": {
+    "mtime": 1784800566.4083972,
+    "ast_hash": "4e59a34e238653ecf805b49cd7c01fec",
+    "semantic_hash": "4e59a34e238653ecf805b49cd7c01fec"
+  },
+  "AutoQAC/Services/Plugin/PluginRefreshPublicationStore.cs": {
+    "mtime": 1784801048.8129177,
+    "ast_hash": "44717dbc263314a21b3131f32565a587",
+    "semantic_hash": "44717dbc263314a21b3131f32565a587"
+  },
+  "AutoQAC/Services/Plugin/PluginRefreshSnapshot.cs": {
+    "mtime": 1784800567.7458532,
+    "ast_hash": "53992e406bb76b023eb5261832ba553d",
+    "semantic_hash": "53992e406bb76b023eb5261832ba553d"
+  },
+  "AutoQAC/Services/Plugin/PluginSelectionChange.cs": {
+    "mtime": 1783481428.6748097,
+    "ast_hash": "697096d45d946473c6cde3f5490e937c",
+    "semantic_hash": "697096d45d946473c6cde3f5490e937c"
+  },
+  "AutoQAC/Services/Plugin/PluginValidationService.cs": {
+    "mtime": 1783492708.665097,
+    "ast_hash": "022d77bae627f1c5150c88b4d2be5e3a",
+    "semantic_hash": "022d77bae627f1c5150c88b4d2be5e3a"
+  },
+  "AutoQAC/Services/Plugin/SkipListPolicy.cs": {
+    "mtime": 1783481428.6753097,
+    "ast_hash": "bdbf16a9850d4d803e65770f9d645753",
+    "semantic_hash": "bdbf16a9850d4d803e65770f9d645753"
+  },
+  "AutoQAC/Services/Process/DefaultPidStorePathProvider.cs": {
+    "mtime": 1777429792.1454782,
+    "ast_hash": "c2cdf6aa84c430c275476633758cfdee",
+    "semantic_hash": "c2cdf6aa84c430c275476633758cfdee"
+  },
+  "AutoQAC/Services/Process/IPidStore.cs": {
+    "mtime": 1783481428.6753097,
+    "ast_hash": "91d26803380fa9cf1547a20e5071b582",
+    "semantic_hash": "91d26803380fa9cf1547a20e5071b582"
+  },
+  "AutoQAC/Services/Process/IPidStorePathProvider.cs": {
+    "mtime": 1777429703.9170156,
+    "ast_hash": "f41cb7c1ae423e456b50d5140cf72a17",
+    "semantic_hash": "f41cb7c1ae423e456b50d5140cf72a17"
+  },
+  "AutoQAC/Services/Process/IProcessExecutionService.cs": {
+    "mtime": 1777429868.4604025,
+    "ast_hash": "f4276419eda93444846ff58e47a2a33b",
+    "semantic_hash": "f4276419eda93444846ff58e47a2a33b"
+  },
+  "AutoQAC/Services/Process/IProcessExitWaiter.cs": {
+    "mtime": 1777431336.9246085,
+    "ast_hash": "8889b1a362b167bb1e405751d53cf221",
+    "semantic_hash": "8889b1a362b167bb1e405751d53cf221"
+  },
+  "AutoQAC/Services/Process/IProcessSessionIdProvider.cs": {
+    "mtime": 1777429703.9175158,
+    "ast_hash": "cce228bde7bd1b546dfd4fad67fe8836",
+    "semantic_hash": "cce228bde7bd1b546dfd4fad67fe8836"
+  },
+  "AutoQAC/Services/Process/ISingleInstanceGuard.cs": {
+    "mtime": 1777430040.975106,
+    "ast_hash": "9a7de54ec9813beb0f7ec7c286ecf2a1",
+    "semantic_hash": "9a7de54ec9813beb0f7ec7c286ecf2a1"
+  },
+  "AutoQAC/Services/Process/JsonPidStore.cs": {
+    "mtime": 1783481428.6758103,
+    "ast_hash": "59b65480483e5b5c989a440110ea092f",
+    "semantic_hash": "59b65480483e5b5c989a440110ea092f"
+  },
+  "AutoQAC/Services/Process/ProcessExecutionService.cs": {
+    "mtime": 1783481428.6763093,
+    "ast_hash": "87d621ded50625ff23491ef855f74837",
+    "semantic_hash": "87d621ded50625ff23491ef855f74837"
+  },
+  "AutoQAC/Services/Process/ProcessSessionIdProvider.cs": {
+    "mtime": 1777429792.1459827,
+    "ast_hash": "6d75a2ce7cf98c47497cbf1cef50cc2c",
+    "semantic_hash": "6d75a2ce7cf98c47497cbf1cef50cc2c"
+  },
+  "AutoQAC/Services/Process/SingleInstanceGuard.cs": {
+    "mtime": 1777430040.9756067,
+    "ast_hash": "20741447a97bf005683cc9ab15cc0458",
+    "semantic_hash": "20741447a97bf005683cc9ab15cc0458"
+  },
+  "AutoQAC/Services/State/IStateService.cs": {
+    "mtime": 1784800357.7215066,
+    "ast_hash": "0550906b0572a4d41da42168b7a76fc8",
+    "semantic_hash": "0550906b0572a4d41da42168b7a76fc8"
+  },
+  "AutoQAC/Services/State/StateService.cs": {
+    "mtime": 1784800359.1972432,
+    "ast_hash": "e88fecc3d78a78857a243a5dd38dde97",
+    "semantic_hash": "e88fecc3d78a78857a243a5dd38dde97"
+  },
+  "AutoQAC/Services/UI/CallbackObserver.cs": {
+    "mtime": 1783481428.6773129,
+    "ast_hash": "013e45678f9805ca94ec2cf5e1eb6306",
+    "semantic_hash": "013e45678f9805ca94ec2cf5e1eb6306"
+  },
+  "AutoQAC/Services/UI/CleaningSessionDialogDecisionAdapter.cs": {
+    "mtime": 1783481428.6773129,
+    "ast_hash": "93b8a374379c909a7e5a23f2dcf2e9bc",
+    "semantic_hash": "93b8a374379c909a7e5a23f2dcf2e9bc"
+  },
+  "AutoQAC/Services/UI/FileDialogFilterMapper.cs": {
+    "mtime": 1783481428.6773129,
+    "ast_hash": "e28b145348c32e8cd86e553b44384006",
+    "semantic_hash": "e28b145348c32e8cd86e553b44384006"
+  },
+  "AutoQAC/Services/UI/FileDialogFilterParser.cs": {
+    "mtime": 1783481428.6778188,
+    "ast_hash": "581ab40e48973c87f526efe5c440ad8f",
+    "semantic_hash": "581ab40e48973c87f526efe5c440ad8f"
+  },
+  "AutoQAC/Services/UI/FileDialogService.cs": {
+    "mtime": 1783481428.6778188,
+    "ast_hash": "e359892092bbc6bac67a8e061b2363a4",
+    "semantic_hash": "e359892092bbc6bac67a8e061b2363a4"
+  },
+  "AutoQAC/Services/UI/IAppLifetime.cs": {
+    "mtime": 1783481428.678317,
+    "ast_hash": "635e468c7ba96b6e546bfa13213242a1",
+    "semantic_hash": "635e468c7ba96b6e546bfa13213242a1"
+  },
+  "AutoQAC/Services/UI/IFileDialogService.cs": {
+    "mtime": 1767314101.6667128,
+    "ast_hash": "90507ef9134654fc8aa7ad1ac74e086f",
+    "semantic_hash": "90507ef9134654fc8aa7ad1ac74e086f"
+  },
+  "AutoQAC/Services/UI/IMessageDialogService.cs": {
+    "mtime": 1783492845.33037,
+    "ast_hash": "0ddf877edb134ed228ab8d14b993d98d",
+    "semantic_hash": "0ddf877edb134ed228ab8d14b993d98d"
+  },
+  "AutoQAC/Services/UI/IUiDispatcher.cs": {
+    "mtime": 1783481428.6788232,
+    "ast_hash": "c67f75112d8acb0c2796bb77a391151f",
+    "semantic_hash": "c67f75112d8acb0c2796bb77a391151f"
+  },
+  "AutoQAC/Services/UI/IUiFrameworkVersionProvider.cs": {
+    "mtime": 1783481428.6793177,
+    "ast_hash": "9e692416086e118fab9e22c0ec73d0b7",
+    "semantic_hash": "9e692416086e118fab9e22c0ec73d0b7"
+  },
+  "AutoQAC/Services/UI/IWindowContextProvider.cs": {
+    "mtime": 1783481428.6793177,
+    "ast_hash": "1b46b3c39f03cc33f80a5a3f47ccae36",
+    "semantic_hash": "1b46b3c39f03cc33f80a5a3f47ccae36"
+  },
+  "AutoQAC/Services/UI/Interactions/Interaction.cs": {
+    "mtime": 1777172254.8136163,
+    "ast_hash": "209c2ec1232974df2c687f222d4048d0",
+    "semantic_hash": "209c2ec1232974df2c687f222d4048d0"
+  },
+  "AutoQAC/Services/UI/Interactions/Unit.cs": {
+    "mtime": 1777172254.8136163,
+    "ast_hash": "5ec50073fbeb64d3f4c6e613833873f8",
+    "semantic_hash": "5ec50073fbeb64d3f4c6e613833873f8"
+  },
+  "AutoQAC/Services/UI/MessageDialogButtonMapper.cs": {
+    "mtime": 1783481428.6793177,
+    "ast_hash": "3ee24cead0b6d381b58de03e1a6ab558",
+    "semantic_hash": "3ee24cead0b6d381b58de03e1a6ab558"
+  },
+  "AutoQAC/Services/UI/MessageDialogService.cs": {
+    "mtime": 1783481428.6793177,
+    "ast_hash": "3b864d445fd70ecf98504c405af0a172",
+    "semantic_hash": "3b864d445fd70ecf98504c405af0a172"
+  },
+  "AutoQAC/Services/UI/WinAppLifetime.cs": {
+    "mtime": 1783481428.6793177,
+    "ast_hash": "132a4dd20729e24135cdc0bc9f3bd293",
+    "semantic_hash": "132a4dd20729e24135cdc0bc9f3bd293"
+  },
+  "AutoQAC/Services/UI/WinUiDispatcher.cs": {
+    "mtime": 1783481428.680327,
+    "ast_hash": "36db9f2a9072afc1cff1e909371fd5c3",
+    "semantic_hash": "36db9f2a9072afc1cff1e909371fd5c3"
+  },
+  "AutoQAC/Services/UI/WinUiFrameworkVersionProvider.cs": {
+    "mtime": 1783481428.680327,
+    "ast_hash": "d21c760e79341bc24f2e00c193d62773",
+    "semantic_hash": "d21c760e79341bc24f2e00c193d62773"
+  },
+  "AutoQAC/Services/UI/WindowContextProvider.cs": {
+    "mtime": 1783481428.6808314,
+    "ast_hash": "29f31325dc050d57e2a0e4f6cfa10a6c",
+    "semantic_hash": "29f31325dc050d57e2a0e4f6cfa10a6c"
+  },
+  "AutoQAC/ViewModels/AboutViewModel.cs": {
+    "mtime": 1783493450.33858,
+    "ast_hash": "49d29d702b1e7325763f19bcbc1a29f5",
+    "semantic_hash": "49d29d702b1e7325763f19bcbc1a29f5"
+  },
+  "AutoQAC/ViewModels/BackupProgressTextFormatter.cs": {
+    "mtime": 1783481428.681339,
+    "ast_hash": "024fe0171aa296aa2c6dce35331e44ab",
+    "semantic_hash": "024fe0171aa296aa2c6dce35331e44ab"
+  },
+  "AutoQAC/ViewModels/CleaningResultsViewModel.cs": {
+    "mtime": 1783481428.6818316,
+    "ast_hash": "51a1af0a9041ca8d8361d84e087d976f",
+    "semantic_hash": "51a1af0a9041ca8d8361d84e087d976f"
+  },
+  "AutoQAC/ViewModels/MainWindowViewModel.cs": {
+    "mtime": 1783493468.2197454,
+    "ast_hash": "5eaedff1a255fa4f67ecb47e2aeb4114",
+    "semantic_hash": "5eaedff1a255fa4f67ecb47e2aeb4114"
+  },
+  "AutoQAC/ViewModels/MainWindow/CleaningCommandsViewModel.cs": {
+    "mtime": 1783495026.1401994,
+    "ast_hash": "74000379e2b76af4aff3a603a5233a62",
+    "semantic_hash": "74000379e2b76af4aff3a603a5233a62"
+  },
+  "AutoQAC/ViewModels/MainWindow/ConfigurationViewModel.cs": {
+    "mtime": 1783493348.5221603,
+    "ast_hash": "4c3ddbee09a406ff869faafca6a1a359",
+    "semantic_hash": "4c3ddbee09a406ff869faafca6a1a359"
+  },
+  "AutoQAC/ViewModels/MainWindow/PluginListItem.cs": {
+    "mtime": 1783493432.3391545,
+    "ast_hash": "734830dde5f7bbd03d4499e87313888d",
+    "semantic_hash": "734830dde5f7bbd03d4499e87313888d"
+  },
+  "AutoQAC/ViewModels/MainWindow/PluginListViewModel.cs": {
+    "mtime": 1783495016.857121,
+    "ast_hash": "c2fe309a97d0016d5fd4f51b77ce26e9",
+    "semantic_hash": "c2fe309a97d0016d5fd4f51b77ce26e9"
+  },
+  "AutoQAC/ViewModels/MessageDialogViewModel.cs": {
+    "mtime": 1783481428.6843314,
+    "ast_hash": "c4ec134e4adf1e02f56f319eb059d196",
+    "semantic_hash": "c4ec134e4adf1e02f56f319eb059d196"
+  },
+  "AutoQAC/ViewModels/PartialFormsWarningViewModel.cs": {
+    "mtime": 1777172254.8176272,
+    "ast_hash": "8b7d07a63d14b4184993a456528aa26c",
+    "semantic_hash": "8b7d07a63d14b4184993a456528aa26c"
+  },
+  "AutoQAC/ViewModels/ProgressViewModel.cs": {
+    "mtime": 1783481428.6843314,
+    "ast_hash": "7d4e5488a211c9d8b74bce2f8161417b",
+    "semantic_hash": "7d4e5488a211c9d8b74bce2f8161417b"
+  },
+  "AutoQAC/ViewModels/RestoreViewModel.cs": {
+    "mtime": 1783481428.6848314,
+    "ast_hash": "a7a3f6f6a26dd42b7568f4cb9fcb0a44",
+    "semantic_hash": "a7a3f6f6a26dd42b7568f4cb9fcb0a44"
+  },
+  "AutoQAC/ViewModels/SettingsViewModel.cs": {
+    "mtime": 1783493549.8584137,
+    "ast_hash": "04e6e2b10404c35cf86ffaa017e9d7a2",
+    "semantic_hash": "04e6e2b10404c35cf86ffaa017e9d7a2"
+  },
+  "AutoQAC/ViewModels/SkipListViewModel.cs": {
+    "mtime": 1783481428.6853318,
+    "ast_hash": "58bd2f147af98da5de97ee3514ba4ec8",
+    "semantic_hash": "58bd2f147af98da5de97ee3514ba4ec8"
+  },
+  "AutoQAC/ViewModels/ViewModelBase.cs": {
+    "mtime": 1783481428.6858318,
+    "ast_hash": "fed3326bcaf91f8adf5de44749e40626",
+    "semantic_hash": "fed3326bcaf91f8adf5de44749e40626"
+  },
+  "AutoQAC/Views/AboutContent.xaml": {
+    "mtime": 1783481428.6863365,
+    "ast_hash": "21609e60ba92efddad5376546086f8dd",
+    "semantic_hash": "21609e60ba92efddad5376546086f8dd"
+  },
+  "AutoQAC/Views/AboutContent.xaml.cs": {
+    "mtime": 1783493770.329663,
+    "ast_hash": "12b0caa8c44eaf609f431b2152651113",
+    "semantic_hash": "12b0caa8c44eaf609f431b2152651113"
+  },
+  "AutoQAC/Views/AboutWindow.cs": {
+    "mtime": 1783481428.6868315,
+    "ast_hash": "c74278891afb36cebc75db6acea97577",
+    "semantic_hash": "c74278891afb36cebc75db6acea97577"
+  },
+  "AutoQAC/Views/CleaningResultsWindow.xaml": {
+    "mtime": 1783481428.6868315,
+    "ast_hash": "09dfadcf4cb3d7a7edb6bade956eef80",
+    "semantic_hash": "09dfadcf4cb3d7a7edb6bade956eef80"
+  },
+  "AutoQAC/Views/CleaningResultsWindow.xaml.cs": {
+    "mtime": 1783493775.356987,
+    "ast_hash": "88917bc6717210909b012163d08e1d87",
+    "semantic_hash": "88917bc6717210909b012163d08e1d87"
+  },
+  "AutoQAC/Views/Helpers/BindingHelpers.cs": {
+    "mtime": 1783481428.687332,
+    "ast_hash": "95dccc845c3fbeaaa433401f80d9abed",
+    "semantic_hash": "95dccc845c3fbeaaa433401f80d9abed"
+  },
+  "AutoQAC/Views/Helpers/ContentDialogPresenter.cs": {
+    "mtime": 1783481428.687332,
+    "ast_hash": "76e1cfb9ba99b31f70514c526230120f",
+    "semantic_hash": "76e1cfb9ba99b31f70514c526230120f"
+  },
+  "AutoQAC/Views/Helpers/GameTypeDisplayConverter.cs": {
+    "mtime": 1783481428.687332,
+    "ast_hash": "ba6a3430576ca06da1d4f5f47733698f",
+    "semantic_hash": "ba6a3430576ca06da1d4f5f47733698f"
+  },
+  "AutoQAC/Views/Helpers/IntDoubleConverter.cs": {
+    "mtime": 1783481428.6883402,
+    "ast_hash": "0d0005ae03af883ffaf9632c5217d72b",
+    "semantic_hash": "0d0005ae03af883ffaf9632c5217d72b"
+  },
+  "AutoQAC/Views/Helpers/VisibilityConverters.cs": {
+    "mtime": 1783481428.6883402,
+    "ast_hash": "f6bd715ce36b63a777c1024b2edf54c1",
+    "semantic_hash": "f6bd715ce36b63a777c1024b2edf54c1"
+  },
+  "AutoQAC/Views/Helpers/WindowSizing.cs": {
+    "mtime": 1783481428.6883402,
+    "ast_hash": "b2e7a7388cc7805fcc2e234eb6ac8eec",
+    "semantic_hash": "b2e7a7388cc7805fcc2e234eb6ac8eec"
+  },
+  "AutoQAC/Views/MainWindow.xaml": {
+    "mtime": 1783481428.6888514,
+    "ast_hash": "f12c48c50aa5fea74df3967e1de52692",
+    "semantic_hash": "f12c48c50aa5fea74df3967e1de52692"
+  },
+  "AutoQAC/Views/MainWindow.xaml.cs": {
+    "mtime": 1783493781.7666664,
+    "ast_hash": "907633fd4ce72d43cca8f8168ad6c8a1",
+    "semantic_hash": "907633fd4ce72d43cca8f8168ad6c8a1"
+  },
+  "AutoQAC/Views/PartialFormsWarningContent.xaml": {
+    "mtime": 1783481428.6893451,
+    "ast_hash": "22566115bbbdca65efaa55ecda2aa8f2",
+    "semantic_hash": "22566115bbbdca65efaa55ecda2aa8f2"
+  },
+  "AutoQAC/Views/PartialFormsWarningContent.xaml.cs": {
+    "mtime": 1783493791.5873098,
+    "ast_hash": "6884a9a5b662b835ffa07c4aa6d98874",
+    "semantic_hash": "6884a9a5b662b835ffa07c4aa6d98874"
+  },
+  "AutoQAC/Views/PartialFormsWarningDialog.xaml.cs": {
+    "mtime": 1783481428.6893451,
+    "ast_hash": "76d1e22e13afb695d5469e1f2fab4ea3",
+    "semantic_hash": "76d1e22e13afb695d5469e1f2fab4ea3"
+  },
+  "AutoQAC/Views/ProgressWindow.xaml": {
+    "mtime": 1783481428.6893451,
+    "ast_hash": "999afd5e8f6f558a485b6b7df87683a0",
+    "semantic_hash": "999afd5e8f6f558a485b6b7df87683a0"
+  },
+  "AutoQAC/Views/ProgressWindow.xaml.cs": {
+    "mtime": 1783493795.7594707,
+    "ast_hash": "c5bf5155a1d5aebbdd0f82bc40a27ba1",
+    "semantic_hash": "c5bf5155a1d5aebbdd0f82bc40a27ba1"
+  },
+  "AutoQAC/Views/RestoreWindow.xaml": {
+    "mtime": 1783481428.690349,
+    "ast_hash": "5160f3c997dc3b55b42e63677a72f545",
+    "semantic_hash": "5160f3c997dc3b55b42e63677a72f545"
+  },
+  "AutoQAC/Views/RestoreWindow.xaml.cs": {
+    "mtime": 1783493814.4884999,
+    "ast_hash": "45b56f3fb2017fdfb9a4d737dfa95771",
+    "semantic_hash": "45b56f3fb2017fdfb9a4d737dfa95771"
+  },
+  "AutoQAC/Views/SettingsContent.xaml": {
+    "mtime": 1783481428.6908586,
+    "ast_hash": "9c56400505d24568f1d3487e8333769f",
+    "semantic_hash": "9c56400505d24568f1d3487e8333769f"
+  },
+  "AutoQAC/Views/SettingsContent.xaml.cs": {
+    "mtime": 1783493835.3022263,
+    "ast_hash": "895e1fd6f6beb39e295ade6d7c5f9b23",
+    "semantic_hash": "895e1fd6f6beb39e295ade6d7c5f9b23"
+  },
+  "AutoQAC/Views/SettingsWindow.xaml.cs": {
+    "mtime": 1783481428.6913588,
+    "ast_hash": "1c2afe96155a7d4a70e0af8bb2d6df8e",
+    "semantic_hash": "1c2afe96155a7d4a70e0af8bb2d6df8e"
+  },
+  "AutoQAC/Views/SkipListContent.xaml": {
+    "mtime": 1783481428.691854,
+    "ast_hash": "6c31805065038702f67b493dccfb870a",
+    "semantic_hash": "6c31805065038702f67b493dccfb870a"
+  },
+  "AutoQAC/Views/SkipListContent.xaml.cs": {
+    "mtime": 1783493858.6951284,
+    "ast_hash": "019841ae3f7bfe1f6b43535341d176cd",
+    "semantic_hash": "019841ae3f7bfe1f6b43535341d176cd"
+  },
+  "AutoQAC/Views/SkipListWindow.xaml.cs": {
+    "mtime": 1783481428.691854,
+    "ast_hash": "12bd0ad23ad2b5a606948a934fad7993",
+    "semantic_hash": "12bd0ad23ad2b5a606948a934fad7993"
+  },
+  "AutoQAC.Tests/AutoQAC.Tests.csproj": {
+    "mtime": 1783481428.6251915,
+    "ast_hash": "71fdebb316df2e82bdff6524337686e5",
+    "semantic_hash": "71fdebb316df2e82bdff6524337686e5"
+  },
+  "AutoQAC.Tests/Helpers/DiagnosticSentinels.cs": {
+    "mtime": 1783481428.6251915,
+    "ast_hash": "862dc28f7aedebe5ba4688c7f7aa3733",
+    "semantic_hash": "862dc28f7aedebe5ba4688c7f7aa3733"
+  },
+  "AutoQAC.Tests/Integration/DependencyInjectionTests.cs": {
+    "mtime": 1784794762.7829735,
+    "ast_hash": "561edd928a0b31426fd93ccec14e8023",
+    "semantic_hash": "561edd928a0b31426fd93ccec14e8023"
+  },
+  "AutoQAC.Tests/Integration/GameSelectionIntegrationTests.cs": {
+    "mtime": 1783481428.6261916,
+    "ast_hash": "8c36731ea26a296760ce08954eab7ec3",
+    "semantic_hash": "8c36731ea26a296760ce08954eab7ec3"
+  },
+  "AutoQAC.Tests/Models/AppStateTests.cs": {
+    "mtime": 1783481428.626696,
+    "ast_hash": "f7852a3ea69ff016558ee353b21a7086",
+    "semantic_hash": "f7852a3ea69ff016558ee353b21a7086"
+  },
+  "AutoQAC.Tests/Models/BackupOperationResultTests.cs": {
+    "mtime": 1783481428.626696,
+    "ast_hash": "e22455507a4854cb70a254d227ae1f8e",
+    "semantic_hash": "e22455507a4854cb70a254d227ae1f8e"
+  },
+  "AutoQAC.Tests/Models/CleaningSessionResultTests.cs": {
+    "mtime": 1783481428.6272,
+    "ast_hash": "eb147b0abf571606ae9f9bbcc6e8e258",
+    "semantic_hash": "eb147b0abf571606ae9f9bbcc6e8e258"
+  },
+  "AutoQAC.Tests/Models/DiagnosticTextFormatterTests.cs": {
+    "mtime": 1783481428.6272,
+    "ast_hash": "e23be961351828e50779d2af9e2aa790",
+    "semantic_hash": "e23be961351828e50779d2af9e2aa790"
+  },
+  "AutoQAC.Tests/Models/Phase11ReportBoundaryTests.cs": {
+    "mtime": 1783481428.6276908,
+    "ast_hash": "c376609d2539ff5bb620bd82dd156ac2",
+    "semantic_hash": "c376609d2539ff5bb620bd82dd156ac2"
+  },
+  "AutoQAC.Tests/Models/PluginCleaningResultTests.cs": {
+    "mtime": 1783481428.6276908,
+    "ast_hash": "457f7d521ee625fa5b60eaf40e1b968b",
+    "semantic_hash": "457f7d521ee625fa5b60eaf40e1b968b"
+  },
+  "AutoQAC.Tests/Models/UserConfigurationCopyTests.cs": {
+    "mtime": 1783481428.628199,
+    "ast_hash": "a5beddd4401cd0af23d3a758e327d53c",
+    "semantic_hash": "a5beddd4401cd0af23d3a758e327d53c"
+  },
+  "AutoQAC.Tests/Services/AppShutdownDisposalTests.cs": {
+    "mtime": 1783481428.6286986,
+    "ast_hash": "cc44b13d9995010ec9c2e1dd2646a52e",
+    "semantic_hash": "cc44b13d9995010ec9c2e1dd2646a52e"
+  },
+  "AutoQAC.Tests/Services/BackupFileCopierTests.cs": {
+    "mtime": 1783481428.6291983,
+    "ast_hash": "c4f0e3a17f461a55988437d6ee359244",
+    "semantic_hash": "c4f0e3a17f461a55988437d6ee359244"
+  },
+  "AutoQAC.Tests/Services/BackupServiceTests.cs": {
+    "mtime": 1783481428.6291983,
+    "ast_hash": "86624ff9de84b81a75b601f7389120a6",
+    "semantic_hash": "86624ff9de84b81a75b601f7389120a6"
+  },
+  "AutoQAC.Tests/Services/CleaningServiceTests.cs": {
+    "mtime": 1783481428.6322145,
+    "ast_hash": "6cb2f6af6ee2861834acf913d7212de8",
+    "semantic_hash": "6cb2f6af6ee2861834acf913d7212de8"
+  },
+  "AutoQAC.Tests/Services/CleaningSessionTests.cs": {
+    "mtime": 1783494389.9704125,
+    "ast_hash": "67e9a201a3688fc95e7d940e70d39dde",
+    "semantic_hash": "67e9a201a3688fc95e7d940e70d39dde"
+  },
+  "AutoQAC.Tests/Services/Cleaning/BackupSessionCoordinatorTests.cs": {
+    "mtime": 1783481428.63021,
+    "ast_hash": "e036dd23d75d49c38da4811cfb328e03",
+    "semantic_hash": "e036dd23d75d49c38da4811cfb328e03"
+  },
+  "AutoQAC.Tests/Services/Cleaning/CleaningCommandReadinessTests.cs": {
+    "mtime": 1783481428.63021,
+    "ast_hash": "cbf6ce57eecfeae3572acf2e1ff4bb60",
+    "semantic_hash": "cbf6ce57eecfeae3572acf2e1ff4bb60"
+  },
+  "AutoQAC.Tests/Services/Cleaning/CleaningPreflightTests.cs": {
+    "mtime": 1783481428.6307228,
+    "ast_hash": "b731cd21d41ef3e12bead84393d5cb3b",
+    "semantic_hash": "b731cd21d41ef3e12bead84393d5cb3b"
+  },
+  "AutoQAC.Tests/Services/Cleaning/CleaningTerminationCoordinatorTests.cs": {
+    "mtime": 1783481428.6312225,
+    "ast_hash": "d8c4bfb41887840114d68cbc1cd7f044",
+    "semantic_hash": "d8c4bfb41887840114d68cbc1cd7f044"
+  },
+  "AutoQAC.Tests/Services/Cleaning/PluginCleaningRunnerTests.cs": {
+    "mtime": 1783481428.6317148,
+    "ast_hash": "86fe3419f5c03edf6885e74e89099581",
+    "semantic_hash": "86fe3419f5c03edf6885e74e89099581"
+  },
+  "AutoQAC.Tests/Services/Cleaning/PluginCleaningTests.cs": {
+    "mtime": 1783489110.856645,
+    "ast_hash": "12d62212218b82cbab9a20e930dbbe8a",
+    "semantic_hash": "12d62212218b82cbab9a20e930dbbe8a"
+  },
+  "AutoQAC.Tests/Services/Cleaning/PluginResultFinalizerTests.cs": {
+    "mtime": 1783481428.6317148,
+    "ast_hash": "c7c732fab6c3c310ca27d7760e8ff0db",
+    "semantic_hash": "c7c732fab6c3c310ca27d7760e8ff0db"
+  },
+  "AutoQAC.Tests/Services/ConfigWatcherServiceTests.cs": {
+    "mtime": 1783481428.6332145,
+    "ast_hash": "f51f7ef7a723a96555f0617603def61a",
+    "semantic_hash": "f51f7ef7a723a96555f0617603def61a"
+  },
+  "AutoQAC.Tests/Services/ConfigurationServiceSkipListTests.cs": {
+    "mtime": 1772187043.1635175,
+    "ast_hash": "1d9b7904418cf365fa08a8f84d1c4351",
+    "semantic_hash": "1d9b7904418cf365fa08a8f84d1c4351"
+  },
+  "AutoQAC.Tests/Services/ConfigurationServiceTests.cs": {
+    "mtime": 1783481428.635219,
+    "ast_hash": "38b16c33a0bddf3541cb6464b72358e7",
+    "semantic_hash": "38b16c33a0bddf3541cb6464b72358e7"
+  },
+  "AutoQAC.Tests/Services/Configuration/ConfigPersistenceCoordinatorTests.cs": {
+    "mtime": 1783481428.6337147,
+    "ast_hash": "8d7bb8af8aed46e603b20583e576f520",
+    "semantic_hash": "8d7bb8af8aed46e603b20583e576f520"
+  },
+  "AutoQAC.Tests/Services/Configuration/DiscoverySettingsModuleTests.cs": {
+    "mtime": 1783481428.6337147,
+    "ast_hash": "2c0ae817ae515794190c3a3e12d17bd4",
+    "semantic_hash": "2c0ae817ae515794190c3a3e12d17bd4"
+  },
+  "AutoQAC.Tests/Services/Configuration/Fakes/FakeUserConfigFileStore.cs": {
+    "mtime": 1783481428.6342254,
+    "ast_hash": "47afa2c9bc2c8713d292ba5e79c9f8fd",
+    "semantic_hash": "47afa2c9bc2c8713d292ba5e79c9f8fd"
+  },
+  "AutoQAC.Tests/Services/Configuration/UserConfigFileStoreTests.cs": {
+    "mtime": 1783481428.6342254,
+    "ast_hash": "5df8e3ff220511ceda436d05614f1feb",
+    "semantic_hash": "5df8e3ff220511ceda436d05614f1feb"
+  },
+  "AutoQAC.Tests/Services/GameDetectionServiceTests.cs": {
+    "mtime": 1772189103.7851124,
+    "ast_hash": "543f3c0a2f0ce9f5c9544ac6ed4fd8b5",
+    "semantic_hash": "543f3c0a2f0ce9f5c9544ac6ed4fd8b5"
+  },
+  "AutoQAC.Tests/Services/HangDetectionServiceTests.cs": {
+    "mtime": 1770462274.3197207,
+    "ast_hash": "974e69f7cca51561bfaf68dce662950b",
+    "semantic_hash": "974e69f7cca51561bfaf68dce662950b"
+  },
+  "AutoQAC.Tests/Services/JsonPidStoreTests.cs": {
+    "mtime": 1777429808.6304874,
+    "ast_hash": "928833db896040fd64a7114e8828286b",
+    "semantic_hash": "928833db896040fd64a7114e8828286b"
+  },
+  "AutoQAC.Tests/Services/LegacyMigrationServiceTests.cs": {
+    "mtime": 1783481428.6357217,
+    "ast_hash": "103c7b2446e587dcf7c0e1eaaa1fda1c",
+    "semantic_hash": "103c7b2446e587dcf7c0e1eaaa1fda1c"
+  },
+  "AutoQAC.Tests/Services/LogRetentionServicePathTests.cs": {
+    "mtime": 1773285023.9571319,
+    "ast_hash": "c0af58e65ce058f9325f514fd65a5c10",
+    "semantic_hash": "c0af58e65ce058f9325f514fd65a5c10"
+  },
+  "AutoQAC.Tests/Services/LogRetentionServiceTests.cs": {
+    "mtime": 1783481428.6357217,
+    "ast_hash": "4c69abca7ca15b99ed6040f73f2c4bee",
+    "semantic_hash": "4c69abca7ca15b99ed6040f73f2c4bee"
+  },
+  "AutoQAC.Tests/Services/MO2ValidationServiceTests.cs": {
+    "mtime": 1767955568.8823154,
+    "ast_hash": "d59d7e20efe2994539e064132078253a",
+    "semantic_hash": "d59d7e20efe2994539e064132078253a"
+  },
+  "AutoQAC.Tests/Services/Mo2InstanceServiceTests.cs": {
+    "mtime": 1783481428.6362178,
+    "ast_hash": "f5b005378801406d23a02ad48d9f3862",
+    "semantic_hash": "f5b005378801406d23a02ad48d9f3862"
+  },
+  "AutoQAC.Tests/Services/Phase11LogBoundaryTests.cs": {
+    "mtime": 1783481428.6362178,
+    "ast_hash": "48e55f2f4b31a8efdfbf7533fbc7960d",
+    "semantic_hash": "48e55f2f4b31a8efdfbf7533fbc7960d"
+  },
+  "AutoQAC.Tests/Services/PluginIssueApproximationModuleTests.cs": {
+    "mtime": 1784795489.9244106,
+    "ast_hash": "6b8a5be9b94ac2c46cb5cb07669f2e85",
+    "semantic_hash": "6b8a5be9b94ac2c46cb5cb07669f2e85"
+  },
+  "AutoQAC.Tests/Services/PluginLoadingServiceTests.cs": {
+    "mtime": 1783481428.6372223,
+    "ast_hash": "244ef8d2cf25fd4915cf8bccf8975a19",
+    "semantic_hash": "244ef8d2cf25fd4915cf8bccf8975a19"
+  },
+  "AutoQAC.Tests/Services/PluginRefreshDiscoveryPlannerCapabilityTests.cs": {
+    "mtime": 1783481428.6372223,
+    "ast_hash": "8a8484d0efdd802dad58a3cc10014d86",
+    "semantic_hash": "8a8484d0efdd802dad58a3cc10014d86"
+  },
+  "AutoQAC.Tests/Services/PluginRefreshDiscoveryPlannerFreshnessTests.cs": {
+    "mtime": 1783481428.637722,
+    "ast_hash": "047323ccca11e449813abc5743ed75e9",
+    "semantic_hash": "047323ccca11e449813abc5743ed75e9"
+  },
+  "AutoQAC.Tests/Services/PluginRefreshDiscoveryPlannerTests.cs": {
+    "mtime": 1783481428.6382143,
+    "ast_hash": "d69f35899a3a1b061987db5f2712f836",
+    "semantic_hash": "d69f35899a3a1b061987db5f2712f836"
+  },
+  "AutoQAC.Tests/Services/PluginRefreshModuleTests.cs": {
+    "mtime": 1784800887.1600008,
+    "ast_hash": "833fe857f580192b0b400b2fb8092c11",
+    "semantic_hash": "833fe857f580192b0b400b2fb8092c11"
+  },
+  "AutoQAC.Tests/Services/PluginRefreshPublicationRowsTests.cs": {
+    "mtime": 1784801071.918674,
+    "ast_hash": "1af5f5aa7afe6cda1b9bdd1b4dc7cdc8",
+    "semantic_hash": "1af5f5aa7afe6cda1b9bdd1b4dc7cdc8"
+  },
+  "AutoQAC.Tests/Services/PluginRefreshPublicationStoreTests.cs": {
+    "mtime": 1784801073.2489493,
+    "ast_hash": "71ff091ffea554e783c45c5e5199bf60",
+    "semantic_hash": "71ff091ffea554e783c45c5e5199bf60"
+  },
+  "AutoQAC.Tests/Services/PluginValidationServiceTests.cs": {
+    "mtime": 1770462261.0431368,
+    "ast_hash": "47c4afc0654259e65239edffc168679f",
+    "semantic_hash": "47c4afc0654259e65239edffc168679f"
+  },
+  "AutoQAC.Tests/Services/ProcessExecutionIntegrationTests.cs": {
+    "mtime": 1783481428.6392193,
+    "ast_hash": "12b3d647d95b18766cf1e93590b49c33",
+    "semantic_hash": "12b3d647d95b18766cf1e93590b49c33"
+  },
+  "AutoQAC.Tests/Services/ProcessExecutionServiceTests.cs": {
+    "mtime": 1783489110.8576446,
+    "ast_hash": "3d351bf4c537ccddd7bf84fd608269f9",
+    "semantic_hash": "3d351bf4c537ccddd7bf84fd608269f9"
+  },
+  "AutoQAC.Tests/Services/SingleInstanceGuardTests.cs": {
+    "mtime": 1777430040.9776063,
+    "ast_hash": "c110212b3d1f06f8cc719ef1f5b13f23",
+    "semantic_hash": "c110212b3d1f06f8cc719ef1f5b13f23"
+  },
+  "AutoQAC.Tests/Services/SkipListPolicyTests.cs": {
+    "mtime": 1783481428.6392193,
+    "ast_hash": "6d6aca971cde4889ed3bfc304b09d6f8",
+    "semantic_hash": "6d6aca971cde4889ed3bfc304b09d6f8"
+  },
+  "AutoQAC.Tests/Services/StateServiceTests.cs": {
+    "mtime": 1784800707.9999268,
+    "ast_hash": "e212c20743d0bbe2e09896efe6cbef21",
+    "semantic_hash": "e212c20743d0bbe2e09896efe6cbef21"
+  },
+  "AutoQAC.Tests/Services/UI/FileDialogServiceTests.cs": {
+    "mtime": 1783481428.6407301,
+    "ast_hash": "7779b1d3e8e4d12cb5e8c43aac53b23c",
+    "semantic_hash": "7779b1d3e8e4d12cb5e8c43aac53b23c"
+  },
+  "AutoQAC.Tests/Services/UI/InteractionTests.cs": {
+    "mtime": 1783481428.6407301,
+    "ast_hash": "5ecfbddda3b0ff483c7805e4c282103b",
+    "semantic_hash": "5ecfbddda3b0ff483c7805e4c282103b"
+  },
+  "AutoQAC.Tests/Services/UI/MessageDialogButtonMapperTests.cs": {
+    "mtime": 1783481428.6412296,
+    "ast_hash": "88c994206d83a265786b2da4e0ed5162",
+    "semantic_hash": "88c994206d83a265786b2da4e0ed5162"
+  },
+  "AutoQAC.Tests/Services/UI/SynchronousUiDispatcherTests.cs": {
+    "mtime": 1783481428.6412296,
+    "ast_hash": "72357b3f5bb3d1327201f28095502629",
+    "semantic_hash": "72357b3f5bb3d1327201f28095502629"
+  },
+  "AutoQAC.Tests/Services/XEditCommandBuilderTests.cs": {
+    "mtime": 1783481428.6417296,
+    "ast_hash": "26f8134b92de7a4f4bf41c646f096030",
+    "semantic_hash": "26f8134b92de7a4f4bf41c646f096030"
+  },
+  "AutoQAC.Tests/Services/XEditLogFileServiceTests.cs": {
+    "mtime": 1774942213.867458,
+    "ast_hash": "e6975680ae216e78944bde92490fa47e",
+    "semantic_hash": "e6975680ae216e78944bde92490fa47e"
+  },
+  "AutoQAC.Tests/Services/XEditOutputParserTests.cs": {
+    "mtime": 1772018957.6472743,
+    "ast_hash": "213442093b8c2304a48070dfdbbdd799",
+    "semantic_hash": "213442093b8c2304a48070dfdbbdd799"
+  },
+  "AutoQAC.Tests/TestInfrastructure/RecordingPluginRefreshModule.cs": {
+    "mtime": 1783481428.6417296,
+    "ast_hash": "6452c4c2d08d14369c0c14e1fbdfbcde",
+    "semantic_hash": "6452c4c2d08d14369c0c14e1fbdfbcde"
+  },
+  "AutoQAC.Tests/TestInfrastructure/SynchronousUiDispatcher.cs": {
+    "mtime": 1777172254.8036046,
+    "ast_hash": "d6d744a8381810b1e0644b4e8def943b",
+    "semantic_hash": "d6d744a8381810b1e0644b4e8def943b"
+  },
+  "AutoQAC.Tests/TestProcessHelper/AutoQAC.TestProcessHelper.csproj": {
+    "mtime": 1777430078.413838,
+    "ast_hash": "d8b6eae0e754dd6ed05b0a9478f9f394",
+    "semantic_hash": "d8b6eae0e754dd6ed05b0a9478f9f394"
+  },
+  "AutoQAC.Tests/TestProcessHelper/Program.cs": {
+    "mtime": 1783481428.6422365,
+    "ast_hash": "cb97072a3e754597adaafc502877400a",
+    "semantic_hash": "cb97072a3e754597adaafc502877400a"
+  },
+  "AutoQAC.Tests/ViewModels/CleaningCommandsViewModelTests.cs": {
+    "mtime": 1783481428.6427283,
+    "ast_hash": "4138a1c925eaa077bd0597956eea14ee",
+    "semantic_hash": "4138a1c925eaa077bd0597956eea14ee"
+  },
+  "AutoQAC.Tests/ViewModels/CleaningResultsViewModelTests.cs": {
+    "mtime": 1777172254.80461,
+    "ast_hash": "118249247fe206450ebebc74332b6121",
+    "semantic_hash": "118249247fe206450ebebc74332b6121"
+  },
+  "AutoQAC.Tests/ViewModels/ErrorDialogTests.cs": {
+    "mtime": 1783481428.6432314,
+    "ast_hash": "3ef256532a8a199f8e9cc470814db9fe",
+    "semantic_hash": "3ef256532a8a199f8e9cc470814db9fe"
+  },
+  "AutoQAC.Tests/ViewModels/MainWindowThreadingTests.cs": {
+    "mtime": 1783481428.6432314,
+    "ast_hash": "4649cd0c18988390e6edfc5e5eb991d1",
+    "semantic_hash": "4649cd0c18988390e6edfc5e5eb991d1"
+  },
+  "AutoQAC.Tests/ViewModels/MainWindowViewModelInitializationTests.cs": {
+    "mtime": 1783481428.6437285,
+    "ast_hash": "392f0c877a327073c6b48a99f44524ef",
+    "semantic_hash": "392f0c877a327073c6b48a99f44524ef"
+  },
+  "AutoQAC.Tests/ViewModels/MainWindowViewModelTests.cs": {
+    "mtime": 1784800637.3393133,
+    "ast_hash": "76ba91901c661ee92e53a047eb5de89d",
+    "semantic_hash": "76ba91901c661ee92e53a047eb5de89d"
+  },
+  "AutoQAC.Tests/ViewModels/PartialFormsWarningViewModelTests.cs": {
+    "mtime": 1777172254.807116,
+    "ast_hash": "f99e57eca65d312f3d0ba85cd04a9b95",
+    "semantic_hash": "f99e57eca65d312f3d0ba85cd04a9b95"
+  },
+  "AutoQAC.Tests/ViewModels/Phase11DiagnosticsBoundaryTests.cs": {
+    "mtime": 1783481428.6447358,
+    "ast_hash": "5c31bd6cbe54b011a7a3a9fdd23f14f9",
+    "semantic_hash": "5c31bd6cbe54b011a7a3a9fdd23f14f9"
+  },
+  "AutoQAC.Tests/ViewModels/PluginListViewModelTests.cs": {
+    "mtime": 1783481428.6452367,
+    "ast_hash": "e183c061bc6ffadecb3d7550eeea4d83",
+    "semantic_hash": "e183c061bc6ffadecb3d7550eeea4d83"
+  },
+  "AutoQAC.Tests/ViewModels/ProgressViewModelTests.cs": {
+    "mtime": 1783481428.6457276,
+    "ast_hash": "2781ca9a00df47b5c56adc1f8338a23c",
+    "semantic_hash": "2781ca9a00df47b5c56adc1f8338a23c"
+  },
+  "AutoQAC.Tests/ViewModels/RestoreViewModelTests.cs": {
+    "mtime": 1783481428.6457276,
+    "ast_hash": "a89bb8149fa9faf4d6bb5a59944971fc",
+    "semantic_hash": "a89bb8149fa9faf4d6bb5a59944971fc"
+  },
+  "AutoQAC.Tests/ViewModels/SettingsViewModelTests.cs": {
+    "mtime": 1783481428.6462362,
+    "ast_hash": "8f3cc0947957bf8b217ee7f1b70db1e8",
+    "semantic_hash": "8f3cc0947957bf8b217ee7f1b70db1e8"
+  },
+  "AutoQAC.Tests/ViewModels/SkipListViewModelTests.cs": {
+    "mtime": 1777172254.8081155,
+    "ast_hash": "25feb8dfb5315922fce0b912241d7716",
+    "semantic_hash": "25feb8dfb5315922fce0b912241d7716"
+  },
+  "AutoQAC.Tests/Views/BindingHelpersTests.cs": {
+    "mtime": 1783481428.6462362,
+    "ast_hash": "3340feb2ad3ab82b097de2a2a0385358",
+    "semantic_hash": "3340feb2ad3ab82b097de2a2a0385358"
+  },
+  "AutoQAC.Tests/Views/ViewSubscriptionLifecycleTests.cs": {
+    "mtime": 1783481428.6467276,
+    "ast_hash": "f2df41e23d038bcc7d8cd003ffb0a092",
+    "semantic_hash": "f2df41e23d038bcc7d8cd003ffb0a092"
+  }
+}

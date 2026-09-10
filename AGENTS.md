@@ -6,7 +6,7 @@ Guidance for coding agents working in this repository.
 
 - `AutoQAC` is a Windows-only WinUI 3 desktop app for running xEdit Quick Auto Clean (`-QAC`) safely, one plugin at a time.
 - `QueryPlugins` is a separate Mutagen-based analysis library for detecting ITMs, deleted references, and deleted navmeshes.
-- The solution currently includes `AutoQAC`, `AutoQAC.Tests`, `QueryPlugins`, and `QueryPlugins.Tests`.
+- The solution includes `AutoQAC`, `AutoQAC.Tests`, `AutoQAC.TestProcessHelper` (a test-only child process used by process/termination tests), `QueryPlugins`, and `QueryPlugins.Tests`.
 
 ## Essential Commands
 
@@ -15,26 +15,21 @@ dotnet build AutoQACSharp.slnx
 dotnet test AutoQACSharp.slnx
 dotnet run --project AutoQAC/AutoQAC.csproj
 dotnet build AutoQAC/AutoQAC.csproj -c Release
-dotnet clean AutoQACSharp.slnx
 ```
 
 ## Current Stack
 
-- .NET 10
-- C# 13 with nullable reference types enabled
-- `AutoQAC`: `net10.0-windows10.0.19041.0`
-- WinUI 3 with Microsoft Windows App SDK 2.2.0
-- CommunityToolkit.Mvvm 8.4.2 (source-generator MVVM)
-- Microsoft.Extensions.DependencyInjection 10.0.3
-- Serilog 4.3.1 with console and file sinks
-- YamlDotNet 16.3.0
-- Mutagen 0.53.1
-- xUnit 2.9.3, FluentAssertions 8.8.0, NSubstitute 5.3.0, coverlet 8.0.0
+- .NET 10, nullable reference types enabled, `LangVersion` set to `preview`.
+- `AutoQAC` targets `net10.0-windows10.0.19041.0` and is x64-only, self-contained, unpackaged (`WindowsPackageType=None`).
+- `QueryPlugins` and its tests target plain `net10.0`.
+- WinUI 3 / Microsoft Windows App SDK, CommunityToolkit.Mvvm (source-generator MVVM), Microsoft.Extensions.DependencyInjection, Serilog (console + file sinks), YamlDotNet, Mutagen.
+- Tests use xUnit, FluentAssertions, NSubstitute, and coverlet.
+- Exact package versions live in the `.csproj` files; check there rather than trusting this list. Versions are not uniform across projects.
 
 ## Current Architecture
 
 - `AutoQAC/Infrastructure` contains DI wiring and logging.
-- `AutoQAC/Services` contains the main business logic, grouped into `Backup`, `Cleaning`, `Configuration`, `GameDetection`, `MO2`, `Monitoring`, `Plugin`, `Process`, `State`, and `UI`.
+- `AutoQAC/Services` contains the main business logic, grouped into `Backup`, `Cleaning`, `Configuration`, `GameCapability`, `GameDetection`, `MO2`, `Monitoring`, `Plugin`, `Process`, `State`, and `UI`.
 - `AutoQAC/ViewModels/MainWindow` splits the main window into `ConfigurationViewModel`, `PluginListViewModel`, and `CleaningCommandsViewModel`, coordinated by `MainWindowViewModel`.
 - `MainWindow.xaml.cs` owns dialog/window interactions; ViewModels should not directly manipulate controls.
 - `IStateService` and `AppState` are the shared runtime state hub for cleaning progress, plugin lists, and session results.
@@ -45,7 +40,7 @@ dotnet clean AutoQACSharp.slnx
 
 - Sequential cleaning is a hard requirement. Do not parallelize plugin cleaning or xEdit launches.
 - `ProcessExecutionService` intentionally uses a single process slot.
-- `CleaningOrchestrator` owns the end-to-end session flow: flush pending config, validate environment, detect game and variant, apply skip lists, optionally back up plugins, launch xEdit, parse results, and finalize the session.
+- `ICleaningSession` / `CleaningSession` owns the end-to-end session flow: preflight (flush pending config, validate environment, detect game and variant, apply skip lists), optional plugin backup, xEdit launch, result parsing, and final state publication. Its seam is `StartAsync`, `PreviewAsync`, `ControlAsync`, and `HangDetected`; preflight, backup, process/termination, runner, and finalizer sit behind it as adapters. See `docs/adr/0001-replace-cleaning-orchestrator-seam.md` — the older `ICleaningOrchestrator` seam no longer exists.
 - Stop behavior is two-stage: graceful cancellation first, then force termination if needed.
 - Hang detection is CPU-based and flows through `IHangDetectionService` into the progress UI.
 - MO2 mode wraps xEdit with `ModOrganizer.exe run`.
@@ -63,7 +58,6 @@ dotnet clean AutoQACSharp.slnx
 - Use constructor injection through `ServiceCollectionExtensions`; avoid static mutable state and service locators.
 - Respect Windows-specific assumptions when touching registry probing, executable paths, or process handling.
 - If you touch Partial Forms support, verify end-to-end state flow first. The command-line flags exist, but the feature remains experimental.
-- Do not modify `Mutagen/`; treat it as read-only.
 
 ## Testing Notes
 
@@ -77,23 +71,52 @@ dotnet clean AutoQACSharp.slnx
 
 - `AutoQAC/App.xaml.cs`
 - `AutoQAC/Infrastructure/ServiceCollectionExtensions.cs`
-- `AutoQAC/Services/Cleaning/CleaningOrchestrator.cs`
+- `AutoQAC/Services/Cleaning/CleaningSession.cs`
+- `AutoQAC/Services/Cleaning/CleaningPreflight.cs`
 - `AutoQAC/Services/Process/ProcessExecutionService.cs`
 - `AutoQAC/Services/Configuration/ConfigurationService.cs`
 - `AutoQAC/Services/Plugin/PluginLoadingService.cs`
-- `AutoQAC Data/AutoQAC Main.yaml`
-- `AutoQAC Data/AutoQAC Settings.yaml`
+- `AutoQAC/Services/GameCapability/GameCapabilityCatalog.cs`
+- `AutoQAC/AutoQAC Data/AutoQAC Main.yaml` and `AutoQAC/AutoQAC Data/AutoQAC Settings.yaml` — the copies the app ships and reads. A second `AutoQAC Data/` at the repo root holds branding assets plus its own `AutoQAC Main.yaml`; the project only copies the `AutoQAC/` one to output.
 
 ## Mutagen Reference
 
 - Check `docs/mutagen/` first for fast lookups.
-- The curated docs are useful, but package references in this repo are on Mutagen 0.53.1. If something looks stale or mismatched, verify against the read-only `Mutagen/` submodule.
+- The curated docs may lag the pinned package version. If something looks stale or mismatched, verify against the read-only `Mutagen/` submodule.
 - Do not build, modify, or add files under `Mutagen/`.
 
 ## Common Pitfalls
 
-- Do not parallelize cleaning work.
-- Do not assume every game uses a file-based load order; check `PluginLoadingService` first.
-- Do not bypass `FlushPendingSavesAsync` before launching xEdit.
-- Do not claim UI test infrastructure that is not present.
+- Do not assume every game uses a file-based load order; check `GameCapabilityCatalog` and `PluginLoadingService` first.
+- Do not bypass `FlushPendingSavesAsync` before launching xEdit; `CleaningPreflight` is where the session does it.
 - Do not revert unrelated working-tree changes.
+
+## graphify
+
+This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+
+When the user types `/graphify`, use the installed graphify skill or instructions before doing anything else.
+
+Rules:
+- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- Dirty graphify-out/ files are expected after hooks or incremental updates; dirty graph files are not a reason to skip graphify. Only skip graphify if the task is about stale or incorrect graph output, or the user explicitly says not to use it.
+- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
+- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
+
+## Agent skills
+
+### Issue tracker
+
+Track issues locally under `.scratch/<feature>/`. Before creating, fetching,
+or updating tickets, read `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the five default triage roles. Before triaging tickets, read
+`docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Use the single-context layout: root `CONTEXT.md` and `docs/adr/`.
+Before exploring domain concepts, read `docs/agents/domain.md`.

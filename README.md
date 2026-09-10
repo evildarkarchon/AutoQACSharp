@@ -5,7 +5,7 @@ AutoQACSharp is a Windows desktop tool for sequential cleaning of Bethesda plugi
 ## Current Status
 
 - The desktop app is past the old "foundation stage". Core configuration, plugin loading, cleaning orchestration, backup/restore, result reporting, and test coverage are all in place.
-- The solution currently contains four projects: `AutoQAC`, `AutoQAC.Tests`, `QueryPlugins`, and `QueryPlugins.Tests`.
+- The solution contains `AutoQAC`, `AutoQAC.Tests`, `AutoQAC.TestProcessHelper` (a test-only child process), `QueryPlugins`, and `QueryPlugins.Tests`.
 - The UI uses WinUI 3 and the shipping app targets Windows (`net10.0-windows10.0.19041.0`) because it relies on Windows registry and process behavior for game discovery and xEdit integration.
 
 ## Implemented Features
@@ -41,13 +41,16 @@ Note: the dry-run preview is a readiness check only. The plugin list can show Mu
 ## Solution Layout
 
 ```text
-AutoQAC/             WinUI 3 desktop application
-AutoQAC.Tests/       Tests for the desktop app
-QueryPlugins/        Standalone Mutagen-based plugin analysis library
-QueryPlugins.Tests/  Tests for the analysis library
-AutoQAC Data/        Bundled YAML config and assets
-docs/mutagen/        Curated Mutagen reference docs
-Mutagen/             Read-only Mutagen git submodule
+AutoQAC/                        WinUI 3 desktop application
+AutoQAC/AutoQAC Data/           Bundled YAML config that ships with the app
+AutoQAC.Tests/                  Tests for the desktop app
+AutoQAC.Tests/TestProcessHelper/  Test-only child process used by process/termination tests
+QueryPlugins/                   Standalone Mutagen-based plugin analysis library
+QueryPlugins.Tests/             Tests for the analysis library
+AutoQAC Data/                   Branding assets and source YAML at the repo root
+docs/mutagen/                   Curated Mutagen reference docs
+docs/adr/                       Architecture decision records
+Mutagen/                        Read-only Mutagen git submodule
 ```
 
 ## Requirements
@@ -110,7 +113,7 @@ dotnet publish AutoQAC/AutoQAC.csproj -c Release -r win-x64 --self-contained tru
 
 ## Important Constraint
 
-Only one plugin can be cleaned at a time. `ProcessExecutionService` and `CleaningOrchestrator` intentionally serialize xEdit launches because xEdit relies on single-instance file locking.
+Only one plugin can be cleaned at a time. `ProcessExecutionService` and `CleaningSession` intentionally serialize xEdit launches because xEdit relies on single-instance file locking.
 
 ## Mutagen Reference Material
 

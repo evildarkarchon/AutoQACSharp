@@ -20,10 +20,18 @@ public sealed class LegacyMigrationService : ILegacyMigrationService
     private const string LegacyConfigFile = "AutoQAC Config.yaml";
     private const string CurrentConfigFile = "AutoQAC Settings.yaml";
     private const string BackupSubdirectory = "migration_backup";
-    private const string ParseFailureWarning = "Legacy config could not be migrated because it could not be parsed. See the latest AutoQAC log for technical details.";
-    private const string WriteFailureWarning = "Legacy config could not be migrated because the new settings file could not be written. See the latest AutoQAC log for technical details.";
-    private const string BackupFailureWarning = "Legacy config was migrated, but AutoQAC could not back up the original file. Original file was kept for safety. See the latest AutoQAC log for technical details.";
-    private const string DeleteFailureWarning = "Legacy config was migrated, but AutoQAC could not remove the original legacy file. See the latest AutoQAC log for technical details.";
+
+    private const string ParseFailureWarning =
+        "Legacy config could not be migrated because it could not be parsed. See the latest AutoQAC log for technical details.";
+
+    private const string WriteFailureWarning =
+        "Legacy config could not be migrated because the new settings file could not be written. See the latest AutoQAC log for technical details.";
+
+    private const string BackupFailureWarning =
+        "Legacy config was migrated, but AutoQAC could not back up the original file. Original file was kept for safety. See the latest AutoQAC log for technical details.";
+
+    private const string DeleteFailureWarning =
+        "Legacy config was migrated, but AutoQAC could not remove the original legacy file. See the latest AutoQAC log for technical details.";
 
     private readonly ISerializer _serializer;
     private readonly IDeserializer _deserializer;
@@ -75,7 +83,9 @@ public sealed class LegacyMigrationService : ILegacyMigrationService
         // Step 2: Check if C# config already exists -- skip migration (one-time bootstrap, not merge)
         if (File.Exists(currentPath))
         {
-            _logger.Information("[Migration] C# config already exists at {Path}, skipping migration (bootstrap only, no merge)", currentPath);
+            _logger.Information(
+                "[Migration] C# config already exists at {Path}, skipping migration (bootstrap only, no merge)",
+                currentPath);
             return MigrationResult.NotNeeded();
         }
 
@@ -138,7 +148,8 @@ public sealed class LegacyMigrationService : ILegacyMigrationService
         }
         catch (Exception ex)
         {
-            _logger.Warning("[Migration] Failed to create backup of legacy config: {Message}. Keeping original file.", ex.Message);
+            _logger.Warning("[Migration] Failed to create backup of legacy config: {Message}. Keeping original file.",
+                ex.Message);
             // Do NOT delete the original if backup failed
             return new MigrationResult(
                 Attempted: true,

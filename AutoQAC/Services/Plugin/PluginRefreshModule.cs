@@ -1,9 +1,7 @@
 using System;
-using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Reactive.Subjects;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
@@ -21,22 +19,17 @@ namespace AutoQAC.Services.Plugin;
 public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
 {
     private static readonly PluginRefreshActivity IdleActivity = new(false, false);
-    private static readonly PluginRefreshCommandAvailability EmptyCommands = new(false, false, false, false);
 
     private readonly IPluginRefreshDiscoveryPlanner _discoveryPlanner;
-    private readonly IPluginIssueApproximationService _pluginIssueApproximationService;
+    private readonly IPluginIssueApproximationModule _pluginIssueApproximationModule;
     private readonly IStateService _stateService;
     private readonly ISkipListPolicy _skipListPolicy;
     private readonly ILoggingService? _logger;
-    private readonly BehaviorSubject<PluginRefreshSnapshot> _snapshots;
+    private readonly PluginRefreshPublicationStore _publicationStore;
     private readonly IDisposable _stateSubscription;
     private readonly IDisposable? _userConfigurationSubscription;
     private readonly IDisposable? _skipListSubscription;
-    private readonly Lock _snapshotLock = new();
 
-    private PluginRefreshSnapshot _currentSnapshot;
-    private PluginRefreshPublication _currentPublication;
-    private PluginRefreshDiscoveryFreshnessToken? _currentPublicationFreshnessToken;
     private CancellationTokenSource? _activeRefreshCts;
     private long _activeGeneration;
     private int _freshnessRefreshVersion;
@@ -47,25 +40,24 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
     /// <summary>
     /// Initializes a Plugin refresh module with the adapters needed for context assembly, publication, and AppState compatibility.
     /// </summary>
-    public PluginRefreshModule(
+    internal PluginRefreshModule(
         IPluginRefreshDiscoveryPlanner discoveryPlanner,
-        IPluginIssueApproximationService pluginIssueApproximationService,
+        IPluginIssueApproximationModule pluginIssueApproximationModule,
         IStateService stateService,
         ISkipListPolicy skipListPolicy,
+        PluginRefreshPublicationStore publicationStore,
         ILoggingService? logger = null,
         IConfigurationService? configurationService = null)
     {
         _discoveryPlanner = discoveryPlanner;
-        _pluginIssueApproximationService = pluginIssueApproximationService;
+        _pluginIssueApproximationModule = pluginIssueApproximationModule;
         _stateService = stateService;
         _skipListPolicy = skipListPolicy;
         _logger = logger;
+        _publicationStore = publicationStore;
 
         _lastIsCleaning = _stateService.CurrentState.IsCleaning;
         _lastDiscoveryAffectingState = DiscoveryAffectingState.From(_stateService.CurrentState);
-        _currentSnapshot = CreateInitialSnapshot(_stateService.CurrentState);
-        _currentPublication = CreateMissingPublication(_currentSnapshot);
-        _snapshots = new BehaviorSubject<PluginRefreshSnapshot>(_currentSnapshot);
         _stateSubscription = _stateService.StateChanged.Subscribe(new StateChangedObserver(OnAppStateChanged));
         if (configurationService is not null)
         {
@@ -77,7 +69,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
     }
 
     /// <inheritdoc />
-    public IObservable<PluginRefreshSnapshot> Snapshots => _snapshots;
+    public IObservable<PluginRefreshSnapshot> Snapshots => _publicationStore.Snapshots;
 
     /// <inheritdoc />
     public Task<PluginRefreshPublication> GetCurrentPublicationAsync(CancellationToken cancellationToken = default) =>
@@ -87,13 +79,9 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         bool publishIfChanged,
         CancellationToken cancellationToken = default)
     {
-        PluginRefreshPublication publication;
-        PluginRefreshDiscoveryFreshnessToken? freshnessToken;
-        lock (_snapshotLock)
-        {
-            publication = _currentPublication;
-            freshnessToken = _currentPublicationFreshnessToken;
-        }
+        var inspection = _publicationStore.GetFreshnessInspection();
+        var publication = inspection.Publication;
+        var freshnessToken = inspection.FreshnessToken;
 
         if (freshnessToken is null || publication.DiscoveryPlan is null)
         {
@@ -108,7 +96,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         var refreshedPublication = publication with { Freshness = freshness };
         if (publishIfChanged)
         {
-            PublishFreshnessIfCurrent(publication, freshnessToken, refreshedPublication);
+            _publicationStore.PublishFreshnessIfCurrent(publication, freshnessToken, refreshedPublication.Freshness);
         }
 
         return refreshedPublication;
@@ -140,10 +128,10 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         _stateSubscription.Dispose();
         _userConfigurationSubscription?.Dispose();
         _skipListSubscription?.Dispose();
+        CancelActiveRefresh(PluginRefreshCancelReason.Disposed);
         var cts = Interlocked.Exchange(ref _activeRefreshCts, null);
-        cts?.Cancel();
         cts?.Dispose();
-        _snapshots.Dispose();
+        _publicationStore.Dispose();
     }
 
     private async Task<PluginRefreshSnapshot> RefreshGameAsync(
@@ -153,29 +141,30 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
     {
         using var linkedCts = CreateAndActivateGeneration(cancellationToken, out var generation);
         var token = linkedCts.Token;
-        var acceptedSnapshot = GetCurrentSnapshot();
+        var acceptedSnapshot = _publicationStore.GetCurrentSnapshot();
         var configuration = acceptedSnapshot.Configuration;
         var keepExistingRows = gameType != GameType.Unknown && gameType == acceptedSnapshot.GameType;
         if (!keepExistingRows)
         {
-            ClearStaleRowsForRefreshStart(gameType);
+            _publicationStore.ClearRowsForRefreshStart(gameType);
         }
 
-        PublishSnapshot(new PluginRefreshSnapshot(
+        _publicationStore.PublishSnapshot(new PluginRefreshSnapshot(
             generation,
             gameType,
             keepExistingRows ? acceptedSnapshot.Rows : [],
             configuration,
             new PluginRefreshActivity(IsPluginRefreshRunning: true, IsIssueApproximationRefreshRunning: false),
-            EmptyCommands,
-            gameType == GameType.Unknown ? "No game selected" : $"Loading plugins for {gameType}..."));
+            PluginRefreshPublicationStore.EmptyCommands,
+            gameType == GameType.Unknown ? "No game selected" : $"Loading plugins for {gameType}..."),
+            GetAffordance(gameType, configuration));
 
         try
         {
             if (gameType == GameType.Unknown)
             {
                 PublishNoGameSelected(generation);
-                return GetCurrentSnapshot();
+                return _publicationStore.GetCurrentSnapshot();
             }
 
             var planResult = await _discoveryPlanner.CreatePlanAsync(
@@ -183,36 +172,38 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                     token)
                 .ConfigureAwait(false);
             configuration = planResult.Configuration;
-            if (!IsVisible(generation, token)) return GetCurrentSnapshot();
+            if (!IsVisible(generation, token)) return _publicationStore.GetCurrentSnapshot();
 
             PublishRuntimeConfiguration(configuration, gameType);
-            PublishSnapshotFromState(
+            _publicationStore.PublishSnapshotFromState(
                 generation,
                 gameType,
                 configuration,
                 new PluginRefreshActivity(IsPluginRefreshRunning: true, IsIssueApproximationRefreshRunning: false),
-                $"Loading plugins for {gameType}...");
+                $"Loading plugins for {gameType}...",
+                GetAffordance(gameType, configuration));
 
             if (planResult.Plan is null)
             {
-                _stateService.SetPluginsToClean([]);
-                PublishMissingPublicationFromState(
+                _publicationStore.ClearCompatibilityRows();
+                _publicationStore.PublishMissingPublicationFromState(
                     generation,
                     gameType,
                     configuration,
                     IdleActivity,
-                    GetPlanStatusText(planResult, gameType));
-                return GetCurrentSnapshot();
+                    GetPlanStatusText(planResult, gameType),
+                    GetAffordance(gameType, configuration));
+                return _publicationStore.GetCurrentSnapshot();
             }
 
             var plan = planResult.Plan;
             var freshnessToken = await _discoveryPlanner.CreateFreshnessTokenAsync(plan, token).ConfigureAwait(false);
             var loadedPlugins = await _discoveryPlanner.LoadPluginsAsync(plan, token).ConfigureAwait(false);
-            if (!IsVisible(generation, token)) return GetCurrentSnapshot();
+            if (!IsVisible(generation, token)) return _publicationStore.GetCurrentSnapshot();
 
             if (loadedPlugins.Plugins.Count == 0)
             {
-                PublishAcceptedPublication(
+                _publicationStore.PublishAcceptedPublication(
                     generation,
                     gameType,
                     plan,
@@ -220,8 +211,9 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                     configuration,
                     [],
                     IdleActivity,
-                    GetNoPluginsFoundMessage(plan));
-                return GetCurrentSnapshot();
+                    GetNoPluginsFoundMessage(plan),
+                    GetAffordance(gameType, configuration));
+                return _publicationStore.GetCurrentSnapshot();
             }
 
             var skipEvaluation = await _skipListPolicy.EvaluateAsync(
@@ -230,69 +222,81 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                     plan.DisableSkipLists,
                     token)
                 .ConfigureAwait(false);
-            if (!IsVisible(generation, token)) return GetCurrentSnapshot();
+            if (!IsVisible(generation, token)) return _publicationStore.GetCurrentSnapshot();
 
-            var initialApproximation = plan.CanAttemptIssueApproximation
-                ? PluginIssueApproximation.Pending
-                : PluginIssueApproximation.Unavailable;
-            var publishedRows = PluginRefreshPublicationRows.Accept(
+            // Hidden Skip-list rows remain dependency context but never become targets, so begin
+            // every row terminal and mark only this generation's authoritative targets Pending.
+            var acceptedRows = PluginRefreshPublicationRows.Accept(
                 skipEvaluation.Decisions,
-                initialApproximation,
+                PluginIssueApproximation.Unavailable,
                 _stateService.CurrentState.ExcludedPluginPaths);
+            // Reuse accepted row keys verbatim so result publication cannot drift back to filename correlation.
+            var targets = plan.CanAttemptIssueApproximation
+                ? acceptedRows.Rows
+                    .Where(row => !row.IsSkippedByPolicy)
+                    .Select(row => row.Key)
+                    .ToList()
+                : [];
+            var targetLookup = PluginRefreshPublicationRows.CreateTargetLookup(targets);
+            var publishedRows = targets.Count == 0
+                ? acceptedRows
+                : PluginRefreshPublicationRows.ApplyApproximationToTargets(
+                    acceptedRows.Rows,
+                    targetLookup,
+                    PluginIssueApproximation.Pending).Commit;
             var rows = publishedRows.Rows.Select(row => row.Plugin).ToList();
+            var issueActivity = targets.Count == 0
+                ? IdleActivity
+                : new PluginRefreshActivity(
+                    IsPluginRefreshRunning: true,
+                    IsIssueApproximationRefreshRunning: true);
 
-            PublishAcceptedPublication(
+            _publicationStore.PublishAcceptedPublication(
                 generation,
                 plan.GameType,
                 plan,
                 freshnessToken,
                 configuration,
                 publishedRows.Rows,
-                new PluginRefreshActivity(IsPluginRefreshRunning: true, IsIssueApproximationRefreshRunning: false),
-                $"Loading plugins for {plan.GameType}...");
+                issueActivity,
+                plan.CanAttemptIssueApproximation
+                    ? targets.Count == 0
+                        ? "Refreshed 0 plugin approximations."
+                        : $"Analyzing 0 of {targets.Count} plugins."
+                    : $"Loading plugins for {plan.GameType}...",
+                GetAffordance(plan.GameType, configuration));
 
             if (!plan.CanAttemptIssueApproximation)
             {
-                PublishCurrentPublication(
+                _publicationStore.PublishCurrentPublication(
                     generation,
                     plan.GameType,
                     configuration,
                     IdleActivity,
-                    "Approximation refresh is not available for this game.");
-                return GetCurrentSnapshot();
+                    "Approximation refresh is not available for this game.",
+                    GetAffordance(plan.GameType, configuration));
+                return _publicationStore.GetCurrentSnapshot();
             }
 
-            var dataFolder = ResolveDataFolder(plan, rows);
-            var targets = skipEvaluation.Decisions
-                .Where(decision => !decision.ShouldSkipByPolicy)
-                .Select(decision => new PluginRefreshRowKey(
-                    decision.Plugin.FileName,
-                    decision.Plugin.FullPath))
-                .ToList();
-            var targetLookup = PluginRefreshPublicationRows.CreateTargetLookup(targets);
-            var issueActivity = new PluginRefreshActivity(
-                IsPluginRefreshRunning: true,
-                IsIssueApproximationRefreshRunning: true);
-            PublishCurrentPublication(
-                generation,
-                plan.GameType,
-                configuration,
-                issueActivity,
-                targets.Count == 0 ? "Refreshed 0 plugin approximations." : $"Analyzing 0 of {targets.Count} selected plugins.");
+            if (targets.Count == 0)
+            {
+                return _publicationStore.GetCurrentSnapshot();
+            }
 
             try
             {
+                var dataFolder = ResolveDataFolder(plan, rows.FirstOrDefault()?.FullPath);
+                var request = CreateInitialApproximationRequest(
+                    plan,
+                    dataFolder,
+                    publishedRows.Rows,
+                    targets);
                 var updatedCount = 0;
-                await AnalyzeTargetsAsync(
-                        plan,
-                        dataFolder,
-                        targets,
-                        result => PublishApproximationResult(
+                await _pluginIssueApproximationModule.AnalyzeAsync(
+                        request,
+                        result => PublishInitialApproximationResult(
                             generation,
                             token,
-                            plan.GameType,
-                            configuration,
-                            issueActivity,
                             targetLookup,
                             result,
                             ref updatedCount),
@@ -301,239 +305,195 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
 
                 if (IsVisible(generation, token))
                 {
-                    PublishCurrentPublication(
+                    _publicationStore.TryFinalizeInitialApproximation(
                         generation,
-                        plan.GameType,
-                        configuration,
-                        IdleActivity,
-                        $"Refreshed {Volatile.Read(ref updatedCount)} plugin approximations.");
+                        $"Refreshed {Volatile.Read(ref updatedCount)} plugin approximations.",
+                        GetAffordance(plan.GameType, configuration),
+                        () => IsVisible(generation, token),
+                        out _);
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 _logger?.Error(ex, "Failed to refresh plugin issue approximations");
-                PublishApproximationFailure(
+                _publicationStore.TryFinalizeInitialApproximation(
                     generation,
-                    token,
-                    plan.GameType,
-                    configuration,
-                    targetLookup,
-                    "Approximation refresh failed.");
+                    "Approximation refresh failed.",
+                    GetAffordance(plan.GameType, configuration),
+                    () => IsVisible(generation, token),
+                    out _);
             }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
             // Superseded and lifecycle cancellations are ordinary Plugin refresh control flow.
+            var snapshot = _publicationStore.GetCurrentSnapshot();
+            _publicationStore.TryFinalizeInitialApproximation(
+                generation,
+                snapshot.StatusText,
+                GetAffordance(snapshot),
+                () => generation == Volatile.Read(ref _activeGeneration),
+                out _);
         }
         finally
         {
             ReleaseGeneration(linkedCts);
         }
 
-        return GetCurrentSnapshot();
+        return _publicationStore.GetCurrentSnapshot();
     }
 
-    private async Task<PluginRefreshSnapshot> RefreshSelectedIssueApproximationsAsync(CancellationToken cancellationToken)
+    /// <summary>
+    /// Reanalyzes selected rows from one fresh accepted publication and preserves terminal row state.
+    /// </summary>
+    /// <param name="cancellationToken">Token that cancels the active selected-reanalysis generation.</param>
+    /// <returns>The current visible snapshot after rejection, completion, failure, or cancellation.</returns>
+    private async Task<PluginRefreshSnapshot> RefreshSelectedIssueApproximationsAsync(
+        CancellationToken cancellationToken)
     {
-        var acceptedSnapshot = GetCurrentSnapshot();
-        var selectedTargets = acceptedSnapshot.Rows
-            .Where(row => row.IsSelected)
-            .Select(row => row.Key)
-            .ToList();
-
-        if (selectedTargets.Count == 0)
-        {
-            return PublishSnapshot(acceptedSnapshot with
-            {
-                Activity = IdleActivity,
-                StatusText = "Select plugins to refresh."
-            });
-        }
-
         using var linkedCts = CreateAndActivateGeneration(cancellationToken, out var generation);
         var token = linkedCts.Token;
+        var freshnessVersion = Volatile.Read(ref _freshnessRefreshVersion);
 
         try
         {
-            var planResult = await GetPlanForSelectedRefreshAsync(token).ConfigureAwait(false);
-            if (planResult.Plan is null)
+            // Selected reanalysis must prove the accepted row identities are still current before
+            // any row becomes Pending; rebuilding a plan here would combine new facts with old keys.
+            var publication = await GetCurrentPublicationWithFreshnessAsync(
+                    publishIfChanged: true,
+                    token)
+                .ConfigureAwait(false);
+            if (!IsVisible(generation, token))
             {
-                PublishSnapshot(acceptedSnapshot with
-                {
-                    Generation = generation,
-                    Activity = IdleActivity,
-                    Configuration = planResult.Configuration,
-                    StatusText = planResult.Status == PluginRefreshDiscoveryPlanStatus.NoGameSelected
-                        ? "Approximation refresh is not available for this game."
-                        : GetPlanStatusText(planResult, _stateService.CurrentState.CurrentGameType)
-                });
-                return GetCurrentSnapshot();
+                return _publicationStore.GetCurrentSnapshot();
             }
 
-            var plan = planResult.Plan;
-            var configuration = planResult.Configuration;
+            var hasFreshnessLease =
+                freshnessVersion == Volatile.Read(ref _freshnessRefreshVersion);
+            if (!hasFreshnessLease ||
+                !publication.Freshness.IsFresh ||
+                publication.DiscoveryPlan is null)
+            {
+                _publicationStore.TryPublishSelectedIdleStatus(
+                    generation,
+                    "Run a full Plugin refresh before refreshing selected approximations.",
+                    GetAffordance(publication),
+                    () => IsVisible(generation, token),
+                    out _);
+                return _publicationStore.GetCurrentSnapshot();
+            }
+
+            var plan = publication.DiscoveryPlan;
+            var configuration = publication.Configuration;
             if (!plan.CanAttemptIssueApproximation)
             {
-                PublishCurrentPublication(
+                _publicationStore.TryPublishSelectedIdleStatus(
                     generation,
-                    plan.GameType,
-                    configuration,
-                    IdleActivity,
-                    "Approximation refresh is not available for this game.");
-                return GetCurrentSnapshot();
+                    "Approximation refresh is not available for this game.",
+                    GetAffordance(plan.GameType, configuration),
+                    () =>
+                        IsVisible(generation, token) &&
+                        freshnessVersion == Volatile.Read(ref _freshnessRefreshVersion),
+                    out _);
+                return _publicationStore.GetCurrentSnapshot();
             }
 
-            var targetLookup = PluginRefreshPublicationRows.CreateTargetLookup(selectedTargets);
-            MarkTargetsPending(plan.GameType, selectedTargets, targetLookup);
-            var issueActivity = new PluginRefreshActivity(
-                IsPluginRefreshRunning: false,
-                IsIssueApproximationRefreshRunning: true);
-            PublishCurrentPublication(
+            var start = _publicationStore.TryBeginSelectedIssueApproximation(
+                publication,
                 generation,
-                plan.GameType,
-                configuration,
-                issueActivity,
-                $"Analyzing 0 of {selectedTargets.Count} selected plugins.");
+                GetAffordance(plan.GameType, configuration),
+                () =>
+                    IsVisible(generation, token) &&
+                    freshnessVersion == Volatile.Read(ref _freshnessRefreshVersion));
+            if (start.Status == PluginRefreshSelectedIssueApproximationStartStatus.Rejected)
+            {
+                _publicationStore.TryPublishSelectedIdleStatus(
+                    generation,
+                    "Run a full Plugin refresh before refreshing selected approximations.",
+                    GetAffordance(plan.GameType, configuration),
+                    () => IsVisible(generation, token),
+                    out _);
+                return _publicationStore.GetCurrentSnapshot();
+            }
 
-            var dataFolder = ResolveDataFolder(
-                plan,
-                PluginRefreshPublicationRows.CreateRowsFromTargets(plan.GameType, selectedTargets));
+            if (start.Status == PluginRefreshSelectedIssueApproximationStartStatus.NoTargets)
+            {
+                _publicationStore.TryPublishSelectedIdleStatus(
+                    generation,
+                    "Select plugins to refresh.",
+                    GetAffordance(plan.GameType, configuration),
+                    () =>
+                        IsVisible(generation, token) &&
+                        freshnessVersion == Volatile.Read(ref _freshnessRefreshVersion),
+                    out _);
+                return _publicationStore.GetCurrentSnapshot();
+            }
+
+            var operation = start.Operation!;
+            var request = CreateSelectedApproximationRequest(operation);
             var updatedCount = 0;
-            await AnalyzeTargetsAsync(
-                    plan,
-                    dataFolder,
-                    selectedTargets,
-                    result => PublishApproximationResult(
-                        generation,
-                        token,
-                        plan.GameType,
-                        configuration,
-                        issueActivity,
-                        targetLookup,
-                        result,
-                        ref updatedCount),
+            await _pluginIssueApproximationModule.AnalyzeAsync(
+                    request,
+                    result =>
+                    {
+                        if (_publicationStore.TryPublishSelectedApproximationResult(
+                                generation,
+                                result,
+                                GetAffordance(plan.GameType, configuration),
+                                () => IsVisible(generation, token)))
+                        {
+                            Interlocked.Increment(ref updatedCount);
+                        }
+                    },
                     token)
                 .ConfigureAwait(false);
 
             if (IsVisible(generation, token))
             {
-                PublishCurrentPublication(
+                _publicationStore.TryFinalizeSelectedIssueApproximation(
                     generation,
-                    plan.GameType,
-                    configuration,
-                    IdleActivity,
-                    $"Updated {Volatile.Read(ref updatedCount)} selected plugin approximations.");
+                    PluginRefreshSelectedIssueApproximationDisposition.Unavailable,
+                    $"Updated {Volatile.Read(ref updatedCount)} selected plugin approximations.",
+                    GetAffordance(plan.GameType, configuration),
+                    () => IsVisible(generation, token),
+                    out _);
             }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
-            // Manual cancellation publishes the visible canceled snapshot in CancelActiveRefresh.
+            var snapshot = _publicationStore.GetCurrentSnapshot();
+            _publicationStore.TryFinalizeSelectedIssueApproximation(
+                generation,
+                PluginRefreshSelectedIssueApproximationDisposition.RestorePrior,
+                "Approximation refresh canceled.",
+                GetAffordance(snapshot),
+                () => generation == Volatile.Read(ref _activeGeneration),
+                out _);
         }
         catch (Exception ex)
         {
             _logger?.Error(ex, "Failed to refresh selected plugin issue approximations");
-            var snapshot = GetCurrentSnapshot();
-            PublishApproximationFailure(
+            var snapshot = _publicationStore.GetCurrentSnapshot();
+            _publicationStore.TryFinalizeSelectedIssueApproximation(
                 generation,
-                token,
-                snapshot.GameType,
-                snapshot.Configuration,
-                PluginRefreshPublicationRows.CreateTargetLookup(selectedTargets),
-                "Approximation refresh failed.");
+                PluginRefreshSelectedIssueApproximationDisposition.Unavailable,
+                "Approximation refresh failed.",
+                GetAffordance(snapshot),
+                () => IsVisible(generation, token),
+                out _);
         }
         finally
         {
             ReleaseGeneration(linkedCts);
         }
 
-        return GetCurrentSnapshot();
+        return _publicationStore.GetCurrentSnapshot();
     }
 
     private PluginRefreshSnapshot ApplySelectionChange(PluginSelectionChange change)
     {
-        if (TryApplySelectionChangeToPublication(change, out var publicationSnapshot))
-        {
-            return publicationSnapshot;
-        }
-
-        return ApplySelectionChangeToState(change);
-    }
-
-    private bool TryApplySelectionChangeToPublication(
-        PluginSelectionChange change,
-        out PluginRefreshSnapshot snapshot)
-    {
-        PluginRefreshPublication publication;
-        PluginRefreshDiscoveryFreshnessToken? freshnessToken;
-        lock (_snapshotLock)
-        {
-            publication = _currentPublication;
-            freshnessToken = _currentPublicationFreshnessToken;
-        }
-
-        if (publication.DiscoveryPlan is null || freshnessToken is null)
-        {
-            snapshot = null!;
-            return false;
-        }
-
-        snapshot = GetCurrentSnapshot();
-        if (publication.VisibleRows.Count == 0)
-        {
-            return true;
-        }
-
-        var selection = PluginRefreshPublicationRows.ApplySelectionChange(publication.Rows, change);
-        if (!selection.WasTargetFound)
-        {
-            return true;
-        }
-
-        var nextPublication = publication with
-        {
-            Rows = selection.Commit.Rows,
-            VisibleRows = selection.Commit.VisibleRows
-        };
-        TryPublishSelectionPublicationIfCurrent(
-            publication,
-            nextPublication,
-            freshnessToken,
-            selection.Commit.Mirror,
-            out snapshot);
-        return true;
-    }
-
-    private PluginRefreshSnapshot ApplySelectionChangeToState(PluginSelectionChange change)
-    {
-        var snapshot = GetCurrentSnapshot();
-        var visibleRows = snapshot.Rows.ToList();
-        if (visibleRows.Count == 0)
-        {
-            return snapshot;
-        }
-
-        var targetFound = false;
-        _stateService.UpdateExcludedPlugins(current =>
-        {
-            var result = PluginRefreshPublicationRows.ApplyStateSelectionChange(
-                visibleRows,
-                current,
-                change);
-            targetFound = result.WasTargetFound;
-            return result.ExcludedPluginPaths;
-        });
-
-        if (!targetFound)
-        {
-            return snapshot;
-        }
-
-        return PublishCurrentPublication(
-            snapshot.Generation,
-            snapshot.GameType,
-            snapshot.Configuration,
-            snapshot.Activity,
-            snapshot.StatusText);
+        var snapshot = _publicationStore.GetCurrentSnapshot();
+        return _publicationStore.ApplySelectionChange(change, GetAffordance(snapshot));
     }
 
     private PluginRefreshSnapshot CancelActiveRefresh(PluginRefreshCancelReason reason)
@@ -551,43 +511,61 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             }
         }
 
-        var snapshot = GetCurrentSnapshot();
-        if (reason == PluginRefreshCancelReason.Disposed)
+        var snapshot = _publicationStore.GetCurrentSnapshot();
+        var statusText = reason == PluginRefreshCancelReason.Manual
+            ? "Approximation refresh canceled."
+            : snapshot.StatusText;
+        if (!snapshot.Activity.IsPluginRefreshRunning &&
+            snapshot.Activity.IsIssueApproximationRefreshRunning &&
+            _publicationStore.TryFinalizeSelectedIssueApproximation(
+                snapshot.Generation,
+                PluginRefreshSelectedIssueApproximationDisposition.RestorePrior,
+                statusText,
+                GetAffordance(snapshot),
+                () => snapshot.Generation == Volatile.Read(ref _activeGeneration),
+                out var finalizedSelected))
         {
-            return snapshot;
+            return finalizedSelected;
         }
 
-        return PublishCurrentPublication(
+        if (snapshot.Activity.IsPluginRefreshRunning &&
+            snapshot.Activity.IsIssueApproximationRefreshRunning &&
+            _publicationStore.TryFinalizeInitialApproximation(
+                snapshot.Generation,
+                statusText,
+                GetAffordance(snapshot),
+                () => snapshot.Generation == Volatile.Read(ref _activeGeneration),
+                out var finalized))
+        {
+            return finalized;
+        }
+
+        if (reason == PluginRefreshCancelReason.Disposed)
+        {
+            return _publicationStore.GetCurrentSnapshot();
+        }
+
+        return _publicationStore.PublishCurrentPublication(
             snapshot.Generation,
             snapshot.GameType,
             snapshot.Configuration,
             IdleActivity,
-            reason == PluginRefreshCancelReason.Manual
-                ? "Approximation refresh canceled."
-                : snapshot.StatusText);
+            statusText,
+            GetAffordance(snapshot));
     }
 
     private void PublishNoGameSelected(long generation)
     {
         _stateService.UpdateState(state => state with { CurrentGameType = GameType.Unknown });
-        _stateService.SetPluginsToClean([]);
-        PublishMissingPublicationFromState(
+        _publicationStore.ClearCompatibilityRows();
+        var configuration = _publicationStore.CreateConfigurationProjectionFromCurrentState();
+        _publicationStore.PublishMissingPublicationFromState(
             generation,
             GameType.Unknown,
-            CreateConfigurationProjectionFromState(_stateService.CurrentState),
+            configuration,
             IdleActivity,
-            "No game selected");
-    }
-
-    private void ClearStaleRowsForRefreshStart(GameType gameType)
-    {
-        // Start/Preview gates read AppState, so clear stale rows before async discovery can be canceled.
-        _stateService.UpdateState(state => state with
-        {
-            CurrentGameType = gameType,
-            PluginsToClean = Array.Empty<PluginInfo>().ToList().AsReadOnly(),
-            ExcludedPluginPaths = Array.Empty<string>().ToFrozenSet(StringComparer.OrdinalIgnoreCase)
-        });
+            "No game selected",
+            GetAffordance(GameType.Unknown, configuration));
     }
 
     private CancellationTokenSource CreateAndActivateGeneration(
@@ -595,9 +573,22 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         out long generation)
     {
         var cts = CancellationTokenSource.CreateLinkedTokenSource(externalToken);
-        generation = Interlocked.Increment(ref _activeGeneration);
+        var activatedGeneration = Interlocked.Increment(ref _activeGeneration);
+        generation = activatedGeneration;
         var previous = Interlocked.Exchange(ref _activeRefreshCts, cts);
         previous?.Cancel(); // do not dispose another generation's live token source
+        var snapshot = _publicationStore.GetCurrentSnapshot();
+        _publicationStore.TryFinalizeSelectedIssueApproximation(
+            snapshot.Generation,
+            PluginRefreshSelectedIssueApproximationDisposition.RestorePrior,
+            snapshot.StatusText,
+            GetAffordance(snapshot),
+            () => activatedGeneration == Volatile.Read(ref _activeGeneration),
+            out _);
+        // The generation flip blocks old callbacks before retained rows are terminalized for the
+        // replacement snapshot, preventing an inactive Pending estimate from surviving supersession.
+        _publicationStore.FinalizePendingRowsForSupersession(
+            () => activatedGeneration == Volatile.Read(ref _activeGeneration));
         return cts;
     }
 
@@ -611,6 +602,17 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
     private bool IsVisible(long generation, CancellationToken cancellationToken) =>
         !cancellationToken.IsCancellationRequested && generation == Volatile.Read(ref _activeGeneration);
 
+    private PluginRefreshGameAffordance GetAffordance(PluginRefreshSnapshot snapshot) =>
+        GetAffordance(snapshot.GameType, snapshot.Configuration);
+
+    private PluginRefreshGameAffordance GetAffordance(PluginRefreshPublication publication) =>
+        GetAffordance(publication.GameType, publication.Configuration);
+
+    private PluginRefreshGameAffordance GetAffordance(
+        GameType gameType,
+        PluginRefreshConfigurationProjection configuration) =>
+        _discoveryPlanner.GetAffordance(gameType, configuration.Mo2ModeEnabled);
+
     private async Task<PluginRefreshDiscoveryPlanResult> GetPlanForSelectedRefreshAsync(CancellationToken ct)
     {
         var currentGame = _stateService.CurrentState.CurrentGameType;
@@ -619,7 +621,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             return new PluginRefreshDiscoveryPlanResult(
                 PluginRefreshDiscoveryPlanStatus.NoGameSelected,
                 null,
-                GetCurrentSnapshot().Configuration);
+                _publicationStore.GetCurrentSnapshot().Configuration);
         }
 
         // Selected refreshes rebuild the plan so same-game MO2/profile/path changes are never cached stale.
@@ -646,546 +648,90 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         });
     }
 
-    private async Task AnalyzeTargetsAsync(
+    /// <summary>
+    /// Builds one full-refresh analysis request from the accepted discovery plan and publication rows.
+    /// </summary>
+    /// <param name="plan">Discovery plan accepted by the active generation.</param>
+    /// <param name="dataFolder">Resolved base data folder for import context.</param>
+    /// <param name="publicationRows">Complete ordered publication rows, including hidden Skip-list context.</param>
+    /// <param name="targets">Ordered non-Skip-list row keys to analyze.</param>
+    /// <returns>An authoritative module request that keeps source context separate from targets.</returns>
+    private static PluginIssueApproximationModuleRequest CreateInitialApproximationRequest(
         PluginRefreshDiscoveryPlan plan,
         string? dataFolder,
-        IReadOnlyList<PluginRefreshRowKey> targets,
-        Action<PluginIssueApproximationResult> onApproximationReady,
-        CancellationToken ct)
+        IReadOnlyList<PluginRefreshPublishedRow> publicationRows,
+        IReadOnlyList<PluginRefreshRowKey> targets)
     {
-        if (string.IsNullOrWhiteSpace(dataFolder) || targets.Count == 0)
+        if (string.IsNullOrWhiteSpace(dataFolder))
         {
-            return;
+            throw new InvalidOperationException(
+                "The accepted Plugin refresh plan did not resolve an Issue approximation data folder.");
         }
 
-        if (plan.Mode == PluginRefreshDiscoveryMode.Mo2LoadOrderFile)
-        {
-            await _pluginIssueApproximationService.GetApproximationsAsync(
-                new PluginIssueApproximationRequest(
-                    plan.GameType,
-                    new PluginIssueApproximationSource.ResolvedLoadOrder(
-                        dataFolder,
-                        targets.Select(target => target.FileName).ToList(),
-                        plan.Mo2PathMap)),
-                onApproximationReady,
-                ct).ConfigureAwait(false);
-        }
-        else
-        {
-            await _pluginIssueApproximationService.GetApproximationsAsync(
-                new PluginIssueApproximationRequest(
-                    plan.GameType,
-                    new PluginIssueApproximationSource.DirectDataFolder(dataFolder)),
-                onApproximationReady,
-                ct).ConfigureAwait(false);
-        }
+        // Full refresh already accepted one ordered source. Reusing those exact keys prevents a
+        // later direct-load-order enumeration or MO2 conflict change from replacing its context.
+        PluginIssueApproximationModuleSource source =
+            new PluginIssueApproximationModuleSource.ResolvedLoadOrder(
+                dataFolder,
+                publicationRows.Select(row => row.Key).ToList());
+        return new PluginIssueApproximationModuleRequest(plan.GameType, source, targets);
     }
 
-    private void PublishApproximationResult(
+    /// <summary>
+    /// Builds selected reanalysis from the accepted plan, complete source rows, and ordered selected targets.
+    /// </summary>
+    /// <param name="operation">Atomic selected-reanalysis facts captured from one fresh publication.</param>
+    /// <returns>An authoritative keyed module request.</returns>
+    private static PluginIssueApproximationModuleRequest CreateSelectedApproximationRequest(
+        PluginRefreshSelectedIssueApproximationOperation operation)
+    {
+        var dataFolder = ResolveDataFolder(
+            operation.Plan,
+            operation.SourceRows.FirstOrDefault()?.FullPath);
+        if (string.IsNullOrWhiteSpace(dataFolder))
+        {
+            throw new InvalidOperationException(
+                "The accepted Plugin refresh publication did not resolve an Issue approximation data folder.");
+        }
+
+        // A resolved source is used for direct and MO2 publications alike so no filesystem
+        // re-enumeration can replace accepted dependency rows or conflict-winning paths.
+        var source = new PluginIssueApproximationModuleSource.ResolvedLoadOrder(
+            dataFolder,
+            operation.SourceRows);
+        return new PluginIssueApproximationModuleRequest(
+            operation.Plan.GameType,
+            source,
+            operation.Targets.Select(target => target.Key).ToList());
+    }
+
+    /// <summary>
+    /// Publishes one exact keyed result with its deterministic progress count.
+    /// </summary>
+    /// <param name="generation">Generation that owns the result.</param>
+    /// <param name="token">Cancellation boundary for the generation.</param>
+    /// <param name="targetLookup">Authoritative target set.</param>
+    /// <param name="result">Exact keyed terminal result.</param>
+    /// <param name="updatedCount">Count of results already accepted for publication.</param>
+    private void PublishInitialApproximationResult(
         long generation,
         CancellationToken token,
-        GameType gameType,
-        PluginRefreshConfigurationProjection configuration,
-        PluginRefreshActivity activity,
         PluginRefreshPublicationRows.TargetLookup targetLookup,
-        PluginIssueApproximationResult result,
+        PluginIssueApproximationModuleResult result,
         ref int updatedCount)
     {
-        if (!IsVisible(generation, token) || !targetLookup.Contains(result))
-        {
-            return;
-        }
-
-        var matchedRow = TryUpdateAcceptedPublicationRows(
-            gameType,
-            rows => PluginRefreshPublicationRows.ApplyApproximationResult(rows, result),
-            () => IsVisible(generation, token));
-        if (!matchedRow)
-        {
-            matchedRow = TryUpdateStateApproximation(generation, token, result);
-        }
-
-        if (!matchedRow || !IsVisible(generation, token))
-        {
-            return;
-        }
-
-        var updated = Interlocked.Increment(ref updatedCount);
-        PublishCurrentPublication(
-            generation,
-            gameType,
-            configuration,
-            activity,
-            $"Analyzing {updated} of {targetLookup.Count} selected plugins.");
-    }
-
-    private void PublishApproximationFailure(
-        long generation,
-        CancellationToken token,
-        GameType gameType,
-        PluginRefreshConfigurationProjection configuration,
-        PluginRefreshPublicationRows.TargetLookup targetLookup,
-        string message)
-    {
-        if (!IsVisible(generation, token))
-        {
-            return;
-        }
-
-        MarkTargetsUnavailable(gameType, targetLookup, generation, token);
-        PublishCurrentPublication(
-            generation,
-            gameType,
-            configuration,
-            IdleActivity,
-            message);
-    }
-
-    private void MarkTargetsPending(
-        GameType gameType,
-        IReadOnlyList<PluginRefreshRowKey> targets,
-        PluginRefreshPublicationRows.TargetLookup targetLookup)
-    {
-        if (TryUpdateAcceptedPublicationRows(
-                gameType,
-                rows => PluginRefreshPublicationRows.ApplyApproximationToTargets(
-                    rows,
-                    targetLookup,
-                    PluginIssueApproximation.Pending)))
-        {
-            return;
-        }
-
-        _stateService.UpdateState(state =>
-        {
-            if (state.PluginsToClean.Count == 0)
-            {
-                var pendingRows = PluginRefreshPublicationRows.CreateRowsFromTargets(gameType, targets).ToList();
-                return state with { PluginsToClean = pendingRows.AsReadOnly() };
-            }
-
-            var rows = state.PluginsToClean.Select(plugin =>
-                targetLookup.Contains(plugin)
-                    ? plugin with { Approximation = PluginIssueApproximation.Pending }
-                    : plugin).ToList();
-
-            return state with { PluginsToClean = rows.AsReadOnly() };
-        });
-    }
-
-    private void MarkTargetsUnavailable(
-        GameType gameType,
-        PluginRefreshPublicationRows.TargetLookup targetLookup,
-        long generation,
-        CancellationToken token)
-    {
-        if (TryUpdateAcceptedPublicationRows(
-                gameType,
-                rows => PluginRefreshPublicationRows.ApplyApproximationToTargets(
-                    rows,
-                    targetLookup,
-                    PluginIssueApproximation.Unavailable),
+        var nextCount = Volatile.Read(ref updatedCount) + 1;
+        if (_publicationStore.TryPublishInitialApproximationResult(
+                generation,
+                targetLookup,
+                result,
+                $"Analyzing {nextCount} of {targetLookup.Count} plugins.",
+                GetAffordance(_publicationStore.GetCurrentSnapshot()),
                 () => IsVisible(generation, token)))
         {
-            return;
-        }
-
-        _stateService.UpdateState(state =>
-        {
-            if (!IsVisible(generation, token) || state.PluginsToClean.Count == 0)
-            {
-                return state;
-            }
-
-            var rows = state.PluginsToClean.Select(plugin =>
-                targetLookup.Contains(plugin)
-                    ? plugin with { Approximation = PluginIssueApproximation.Unavailable }
-                    : plugin).ToList();
-
-            return state with { PluginsToClean = rows.AsReadOnly() };
-        });
-    }
-
-    private bool TryUpdateAcceptedPublicationRows(
-        GameType gameType,
-        Func<IReadOnlyList<PluginRefreshPublishedRow>, PluginRefreshPublicationRowsUpdate> updateRows,
-        Func<bool>? canUpdate = null)
-    {
-        PluginRefreshPublicationRowsMirror mirror;
-        lock (_snapshotLock)
-        {
-            if (canUpdate is not null && !canUpdate())
-            {
-                return false;
-            }
-
-            if (_currentPublicationFreshnessToken is null ||
-                _currentPublication.DiscoveryPlan is null ||
-                _currentPublication.DiscoveryPlan.GameType != gameType ||
-                _currentPublication.Rows.Count == 0)
-            {
-                return false;
-            }
-
-            var result = updateRows(_currentPublication.Rows);
-            if (!result.Matched)
-            {
-                return false;
-            }
-
-            _currentPublication = _currentPublication with
-            {
-                Rows = result.Commit.Rows,
-                VisibleRows = result.Commit.VisibleRows
-            };
-            _currentSnapshot = ToSnapshot(_currentPublication);
-            mirror = result.Commit.Mirror;
-        }
-
-        MirrorPublicationRowsToState(mirror);
-        return true;
-    }
-
-    private bool TryUpdateStateApproximation(
-        long generation,
-        CancellationToken token,
-        PluginIssueApproximationResult result)
-    {
-        var matchedRow = false;
-        _stateService.UpdateState(state =>
-        {
-            if (!IsVisible(generation, token) || state.PluginsToClean.Count == 0)
-            {
-                return state;
-            }
-
-            var rows = state.PluginsToClean.Select(plugin =>
-            {
-                if (!PluginRefreshPublicationRows.IsMatch(plugin, result))
-                {
-                    return plugin;
-                }
-
-                matchedRow = true;
-                return plugin with { Approximation = result.Approximation };
-            }).ToList();
-
-            return state with { PluginsToClean = rows.AsReadOnly() };
-        });
-
-        return matchedRow;
-    }
-
-    private PluginRefreshSnapshot PublishSnapshotFromState(
-        long generation,
-        GameType gameType,
-        PluginRefreshConfigurationProjection configuration,
-        PluginRefreshActivity activity,
-        string statusText)
-    {
-        var state = _stateService.CurrentState;
-        var rows = PluginRefreshPublicationRows.ProjectStateVisibleRows(
-            state.PluginsToClean,
-            state.ExcludedPluginPaths);
-        return PublishSnapshot(
-            new PluginRefreshSnapshot(
-                generation,
-                gameType,
-                rows,
-                configuration,
-                activity,
-                EmptyCommands,
-                statusText),
-            state);
-    }
-
-    private PluginRefreshSnapshot PublishMissingPublicationFromState(
-        long generation,
-        GameType gameType,
-        PluginRefreshConfigurationProjection configuration,
-        PluginRefreshActivity activity,
-        string statusText)
-    {
-        var snapshot = PublishSnapshotFromState(generation, gameType, configuration, activity, statusText);
-        lock (_snapshotLock)
-        {
-            _currentPublication = CreateMissingPublication(snapshot);
-            _currentPublicationFreshnessToken = null;
-        }
-
-        return snapshot;
-    }
-
-    private PluginRefreshSnapshot PublishAcceptedPublication(
-        long generation,
-        GameType gameType,
-        PluginRefreshDiscoveryPlan plan,
-        PluginRefreshDiscoveryFreshnessToken freshnessToken,
-        PluginRefreshConfigurationProjection configuration,
-        IReadOnlyList<PluginRefreshPublishedRow> rows,
-        PluginRefreshActivity activity,
-        string statusText)
-    {
-        var rowCommit = PluginRefreshPublicationRows.Commit(rows);
-        var publication = new PluginRefreshPublication(
-            generation,
-            gameType,
-            plan,
-            configuration,
-            PluginRefreshFreshness.Fresh,
-            rowCommit.Rows,
-            rowCommit.VisibleRows,
-            activity,
-            EmptyCommands,
-            statusText);
-        return PublishPublicationWithMirroredRows(publication, freshnessToken, rowCommit.Mirror);
-    }
-
-    private PluginRefreshSnapshot PublishCurrentPublication(
-        long generation,
-        GameType gameType,
-        PluginRefreshConfigurationProjection configuration,
-        PluginRefreshActivity activity,
-        string statusText)
-    {
-        PluginRefreshPublication publication;
-        PluginRefreshDiscoveryFreshnessToken? freshnessToken;
-        lock (_snapshotLock)
-        {
-            publication = _currentPublication;
-            freshnessToken = _currentPublicationFreshnessToken;
-        }
-
-        if (publication.DiscoveryPlan is null ||
-            freshnessToken is null ||
-            publication.DiscoveryPlan.GameType != gameType)
-        {
-            return PublishSnapshotFromState(generation, gameType, configuration, activity, statusText);
-        }
-
-        var nextPublication = publication with
-        {
-            Generation = generation,
-            GameType = gameType,
-            Configuration = configuration,
-            VisibleRows = PluginRefreshPublicationRows.ProjectVisibleRows(publication.Rows),
-            Activity = activity,
-            StatusText = statusText
-        };
-        return PublishPublication(nextPublication, freshnessToken, _stateService.CurrentState);
-    }
-
-    private PluginRefreshSnapshot PublishPublicationWithMirroredRows(
-        PluginRefreshPublication publication,
-        PluginRefreshDiscoveryFreshnessToken freshnessToken,
-        PluginRefreshPublicationRowsMirror mirror)
-    {
-        MirrorPublicationRowsToState(mirror);
-        return PublishPublication(publication, freshnessToken, _stateService.CurrentState);
-    }
-
-    private bool TryPublishSelectionPublicationIfCurrent(
-        PluginRefreshPublication observedPublication,
-        PluginRefreshPublication nextPublication,
-        PluginRefreshDiscoveryFreshnessToken observedFreshnessToken,
-        PluginRefreshPublicationRowsMirror mirror,
-        out PluginRefreshSnapshot snapshot)
-    {
-        if (_disposed)
-        {
-            snapshot = GetCurrentSnapshot();
-            return false;
-        }
-
-        var state = _stateService.CurrentState;
-        var commands = CreateCommandAvailability(
-            nextPublication.GameType,
-            nextPublication.VisibleRows,
-            nextPublication.Activity,
-            nextPublication.Configuration,
-            state.IsCleaning);
-        var committedPublication = nextPublication with { Commands = commands };
-
-        lock (_snapshotLock)
-        {
-            if (!ReferenceEquals(_currentPublicationFreshnessToken, observedFreshnessToken) ||
-                _currentPublication.Generation != observedPublication.Generation ||
-                _currentPublication.DiscoveryPlan != observedPublication.DiscoveryPlan)
-            {
-                snapshot = _currentSnapshot;
-                return false;
-            }
-
-            committedPublication = committedPublication with { Freshness = _currentPublication.Freshness };
-            _currentPublication = committedPublication;
-            _currentPublicationFreshnessToken = observedFreshnessToken;
-            _currentSnapshot = ToSnapshot(committedPublication);
-            snapshot = _currentSnapshot;
-        }
-
-        MirrorPublicationRowsToState(mirror);
-        _snapshots.OnNext(snapshot);
-        return true;
-    }
-
-    private void MirrorPublicationRowsToState(PluginRefreshPublicationRowsMirror mirror)
-    {
-        if (_stateService.CurrentState.IsCleaning)
-        {
-            return;
-        }
-
-        _stateService.SetPluginsToClean(mirror.PluginsToClean.ToList());
-        _stateService.UpdateExcludedPlugins(_ => mirror.ExcludedPluginPaths);
-    }
-
-    private PluginRefreshSnapshot PublishSnapshot(PluginRefreshSnapshot snapshot, AppState? state = null)
-    {
-        if (_disposed)
-        {
-            return GetCurrentSnapshot();
-        }
-
-        var next = WithCommandAvailability(snapshot, state ?? _stateService.CurrentState);
-        lock (_snapshotLock)
-        {
-            _currentSnapshot = next;
-        }
-
-        _snapshots.OnNext(next);
-        return next;
-    }
-
-    private PluginRefreshSnapshot PublishPublication(
-        PluginRefreshPublication publication,
-        PluginRefreshDiscoveryFreshnessToken freshnessToken,
-        AppState state)
-    {
-        if (_disposed)
-        {
-            return GetCurrentSnapshot();
-        }
-
-        var commands = CreateCommandAvailability(
-            publication.GameType,
-            publication.VisibleRows,
-            publication.Activity,
-            publication.Configuration,
-            state.IsCleaning);
-        var nextPublication = publication with { Commands = commands };
-        var snapshot = ToSnapshot(nextPublication);
-        lock (_snapshotLock)
-        {
-            _currentPublication = nextPublication;
-            _currentPublicationFreshnessToken = freshnessToken;
-            _currentSnapshot = snapshot;
-        }
-
-        _snapshots.OnNext(snapshot);
-        return snapshot;
-    }
-
-    private PluginRefreshSnapshot GetCurrentSnapshot()
-    {
-        lock (_snapshotLock)
-        {
-            return _currentSnapshot;
+            Volatile.Write(ref updatedCount, nextCount);
         }
     }
-
-    private static PluginRefreshSnapshot ToSnapshot(PluginRefreshPublication publication) =>
-        new(
-            publication.Generation,
-            publication.GameType,
-            publication.VisibleRows,
-            publication.Configuration,
-            publication.Activity,
-            publication.Commands,
-            publication.StatusText);
-
-    private static PluginRefreshPublication CreateMissingPublication(PluginRefreshSnapshot snapshot) =>
-        new(
-            snapshot.Generation,
-            snapshot.GameType,
-            DiscoveryPlan: null,
-            snapshot.Configuration,
-            PluginRefreshFreshness.Missing,
-            Rows: [],
-            VisibleRows: snapshot.Rows,
-            snapshot.Activity,
-            snapshot.Commands,
-            snapshot.StatusText);
-
-    private PluginRefreshSnapshot WithCommandAvailability(PluginRefreshSnapshot snapshot, AppState state) =>
-        snapshot with
-        {
-            Commands = CreateCommandAvailability(
-                snapshot.GameType,
-                snapshot.Rows,
-                snapshot.Activity,
-                snapshot.Configuration,
-                state.IsCleaning)
-        };
-
-    private PluginRefreshCommandAvailability CreateCommandAvailability(
-        GameType gameType,
-        IReadOnlyList<PluginRefreshRow> rows,
-        PluginRefreshActivity activity,
-        PluginRefreshConfigurationProjection configuration,
-        bool isCleaning)
-    {
-        var hasRows = rows.Count > 0;
-        var isRunning = activity.IsPluginRefreshRunning || activity.IsIssueApproximationRefreshRunning;
-        var canUseRows = hasRows && !isCleaning;
-        var affordance = _discoveryPlanner.GetAffordance(gameType, configuration.Mo2ModeEnabled);
-        var canRefreshApproximations = canUseRows &&
-                                      !isRunning &&
-                                      rows.Any(row => row.IsSelected) &&
-                                      gameType != GameType.Unknown &&
-                                      affordance.CanAttemptIssueApproximation;
-
-        return new PluginRefreshCommandAvailability(
-            CanSelectAll: canUseRows,
-            CanDeselectAll: canUseRows,
-            CanRefreshSelectedIssueApproximations: canRefreshApproximations,
-            CanCancelRefresh: isRunning);
-    }
-
-    private PluginRefreshSnapshot CreateInitialSnapshot(AppState state)
-    {
-        var rows = PluginRefreshPublicationRows.ProjectStateVisibleRows(
-            state.PluginsToClean,
-            state.ExcludedPluginPaths);
-        var configuration = CreateConfigurationProjectionFromState(state);
-        return new PluginRefreshSnapshot(
-            Generation: 0,
-            GameType: state.CurrentGameType,
-            Rows: rows,
-            Configuration: configuration,
-            Activity: IdleActivity,
-            Commands: CreateCommandAvailability(
-                state.CurrentGameType,
-                rows,
-                IdleActivity,
-                configuration,
-                state.IsCleaning),
-            StatusText: "Ready");
-    }
-
-    private static PluginRefreshConfigurationProjection CreateConfigurationProjectionFromState(AppState state) =>
-        new(
-            LoadOrderPath: state.LoadOrderPath,
-            GameDataFolder: null,
-            HasGameDataFolderOverride: false,
-            XEditPath: state.XEditExecutablePath,
-            Mo2Path: state.Mo2ExecutablePath,
-            Mo2ModeEnabled: state.Mo2ModeEnabled,
-            Mo2InstancePath: null,
-            IsMo2InstanceOverride: false,
-            IsMo2InstanceValid: null,
-            AvailableProfiles: [],
-            SelectedProfile: state.Mo2Profile,
-            CleaningTimeout: state.CleaningTimeout);
 
     private void OnAppStateChanged(AppState state)
     {
@@ -1207,39 +753,12 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         }
 
         _lastIsCleaning = state.IsCleaning;
-        PublishCommandAvailabilityIfChanged(state);
-    }
-
-    private void PublishCommandAvailabilityIfChanged(AppState state)
-    {
-        PluginRefreshSnapshot? nextSnapshot = null;
-        lock (_snapshotLock)
-        {
-            var publicationCommands = CreateCommandAvailability(
-                _currentPublication.GameType,
-                _currentPublication.VisibleRows,
-                _currentPublication.Activity,
-                _currentPublication.Configuration,
-                state.IsCleaning);
-            var snapshotCommands = CreateCommandAvailability(
-                _currentSnapshot.GameType,
-                _currentSnapshot.Rows,
-                _currentSnapshot.Activity,
-                _currentSnapshot.Configuration,
-                state.IsCleaning);
-
-            if (publicationCommands == _currentPublication.Commands &&
-                snapshotCommands == _currentSnapshot.Commands)
-            {
-                return;
-            }
-
-            _currentPublication = _currentPublication with { Commands = publicationCommands };
-            _currentSnapshot = _currentSnapshot with { Commands = snapshotCommands };
-            nextSnapshot = _currentSnapshot;
-        }
-
-        _snapshots.OnNext(nextSnapshot!);
+        var commandInspection = _publicationStore.GetCommandAvailabilityInspection();
+        _publicationStore.PublishCommandAvailabilityIfChanged(
+            state,
+            commandInspection,
+            GetAffordance(commandInspection.Publication),
+            GetAffordance(commandInspection.Snapshot));
     }
 
     private void OnDiscoveryAffectingSettingsChanged()
@@ -1250,7 +769,42 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         }
 
         var requestId = Interlocked.Increment(ref _freshnessRefreshVersion);
+        CancelSelectedApproximationForStaleness();
         _ = RefreshPublicationFreshnessAsync(requestId);
+    }
+
+    /// <summary>
+    /// Restores unfinished selected targets when Discovery-affecting settings invalidate their freshness lease.
+    /// </summary>
+    private void CancelSelectedApproximationForStaleness()
+    {
+        var snapshot = _publicationStore.GetCurrentSnapshot();
+        if (snapshot.Activity.IsPluginRefreshRunning ||
+            !snapshot.Activity.IsIssueApproximationRefreshRunning)
+        {
+            return;
+        }
+
+        var cts = Volatile.Read(ref _activeRefreshCts);
+        if (cts is not null)
+        {
+            try
+            {
+                cts.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // A selected generation can finish while its settings-change notification is being dispatched.
+            }
+        }
+
+        _publicationStore.TryFinalizeSelectedIssueApproximation(
+            snapshot.Generation,
+            PluginRefreshSelectedIssueApproximationDisposition.RestorePrior,
+            "Run a full Plugin refresh before refreshing selected approximations.",
+            GetAffordance(snapshot),
+            () => snapshot.Generation == Volatile.Read(ref _activeGeneration),
+            out _);
     }
 
     private async Task RefreshPublicationFreshnessAsync(int requestId)
@@ -1268,31 +822,6 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         }
     }
 
-    private void PublishFreshnessIfCurrent(
-        PluginRefreshPublication observedPublication,
-        PluginRefreshDiscoveryFreshnessToken observedFreshnessToken,
-        PluginRefreshPublication refreshedPublication)
-    {
-        PluginRefreshSnapshot snapshot;
-        lock (_snapshotLock)
-        {
-            if (!ReferenceEquals(_currentPublicationFreshnessToken, observedFreshnessToken) ||
-                _currentPublication.Generation != observedPublication.Generation ||
-                _currentPublication.DiscoveryPlan != observedPublication.DiscoveryPlan ||
-                _currentPublication.Freshness == refreshedPublication.Freshness)
-            {
-                return;
-            }
-
-            _currentPublication = _currentPublication with { Freshness = refreshedPublication.Freshness };
-            snapshot = _currentSnapshot;
-        }
-
-        // Freshness is a publication fact, not a row refresh. Re-emit the current snapshot so callers
-        // can re-query publication readiness without AutoQAC changing visible rows underneath them.
-        _snapshots.OnNext(snapshot);
-    }
-
     private static PluginRefreshDiscoveryFreshnessContext CreateFreshnessContext(AppState state) =>
         new(
             state.CurrentGameType,
@@ -1300,7 +829,15 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             state.LoadOrderPath,
             state.Mo2Profile);
 
-    private static string? ResolveDataFolder(PluginRefreshDiscoveryPlan plan, IReadOnlyList<PluginInfo> rows)
+    /// <summary>
+    /// Resolves the accepted plan's analysis root, using a publication path only as a direct-mode fallback.
+    /// </summary>
+    /// <param name="plan">Accepted discovery plan that owns the analysis source.</param>
+    /// <param name="firstPublicationPath">First accepted row path, when the plan has no explicit direct data folder.</param>
+    /// <returns>The resolved analysis data folder, or null when the accepted publication has no usable root.</returns>
+    private static string? ResolveDataFolder(
+        PluginRefreshDiscoveryPlan plan,
+        string? firstPublicationPath)
     {
         if (plan.Mode == PluginRefreshDiscoveryMode.Mo2LoadOrderFile)
         {
@@ -1312,8 +849,9 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             return plan.DataFolderPath;
         }
 
-        var firstPath = rows.FirstOrDefault()?.FullPath;
-        return string.IsNullOrWhiteSpace(firstPath) ? null : Path.GetDirectoryName(firstPath);
+        return string.IsNullOrWhiteSpace(firstPublicationPath)
+            ? null
+            : Path.GetDirectoryName(firstPublicationPath);
     }
 
     private static string GetPlanStatusText(PluginRefreshDiscoveryPlanResult result, GameType gameType) =>

@@ -19,8 +19,6 @@ public interface IStateService
     void UpdateConfigurationPaths(string? loadOrder, string? mo2, string? xEdit);
     void UpdateConfigurationPaths(string? loadOrder, string? mo2, string? xEdit, string? mo2Profile);
     void SetPluginsToClean(List<PluginInfo> plugins);
-    void MergePluginApproximation(PluginIssueApproximationResult approximation);
-    void MergePluginApproximations(IReadOnlyList<PluginIssueApproximationResult> approximations);
     void StartCleaning(List<PluginInfo> plugins);
 
     /// <summary>
@@ -41,6 +39,7 @@ public interface IStateService
     /// identity prevents stale exclusions leaking when the visible plugin list changes.
     /// </summary>
     void UpdateExcludedPlugins(Func<IReadOnlySet<string>, IReadOnlySet<string>> updater);
+
     void FinishCleaning();
     void AddCleaningResult(string plugin, CleaningStatus status);
     void UpdateProgress(int current, int total);

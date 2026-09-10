@@ -19,9 +19,9 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
     private readonly IConfigurationService? _configService;
     private readonly ILoggingService? _logger;
     private readonly IFileDialogService? _fileDialog;
-    private IDisposable? _failuresSubscription;
-    private IDisposable? _resultsSubscription;
-    private IDisposable? _configChangedClearSubscription;
+    private readonly IDisposable? _failuresSubscription;
+    private readonly IDisposable? _resultsSubscription;
+    private readonly IDisposable? _configChangedClearSubscription;
 
     // Loading flag to suppress validation during initial property population
     private bool _isLoading;

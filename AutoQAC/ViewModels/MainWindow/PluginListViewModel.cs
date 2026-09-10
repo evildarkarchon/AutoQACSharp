@@ -13,9 +13,9 @@ namespace AutoQAC.ViewModels.MainWindow;
 /// <summary>
 /// Manages the plugin collection and plugin-refresh commands from module snapshots.
 /// </summary>
-public sealed partial class PluginListViewModel : ViewModelBase, IDisposable
+public sealed partial class PluginListViewModel(IPluginRefreshModule pluginRefreshModule) : ViewModelBase, IDisposable
 {
-    private readonly IPluginRefreshModule _pluginRefreshModule;
+    private readonly IPluginRefreshModule _pluginRefreshModule = pluginRefreshModule;
 
     public ObservableCollection<PluginListItem> PluginsToClean { get; } = [];
 
@@ -65,11 +65,6 @@ public sealed partial class PluginListViewModel : ViewModelBase, IDisposable
 
     public bool CanRefreshApproximations => CanRefreshSelectedIssueApproximations;
 
-    public PluginListViewModel(IPluginRefreshModule pluginRefreshModule)
-    {
-        _pluginRefreshModule = pluginRefreshModule;
-    }
-
     private bool CanSelectAll() => CanSelectAllPlugins;
 
     private bool CanDeselectAll() => CanDeselectAllPlugins;
@@ -114,7 +109,8 @@ public sealed partial class PluginListViewModel : ViewModelBase, IDisposable
         IsCleaning = !snapshot.Commands.CanSelectAll && HasPlugins;
         CurrentGameType = snapshot.GameType;
         HasSelectedVisiblePlugin = snapshot.Rows.Any(row => row.IsSelected);
-        IsApproximationRefreshRunning = snapshot.Activity.IsIssueApproximationRefreshRunning || snapshot.Commands.CanCancelRefresh;
+        IsApproximationRefreshRunning =
+            snapshot.Activity.IsIssueApproximationRefreshRunning || snapshot.Commands.CanCancelRefresh;
         CanSelectAllPlugins = snapshot.Commands.CanSelectAll;
         CanDeselectAllPlugins = snapshot.Commands.CanDeselectAll;
         CanRefreshSelectedIssueApproximations = snapshot.Commands.CanRefreshSelectedIssueApproximations;

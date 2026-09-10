@@ -34,8 +34,7 @@ public sealed partial class AboutViewModel : ViewModelBase
     public string GitHubIssuesUrl => "https://github.com/evildarkarchon/AutoQACSharp/issues";
     public string XEditUrl => "https://github.com/TES5Edit/TES5Edit";
 
-    [ObservableProperty]
-    public partial string UpdateStatusText { get; set; } = string.Empty;
+    [ObservableProperty] public partial string UpdateStatusText { get; set; } = string.Empty;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(CheckForUpdateCommand))]
@@ -69,7 +68,8 @@ public sealed partial class AboutViewModel : ViewModelBase
 
         var toolkitAssembly = typeof(ObservableObject).Assembly;
         var toolkitVer = toolkitAssembly.GetName().Version;
-        MvvmToolkitVersion = toolkitVer != null ? $"{toolkitVer.Major}.{toolkitVer.Minor}.{toolkitVer.Build}" : "Unknown";
+        MvvmToolkitVersion =
+            toolkitVer != null ? $"{toolkitVer.Major}.{toolkitVer.Minor}.{toolkitVer.Build}" : "Unknown";
     }
 
     private bool CanCheckForUpdate() => !IsCheckingUpdate;

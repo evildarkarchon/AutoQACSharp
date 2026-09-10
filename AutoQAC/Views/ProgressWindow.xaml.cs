@@ -5,7 +5,7 @@ using Microsoft.UI.Xaml;
 
 namespace AutoQAC.Views;
 
-public sealed partial class ProgressWindow : Window
+public sealed partial class ProgressWindow
 {
     private ProgressViewModel? _subscribedViewModel;
     private bool _disposeHandled;

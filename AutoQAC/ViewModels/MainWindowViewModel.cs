@@ -117,5 +117,4 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         {
         }
     }
-
 }

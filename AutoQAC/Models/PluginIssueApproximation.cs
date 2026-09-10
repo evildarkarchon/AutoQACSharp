@@ -35,10 +35,3 @@ public sealed record PluginIssueApproximation
         };
     }
 }
-
-public sealed record PluginIssueApproximationResult
-{
-    public required string FileName { get; init; }
-    public required string FullPath { get; init; }
-    public required PluginIssueApproximation Approximation { get; init; }
-}

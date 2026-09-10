@@ -166,7 +166,9 @@ public sealed class PluginRefreshPublicationRowsTests
             PluginIssueApproximation.Pending);
         var available = PluginRefreshPublicationRows.ApplyApproximationResult(
             pending.Commit.Rows,
-            Result("Target.esp", @"C:\Data\Target.esp", PluginIssueApproximation.Available(4, 2, 1)));
+            new PluginIssueApproximationModuleResult(
+                new PluginRefreshRowKey("Target.esp", @"C:\Data\Target.esp"),
+                PluginIssueApproximation.Available(4, 2, 1)));
         var unavailable = PluginRefreshPublicationRows.ApplyApproximationToTargets(
             available.Commit.Rows,
             lookup,
@@ -188,32 +190,47 @@ public sealed class PluginRefreshPublicationRowsTests
             row.Plugin.Approximation.Status == PluginIssueApproximationStatus.Unavailable);
     }
 
+    /// <summary>
+    /// Verifies approximation targeting and publication require the complete authoritative row key.
+    /// </summary>
     [Fact]
-    public void ApplyApproximationResult_ShouldPreferFullPathAndUsePathlessFallback()
+    public void ApproximationPublication_ShouldRequireExactRowKey()
     {
         var rows = new[]
         {
             Published("Duplicate.esp", @"C:\A\Duplicate.esp", approximation: PluginIssueApproximation.Pending),
             Published("Duplicate.esp", @"C:\B\Duplicate.esp", approximation: PluginIssueApproximation.Pending),
-            Published("Fallback.esp", string.Empty, approximation: PluginIssueApproximation.Pending)
+            Published("Fallback.esp", @"C:\Data\Fallback.esp", approximation: PluginIssueApproximation.Unavailable)
         };
 
-        var fullPathMatch = PluginRefreshPublicationRows.ApplyApproximationResult(
+        var exactMatch = PluginRefreshPublicationRows.ApplyApproximationResult(
             rows,
-            Result("Duplicate.esp", @"C:\B\Duplicate.esp", PluginIssueApproximation.Available(1, 0, 0)));
-        var fallbackMatch = PluginRefreshPublicationRows.ApplyApproximationResult(
-            fullPathMatch.Commit.Rows,
-            Result("Fallback.esp", @"C:\Data\Fallback.esp", PluginIssueApproximation.Available(2, 0, 0)));
+            new PluginIssueApproximationModuleResult(
+                new PluginRefreshRowKey("Duplicate.esp", @"C:\B\Duplicate.esp"),
+                PluginIssueApproximation.Available(1, 0, 0)));
+        var mixedIdentity = PluginRefreshPublicationRows.ApplyApproximationResult(
+            exactMatch.Commit.Rows,
+            new PluginIssueApproximationModuleResult(
+                new PluginRefreshRowKey("Different.esp", @"C:\B\Duplicate.esp"),
+                PluginIssueApproximation.Available(9, 0, 0)));
+        var pathlessLookup = PluginRefreshPublicationRows.CreateTargetLookup(
+            [new PluginRefreshRowKey("Fallback.esp", string.Empty)]);
+        var pathlessTarget = PluginRefreshPublicationRows.ApplyApproximationToTargets(
+            mixedIdentity.Commit.Rows,
+            pathlessLookup,
+            PluginIssueApproximation.Pending);
 
-        fallbackMatch.Commit.Rows.Should().Contain(row =>
+        mixedIdentity.Matched.Should().BeFalse();
+        pathlessTarget.Matched.Should().BeFalse();
+        pathlessTarget.Commit.Rows.Should().Contain(row =>
             row.Plugin.FullPath == @"C:\A\Duplicate.esp" &&
             row.Plugin.Approximation.Status == PluginIssueApproximationStatus.Pending);
-        fallbackMatch.Commit.Rows.Should().Contain(row =>
+        pathlessTarget.Commit.Rows.Should().Contain(row =>
             row.Plugin.FullPath == @"C:\B\Duplicate.esp" &&
             row.Plugin.Approximation.ItmCount == 1);
-        fallbackMatch.Commit.Rows.Should().Contain(row =>
+        pathlessTarget.Commit.Rows.Should().Contain(row =>
             row.Plugin.FileName == "Fallback.esp" &&
-            row.Plugin.Approximation.ItmCount == 2);
+            row.Plugin.Approximation.Status == PluginIssueApproximationStatus.Unavailable);
     }
 
     [Fact]
@@ -276,14 +293,4 @@ public sealed class PluginRefreshPublicationRowsTests
             Approximation = approximation ?? PluginIssueApproximation.Unavailable
         };
 
-    private static PluginIssueApproximationResult Result(
-        string fileName,
-        string fullPath,
-        PluginIssueApproximation approximation) =>
-        new()
-        {
-            FileName = fileName,
-            FullPath = fullPath,
-            Approximation = approximation
-        };
 }

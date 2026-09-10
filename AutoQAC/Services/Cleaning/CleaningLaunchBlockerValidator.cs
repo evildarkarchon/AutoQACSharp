@@ -188,7 +188,7 @@ internal static class CleaningLaunchBlockerValidator
             return true;
         }
 
-        if (!publication.Rows.Any(row => row.IsSelected && !row.IsSkippedByPolicy))
+        if (!publication.Rows.Any(row => row is { IsSelected: true, IsSkippedByPolicy: false }))
         {
             failure = CreateFailure(
                 CleaningPreflightFailureKind.NoPluginsSelected,

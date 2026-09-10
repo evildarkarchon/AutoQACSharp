@@ -47,7 +47,10 @@ public sealed class PluginValidationService(ILoggingService logger) : IPluginVal
                 let fullPath = dataFolderPath is not null
                     ? Path.Combine(dataFolderPath, processed)
                     : processed
-                select new PluginInfo { FileName = processed, FullPath = fullPath, IsInSkipList = false, DetectedGameType = GameType.Unknown });
+                select new PluginInfo
+                {
+                    FileName = processed, FullPath = fullPath, IsInSkipList = false, DetectedGameType = GameType.Unknown
+                });
         }
         catch (Exception ex)
         {
