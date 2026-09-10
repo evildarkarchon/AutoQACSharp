@@ -1,7 +1,16 @@
 <Solution>
+  <Configurations>
+    <!-- AutoQAC is x64-only (WinUI 3, self-contained win-x64), so the solution offers x64 only.
+         Without this the solution infers an "Any CPU" platform and asks AutoQAC for a
+         Debug|Any CPU / Release|Any CPU configuration it does not have. -->
+    <Platform Name="x64" />
+  </Configurations>
   <Project Path="AutoQAC.Tests/AutoQAC.Tests.csproj" Id="16053e2e-a500-4d00-a954-b4176d6d3deb" />
   <Project Path="AutoQAC.Tests/TestProcessHelper/AutoQAC.TestProcessHelper.csproj" />
-  <Project Path="AutoQAC/AutoQAC.csproj" />
+  <Project Path="AutoQAC/AutoQAC.csproj">
+    <!-- The slnx parser assumes AnyCPU for csproj projects; AutoQAC only defines x64. -->
+    <Platform Solution="*|*" Project="x64" />
+  </Project>
   <Project Path="QueryPlugins.Tests/QueryPlugins.Tests.csproj" />
   <Project Path="QueryPlugins/QueryPlugins.csproj" />
 </Solution>
