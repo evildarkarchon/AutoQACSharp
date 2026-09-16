@@ -10,60 +10,64 @@ internal sealed record MessageDialogButtonConfiguration(
 
 internal static class MessageDialogButtonMapper
 {
-    public static MessageDialogButtonConfiguration Build(MessageDialogButtons buttons) =>
-        buttons switch
+    public static MessageDialogButtonConfiguration Build(MessageDialogButtons buttons)
+    {
+        return buttons switch
         {
             MessageDialogButtons.Ok => new MessageDialogButtonConfiguration(
-                PrimaryButtonText: null,
-                SecondaryButtonText: null,
-                CloseButtonText: "OK",
-                PrimaryResult: MessageDialogResult.None,
-                SecondaryResult: MessageDialogResult.None,
-                CloseResult: MessageDialogResult.Ok),
+                null,
+                null,
+                "OK",
+                MessageDialogResult.None,
+                MessageDialogResult.None,
+                MessageDialogResult.Ok),
 
             MessageDialogButtons.OkCancel => new MessageDialogButtonConfiguration(
-                PrimaryButtonText: "OK",
-                SecondaryButtonText: null,
-                CloseButtonText: "Cancel",
-                PrimaryResult: MessageDialogResult.Ok,
-                SecondaryResult: MessageDialogResult.None,
-                CloseResult: MessageDialogResult.Cancel),
+                "OK",
+                null,
+                "Cancel",
+                MessageDialogResult.Ok,
+                MessageDialogResult.None,
+                MessageDialogResult.Cancel),
 
             MessageDialogButtons.YesNo => new MessageDialogButtonConfiguration(
-                PrimaryButtonText: "Yes",
-                SecondaryButtonText: "No",
-                CloseButtonText: null,
-                PrimaryResult: MessageDialogResult.Yes,
-                SecondaryResult: MessageDialogResult.No,
-                CloseResult: MessageDialogResult.None),
+                "Yes",
+                "No",
+                null,
+                MessageDialogResult.Yes,
+                MessageDialogResult.No,
+                MessageDialogResult.None),
 
             MessageDialogButtons.YesNoCancel => new MessageDialogButtonConfiguration(
-                PrimaryButtonText: "Yes",
-                SecondaryButtonText: "No",
-                CloseButtonText: "Cancel",
-                PrimaryResult: MessageDialogResult.Yes,
-                SecondaryResult: MessageDialogResult.No,
-                CloseResult: MessageDialogResult.Cancel),
+                "Yes",
+                "No",
+                "Cancel",
+                MessageDialogResult.Yes,
+                MessageDialogResult.No,
+                MessageDialogResult.Cancel),
 
             MessageDialogButtons.RetryCancel => new MessageDialogButtonConfiguration(
-                PrimaryButtonText: "Retry",
-                SecondaryButtonText: null,
-                CloseButtonText: "Cancel",
-                PrimaryResult: MessageDialogResult.Retry,
-                SecondaryResult: MessageDialogResult.None,
-                CloseResult: MessageDialogResult.Cancel),
+                "Retry",
+                null,
+                "Cancel",
+                MessageDialogResult.Retry,
+                MessageDialogResult.None,
+                MessageDialogResult.Cancel),
 
             _ => Build(MessageDialogButtons.Ok)
         };
+    }
 
     public static MessageDialogButtonConfiguration BuildChoice(
         string primaryButtonText,
-        string secondaryButtonText) =>
-        new(
-            PrimaryButtonText: primaryButtonText,
-            SecondaryButtonText: secondaryButtonText,
-            CloseButtonText: null,
-            PrimaryResult: MessageDialogResult.Yes,
-            SecondaryResult: MessageDialogResult.No,
-            CloseResult: MessageDialogResult.None);
+        string secondaryButtonText)
+    {
+        return new MessageDialogButtonConfiguration(
+            primaryButtonText,
+            secondaryButtonText,
+            null,
+            MessageDialogResult.Yes,
+            MessageDialogResult.No,
+            MessageDialogResult.None);
+    }
 }

@@ -1,3 +1,4 @@
+using System;
 using AutoQAC.ViewModels;
 using AutoQAC.Views.Helpers;
 using Microsoft.UI.Windowing;
@@ -7,8 +8,8 @@ namespace AutoQAC.Views;
 
 public sealed partial class ProgressWindow
 {
-    private ProgressViewModel? _subscribedViewModel;
     private bool _disposeHandled;
+    private ProgressViewModel? _subscribedViewModel;
 
     public ProgressWindow()
     {
@@ -39,7 +40,7 @@ public sealed partial class ProgressWindow
         }
     }
 
-    private void OnCloseRequested(object? sender, System.EventArgs e)
+    private void OnCloseRequested(object? sender, EventArgs e)
     {
         DisposeViewModelIfNeeded();
         Close();
@@ -47,10 +48,7 @@ public sealed partial class ProgressWindow
 
     private void OnAppWindowClosing(AppWindow sender, AppWindowClosingEventArgs args)
     {
-        if (Root.DataContext is ProgressViewModel { IsCleaning: true })
-        {
-            args.Cancel = true;
-        }
+        if (Root.DataContext is ProgressViewModel { IsCleaning: true }) args.Cancel = true;
     }
 
     private void OnClosed(object sender, WindowEventArgs args)
@@ -60,10 +58,7 @@ public sealed partial class ProgressWindow
 
     private void DisposeViewModelIfNeeded()
     {
-        if (_disposeHandled)
-        {
-            return;
-        }
+        if (_disposeHandled) return;
 
         _disposeHandled = true;
         Root.DataContextChanged -= OnDataContextChanged;

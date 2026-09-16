@@ -4,7 +4,7 @@ using System.Linq;
 namespace AutoQAC.Models;
 
 /// <summary>
-/// Aggregate status for backup, restore, retention, and copy operations.
+///     Aggregate status for backup, restore, retention, and copy operations.
 /// </summary>
 public enum BackupOperationStatus
 {
@@ -25,7 +25,7 @@ public enum BackupOperationStatus
 }
 
 /// <summary>
-/// Operation-neutral failure reasons that callers map to concise row-level UI labels.
+///     Operation-neutral failure reasons that callers map to concise row-level UI labels.
 /// </summary>
 public enum BackupFailureReason
 {
@@ -52,7 +52,7 @@ public enum BackupFailureReason
 }
 
 /// <summary>
-/// Maps operation-neutral failure reasons to the concise labels allowed in user-facing restore and retention rows.
+///     Maps operation-neutral failure reasons to the concise labels allowed in user-facing restore and retention rows.
 /// </summary>
 public static class BackupFailureReasonExtensions
 {
@@ -68,14 +68,16 @@ public static class BackupFailureReasonExtensions
         };
 
     /// <summary>
-    /// Returns the approved UI label for a reason, or null when callers must map neutral reasons themselves.
+    ///     Returns the approved UI label for a reason, or null when callers must map neutral reasons themselves.
     /// </summary>
-    public static string? ToDisplayLabel(this BackupFailureReason reason) =>
-        DisplayLabels.GetValueOrDefault(reason);
+    public static string? ToDisplayLabel(this BackupFailureReason reason)
+    {
+        return DisplayLabels.GetValueOrDefault(reason);
+    }
 }
 
 /// <summary>
-/// Row-level outcome for restoring one plugin from a backup session.
+///     Row-level outcome for restoring one plugin from a backup session.
 /// </summary>
 public enum BackupRestoreRowStatus
 {
@@ -90,7 +92,7 @@ public enum BackupRestoreRowStatus
 }
 
 /// <summary>
-/// Row-level outcome for one retention cleanup candidate.
+///     Row-level outcome for one retention cleanup candidate.
 /// </summary>
 public enum BackupRetentionRowStatus
 {
@@ -105,7 +107,7 @@ public enum BackupRetentionRowStatus
 }
 
 /// <summary>
-/// Byte-level progress for a backup or restore file copy.
+///     Byte-level progress for a backup or restore file copy.
 /// </summary>
 /// <param name="FileName">The file or session name being processed, suitable for UI display.</param>
 /// <param name="BytesCopied">Bytes copied so far, or zero for count-only operations.</param>
@@ -120,7 +122,7 @@ public sealed record BackupCopyProgress(
     int? TotalFiles = null);
 
 /// <summary>
-/// Structured result from a single copy operation without raw exception text.
+///     Structured result from a single copy operation without raw exception text.
 /// </summary>
 /// <param name="Status">The copy status.</param>
 /// <param name="SourcePath">The requested source path.</param>
@@ -137,39 +139,49 @@ public sealed record BackupCopyResult(
     BackupFailureReason? FailureReason)
 {
     /// <summary>
-    /// Gets the user-facing label for the failure reason, or null when callers must map the neutral reason themselves.
+    ///     Gets the user-facing label for the failure reason, or null when callers must map the neutral reason themselves.
     /// </summary>
     public string? DisplayReason => FailureReason?.ToDisplayLabel();
 
     /// <summary>
-    /// Creates a completed copy result.
+    ///     Creates a completed copy result.
     /// </summary>
     public static BackupCopyResult Complete(string sourcePath, string destinationPath, long bytesCopied,
-        long? totalBytes) =>
-        new(BackupOperationStatus.Complete, sourcePath, destinationPath, bytesCopied, totalBytes, FailureReason: null);
+        long? totalBytes)
+    {
+        return new BackupCopyResult(BackupOperationStatus.Complete, sourcePath, destinationPath, bytesCopied,
+            totalBytes,
+            null);
+    }
 
     /// <summary>
-    /// Creates a failed copy result with a concise failure reason.
+    ///     Creates a failed copy result with a concise failure reason.
     /// </summary>
     public static BackupCopyResult Failed(
         string sourcePath,
         string destinationPath,
         BackupFailureReason reason,
         long bytesCopied = 0,
-        long? totalBytes = null) =>
-        new(BackupOperationStatus.Failed, sourcePath, destinationPath, bytesCopied, totalBytes, reason);
+        long? totalBytes = null)
+    {
+        return new BackupCopyResult(BackupOperationStatus.Failed, sourcePath, destinationPath, bytesCopied, totalBytes,
+            reason);
+    }
 
     /// <summary>
-    /// Creates a canceled copy result.
+    ///     Creates a canceled copy result.
     /// </summary>
     public static BackupCopyResult Canceled(string sourcePath, string destinationPath, long bytesCopied,
-        long? totalBytes) =>
-        new(BackupOperationStatus.Canceled, sourcePath, destinationPath, bytesCopied, totalBytes,
+        long? totalBytes)
+    {
+        return new BackupCopyResult(BackupOperationStatus.Canceled, sourcePath, destinationPath, bytesCopied,
+            totalBytes,
             BackupFailureReason.Canceled);
+    }
 }
 
 /// <summary>
-/// Structured result for creating one plugin backup during a cleaning session.
+///     Structured result for creating one plugin backup during a cleaning session.
 /// </summary>
 /// <param name="Status">Backup creation status.</param>
 /// <param name="PluginName">Plugin file name shown in progress and results.</param>
@@ -184,13 +196,13 @@ public sealed record BackupCreateResult(
     BackupFailureReason? FailureReason)
 {
     /// <summary>
-    /// Gets the approved UI display reason for failed or canceled backup creation.
+    ///     Gets the approved UI display reason for failed or canceled backup creation.
     /// </summary>
     public string? DisplayReason => FailureReason?.ToDisplayLabel();
 }
 
 /// <summary>
-/// Structured restore result for one plugin row.
+///     Structured restore result for one plugin row.
 /// </summary>
 /// <param name="FileName">Plugin file name.</param>
 /// <param name="Status">Row-level restore status.</param>
@@ -205,13 +217,13 @@ public sealed record BackupRestoreRowResult(
     long? TotalBytes)
 {
     /// <summary>
-    /// Gets the approved UI display reason for failed or canceled restore rows.
+    ///     Gets the approved UI display reason for failed or canceled restore rows.
     /// </summary>
     public string? DisplayReason => FailureReason?.ToDisplayLabel();
 }
 
 /// <summary>
-/// Aggregate structured result for restoring one or more plugins from a backup session.
+///     Aggregate structured result for restoring one or more plugins from a backup session.
 /// </summary>
 /// <param name="Status">Aggregate restore status.</param>
 /// <param name="Rows">Per-plugin restore rows.</param>
@@ -228,7 +240,7 @@ public sealed record BackupRestoreResult(BackupOperationStatus Status, IReadOnly
 }
 
 /// <summary>
-/// Structured retention cleanup result for one backup session directory.
+///     Structured retention cleanup result for one backup session directory.
 /// </summary>
 /// <param name="SessionDirectory">Session directory considered for cleanup.</param>
 /// <param name="Status">Row-level retention status.</param>
@@ -239,13 +251,13 @@ public sealed record BackupRetentionRowResult(
     BackupFailureReason? FailureReason)
 {
     /// <summary>
-    /// Gets the approved UI display reason for failed retention cleanup rows.
+    ///     Gets the approved UI display reason for failed retention cleanup rows.
     /// </summary>
     public string? DisplayReason => FailureReason?.ToDisplayLabel();
 }
 
 /// <summary>
-/// Aggregate structured result for backup retention cleanup.
+///     Aggregate structured result for backup retention cleanup.
 /// </summary>
 /// <param name="Status">Aggregate retention status.</param>
 /// <param name="Rows">Per-session retention cleanup rows.</param>
@@ -265,9 +277,9 @@ public sealed record BackupRetentionCleanupResult(
 }
 
 /// <summary>
-/// Row-level outcome for deleting one backup session directory from RestoreWindow.
-/// Distinct from <see cref="BackupRetentionRowResult"/> because Delete Session is a manual user action,
-/// not part of automated retention cleanup.
+///     Row-level outcome for deleting one backup session directory from RestoreWindow.
+///     Distinct from <see cref="BackupRetentionRowResult" /> because Delete Session is a manual user action,
+///     not part of automated retention cleanup.
 /// </summary>
 public enum BackupSessionDeleteStatus
 {
@@ -282,7 +294,7 @@ public enum BackupSessionDeleteStatus
 }
 
 /// <summary>
-/// Structured result from a manual RestoreWindow "Delete Session" action.
+///     Structured result from a manual RestoreWindow "Delete Session" action.
 /// </summary>
 /// <param name="Status">Aggregate delete status.</param>
 /// <param name="SessionDirectory">The session directory considered for deletion (preserved for logging).</param>

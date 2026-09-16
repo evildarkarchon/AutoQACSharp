@@ -18,10 +18,7 @@ public sealed class UserConfigFileStoreTests : IDisposable
 
     public void Dispose()
     {
-        if (!Directory.Exists(_testDirectory))
-        {
-            return;
-        }
+        if (!Directory.Exists(_testDirectory)) return;
 
         try
         {
@@ -44,7 +41,7 @@ public sealed class UserConfigFileStoreTests : IDisposable
             (source, destination) =>
             {
                 moved = true;
-                File.Move(source, destination, overwrite: false);
+                File.Move(source, destination, false);
             });
 
         await store.WriteAsync(NewConfig(123), CancellationToken.None);
@@ -70,7 +67,7 @@ public sealed class UserConfigFileStoreTests : IDisposable
                 replaced = true;
                 File.Replace(source, destination, backup);
             },
-            (source, destination) => File.Move(source, destination, overwrite: false));
+            (source, destination) => File.Move(source, destination, false));
 
         await store.WriteAsync(NewConfig(456), CancellationToken.None);
 
@@ -90,7 +87,7 @@ public sealed class UserConfigFileStoreTests : IDisposable
             Substitute.For<ILoggingService>(),
             _testDirectory,
             (_, _, _) => throw expected,
-            (source, destination) => File.Move(source, destination, overwrite: false));
+            (source, destination) => File.Move(source, destination, false));
 
         var thrown = await FluentActions.Awaiting(() => store.WriteAsync(NewConfig(789), CancellationToken.None))
             .Should().ThrowAsync<IOException>();
@@ -139,9 +136,12 @@ public sealed class UserConfigFileStoreTests : IDisposable
         result.Hash.Should().MatchRegex("^[0-9A-F]{64}$");
     }
 
-    private static UserConfiguration NewConfig(int timeout) => new()
+    private static UserConfiguration NewConfig(int timeout)
     {
-        SelectedGame = "SkyrimSe",
-        Settings = new AutoQacSettings { CleaningTimeout = timeout }
-    };
+        return new UserConfiguration
+        {
+            SelectedGame = "SkyrimSe",
+            Settings = new AutoQacSettings { CleaningTimeout = timeout }
+        };
+    }
 }

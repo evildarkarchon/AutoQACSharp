@@ -55,9 +55,9 @@ public sealed class PluginIssueApproximationModuleTests
         reported[0].Target.Should().BeSameAs(targetKey);
         reported[0].Approximation.Should().Be(
             PluginIssueApproximation.Available(
-                itmCount: 1,
-                deletedReferenceCount: 0,
-                deletedNavmeshCount: 0));
+                1,
+                0,
+                0));
         _queryService.Received(1).Analyse(
             Arg.Any<IModGetter>(),
             Arg.Any<ILinkCache>(),
@@ -172,8 +172,8 @@ public sealed class PluginIssueApproximationModuleTests
         reported.Select(result => result.Target).Should().Equal(firstTarget, secondKey);
         reported[0].Target.Should().BeSameAs(firstTarget);
         reported[1].Target.Should().BeSameAs(secondKey);
-        reported.Should().OnlyContain(
-            result => result.Approximation.Status == PluginIssueApproximationStatus.Available);
+        reported.Should()
+            .OnlyContain(result => result.Approximation.Status == PluginIssueApproximationStatus.Available);
     }
 
     [Fact]
@@ -200,9 +200,7 @@ public sealed class PluginIssueApproximationModuleTests
                 var plugin = call.ArgAt<IModGetter>(0);
                 analyzed.Add(plugin.ModKey);
                 if (plugin.ModKey == ModKey.FromFileName(brokenKey.FileName))
-                {
                     throw new InvalidOperationException("Target-specific query failure.");
-                }
 
                 return new PluginAnalysisResult(
                 [
@@ -370,7 +368,7 @@ public sealed class PluginIssueApproximationModuleTests
 
         public void Dispose()
         {
-            Directory.Delete(DataFolder, recursive: true);
+            Directory.Delete(DataFolder, true);
         }
     }
 
@@ -399,7 +397,7 @@ public sealed class PluginIssueApproximationModuleTests
 
         public void Dispose()
         {
-            Directory.Delete(DataFolder, recursive: true);
+            Directory.Delete(DataFolder, true);
         }
     }
 }

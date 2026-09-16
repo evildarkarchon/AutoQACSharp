@@ -7,12 +7,12 @@ using AutoQAC.Services.GameCapability;
 namespace AutoQAC.Services.Plugin;
 
 /// <summary>
-/// Computes command availability from publication facts and game affordances.
+///     Computes command availability from publication facts and game affordances.
 /// </summary>
 internal sealed class PluginRefreshCommandAvailabilityPolicy
 {
     /// <summary>
-    /// Creates command availability for the current visible rows and activity state.
+    ///     Creates command availability for the current visible rows and activity state.
     /// </summary>
     /// <param name="gameType">Game associated with the publication.</param>
     /// <param name="rows">Visible rows exposed by the current snapshot.</param>
@@ -42,9 +42,9 @@ internal sealed class PluginRefreshCommandAvailabilityPolicy
                                        affordance.CanAttemptIssueApproximation;
 
         return new PluginRefreshCommandAvailability(
-            CanSelectAll: canUseRows,
-            CanDeselectAll: canUseRows,
-            CanRefreshSelectedIssueApproximations: canRefreshApproximations,
-            CanCancelRefresh: isRunning);
+            canUseRows,
+            canUseRows,
+            canRefreshApproximations,
+            isRunning);
     }
 }

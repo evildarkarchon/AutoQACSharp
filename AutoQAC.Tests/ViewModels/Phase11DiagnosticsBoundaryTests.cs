@@ -27,7 +27,8 @@ public sealed class Phase11DiagnosticsBoundaryTests
     /// Verifies a real StartCleaning command catch path maps unsafe technical exception text to safe UI copy.
     /// </summary>
     [Fact]
-    public async Task StartCleaningCommand_WhenOrchestratorThrowsUnsafeException_ShouldExcludeSharedSentinelsFromUserFacingText()
+    public async Task
+        StartCleaningCommand_WhenOrchestratorThrowsUnsafeException_ShouldExcludeSharedSentinelsFromUserFacingText()
     {
         // Arrange
         var configService = Substitute.For<IConfigurationService>();
@@ -85,7 +86,8 @@ public sealed class Phase11DiagnosticsBoundaryTests
                 discoveryPlanner,
                 new DiscoverySettingsModule(configService, stateService, refreshModule),
                 new CleaningCommandReadiness(refreshModule, stateService));
-            using var _ = viewModel.ShowProgressInteraction.RegisterHandler(_ => Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
+            using var _ = viewModel.ShowProgressInteraction.RegisterHandler(_ =>
+                Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
 
             // Act
             await viewModel.Commands.StartCleaningCommand.ExecuteAsync(null);
@@ -96,7 +98,8 @@ public sealed class Phase11DiagnosticsBoundaryTests
             var userFacingText = dialogCall.GetArguments()
                 .OfType<string>()
                 .Append(viewModel.Commands.StatusText)
-                .Concat(viewModel.Commands.ValidationErrors.SelectMany(error => new[] { error.Title, error.Message, error.FixStep }))
+                .Concat(viewModel.Commands.ValidationErrors.SelectMany(error =>
+                    new[] { error.Title, error.Message, error.FixStep }))
                 .ToArray();
 
             userFacingText.Should().Contain("Cleaning Failed");
@@ -116,9 +119,6 @@ public sealed class Phase11DiagnosticsBoundaryTests
     private static void AssertNoUnsafeSentinels(IEnumerable<string?> values)
     {
         var text = string.Join(Environment.NewLine, values.Where(value => value is not null));
-        foreach (var sentinel in DiagnosticSentinels.UnsafeDiagnosticSentinels)
-        {
-            text.Should().NotContain(sentinel);
-        }
+        foreach (var sentinel in DiagnosticSentinels.UnsafeDiagnosticSentinels) text.Should().NotContain(sentinel);
     }
 }

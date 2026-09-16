@@ -2,6 +2,7 @@ using System.Reactive.Linq;
 using System.Reactive.Subjects;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
+using AutoQAC.Models.Configuration;
 using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
 using AutoQAC.Services.GameCapability;
@@ -41,10 +42,10 @@ public sealed class MainWindowThreadingTests
         configService.LoadUserConfigAsync(Arg.Any<CancellationToken>())
             .Returns(new global::AutoQAC.Models.Configuration.UserConfiguration
             {
-                LoadOrder = new(),
-                XEdit = new(),
-                ModOrganizer = new(),
-                Settings = new()
+                LoadOrder = new LoadOrderConfig(),
+                XEdit = new XEditConfig(),
+                ModOrganizer = new ModOrganizerConfig(),
+                Settings = new AutoQacSettings()
             });
         configService.GetSelectedGameAsync(Arg.Any<CancellationToken>())
             .Returns(GameType.Unknown);
@@ -147,15 +148,15 @@ public sealed class MainWindowThreadingTests
         try
         {
             viewModel.OnPluginRefreshSnapshot(RecordingPluginRefreshModule.CreateSnapshot(
-                gameType: GameType.SkyrimSe,
-                rows: [CreateRow("Test.esp")],
+                GameType.SkyrimSe,
+                [CreateRow("Test.esp")],
                 commands: new PluginRefreshCommandAvailability(true, true, true, false)));
 
             viewModel.SelectAllCommand.CanExecute(null).Should().BeTrue();
 
             viewModel.OnPluginRefreshSnapshot(RecordingPluginRefreshModule.CreateSnapshot(
-                gameType: GameType.SkyrimSe,
-                rows: [CreateRow("Test.esp")],
+                GameType.SkyrimSe,
+                [CreateRow("Test.esp")],
                 commands: new PluginRefreshCommandAvailability(false, false, false, false)));
 
             viewModel.SelectAllCommand.CanExecute(null).Should().BeFalse(
@@ -184,10 +185,10 @@ public sealed class MainWindowThreadingTests
         configService.LoadUserConfigAsync(Arg.Any<CancellationToken>())
             .Returns(new global::AutoQAC.Models.Configuration.UserConfiguration
             {
-                LoadOrder = new(),
-                XEdit = new(),
-                ModOrganizer = new(),
-                Settings = new()
+                LoadOrder = new LoadOrderConfig(),
+                XEdit = new XEditConfig(),
+                ModOrganizer = new ModOrganizerConfig(),
+                Settings = new AutoQacSettings()
             });
         configService.GetSelectedGameAsync(Arg.Any<CancellationToken>())
             .Returns(GameType.Unknown);
@@ -203,18 +204,18 @@ public sealed class MainWindowThreadingTests
             Substitute.For<IPluginValidationService>(),
             pluginLoadingService,
             captureDispatcher,
-            pluginRefreshModule: refreshModule,
-            discoveryPlanner: discoveryPlanner,
-            discoverySettingsModule: new DiscoverySettingsModule(configService, stateService, refreshModule),
-            cleaningCommandReadiness: new CleaningCommandReadiness(refreshModule, stateService));
+            refreshModule,
+            discoveryPlanner,
+            new DiscoverySettingsModule(configService, stateService, refreshModule),
+            new CleaningCommandReadiness(refreshModule, stateService));
 
         try
         {
             captureDispatcher.Reset();
 
             await Task.Run(() => refreshModule.Publish(RecordingPluginRefreshModule.CreateSnapshot(
-                gameType: GameType.SkyrimSe,
-                rows: [CreateRow("A.esp")],
+                GameType.SkyrimSe,
+                [CreateRow("A.esp")],
                 activity: new PluginRefreshActivity(false, true),
                 commands: new PluginRefreshCommandAvailability(false, false, false, true),
                 statusText: "Analyzing 1 of 2 selected plugins.")));
@@ -245,8 +246,8 @@ public sealed class MainWindowThreadingTests
             };
 
             viewModel.OnPluginRefreshSnapshot(RecordingPluginRefreshModule.CreateSnapshot(
-                gameType: GameType.SkyrimSe,
-                rows: initialRows));
+                GameType.SkyrimSe,
+                initialRows));
             var unchangedRow = viewModel.PluginsToClean[1];
 
             var updatedRows = new[]
@@ -256,8 +257,8 @@ public sealed class MainWindowThreadingTests
             };
 
             viewModel.OnPluginRefreshSnapshot(RecordingPluginRefreshModule.CreateSnapshot(
-                gameType: GameType.SkyrimSe,
-                rows: updatedRows));
+                GameType.SkyrimSe,
+                updatedRows));
 
             viewModel.PluginsToClean.Should().HaveCount(2);
             viewModel.PluginsToClean[1].Should().BeSameAs(unchangedRow);
@@ -272,22 +273,26 @@ public sealed class MainWindowThreadingTests
     private static PluginRefreshRow CreateRow(
         string fileName,
         string? fullPath = null,
-        PluginIssueApproximation? approximation = null) =>
-        new(
+        PluginIssueApproximation? approximation = null)
+    {
+        return new PluginRefreshRow(
             fileName,
             fullPath ?? fileName,
             GameType.SkyrimSe,
-            IsSelected: true,
-            IsInSkipList: false,
+            true,
+            false,
             approximation ?? PluginIssueApproximation.Unavailable);
+    }
 
     private static IPluginRefreshDiscoveryPlanner CreateDiscoveryPlanner(
         IConfigurationService configService,
-        IPluginLoadingService pluginLoadingService) =>
-        new PluginRefreshDiscoveryPlanner(
+        IPluginLoadingService pluginLoadingService)
+    {
+        return new PluginRefreshDiscoveryPlanner(
             configService,
             pluginLoadingService,
             Substitute.For<AutoQAC.Services.MO2.IMo2InstanceService>());
+    }
 
     /// <summary>
     /// Test double <see cref="IUiDispatcher"/> that runs callbacks synchronously while
@@ -314,20 +319,18 @@ public sealed class MainWindowThreadingTests
             _postTargetReached = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
         }
 
-        public Task WaitForNextPostAsync() => _nextPost.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        public Task WaitForNextPostAsync()
+        {
+            return _nextPost.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        }
 
         public Task WaitForPostCountAsync(int postCount)
         {
-            if (PostCount >= postCount)
-            {
-                return Task.CompletedTask;
-            }
+            if (PostCount >= postCount) return Task.CompletedTask;
 
             _targetPostCount = postCount;
             if (_postTargetReached.Task.IsCompleted)
-            {
                 _postTargetReached = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
-            }
 
             return _postTargetReached.Task.WaitAsync(TimeSpan.FromSeconds(2));
         }
@@ -343,14 +346,14 @@ public sealed class MainWindowThreadingTests
                 LastPostThreadId = Environment.CurrentManagedThreadId;
                 PostCount++;
                 _nextPost.TrySetResult(LastPostThreadId);
-                if (PostCount >= _targetPostCount)
-                {
-                    _postTargetReached.TrySetResult(PostCount);
-                }
+                if (PostCount >= _targetPostCount) _postTargetReached.TrySetResult(PostCount);
             }
         }
 
-        public Task InvokeAsync(Func<Task> action) => action();
+        public Task InvokeAsync(Func<Task> action)
+        {
+            return action();
+        }
 
         public void Dispose()
         {

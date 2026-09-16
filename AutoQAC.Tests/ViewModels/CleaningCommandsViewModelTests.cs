@@ -42,9 +42,7 @@ public sealed class CleaningCommandsViewModelTests
         refreshModule.ExecuteHandler = (intent, _) =>
         {
             if (intent is PluginRefreshIntent.Cancel { Reason: PluginRefreshCancelReason.CleaningStarted })
-            {
                 callOrder.Add("cancel");
-            }
 
             return Task.FromResult(refreshModule.CurrentSnapshot);
         };
@@ -105,8 +103,8 @@ public sealed class CleaningCommandsViewModelTests
             ConfigPersistenceOperationKind.Flush,
             ConfigPersistenceFailureKind.WriteFailed,
             "Could not write settings file (write_failed)",
-            LogReference: null,
-            Generation: 1);
+            null,
+            1);
         cleaningSession.StartAsync(Arg.Any<CancellationToken>())
             .Returns(_ => Task.FromException(new ConfigPersistenceFailureException(failure, failure.SafeSummary)));
 

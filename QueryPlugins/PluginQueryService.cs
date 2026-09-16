@@ -8,26 +8,26 @@ using QueryPlugins.Models;
 namespace QueryPlugins;
 
 /// <summary>
-/// Orchestrates all plugin issue detectors and returns a consolidated
-/// <see cref="PluginAnalysisResult"/>.
-///
-/// <para>
-/// A default instance is available via <see cref="Default"/>. Alternatively,
-/// construct one directly to supply custom detector implementations (e.g. for testing).
-/// </para>
+///     Orchestrates all plugin issue detectors and returns a consolidated
+///     <see cref="PluginAnalysisResult" />.
+///     <para>
+///         A default instance is available via <see cref="Default" />. Alternatively,
+///         construct one directly to supply custom detector implementations (e.g. for testing).
+///     </para>
 /// </summary>
 public sealed class PluginQueryService : IPluginQueryService
 {
     /// <summary>
-    /// A lazily-initialised default instance using the standard detector implementations.
+    ///     A lazily-initialised default instance using the standard detector implementations.
     /// </summary>
     public static readonly PluginQueryService Default = new();
 
-    private readonly IItmDetector _itmDetector;
     private readonly IReadOnlyDictionary<GameRelease, IGameSpecificDetector> _detectorsByRelease;
 
+    private readonly IItmDetector _itmDetector;
+
     /// <summary>
-    /// Creates a service with the standard built-in detectors.
+    ///     Creates a service with the standard built-in detectors.
     /// </summary>
     public PluginQueryService()
         : this(
@@ -37,15 +37,15 @@ public sealed class PluginQueryService : IPluginQueryService
     }
 
     /// <summary>
-    /// Creates a service with custom detector implementations. Intended for testing.
+    ///     Creates a service with custom detector implementations. Intended for testing.
     /// </summary>
     /// <param name="itmDetector">The ITM detector to use.</param>
     /// <param name="gameDetectors">
-    /// The game-specific detectors. Each must have a unique, non-overlapping set of
-    /// <see cref="IGameSpecificDetector.SupportedReleases"/>.
+    ///     The game-specific detectors. Each must have a unique, non-overlapping set of
+    ///     <see cref="IGameSpecificDetector.SupportedReleases" />.
     /// </param>
     /// <exception cref="ArgumentException">
-    /// Thrown if two detectors claim the same <see cref="GameRelease"/>.
+    ///     Thrown if two detectors claim the same <see cref="GameRelease" />.
     /// </exception>
     public PluginQueryService(IItmDetector itmDetector, IEnumerable<IGameSpecificDetector> gameDetectors)
     {
@@ -53,24 +53,19 @@ public sealed class PluginQueryService : IPluginQueryService
 
         var byRelease = new Dictionary<GameRelease, IGameSpecificDetector>();
         foreach (var detector in gameDetectors)
-        {
-            foreach (var release in detector.SupportedReleases)
-            {
-                if (!byRelease.TryAdd(release, detector))
-                {
-                    throw new ArgumentException(
-                        $"Duplicate detector registered for {release}: " +
-                        $"{byRelease[release].GetType().Name} and {detector.GetType().Name}.",
-                        nameof(gameDetectors));
-                }
-            }
-        }
+        foreach (var release in detector.SupportedReleases)
+            if (!byRelease.TryAdd(release, detector))
+                throw new ArgumentException(
+                    $"Duplicate detector registered for {release}: " +
+                    $"{byRelease[release].GetType().Name} and {detector.GetType().Name}.",
+                    nameof(gameDetectors));
 
         _detectorsByRelease = byRelease;
     }
 
     /// <inheritdoc />
-    public PluginAnalysisResult Analyse(IModGetter plugin, ILinkCache linkCache, GameRelease gameRelease, CancellationToken ct = default)
+    public PluginAnalysisResult Analyse(IModGetter plugin, ILinkCache linkCache, GameRelease gameRelease,
+        CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
 

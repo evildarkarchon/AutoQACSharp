@@ -18,21 +18,20 @@ public sealed class ProcessExecutionService(
     IProcessExitWaiter? processExitWaiter = null)
     : IProcessExecutionService, IDisposable
 {
-    private readonly SemaphoreSlim _processSlots = new(1, 1);
-    private readonly IProcessExitWaiter _processExitWaiter = processExitWaiter ?? new ProcessExitWaiter();
+    private const int GracePeriodMs = 2500;
 
     /// <summary>
-    /// Known xEdit process name fragments for orphan detection.
+    ///     Known xEdit process name fragments for orphan detection.
     /// </summary>
     private static readonly string[] XEditProcessNames =
         ["sseedit", "fo4edit", "fo3edit", "fnvedit", "tes5vredit", "xedit", "fo76edit", "tes4edit"];
 
-    private const int GracePeriodMs = 2500;
+    private readonly IProcessExitWaiter _processExitWaiter = processExitWaiter ?? new ProcessExitWaiter();
+    private readonly SemaphoreSlim _processSlots = new(1, 1);
 
-    private enum ProcessStopReason
+    public void Dispose()
     {
-        Timeout,
-        UserRequestedStop
+        _processSlots.Dispose();
     }
 
     // Hardcoded to 1: xEdit enforces single-instance via file locking
@@ -130,16 +129,14 @@ public sealed class ProcessExecutionService(
                     : "Process execution cancelled by user.");
 
                 // Attempt graceful termination first
-                var result = await TerminateProcessAsync(process, forceKill: false, CancellationToken.None)
+                var result = await TerminateProcessAsync(process, false, CancellationToken.None)
                     .ConfigureAwait(false);
                 terminationResult = result;
 
                 if (stopReason == ProcessStopReason.Timeout && result == TerminationResult.GracePeriodExpired)
-                {
                     // Timeout is an automated safety boundary, so it may escalate without a user prompt.
-                    terminationResult = await TerminateProcessAsync(process, forceKill: true, CancellationToken.None)
+                    terminationResult = await TerminateProcessAsync(process, true, CancellationToken.None)
                         .ConfigureAwait(false);
-                }
             }
             finally
             {
@@ -147,9 +144,7 @@ public sealed class ProcessExecutionService(
                 try
                 {
                     if (!ShouldPreservePidEvidence(terminationResult))
-                    {
                         await UntrackProcessAsync(processId, CancellationToken.None).ConfigureAwait(false);
-                    }
                 }
                 catch (Exception ex)
                 {
@@ -159,76 +154,16 @@ public sealed class ProcessExecutionService(
 
             return new ProcessResult
             {
-                ExitCode = timedOut ? -1 : (process.HasExited ? process.ExitCode : -1),
+                ExitCode = timedOut ? -1 : process.HasExited ? process.ExitCode : -1,
                 TimedOut = timedOut,
                 TerminationResult = terminationResult
             };
         }
         finally
         {
-            if (slotAcquired)
-            {
-                _processSlots.Release();
-            }
+            if (slotAcquired) _processSlots.Release();
         }
     }
-
-    /// <summary>
-    /// Clones caller-supplied process start settings while preserving the mutually exclusive argument API in use.
-    /// </summary>
-    private static ProcessStartInfo CloneStartInfoForLaunch(
-        ProcessStartInfo startInfo,
-        string fileName,
-        string workingDirectory)
-    {
-        var processStartInfo = new ProcessStartInfo
-        {
-            FileName = fileName,
-            WorkingDirectory = workingDirectory,
-            UseShellExecute = false,
-            CreateNoWindow = startInfo.CreateNoWindow,
-            RedirectStandardInput = startInfo.RedirectStandardInput,
-            RedirectStandardOutput = startInfo.RedirectStandardOutput,
-            RedirectStandardError = startInfo.RedirectStandardError,
-            StandardInputEncoding = startInfo.StandardInputEncoding,
-            StandardOutputEncoding = startInfo.StandardOutputEncoding,
-            StandardErrorEncoding = startInfo.StandardErrorEncoding
-        };
-
-        if (startInfo.ArgumentList.Count > 0)
-        {
-            foreach (var argument in startInfo.ArgumentList)
-            {
-                processStartInfo.ArgumentList.Add(argument);
-            }
-        }
-        else
-        {
-            processStartInfo.Arguments = startInfo.Arguments;
-        }
-
-        return processStartInfo;
-    }
-
-    /// <summary>
-    /// Counts launch arguments without exposing their raw values in process-start diagnostics.
-    /// </summary>
-    private static int GetArgumentCount(ProcessStartInfo startInfo) =>
-        startInfo.ArgumentList.Count > 0
-            ? startInfo.ArgumentList.Count
-            : string.IsNullOrWhiteSpace(startInfo.Arguments)
-                ? 0
-                : 1;
-
-    /// <summary>
-    /// Selects a PID tracking label that cannot expose raw launch arguments or local paths.
-    /// </summary>
-    /// <param name="pluginName">Optional caller-supplied plugin name or path candidate.</param>
-    /// <returns>A sanitized plugin filename when available; otherwise the generic <c>ExternalProcess</c> label.</returns>
-    private static string GetSafeTrackingLabel(string? pluginName) =>
-        string.IsNullOrWhiteSpace(pluginName)
-            ? "ExternalProcess"
-            : DiagnosticTextFormatter.SafePluginName(pluginName);
 
     public async Task<TerminationResult> TerminateProcessAsync(
         System.Diagnostics.Process process,
@@ -251,7 +186,7 @@ public sealed class ProcessExecutionService(
             logger.Information("[Termination] Force killing process tree (PID: {Pid})", process.Id);
             try
             {
-                process.Kill(entireProcessTree: true);
+                process.Kill(true);
                 await _processExitWaiter.WaitForExitAsync(process, ct).ConfigureAwait(false);
                 logger.Information("[Termination] Process tree killed successfully (PID: {Pid})", process.Id);
                 return TerminationResult.ForceKilled;
@@ -324,6 +259,67 @@ public sealed class ProcessExecutionService(
         }
     }
 
+    /// <summary>
+    ///     Clones caller-supplied process start settings while preserving the mutually exclusive argument API in use.
+    /// </summary>
+    private static ProcessStartInfo CloneStartInfoForLaunch(
+        ProcessStartInfo startInfo,
+        string fileName,
+        string workingDirectory)
+    {
+        var processStartInfo = new ProcessStartInfo
+        {
+            FileName = fileName,
+            WorkingDirectory = workingDirectory,
+            UseShellExecute = false,
+            CreateNoWindow = startInfo.CreateNoWindow,
+            RedirectStandardInput = startInfo.RedirectStandardInput,
+            RedirectStandardOutput = startInfo.RedirectStandardOutput,
+            RedirectStandardError = startInfo.RedirectStandardError,
+            StandardInputEncoding = startInfo.StandardInputEncoding,
+            StandardOutputEncoding = startInfo.StandardOutputEncoding,
+            StandardErrorEncoding = startInfo.StandardErrorEncoding
+        };
+
+        if (startInfo.ArgumentList.Count > 0)
+            foreach (var argument in startInfo.ArgumentList)
+                processStartInfo.ArgumentList.Add(argument);
+        else
+            processStartInfo.Arguments = startInfo.Arguments;
+
+        return processStartInfo;
+    }
+
+    /// <summary>
+    ///     Counts launch arguments without exposing their raw values in process-start diagnostics.
+    /// </summary>
+    private static int GetArgumentCount(ProcessStartInfo startInfo)
+    {
+        return startInfo.ArgumentList.Count > 0
+            ? startInfo.ArgumentList.Count
+            : string.IsNullOrWhiteSpace(startInfo.Arguments)
+                ? 0
+                : 1;
+    }
+
+    /// <summary>
+    ///     Selects a PID tracking label that cannot expose raw launch arguments or local paths.
+    /// </summary>
+    /// <param name="pluginName">Optional caller-supplied plugin name or path candidate.</param>
+    /// <returns>A sanitized plugin filename when available; otherwise the generic <c>ExternalProcess</c> label.</returns>
+    private static string GetSafeTrackingLabel(string? pluginName)
+    {
+        return string.IsNullOrWhiteSpace(pluginName)
+            ? "ExternalProcess"
+            : DiagnosticTextFormatter.SafePluginName(pluginName);
+    }
+
+    private enum ProcessStopReason
+    {
+        Timeout,
+        UserRequestedStop
+    }
+
     #region PID Tracking
 
     public async Task TrackProcessAsync(System.Diagnostics.Process process, string pluginName,
@@ -387,7 +383,7 @@ public sealed class ProcessExecutionService(
                         entry.Pid, entry.PluginName);
                     try
                     {
-                        process.Kill(entireProcessTree: true);
+                        process.Kill(true);
                         await _processExitWaiter.WaitForExitAsync(process, ct).ConfigureAwait(false);
                         logger.Information("[Orphan] Killed orphaned process (PID: {Pid})", entry.Pid);
                     }
@@ -420,13 +416,15 @@ public sealed class ProcessExecutionService(
         logger.Information("[Orphan] Cleared stale PID file entries: {Count}", tracked.Count - retained.Count);
     }
 
-    private static bool ShouldPreservePidEvidence(TerminationResult? result) =>
-        result is TerminationResult.GracePeriodExpired or TerminationResult.ForceKillFailed
+    private static bool ShouldPreservePidEvidence(TerminationResult? result)
+    {
+        return result is TerminationResult.GracePeriodExpired or TerminationResult.ForceKillFailed
             or TerminationResult.LeftRunningByUser;
+    }
 
     /// <summary>
-    /// Verify a process is actually xEdit, not a recycled PID.
-    /// Checks process name and start time proximity.
+    ///     Verify a process is actually xEdit, not a recycled PID.
+    ///     Checks process name and start time proximity.
     /// </summary>
     private static bool IsXEditProcess(System.Diagnostics.Process process, DateTime trackedStartTime)
     {
@@ -451,9 +449,4 @@ public sealed class ProcessExecutionService(
     }
 
     #endregion
-
-    public void Dispose()
-    {
-        _processSlots.Dispose();
-    }
 }

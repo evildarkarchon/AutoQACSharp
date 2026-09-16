@@ -14,26 +14,14 @@ using AutoQAC.ViewModels.MainWindow;
 namespace AutoQAC.ViewModels;
 
 /// <summary>
-/// Slim orchestrator that composes Configuration, PluginList, and CleaningCommands
-/// sub-ViewModels. Owns Interactions (registered in MainWindow.xaml.cs code-behind)
-/// and mediates cross-VM state changes.
+///     Slim orchestrator that composes Configuration, PluginList, and CleaningCommands
+///     sub-ViewModels. Owns Interactions (registered in MainWindow.xaml.cs code-behind)
+///     and mediates cross-VM state changes.
 /// </summary>
 public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
 {
-    private readonly IDisposable _stateSubscription;
     private readonly IDisposable _pluginRefreshSnapshotSubscription;
-
-    public ConfigurationViewModel Configuration { get; }
-    public PluginListViewModel PluginList { get; }
-    public CleaningCommandsViewModel Commands { get; }
-
-    public Interaction<ICleaningSession, Unit> ShowProgressInteraction { get; } = new();
-    public Interaction<List<DryRunResult>, Unit> ShowPreviewInteraction { get; } = new();
-    public Interaction<CleaningSessionResult, Unit> ShowCleaningResultsInteraction { get; } = new();
-    public Interaction<Unit, bool> ShowSettingsInteraction { get; } = new();
-    public Interaction<Unit, bool> ShowSkipListInteraction { get; } = new();
-    public Interaction<Unit, Unit> ShowRestoreInteraction { get; } = new();
-    public Interaction<Unit, Unit> ShowAboutInteraction { get; } = new();
+    private readonly IDisposable _stateSubscription;
 
     public MainWindowViewModel(
         IConfigurationService configService,
@@ -81,6 +69,27 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         _ = Configuration.InitializeAsync();
     }
 
+    public ConfigurationViewModel Configuration { get; }
+    public PluginListViewModel PluginList { get; }
+    public CleaningCommandsViewModel Commands { get; }
+
+    public Interaction<ICleaningSession, Unit> ShowProgressInteraction { get; } = new();
+    public Interaction<List<DryRunResult>, Unit> ShowPreviewInteraction { get; } = new();
+    public Interaction<CleaningSessionResult, Unit> ShowCleaningResultsInteraction { get; } = new();
+    public Interaction<Unit, bool> ShowSettingsInteraction { get; } = new();
+    public Interaction<Unit, bool> ShowSkipListInteraction { get; } = new();
+    public Interaction<Unit, Unit> ShowRestoreInteraction { get; } = new();
+    public Interaction<Unit, Unit> ShowAboutInteraction { get; } = new();
+
+    public void Dispose()
+    {
+        _pluginRefreshSnapshotSubscription.Dispose();
+        _stateSubscription.Dispose();
+        Configuration.Dispose();
+        PluginList.Dispose();
+        Commands.Dispose();
+    }
+
     private void OnStateChanged(AppState state)
     {
         Configuration.OnStateChanged(state);
@@ -95,18 +104,12 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>
-    /// Shows a non-modal migration warning banner in the main window.
-    /// Delegates to ConfigurationViewModel.
+    ///     Shows a non-modal migration warning banner in the main window.
+    ///     Delegates to ConfigurationViewModel.
     /// </summary>
-    public void ShowMigrationWarning(string message) => Configuration.ShowMigrationWarning(message);
-
-    public void Dispose()
+    public void ShowMigrationWarning(string message)
     {
-        _pluginRefreshSnapshotSubscription.Dispose();
-        _stateSubscription.Dispose();
-        Configuration.Dispose();
-        PluginList.Dispose();
-        Commands.Dispose();
+        Configuration.ShowMigrationWarning(message);
     }
 
     private sealed class NoOpAppLifetime : IAppLifetime

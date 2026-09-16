@@ -37,25 +37,29 @@ public sealed class UserConfiguration
     [YamlMember(Alias = "Backup")] public BackupSettings Backup { get; set; } = new();
 
     /// <summary>
-    /// Returns a deep copy of this configuration with independent mutable containers and
-    /// non-null defaults for every nested config object and collection. Manual copy is intentional
-    /// (Phase 10 D-40..D-46): YamlDotNet serialization is reserved for actual disk persistence
-    /// (UserConfigFileStore in Plan 02) and MUST NOT be used in normal in-memory clone paths
-    /// (PERF-03). Behavior parity with the prior YAML round-trip clone is verified by the
-    /// `Copy_BehaviorMatchesYamlRoundTrip_FullyPopulatedGraph` test in AutoQAC.Tests.
+    ///     Returns a deep copy of this configuration with independent mutable containers and
+    ///     non-null defaults for every nested config object and collection. Manual copy is intentional
+    ///     (Phase 10 D-40..D-46): YamlDotNet serialization is reserved for actual disk persistence
+    ///     (UserConfigFileStore in Plan 02) and MUST NOT be used in normal in-memory clone paths
+    ///     (PERF-03). Behavior parity with the prior YAML round-trip clone is verified by the
+    ///     `Copy_BehaviorMatchesYamlRoundTrip_FullyPopulatedGraph` test in AutoQAC.Tests.
     /// </summary>
     public UserConfiguration Copy()
     {
-        static Dictionary<string, string> CopyDictionary(Dictionary<string, string>? source) =>
-            source is null ? new Dictionary<string, string>() : new Dictionary<string, string>(source);
+        static Dictionary<string, string> CopyDictionary(Dictionary<string, string>? source)
+        {
+            return source is null ? new Dictionary<string, string>() : new Dictionary<string, string>(source);
+        }
 
-        static Dictionary<string, List<string>> CopySkipLists(Dictionary<string, List<string>>? source) =>
-            source is null
+        static Dictionary<string, List<string>> CopySkipLists(Dictionary<string, List<string>>? source)
+        {
+            return source is null
                 ? new Dictionary<string, List<string>>(StringComparer.Ordinal)
                 : source.ToDictionary(
                     kvp => kvp.Key,
                     kvp => kvp.Value?.ToList() ?? [],
                     StringComparer.Ordinal);
+        }
 
         return new UserConfiguration
         {
@@ -80,7 +84,10 @@ public sealed class LoadOrderConfig
     [YamlMember(Alias = "File")] public string? File { get; set; }
 
     /// <summary>Deep copy of LoadOrderConfig (no YAML round-trip; see Phase 10 D-43).</summary>
-    public LoadOrderConfig Copy() => new() { File = File };
+    public LoadOrderConfig Copy()
+    {
+        return new LoadOrderConfig { File = File };
+    }
 }
 
 public sealed class ModOrganizerConfig
@@ -88,7 +95,10 @@ public sealed class ModOrganizerConfig
     [YamlMember(Alias = "Binary")] public string? Binary { get; set; }
 
     /// <summary>Deep copy of ModOrganizerConfig (no YAML round-trip; see Phase 10 D-43).</summary>
-    public ModOrganizerConfig Copy() => new() { Binary = Binary };
+    public ModOrganizerConfig Copy()
+    {
+        return new ModOrganizerConfig { Binary = Binary };
+    }
 }
 
 public sealed class XEditConfig
@@ -96,7 +106,10 @@ public sealed class XEditConfig
     [YamlMember(Alias = "Binary")] public string? Binary { get; set; }
 
     /// <summary>Deep copy of XEditConfig (no YAML round-trip; see Phase 10 D-43).</summary>
-    public XEditConfig Copy() => new() { Binary = Binary };
+    public XEditConfig Copy()
+    {
+        return new XEditConfig { Binary = Binary };
+    }
 }
 
 public sealed class AutoQacSettings
@@ -115,12 +128,15 @@ public sealed class AutoQacSettings
     public bool DisableSkipLists { get; set; }
 
     /// <summary>Deep copy of AutoQacSettings preserving all scalar fields (no YAML round-trip; D-43).</summary>
-    public AutoQacSettings Copy() => new()
+    public AutoQacSettings Copy()
     {
-        JournalExpiration = JournalExpiration,
-        CleaningTimeout = CleaningTimeout,
-        CpuThreshold = CpuThreshold,
-        Mo2Mode = Mo2Mode,
-        DisableSkipLists = DisableSkipLists
-    };
+        return new AutoQacSettings
+        {
+            JournalExpiration = JournalExpiration,
+            CleaningTimeout = CleaningTimeout,
+            CpuThreshold = CpuThreshold,
+            Mo2Mode = Mo2Mode,
+            DisableSkipLists = DisableSkipLists
+        };
+    }
 }

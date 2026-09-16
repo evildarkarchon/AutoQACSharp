@@ -8,14 +8,14 @@ using AutoQAC.Services.State;
 namespace AutoQAC.Services.Plugin;
 
 /// <summary>
-/// Compatibility adapter between Plugin refresh publications and the legacy AppState row surface.
+///     Compatibility adapter between Plugin refresh publications and the legacy AppState row surface.
 /// </summary>
 internal sealed class PluginRefreshAppStateMirror
 {
     private readonly IStateService _stateService;
 
     /// <summary>
-    /// Initializes an AppState mirror backed by the shared state service.
+    ///     Initializes an AppState mirror backed by the shared state service.
     /// </summary>
     /// <param name="stateService">Shared runtime state service.</param>
     internal PluginRefreshAppStateMirror(IStateService stateService)
@@ -24,42 +24,46 @@ internal sealed class PluginRefreshAppStateMirror
     }
 
     /// <summary>
-    /// Gets the latest shared AppState.
+    ///     Gets the latest shared AppState.
     /// </summary>
     internal AppState CurrentState => _stateService.CurrentState;
 
     /// <summary>
-    /// Creates a configuration projection from compatibility AppState fields.
+    ///     Creates a configuration projection from compatibility AppState fields.
     /// </summary>
     /// <param name="state">State to project.</param>
     /// <returns>A Plugin refresh configuration projection.</returns>
-    internal static PluginRefreshConfigurationProjection CreateConfigurationProjection(AppState state) =>
-        new(
-            LoadOrderPath: state.LoadOrderPath,
-            GameDataFolder: null,
-            HasGameDataFolderOverride: false,
-            XEditPath: state.XEditExecutablePath,
-            Mo2Path: state.Mo2ExecutablePath,
-            Mo2ModeEnabled: state.Mo2ModeEnabled,
-            Mo2InstancePath: null,
-            IsMo2InstanceOverride: false,
-            IsMo2InstanceValid: null,
-            AvailableProfiles: [],
-            SelectedProfile: state.Mo2Profile,
-            CleaningTimeout: state.CleaningTimeout);
+    internal static PluginRefreshConfigurationProjection CreateConfigurationProjection(AppState state)
+    {
+        return new PluginRefreshConfigurationProjection(
+            state.LoadOrderPath,
+            null,
+            false,
+            state.XEditExecutablePath,
+            state.Mo2ExecutablePath,
+            state.Mo2ModeEnabled,
+            null,
+            false,
+            null,
+            [],
+            state.Mo2Profile,
+            state.CleaningTimeout);
+    }
 
     /// <summary>
-    /// Projects visible rows from legacy AppState facts.
+    ///     Projects visible rows from legacy AppState facts.
     /// </summary>
     /// <param name="state">State containing compatibility plugin rows and exclusions.</param>
     /// <returns>Visible Plugin refresh rows.</returns>
-    internal static IReadOnlyList<PluginRefreshRow> ProjectVisibleRows(AppState state) =>
-        PluginRefreshPublicationRows.ProjectStateVisibleRows(
+    internal static IReadOnlyList<PluginRefreshRow> ProjectVisibleRows(AppState state)
+    {
+        return PluginRefreshPublicationRows.ProjectStateVisibleRows(
             state.PluginsToClean,
             state.ExcludedPluginPaths);
+    }
 
     /// <summary>
-    /// Clears compatibility rows when a refresh switches to a different game.
+    ///     Clears compatibility rows when a refresh switches to a different game.
     /// </summary>
     /// <param name="gameType">Game that is about to become current.</param>
     internal void ClearRowsForRefreshStart(GameType gameType)
@@ -74,7 +78,7 @@ internal sealed class PluginRefreshAppStateMirror
     }
 
     /// <summary>
-    /// Clears compatibility plugin rows without changing other runtime state.
+    ///     Clears compatibility plugin rows without changing other runtime state.
     /// </summary>
     internal void ClearRows()
     {
@@ -82,24 +86,22 @@ internal sealed class PluginRefreshAppStateMirror
     }
 
     /// <summary>
-    /// Mirrors accepted publication rows into AppState for legacy cleaning compatibility.
+    ///     Mirrors accepted publication rows into AppState for legacy cleaning compatibility.
     /// </summary>
     /// <param name="mirror">Rows and selection exclusions derived from a publication.</param>
     internal void MirrorRows(PluginRefreshPublicationRowsMirror mirror)
     {
         if (_stateService.CurrentState.IsCleaning)
-        {
             // Cleaning sessions run from their own accepted row copy; mirroring during cleaning could
             // rewrite the in-flight session's AppState rows underneath the sequential runner.
             return;
-        }
 
         _stateService.SetPluginsToClean(mirror.PluginsToClean.ToList());
         _stateService.UpdateExcludedPlugins(_ => mirror.ExcludedPluginPaths);
     }
 
     /// <summary>
-    /// Applies selection changes to AppState when no accepted publication is available.
+    ///     Applies selection changes to AppState when no accepted publication is available.
     /// </summary>
     /// <param name="visibleRows">Visible rows from the current snapshot.</param>
     /// <param name="change">Requested selection change.</param>
@@ -121,5 +123,4 @@ internal sealed class PluginRefreshAppStateMirror
 
         return targetFound;
     }
-
 }

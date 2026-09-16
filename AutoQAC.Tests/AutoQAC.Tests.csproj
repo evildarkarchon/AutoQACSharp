@@ -1,58 +1,58 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <LangVersion>preview</LangVersion>
+    <PropertyGroup>
+        <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <LangVersion>preview</LangVersion>
 
-    <IsPackable>false</IsPackable>
-    <IsTestProject>true</IsTestProject>
+        <IsPackable>false</IsPackable>
+        <IsTestProject>true</IsTestProject>
 
-    <!-- Coverage: auto-collect on every dotnet test run -->
-    <CollectCoverage>true</CollectCoverage>
-    <CoverletOutputFormat>cobertura</CoverletOutputFormat>
-    <CoverletOutput>./TestResults/coverage/</CoverletOutput>
-    <Include>[AutoQAC]*</Include>
-    <Exclude>[AutoQAC.Tests]*</Exclude>
-    <ExcludeByAttribute>ExcludeFromCodeCoverage</ExcludeByAttribute>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-  </PropertyGroup>
+        <!-- Coverage: auto-collect on every dotnet test run -->
+        <CollectCoverage>true</CollectCoverage>
+        <CoverletOutputFormat>cobertura</CoverletOutputFormat>
+        <CoverletOutput>./TestResults/coverage/</CoverletOutput>
+        <Include>[AutoQAC]*</Include>
+        <Exclude>[AutoQAC.Tests]*</Exclude>
+        <ExcludeByAttribute>ExcludeFromCodeCoverage</ExcludeByAttribute>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    </PropertyGroup>
 
-  <ItemGroup>
-    <PackageReference Include="coverlet.collector" Version="10.0.1">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
-    <PackageReference Include="coverlet.msbuild" Version="10.0.1">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
-    <PackageReference Include="FluentAssertions" Version="8.10.0" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.10" />
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
-    <PackageReference Include="NSubstitute" Version="6.0.0" />
-    <PackageReference Include="NSubstitute.Analyzers.CSharp" Version="1.0.17">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
-    </PackageReference>
-    <PackageReference Include="xunit" Version="2.9.3" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
-  </ItemGroup>
+    <ItemGroup>
+        <PackageReference Include="coverlet.collector" Version="10.0.1">
+            <PrivateAssets>all</PrivateAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+        </PackageReference>
+        <PackageReference Include="coverlet.msbuild" Version="10.0.1">
+            <PrivateAssets>all</PrivateAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+        </PackageReference>
+        <PackageReference Include="FluentAssertions" Version="8.10.0"/>
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.10"/>
+        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1"/>
+        <PackageReference Include="NSubstitute" Version="6.0.0"/>
+        <PackageReference Include="NSubstitute.Analyzers.CSharp" Version="1.0.17">
+            <PrivateAssets>all</PrivateAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+        </PackageReference>
+        <PackageReference Include="xunit" Version="2.9.3"/>
+        <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5"/>
+    </ItemGroup>
 
-  <ItemGroup>
-    <Compile Remove="TestProcessHelper\**\*.cs" />
-  </ItemGroup>
+    <ItemGroup>
+        <Compile Remove="TestProcessHelper\**\*.cs"/>
+    </ItemGroup>
 
-  <ItemGroup>
-    <Using Include="Xunit" />
-  </ItemGroup>
+    <ItemGroup>
+        <Using Include="Xunit"/>
+    </ItemGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\AutoQAC\AutoQAC.csproj" />
-    <ProjectReference Include="..\QueryPlugins\QueryPlugins.csproj" />
-    <ProjectReference Include="TestProcessHelper\AutoQAC.TestProcessHelper.csproj" ReferenceOutputAssembly="false" OutputItemType="Content" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="TestProcessHelper\bin\$(Configuration)\net10.0\AutoQAC.TestProcessHelper.dll" CopyToOutputDirectory="PreserveNewest" Link="AutoQAC.TestProcessHelper.dll" />
-  </ItemGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\AutoQAC\AutoQAC.csproj"/>
+        <ProjectReference Include="..\QueryPlugins\QueryPlugins.csproj"/>
+        <ProjectReference Include="TestProcessHelper\AutoQAC.TestProcessHelper.csproj" ReferenceOutputAssembly="false" OutputItemType="Content" CopyToOutputDirectory="PreserveNewest"/>
+        <Content Include="TestProcessHelper\bin\$(Configuration)\net10.0\AutoQAC.TestProcessHelper.dll" CopyToOutputDirectory="PreserveNewest" Link="AutoQAC.TestProcessHelper.dll"/>
+    </ItemGroup>
 
 </Project>

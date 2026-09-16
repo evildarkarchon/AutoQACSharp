@@ -5,7 +5,7 @@ using AutoQAC.Models;
 namespace AutoQAC.Services.GameCapability;
 
 /// <summary>
-/// Deterministic Game capability matrix used behind the Plugin refresh discovery plan module.
+///     Deterministic Game capability matrix used behind the Plugin refresh discovery plan module.
 /// </summary>
 internal static class GameCapabilityCatalog
 {
@@ -27,23 +27,27 @@ internal static class GameCapabilityCatalog
         };
 
     /// <summary>
-    /// Gets the capability row for the specified game.
+    ///     Gets the capability row for the specified game.
     /// </summary>
     /// <param name="gameType">Game to evaluate.</param>
     /// <returns>The capability row for the game.</returns>
-    internal static GameCapability Get(GameType gameType) =>
-        Capabilities.TryGetValue(gameType, out var capability)
+    internal static GameCapability Get(GameType gameType)
+    {
+        return Capabilities.TryGetValue(gameType, out var capability)
             ? capability
             : new GameCapability(gameType, PluginDiscoveryMode.None, false);
+    }
 
     /// <summary>
-    /// Gets the games available for user selection.
+    ///     Gets the games available for user selection.
     /// </summary>
     /// <returns>All supported selectable games, excluding <see cref="GameType.Unknown" />.</returns>
-    internal static IReadOnlyList<GameType> GetAvailableGames() =>
-        Capabilities.Values
+    internal static IReadOnlyList<GameType> GetAvailableGames()
+    {
+        return Capabilities.Values
             .Where(capability => capability.SupportsPluginLoading)
             .Select(capability => capability.GameType)
             .OrderBy(gameType => gameType.ToString())
             .ToList();
+    }
 }

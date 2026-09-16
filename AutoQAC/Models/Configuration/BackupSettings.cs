@@ -3,22 +3,25 @@ using YamlDotNet.Serialization;
 namespace AutoQAC.Models.Configuration;
 
 /// <summary>
-/// Settings that control plugin backup before cleaning.
+///     Settings that control plugin backup before cleaning.
 /// </summary>
 public sealed class BackupSettings
 {
     /// <summary>
-    /// Whether plugin backup is enabled before cleaning. Enabled by default.
+    ///     Whether plugin backup is enabled before cleaning. Enabled by default.
     /// </summary>
     [YamlMember(Alias = "enabled")]
     public bool Enabled { get; set; } = true;
 
     /// <summary>
-    /// Maximum number of backup sessions to retain. Oldest sessions beyond this count are deleted.
+    ///     Maximum number of backup sessions to retain. Oldest sessions beyond this count are deleted.
     /// </summary>
     [YamlMember(Alias = "max_sessions")]
     public int MaxSessions { get; set; } = 10;
 
     /// <summary>Deep copy of BackupSettings (no YAML round-trip; see Phase 10 D-43).</summary>
-    public BackupSettings Copy() => new() { Enabled = Enabled, MaxSessions = MaxSessions };
+    public BackupSettings Copy()
+    {
+        return new BackupSettings { Enabled = Enabled, MaxSessions = MaxSessions };
+    }
 }

@@ -14,16 +14,12 @@ namespace AutoQAC.Services.Configuration;
 
 internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinator
 {
-    private readonly IUserConfigFileStore _fileStore;
-    private readonly IStateService _stateService;
-    private readonly ILoggingService _logger;
-    private readonly IDeserializer _yamlValidator;
     private readonly TimeSpan _autoFlushDelay;
     private readonly bool _autoFlushEnabled;
-    private readonly Lock _snapshotLock = new();
-    private readonly Subject<ConfigPersistenceFailure> _failures = new();
-    private readonly Subject<ConfigPersistenceResult> _persistenceResults = new();
     private readonly Subject<UserConfiguration> _configurationAccepted = new();
+    private readonly Subject<ConfigPersistenceFailure> _failures = new();
+    private readonly IUserConfigFileStore _fileStore;
+    private readonly ILoggingService _logger;
 
     private readonly Channel<ConfigPersistenceOperation> _operations =
         Channel.CreateUnbounded<ConfigPersistenceOperation>(new UnboundedChannelOptions
@@ -33,21 +29,26 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
             AllowSynchronousContinuations = false
         });
 
+    private readonly Subject<ConfigPersistenceResult> _persistenceResults = new();
+    private readonly Lock _snapshotLock = new();
+    private readonly IStateService _stateService;
+    private readonly IDeserializer _yamlValidator;
+
     private UserConfiguration _activeConfig = new();
-    private UserConfiguration _lastKnownGood = new();
-    private UserConfiguration? _pendingApp;
-    private UserConfigReadResult? _deferredCandidate;
-    private IDisposable? _cleaningSubscription;
-    private CancellationTokenSource? _autoFlushCts;
-    private CancellationTokenSource? _consumerCts;
-    private Task? _consumerTask;
-    private ConfigPersistenceFailure? _lastFailure;
-    private string? _lastWrittenHash;
-    private string? _lastKnownExternalHash;
     private long _appGeneration;
     private long _appGenerationProducer;
-    private int _started;
+    private CancellationTokenSource? _autoFlushCts;
+    private IDisposable? _cleaningSubscription;
+    private CancellationTokenSource? _consumerCts;
+    private Task? _consumerTask;
+    private UserConfigReadResult? _deferredCandidate;
     private int _disposed;
+    private ConfigPersistenceFailure? _lastFailure;
+    private string? _lastKnownExternalHash;
+    private UserConfiguration _lastKnownGood = new();
+    private string? _lastWrittenHash;
+    private UserConfiguration? _pendingApp;
+    private int _started;
 
     public ConfigPersistenceCoordinator(
         IUserConfigFileStore fileStore,
@@ -75,16 +76,13 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
     public ConfigPersistenceFailure? LastFailure => Volatile.Read(ref _lastFailure);
 
     /// <summary>
-    /// Starts the single-reader coordinator loop and the cleaning transition subscription.
+    ///     Starts the single-reader coordinator loop and the cleaning transition subscription.
     /// </summary>
     public Task StartAsync(CancellationToken ct = default)
     {
         ThrowIfDisposed();
         ct.ThrowIfCancellationRequested();
-        if (Interlocked.Exchange(ref _started, 1) == 1)
-        {
-            return Task.CompletedTask;
-        }
+        if (Interlocked.Exchange(ref _started, 1) == 1) return Task.CompletedTask;
 
         _consumerCts = new CancellationTokenSource();
         _cleaningSubscription = _stateService.StateChanged
@@ -98,19 +96,13 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
     }
 
     /// <summary>
-    /// Attempts one final bounded flush, then completes the operation channel and waits for drain.
+    ///     Attempts one final bounded flush, then completes the operation channel and waits for drain.
     /// </summary>
     public async Task StopAsync(CancellationToken ct = default)
     {
-        if (Interlocked.Exchange(ref _disposed, 1) == 1)
-        {
-            return;
-        }
+        if (Interlocked.Exchange(ref _disposed, 1) == 1) return;
 
-        if (_autoFlushCts != null)
-        {
-            await _autoFlushCts.CancelAsync().ConfigureAwait(false);
-        }
+        if (_autoFlushCts != null) await _autoFlushCts.CancelAsync().ConfigureAwait(false);
 
         _cleaningSubscription?.Dispose();
 
@@ -123,7 +115,6 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
 
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         if (_operations.Writer.TryWrite(new ShutdownOperation(completion)))
-        {
             try
             {
                 await completion.Task.WaitAsync(TimeSpan.FromSeconds(5), ct).ConfigureAwait(false);
@@ -132,7 +123,6 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
             {
                 _logger.Warning("[ConfigPersistence] Shutdown flush did not complete within the bounded wait");
             }
-        }
 
         _operations.Writer.TryComplete();
         try
@@ -141,10 +131,7 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
         }
         catch (TimeoutException)
         {
-            if (_consumerCts != null)
-            {
-                await _consumerCts.CancelAsync().ConfigureAwait(false);
-            }
+            if (_consumerCts != null) await _consumerCts.CancelAsync().ConfigureAwait(false);
 
             _logger.Warning("[ConfigPersistence] Coordinator consumer did not drain before shutdown timeout");
         }
@@ -153,7 +140,7 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
     }
 
     /// <summary>
-    /// Returns a deep snapshot of the currently active configuration without blocking the consumer loop.
+    ///     Returns a deep snapshot of the currently active configuration without blocking the consumer loop.
     /// </summary>
     public Task<UserConfiguration> LoadCurrentAsync(CancellationToken ct = default)
     {
@@ -166,7 +153,7 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
     }
 
     /// <summary>
-    /// Queues an optimistic app-save intent. Intermediate pending saves coalesce in the consumer.
+    ///     Queues an optimistic app-save intent. Intermediate pending saves coalesce in the consumer.
     /// </summary>
     public async Task SaveUserConfigAsync(UserConfiguration config, CancellationToken ct = default)
     {
@@ -179,7 +166,7 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
     }
 
     /// <summary>
-    /// Queues a flush barrier and returns the typed persistence result after the consumer drains it.
+    ///     Queues a flush barrier and returns the typed persistence result after the consumer drains it.
     /// </summary>
     public async Task<ConfigPersistenceResult> FlushPendingSavesAsync(CancellationToken ct = default)
     {
@@ -190,7 +177,7 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
     }
 
     /// <summary>
-    /// Queues a reload barrier that validates disk YAML before mutating active state.
+    ///     Queues a reload barrier that validates disk YAML before mutating active state.
     /// </summary>
     public async Task<ConfigPersistenceResult> ReloadFromDiskAsync(CancellationToken ct = default)
     {
@@ -201,7 +188,7 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
     }
 
     /// <summary>
-    /// Submits a watcher signal; current file content remains the authority when the consumer runs.
+    ///     Submits a watcher signal; current file content remains the authority when the consumer runs.
     /// </summary>
     public void NotifySettingsFileChanged(ConfigFileSignalKind kind)
     {
@@ -212,7 +199,6 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
     private async Task RunAsync(CancellationToken ct)
     {
         await foreach (var op in _operations.Reader.ReadAllAsync(ct).ConfigureAwait(false))
-        {
             try
             {
                 await ApplyOperationAsync(op, ct).ConfigureAwait(false);
@@ -225,19 +211,21 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
             {
                 _logger.Error(ex, "[ConfigPersistence] Operation handler threw");
             }
-        }
     }
 
-    private Task ApplyOperationAsync(ConfigPersistenceOperation operation, CancellationToken ct) => operation switch
+    private Task ApplyOperationAsync(ConfigPersistenceOperation operation, CancellationToken ct)
     {
-        SaveIntent save => ApplySaveAsync(save),
-        FlushBarrier flush => ApplyFlushAsync(flush, ct),
-        WatcherObserved watcher => ApplyWatcherAsync(watcher, ct),
-        CleaningStateChanged cleaning => ApplyCleaningStateAsync(cleaning),
-        ReloadRequest reload => ApplyReloadRequestAsync(reload, ct),
-        ShutdownOperation shutdown => ApplyShutdownAsync(shutdown, ct),
-        _ => Task.CompletedTask
-    };
+        return operation switch
+        {
+            SaveIntent save => ApplySaveAsync(save),
+            FlushBarrier flush => ApplyFlushAsync(flush, ct),
+            WatcherObserved watcher => ApplyWatcherAsync(watcher, ct),
+            CleaningStateChanged cleaning => ApplyCleaningStateAsync(cleaning),
+            ReloadRequest reload => ApplyReloadRequestAsync(reload, ct),
+            ShutdownOperation shutdown => ApplyShutdownAsync(shutdown, ct),
+            _ => Task.CompletedTask
+        };
+    }
 
     private Task ApplySaveAsync(SaveIntent intent)
     {
@@ -261,10 +249,8 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
     private async Task<ConfigPersistenceResult> FlushPendingInsideConsumerAsync(CancellationToken ct)
     {
         if (_pendingApp == null)
-        {
             return new ConfigPersistenceResult(ConfigPersistenceStatusKind.NoOp, ConfigPersistenceOperationKind.Flush,
                 _appGeneration, null);
-        }
 
         try
         {
@@ -376,10 +362,7 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
 
     private Task ApplyCleaningStateAsync(CleaningStateChanged cleaning)
     {
-        if (cleaning.IsCleaning || _deferredCandidate == null)
-        {
-            return Task.CompletedTask;
-        }
+        if (cleaning.IsCleaning || _deferredCandidate == null) return Task.CompletedTask;
 
         var candidate = _deferredCandidate;
         _deferredCandidate = null;
@@ -420,10 +403,8 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
             var result = await FlushPendingInsideConsumerAsync(linked.Token).ConfigureAwait(false);
             if (result.Status == ConfigPersistenceStatusKind.Failed)
-            {
                 _logger.Warning("[ConfigPersistence] Final shutdown flush failed: {SafeSummary}",
                     result.Failure?.SafeSummary ?? "unknown");
-            }
         }
         catch (Exception ex) when (ex is OperationCanceledException or TimeoutException)
         {
@@ -485,10 +466,7 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
         try
         {
             var candidate = _yamlValidator.Deserialize<UserConfiguration>(readResult.Content);
-            if (candidate == null)
-            {
-                throw new InvalidOperationException("YAML deserialized to null");
-            }
+            if (candidate == null) throw new InvalidOperationException("YAML deserialized to null");
 
             var copy = candidate.Copy();
             SetActive(copy);
@@ -522,7 +500,8 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
     }
 
     /// <summary>
-    /// Publishes to the configuration-accepted subject without letting observer exceptions escape into the single-reader operation loop.
+    ///     Publishes to the configuration-accepted subject without letting observer exceptions escape into the single-reader
+    ///     operation loop.
     /// </summary>
     /// <param name="config">The accepted configuration snapshot to publish to observers.</param>
     private void SafePublishAccepted(UserConfiguration config)
@@ -538,7 +517,8 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
     }
 
     /// <summary>
-    /// Publishes to the persistence-results subject without letting observer exceptions escape into the single-reader operation loop.
+    ///     Publishes to the persistence-results subject without letting observer exceptions escape into the single-reader
+    ///     operation loop.
     /// </summary>
     /// <param name="result">The typed persistence result to publish to observers.</param>
     private void SafePublishResult(ConfigPersistenceResult result)
@@ -554,7 +534,7 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
     }
 
     /// <summary>
-    /// Records and publishes a failure without letting observer exceptions escape into the single-reader operation loop.
+    ///     Records and publishes a failure without letting observer exceptions escape into the single-reader operation loop.
     /// </summary>
     /// <param name="failure">The safe typed persistence failure to record and publish.</param>
     private void SafePublishFailure(ConfigPersistenceFailure failure)
@@ -573,17 +553,19 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
     private ConfigPersistenceFailure CreateFailure(
         ConfigPersistenceOperationKind operation,
         ConfigPersistenceFailureKind kind,
-        string safeSummary) => new(operation, kind, safeSummary, null, _appGeneration);
+        string safeSummary)
+    {
+        return new ConfigPersistenceFailure(operation, kind, safeSummary, null, _appGeneration);
+    }
 
-    private static TaskCompletionSource<ConfigPersistenceResult> CreateResultCompletion() =>
-        new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private static TaskCompletionSource<ConfigPersistenceResult> CreateResultCompletion()
+    {
+        return new TaskCompletionSource<ConfigPersistenceResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
 
     private void ScheduleAutoFlush()
     {
-        if (!_autoFlushEnabled)
-        {
-            return;
-        }
+        if (!_autoFlushEnabled) return;
 
         _autoFlushCts?.Cancel();
         _autoFlushCts?.Dispose();
@@ -607,17 +589,12 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
     private void TryWrite(ConfigPersistenceOperation operation)
     {
         if (!_operations.Writer.TryWrite(operation) && Volatile.Read(ref _disposed) == 0)
-        {
             ObjectDisposedException.ThrowIf(true, this);
-        }
     }
 
     private void ThrowIfDisposed()
     {
-        if (Volatile.Read(ref _disposed) != 0)
-        {
-            ObjectDisposedException.ThrowIf(true, this);
-        }
+        if (Volatile.Read(ref _disposed) != 0) ObjectDisposedException.ThrowIf(true, this);
     }
 
     private void DisposeSubjects()

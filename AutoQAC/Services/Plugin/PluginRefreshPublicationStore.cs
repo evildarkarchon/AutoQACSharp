@@ -9,7 +9,7 @@ using AutoQAC.Services.GameCapability;
 namespace AutoQAC.Services.Plugin;
 
 /// <summary>
-/// Owns the current Plugin refresh publication, visible snapshots, and AppState compatibility mirroring.
+///     Owns the current Plugin refresh publication, visible snapshots, and AppState compatibility mirroring.
 /// </summary>
 internal sealed class PluginRefreshPublicationStore : IDisposable
 {
@@ -17,17 +17,17 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
 
     private readonly PluginRefreshAppStateMirror _appStateMirror;
     private readonly PluginRefreshCommandAvailabilityPolicy _commandPolicy;
-    private readonly BehaviorSubject<PluginRefreshSnapshot> _snapshots;
     private readonly Lock _snapshotLock = new();
-
-    private PluginRefreshSnapshot _currentSnapshot;
+    private readonly BehaviorSubject<PluginRefreshSnapshot> _snapshots;
+    private ActiveSelectedIssueApproximation? _activeSelectedIssueApproximation;
     private PluginRefreshPublication _currentPublication;
     private PluginRefreshDiscoveryFreshnessToken? _currentPublicationFreshnessToken;
-    private ActiveSelectedIssueApproximation? _activeSelectedIssueApproximation;
+
+    private PluginRefreshSnapshot _currentSnapshot;
     private bool _disposed;
 
     /// <summary>
-    /// Initializes a publication store from the current AppState mirror.
+    ///     Initializes a publication store from the current AppState mirror.
     /// </summary>
     /// <param name="appStateMirror">Compatibility AppState mirror used for fallback rows and legacy consumers.</param>
     /// <param name="commandPolicy">Command availability policy for visible snapshot facts.</param>
@@ -46,26 +46,23 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
     }
 
     /// <summary>
-    /// Gets the latest visible Plugin refresh snapshots.
+    ///     Gets the latest visible Plugin refresh snapshots.
     /// </summary>
     internal IObservable<PluginRefreshSnapshot> Snapshots => _snapshots;
 
     /// <summary>
-    /// Releases the snapshot stream owned by the store.
+    ///     Releases the snapshot stream owned by the store.
     /// </summary>
     public void Dispose()
     {
-        if (_disposed)
-        {
-            return;
-        }
+        if (_disposed) return;
 
         _disposed = true;
         _snapshots.Dispose();
     }
 
     /// <summary>
-    /// Gets the current visible snapshot.
+    ///     Gets the current visible snapshot.
     /// </summary>
     /// <returns>The current snapshot.</returns>
     internal PluginRefreshSnapshot GetCurrentSnapshot()
@@ -77,7 +74,7 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
     }
 
     /// <summary>
-    /// Gets the current publication and freshness token for a planner freshness check.
+    ///     Gets the current publication and freshness token for a planner freshness check.
     /// </summary>
     /// <returns>Publication inspection facts, with missing freshness applied when no accepted plan exists.</returns>
     internal PluginRefreshPublicationFreshnessInspection GetFreshnessInspection()
@@ -94,27 +91,33 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
     }
 
     /// <summary>
-    /// Creates a configuration projection from the current AppState mirror.
+    ///     Creates a configuration projection from the current AppState mirror.
     /// </summary>
     /// <returns>A Plugin refresh configuration projection.</returns>
-    internal PluginRefreshConfigurationProjection CreateConfigurationProjectionFromCurrentState() =>
-        PluginRefreshAppStateMirror.CreateConfigurationProjection(_appStateMirror.CurrentState);
+    internal PluginRefreshConfigurationProjection CreateConfigurationProjectionFromCurrentState()
+    {
+        return PluginRefreshAppStateMirror.CreateConfigurationProjection(_appStateMirror.CurrentState);
+    }
 
     /// <summary>
-    /// Clears compatibility rows at the start of a refresh that changes game context.
+    ///     Clears compatibility rows at the start of a refresh that changes game context.
     /// </summary>
     /// <param name="gameType">Game that is becoming current.</param>
-    internal void ClearRowsForRefreshStart(GameType gameType) =>
+    internal void ClearRowsForRefreshStart(GameType gameType)
+    {
         _appStateMirror.ClearRowsForRefreshStart(gameType);
+    }
 
     /// <summary>
-    /// Clears compatibility rows while leaving the current publication fallback to the next publish call.
+    ///     Clears compatibility rows while leaving the current publication fallback to the next publish call.
     /// </summary>
-    internal void ClearCompatibilityRows() =>
+    internal void ClearCompatibilityRows()
+    {
         _appStateMirror.ClearRows();
+    }
 
     /// <summary>
-    /// Selects visible rows currently targeted for issue approximation refresh.
+    ///     Selects visible rows currently targeted for issue approximation refresh.
     /// </summary>
     /// <returns>The snapshot used for selection plus selected row identities.</returns>
     internal PluginRefreshSelectedIssueApproximationTargets GetSelectedIssueApproximationTargets()
@@ -128,7 +131,7 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
     }
 
     /// <summary>
-    /// Atomically validates and starts selected Issue approximation from one accepted publication.
+    ///     Atomically validates and starts selected Issue approximation from one accepted publication.
     /// </summary>
     /// <param name="observedPublication">Fresh publication observed before entering the store lock.</param>
     /// <param name="generation">Generation that will own selected reanalysis.</param>
@@ -154,11 +157,9 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
                 _currentPublication.DiscoveryPlan != observedPublication.DiscoveryPlan ||
                 _currentPublicationFreshnessToken is null ||
                 !_currentPublication.Freshness.IsFresh)
-            {
                 return new PluginRefreshSelectedIssueApproximationStartResult(
                     PluginRefreshSelectedIssueApproximationStartStatus.Rejected,
                     null);
-            }
 
             var targets = _currentPublication.Rows
                 .Where(row => row.IsVisible && row.IsSelected && !row.IsSkippedByPolicy)
@@ -169,11 +170,9 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
                         : row.Plugin.Approximation))
                 .ToList();
             if (targets.Count == 0)
-            {
                 return new PluginRefreshSelectedIssueApproximationStartResult(
                     PluginRefreshSelectedIssueApproximationStartStatus.NoTargets,
                     null);
-            }
 
             var targetKeys = targets.Select(target => target.Key).ToList();
             var targetLookup = PluginRefreshPublicationRows.CreateTargetLookup(targetKeys);
@@ -194,8 +193,8 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
                 Rows = rowUpdate.Commit.Rows,
                 VisibleRows = rowUpdate.Commit.VisibleRows,
                 Activity = new PluginRefreshActivity(
-                    IsPluginRefreshRunning: false,
-                    IsIssueApproximationRefreshRunning: true),
+                    false,
+                    true),
                 StatusText = $"Analyzing 0 of {targets.Count} selected plugins."
             };
             var commands = CreateCommandAvailability(
@@ -219,18 +218,20 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
     }
 
     /// <summary>
-    /// Publishes a visible snapshot that is not backed by an accepted publication.
+    ///     Publishes a visible snapshot that is not backed by an accepted publication.
     /// </summary>
     /// <param name="snapshot">Snapshot to publish.</param>
     /// <param name="affordance">Game affordance facts for the snapshot.</param>
     /// <returns>The committed snapshot.</returns>
     internal PluginRefreshSnapshot PublishSnapshot(
         PluginRefreshSnapshot snapshot,
-        PluginRefreshGameAffordance affordance) =>
-        PublishSnapshot(snapshot, _appStateMirror.CurrentState, affordance);
+        PluginRefreshGameAffordance affordance)
+    {
+        return PublishSnapshot(snapshot, _appStateMirror.CurrentState, affordance);
+    }
 
     /// <summary>
-    /// Publishes a visible snapshot projected from the AppState compatibility rows.
+    ///     Publishes a visible snapshot projected from the AppState compatibility rows.
     /// </summary>
     /// <param name="generation">Refresh generation associated with the snapshot.</param>
     /// <param name="gameType">Game context for the snapshot.</param>
@@ -263,7 +264,7 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
     }
 
     /// <summary>
-    /// Publishes a missing publication whose visible rows come from AppState compatibility facts.
+    ///     Publishes a missing publication whose visible rows come from AppState compatibility facts.
     /// </summary>
     /// <param name="generation">Refresh generation associated with the snapshot.</param>
     /// <param name="gameType">Game context for the snapshot.</param>
@@ -291,7 +292,7 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
     }
 
     /// <summary>
-    /// Publishes an accepted discovery plan and authoritative publication rows.
+    ///     Publishes an accepted discovery plan and authoritative publication rows.
     /// </summary>
     /// <param name="generation">Refresh generation accepting the publication.</param>
     /// <param name="gameType">Game context for the publication.</param>
@@ -330,7 +331,7 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
     }
 
     /// <summary>
-    /// Publishes the current accepted publication with updated activity, configuration, and status.
+    ///     Publishes the current accepted publication with updated activity, configuration, and status.
     /// </summary>
     /// <param name="generation">Refresh generation associated with the update.</param>
     /// <param name="gameType">Game context for the update.</param>
@@ -358,9 +359,7 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
         if (publication.DiscoveryPlan is null ||
             freshnessToken is null ||
             publication.DiscoveryPlan.GameType != gameType)
-        {
             return PublishSnapshotFromState(generation, gameType, configuration, activity, statusText, affordance);
-        }
 
         var nextPublication = publication with
         {
@@ -375,7 +374,7 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
     }
 
     /// <summary>
-    /// Publishes an idle selected-refresh status only while its generation remains current.
+    ///     Publishes an idle selected-refresh status only while its generation remains current.
     /// </summary>
     /// <param name="generation">Selected-refresh generation that owns the status.</param>
     /// <param name="statusText">User-facing terminal or rejection status.</param>
@@ -421,7 +420,7 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
     }
 
     /// <summary>
-    /// Applies a visible selection change to the accepted publication or AppState fallback rows.
+    ///     Applies a visible selection change to the accepted publication or AppState fallback rows.
     /// </summary>
     /// <param name="change">Selection change requested by the UI.</param>
     /// <param name="affordance">Game affordance facts for the current snapshot.</param>
@@ -431,15 +430,13 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
         PluginRefreshGameAffordance affordance)
     {
         if (TryApplySelectionChangeToPublication(change, affordance, out var publicationSnapshot))
-        {
             return publicationSnapshot;
-        }
 
         return ApplySelectionChangeToState(change, affordance);
     }
 
     /// <summary>
-    /// Applies one authoritative keyed result and publishes its progress snapshot as one generation-guarded commit.
+    ///     Applies one authoritative keyed result and publishes its progress snapshot as one generation-guarded commit.
     /// </summary>
     /// <param name="generation">Accepted full-refresh generation.</param>
     /// <param name="targetLookup">Authoritative target set for the generation.</param>
@@ -465,17 +462,12 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
                 !_currentPublication.Activity.IsPluginRefreshRunning ||
                 !_currentPublication.Activity.IsIssueApproximationRefreshRunning ||
                 !targetLookup.Contains(result.Target))
-            {
                 return false;
-            }
 
             var rowUpdate = PluginRefreshPublicationRows.ApplyApproximationResult(
                 _currentPublication.Rows,
                 result);
-            if (!rowUpdate.Matched)
-            {
-                return false;
-            }
+            if (!rowUpdate.Matched) return false;
 
             var nextPublication = _currentPublication with
             {
@@ -503,7 +495,7 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
     }
 
     /// <summary>
-    /// Publishes the next exact selected-reanalysis result and its progress as one guarded commit.
+    ///     Publishes the next exact selected-reanalysis result and its progress as one guarded commit.
     /// </summary>
     /// <param name="generation">Selected-reanalysis generation that owns the callback.</param>
     /// <param name="result">Exact keyed result returned by the Issue approximation module.</param>
@@ -531,17 +523,12 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
                 !PluginRefreshPublicationRows.IsExactMatch(
                     active.Operation.Targets[active.NextTargetIndex].Key,
                     result.Target))
-            {
                 return false;
-            }
 
             var rowUpdate = PluginRefreshPublicationRows.ApplyApproximationResult(
                 _currentPublication.Rows,
                 result);
-            if (!rowUpdate.Matched)
-            {
-                return false;
-            }
+            if (!rowUpdate.Matched) return false;
 
             active.NextTargetIndex++;
             var nextPublication = _currentPublication with
@@ -549,7 +536,7 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
                 Rows = rowUpdate.Commit.Rows,
                 VisibleRows = rowUpdate.Commit.VisibleRows,
                 StatusText =
-                    $"Analyzing {active.NextTargetIndex} of {active.Operation.Targets.Count} selected plugins."
+                $"Analyzing {active.NextTargetIndex} of {active.Operation.Targets.Count} selected plugins."
             };
             var commands = CreateCommandAvailability(
                 nextPublication.GameType,
@@ -570,7 +557,7 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
     }
 
     /// <summary>
-    /// Finalizes selected reanalysis while preserving completed results and terminalizing unfinished targets.
+    ///     Finalizes selected reanalysis while preserving completed results and terminalizing unfinished targets.
     /// </summary>
     /// <param name="generation">Selected-reanalysis generation to finalize.</param>
     /// <param name="disposition">Whether unfinished targets restore their prior estimate or become unavailable.</param>
@@ -637,7 +624,7 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
     }
 
     /// <summary>
-    /// Finalizes an active full-refresh approximation without allowing a stale generation to publish.
+    ///     Finalizes an active full-refresh approximation without allowing a stale generation to publish.
     /// </summary>
     /// <param name="generation">Accepted full-refresh generation.</param>
     /// <param name="statusText">Terminal status text.</param>
@@ -693,7 +680,7 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
     }
 
     /// <summary>
-    /// Makes pending rows terminal after their owning generation has been superseded.
+    ///     Makes pending rows terminal after their owning generation has been superseded.
     /// </summary>
     /// <param name="canUpdate">Guard proving the replacement generation is still current.</param>
     internal void FinalizePendingRowsForSupersession(Func<bool> canUpdate)
@@ -704,16 +691,11 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
                 !canUpdate() ||
                 _currentPublicationFreshnessToken is null ||
                 _currentPublication.DiscoveryPlan is null)
-            {
                 return;
-            }
 
             var rowUpdate = PluginRefreshPublicationRows.ApplyUnavailableToPendingRows(
                 _currentPublication.Rows);
-            if (!rowUpdate.Matched)
-            {
-                return;
-            }
+            if (!rowUpdate.Matched) return;
 
             _currentPublication = _currentPublication with
             {
@@ -726,7 +708,7 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
     }
 
     /// <summary>
-    /// Updates command availability after AppState cleaning state changes.
+    ///     Updates command availability after AppState cleaning state changes.
     /// </summary>
     /// <param name="state">Current AppState.</param>
     /// <param name="inspection">Publication and snapshot facts observed before affordance lookup.</param>
@@ -743,9 +725,7 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
         {
             if (!ReferenceEquals(_currentPublication, inspection.Publication) ||
                 !ReferenceEquals(_currentSnapshot, inspection.Snapshot))
-            {
                 return;
-            }
 
             var publicationCommands = CreateCommandAvailability(
                 _currentPublication.GameType,
@@ -764,9 +744,7 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
 
             if (publicationCommands == _currentPublication.Commands &&
                 snapshotCommands == _currentSnapshot.Commands)
-            {
                 return;
-            }
 
             _currentPublication = _currentPublication with { Commands = publicationCommands };
             _currentSnapshot = _currentSnapshot with { Commands = snapshotCommands };
@@ -777,7 +755,7 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
     }
 
     /// <summary>
-    /// Gets publication and snapshot facts needed to resolve command affordances outside the store.
+    ///     Gets publication and snapshot facts needed to resolve command affordances outside the store.
     /// </summary>
     /// <returns>The current publication and snapshot references.</returns>
     internal PluginRefreshCommandAvailabilityInspection GetCommandAvailabilityInspection()
@@ -789,7 +767,7 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
     }
 
     /// <summary>
-    /// Publishes freshness if the observed publication is still current and the value changed.
+    ///     Publishes freshness if the observed publication is still current and the value changed.
     /// </summary>
     /// <param name="observedPublication">Publication observed before the planner freshness check.</param>
     /// <param name="observedFreshnessToken">Freshness token observed before the planner freshness check.</param>
@@ -807,9 +785,7 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
                 _currentPublication.Generation != observedPublication.Generation ||
                 _currentPublication.DiscoveryPlan != observedPublication.DiscoveryPlan ||
                 _currentPublication.Freshness == freshness)
-            {
                 return;
-            }
 
             _currentPublication = _currentPublication with { Freshness = freshness };
             snapshot = _currentSnapshot;
@@ -840,16 +816,10 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
         }
 
         snapshot = GetCurrentSnapshot();
-        if (publication.VisibleRows.Count == 0)
-        {
-            return true;
-        }
+        if (publication.VisibleRows.Count == 0) return true;
 
         var selection = PluginRefreshPublicationRows.ApplySelectionChange(publication.Rows, change);
-        if (!selection.WasTargetFound)
-        {
-            return true;
-        }
+        if (!selection.WasTargetFound) return true;
 
         var nextPublication = publication with
         {
@@ -872,16 +842,10 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
     {
         var snapshot = GetCurrentSnapshot();
         var visibleRows = snapshot.Rows.ToList();
-        if (visibleRows.Count == 0)
-        {
-            return snapshot;
-        }
+        if (visibleRows.Count == 0) return snapshot;
 
         var targetFound = _appStateMirror.ApplyStateSelectionChange(visibleRows, change);
-        if (!targetFound)
-        {
-            return snapshot;
-        }
+        if (!targetFound) return snapshot;
 
         return PublishCurrentPublication(
             snapshot.Generation,
@@ -953,10 +917,7 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
         AppState state,
         PluginRefreshGameAffordance affordance)
     {
-        if (_disposed)
-        {
-            return GetCurrentSnapshot();
-        }
+        if (_disposed) return GetCurrentSnapshot();
 
         var next = WithCommandAvailability(snapshot, state, affordance);
         lock (_snapshotLock)
@@ -974,10 +935,7 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
         AppState state,
         PluginRefreshGameAffordance affordance)
     {
-        if (_disposed)
-        {
-            return GetCurrentSnapshot();
-        }
+        if (_disposed) return GetCurrentSnapshot();
 
         var commands = CreateCommandAvailability(
             publication.GameType,
@@ -1002,8 +960,9 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
     private PluginRefreshSnapshot WithCommandAvailability(
         PluginRefreshSnapshot snapshot,
         AppState state,
-        PluginRefreshGameAffordance affordance) =>
-        snapshot with
+        PluginRefreshGameAffordance affordance)
+    {
+        return snapshot with
         {
             Commands = CreateCommandAvailability(
                 snapshot.GameType,
@@ -1013,6 +972,7 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
                 state.IsCleaning,
                 affordance)
         };
+    }
 
     private PluginRefreshCommandAvailability CreateCommandAvailability(
         GameType gameType,
@@ -1020,8 +980,10 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
         PluginRefreshActivity activity,
         PluginRefreshConfigurationProjection configuration,
         bool isCleaning,
-        PluginRefreshGameAffordance affordance) =>
-        _commandPolicy.Create(gameType, rows, activity, configuration, isCleaning, affordance);
+        PluginRefreshGameAffordance affordance)
+    {
+        return _commandPolicy.Create(gameType, rows, activity, configuration, isCleaning, affordance);
+    }
 
     private PluginRefreshSnapshot CreateInitialSnapshot(
         AppState state,
@@ -1030,23 +992,24 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
         var rows = PluginRefreshAppStateMirror.ProjectVisibleRows(state);
         var configuration = PluginRefreshAppStateMirror.CreateConfigurationProjection(state);
         return new PluginRefreshSnapshot(
-            Generation: 0,
-            GameType: state.CurrentGameType,
-            Rows: rows,
-            Configuration: configuration,
-            Activity: new PluginRefreshActivity(false, false),
-            Commands: CreateCommandAvailability(
+            0,
+            state.CurrentGameType,
+            rows,
+            configuration,
+            new PluginRefreshActivity(false, false),
+            CreateCommandAvailability(
                 state.CurrentGameType,
                 rows,
                 new PluginRefreshActivity(false, false),
                 configuration,
                 state.IsCleaning,
                 initialAffordance),
-            StatusText: "Ready");
+            "Ready");
     }
 
-    private static PluginRefreshSnapshot ToSnapshot(PluginRefreshPublication publication) =>
-        new(
+    private static PluginRefreshSnapshot ToSnapshot(PluginRefreshPublication publication)
+    {
+        return new PluginRefreshSnapshot(
             publication.Generation,
             publication.GameType,
             publication.VisibleRows,
@@ -1054,19 +1017,22 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
             publication.Activity,
             publication.Commands,
             publication.StatusText);
+    }
 
-    private static PluginRefreshPublication CreateMissingPublication(PluginRefreshSnapshot snapshot) =>
-        new(
+    private static PluginRefreshPublication CreateMissingPublication(PluginRefreshSnapshot snapshot)
+    {
+        return new PluginRefreshPublication(
             snapshot.Generation,
             snapshot.GameType,
-            DiscoveryPlan: null,
+            null,
             snapshot.Configuration,
             PluginRefreshFreshness.Missing,
-            Rows: [],
-            VisibleRows: snapshot.Rows,
+            [],
+            snapshot.Rows,
             snapshot.Activity,
             snapshot.Commands,
             snapshot.StatusText);
+    }
 
     private sealed class ActiveSelectedIssueApproximation(
         PluginRefreshSelectedIssueApproximationOperation operation)
@@ -1078,7 +1044,7 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
 }
 
 /// <summary>
-/// Outcome kinds from atomically starting selected Issue approximation.
+///     Outcome kinds from atomically starting selected Issue approximation.
 /// </summary>
 internal enum PluginRefreshSelectedIssueApproximationStartStatus
 {
@@ -1088,7 +1054,7 @@ internal enum PluginRefreshSelectedIssueApproximationStartStatus
 }
 
 /// <summary>
-/// Determines how unfinished selected-reanalysis targets become terminal.
+///     Determines how unfinished selected-reanalysis targets become terminal.
 /// </summary>
 internal enum PluginRefreshSelectedIssueApproximationDisposition
 {
@@ -1097,7 +1063,7 @@ internal enum PluginRefreshSelectedIssueApproximationDisposition
 }
 
 /// <summary>
-/// Immutable accepted-publication facts owned by one selected Issue approximation generation.
+///     Immutable accepted-publication facts owned by one selected Issue approximation generation.
 /// </summary>
 /// <param name="Generation">Generation that owns the operation.</param>
 /// <param name="Plan">Accepted discovery plan reused without replanning.</param>
@@ -1110,7 +1076,7 @@ internal sealed record PluginRefreshSelectedIssueApproximationOperation(
     IReadOnlyList<PluginRefreshSelectedIssueApproximationTarget> Targets);
 
 /// <summary>
-/// One selected target together with the estimate restored if cancellation occurs before its result.
+///     One selected target together with the estimate restored if cancellation occurs before its result.
 /// </summary>
 /// <param name="Key">Exact accepted publication row identity.</param>
 /// <param name="PreviousApproximation">Terminal estimate visible before selected reanalysis began.</param>
@@ -1119,7 +1085,7 @@ internal sealed record PluginRefreshSelectedIssueApproximationTarget(
     PluginIssueApproximation PreviousApproximation);
 
 /// <summary>
-/// Result of attempting to start selected Issue approximation from an observed publication.
+///     Result of attempting to start selected Issue approximation from an observed publication.
 /// </summary>
 /// <param name="Status">Whether the operation started, had no targets, or lost its publication race.</param>
 /// <param name="Operation">Accepted operation facts when started.</param>
@@ -1128,7 +1094,7 @@ internal sealed record PluginRefreshSelectedIssueApproximationStartResult(
     PluginRefreshSelectedIssueApproximationOperation? Operation);
 
 /// <summary>
-/// Current publication facts captured before a planner freshness check.
+///     Current publication facts captured before a planner freshness check.
 /// </summary>
 /// <param name="Publication">Publication observed by the caller.</param>
 /// <param name="FreshnessToken">Freshness token for the observed publication, if one exists.</param>
@@ -1137,7 +1103,7 @@ internal sealed record PluginRefreshPublicationFreshnessInspection(
     PluginRefreshDiscoveryFreshnessToken? FreshnessToken);
 
 /// <summary>
-/// Snapshot-stable issue approximation target selection.
+///     Snapshot-stable issue approximation target selection.
 /// </summary>
 /// <param name="Snapshot">Snapshot used to derive the selected targets.</param>
 /// <param name="Targets">Selected row identities.</param>
@@ -1146,7 +1112,7 @@ internal sealed record PluginRefreshSelectedIssueApproximationTargets(
     IReadOnlyList<PluginRefreshRowKey> Targets);
 
 /// <summary>
-/// Publication and snapshot references used to resolve command affordance facts outside the store lock.
+///     Publication and snapshot references used to resolve command affordance facts outside the store lock.
 /// </summary>
 /// <param name="Publication">Publication observed before command affordance lookup.</param>
 /// <param name="Snapshot">Snapshot observed before command affordance lookup.</param>

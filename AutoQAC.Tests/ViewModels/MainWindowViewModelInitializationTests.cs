@@ -82,7 +82,7 @@ public sealed class MainWindowViewModelInitializationTests
         using var refreshModule = new RecordingPluginRefreshModule();
         refreshModule.ExecuteHandler = (intent, _) => Task.FromResult(
             intent is PluginRefreshIntent.RefreshGame refresh
-                ? RecordingPluginRefreshModule.CreateSnapshot(gameType: refresh.GameType)
+                ? RecordingPluginRefreshModule.CreateSnapshot(refresh.GameType)
                 : refreshModule.CurrentSnapshot);
         var discoveryPlanner = new PluginRefreshDiscoveryPlanner(
             _configServiceMock,

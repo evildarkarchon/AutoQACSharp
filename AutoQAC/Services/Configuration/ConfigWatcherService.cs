@@ -5,22 +5,21 @@ using AutoQAC.Infrastructure.Logging;
 namespace AutoQAC.Services.Configuration;
 
 /// <summary>
-/// Watches the user configuration YAML file for external changes and forwards file-system
-/// signals to the persistence coordinator. Ordering, validation, echo skipping, and cleaning-time
-/// deferral live in the coordinator after Phase 10 D-08/D-23.
+///     Watches the user configuration YAML file for external changes and forwards file-system
+///     signals to the persistence coordinator. Ordering, validation, echo skipping, and cleaning-time
+///     deferral live in the coordinator after Phase 10 D-08/D-23.
 /// </summary>
 public sealed class ConfigWatcherService : IConfigWatcherService
 {
+    private const string UserConfigFile = "AutoQAC Settings.yaml";
+    private readonly string _configDirectory;
     private readonly IConfigPersistenceCoordinator _coordinator;
     private readonly ILoggingService _logger;
-    private readonly string _configDirectory;
 
     private FileSystemWatcher? _watcher;
 
-    private const string UserConfigFile = "AutoQAC Settings.yaml";
-
     /// <summary>
-    /// Creates a watcher service that forwards user settings file notifications to the shared persistence coordinator.
+    ///     Creates a watcher service that forwards user settings file notifications to the shared persistence coordinator.
     /// </summary>
     public ConfigWatcherService(
         IConfigPersistenceCoordinator coordinator,
@@ -32,33 +31,9 @@ public sealed class ConfigWatcherService : IConfigWatcherService
         _configDirectory = configDirectory ?? ResolveConfigDirectory();
     }
 
-    private static string ResolveConfigDirectory()
-    {
-        var baseDir = AppContext.BaseDirectory;
-
-#if DEBUG
-        var current = new DirectoryInfo(baseDir);
-        for (var i = 0; i < 6 && current != null; i++)
-        {
-            var candidate = Path.Combine(current.FullName, "AutoQAC Data");
-            if (Directory.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            current = current.Parent;
-        }
-#endif
-
-        return Path.Combine(baseDir, "AutoQAC Data");
-    }
-
     public void StartWatching()
     {
-        if (_watcher != null)
-        {
-            return;
-        }
+        if (_watcher != null) return;
 
         if (!Directory.Exists(_configDirectory))
         {
@@ -99,10 +74,7 @@ public sealed class ConfigWatcherService : IConfigWatcherService
 
     public void StopWatching()
     {
-        if (_watcher == null)
-        {
-            return;
-        }
+        if (_watcher == null) return;
 
         _watcher.EnableRaisingEvents = false;
         _watcher.Dispose();
@@ -113,5 +85,23 @@ public sealed class ConfigWatcherService : IConfigWatcherService
     public void Dispose()
     {
         StopWatching();
+    }
+
+    private static string ResolveConfigDirectory()
+    {
+        var baseDir = AppContext.BaseDirectory;
+
+#if DEBUG
+        var current = new DirectoryInfo(baseDir);
+        for (var i = 0; i < 6 && current != null; i++)
+        {
+            var candidate = Path.Combine(current.FullName, "AutoQAC Data");
+            if (Directory.Exists(candidate)) return candidate;
+
+            current = current.Parent;
+        }
+#endif
+
+        return Path.Combine(baseDir, "AutoQAC Data");
     }
 }

@@ -5,20 +5,20 @@ using System.Threading.Tasks;
 namespace AutoQAC.Services.Configuration;
 
 /// <summary>
-/// Detects and migrates legacy Python-era configuration files
-/// (AutoQAC Config.yaml) to the current C# format (AutoQAC Settings.yaml).
+///     Detects and migrates legacy Python-era configuration files
+///     (AutoQAC Config.yaml) to the current C# format (AutoQAC Settings.yaml).
 /// </summary>
 public interface ILegacyMigrationService
 {
     /// <summary>
-    /// Checks for legacy config files and migrates them if the C# config does not already exist.
-    /// Migration is one-time bootstrap only -- no merge is performed if C# config exists.
+    ///     Checks for legacy config files and migrates them if the C# config does not already exist.
+    ///     Migration is one-time bootstrap only -- no merge is performed if C# config exists.
     /// </summary>
     Task<MigrationResult> MigrateIfNeededAsync(CancellationToken ct = default);
 }
 
 /// <summary>
-/// Result of a legacy configuration migration attempt.
+///     Result of a legacy configuration migration attempt.
 /// </summary>
 /// <param name="Attempted">Whether legacy files were found and migration was attempted.</param>
 /// <param name="Success">Whether migration completed without errors.</param>
@@ -33,8 +33,10 @@ public sealed record MigrationResult(
     List<string>? FailedFiles = null)
 {
     /// <summary>
-    /// Convenience factory for the "nothing to do" case.
+    ///     Convenience factory for the "nothing to do" case.
     /// </summary>
-    public static MigrationResult NotNeeded() =>
-        new(Attempted: false, Success: true);
+    public static MigrationResult NotNeeded()
+    {
+        return new MigrationResult(false, true);
+    }
 }

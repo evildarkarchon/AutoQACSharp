@@ -6,13 +6,12 @@ namespace AutoQAC.Services.Configuration;
 
 internal interface IUserConfigFileStore
 {
+    string SettingsFilePath { get; }
     Task<UserConfigReadResult> ReadAsync(CancellationToken ct);
 
     Task<string> WriteAsync(UserConfiguration config, CancellationToken ct);
 
     Task<string?> ComputeHashAsync(CancellationToken ct);
-
-    string SettingsFilePath { get; }
 }
 
 internal sealed record UserConfigReadResult(bool Exists, string? Content, string? Hash);

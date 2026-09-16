@@ -6,18 +6,17 @@ using AutoQAC.Services.Plugin;
 namespace AutoQAC.Services.GameCapability;
 
 /// <summary>
-/// Opaque token representing Discovery-affecting settings accepted with a Plugin refresh discovery plan.
+///     Opaque token representing Discovery-affecting settings accepted with a Plugin refresh discovery plan.
 /// </summary>
 public sealed class PluginRefreshDiscoveryFreshnessToken
 {
-    private readonly GameType _gameType;
-    private readonly bool _mo2ModeEnabled;
-    private readonly string? _mo2ExecutablePath;
-    private readonly string? _loadOrderPath;
-    private readonly string? _gameDataFolderOverride;
-    private readonly string? _mo2InstancePath;
-    private readonly string? _mo2Profile;
     private readonly bool _disableSkipLists;
+    private readonly string? _gameDataFolderOverride;
+    private readonly string? _loadOrderPath;
+    private readonly string? _mo2ExecutablePath;
+    private readonly string? _mo2InstancePath;
+    private readonly bool _mo2ModeEnabled;
+    private readonly string? _mo2Profile;
     private readonly IReadOnlyDictionary<string, IReadOnlyList<string>> _skipLists;
 
     internal PluginRefreshDiscoveryFreshnessToken(
@@ -31,7 +30,7 @@ public sealed class PluginRefreshDiscoveryFreshnessToken
         bool disableSkipLists,
         IReadOnlyDictionary<string, IReadOnlyList<string>> skipLists)
     {
-        _gameType = gameType;
+        GameType = gameType;
         _mo2ModeEnabled = mo2ModeEnabled;
         _mo2ExecutablePath = mo2ExecutablePath;
         _loadOrderPath = loadOrderPath;
@@ -42,49 +41,33 @@ public sealed class PluginRefreshDiscoveryFreshnessToken
         _skipLists = skipLists;
     }
 
-    internal GameType GameType => _gameType;
+    internal GameType GameType { get; }
 
     internal PluginRefreshFreshness CompareWith(PluginRefreshDiscoveryFreshnessToken current)
     {
-        if (current._gameType != _gameType)
-        {
+        if (current.GameType != GameType)
             return new PluginRefreshFreshness(false, PluginRefreshStalenessReason.SelectedGameChanged);
-        }
 
         if (current._mo2ModeEnabled != _mo2ModeEnabled)
-        {
             return new PluginRefreshFreshness(false, PluginRefreshStalenessReason.Mo2ModeChanged);
-        }
 
         if (!StringComparer.OrdinalIgnoreCase.Equals(current._mo2ExecutablePath, _mo2ExecutablePath))
-        {
             return new PluginRefreshFreshness(false, PluginRefreshStalenessReason.Mo2ExecutablePathChanged);
-        }
 
         if (!StringComparer.OrdinalIgnoreCase.Equals(current._loadOrderPath, _loadOrderPath))
-        {
             return new PluginRefreshFreshness(false, PluginRefreshStalenessReason.LoadOrderPathChanged);
-        }
 
         if (!StringComparer.OrdinalIgnoreCase.Equals(current._gameDataFolderOverride, _gameDataFolderOverride))
-        {
             return new PluginRefreshFreshness(false, PluginRefreshStalenessReason.GameDataFolderOverrideChanged);
-        }
 
         if (!StringComparer.OrdinalIgnoreCase.Equals(current._mo2InstancePath, _mo2InstancePath))
-        {
             return new PluginRefreshFreshness(false, PluginRefreshStalenessReason.Mo2InstanceChanged);
-        }
 
         if (!StringComparer.OrdinalIgnoreCase.Equals(current._mo2Profile, _mo2Profile))
-        {
             return new PluginRefreshFreshness(false, PluginRefreshStalenessReason.Mo2ProfileChanged);
-        }
 
         if (current._disableSkipLists != _disableSkipLists || !SkipListsEqual(current._skipLists, _skipLists))
-        {
             return new PluginRefreshFreshness(false, PluginRefreshStalenessReason.SkipListSettingsChanged);
-        }
 
         return PluginRefreshFreshness.Fresh;
     }
@@ -93,25 +76,15 @@ public sealed class PluginRefreshDiscoveryFreshnessToken
         IReadOnlyDictionary<string, IReadOnlyList<string>> left,
         IReadOnlyDictionary<string, IReadOnlyList<string>> right)
     {
-        if (left.Count != right.Count)
-        {
-            return false;
-        }
+        if (left.Count != right.Count) return false;
 
         foreach (var (key, leftValues) in left)
         {
-            if (!right.TryGetValue(key, out var rightValues) || leftValues.Count != rightValues.Count)
-            {
-                return false;
-            }
+            if (!right.TryGetValue(key, out var rightValues) || leftValues.Count != rightValues.Count) return false;
 
             for (var i = 0; i < leftValues.Count; i++)
-            {
                 if (!string.Equals(leftValues[i], rightValues[i], StringComparison.OrdinalIgnoreCase))
-                {
                     return false;
-                }
-            }
         }
 
         return true;
@@ -119,7 +92,7 @@ public sealed class PluginRefreshDiscoveryFreshnessToken
 }
 
 /// <summary>
-/// Current AppState-owned context needed to check Plugin refresh discovery freshness lazily.
+///     Current AppState-owned context needed to check Plugin refresh discovery freshness lazily.
 /// </summary>
 /// <param name="CurrentGameType">Currently selected game.</param>
 /// <param name="Mo2ModeEnabled">Whether MO2 mode is currently enabled.</param>

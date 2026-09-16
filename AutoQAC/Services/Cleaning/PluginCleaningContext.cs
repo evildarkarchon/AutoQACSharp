@@ -3,7 +3,7 @@ using AutoQAC.Models;
 namespace AutoQAC.Services.Cleaning;
 
 /// <summary>
-/// Per-plugin facts needed to clean one plugin within a Cleaning session.
+///     Per-plugin facts needed to clean one plugin within a Cleaning session.
 /// </summary>
 /// <param name="Plugin">Plugin selected by preflight for cleaning.</param>
 /// <param name="GameType">Detected game type used for launch and xEdit log names.</param>

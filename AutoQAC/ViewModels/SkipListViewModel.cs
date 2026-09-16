@@ -16,13 +16,30 @@ namespace AutoQAC.ViewModels;
 
 public sealed partial class SkipListViewModel : ViewModelBase, IDisposable
 {
+    private static readonly string[] ValidExtensions = [".esp", ".esm", ".esl"];
     private readonly IConfigurationService _configService;
-    private readonly IStateService _stateService;
     private readonly ILoggingService _logger;
+    private readonly IStateService _stateService;
 
     private List<string> _originalSkipList = [];
 
-    private static readonly string[] ValidExtensions = [".esp", ".esm", ".esl"];
+    public SkipListViewModel(
+        IConfigurationService configService,
+        IStateService stateService,
+        ILoggingService logger)
+    {
+        _configService = configService;
+        _stateService = stateService;
+        _logger = logger;
+
+        AvailableGames = Enum.GetValues<GameType>()
+            .Where(g => g != GameType.Unknown)
+            .ToList()
+            .AsReadOnly();
+
+        SkipListEntries.CollectionChanged += OnSkipListEntriesChanged;
+        RecomputeHasUnsavedChanges();
+    }
 
     [ObservableProperty] public partial GameType SelectedGame { get; set; }
 
@@ -50,35 +67,28 @@ public sealed partial class SkipListViewModel : ViewModelBase, IDisposable
 
     [ObservableProperty] public partial bool IsLoading { get; set; }
 
+    public void Dispose()
+    {
+        SkipListEntries.CollectionChanged -= OnSkipListEntriesChanged;
+    }
+
     /// <summary>Raised when the user picks Save or Cancel. The view closes the dialog with this value.</summary>
     public event Action<bool>? CloseRequested;
 
-    public SkipListViewModel(
-        IConfigurationService configService,
-        IStateService stateService,
-        ILoggingService logger)
+    private void OnSkipListEntriesChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        _configService = configService;
-        _stateService = stateService;
-        _logger = logger;
-
-        AvailableGames = Enum.GetValues<GameType>()
-            .Where(g => g != GameType.Unknown)
-            .ToList()
-            .AsReadOnly();
-
-        SkipListEntries.CollectionChanged += OnSkipListEntriesChanged;
         RecomputeHasUnsavedChanges();
     }
 
-    private void OnSkipListEntriesChanged(object? sender, NotifyCollectionChangedEventArgs e) =>
-        RecomputeHasUnsavedChanges();
-
-    private void RecomputeHasUnsavedChanges() =>
+    private void RecomputeHasUnsavedChanges()
+    {
         HasUnsavedChanges = !SkipListEntriesMatchOriginal();
+    }
 
-    partial void OnManualEntryTextChanged(string value) =>
+    partial void OnManualEntryTextChanged(string value)
+    {
         ManualEntryError = ValidatePluginName(value);
+    }
 
     partial void OnSelectedGameChanged(GameType value)
     {
@@ -93,10 +103,7 @@ public sealed partial class SkipListViewModel : ViewModelBase, IDisposable
             IsLoading = true;
 
             var currentGame = _stateService.CurrentState.CurrentGameType;
-            if (currentGame == GameType.Unknown && AvailableGames.Count > 0)
-            {
-                currentGame = AvailableGames[0];
-            }
+            if (currentGame == GameType.Unknown && AvailableGames.Count > 0) currentGame = AvailableGames[0];
 
             // IsLoading is true → OnSelectedGameChanged bails out; we load explicitly below.
             SelectedGame = currentGame;
@@ -121,10 +128,7 @@ public sealed partial class SkipListViewModel : ViewModelBase, IDisposable
             _originalSkipList = list.ToList();
 
             SkipListEntries.Clear();
-            foreach (var entry in list.Where(e => !string.IsNullOrWhiteSpace(e)))
-            {
-                SkipListEntries.Add(entry);
-            }
+            foreach (var entry in list.Where(e => !string.IsNullOrWhiteSpace(e))) SkipListEntries.Add(entry);
 
             await RefreshAvailablePluginsAsync();
             _logger.Debug("Loaded {Count} entries for {Game} skip list", list.Count, game);
@@ -151,14 +155,15 @@ public sealed partial class SkipListViewModel : ViewModelBase, IDisposable
         var skipSet = new HashSet<string>(mergedSkipList, StringComparer.OrdinalIgnoreCase);
 
         foreach (var plugin in loadedPlugins.Where(p => !skipSet.Contains(p.FileName)))
-        {
             AvailablePlugins.Add(plugin.FileName);
-        }
 
         SelectedPlugin = null;
     }
 
-    private bool CanAddSelectedPlugin() => !string.IsNullOrEmpty(SelectedPlugin);
+    private bool CanAddSelectedPlugin()
+    {
+        return !string.IsNullOrEmpty(SelectedPlugin);
+    }
 
     [RelayCommand(CanExecute = nameof(CanAddSelectedPlugin))]
     private void AddSelectedPlugin()
@@ -168,10 +173,7 @@ public sealed partial class SkipListViewModel : ViewModelBase, IDisposable
 
         var plugin = SelectedPlugin;
 
-        if (!SkipListEntries.Contains(plugin, StringComparer.OrdinalIgnoreCase))
-        {
-            SkipListEntries.Add(plugin);
-        }
+        if (!SkipListEntries.Contains(plugin, StringComparer.OrdinalIgnoreCase)) SkipListEntries.Add(plugin);
 
         AvailablePlugins.Remove(plugin);
         SelectedPlugin = null;
@@ -179,8 +181,10 @@ public sealed partial class SkipListViewModel : ViewModelBase, IDisposable
         _logger.Debug("Added {Plugin} to skip list from loaded plugins", plugin);
     }
 
-    private bool CanAddManualEntry() =>
-        ValidatePluginName(ManualEntryText) == null && !string.IsNullOrWhiteSpace(ManualEntryText);
+    private bool CanAddManualEntry()
+    {
+        return ValidatePluginName(ManualEntryText) == null && !string.IsNullOrWhiteSpace(ManualEntryText);
+    }
 
     [RelayCommand(CanExecute = nameof(CanAddManualEntry))]
     private void AddManualEntry()
@@ -204,10 +208,7 @@ public sealed partial class SkipListViewModel : ViewModelBase, IDisposable
 
         var toRemove = AvailablePlugins.FirstOrDefault(p =>
             string.Equals(p, entry, StringComparison.OrdinalIgnoreCase));
-        if (toRemove != null)
-        {
-            AvailablePlugins.Remove(toRemove);
-        }
+        if (toRemove != null) AvailablePlugins.Remove(toRemove);
 
         ManualEntryText = string.Empty;
         ManualEntryError = null;
@@ -215,7 +216,10 @@ public sealed partial class SkipListViewModel : ViewModelBase, IDisposable
         _logger.Debug("Added {Plugin} to skip list via manual entry", entry);
     }
 
-    private bool CanRemoveSelectedEntry() => !string.IsNullOrEmpty(SelectedEntry);
+    private bool CanRemoveSelectedEntry()
+    {
+        return !string.IsNullOrEmpty(SelectedEntry);
+    }
 
     [RelayCommand(CanExecute = nameof(CanRemoveSelectedEntry))]
     private async Task RemoveSelectedEntryAsync()
@@ -236,10 +240,7 @@ public sealed partial class SkipListViewModel : ViewModelBase, IDisposable
             var inDefaultSkipList =
                 defaultSkipList.Any(s => string.Equals(s, entry, StringComparison.OrdinalIgnoreCase));
 
-            if (!inDefaultSkipList)
-            {
-                AvailablePlugins.Add(entry);
-            }
+            if (!inDefaultSkipList) AvailablePlugins.Add(entry);
         }
 
         SelectedEntry = null;
@@ -270,7 +271,10 @@ public sealed partial class SkipListViewModel : ViewModelBase, IDisposable
     }
 
     [RelayCommand]
-    private void Cancel() => CloseRequested?.Invoke(false);
+    private void Cancel()
+    {
+        CloseRequested?.Invoke(false);
+    }
 
     private bool SkipListEntriesMatchOriginal()
     {
@@ -300,10 +304,5 @@ public sealed partial class SkipListViewModel : ViewModelBase, IDisposable
             return "Must end with .esp, .esm, or .esl";
 
         return null;
-    }
-
-    public void Dispose()
-    {
-        SkipListEntries.CollectionChanged -= OnSkipListEntriesChanged;
     }
 }

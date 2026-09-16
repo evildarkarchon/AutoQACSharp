@@ -13,16 +13,17 @@ using AutoQAC.Services.Plugin;
 namespace AutoQAC.Services.GameCapability;
 
 /// <summary>
-/// Default Plugin refresh discovery planner backed by configuration, plugin loading, MO2 probing, and the Game capability catalog.
+///     Default Plugin refresh discovery planner backed by configuration, plugin loading, MO2 probing, and the Game
+///     capability catalog.
 /// </summary>
 public sealed class PluginRefreshDiscoveryPlanner : IPluginRefreshDiscoveryPlanner
 {
     private readonly IConfigurationService _configurationService;
-    private readonly IPluginLoadingService _pluginLoadingService;
     private readonly IMo2InstanceService _mo2InstanceService;
+    private readonly IPluginLoadingService _pluginLoadingService;
 
     /// <summary>
-    /// Initializes a planner with the adapter services needed to resolve Plugin refresh discovery details.
+    ///     Initializes a planner with the adapter services needed to resolve Plugin refresh discovery details.
     /// </summary>
     public PluginRefreshDiscoveryPlanner(
         IConfigurationService configurationService,
@@ -35,7 +36,10 @@ public sealed class PluginRefreshDiscoveryPlanner : IPluginRefreshDiscoveryPlann
     }
 
     /// <inheritdoc />
-    public IReadOnlyList<GameType> GetAvailableGames() => GameCapabilityCatalog.GetAvailableGames();
+    public IReadOnlyList<GameType> GetAvailableGames()
+    {
+        return GameCapabilityCatalog.GetAvailableGames();
+    }
 
     /// <inheritdoc />
     public PluginRefreshGameAffordance GetAffordance(GameType gameType, bool mo2ModeEnabled)
@@ -55,17 +59,13 @@ public sealed class PluginRefreshDiscoveryPlanner : IPluginRefreshDiscoveryPlann
     {
         var userConfig = await _configurationService.LoadUserConfigAsync(ct).ConfigureAwait(false);
         if (request.GameType == GameType.Unknown)
-        {
             return new PluginRefreshDiscoveryPlanResult(
                 PluginRefreshDiscoveryPlanStatus.NoGameSelected,
                 null,
-                CreateDirectConfiguration(userConfig, null, null, hasDataFolderOverride: false));
-        }
+                CreateDirectConfiguration(userConfig, null, null, false));
 
         if (userConfig.Settings.Mo2Mode)
-        {
             return await CreateMo2PlanAsync(request.GameType, userConfig, ct).ConfigureAwait(false);
-        }
 
         return await CreateDirectPlanAsync(request.GameType, request.SelectedLoadOrderPath, userConfig, ct)
             .ConfigureAwait(false);
@@ -133,9 +133,7 @@ public sealed class PluginRefreshDiscoveryPlanner : IPluginRefreshDiscoveryPlann
             case PluginRefreshDiscoveryMode.DirectLoadOrderFile:
             {
                 if (string.IsNullOrWhiteSpace(plan.LoadOrderPath))
-                {
                     return new PluginRefreshDiscoveredPlugins(plan, [], null);
-                }
 
                 var plugins = await _pluginLoadingService.GetPluginsFromFileAsync(
                         plan.LoadOrderPath,
@@ -148,19 +146,14 @@ public sealed class PluginRefreshDiscoveryPlanner : IPluginRefreshDiscoveryPlann
             case PluginRefreshDiscoveryMode.Mo2LoadOrderFile:
             {
                 if (string.IsNullOrWhiteSpace(plan.Mo2LoadOrderPath))
-                {
                     return new PluginRefreshDiscoveredPlugins(plan, [], null);
-                }
 
                 var plugins = await _pluginLoadingService.GetPluginsFromFileAsync(
                         plan.Mo2LoadOrderPath,
                         null,
                         ct)
                     .ConfigureAwait(false);
-                if (plan.Mo2PathMap.Count == 0)
-                {
-                    return new PluginRefreshDiscoveredPlugins(plan, plugins, null);
-                }
+                if (plan.Mo2PathMap.Count == 0) return new PluginRefreshDiscoveredPlugins(plan, plugins, null);
 
                 var mappedPlugins = plugins.Select(plugin =>
                         plan.Mo2PathMap.TryGetValue(plugin.FileName, out var fullPath)
@@ -214,28 +207,22 @@ public sealed class PluginRefreshDiscoveryPlanner : IPluginRefreshDiscoveryPlann
 
         var capability = GameCapabilityCatalog.Get(gameType);
         if (string.IsNullOrWhiteSpace(loadOrderPath) && capability.RequiresLoadOrderFile)
-        {
             loadOrderPath = await _configurationService.GetGameLoadOrderOverrideAsync(gameType, ct)
                                 .ConfigureAwait(false)
                             ?? _pluginLoadingService.GetDefaultLoadOrderPath(gameType);
-        }
 
         var configuration = CreateDirectConfiguration(userConfig, loadOrderPath, dataFolder, hasDataFolderOverride);
         if (!capability.SupportsPluginLoading)
-        {
             return new PluginRefreshDiscoveryPlanResult(
                 PluginRefreshDiscoveryPlanStatus.UnsupportedGame,
                 null,
                 configuration);
-        }
 
         if (capability.RequiresLoadOrderFile && string.IsNullOrWhiteSpace(loadOrderPath))
-        {
             return new PluginRefreshDiscoveryPlanResult(
                 PluginRefreshDiscoveryPlanStatus.MissingLoadOrderFile,
                 null,
                 configuration);
-        }
 
         var mode = string.IsNullOrWhiteSpace(loadOrderPath)
             ? PluginRefreshDiscoveryMode.DirectAutomatic
@@ -248,9 +235,9 @@ public sealed class PluginRefreshDiscoveryPlanner : IPluginRefreshDiscoveryPlann
             capability.SupportsIssueApproximation,
             dataFolder,
             loadOrderPath,
-            Mo2LoadOrderPath: null,
+            null,
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
-            Mo2BaseDataFolder: null);
+            null);
         return new PluginRefreshDiscoveryPlanResult(
             PluginRefreshDiscoveryPlanStatus.Ready,
             plan,
@@ -286,7 +273,7 @@ public sealed class PluginRefreshDiscoveryPlanner : IPluginRefreshDiscoveryPlann
                 isInstanceOverride,
                 string.IsNullOrWhiteSpace(instanceOverride) ? null : Directory.Exists(instanceOverride),
                 [],
-                selectedProfile: null);
+                null);
             return new PluginRefreshDiscoveryPlanResult(
                 PluginRefreshDiscoveryPlanStatus.MissingMo2Instance,
                 null,
@@ -307,21 +294,17 @@ public sealed class PluginRefreshDiscoveryPlanner : IPluginRefreshDiscoveryPlann
             profile);
 
         if (string.IsNullOrWhiteSpace(profile))
-        {
             return new PluginRefreshDiscoveryPlanResult(
                 PluginRefreshDiscoveryPlanStatus.MissingMo2Profile,
                 null,
                 baseConfiguration);
-        }
 
         var mo2LoadOrderPath = _mo2InstanceService.GetLoadOrderPath(instance, profile);
         if (string.IsNullOrWhiteSpace(mo2LoadOrderPath) || !File.Exists(mo2LoadOrderPath))
-        {
             return new PluginRefreshDiscoveryPlanResult(
                 PluginRefreshDiscoveryPlanStatus.MissingMo2ProfileLoadOrder,
                 null,
                 baseConfiguration);
-        }
 
         var pathMap = await Task.Run(
                 () => _mo2InstanceService.BuildPluginPathMap(instance, profile, dataFolder),
@@ -335,10 +318,10 @@ public sealed class PluginRefreshDiscoveryPlanner : IPluginRefreshDiscoveryPlann
             userConfig.Settings.DisableSkipLists,
             capability.SupportsIssueApproximation,
             dataFolder,
-            LoadOrderPath: null,
+            null,
             mo2LoadOrderPath,
             pathMap,
-            Mo2BaseDataFolder: dataFolder);
+            dataFolder);
         return new PluginRefreshDiscoveryPlanResult(
             PluginRefreshDiscoveryPlanStatus.Ready,
             plan,
@@ -349,20 +332,22 @@ public sealed class PluginRefreshDiscoveryPlanner : IPluginRefreshDiscoveryPlann
         UserConfiguration userConfig,
         string? loadOrderPath,
         string? dataFolder,
-        bool hasDataFolderOverride) =>
-        new(
-            LoadOrderPath: loadOrderPath,
-            GameDataFolder: dataFolder,
-            HasGameDataFolderOverride: hasDataFolderOverride,
-            XEditPath: userConfig.XEdit.Binary,
-            Mo2Path: userConfig.ModOrganizer.Binary,
-            Mo2ModeEnabled: userConfig.Settings.Mo2Mode,
-            Mo2InstancePath: null,
-            IsMo2InstanceOverride: false,
-            IsMo2InstanceValid: null,
-            AvailableProfiles: [],
-            SelectedProfile: null,
-            CleaningTimeout: userConfig.Settings.CleaningTimeout);
+        bool hasDataFolderOverride)
+    {
+        return new PluginRefreshConfigurationProjection(
+            loadOrderPath,
+            dataFolder,
+            hasDataFolderOverride,
+            userConfig.XEdit.Binary,
+            userConfig.ModOrganizer.Binary,
+            userConfig.Settings.Mo2Mode,
+            null,
+            false,
+            null,
+            [],
+            null,
+            userConfig.Settings.CleaningTimeout);
+    }
 
     private static PluginRefreshConfigurationProjection CreateMo2Configuration(
         UserConfiguration userConfig,
@@ -372,20 +357,22 @@ public sealed class PluginRefreshDiscoveryPlanner : IPluginRefreshDiscoveryPlann
         bool isInstanceOverride,
         bool? isInstanceValid,
         IReadOnlyList<string> profiles,
-        string? selectedProfile) =>
-        new(
-            LoadOrderPath: null,
-            GameDataFolder: dataFolder,
-            HasGameDataFolderOverride: hasDataFolderOverride,
-            XEditPath: userConfig.XEdit.Binary,
-            Mo2Path: userConfig.ModOrganizer.Binary,
-            Mo2ModeEnabled: userConfig.Settings.Mo2Mode,
-            Mo2InstancePath: instancePath,
-            IsMo2InstanceOverride: isInstanceOverride,
-            IsMo2InstanceValid: isInstanceValid,
-            AvailableProfiles: profiles,
-            SelectedProfile: selectedProfile,
-            CleaningTimeout: userConfig.Settings.CleaningTimeout);
+        string? selectedProfile)
+    {
+        return new PluginRefreshConfigurationProjection(
+            null,
+            dataFolder,
+            hasDataFolderOverride,
+            userConfig.XEdit.Binary,
+            userConfig.ModOrganizer.Binary,
+            userConfig.Settings.Mo2Mode,
+            instancePath,
+            isInstanceOverride,
+            isInstanceValid,
+            profiles,
+            selectedProfile,
+            userConfig.Settings.CleaningTimeout);
+    }
 
     private static string? GetConfiguredMo2InstancePath(UserConfiguration userConfig, GameType gameType)
     {
@@ -399,23 +386,18 @@ public sealed class PluginRefreshDiscoveryPlanner : IPluginRefreshDiscoveryPlann
     {
         var normalized = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
         foreach (var (key, values) in userConfig.SkipLists.OrderBy(kvp => kvp.Key, StringComparer.OrdinalIgnoreCase))
-        {
             normalized[NormalizeText(key) ?? string.Empty] = (values ?? [])
                 .Where(value => !string.IsNullOrWhiteSpace(value))
                 .Select(value => value.Trim())
                 .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
                 .ToList();
-        }
 
         return normalized;
     }
 
     private static string? NormalizePath(string? path)
     {
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            return null;
-        }
+        if (string.IsNullOrWhiteSpace(path)) return null;
 
         try
         {
@@ -427,6 +409,8 @@ public sealed class PluginRefreshDiscoveryPlanner : IPluginRefreshDiscoveryPlann
         }
     }
 
-    private static string? NormalizeText(string? value) =>
-        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    private static string? NormalizeText(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
 }

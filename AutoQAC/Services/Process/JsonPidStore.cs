@@ -10,7 +10,7 @@ using AutoQAC.Models;
 namespace AutoQAC.Services.Process;
 
 /// <summary>
-/// JSON-backed PID store that serializes read-modify-write operations with process-local and file locks.
+///     JSON-backed PID store that serializes read-modify-write operations with process-local and file locks.
 /// </summary>
 public sealed class JsonPidStore(IPidStorePathProvider pathProvider, ILoggingService logger) : IPidStore
 {
@@ -28,7 +28,7 @@ public sealed class JsonPidStore(IPidStorePathProvider pathProvider, ILoggingSer
             var locked = true;
             try
             {
-                return await ReadEntriesAsync(stream, resetOnCorrupt: true, ct).ConfigureAwait(false);
+                return await ReadEntriesAsync(stream, true, ct).ConfigureAwait(false);
             }
             finally
             {
@@ -54,7 +54,7 @@ public sealed class JsonPidStore(IPidStorePathProvider pathProvider, ILoggingSer
             var locked = true;
             try
             {
-                var existing = await ReadEntriesAsync(stream, resetOnCorrupt: true, ct).ConfigureAwait(false);
+                var existing = await ReadEntriesAsync(stream, true, ct).ConfigureAwait(false);
                 var updated = update(existing);
                 await WriteEntriesAsync(stream, updated, ct).ConfigureAwait(false);
             }
@@ -72,18 +72,15 @@ public sealed class JsonPidStore(IPidStorePathProvider pathProvider, ILoggingSer
     private FileStream OpenPidFile()
     {
         var directory = Path.GetDirectoryName(pathProvider.PidFilePath);
-        if (!string.IsNullOrEmpty(directory))
-        {
-            Directory.CreateDirectory(directory);
-        }
+        if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
 
         return new FileStream(
             pathProvider.PidFilePath,
             FileMode.OpenOrCreate,
             FileAccess.ReadWrite,
             FileShare.ReadWrite,
-            bufferSize: 4096,
-            useAsync: true);
+            4096,
+            true);
     }
 
     private async Task<IReadOnlyList<TrackedProcess>> ReadEntriesAsync(
@@ -94,10 +91,7 @@ public sealed class JsonPidStore(IPidStorePathProvider pathProvider, ILoggingSer
         try
         {
             stream.Position = 0;
-            if (stream.Length == 0)
-            {
-                return [];
-            }
+            if (stream.Length == 0) return [];
 
             var entries = await JsonSerializer.DeserializeAsync<List<TrackedProcess>>(stream, SerializerOptions, ct)
                 .ConfigureAwait(false);
@@ -121,7 +115,7 @@ public sealed class JsonPidStore(IPidStorePathProvider pathProvider, ILoggingSer
             $"autoqac-pids.corrupt-{DateTime.UtcNow:yyyyMMddHHmmssfff}.json");
 
         await using var copy = new FileStream(copyPath, FileMode.CreateNew, FileAccess.Write, FileShare.Read, 4096,
-            useAsync: true);
+            true);
         await stream.CopyToAsync(copy, ct).ConfigureAwait(false);
     }
 
@@ -142,7 +136,6 @@ public sealed class JsonPidStore(IPidStorePathProvider pathProvider, ILoggingSer
         var delay = TimeSpan.FromMilliseconds(25);
 
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
-        {
             try
             {
                 stream.Lock(0, 1);
@@ -153,15 +146,11 @@ public sealed class JsonPidStore(IPidStorePathProvider pathProvider, ILoggingSer
                 await Task.Delay(delay, ct).ConfigureAwait(false);
                 delay += delay;
             }
-        }
     }
 
     private static void UnlockQuietly(FileStream stream, ref bool locked)
     {
-        if (!locked)
-        {
-            return;
-        }
+        if (!locked) return;
 
         try
         {

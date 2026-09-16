@@ -37,10 +37,14 @@ public sealed class XEditLogFileServiceTests : IDisposable
     public void Dispose()
     {
         if (Directory.Exists(_testRoot))
-        {
-            try { Directory.Delete(_testRoot, recursive: true); }
-            catch { /* Best-effort cleanup */ }
-        }
+            try
+            {
+                Directory.Delete(_testRoot, true);
+            }
+            catch
+            {
+                /* Best-effort cleanup */
+            }
     }
 
     #region GetLogFilePath -- Game-Aware Filename Mapping (LOG-01, LOG-02)
@@ -104,7 +108,8 @@ public sealed class XEditLogFileServiceTests : IDisposable
     [InlineData(GameType.Oblivion, "TES4EditException.log")]
     [InlineData(GameType.SkyrimLe, "TES5EditException.log")]
     [InlineData(GameType.Fallout3, "FO3EditException.log")]
-    public void GetExceptionLogFilePath_MultipleGameTypes_ReturnsCorrectFilename(GameType gameType, string expectedFilename)
+    public void GetExceptionLogFilePath_MultipleGameTypes_ReturnsCorrectFilename(GameType gameType,
+        string expectedFilename)
     {
         // Act
         var result = _sut.GetExceptionLogFilePath(@"C:\xEdit", gameType);
@@ -508,5 +513,4 @@ public sealed class XEditLogFileServiceTests : IDisposable
     }
 
     #endregion
-
 }

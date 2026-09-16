@@ -1,6 +1,6 @@
 using System;
-using System.Collections.ObjectModel;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.IO;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
@@ -18,26 +18,54 @@ using CommunityToolkit.Mvvm.Input;
 namespace AutoQAC.ViewModels.MainWindow;
 
 /// <summary>
-/// Manages configuration paths, file dialogs, path validation, game selection,
-/// and auto-save reactions for the main window.
+///     Manages configuration paths, file dialogs, path validation, game selection,
+///     and auto-save reactions for the main window.
 /// </summary>
 public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
 {
     private readonly IConfigurationService _configService;
+    private readonly IPluginRefreshDiscoveryPlanner _discoveryPlanner;
+    private readonly IDiscoverySettingsModule _discoverySettingsModule;
     private readonly IFileDialogService _fileDialog;
     private readonly ILoggingService _logger;
     private readonly IMessageDialogService _messageDialog;
     private readonly IPluginLoadingService _pluginLoadingService;
     private readonly IPluginRefreshModule _pluginRefreshModule;
-    private readonly IPluginRefreshDiscoveryPlanner _discoveryPlanner;
-    private readonly IDiscoverySettingsModule _discoverySettingsModule;
-    private readonly IStateService _stateService;
     private readonly IDisposable _skipListChangedSubscription;
+    private readonly IStateService _stateService;
 
     private bool _initialized;
-    private bool _suppressSelectedGameChanged;
     private bool _suppressDisableSkipListsChanged;
+    private bool _suppressSelectedGameChanged;
     private bool _suppressSelectedProfileChanged;
+
+    public ConfigurationViewModel(
+        IConfigurationService configService,
+        IStateService stateService,
+        ILoggingService logger,
+        IFileDialogService fileDialog,
+        IMessageDialogService messageDialog,
+        IPluginValidationService pluginService,
+        IPluginLoadingService pluginLoadingService,
+        IPluginRefreshModule pluginRefreshModule,
+        IPluginRefreshDiscoveryPlanner discoveryPlanner,
+        IDiscoverySettingsModule discoverySettingsModule)
+    {
+        _configService = configService;
+        _stateService = stateService;
+        _logger = logger;
+        _fileDialog = fileDialog;
+        _messageDialog = messageDialog;
+        _pluginLoadingService = pluginLoadingService;
+        _pluginRefreshModule = pluginRefreshModule;
+        _discoveryPlanner = discoveryPlanner;
+        _discoverySettingsModule = discoverySettingsModule;
+
+        AvailableGames = _discoveryPlanner.GetAvailableGames();
+
+        _skipListChangedSubscription = _configService.SkipListChanged.Subscribe(
+            new CallbackObserver<GameType>(OnSkipListChanged));
+    }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsLoadOrderConfigured))]
@@ -104,38 +132,17 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
     public bool IsMutagenSupported => _discoveryPlanner.GetAffordance(SelectedGame, Mo2ModeEnabled).IsMutagenSupported;
     public bool IsGameSelected => SelectedGame != GameType.Unknown;
 
-    public bool RequiresLoadOrderFile => _discoveryPlanner.GetAffordance(SelectedGame, Mo2ModeEnabled).RequiresLoadOrderFile;
+    public bool RequiresLoadOrderFile =>
+        _discoveryPlanner.GetAffordance(SelectedGame, Mo2ModeEnabled).RequiresLoadOrderFile;
 
     public bool IsLoadOrderConfigured => !string.IsNullOrWhiteSpace(LoadOrderPath);
     public bool ShowMo2Config => Mo2ModeEnabled && IsGameSelected;
     public bool ShowProfileSelector => ShowMo2Config && AvailableProfiles.Count > 1;
 
-    public ConfigurationViewModel(
-        IConfigurationService configService,
-        IStateService stateService,
-        ILoggingService logger,
-        IFileDialogService fileDialog,
-        IMessageDialogService messageDialog,
-        IPluginValidationService pluginService,
-        IPluginLoadingService pluginLoadingService,
-        IPluginRefreshModule pluginRefreshModule,
-        IPluginRefreshDiscoveryPlanner discoveryPlanner,
-        IDiscoverySettingsModule discoverySettingsModule)
+    public void Dispose()
     {
-        _configService = configService;
-        _stateService = stateService;
-        _logger = logger;
-        _fileDialog = fileDialog;
-        _messageDialog = messageDialog;
-        _pluginLoadingService = pluginLoadingService;
-        _pluginRefreshModule = pluginRefreshModule;
-        _discoveryPlanner = discoveryPlanner;
-        _discoverySettingsModule = discoverySettingsModule;
-
-        AvailableGames = _discoveryPlanner.GetAvailableGames();
-
-        _skipListChangedSubscription = _configService.SkipListChanged.Subscribe(
-            new CallbackObserver<GameType>(OnSkipListChanged));
+        _ = _pluginRefreshModule.ExecuteAsync(new PluginRefreshIntent.Cancel(PluginRefreshCancelReason.Disposed));
+        _skipListChangedSubscription.Dispose();
     }
 
     private void OnSkipListChanged(GameType changedGame)
@@ -143,30 +150,36 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         if (changedGame != SelectedGame) return;
         _ = RefreshPluginsForGameAsync(SelectedGame).ContinueWith(t =>
         {
-            if (t.Exception is { } ex)
-            {
-                _logger.Error(ex, "Failed to refresh plugins after skip list change");
-            }
+            if (t.Exception is { } ex) _logger.Error(ex, "Failed to refresh plugins after skip list change");
         }, TaskScheduler.Default);
     }
 
-    partial void OnXEditPathChanged(string? value) =>
+    partial void OnXEditPathChanged(string? value)
+    {
         IsXEditPathValid = string.IsNullOrWhiteSpace(value)
             ? null
             : File.Exists(value) && value.EndsWith(".exe", StringComparison.OrdinalIgnoreCase);
+    }
 
-    partial void OnMo2PathChanged(string? value) =>
+    partial void OnMo2PathChanged(string? value)
+    {
         IsMo2PathValid = string.IsNullOrWhiteSpace(value)
             ? null
             : File.Exists(value) && value.EndsWith(".exe", StringComparison.OrdinalIgnoreCase);
+    }
 
-    partial void OnMo2InstancePathChanged(string? value) =>
+    partial void OnMo2InstancePathChanged(string? value)
+    {
         IsMo2InstanceValid = string.IsNullOrWhiteSpace(value)
             ? null
             : Directory.Exists(value);
+    }
 
     // ReSharper disable once UnusedParameter.Global
-    partial void OnLoadOrderPathChanged(string? value) => RecomputeLoadOrderValidity();
+    partial void OnLoadOrderPathChanged(string? value)
+    {
+        RecomputeLoadOrderValidity();
+    }
 
     partial void OnSelectedGameChanged(GameType value)
     {
@@ -194,21 +207,19 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
     {
         var path = LoadOrderPath;
         if (RequiresLoadOrderFile)
-        {
             IsLoadOrderPathValid = !string.IsNullOrWhiteSpace(path) && File.Exists(path);
-        }
         else
-        {
             IsLoadOrderPathValid = string.IsNullOrWhiteSpace(path)
                 ? null
                 : File.Exists(path);
-        }
     }
 
-    partial void OnGameDataFolderChanged(string? value) =>
+    partial void OnGameDataFolderChanged(string? value)
+    {
         IsGameDataFolderValid = string.IsNullOrWhiteSpace(value)
             ? null
             : Directory.Exists(value);
+    }
 
     partial void OnMo2ModeEnabledChanged(bool value)
     {
@@ -356,7 +367,7 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         // user's selection on disk.
         XEditPath = path;
         _stateService.UpdateConfigurationPaths(LoadOrderPath, Mo2Path, path);
-        await SaveConfigurationAsync(flushToDisk: true);
+        await SaveConfigurationAsync(true);
     }
 
     [RelayCommand]
@@ -373,7 +384,10 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         await ApplyDiscoverySettingsResultAsync(result);
     }
 
-    private bool CanConfigureMo2Instance() => IsGameSelected;
+    private bool CanConfigureMo2Instance()
+    {
+        return IsGameSelected;
+    }
 
     [RelayCommand(CanExecute = nameof(CanConfigureMo2Instance))]
     private async Task ConfigureMo2InstanceAsync()
@@ -397,12 +411,13 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         var result = await _discoverySettingsModule.ExecuteAsync(
             new DiscoverySettingsIntent.SetMo2InstanceOverride(SelectedGame, path));
         if (await ApplyDiscoverySettingsResultAsync(result))
-        {
             StatusText = $"MO2 instance override set for {SelectedGame}";
-        }
     }
 
-    private bool CanResetMo2Instance() => IsMo2InstanceOverride;
+    private bool CanResetMo2Instance()
+    {
+        return IsMo2InstanceOverride;
+    }
 
     [RelayCommand(CanExecute = nameof(CanResetMo2Instance))]
     private async Task ResetMo2InstanceAsync()
@@ -416,7 +431,10 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         }
     }
 
-    private bool CanConfigureGameDataFolder() => IsGameSelected;
+    private bool CanConfigureGameDataFolder()
+    {
+        return IsGameSelected;
+    }
 
     [RelayCommand(CanExecute = nameof(CanConfigureGameDataFolder))]
     private async Task ConfigureGameDataFolderAsync()
@@ -446,24 +464,30 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         }
     }
 
-    private bool CanClearGameDataFolderOverride() => HasGameDataFolderOverride;
+    private bool CanClearGameDataFolderOverride()
+    {
+        return HasGameDataFolderOverride;
+    }
 
     /// <summary>
-    /// Converts the selected game into the folder label used by diagnostics without exposing a selected folder path.
+    ///     Converts the selected game into the folder label used by diagnostics without exposing a selected folder path.
     /// </summary>
     /// <returns>A safe game label, or the stable fallback phrase when no game is selected.</returns>
-    private string GetSelectedGameFolderDisplayName() => SelectedGame switch
+    private string GetSelectedGameFolderDisplayName()
     {
-        GameType.SkyrimLe => "Skyrim Legendary Edition",
-        GameType.SkyrimSe => "Skyrim Special Edition",
-        GameType.SkyrimVr => "Skyrim VR",
-        GameType.Fallout4 => "Fallout 4",
-        GameType.Fallout4Vr => "Fallout 4 VR",
-        GameType.Fallout3 => "Fallout 3",
-        GameType.FalloutNewVegas => "Fallout New Vegas",
-        GameType.Oblivion => "Oblivion",
-        _ => "selected game"
-    };
+        return SelectedGame switch
+        {
+            GameType.SkyrimLe => "Skyrim Legendary Edition",
+            GameType.SkyrimSe => "Skyrim Special Edition",
+            GameType.SkyrimVr => "Skyrim VR",
+            GameType.Fallout4 => "Fallout 4",
+            GameType.Fallout4Vr => "Fallout 4 VR",
+            GameType.Fallout3 => "Fallout 3",
+            GameType.FalloutNewVegas => "Fallout New Vegas",
+            GameType.Oblivion => "Oblivion",
+            _ => "selected game"
+        };
+    }
 
     [RelayCommand(CanExecute = nameof(CanClearGameDataFolderOverride))]
     private async Task ClearGameDataFolderOverrideAsync()
@@ -512,8 +536,8 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>
-    /// Called by the parent VM after construction to load config and initialize state.
-    /// Sets a flag that causes subsequent property-change reactions (auto-save, refresh) to fire.
+    ///     Called by the parent VM after construction to load config and initialize state.
+    ///     Sets a flag that causes subsequent property-change reactions (auto-save, refresh) to fire.
     /// </summary>
     public async Task InitializeAsync()
     {
@@ -540,13 +564,9 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
 
             var savedGame = await _configService.GetSelectedGameAsync();
             if (SelectedGame == savedGame)
-            {
                 await RefreshPluginsForGameAsync(savedGame);
-            }
             else
-            {
                 SelectedGame = savedGame;
-            }
         }
         catch (Exception ex)
         {
@@ -556,7 +576,7 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>
-    /// Updates local properties from application state. Called by parent on state changes.
+    ///     Updates local properties from application state. Called by parent on state changes.
     /// </summary>
     public void OnStateChanged(AppState state)
     {
@@ -569,7 +589,7 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>
-    /// Applies visible configuration and status fields published by the Plugin refresh module.
+    ///     Applies visible configuration and status fields published by the Plugin refresh module.
     /// </summary>
     /// <param name="snapshot">Whole Plugin refresh publication snapshot.</param>
     public void OnPluginRefreshSnapshot(PluginRefreshSnapshot snapshot)
@@ -579,8 +599,8 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>
-    /// Saves the current main-window configuration values, optionally forcing the
-    /// debounced configuration write to disk before returning for explicit Browse saves.
+    ///     Saves the current main-window configuration values, optionally forcing the
+    ///     debounced configuration write to disk before returning for explicit Browse saves.
     /// </summary>
     private async Task SaveConfigurationAsync(bool flushToDisk = false)
     {
@@ -592,10 +612,7 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         config.Settings.DisableSkipLists = DisableSkipListsEnabled;
 
         await _configService.SaveUserConfigAsync(config);
-        if (flushToDisk)
-        {
-            await _configService.FlushPendingSavesAsync();
-        }
+        if (flushToDisk) await _configService.FlushPendingSavesAsync();
     }
 
     private async Task RefreshPluginsForGameAsync(GameType gameType)
@@ -608,18 +625,12 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
     {
         if (result.Status == DiscoverySettingsChangeStatus.Accepted)
         {
-            if (result.Snapshot is not null)
-            {
-                OnPluginRefreshSnapshot(result.Snapshot);
-            }
+            if (result.Snapshot is not null) OnPluginRefreshSnapshot(result.Snapshot);
 
             return true;
         }
 
-        if (result.Failure is not null)
-        {
-            await ProjectDiscoverySettingsFailureAsync(result.Failure);
-        }
+        if (result.Failure is not null) await ProjectDiscoverySettingsFailureAsync(result.Failure);
 
         return false;
     }
@@ -645,11 +656,9 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         }
 
         if (failure.Kind == DiscoverySettingsChangeFailureKind.InvalidMo2ExecutablePath)
-        {
             await _messageDialog.ShowErrorAsync(
                 "File Not Found",
                 failure.SafeMessage);
-        }
     }
 
     private void ApplyRefreshConfiguration(PluginRefreshConfigurationProjection projection)
@@ -674,15 +683,15 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
     private void SetAvailableProfiles(IReadOnlyList<string> profiles)
     {
         AvailableProfiles.Clear();
-        foreach (var profile in profiles)
-        {
-            AvailableProfiles.Add(profile);
-        }
+        foreach (var profile in profiles) AvailableProfiles.Add(profile);
 
         OnPropertyChanged(nameof(ShowProfileSelector));
     }
 
-    private void ClearAvailableProfiles() => SetAvailableProfiles([]);
+    private void ClearAvailableProfiles()
+    {
+        SetAvailableProfiles([]);
+    }
 
     private void ClearMo2ProfileState()
     {
@@ -733,18 +742,12 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>
-    /// Shows a non-modal migration warning banner in the main window.
-    /// Called from App.xaml.cs after legacy migration runs on startup.
+    ///     Shows a non-modal migration warning banner in the main window.
+    ///     Called from App.xaml.cs after legacy migration runs on startup.
     /// </summary>
     public void ShowMigrationWarning(string message)
     {
         MigrationWarningMessage = message;
         HasMigrationWarning = true;
-    }
-
-    public void Dispose()
-    {
-        _ = _pluginRefreshModule.ExecuteAsync(new PluginRefreshIntent.Cancel(PluginRefreshCancelReason.Disposed));
-        _skipListChangedSubscription.Dispose();
     }
 }

@@ -4,7 +4,7 @@ using AutoQAC.Models;
 namespace AutoQAC.Services.Cleaning;
 
 /// <summary>
-/// Publishes Cleaning session state changes while hiding the concrete application-state store.
+///     Publishes Cleaning session state changes while hiding the concrete application-state store.
 /// </summary>
 public interface ICleaningSessionStatePublisher
 {

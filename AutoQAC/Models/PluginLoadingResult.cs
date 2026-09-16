@@ -3,7 +3,7 @@ using System.Collections.Generic;
 namespace AutoQAC.Models;
 
 /// <summary>
-/// Typed status for plugin loading operations.
+///     Typed status for plugin loading operations.
 /// </summary>
 public enum PluginLoadingStatus
 {
@@ -15,7 +15,7 @@ public enum PluginLoadingStatus
 }
 
 /// <summary>
-/// Result payload for plugin loading operations.
+///     Result payload for plugin loading operations.
 /// </summary>
 public sealed record PluginLoadingResult
 {

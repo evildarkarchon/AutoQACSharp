@@ -7,9 +7,9 @@ namespace AutoQAC.Services.Cleaning;
 public interface IPluginResultFinalizer
 {
     /// <summary>
-    /// Builds the per-plugin <see cref="PluginCleaningResult" /> from the runner output, log file content,
-    /// and the termination coordinator's view of whether the process may still be running.
-    /// Honors the Phase 5 lock: skip log read when termination is unsafe or stop was requested.
+    ///     Builds the per-plugin <see cref="PluginCleaningResult" /> from the runner output, log file content,
+    ///     and the termination coordinator's view of whether the process may still be running.
+    ///     Honors the Phase 5 lock: skip log read when termination is unsafe or stop was requested.
     /// </summary>
     /// <param name="plugin">Plugin whose final cleaning result is being built.</param>
     /// <param name="gameType">Detected game type used for xEdit log names.</param>

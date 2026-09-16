@@ -30,20 +30,20 @@ public sealed class LegacyMigrationServiceTests : IDisposable
     public void Dispose()
     {
         if (Directory.Exists(_testDirectory))
-        {
             try
             {
-                Directory.Delete(_testDirectory, recursive: true);
+                Directory.Delete(_testDirectory, true);
             }
             catch
             {
                 // Best-effort cleanup
             }
-        }
     }
 
-    private LegacyMigrationService CreateSut() =>
-        new(_mockLogger, _testDirectory);
+    private LegacyMigrationService CreateSut()
+    {
+        return new LegacyMigrationService(_mockLogger, _testDirectory);
+    }
 
     private string LegacyConfigPath => Path.Combine(_testDirectory, "AutoQAC Config.yaml");
     private string CurrentConfigPath => Path.Combine(_testDirectory, "AutoQAC Settings.yaml");
@@ -55,10 +55,7 @@ public sealed class LegacyMigrationServiceTests : IDisposable
     private void AssertSafeMigrationWarning(string? warningMessage, params string[] expectedFragments)
     {
         warningMessage.Should().NotBeNullOrWhiteSpace("migration warnings should remain actionable");
-        foreach (var expectedFragment in expectedFragments)
-        {
-            warningMessage.Should().Contain(expectedFragment);
-        }
+        foreach (var expectedFragment in expectedFragments) warningMessage.Should().Contain(expectedFragment);
 
         warningMessage.Should().Contain("See the latest AutoQAC log");
         warningMessage.Should().NotContain(_testDirectory);
@@ -66,9 +63,7 @@ public sealed class LegacyMigrationServiceTests : IDisposable
         warningMessage.Should().NotContain("UnauthorizedAccess");
         warningMessage.Should().NotContain("Exception");
         foreach (var sentinel in DiagnosticSentinels.UnsafeDiagnosticSentinels)
-        {
             warningMessage.Should().NotContain(sentinel);
-        }
     }
 
     #region No Legacy File
@@ -163,7 +158,8 @@ Load_Order:
         backupFiles[0].Should().Contain("AutoQAC Config.yaml", "backup file should contain original filename");
 
         // Verify legacy file was deleted
-        File.Exists(LegacyConfigPath).Should().BeFalse("legacy file should be deleted after successful migration and backup");
+        File.Exists(LegacyConfigPath).Should()
+            .BeFalse("legacy file should be deleted after successful migration and backup");
     }
 
     #endregion

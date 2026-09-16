@@ -10,8 +10,8 @@ using AutoQAC.Services.Process;
 namespace AutoQAC.Services.Cleaning;
 
 /// <summary>
-/// Owns the full Cleaning session lifecycle: preflight, backup policy, sequential xEdit launches,
-/// cancellation, user decisions, and final state publication.
+///     Owns the full Cleaning session lifecycle: preflight, backup policy, sequential xEdit launches,
+///     cancellation, user decisions, and final state publication.
 /// </summary>
 public sealed class CleaningSession(
     ICleaningPreflight preflight,
@@ -83,10 +83,7 @@ public sealed class CleaningSession(
                         maxRetryAttempts, context, cts.Token)
                     .ConfigureAwait(false);
 
-                if (pluginDecision == PluginLoopDecision.ReturnedEarly)
-                {
-                    return;
-                }
+                if (pluginDecision == PluginLoopDecision.ReturnedEarly) return;
 
                 if (pluginDecision == PluginLoopDecision.StopSession || cts.Token.IsCancellationRequested ||
                     terminationCoordinator.IsStopRequested)
@@ -97,14 +94,12 @@ public sealed class CleaningSession(
             }
 
             if (backupSessionDir is not null && backupEntries.Count > 0)
-            {
                 context = context with
                 {
                     BackupCleanup = await backupCoordinator.FinalizeSessionAsync(backupSessionDir, context.GameType,
                             backupEntries, preflightPlan.BackupMaxSessions, cts.Token)
                         .ConfigureAwait(false)
                 };
-            }
 
             FinishSession(context);
         }
@@ -113,12 +108,10 @@ public sealed class CleaningSession(
             // Cancellation is not an error -- preserve partial results.
             logger.Information("Cleaning workflow cancelled");
             if (backupSessionDir is not null && backupEntries.Count > 0)
-            {
                 await backupCoordinator
                     .WritePartialMetadataAsync(backupSessionDir, context.GameType, backupEntries,
                         CancellationToken.None)
                     .ConfigureAwait(false);
-            }
 
             FinishSession(context with { WasCancelled = true });
         }
@@ -202,9 +195,7 @@ public sealed class CleaningSession(
                     }
 
                     if (outcome.Kind == PluginBackupOutcomeKind.UserSkipped)
-                    {
                         statePublisher.PublishSkippedPlugin(plugin.FileName);
-                    }
 
                     return cancellationToken.IsCancellationRequested
                         ? PluginLoopDecision.StopSession
@@ -259,6 +250,12 @@ public sealed class CleaningSession(
         return results;
     }
 
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        DisposeSessionCts();
+    }
+
     /// <summary>Creates the session CTS linked to the caller token and publishes it under the session lock.</summary>
     private CancellationTokenSource CreateSessionCts(CancellationToken ct)
     {
@@ -270,20 +267,18 @@ public sealed class CleaningSession(
     }
 
     /// <summary>
-    /// Enters the single active cleaning session slot without blocking competing callers.
-    /// This protects CTS ownership and preserves sequential orchestration before startup work mutates session state.
+    ///     Enters the single active cleaning session slot without blocking competing callers.
+    ///     This protects CTS ownership and preserves sequential orchestration before startup work mutates session state.
     /// </summary>
     private void EnterSessionOrThrow()
     {
         if (Interlocked.CompareExchange(ref _sessionActive, 1, 0) == 1)
-        {
             throw new InvalidOperationException("A cleaning session is already in progress.");
-        }
     }
 
     /// <summary>
-    /// Releases the active cleaning session slot after CTS disposal and termination reset complete.
-    /// The volatile write makes subsequent StartAsync calls observe the session as idle only after cleanup finishes.
+    ///     Releases the active cleaning session slot after CTS disposal and termination reset complete.
+    ///     The volatile write makes subsequent StartAsync calls observe the session as idle only after cleanup finishes.
     /// </summary>
     private void ExitSession()
     {
@@ -323,23 +318,19 @@ public sealed class CleaningSession(
     private async Task<CleaningSessionControlResult> RequestStopAsync(CancellationToken ct)
     {
         if (!HasControllableSession())
-        {
             return new CleaningSessionControlResult(
                 CleaningSessionControl.RequestStop,
                 CleaningSessionControlStatus.NoActiveSession);
-        }
 
         CancelSessionCts();
         var stopResult = await terminationCoordinator.StopAsync().ConfigureAwait(false);
         var terminationResult = stopResult.TerminationResult ?? terminationCoordinator.LastTerminationResult;
 
         if (terminationResult != TerminationResult.GracePeriodExpired)
-        {
             return new CleaningSessionControlResult(
                 CleaningSessionControl.RequestStop,
                 MapRequestStopStatus(terminationResult),
                 terminationResult);
-        }
 
         var decision = await decisions.ChooseAfterGracePeriodExpiredAsync(terminationResult.Value, ct)
             .ConfigureAwait(false);
@@ -360,11 +351,9 @@ public sealed class CleaningSession(
     private async Task<CleaningSessionControlResult> ForceStopAsync()
     {
         if (!HasControllableSession())
-        {
             return new CleaningSessionControlResult(
                 CleaningSessionControl.ForceStop,
                 CleaningSessionControlStatus.NoActiveSession);
-        }
 
         CancelSessionCts();
         var forceResult = await terminationCoordinator.ForceStopAsync().ConfigureAwait(false);
@@ -379,11 +368,9 @@ public sealed class CleaningSession(
     private async Task<CleaningSessionControlResult> HandleCancelBackupOperationAsync()
     {
         if (!IsSessionActive())
-        {
             return new CleaningSessionControlResult(
                 CleaningSessionControl.CancelBackupOperation,
                 CleaningSessionControlStatus.NoActiveBackupOperation);
-        }
 
         if (terminationCoordinator.HasActiveProcess)
         {
@@ -400,20 +387,26 @@ public sealed class CleaningSession(
     }
 
     /// <summary>True while a real Cleaning session is active.</summary>
-    private bool IsSessionActive() => Volatile.Read(ref _sessionActive) == 1;
+    private bool IsSessionActive()
+    {
+        return Volatile.Read(ref _sessionActive) == 1;
+    }
 
     /// <summary>
-    /// True when a control request can still affect session or retained termination state.
-    /// GracePeriodExpired may outlive session finalization until the user resolves it.
+    ///     True when a control request can still affect session or retained termination state.
+    ///     GracePeriodExpired may outlive session finalization until the user resolves it.
     /// </summary>
-    private bool HasControllableSession() =>
-        IsSessionActive() ||
-        terminationCoordinator.HasActiveProcess ||
-        terminationCoordinator.LastTerminationResult == TerminationResult.GracePeriodExpired;
+    private bool HasControllableSession()
+    {
+        return IsSessionActive() ||
+               terminationCoordinator.HasActiveProcess ||
+               terminationCoordinator.LastTerminationResult == TerminationResult.GracePeriodExpired;
+    }
 
     /// <summary>Maps a graceful stop path to caller-facing control status.</summary>
-    private static CleaningSessionControlStatus MapRequestStopStatus(TerminationResult? terminationResult) =>
-        terminationResult switch
+    private static CleaningSessionControlStatus MapRequestStopStatus(TerminationResult? terminationResult)
+    {
+        return terminationResult switch
         {
             null => CleaningSessionControlStatus.StopRequested,
             TerminationResult.AlreadyExited or TerminationResult.GracefulExit =>
@@ -423,15 +416,18 @@ public sealed class CleaningSession(
             TerminationResult.LeftRunningByUser => CleaningSessionControlStatus.LeftRunningByUser,
             _ => CleaningSessionControlStatus.StopRequested
         };
+    }
 
     /// <summary>Maps a force stop path to caller-facing control status.</summary>
-    private static CleaningSessionControlStatus MapForceStopStatus(TerminationResult? terminationResult) =>
-        terminationResult switch
+    private static CleaningSessionControlStatus MapForceStopStatus(TerminationResult? terminationResult)
+    {
+        return terminationResult switch
         {
             TerminationResult.ForceKillFailed => CleaningSessionControlStatus.ForceKillFailed,
             null => CleaningSessionControlStatus.StopRequested,
             _ => CleaningSessionControlStatus.ForceStopped
         };
+    }
 
     /// <summary>Builds the final session result, publishes it, and logs the legacy session summary.</summary>
     private void FinishSession(SessionContext context)
@@ -446,17 +442,20 @@ public sealed class CleaningSession(
     }
 
     /// <summary>Converts a shared preflight row to the existing dry-run preview row contract.</summary>
-    private static DryRunResult ToDryRunResult(PreflightPluginRow row) => row.Decision == PreflightDecision.Clean
-        ? new DryRunResult(row.Plugin.FileName, DryRunStatus.WillClean, "Ready for cleaning")
-        : new DryRunResult(row.Plugin.FileName, DryRunStatus.WillSkip, row.SkipReason switch
-        {
-            PreflightSkipReason.NotSelected => "Not selected", PreflightSkipReason.InSkipList => "In skip list",
-            PreflightSkipReason.FileNotFound => "File not found",
-            PreflightSkipReason.Unreadable => "File is unreadable",
-            PreflightSkipReason.ZeroByte => "Zero-byte file",
-            PreflightSkipReason.MalformedEntry => "Malformed file name",
-            PreflightSkipReason.InvalidExtension => "Invalid file extension", _ => "Skipped"
-        });
+    private static DryRunResult ToDryRunResult(PreflightPluginRow row)
+    {
+        return row.Decision == PreflightDecision.Clean
+            ? new DryRunResult(row.Plugin.FileName, DryRunStatus.WillClean, "Ready for cleaning")
+            : new DryRunResult(row.Plugin.FileName, DryRunStatus.WillSkip, row.SkipReason switch
+            {
+                PreflightSkipReason.NotSelected => "Not selected", PreflightSkipReason.InSkipList => "In skip list",
+                PreflightSkipReason.FileNotFound => "File not found",
+                PreflightSkipReason.Unreadable => "File is unreadable",
+                PreflightSkipReason.ZeroByte => "Zero-byte file",
+                PreflightSkipReason.MalformedEntry => "Malformed file name",
+                PreflightSkipReason.InvalidExtension => "Invalid file extension", _ => "Skipped"
+            });
+    }
 
     /// <summary>Preserves the legacy real-run failure when all selected plugins fail file validation.</summary>
     private static void ThrowIfNoValidPluginsAfterFileValidation(CleaningPreflightPlan plan)
@@ -470,19 +469,25 @@ public sealed class CleaningSession(
     }
 
     /// <summary>True for skip reasons produced by on-disk plugin validation.</summary>
-    private static bool IsFileValidationReason(PreflightSkipReason? reason) =>
-        reason is PreflightSkipReason.FileNotFound or PreflightSkipReason.Unreadable or PreflightSkipReason.ZeroByte
+    private static bool IsFileValidationReason(PreflightSkipReason? reason)
+    {
+        return reason is PreflightSkipReason.FileNotFound or PreflightSkipReason.Unreadable
+            or PreflightSkipReason.ZeroByte
             or PreflightSkipReason.MalformedEntry or PreflightSkipReason.InvalidExtension;
+    }
 
     /// <summary>Converts a file-validation preflight reason to the legacy warning label used in exception summaries.</summary>
-    private static string MapReasonToPluginWarningLabel(PreflightSkipReason reason) => reason switch
+    private static string MapReasonToPluginWarningLabel(PreflightSkipReason reason)
     {
-        PreflightSkipReason.FileNotFound => nameof(PluginWarningKind.NotFound),
-        PreflightSkipReason.Unreadable => nameof(PluginWarningKind.Unreadable),
-        PreflightSkipReason.ZeroByte => nameof(PluginWarningKind.ZeroByte),
-        PreflightSkipReason.MalformedEntry => nameof(PluginWarningKind.MalformedEntry),
-        PreflightSkipReason.InvalidExtension => nameof(PluginWarningKind.InvalidExtension), _ => reason.ToString()
-    };
+        return reason switch
+        {
+            PreflightSkipReason.FileNotFound => nameof(PluginWarningKind.NotFound),
+            PreflightSkipReason.Unreadable => nameof(PluginWarningKind.Unreadable),
+            PreflightSkipReason.ZeroByte => nameof(PluginWarningKind.ZeroByte),
+            PreflightSkipReason.MalformedEntry => nameof(PluginWarningKind.MalformedEntry),
+            PreflightSkipReason.InvalidExtension => nameof(PluginWarningKind.InvalidExtension), _ => reason.ToString()
+        };
+    }
 
     private void LogSessionSummary(CleaningSessionResult session)
     {
@@ -494,9 +499,6 @@ public sealed class CleaningSession(
             session.TotalItemsRemoved, session.TotalItemsUndeleted, session.TotalPartialFormsCreated);
         if (session.WasCancelled) logger.Information("Session was cancelled by user");
     }
-
-    /// <inheritdoc />
-    public void Dispose() => DisposeSessionCts();
 
     private sealed record SessionContext(DateTime StartTime, GameType GameType)
     {

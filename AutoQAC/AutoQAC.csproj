@@ -1,75 +1,75 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <OutputType>WinExe</OutputType>
-    <StartupObject>AutoQAC.Program</StartupObject>
-    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
-    <Nullable>enable</Nullable>
-    <LangVersion>preview</LangVersion>
-    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
-    <ApplicationManifest>app.manifest</ApplicationManifest>
-    <ApplicationIcon>Assets\AutoQAC.ico</ApplicationIcon>
-    <UseWinUI>true</UseWinUI>
-    <WindowsPackageType>None</WindowsPackageType>
-    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
-    <SelfContained>true</SelfContained>
-    <EnableMsixTooling>true</EnableMsixTooling>
-    <Platform Condition="'$(Platform)' == '' or '$(Platform)' == 'AnyCPU'">x64</Platform>
-    <Platforms>x64</Platforms>
-    <PlatformTarget>x64</PlatformTarget>
-    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <IntermediateOutputPath Condition="'$(Platform)' == 'AnyCPU' or '$(Platform)' == 'Any CPU'">obj\x64\$(Configuration)\</IntermediateOutputPath>
-    <OutputPath Condition="'$(Platform)' == 'AnyCPU' or '$(Platform)' == 'Any CPU'">bin\x64\$(Configuration)\</OutputPath>
-    <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-  </PropertyGroup>
+    <PropertyGroup>
+        <OutputType>WinExe</OutputType>
+        <StartupObject>AutoQAC.Program</StartupObject>
+        <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <LangVersion>preview</LangVersion>
+        <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+        <ApplicationManifest>app.manifest</ApplicationManifest>
+        <ApplicationIcon>Assets\AutoQAC.ico</ApplicationIcon>
+        <UseWinUI>true</UseWinUI>
+        <WindowsPackageType>None</WindowsPackageType>
+        <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+        <SelfContained>true</SelfContained>
+        <EnableMsixTooling>true</EnableMsixTooling>
+        <Platform Condition="'$(Platform)' == '' or '$(Platform)' == 'AnyCPU'">x64</Platform>
+        <Platforms>x64</Platforms>
+        <PlatformTarget>x64</PlatformTarget>
+        <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+        <IntermediateOutputPath Condition="'$(Platform)' == 'AnyCPU' or '$(Platform)' == 'Any CPU'">obj\x64\$(Configuration)\</IntermediateOutputPath>
+        <OutputPath Condition="'$(Platform)' == 'AnyCPU' or '$(Platform)' == 'Any CPU'">bin\x64\$(Configuration)\</OutputPath>
+        <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    </PropertyGroup>
 
-  <ItemGroup>
-    <AssemblyMetadata Include="BuildDate" Value="$([System.DateTime]::UtcNow.ToString('yyyy-MM-dd'))" />
-  </ItemGroup>
+    <ItemGroup>
+        <AssemblyMetadata Include="BuildDate" Value="$([System.DateTime]::UtcNow.ToString('yyyy-MM-dd'))"/>
+    </ItemGroup>
 
-  <ItemGroup>
-    <Folder Include="Models\" />
-    <None Remove="Assets\AutoQAC.ico" />
-    <None Remove="Assets\Square44x44Logo.png" />
-    <None Remove="Assets\Square150x150Logo.png" />
-    <None Remove="Assets\StoreLogo.png" />
-    <Content Include="Assets\AutoQAC.ico" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="Assets\Square44x44Logo.png" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="Assets\Square150x150Logo.png" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="Assets\StoreLogo.png" CopyToOutputDirectory="PreserveNewest" />
-  </ItemGroup>
+    <ItemGroup>
+        <Folder Include="Models\"/>
+        <None Remove="Assets\AutoQAC.ico"/>
+        <None Remove="Assets\Square44x44Logo.png"/>
+        <None Remove="Assets\Square150x150Logo.png"/>
+        <None Remove="Assets\StoreLogo.png"/>
+        <Content Include="Assets\AutoQAC.ico" CopyToOutputDirectory="PreserveNewest"/>
+        <Content Include="Assets\Square44x44Logo.png" CopyToOutputDirectory="PreserveNewest"/>
+        <Content Include="Assets\Square150x150Logo.png" CopyToOutputDirectory="PreserveNewest"/>
+        <Content Include="Assets\StoreLogo.png" CopyToOutputDirectory="PreserveNewest"/>
+    </ItemGroup>
 
-  <ItemGroup>
-    <!-- Copy AutoQAC Data folder to output directory -->
-    <None Include="AutoQAC Data\**" CopyToOutputDirectory="PreserveNewest" LinkBase="AutoQAC Data" />
-  </ItemGroup>
+    <ItemGroup>
+        <!-- Copy AutoQAC Data folder to output directory -->
+        <None Include="AutoQAC Data\**" CopyToOutputDirectory="PreserveNewest" LinkBase="AutoQAC Data"/>
+    </ItemGroup>
 
-  <ItemGroup>
-    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.10" />
-    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.3.1" />
-    <PackageReference Include="Serilog" Version="4.4.0" />
-    <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
-    <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
-    <PackageReference Include="YamlDotNet" Version="18.1.0" />
-    <!-- Mutagen packages for plugin loading -->
-    <PackageReference Include="Mutagen.Bethesda" Version="0.53.1" />
-    <PackageReference Include="Mutagen.Bethesda.Skyrim" Version="0.53.1" />
-    <PackageReference Include="Mutagen.Bethesda.Fallout4" Version="0.53.1" />
-  </ItemGroup>
+    <ItemGroup>
+        <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2"/>
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.10"/>
+        <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.3.1"/>
+        <PackageReference Include="Serilog" Version="4.4.0"/>
+        <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1"/>
+        <PackageReference Include="Serilog.Sinks.File" Version="7.0.0"/>
+        <PackageReference Include="YamlDotNet" Version="18.1.0"/>
+        <!-- Mutagen packages for plugin loading -->
+        <PackageReference Include="Mutagen.Bethesda" Version="0.53.1"/>
+        <PackageReference Include="Mutagen.Bethesda.Skyrim" Version="0.53.1"/>
+        <PackageReference Include="Mutagen.Bethesda.Fallout4" Version="0.53.1"/>
+    </ItemGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\QueryPlugins\QueryPlugins.csproj" />
-  </ItemGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\QueryPlugins\QueryPlugins.csproj"/>
+    </ItemGroup>
 
-  <ItemGroup>
-    <!-- Expose internals to the test project so internal helpers like BackupPathContainment
-         can be exercised directly in unit tests without a public API surface change. -->
-    <InternalsVisibleTo Include="AutoQAC.Tests" />
-  </ItemGroup>
+    <ItemGroup>
+        <!-- Expose internals to the test project so internal helpers like BackupPathContainment
+             can be exercised directly in unit tests without a public API surface change. -->
+        <InternalsVisibleTo Include="AutoQAC.Tests"/>
+    </ItemGroup>
 
-  <ItemGroup>
-    <!-- Allow NSubstitute/Castle DynamicProxy to proxy internal interfaces in configuration coordinator tests. -->
-    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
-  </ItemGroup>
+    <ItemGroup>
+        <!-- Allow NSubstitute/Castle DynamicProxy to proxy internal interfaces in configuration coordinator tests. -->
+        <InternalsVisibleTo Include="DynamicProxyGenAssembly2"/>
+    </ItemGroup>
 </Project>

@@ -12,7 +12,7 @@ public sealed class PluginRefreshPublicationRowsTests
         var accepted = PluginRefreshPublicationRows.Accept(
             [
                 Decision("Visible.esp"),
-                Decision("Hidden.esp", shouldSkip: true)
+                Decision("Hidden.esp", true)
             ],
             PluginIssueApproximation.Pending,
             new HashSet<string>(StringComparer.OrdinalIgnoreCase) { @"C:\Data\Hidden.esp" });
@@ -94,7 +94,7 @@ public sealed class PluginRefreshPublicationRowsTests
     {
         var rows = new[]
         {
-            Published("Fallback.esp", fullPath: string.Empty)
+            Published("Fallback.esp", string.Empty)
         };
 
         var changed = PluginRefreshPublicationRows.ApplySelectionChange(
@@ -129,8 +129,8 @@ public sealed class PluginRefreshPublicationRowsTests
                 "Visible.esp",
                 @"C:\Data\Visible.esp",
                 GameType.SkyrimSe,
-                IsSelected: true,
-                IsInSkipList: false,
+                true,
+                false,
                 PluginIssueApproximation.Unavailable)
         };
 
@@ -239,11 +239,11 @@ public sealed class PluginRefreshPublicationRowsTests
         var hidden = Published("Hidden.esp", isVisible: false, isSelected: false, isSkippedByPolicy: true);
 
         var committed = PluginRefreshPublicationRows.Commit(
-            [
-                Published("VisibleSelected.esp", isSelected: true),
-                Published("VisibleDeselected.esp", isSelected: false),
-                hidden
-            ]);
+        [
+            Published("VisibleSelected.esp", isSelected: true),
+            Published("VisibleDeselected.esp", isSelected: false),
+            hidden
+        ]);
 
         committed.Mirror.PluginsToClean.Select(plugin => plugin.FileName)
             .Should().Equal("VisibleSelected.esp", "VisibleDeselected.esp", "Hidden.esp");
@@ -252,11 +252,13 @@ public sealed class PluginRefreshPublicationRowsTests
         committed.Mirror.ExcludedPluginPaths.Should().NotContain(hidden.Plugin.FullPath);
     }
 
-    private static SkipListPluginDecision Decision(string fileName, bool shouldSkip = false) =>
-        new(
+    private static SkipListPluginDecision Decision(string fileName, bool shouldSkip = false)
+    {
+        return new SkipListPluginDecision(
             Plugin(fileName, isInSkipList: shouldSkip),
-            IsInEffectiveSkipList: shouldSkip,
-            ShouldSkipByPolicy: shouldSkip);
+            shouldSkip,
+            shouldSkip);
+    }
 
     private static PluginRefreshPublishedRow Published(
         string fileName,
@@ -269,8 +271,8 @@ public sealed class PluginRefreshPublicationRowsTests
         var plugin = Plugin(
             fileName,
             fullPath,
-            isInSkipList: isSkippedByPolicy,
-            approximation: approximation);
+            isSkippedByPolicy,
+            approximation);
         return new PluginRefreshPublishedRow(
             plugin,
             isVisible,
@@ -283,8 +285,9 @@ public sealed class PluginRefreshPublicationRowsTests
         string fileName,
         string? fullPath = null,
         bool isInSkipList = false,
-        PluginIssueApproximation? approximation = null) =>
-        new()
+        PluginIssueApproximation? approximation = null)
+    {
+        return new PluginInfo
         {
             FileName = fileName,
             FullPath = fullPath ?? $@"C:\Data\{fileName}",
@@ -292,5 +295,5 @@ public sealed class PluginRefreshPublicationRowsTests
             DetectedGameType = GameType.SkyrimSe,
             Approximation = approximation ?? PluginIssueApproximation.Unavailable
         };
-
+    }
 }

@@ -33,7 +33,7 @@ public sealed class ProcessExecutionIntegrationTests : IDisposable
         {
             var result = await _service.ExecuteAsync(
                 HelperStartInfo("sleep 30000"),
-                timeout: TimeSpan.FromMilliseconds(250),
+                TimeSpan.FromMilliseconds(250),
                 onProcessStarted: p => started = p,
                 pluginName: "Sleep.esp");
 
@@ -59,7 +59,7 @@ public sealed class ProcessExecutionIntegrationTests : IDisposable
 
             var result = await _service.ExecuteAsync(
                 startInfo,
-                timeout: TimeSpan.FromSeconds(5),
+                TimeSpan.FromSeconds(5),
                 onProcessStarted: p =>
                 {
                     started = p;
@@ -90,7 +90,7 @@ public sealed class ProcessExecutionIntegrationTests : IDisposable
         {
             var result = await _service.ExecuteAsync(
                 HelperStartInfo("spawn-child 30000"),
-                timeout: TimeSpan.FromMilliseconds(250),
+                TimeSpan.FromMilliseconds(250),
                 onProcessStarted: p => started = p,
                 pluginName: "Tree.esp");
 
@@ -128,7 +128,7 @@ public sealed class ProcessExecutionIntegrationTests : IDisposable
             var outputTask = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
             var result = await _service.ExecuteAsync(
                 startInfo,
-                timeout: TimeSpan.FromSeconds(5),
+                TimeSpan.FromSeconds(5),
                 onProcessStarted: process =>
                 {
                     started = process;
@@ -163,7 +163,7 @@ public sealed class ProcessExecutionIntegrationTests : IDisposable
             var outputTask = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
             var result = await _service.ExecuteAsync(
                 startInfo,
-                timeout: TimeSpan.FromSeconds(5),
+                TimeSpan.FromSeconds(5),
                 onProcessStarted: process =>
                 {
                     started = process;
@@ -193,12 +193,12 @@ public sealed class ProcessExecutionIntegrationTests : IDisposable
             _pidStore,
             _sessionIdProvider,
             waitStrategy);
-        using var process = System.Diagnostics.Process.Start(HelperStartInfo("sleep 30000"));
+        using var process = Process.Start(HelperStartInfo("sleep 30000"));
         process.Should().NotBeNull("the helper process is required for force-kill validation");
 
         try
         {
-            var result = await service.TerminateProcessAsync(process!, forceKill: true);
+            var result = await service.TerminateProcessAsync(process!, true);
 
             process!.WaitForExit(2000).Should().BeTrue("force kill should be invoked before waiting for process exit");
             result.Should().Be(TerminationResult.ForceKillFailed);
@@ -214,7 +214,8 @@ public sealed class ProcessExecutionIntegrationTests : IDisposable
     /// Verifies user cancellation reports a grace-period expiration without force-killing the helper or removing PID evidence.
     /// </summary>
     [Fact]
-    public async Task ExecuteAsync_UserCancellation_ShouldReturnGracePeriodExpiredKeepHelperRunningAndPreservePidEvidence()
+    public async Task
+        ExecuteAsync_UserCancellation_ShouldReturnGracePeriodExpiredKeepHelperRunningAndPreservePidEvidence()
     {
         var startedSignal = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
         var helperPid = 0;
@@ -224,10 +225,10 @@ public sealed class ProcessExecutionIntegrationTests : IDisposable
         {
             var executionTask = _service.ExecuteAsync(
                 HelperStartInfo("sleep 30000"),
-                timeout: TimeSpan.FromSeconds(30),
-                ct: cts.Token,
-                onProcessStarted: p => startedSignal.TrySetResult(p.Id),
-                pluginName: "UserStop.esp");
+                TimeSpan.FromSeconds(30),
+                cts.Token,
+                p => startedSignal.TrySetResult(p.Id),
+                "UserStop.esp");
 
             helperPid = await startedSignal.Task.WaitAsync(TimeSpan.FromSeconds(5));
             await cts.CancelAsync();
@@ -238,7 +239,8 @@ public sealed class ProcessExecutionIntegrationTests : IDisposable
             result.TerminationResult.Should().Be(TerminationResult.GracePeriodExpired);
 
             using var helper = Process.GetProcessById(helperPid);
-            helper.HasExited.Should().BeFalse("user cancellation must leave the process for caller confirmation/manual follow-up");
+            helper.HasExited.Should()
+                .BeFalse("user cancellation must leave the process for caller confirmation/manual follow-up");
 
             var tracked = await _pidStore.LoadAsync();
             tracked.Should().ContainSingle(entry =>
@@ -277,10 +279,7 @@ public sealed class ProcessExecutionIntegrationTests : IDisposable
     private static ProcessStartInfo HelperStartInfo(params string[] argumentList)
     {
         var startInfo = HelperStartInfo(string.Empty);
-        foreach (var argument in argumentList)
-        {
-            startInfo.ArgumentList.Add(argument);
-        }
+        foreach (var argument in argumentList) startInfo.ArgumentList.Add(argument);
 
         return startInfo;
     }
@@ -304,16 +303,13 @@ public sealed class ProcessExecutionIntegrationTests : IDisposable
 
     private static void KillIfRunning(Process? process)
     {
-        if (process is null)
-        {
-            return;
-        }
+        if (process is null) return;
 
         try
         {
             if (!process.HasExited)
             {
-                process.Kill(entireProcessTree: true);
+                process.Kill(true);
                 process.WaitForExit(2000);
             }
         }
@@ -332,10 +328,7 @@ public sealed class ProcessExecutionIntegrationTests : IDisposable
     /// </summary>
     private static void KillIfRunning(int pid)
     {
-        if (pid <= 0)
-        {
-            return;
-        }
+        if (pid <= 0) return;
 
         try
         {
@@ -360,10 +353,7 @@ public sealed class ProcessExecutionIntegrationTests : IDisposable
 
         public void Dispose()
         {
-            if (Directory.Exists(_directory))
-            {
-                Directory.Delete(_directory, recursive: true);
-            }
+            if (Directory.Exists(_directory)) Directory.Delete(_directory, true);
         }
     }
 
@@ -374,7 +364,7 @@ public sealed class ProcessExecutionIntegrationTests : IDisposable
         /// <summary>
         /// Simulates cancellation after force kill has been invoked but before the exit wait reports completion.
         /// </summary>
-        public Task WaitForExitAsync(System.Diagnostics.Process process, CancellationToken ct)
+        public Task WaitForExitAsync(Process process, CancellationToken ct)
         {
             Calls++;
             throw new OperationCanceledException(ct);

@@ -19,7 +19,7 @@ using QueryPlugins;
 namespace AutoQAC.Services.Plugin;
 
 /// <summary>
-/// Production Issue approximation module that owns load-order import, target selection, and keyed publication.
+///     Production Issue approximation module that owns load-order import, target selection, and keyed publication.
 /// </summary>
 /// <param name="pluginQueryService">Production QueryPlugins seam used for target-specific analysis.</param>
 public sealed class PluginIssueApproximationModule(IPluginQueryService pluginQueryService)
@@ -37,10 +37,7 @@ public sealed class PluginIssueApproximationModule(IPluginQueryService pluginQue
         ArgumentNullException.ThrowIfNull(onResult);
 
         var validated = ValidateRequest(request);
-        if (!GameCapabilityCatalog.Get(request.GameType).SupportsIssueApproximation)
-        {
-            return Task.CompletedTask;
-        }
+        if (!GameCapabilityCatalog.Get(request.GameType).SupportsIssueApproximation) return Task.CompletedTask;
 
         return Task.Run(
             () => Analyze(validated, onResult, ct),
@@ -61,7 +58,7 @@ public sealed class PluginIssueApproximationModule(IPluginQueryService pluginQue
                 .GetLoadOrderListings(
                     release,
                     new DirectoryPath(direct.DataFolder),
-                    throwOnMissingMods: false)
+                    false)
                 .Select(listing => new ValidatedRow(
                     listing.ModKey,
                     Path.GetFullPath(Path.Combine(direct.DataFolder, listing.ModKey.FileName.String))))
@@ -93,11 +90,9 @@ public sealed class PluginIssueApproximationModule(IPluginQueryService pluginQue
             if (!File.Exists(row.FullPath))
             {
                 if (!targetPaths.Contains(row.FullPath))
-                {
                     throw new FileNotFoundException(
                         $"Issue approximation dependency context row '{row.ModKey.FileName}' disappeared.",
                         row.FullPath);
-                }
 
                 continue;
             }
@@ -127,11 +122,8 @@ public sealed class PluginIssueApproximationModule(IPluginQueryService pluginQue
 
             PluginIssueApproximation approximation;
             if (!importedByPath.TryGetValue(target.NormalizedFullPath, out var plugin))
-            {
                 approximation = PluginIssueApproximation.Unavailable;
-            }
             else
-            {
                 try
                 {
                     var analysis = pluginQueryService.Analyse(plugin, linkCache, release, ct);
@@ -150,7 +142,6 @@ public sealed class PluginIssueApproximationModule(IPluginQueryService pluginQue
                 {
                     approximation = PluginIssueApproximation.Unavailable;
                 }
-            }
 
             // The target object, rather than reconstructed filename/path fields, is the publication identity.
             // This last cancellation boundary prevents callbacks once cancellation has been observed between targets.
@@ -159,18 +150,21 @@ public sealed class PluginIssueApproximationModule(IPluginQueryService pluginQue
         }
     }
 
-    private static IModGetter ImportPlugin(GameRelease release, ModKey modKey, string fullPath) => release switch
+    private static IModGetter ImportPlugin(GameRelease release, ModKey modKey, string fullPath)
     {
-        GameRelease.SkyrimLE or GameRelease.SkyrimSE or GameRelease.SkyrimVR =>
-            SkyrimMod.CreateFromBinary(
-                new ModPath(modKey, fullPath),
-                release.ToSkyrimRelease()),
-        GameRelease.Fallout4 or GameRelease.Fallout4VR =>
-            Fallout4Mod.CreateFromBinary(
-                new ModPath(modKey, fullPath),
-                release.ToFallout4Release()),
-        _ => throw new ArgumentException($"Game release {release} is not supported by Issue approximation.")
-    };
+        return release switch
+        {
+            GameRelease.SkyrimLE or GameRelease.SkyrimSE or GameRelease.SkyrimVR =>
+                SkyrimMod.CreateFromBinary(
+                    new ModPath(modKey, fullPath),
+                    release.ToSkyrimRelease()),
+            GameRelease.Fallout4 or GameRelease.Fallout4VR =>
+                Fallout4Mod.CreateFromBinary(
+                    new ModPath(modKey, fullPath),
+                    release.ToFallout4Release()),
+            _ => throw new ArgumentException($"Game release {release} is not supported by Issue approximation.")
+        };
+    }
 
     private static ValidatedRequest ValidateRequest(PluginIssueApproximationModuleRequest request)
     {
@@ -183,11 +177,9 @@ public sealed class PluginIssueApproximationModule(IPluginQueryService pluginQue
         {
             var validatedTarget = ValidateTarget(target, nameof(request.Targets));
             if (!targetPaths.Add(validatedTarget.NormalizedFullPath))
-            {
                 throw new ArgumentException(
                     $"Duplicate Issue approximation target path '{target.FullPath}'.",
                     nameof(request));
-            }
 
             targets.Add(validatedTarget);
         }
@@ -217,11 +209,9 @@ public sealed class PluginIssueApproximationModule(IPluginQueryService pluginQue
         {
             var validatedRow = ValidateTarget(row, nameof(source.Rows));
             if (!pathsByFileName.TryAdd(row.FileName, validatedRow.NormalizedFullPath))
-            {
                 throw new ArgumentException(
                     $"Resolved Issue approximation source contains duplicate filename '{row.FileName}'.",
                     nameof(source));
-            }
 
             rows.Add(new ValidatedRow(
                 ModKey.FromFileName(row.FileName),
@@ -229,15 +219,11 @@ public sealed class PluginIssueApproximationModule(IPluginQueryService pluginQue
         }
 
         foreach (var target in targets)
-        {
             if (!pathsByFileName.TryGetValue(target.Original.FileName, out var sourcePath) ||
                 !WindowsPathComparer.Equals(sourcePath, target.NormalizedFullPath))
-            {
                 throw new ArgumentException(
                     $"Target '{target.Original.FileName}' is absent from the resolved source.",
                     nameof(source));
-            }
-        }
 
         return new ValidatedSource.ResolvedLoadOrder(baseDataFolder, rows);
     }
@@ -248,22 +234,18 @@ public sealed class PluginIssueApproximationModule(IPluginQueryService pluginQue
         if (string.IsNullOrWhiteSpace(target.FileName) ||
             string.IsNullOrWhiteSpace(target.FullPath) ||
             !Path.IsPathFullyQualified(target.FullPath))
-        {
             throw new ArgumentException(
                 "Every Issue approximation target requires a filename and rooted full path.",
                 parameterName);
-        }
 
         var normalizedPath = Path.GetFullPath(target.FullPath);
         if (!string.Equals(
                 target.FileName,
                 Path.GetFileName(normalizedPath),
                 StringComparison.OrdinalIgnoreCase))
-        {
             throw new ArgumentException(
                 $"Target filename '{target.FileName}' does not match its path '{target.FullPath}'.",
                 parameterName);
-        }
 
         return new ValidatedTarget(target, normalizedPath);
     }
@@ -271,22 +253,23 @@ public sealed class PluginIssueApproximationModule(IPluginQueryService pluginQue
     private static string ValidateFolder(string folder, string parameterName)
     {
         if (string.IsNullOrWhiteSpace(folder) || !Path.IsPathFullyQualified(folder))
-        {
             throw new ArgumentException("Issue approximation source folders must be rooted.", parameterName);
-        }
 
         return Path.GetFullPath(folder);
     }
 
-    private static GameRelease MapToGameRelease(GameType gameType) => gameType switch
+    private static GameRelease MapToGameRelease(GameType gameType)
     {
-        GameType.SkyrimLe => GameRelease.SkyrimLE,
-        GameType.SkyrimSe => GameRelease.SkyrimSE,
-        GameType.SkyrimVr => GameRelease.SkyrimVR,
-        GameType.Fallout4 => GameRelease.Fallout4,
-        GameType.Fallout4Vr => GameRelease.Fallout4VR,
-        _ => throw new ArgumentException($"Game {gameType} is not supported by Issue approximation.")
-    };
+        return gameType switch
+        {
+            GameType.SkyrimLe => GameRelease.SkyrimLE,
+            GameType.SkyrimSe => GameRelease.SkyrimSE,
+            GameType.SkyrimVr => GameRelease.SkyrimVR,
+            GameType.Fallout4 => GameRelease.Fallout4,
+            GameType.Fallout4Vr => GameRelease.Fallout4VR,
+            _ => throw new ArgumentException($"Game {gameType} is not supported by Issue approximation.")
+        };
+    }
 
     private sealed record ValidatedRequest(
         GameType GameType,

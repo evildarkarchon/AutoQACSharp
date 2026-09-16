@@ -1,6 +1,6 @@
 using System;
-using System.Collections.Generic;
 using System.Collections.Frozen;
+using System.Collections.Generic;
 using System.Linq;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
@@ -11,12 +11,12 @@ namespace AutoQAC.Services.State;
 
 public sealed class StateService : IStateService, IDisposable
 {
-    private readonly Lock _lock = new();
-    private readonly BehaviorSubject<AppState> _stateSubject = new(new AppState());
-    private readonly Subject<(string plugin, CleaningStatus status)> _pluginProcessedSubject = new();
     private readonly Subject<CleaningSessionResult> _cleaningCompletedSubject = new();
     private readonly Subject<PluginCleaningResult> _detailedPluginResultSubject = new();
     private readonly BehaviorSubject<bool> _isTerminatingSubject = new(false);
+    private readonly Lock _lock = new();
+    private readonly Subject<(string plugin, CleaningStatus status)> _pluginProcessedSubject = new();
+    private readonly BehaviorSubject<AppState> _stateSubject = new(new AppState());
 
     // Authoritative state protected by _lock. Updated inside the lock so concurrent
     // UpdateState calls always read-modify-write against the latest value.
@@ -24,6 +24,15 @@ public sealed class StateService : IStateService, IDisposable
     private volatile AppState _currentState = new();
 
     private CleaningSessionResult? _lastSessionResult;
+
+    public void Dispose()
+    {
+        _stateSubject.Dispose();
+        _pluginProcessedSubject.Dispose();
+        _cleaningCompletedSubject.Dispose();
+        _detailedPluginResultSubject.Dispose();
+        _isTerminatingSubject.Dispose();
+    }
 
     public CleaningSessionResult? LastSessionResult
     {
@@ -232,14 +241,4 @@ public sealed class StateService : IStateService, IDisposable
             TotalPlugins = total
         });
     }
-
-    public void Dispose()
-    {
-        _stateSubject.Dispose();
-        _pluginProcessedSubject.Dispose();
-        _cleaningCompletedSubject.Dispose();
-        _detailedPluginResultSubject.Dispose();
-        _isTerminatingSubject.Dispose();
-    }
-
 }

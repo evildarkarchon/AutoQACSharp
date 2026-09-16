@@ -16,12 +16,14 @@ public class StateServiceTests
     /// <summary>
     /// Helper method to create a list of PluginInfo from plugin names.
     /// </summary>
-    private static List<PluginInfo> CreatePluginInfoList(params string[] pluginNames) =>
-        pluginNames.Select(name => new PluginInfo 
-        { 
-            FileName = name, 
-            FullPath = name 
+    private static List<PluginInfo> CreatePluginInfoList(params string[] pluginNames)
+    {
+        return pluginNames.Select(name => new PluginInfo
+        {
+            FileName = name,
+            FullPath = name
         }).ToList();
+    }
 
     [Fact]
     public void InitialState_IsEmpty()
@@ -49,7 +51,7 @@ public class StateServiceTests
     public void StartCleaning_ResetsProgressAndLists()
     {
         var plugins = CreatePluginInfoList("a.esp", "b.esp");
-        
+
         _sut.StartCleaning(plugins);
 
         var state = _sut.CurrentState;
@@ -64,14 +66,14 @@ public class StateServiceTests
     public void AddCleaningResult_UpdatesCorrectSetAndProgress()
     {
         _sut.StartCleaning(CreatePluginInfoList("a.esp", "b.esp"));
-        
+
         _sut.AddCleaningResult("a.esp", CleaningStatus.Cleaned);
 
         var state = _sut.CurrentState;
         state.CleanedPlugins.Should().Contain("a.esp");
         state.Progress.Should().Be(1);
     }
-    
+
     [Fact]
     public void StateChanged_EmitsOnUpdate()
     {
@@ -109,11 +111,9 @@ public class StateServiceTests
             // Wait for all threads to start simultaneously
             barrier.SignalAndWait();
 
-            for (int i = 0; i < updatesPerThread; i++)
-            {
+            for (var i = 0; i < updatesPerThread; i++)
                 // Each thread updates state with its own progress value
                 _sut.UpdateState(s => s with { Progress = threadId * 1000 + i });
-            }
         }));
 
         await Task.WhenAll(tasks);
@@ -138,7 +138,8 @@ public class StateServiceTests
     {
         // Arrange
         const int numPlugins = 100;
-        _sut.StartCleaning(Enumerable.Range(0, numPlugins).Select(i => new PluginInfo { FileName = $"plugin{i}.esp", FullPath = $"plugin{i}.esp" }).ToList());
+        _sut.StartCleaning(Enumerable.Range(0, numPlugins)
+            .Select(i => new PluginInfo { FileName = $"plugin{i}.esp", FullPath = $"plugin{i}.esp" }).ToList());
 
         // Act
         // Simulate concurrent cleaning results from multiple threads
@@ -177,10 +178,7 @@ public class StateServiceTests
         const int numUpdates = 50;
         var emittedStates = new System.Collections.Concurrent.ConcurrentBag<AppState>();
 
-        using var subscription = _sut.StateChanged.Subscribe(state =>
-        {
-            emittedStates.Add(state);
-        });
+        using var subscription = _sut.StateChanged.Subscribe(state => { emittedStates.Add(state); });
 
         var initialCount = emittedStates.Count;
         initialCount.Should().Be(1, "BehaviorSubject should synchronously emit the initial state on subscribe");
@@ -215,7 +213,7 @@ public class StateServiceTests
         // Start a writer task that updates multiple state fields atomically
         var writerTask = Task.Run(async () =>
         {
-            for (int i = 0; i < numIterations && !cts.Token.IsCancellationRequested; i++)
+            for (var i = 0; i < numIterations && !cts.Token.IsCancellationRequested; i++)
             {
                 _sut.UpdateState(s => s with
                 {
@@ -230,7 +228,7 @@ public class StateServiceTests
         // Start a reader task that checks state consistency
         var readerTask = Task.Run(async () =>
         {
-            for (int i = 0; i < numIterations * 2 && !cts.Token.IsCancellationRequested; i++)
+            for (var i = 0; i < numIterations * 2 && !cts.Token.IsCancellationRequested; i++)
             {
                 var state = _sut.CurrentState;
 
@@ -242,6 +240,7 @@ public class StateServiceTests
                     cts.Cancel();
                     break;
                 }
+
                 await Task.Yield();
             }
         });
@@ -464,13 +463,14 @@ public class StateServiceTests
 
         _sut.SetPluginsToClean([
             new PluginInfo { FileName = "Update.esp", FullPath = @"C:\Fallout4\Data\Update.esp" },
-            new PluginInfo { FileName = "Other.esp",  FullPath = @"C:\Fallout4\Data\Other.esp" }
+            new PluginInfo { FileName = "Other.esp", FullPath = @"C:\Fallout4\Data\Other.esp" }
         ]);
 
         var state = _sut.CurrentState;
         state.PluginsToClean.Should().HaveCount(2);
         state.ExcludedPluginPaths.Should()
-            .BeEmpty("the Skyrim Update.esp path is no longer in the visible list — its deselection must not bleed into Fallout 4");
+            .BeEmpty(
+                "the Skyrim Update.esp path is no longer in the visible list — its deselection must not bleed into Fallout 4");
     }
 
     /// <summary>
@@ -483,15 +483,15 @@ public class StateServiceTests
     {
         _sut.SetPluginsToClean([
             new PluginInfo { FileName = "Update.esp", FullPath = @"C:\Skyrim\Data\Update.esp" },
-            new PluginInfo { FileName = "Other.esp",  FullPath = @"C:\Skyrim\Data\Other.esp" }
+            new PluginInfo { FileName = "Other.esp", FullPath = @"C:\Skyrim\Data\Other.esp" }
         ]);
         _sut.UpdateExcludedPlugins(_ =>
             new HashSet<string>(StringComparer.OrdinalIgnoreCase) { @"C:\Skyrim\Data\Update.esp" });
 
         _sut.SetPluginsToClean([
             new PluginInfo { FileName = "Update.esp", FullPath = @"C:\Skyrim\Data\Update.esp" },
-            new PluginInfo { FileName = "Other.esp",  FullPath = @"C:\Skyrim\Data\Other.esp" },
-            new PluginInfo { FileName = "Extra.esp",  FullPath = @"C:\Skyrim\Data\Extra.esp" }
+            new PluginInfo { FileName = "Other.esp", FullPath = @"C:\Skyrim\Data\Other.esp" },
+            new PluginInfo { FileName = "Extra.esp", FullPath = @"C:\Skyrim\Data\Extra.esp" }
         ]);
 
         var state = _sut.CurrentState;
@@ -715,7 +715,8 @@ public class StateServiceTests
     {
         // Arrange
         const int numPlugins = 50;
-        var plugins = Enumerable.Range(0, numPlugins).Select(i => new PluginInfo { FileName = $"plugin{i}.esp", FullPath = $"plugin{i}.esp" }).ToList();
+        var plugins = Enumerable.Range(0, numPlugins)
+            .Select(i => new PluginInfo { FileName = $"plugin{i}.esp", FullPath = $"plugin{i}.esp" }).ToList();
         _sut.StartCleaning(plugins);
 
         // Act
@@ -788,7 +789,7 @@ public class StateServiceTests
         var tasks = Enumerable.Range(0, numTasks).Select(taskId => Task.Run(() =>
         {
             barrier.SignalAndWait();
-            for (int i = 0; i < updatesPerTask; i++)
+            for (var i = 0; i < updatesPerTask; i++)
             {
                 var loadOrderPath = $"task{taskId}_update{i}.txt";
                 _sut.UpdateState(s => s with { LoadOrderPath = loadOrderPath });
@@ -815,19 +816,13 @@ public class StateServiceTests
         const int numUpdates = 50;
         var emittedStates = new System.Collections.Concurrent.ConcurrentBag<AppState>();
 
-        using var subscription = _sut.StateChanged.Subscribe(state =>
-        {
-            emittedStates.Add(state);
-        });
+        using var subscription = _sut.StateChanged.Subscribe(state => { emittedStates.Add(state); });
 
         var initialCount = emittedStates.Count;
         initialCount.Should().Be(1, "BehaviorSubject should synchronously emit the initial state on subscribe");
 
         // Act
-        for (int i = 0; i < numUpdates; i++)
-        {
-            _sut.UpdateState(s => s with { Progress = i });
-        }
+        for (var i = 0; i < numUpdates; i++) _sut.UpdateState(s => s with { Progress = i });
 
         // Assert
         (emittedStates.Count - initialCount).Should().Be(numUpdates,

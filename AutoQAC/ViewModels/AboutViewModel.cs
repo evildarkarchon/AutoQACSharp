@@ -22,6 +22,30 @@ public sealed partial class AboutViewModel : ViewModelBase
         HttpClient.Timeout = TimeSpan.FromSeconds(10);
     }
 
+    public AboutViewModel(IUiFrameworkVersionProvider uiFrameworkVersionProvider)
+    {
+        var assembly = Assembly.GetEntryAssembly();
+        var version = assembly?.GetName().Version;
+        AppVersion = version != null ? $"{version.Major}.{version.Minor}.{version.Build}" : "Unknown";
+
+        var infoAttr = assembly?.GetCustomAttribute<AssemblyInformationalVersionAttribute>();
+        InformationalVersion = infoAttr?.InformationalVersion ?? AppVersion;
+
+        var buildDateAttr = assembly?.GetCustomAttributes<AssemblyMetadataAttribute>()
+            .FirstOrDefault(a => a.Key == "BuildDate");
+        BuildDate = buildDateAttr?.Value ?? "Unknown";
+
+        DotNetVersion = RuntimeInformation.FrameworkDescription;
+
+        UiFrameworkDisplayName = $"{uiFrameworkVersionProvider.DisplayName}:";
+        UiFrameworkVersion = uiFrameworkVersionProvider.Version;
+
+        var toolkitAssembly = typeof(ObservableObject).Assembly;
+        var toolkitVer = toolkitAssembly.GetName().Version;
+        MvvmToolkitVersion =
+            toolkitVer != null ? $"{toolkitVer.Major}.{toolkitVer.Minor}.{toolkitVer.Build}" : "Unknown";
+    }
+
     public string AppVersion { get; }
     public string InformationalVersion { get; }
     public string BuildDate { get; }
@@ -48,31 +72,10 @@ public sealed partial class AboutViewModel : ViewModelBase
     [NotifyCanExecuteChangedFor(nameof(OpenLatestReleaseCommand))]
     public partial string? LatestVersionUrl { get; set; }
 
-    public AboutViewModel(IUiFrameworkVersionProvider uiFrameworkVersionProvider)
+    private bool CanCheckForUpdate()
     {
-        var assembly = Assembly.GetEntryAssembly();
-        var version = assembly?.GetName().Version;
-        AppVersion = version != null ? $"{version.Major}.{version.Minor}.{version.Build}" : "Unknown";
-
-        var infoAttr = assembly?.GetCustomAttribute<AssemblyInformationalVersionAttribute>();
-        InformationalVersion = infoAttr?.InformationalVersion ?? AppVersion;
-
-        var buildDateAttr = assembly?.GetCustomAttributes<AssemblyMetadataAttribute>()
-            .FirstOrDefault(a => a.Key == "BuildDate");
-        BuildDate = buildDateAttr?.Value ?? "Unknown";
-
-        DotNetVersion = RuntimeInformation.FrameworkDescription;
-
-        UiFrameworkDisplayName = $"{uiFrameworkVersionProvider.DisplayName}:";
-        UiFrameworkVersion = uiFrameworkVersionProvider.Version;
-
-        var toolkitAssembly = typeof(ObservableObject).Assembly;
-        var toolkitVer = toolkitAssembly.GetName().Version;
-        MvvmToolkitVersion =
-            toolkitVer != null ? $"{toolkitVer.Major}.{toolkitVer.Minor}.{toolkitVer.Build}" : "Unknown";
+        return !IsCheckingUpdate;
     }
-
-    private bool CanCheckForUpdate() => !IsCheckingUpdate;
 
     [RelayCommand(CanExecute = nameof(CanCheckForUpdate))]
     private async Task CheckForUpdateAsync()
@@ -138,18 +141,33 @@ public sealed partial class AboutViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private void OpenGitHub() => OpenUrl(GitHubUrl);
+    private void OpenGitHub()
+    {
+        OpenUrl(GitHubUrl);
+    }
 
     [RelayCommand]
-    private void OpenIssues() => OpenUrl(GitHubIssuesUrl);
+    private void OpenIssues()
+    {
+        OpenUrl(GitHubIssuesUrl);
+    }
 
     [RelayCommand]
-    private void OpenXEdit() => OpenUrl(XEditUrl);
+    private void OpenXEdit()
+    {
+        OpenUrl(XEditUrl);
+    }
 
-    private bool CanOpenLatestRelease() => UpdateAvailable && !string.IsNullOrEmpty(LatestVersionUrl);
+    private bool CanOpenLatestRelease()
+    {
+        return UpdateAvailable && !string.IsNullOrEmpty(LatestVersionUrl);
+    }
 
     [RelayCommand(CanExecute = nameof(CanOpenLatestRelease))]
-    private void OpenLatestRelease() => OpenUrl(LatestVersionUrl!);
+    private void OpenLatestRelease()
+    {
+        OpenUrl(LatestVersionUrl!);
+    }
 
     private static void OpenUrl(string url)
     {

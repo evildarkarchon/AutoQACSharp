@@ -31,10 +31,10 @@ public sealed class PluginRefreshDiscoveryPlannerTests
     {
         var sut = CreateSut();
 
-        sut.GetAffordance(GameType.SkyrimSe, mo2ModeEnabled: false).IsMutagenSupported.Should().BeTrue();
-        sut.GetAffordance(GameType.FalloutNewVegas, mo2ModeEnabled: false).RequiresLoadOrderFile.Should().BeTrue();
-        sut.GetAffordance(GameType.FalloutNewVegas, mo2ModeEnabled: true).RequiresLoadOrderFile.Should().BeFalse();
-        sut.GetAffordance(GameType.Oblivion, mo2ModeEnabled: false).CanAttemptIssueApproximation.Should().BeFalse();
+        sut.GetAffordance(GameType.SkyrimSe, false).IsMutagenSupported.Should().BeTrue();
+        sut.GetAffordance(GameType.FalloutNewVegas, false).RequiresLoadOrderFile.Should().BeTrue();
+        sut.GetAffordance(GameType.FalloutNewVegas, true).RequiresLoadOrderFile.Should().BeFalse();
+        sut.GetAffordance(GameType.Oblivion, false).CanAttemptIssueApproximation.Should().BeFalse();
     }
 
     [Fact]
@@ -151,7 +151,7 @@ public sealed class PluginRefreshDiscoveryPlannerTests
         {
             var loadOrderPath = Path.Combine(tempDir.FullName, "loadorder.txt");
             await File.WriteAllTextAsync(loadOrderPath, "Mapped.esp");
-            var configurationService = CreateConfigurationService(mo2Mode: true, disableSkipLists: true, mo2Path: @"C:\MO2\ModOrganizer.exe");
+            var configurationService = CreateConfigurationService(true, true, @"C:\MO2\ModOrganizer.exe");
             var pluginLoadingService = Substitute.For<IPluginLoadingService>();
             var mo2InstanceService = Substitute.For<IMo2InstanceService>();
             var instance = CreateMo2Instance(tempDir.FullName);
@@ -194,19 +194,20 @@ public sealed class PluginRefreshDiscoveryPlannerTests
             result.Configuration.Mo2InstancePath.Should().Be(tempDir.FullName);
             result.Configuration.IsMo2InstanceOverride.Should().BeTrue();
             result.Configuration.IsMo2InstanceValid.Should().BeTrue();
-            result.Configuration.AvailableProfiles.Should().BeEquivalentTo(profiles, options => options.WithStrictOrdering());
+            result.Configuration.AvailableProfiles.Should()
+                .BeEquivalentTo(profiles, options => options.WithStrictOrdering());
             result.Configuration.SelectedProfile.Should().Be("Survival");
         }
         finally
         {
-            tempDir.Delete(recursive: true);
+            tempDir.Delete(true);
         }
     }
 
     [Fact]
     public async Task CreatePlanAsync_ForMo2Mode_ShouldReturnMissingInstanceWhenResolutionFails()
     {
-        var configurationService = CreateConfigurationService(mo2Mode: true, mo2Path: @"C:\MO2\ModOrganizer.exe");
+        var configurationService = CreateConfigurationService(true, mo2Path: @"C:\MO2\ModOrganizer.exe");
         var pluginLoadingService = Substitute.For<IPluginLoadingService>();
         var mo2InstanceService = Substitute.For<IMo2InstanceService>();
         configurationService.GetMo2InstanceOverrideAsync(GameType.Fallout4, Arg.Any<CancellationToken>())
@@ -235,7 +236,7 @@ public sealed class PluginRefreshDiscoveryPlannerTests
         var tempDir = Directory.CreateTempSubdirectory("AutoQAC_MO2_");
         try
         {
-            var configurationService = CreateConfigurationService(mo2Mode: true);
+            var configurationService = CreateConfigurationService(true);
             var pluginLoadingService = Substitute.For<IPluginLoadingService>();
             var mo2InstanceService = Substitute.For<IMo2InstanceService>();
             var instance = CreateMo2Instance(tempDir.FullName);
@@ -258,7 +259,7 @@ public sealed class PluginRefreshDiscoveryPlannerTests
         }
         finally
         {
-            tempDir.Delete(recursive: true);
+            tempDir.Delete(true);
         }
     }
 
@@ -269,7 +270,7 @@ public sealed class PluginRefreshDiscoveryPlannerTests
         try
         {
             var missingLoadOrderPath = Path.Combine(tempDir.FullName, "missing-loadorder.txt");
-            var configurationService = CreateConfigurationService(mo2Mode: true);
+            var configurationService = CreateConfigurationService(true);
             var pluginLoadingService = Substitute.For<IPluginLoadingService>();
             var mo2InstanceService = Substitute.For<IMo2InstanceService>();
             var instance = CreateMo2Instance(tempDir.FullName);
@@ -295,7 +296,7 @@ public sealed class PluginRefreshDiscoveryPlannerTests
         }
         finally
         {
-            tempDir.Delete(recursive: true);
+            tempDir.Delete(true);
         }
     }
 
@@ -303,7 +304,7 @@ public sealed class PluginRefreshDiscoveryPlannerTests
     public async Task LoadPluginsAsync_ForDirectAutomaticPlan_ShouldUseTryGetPluginsAsync()
     {
         var pluginLoadingService = Substitute.For<IPluginLoadingService>();
-        var plan = CreatePlan(PluginRefreshDiscoveryMode.DirectAutomatic, GameType.Fallout4, dataFolder: @"C:\Fallout4\Data");
+        var plan = CreatePlan(PluginRefreshDiscoveryMode.DirectAutomatic, GameType.Fallout4, @"C:\Fallout4\Data");
         var plugins = new[] { Plugin("Automatic.esp", @"C:\Fallout4\Data\Automatic.esp", GameType.Fallout4) };
         pluginLoadingService.TryGetPluginsAsync(GameType.Fallout4, @"C:\Fallout4\Data", Arg.Any<CancellationToken>())
             .Returns(new PluginLoadingResult
@@ -328,10 +329,11 @@ public sealed class PluginRefreshDiscoveryPlannerTests
         var plan = CreatePlan(
             PluginRefreshDiscoveryMode.DirectLoadOrderFile,
             GameType.FalloutNewVegas,
-            dataFolder: @"C:\FNV\Data",
-            loadOrderPath: @"C:\FNV\plugins.txt");
+            @"C:\FNV\Data",
+            @"C:\FNV\plugins.txt");
         var plugins = new[] { Plugin("FNV.esp", @"C:\FNV\Data\FNV.esp", GameType.FalloutNewVegas) };
-        pluginLoadingService.GetPluginsFromFileAsync(@"C:\FNV\plugins.txt", @"C:\FNV\Data", Arg.Any<CancellationToken>())
+        pluginLoadingService
+            .GetPluginsFromFileAsync(@"C:\FNV\plugins.txt", @"C:\FNV\Data", Arg.Any<CancellationToken>())
             .Returns(plugins.ToList());
         var sut = CreateSut(pluginLoadingService: pluginLoadingService);
 
@@ -349,7 +351,7 @@ public sealed class PluginRefreshDiscoveryPlannerTests
         var plan = CreatePlan(
             PluginRefreshDiscoveryMode.Mo2LoadOrderFile,
             GameType.SkyrimSe,
-            dataFolder: @"C:\Skyrim\Data",
+            @"C:\Skyrim\Data",
             mo2LoadOrderPath: @"C:\MO2\profiles\Default\loadorder.txt",
             mo2PathMap: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
@@ -381,11 +383,13 @@ public sealed class PluginRefreshDiscoveryPlannerTests
     private static PluginRefreshDiscoveryPlanner CreateSut(
         IConfigurationService? configurationService = null,
         IPluginLoadingService? pluginLoadingService = null,
-        IMo2InstanceService? mo2InstanceService = null) =>
-        new(
+        IMo2InstanceService? mo2InstanceService = null)
+    {
+        return new PluginRefreshDiscoveryPlanner(
             configurationService ?? CreateConfigurationService(),
             pluginLoadingService ?? Substitute.For<IPluginLoadingService>(),
             mo2InstanceService ?? Substitute.For<IMo2InstanceService>());
+    }
 
     private static IConfigurationService CreateConfigurationService(
         bool mo2Mode = false,
@@ -423,47 +427,53 @@ public sealed class PluginRefreshDiscoveryPlannerTests
         string? dataFolder,
         string? loadOrderPath = null,
         string? mo2LoadOrderPath = null,
-        IReadOnlyDictionary<string, string>? mo2PathMap = null) =>
-        new(
+        IReadOnlyDictionary<string, string>? mo2PathMap = null)
+    {
+        return new PluginRefreshDiscoveryPlan(
             gameType,
             mode,
             new PluginRefreshConfigurationProjection(
                 loadOrderPath,
                 dataFolder,
-                HasGameDataFolderOverride: false,
-                XEditPath: null,
-                Mo2Path: null,
-                Mo2ModeEnabled: mode == PluginRefreshDiscoveryMode.Mo2LoadOrderFile,
-                Mo2InstancePath: null,
-                IsMo2InstanceOverride: false,
-                IsMo2InstanceValid: null,
-                AvailableProfiles: [],
-                SelectedProfile: null,
-                CleaningTimeout: 0),
-            DisableSkipLists: false,
-            CanAttemptIssueApproximation: true,
+                false,
+                null,
+                null,
+                mode == PluginRefreshDiscoveryMode.Mo2LoadOrderFile,
+                null,
+                false,
+                null,
+                [],
+                null,
+                0),
+            false,
+            true,
             dataFolder,
             loadOrderPath,
             mo2LoadOrderPath,
             mo2PathMap ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
-            Mo2BaseDataFolder: mode == PluginRefreshDiscoveryMode.Mo2LoadOrderFile ? dataFolder : null);
+            mode == PluginRefreshDiscoveryMode.Mo2LoadOrderFile ? dataFolder : null);
+    }
 
-    private static PluginInfo Plugin(string fileName, string fullPath, GameType gameType) =>
-        new()
+    private static PluginInfo Plugin(string fileName, string fullPath, GameType gameType)
+    {
+        return new PluginInfo
         {
             FileName = fileName,
             FullPath = fullPath,
             DetectedGameType = gameType
         };
+    }
 
-    private static Mo2InstanceInfo CreateMo2Instance(string baseDirectory) =>
-        new(
-            BaseDirectory: baseDirectory,
-            ModsDirectory: Path.Combine(baseDirectory, "mods"),
-            ProfilesDirectory: Path.Combine(baseDirectory, "profiles"),
-            OverwriteDirectory: Path.Combine(baseDirectory, "overwrite"),
-            IniSelectedProfile: null,
-            GameName: null,
-            IsAutoDetected: false,
-            IniPath: null);
+    private static Mo2InstanceInfo CreateMo2Instance(string baseDirectory)
+    {
+        return new Mo2InstanceInfo(
+            baseDirectory,
+            Path.Combine(baseDirectory, "mods"),
+            Path.Combine(baseDirectory, "profiles"),
+            Path.Combine(baseDirectory, "overwrite"),
+            null,
+            null,
+            false,
+            null);
+    }
 }

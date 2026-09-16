@@ -6,10 +6,10 @@ using QueryPlugins.Models;
 namespace QueryPlugins.Detectors.Games;
 
 /// <summary>
-/// Game-specific detector for The Elder Scrolls IV: Oblivion and Oblivion Remastered.
-/// Detects deleted placed references. Oblivion uses PathGrids rather than Navigation Meshes,
-/// so <see cref="FindDeletedNavmeshes"/> always returns an empty sequence.
-/// PathGrid support may be added in a future iteration.
+///     Game-specific detector for The Elder Scrolls IV: Oblivion and Oblivion Remastered.
+///     Detects deleted placed references. Oblivion uses PathGrids rather than Navigation Meshes,
+///     so <see cref="FindDeletedNavmeshes" /> always returns an empty sequence.
+///     PathGrid support may be added in a future iteration.
 /// </summary>
 public sealed class OblivionDetector : IGameSpecificDetector
 {
@@ -17,7 +17,7 @@ public sealed class OblivionDetector : IGameSpecificDetector
     public IReadOnlySet<GameRelease> SupportedReleases { get; } = new HashSet<GameRelease>
     {
         GameRelease.Oblivion,
-        GameRelease.OblivionRE,
+        GameRelease.OblivionRE
     };
 
     /// <inheritdoc />
@@ -29,7 +29,11 @@ public sealed class OblivionDetector : IGameSpecificDetector
                 nameof(plugin));
 
         return oblivionMod.EnumerateMajorRecords<IPlacedGetter>()
-            .Where(placed => { ct.ThrowIfCancellationRequested(); return placed.IsDeleted; })
+            .Where(placed =>
+            {
+                ct.ThrowIfCancellationRequested();
+                return placed.IsDeleted;
+            })
             .Select(placed => new PluginIssue(
                 placed.FormKey,
                 placed.EditorID,
@@ -38,9 +42,11 @@ public sealed class OblivionDetector : IGameSpecificDetector
 
     /// <inheritdoc />
     /// <remarks>
-    /// Oblivion does not have Navigation Mesh records (it uses PathGrids). This method
-    /// returns an empty sequence. PathGrid deletion detection is deferred to a future iteration.
+    ///     Oblivion does not have Navigation Mesh records (it uses PathGrids). This method
+    ///     returns an empty sequence. PathGrid deletion detection is deferred to a future iteration.
     /// </remarks>
-    public IEnumerable<PluginIssue> FindDeletedNavmeshes(IModGetter plugin, CancellationToken ct = default) =>
-        Enumerable.Empty<PluginIssue>();
+    public IEnumerable<PluginIssue> FindDeletedNavmeshes(IModGetter plugin, CancellationToken ct = default)
+    {
+        return Enumerable.Empty<PluginIssue>();
+    }
 }

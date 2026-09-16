@@ -9,7 +9,8 @@ using AutoQAC.Services.State;
 namespace AutoQAC.Services.Configuration;
 
 /// <summary>
-/// Coordinates persistence, compatibility state mirroring, and Plugin refresh publication for Discovery settings changes.
+///     Coordinates persistence, compatibility state mirroring, and Plugin refresh publication for Discovery settings
+///     changes.
 /// </summary>
 public sealed class DiscoverySettingsModule(
     IConfigurationService configurationService,
@@ -20,8 +21,9 @@ public sealed class DiscoverySettingsModule(
     /// <inheritdoc />
     public Task<DiscoverySettingsChangeResult> ExecuteAsync(
         DiscoverySettingsIntent intent,
-        CancellationToken ct = default) =>
-        intent switch
+        CancellationToken ct = default)
+    {
+        return intent switch
         {
             DiscoverySettingsIntent.SelectGame select => SelectGameAsync(select.GameType, ct),
             DiscoverySettingsIntent.SetMo2Mode mo2Mode => SetMo2ModeAsync(mo2Mode.Enabled, ct),
@@ -50,11 +52,12 @@ public sealed class DiscoverySettingsModule(
             DiscoverySettingsIntent.Reset => ResetAsync(ct),
             _ => throw new ArgumentOutOfRangeException(nameof(intent), intent, "Unknown Discovery settings intent.")
         };
+    }
 
     private async Task<DiscoverySettingsChangeResult> SelectGameAsync(GameType gameType, CancellationToken ct)
     {
         await configurationService.SetSelectedGameAsync(gameType, ct).ConfigureAwait(false);
-        return await RefreshGameAsync(gameType, selectedLoadOrderPath: null, ct).ConfigureAwait(false);
+        return await RefreshGameAsync(gameType, null, ct).ConfigureAwait(false);
     }
 
     private async Task<DiscoverySettingsChangeResult> SetMo2ModeAsync(bool enabled, CancellationToken ct)
@@ -75,7 +78,7 @@ public sealed class DiscoverySettingsModule(
     {
         await configurationService.SetMo2ProfileAsync(gameType, profileName, ct).ConfigureAwait(false);
         await configurationService.FlushPendingSavesAsync(ct).ConfigureAwait(false);
-        return await RefreshGameAsync(gameType, selectedLoadOrderPath: null, ct).ConfigureAwait(false);
+        return await RefreshGameAsync(gameType, null, ct).ConfigureAwait(false);
     }
 
     private async Task<DiscoverySettingsChangeResult> SetLoadOrderPathAsync(
@@ -84,12 +87,10 @@ public sealed class DiscoverySettingsModule(
         CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(loadOrderPath) || !File.Exists(loadOrderPath))
-        {
             return DiscoverySettingsChangeResult.Rejected(new DiscoverySettingsChangeFailure(
                 DiscoverySettingsChangeFailureKind.InvalidLoadOrderPath,
                 "The selected load order file is missing.",
                 "Choose the current plugins.txt or loadorder.txt file."));
-        }
 
         var result = await RefreshGameAsync(gameType, loadOrderPath, ct).ConfigureAwait(false);
         await configurationService.SetGameLoadOrderOverrideAsync(gameType, loadOrderPath, ct)
@@ -103,16 +104,14 @@ public sealed class DiscoverySettingsModule(
         CancellationToken ct)
     {
         if (!string.IsNullOrWhiteSpace(folderPath) && !Directory.Exists(folderPath))
-        {
             return DiscoverySettingsChangeResult.Rejected(new DiscoverySettingsChangeFailure(
                 DiscoverySettingsChangeFailureKind.InvalidGameDataFolder,
                 "The selected game data folder is missing.",
                 "Choose an existing game data folder."));
-        }
 
         await configurationService.SetGameDataFolderOverrideAsync(gameType, folderPath, ct)
             .ConfigureAwait(false);
-        return await RefreshGameAsync(gameType, selectedLoadOrderPath: null, ct).ConfigureAwait(false);
+        return await RefreshGameAsync(gameType, null, ct).ConfigureAwait(false);
     }
 
     private async Task<DiscoverySettingsChangeResult> SetMo2InstanceOverrideAsync(
@@ -121,16 +120,14 @@ public sealed class DiscoverySettingsModule(
         CancellationToken ct)
     {
         if (!string.IsNullOrWhiteSpace(folderPath) && !Directory.Exists(folderPath))
-        {
             return DiscoverySettingsChangeResult.Rejected(new DiscoverySettingsChangeFailure(
                 DiscoverySettingsChangeFailureKind.InvalidMo2InstanceFolder,
                 "The selected MO2 instance folder is missing.",
                 "Choose the MO2 instance folder or disable MO2 Mode."));
-        }
 
         await configurationService.SetMo2InstanceOverrideAsync(gameType, folderPath, ct).ConfigureAwait(false);
         await configurationService.FlushPendingSavesAsync(ct).ConfigureAwait(false);
-        return await RefreshGameAsync(gameType, selectedLoadOrderPath: null, ct).ConfigureAwait(false);
+        return await RefreshGameAsync(gameType, null, ct).ConfigureAwait(false);
     }
 
     private async Task<DiscoverySettingsChangeResult> SetMo2ExecutablePathAsync(
@@ -140,12 +137,10 @@ public sealed class DiscoverySettingsModule(
         if (string.IsNullOrWhiteSpace(executablePath) ||
             !File.Exists(executablePath) ||
             !executablePath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
-        {
             return DiscoverySettingsChangeResult.Rejected(new DiscoverySettingsChangeFailure(
                 DiscoverySettingsChangeFailureKind.InvalidMo2ExecutablePath,
                 "The selected Mod Organizer executable is missing.",
                 "Choose ModOrganizer.exe or disable MO2 Mode."));
-        }
 
         var config = await configurationService.LoadUserConfigAsync(ct).ConfigureAwait(false);
         config.ModOrganizer.Binary = executablePath;
@@ -180,7 +175,7 @@ public sealed class DiscoverySettingsModule(
             config.LoadOrder.File,
             config.ModOrganizer.Binary,
             config.XEdit.Binary,
-            mo2Profile: null);
+            null);
         stateService.UpdateState(state => state with
         {
             CurrentGameType = GameType.Unknown,
@@ -191,11 +186,13 @@ public sealed class DiscoverySettingsModule(
         });
         stateService.SetPluginsToClean([]);
 
-        return await RefreshGameAsync(GameType.Unknown, selectedLoadOrderPath: null, ct).ConfigureAwait(false);
+        return await RefreshGameAsync(GameType.Unknown, null, ct).ConfigureAwait(false);
     }
 
-    private Task<DiscoverySettingsChangeResult> RefreshCurrentGameAsync(CancellationToken ct) =>
-        RefreshGameAsync(stateService.CurrentState.CurrentGameType, selectedLoadOrderPath: null, ct);
+    private Task<DiscoverySettingsChangeResult> RefreshCurrentGameAsync(CancellationToken ct)
+    {
+        return RefreshGameAsync(stateService.CurrentState.CurrentGameType, null, ct);
+    }
 
     private async Task<DiscoverySettingsChangeResult> RefreshGameAsync(
         GameType gameType,

@@ -75,8 +75,8 @@ public sealed partial class CleaningSessionTests : IDisposable
             .Returns(new ConfigPersistenceResult(
                 ConfigPersistenceStatusKind.NoOp,
                 ConfigPersistenceOperationKind.Flush,
-                Generation: 0,
-                Failure: null));
+                0,
+                null));
         _configServiceMock.GetSkipListAsync(
                 Arg.Any<GameType>(),
                 Arg.Any<GameVariant>(),
@@ -149,42 +149,35 @@ public sealed partial class CleaningSessionTests : IDisposable
             _processServiceMock);
     }
 
-    private ICleaningPreflight CreatePreflight() => new CleaningPreflight(
-        _configServiceMock,
-        _pluginServiceMock,
-        _pluginRefreshModule,
-        _mo2ValidationServiceMock,
-        _stateServiceMock,
-        _loggerMock);
+    private ICleaningPreflight CreatePreflight()
+    {
+        return new CleaningPreflight(
+            _configServiceMock,
+            _pluginServiceMock,
+            _pluginRefreshModule,
+            _mo2ValidationServiceMock,
+            _stateServiceMock,
+            _loggerMock);
+    }
 
-    private IPluginCleaning CreatePluginCleaning(ICleaningTerminationCoordinator terminationCoordinator) =>
-        new PluginCleaning(
+    private IPluginCleaning CreatePluginCleaning(ICleaningTerminationCoordinator terminationCoordinator)
+    {
+        return new PluginCleaning(
             new PluginCleaningRunner(_cleaningServiceMock, _logFileServiceMock, _loggerMock),
             new PluginResultFinalizer(_logFileServiceMock, _outputParserMock, _loggerMock),
             _decisionsMock,
             terminationCoordinator);
+    }
 
     public void Dispose()
     {
-        if (File.Exists(_mo2LoadOrderPath))
-        {
-            File.Delete(_mo2LoadOrderPath);
-        }
+        if (File.Exists(_mo2LoadOrderPath)) File.Delete(_mo2LoadOrderPath);
 
-        if (File.Exists(_xEditCompatibilityPath))
-        {
-            File.Delete(_xEditCompatibilityPath);
-        }
+        if (File.Exists(_xEditCompatibilityPath)) File.Delete(_xEditCompatibilityPath);
 
-        if (File.Exists(_loadOrderCompatibilityPath))
-        {
-            File.Delete(_loadOrderCompatibilityPath);
-        }
+        if (File.Exists(_loadOrderCompatibilityPath)) File.Delete(_loadOrderCompatibilityPath);
 
-        if (Directory.Exists(_mo2InstancePath))
-        {
-            Directory.Delete(_mo2InstancePath, recursive: true);
-        }
+        if (Directory.Exists(_mo2InstancePath)) Directory.Delete(_mo2InstancePath, true);
 
         _pluginRefreshModule.Dispose();
     }
@@ -201,10 +194,7 @@ public sealed partial class CleaningSessionTests : IDisposable
     {
         File.Delete(path);
         var directory = Path.GetDirectoryName(path);
-        if (!string.IsNullOrWhiteSpace(directory) && Directory.Exists(directory))
-        {
-            Directory.Delete(directory, recursive: true);
-        }
+        if (!string.IsNullOrWhiteSpace(directory) && Directory.Exists(directory)) Directory.Delete(directory, true);
     }
 
     private async Task<PluginRefreshPublication> CreatePublicationFromCurrentStateAsync(CancellationToken ct)
@@ -217,12 +207,12 @@ public sealed partial class CleaningSessionTests : IDisposable
         }
 
         var configuration = RecordingPluginRefreshModule.CreateConfiguration(
-            loadOrderPath: state.LoadOrderPath,
-            xEditPath: state.XEditExecutablePath,
-            mo2Path: state.Mo2ExecutablePath,
-            mo2ModeEnabled: state.Mo2ModeEnabled,
-            mo2InstancePath: state.Mo2ModeEnabled ? _mo2InstancePath : null,
-            selectedProfile: state.Mo2Profile);
+            state.LoadOrderPath,
+            state.XEditExecutablePath,
+            state.Mo2ExecutablePath,
+            state.Mo2ModeEnabled,
+            state.Mo2ModeEnabled ? _mo2InstancePath : null,
+            state.Mo2Profile);
         var mode = GetDiscoveryMode(state);
         var plan = state.CurrentGameType == GameType.Unknown
             ? null
@@ -230,8 +220,8 @@ public sealed partial class CleaningSessionTests : IDisposable
                 state.CurrentGameType,
                 mode,
                 configuration,
-                loadOrderPath: mode == PluginRefreshDiscoveryMode.DirectLoadOrderFile ? state.LoadOrderPath : null,
-                mo2LoadOrderPath: state.Mo2ModeEnabled ? _mo2LoadOrderPath : null);
+                mode == PluginRefreshDiscoveryMode.DirectLoadOrderFile ? state.LoadOrderPath : null,
+                state.Mo2ModeEnabled ? _mo2LoadOrderPath : null);
         var skipList = await GetEffectiveSkipListAsync(state, ct);
         var rows = state.PluginsToClean
             .Select(plugin => CreatePublishedRow(plugin, state, skipList))
@@ -246,20 +236,20 @@ public sealed partial class CleaningSessionTests : IDisposable
             plan);
     }
 
-    private static PluginRefreshDiscoveryMode GetDiscoveryMode(AppState state) =>
-        state.Mo2ModeEnabled
+    private static PluginRefreshDiscoveryMode GetDiscoveryMode(AppState state)
+    {
+        return state.Mo2ModeEnabled
             ? PluginRefreshDiscoveryMode.Mo2LoadOrderFile
             : state.CurrentGameType is GameType.Fallout3 or GameType.FalloutNewVegas or GameType.Oblivion
                 ? PluginRefreshDiscoveryMode.DirectLoadOrderFile
                 : PluginRefreshDiscoveryMode.DirectAutomatic;
+    }
 
     private async Task<IReadOnlySet<string>> GetEffectiveSkipListAsync(AppState state, CancellationToken ct)
     {
         var userConfig = await _configServiceMock.LoadUserConfigAsync(ct);
         if (userConfig.Settings.DisableSkipLists || state.CurrentGameType == GameType.Unknown)
-        {
             return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        }
 
         var skipList = await _configServiceMock.GetSkipListAsync(state.CurrentGameType, GameVariant.None, ct);
         return skipList.ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -274,25 +264,28 @@ public sealed partial class CleaningSessionTests : IDisposable
         var publishedPlugin = plugin with { IsInSkipList = isSkipped };
         return RecordingPluginRefreshModule.CreatePublishedRow(
             publishedPlugin,
-            isVisible: !isSkipped,
-            isSelected: !state.ExcludedPluginPaths.Contains(plugin.FullPath),
-            isSkippedByPolicy: isSkipped);
+            !isSkipped,
+            !state.ExcludedPluginPaths.Contains(plugin.FullPath),
+            isSkipped);
     }
 
-    private static CleaningPreflightPlan CreateEmptyPreflightPlan() => new()
+    private static CleaningPreflightPlan CreateEmptyPreflightPlan()
     {
-        DetectedGameType = GameType.SkyrimSe,
-        DetectedGameVariant = GameVariant.None,
-        PluginRows = [],
-        IsMo2ModeActive = false,
-        BackupSkippedByPolicy = true,
-        FileValidationSkippedByPolicy = false,
-        LaunchModeLabel = "direct xEdit",
-        CleaningTimeoutSeconds = 30,
-        BackupEnabled = false,
-        BackupMaxSessions = 0,
-        XEditDirectory = "xedit"
-    };
+        return new CleaningPreflightPlan
+        {
+            DetectedGameType = GameType.SkyrimSe,
+            DetectedGameVariant = GameVariant.None,
+            PluginRows = [],
+            IsMo2ModeActive = false,
+            BackupSkippedByPolicy = true,
+            FileValidationSkippedByPolicy = false,
+            LaunchModeLabel = "direct xEdit",
+            CleaningTimeoutSeconds = 30,
+            BackupEnabled = false,
+            BackupMaxSessions = 0,
+            XEditDirectory = "xedit"
+        };
+    }
 
     private static TaskCompletionSource<bool> CreateSignal()
     {
@@ -306,10 +299,7 @@ public sealed partial class CleaningSessionTests : IDisposable
 
     private static async Task WaitForCancellationAsync(CancellationToken ct)
     {
-        if (ct.IsCancellationRequested)
-        {
-            return;
-        }
+        if (ct.IsCancellationRequested) return;
 
         var cancellationSignal = CreateSignal();
         await using var registration = ct.Register(() => cancellationSignal.TrySetResult(true));
@@ -407,16 +397,13 @@ public sealed partial class CleaningSessionTests : IDisposable
 
     private static void KillProcessIfRunning(Process? process)
     {
-        if (process == null)
-        {
-            return;
-        }
+        if (process == null) return;
 
         try
         {
             if (!process.HasExited)
             {
-                process.Kill(entireProcessTree: true);
+                process.Kill(true);
                 process.WaitForExit(2000);
             }
         }
@@ -436,17 +423,14 @@ public sealed partial class CleaningSessionTests : IDisposable
     /// <param name="processId">Operating-system process ID captured before the original handle was disposed.</param>
     private static void KillProcessByIdIfRunning(int? processId)
     {
-        if (processId is null)
-        {
-            return;
-        }
+        if (processId is null) return;
 
         try
         {
             using var process = Process.GetProcessById(processId.Value);
             if (!process.HasExited)
             {
-                process.Kill(entireProcessTree: true);
+                process.Kill(true);
                 process.WaitForExit(2000);
             }
         }
@@ -657,10 +641,8 @@ public sealed partial class CleaningSessionTests : IDisposable
             {
                 cleanedCount++;
                 if (cleanedCount == 2)
-                {
                     // Simulate user clicking "Stop"
                     cts.Cancel();
-                }
 
                 return new CleaningResult { Status = CleaningStatus.Cleaned };
             });
@@ -800,10 +782,7 @@ public sealed partial class CleaningSessionTests : IDisposable
                 lock (lockObj)
                 {
                     currentlyExecuting++;
-                    if (currentlyExecuting > maxConcurrent)
-                    {
-                        maxConcurrent = currentlyExecuting;
-                    }
+                    if (currentlyExecuting > maxConcurrent) maxConcurrent = currentlyExecuting;
                 }
 
                 // Simulate some work (short delay to detect parallelism)
@@ -834,11 +813,9 @@ public sealed partial class CleaningSessionTests : IDisposable
 
         // Verify order: each plugin should start after the previous one ends
         executionLog.Should().HaveCount(3);
-        for (int i = 1; i < executionLog.Count; i++)
-        {
+        for (var i = 1; i < executionLog.Count; i++)
             executionLog[i].start.Should().BeOnOrAfter(executionLog[i - 1].end,
                 $"Plugin {executionLog[i].plugin} should start after {executionLog[i - 1].plugin} ends");
-        }
     }
 
     /// <summary>
@@ -879,10 +856,7 @@ public sealed partial class CleaningSessionTests : IDisposable
                 cleanedPlugins.Add(plugin.FileName);
 
                 // Signal that cleaning has started (for first plugin)
-                if (cleanedPlugins.Count == 1)
-                {
-                    cleaningStartedEvent.TrySetResult(true);
-                }
+                if (cleanedPlugins.Count == 1) cleaningStartedEvent.TrySetResult(true);
 
                 await WaitForCancellationAsync(ct);
 
@@ -914,7 +888,7 @@ public sealed partial class CleaningSessionTests : IDisposable
         var preflightReached = CreateSignal();
         var releaseTcs =
             new TaskCompletionSource<CleaningPreflightPlan>(TaskCreationOptions.RunContinuationsAsynchronously);
-        CancellationToken capturedToken = CancellationToken.None;
+        var capturedToken = CancellationToken.None;
 
         _processServiceMock.CleanOrphanedProcessesAsync(Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
@@ -977,7 +951,7 @@ public sealed partial class CleaningSessionTests : IDisposable
     {
         var orphanReached = CreateSignal();
         var releaseOrphanCleanup = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        CancellationToken capturedToken = CancellationToken.None;
+        var capturedToken = CancellationToken.None;
 
         _processServiceMock.CleanOrphanedProcessesAsync(Arg.Do<CancellationToken>(t => capturedToken = t))
             .Returns(async _ =>
@@ -1049,7 +1023,7 @@ public sealed partial class CleaningSessionTests : IDisposable
         _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>()).Returns(true);
 
         var firstPluginStarted = CreateSignal();
-        CancellationToken firstSessionToken = CancellationToken.None;
+        var firstSessionToken = CancellationToken.None;
         var cleanCalls = 0;
         _cleaningServiceMock.CleanPluginAsync(
                 Arg.Any<PluginInfo>(),
@@ -1058,10 +1032,7 @@ public sealed partial class CleaningSessionTests : IDisposable
             .Returns(async _ =>
             {
                 cleanCalls++;
-                if (cleanCalls > 1)
-                {
-                    return new CleaningResult { Status = CleaningStatus.Cleaned, Success = true };
-                }
+                if (cleanCalls > 1) return new CleaningResult { Status = CleaningStatus.Cleaned, Success = true };
 
                 firstPluginStarted.TrySetResult(true);
                 await WaitForCancellationAsync(firstSessionToken);
@@ -1436,7 +1407,6 @@ public sealed partial class CleaningSessionTests : IDisposable
             {
                 attempts++;
                 if (attempts == 1)
-                {
                     return new CleaningResult
                     {
                         Status = CleaningStatus.Failed,
@@ -1444,7 +1414,6 @@ public sealed partial class CleaningSessionTests : IDisposable
                         TimedOut = true,
                         Message = "Timed out on attempt 1"
                     };
-                }
 
                 return new CleaningResult
                 {
@@ -1582,10 +1551,7 @@ public sealed partial class CleaningSessionTests : IDisposable
         using var sub = _cleaningSession.HangDetected.Subscribe(isHung =>
         {
             hangEvents.Add(isHung);
-            if (isHung)
-            {
-                hangForwarded.TrySetResult(true);
-            }
+            if (isHung) hangForwarded.TrySetResult(true);
         });
 
         // Act
@@ -2842,16 +2808,16 @@ public sealed partial class CleaningSessionTests : IDisposable
             PluginsToClean = new List<PluginInfo> { plugin }
         });
         _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>()).Returns(true);
-        _processServiceMock.TerminateProcessAsync(Arg.Any<Process>(), forceKill: false, Arg.Any<CancellationToken>())
+        _processServiceMock.TerminateProcessAsync(Arg.Any<Process>(), false, Arg.Any<CancellationToken>())
             .Returns(TerminationResult.GracePeriodExpired);
-        _processServiceMock.TerminateProcessAsync(Arg.Any<Process>(), forceKill: true, Arg.Any<CancellationToken>())
+        _processServiceMock.TerminateProcessAsync(Arg.Any<Process>(), true, Arg.Any<CancellationToken>())
             .Returns(callInfo =>
             {
                 var process = callInfo.ArgAt<Process>(0);
                 forceProcessId = process.Id;
                 forceUsedDisposedOriginalHandle = ReferenceEquals(process, disposedOriginalHandle);
                 if (process.HasExited) return TerminationResult.ForceKilled;
-                process.Kill(entireProcessTree: true);
+                process.Kill(true);
                 process.WaitForExit(2000);
 
                 return TerminationResult.ForceKilled;
@@ -2917,7 +2883,7 @@ public sealed partial class CleaningSessionTests : IDisposable
                     "confirmed force stop must reopen a fresh process handle instead of reusing the disposed original");
             await _processServiceMock.Received(1).TerminateProcessAsync(
                 Arg.Any<Process>(),
-                forceKill: true,
+                true,
                 Arg.Is<CancellationToken>(ct => ct == CancellationToken.None));
         }
         finally
@@ -2942,7 +2908,7 @@ public sealed partial class CleaningSessionTests : IDisposable
             PluginsToClean = new List<PluginInfo> { firstPlugin }
         });
         _cleaningServiceMock.ValidateEnvironmentAsync(Arg.Any<CancellationToken>()).Returns(true);
-        _processServiceMock.TerminateProcessAsync(Arg.Any<Process>(), forceKill: false, Arg.Any<CancellationToken>())
+        _processServiceMock.TerminateProcessAsync(Arg.Any<Process>(), false, Arg.Any<CancellationToken>())
             .Returns(TerminationResult.GracePeriodExpired);
 
         var processStarted = CreateSignal();
@@ -2991,7 +2957,7 @@ public sealed partial class CleaningSessionTests : IDisposable
             // Assert
             await _processServiceMock.DidNotReceive().TerminateProcessAsync(
                 Arg.Any<Process>(),
-                forceKill: true,
+                true,
                 Arg.Any<CancellationToken>());
         }
         finally
@@ -3063,7 +3029,7 @@ public sealed partial class CleaningSessionTests : IDisposable
             // Assert
             await _processServiceMock.DidNotReceive().TerminateProcessAsync(
                 Arg.Any<Process>(),
-                forceKill: true,
+                true,
                 Arg.Any<CancellationToken>());
         }
         finally
@@ -3129,22 +3095,13 @@ public sealed partial class CleaningSessionTests : IDisposable
     private static string FormatTypeName(Type t)
     {
         var underlying = Nullable.GetUnderlyingType(t);
-        if (underlying != null)
-        {
-            return $"{FormatTypeName(underlying)}?";
-        }
+        if (underlying != null) return $"{FormatTypeName(underlying)}?";
 
-        if (!t.IsGenericType)
-        {
-            return t.Name;
-        }
+        if (!t.IsGenericType) return t.Name;
 
         var def = t.Name;
         var tickIndex = def.IndexOf('`', StringComparison.Ordinal);
-        if (tickIndex > 0)
-        {
-            def = def[..tickIndex];
-        }
+        if (tickIndex > 0) def = def[..tickIndex];
 
         var args = string.Join(", ", t.GetGenericArguments().Select(FormatTypeName));
         return $"{def}<{args}>";
@@ -3223,10 +3180,8 @@ public sealed partial class CleaningSessionTests : IDisposable
             var content = File.ReadAllText(path);
 
             foreach (var token in prohibitedTokens)
-            {
                 content.Should().NotContain(token,
                     $"{file} must not parallelize cleaning work — sequential xEdit is a hard runtime invariant (Phase 8 D-10).");
-            }
         }
     }
 
@@ -3234,9 +3189,7 @@ public sealed partial class CleaningSessionTests : IDisposable
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "AutoQACSharp.slnx")))
-        {
             directory = directory.Parent;
-        }
 
         directory.Should().NotBeNull("tests should run under the repository root");
         return Path.Combine(new[] { directory.FullName }.Concat(segments).ToArray());

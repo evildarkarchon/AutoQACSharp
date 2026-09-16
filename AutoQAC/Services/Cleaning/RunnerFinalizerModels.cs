@@ -4,7 +4,7 @@ using AutoQAC.Models;
 namespace AutoQAC.Services.Cleaning;
 
 /// <summary>
-/// Structured output from <see cref="IPluginCleaningRunner" /> for final result construction.
+///     Structured output from <see cref="IPluginCleaningRunner" /> for final result construction.
 /// </summary>
 public sealed record PluginRunnerOutput
 {
@@ -28,7 +28,7 @@ public sealed record PluginRunnerOutput
 }
 
 /// <summary>
-/// Termination-state snapshot consumed by result finalization after the runner detaches the process.
+///     Termination-state snapshot consumed by result finalization after the runner detaches the process.
 /// </summary>
 /// <param name="ProcessMayStillBeRunning">True when log reading is unsafe because xEdit may still be running.</param>
 /// <param name="StopWasRequested">True when the user requested a stop in the current session.</param>

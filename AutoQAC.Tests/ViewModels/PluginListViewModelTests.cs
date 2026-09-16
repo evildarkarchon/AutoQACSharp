@@ -16,12 +16,12 @@ public sealed class PluginListViewModelTests
         try
         {
             vm.OnPluginRefreshSnapshot(Snapshot(
-                rows: [Row("A.esp", isSelected: true)],
+                [Row("A.esp", isSelected: true)],
                 commands: new PluginRefreshCommandAvailability(
-                    CanSelectAll: true,
-                    CanDeselectAll: true,
-                    CanRefreshSelectedIssueApproximations: true,
-                    CanCancelRefresh: false)));
+                    true,
+                    true,
+                    true,
+                    false)));
 
             vm.PluginsToClean.Should().ContainSingle(item =>
                 item.FileName == "A.esp" && item.IsSelected);
@@ -45,19 +45,19 @@ public sealed class PluginListViewModelTests
         try
         {
             vm.OnPluginRefreshSnapshot(Snapshot(
-                rows: [Row("A.esp")],
-                activity: new PluginRefreshActivity(
-                    IsPluginRefreshRunning: false,
-                    IsIssueApproximationRefreshRunning: true),
-                commands: new PluginRefreshCommandAvailability(false, false, false, true)));
+                [Row("A.esp")],
+                new PluginRefreshActivity(
+                    false,
+                    true),
+                new PluginRefreshCommandAvailability(false, false, false, true)));
 
             vm.IsApproximationRefreshRunning.Should().BeTrue();
             vm.CancelApproximationRefreshCommand.CanExecute(null).Should().BeTrue();
 
             vm.OnPluginRefreshSnapshot(Snapshot(
-                rows: [Row("A.esp")],
-                activity: new PluginRefreshActivity(false, false),
-                commands: new PluginRefreshCommandAvailability(true, true, true, false)));
+                [Row("A.esp")],
+                new PluginRefreshActivity(false, false),
+                new PluginRefreshCommandAvailability(true, true, true, false)));
 
             vm.IsApproximationRefreshRunning.Should().BeFalse();
             vm.CancelApproximationRefreshCommand.CanExecute(null).Should().BeFalse();
@@ -77,7 +77,7 @@ public sealed class PluginListViewModelTests
         try
         {
             vm.OnPluginRefreshSnapshot(Snapshot(
-                rows: [Row("A.esp")],
+                [Row("A.esp")],
                 commands: new PluginRefreshCommandAvailability(true, true, false, false)));
 
             await vm.SelectAllCommand.ExecuteAsync(null);
@@ -104,7 +104,7 @@ public sealed class PluginListViewModelTests
         var vm = new PluginListViewModel(module);
         try
         {
-            vm.OnPluginRefreshSnapshot(Snapshot(rows: [Row("A.esp", @"C:\Game\Data\A.esp", true)]));
+            vm.OnPluginRefreshSnapshot(Snapshot([Row("A.esp", @"C:\Game\Data\A.esp", true)]));
 
             vm.PluginsToClean.Single().IsSelected = false;
 
@@ -131,7 +131,7 @@ public sealed class PluginListViewModelTests
         try
         {
             vm.OnPluginRefreshSnapshot(Snapshot(
-                rows: [Row("A.esp")],
+                [Row("A.esp")],
                 commands: new PluginRefreshCommandAvailability(false, false, true, false)));
 
             await vm.RefreshSelectedApproximationsCommand.ExecuteAsync(null);
@@ -154,7 +154,7 @@ public sealed class PluginListViewModelTests
         try
         {
             vm.OnPluginRefreshSnapshot(Snapshot(
-                rows: [Row("A.esp")],
+                [Row("A.esp")],
                 commands: new PluginRefreshCommandAvailability(false, false, false, true)));
 
             await vm.CancelApproximationRefreshCommand.ExecuteAsync(null);
@@ -176,10 +176,9 @@ public sealed class PluginListViewModelTests
         var vm = new PluginListViewModel(module);
         try
         {
-            vm.OnPluginRefreshSnapshot(Snapshot(rows: [Row("A.esp", isSelected: false)]));
+            vm.OnPluginRefreshSnapshot(Snapshot([Row("A.esp", isSelected: false)]));
 
-            vm.OnPluginRefreshSnapshot(Snapshot(rows:
-            [
+            vm.OnPluginRefreshSnapshot(Snapshot([
                 Row("A.esp", isSelected: false, approximation: PluginIssueApproximation.Available(3, 1, 0))
             ]));
 
@@ -199,40 +198,44 @@ public sealed class PluginListViewModelTests
         IReadOnlyList<PluginRefreshRow>? rows = null,
         PluginRefreshActivity? activity = null,
         PluginRefreshCommandAvailability? commands = null,
-        string statusText = "Ready") =>
-        new(
-            Generation: 1,
-            GameType: GameType.SkyrimSe,
-            Rows: rows ?? [],
-            Configuration: new PluginRefreshConfigurationProjection(
-                LoadOrderPath: null,
-                GameDataFolder: @"C:\Game\Data",
-                HasGameDataFolderOverride: false,
-                XEditPath: null,
-                Mo2Path: null,
-                Mo2ModeEnabled: false,
-                Mo2InstancePath: null,
-                IsMo2InstanceOverride: false,
-                IsMo2InstanceValid: null,
-                AvailableProfiles: [],
-                SelectedProfile: null,
-                CleaningTimeout: 300),
-            Activity: activity ?? new PluginRefreshActivity(false, false),
-            Commands: commands ?? new PluginRefreshCommandAvailability(true, true, true, false),
-            StatusText: statusText);
+        string statusText = "Ready")
+    {
+        return new PluginRefreshSnapshot(
+            1,
+            GameType.SkyrimSe,
+            rows ?? [],
+            new PluginRefreshConfigurationProjection(
+                null,
+                @"C:\Game\Data",
+                false,
+                null,
+                null,
+                false,
+                null,
+                false,
+                null,
+                [],
+                null,
+                300),
+            activity ?? new PluginRefreshActivity(false, false),
+            commands ?? new PluginRefreshCommandAvailability(true, true, true, false),
+            statusText);
+    }
 
     private static PluginRefreshRow Row(
         string fileName,
         string? fullPath = null,
         bool isSelected = true,
-        PluginIssueApproximation? approximation = null) =>
-        new(
+        PluginIssueApproximation? approximation = null)
+    {
+        return new PluginRefreshRow(
             fileName,
             fullPath ?? $@"C:\Game\Data\{fileName}",
             GameType.SkyrimSe,
             isSelected,
-            IsInSkipList: false,
+            false,
             approximation ?? PluginIssueApproximation.Unavailable);
+    }
 
     private sealed class RecordingPluginRefreshModule : IPluginRefreshModule, IDisposable
     {
@@ -251,18 +254,20 @@ public sealed class PluginListViewModelTests
             return Task.FromResult(_lastSnapshot);
         }
 
-        public Task<PluginRefreshPublication> GetCurrentPublicationAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult(new PluginRefreshPublication(
+        public Task<PluginRefreshPublication> GetCurrentPublicationAsync(CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(new PluginRefreshPublication(
                 _lastSnapshot.Generation,
                 _lastSnapshot.GameType,
-                DiscoveryPlan: null,
+                null,
                 _lastSnapshot.Configuration,
                 PluginRefreshFreshness.Missing,
-                Rows: [],
+                [],
                 _lastSnapshot.Rows,
                 _lastSnapshot.Activity,
                 _lastSnapshot.Commands,
                 _lastSnapshot.StatusText));
+        }
 
         public void Publish(PluginRefreshSnapshot snapshot)
         {
@@ -270,6 +275,9 @@ public sealed class PluginListViewModelTests
             _snapshots.OnNext(snapshot);
         }
 
-        public void Dispose() => _snapshots.Dispose();
+        public void Dispose()
+        {
+            _snapshots.Dispose();
+        }
     }
 }

@@ -27,7 +27,8 @@ public class XEditCommandBuilderTests
         _stateServiceMock.CurrentState.Returns(new AppState { XEditExecutablePath = "" });
 
         // Act
-        var result = _sut.BuildCommand(new PluginInfo { FileName = "test.esp", FullPath = "/path/to/test.esp" }, GameType.SkyrimSe);
+        var result = _sut.BuildCommand(new PluginInfo { FileName = "test.esp", FullPath = "/path/to/test.esp" },
+            GameType.SkyrimSe);
 
         // Assert
         result.Should().BeNull();
@@ -70,7 +71,8 @@ public class XEditCommandBuilderTests
         result.Should().NotBeNull();
         result!.FileName.Should().Be(xEditPath);
         result.UseShellExecute.Should().BeFalse("D-04 requires shell-sensitive characters to remain literal argv data");
-        result.Arguments.Should().BeEmpty("D-16 requires asserting parsed ArgumentList entries instead of raw command strings");
+        result.Arguments.Should()
+            .BeEmpty("D-16 requires asserting parsed ArgumentList entries instead of raw command strings");
         result.ArgumentList.Should().Equal("-QAC", "-autoexit", "-autoload", WorstCasePluginName);
     }
 
@@ -91,7 +93,8 @@ public class XEditCommandBuilderTests
         // Assert
         result.Should().NotBeNull();
         result!.Arguments.Should().BeEmpty();
-        result.ArgumentList.Should().Equal("-FO4", "-QAC", "-autoexit", "-autoload", "Plugin.esp", "-iknowwhatimdoing", "-allowmakepartial");
+        result.ArgumentList.Should().Equal("-FO4", "-QAC", "-autoexit", "-autoload", "Plugin.esp", "-iknowwhatimdoing",
+            "-allowmakepartial");
     }
 
     [Theory]
@@ -138,13 +141,16 @@ public class XEditCommandBuilderTests
         result.Should().NotBeNull();
         result!.FileName.Should().Be(mo2Path);
         result.UseShellExecute.Should().BeFalse();
-        result.Arguments.Should().BeEmpty("MO2 argv should be carried through ArgumentList while only the -a value remains nested text");
-        result.ArgumentList.Should().HaveCount(4, "D-05/D-06 require run, xEdit path, -a, and exactly one nested xEdit payload entry");
+        result.Arguments.Should()
+            .BeEmpty("MO2 argv should be carried through ArgumentList while only the -a value remains nested text");
+        result.ArgumentList.Should().HaveCount(4,
+            "D-05/D-06 require run, xEdit path, -a, and exactly one nested xEdit payload entry");
         result.ArgumentList.Should().Equal("run", xEditPath, "-a", result.ArgumentList[3]);
 
         var nestedPayload = result.ArgumentList[3];
         nestedPayload.Should().Contain("-autoload");
-        nestedPayload.Should().NotContain(plugin.FullPath, "D-07 requires MO2 -autoload to use the file-name-only target");
+        nestedPayload.Should()
+            .NotContain(plugin.FullPath, "D-07 requires MO2 -autoload to use the file-name-only target");
         var parsedPayload = ParseWindowsCommandLine(nestedPayload);
         parsedPayload.Should().Contain(WorstCasePluginName);
         parsedPayload.Should().Equal("-FO4", "-QAC", "-autoexit", "-autoload", WorstCasePluginName);
@@ -188,14 +194,17 @@ public class XEditCommandBuilderTests
         var result = _sut.BuildCommand(CreatePlugin("Plugin.esp"), GameType.SkyrimSe);
 
         // Assert
-        result.Should().BeNull("D-09/D-11 require MO2 command-build failure before process start when MO2 mode is enabled without a usable MO2 executable path");
+        result.Should()
+            .BeNull(
+                "D-09/D-11 require MO2 command-build failure before process start when MO2 mode is enabled without a usable MO2 executable path");
     }
 
     [Theory]
     [InlineData("Quote \"Case\".esp")]
     [InlineData("TrailingBackslash\\")]
     [InlineData("QuoteAndTrailingBackslash\\\"")]
-    public void FormatMo2NestedArgument_ShouldPreserveQuotesAndTrailingBackslashesThroughWindowsParsing(string nestedValue)
+    public void FormatMo2NestedArgument_ShouldPreserveQuotesAndTrailingBackslashesThroughWindowsParsing(
+        string nestedValue)
     {
         // Arrange / Act
         var formatted = InvokeFormatMo2NestedArgument(nestedValue);
@@ -217,7 +226,9 @@ public class XEditCommandBuilderTests
 
     private static string InvokeFormatMo2NestedArgument(string argument)
     {
-        var method = typeof(XEditCommandBuilder).GetMethod("FormatMo2NestedArgument", BindingFlags.NonPublic | BindingFlags.Static);
+        var method =
+            typeof(XEditCommandBuilder).GetMethod("FormatMo2NestedArgument",
+                BindingFlags.NonPublic | BindingFlags.Static);
         method.Should().NotBeNull("the MO2 nested formatter is the audited second parser-boundary escaping helper");
         return ((string?)method!.Invoke(null, [argument])).Should().NotBeNull().And.Subject;
     }
@@ -241,13 +252,9 @@ public class XEditCommandBuilderTests
             {
                 current.Append('\\', backslashes / 2);
                 if (backslashes % 2 == 0)
-                {
                     inQuotes = !inQuotes;
-                }
                 else
-                {
                     current.Append('"');
-                }
 
                 backslashes = 0;
                 continue;
@@ -271,10 +278,7 @@ public class XEditCommandBuilderTests
         }
 
         current.Append('\\', backslashes);
-        if (current.Length > 0)
-        {
-            args.Add(current.ToString());
-        }
+        if (current.Length > 0) args.Add(current.ToString());
 
         return args;
     }

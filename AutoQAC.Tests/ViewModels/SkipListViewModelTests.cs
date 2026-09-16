@@ -526,13 +526,9 @@ public sealed class SkipListViewModelTests
 
         // Assert
         if (expectedErrorContains == null)
-        {
             vm.ManualEntryError.Should().BeNull();
-        }
         else
-        {
             vm.ManualEntryError.Should().Contain(expectedErrorContains);
-        }
     }
 
     #endregion
@@ -560,15 +556,16 @@ public sealed class SkipListViewModelTests
         // Arrange - simulate user skip list is empty, but default skip list has base game ESMs
         var loadedPlugins = new List<PluginInfo>
         {
-            new() { FileName = "Skyrim.esm", FullPath = "Skyrim.esm" },  // In default skip list
-            new() { FileName = "Update.esm", FullPath = "Update.esm" },  // In default skip list
-            new() { FileName = "Dawnguard.esm", FullPath = "Dawnguard.esm" },  // In default skip list
-            new() { FileName = "UserMod.esp", FullPath = "UserMod.esp" },  // NOT in skip list
-            new() { FileName = "AnotherMod.esp", FullPath = "AnotherMod.esp" }  // NOT in skip list
+            new() { FileName = "Skyrim.esm", FullPath = "Skyrim.esm" }, // In default skip list
+            new() { FileName = "Update.esm", FullPath = "Update.esm" }, // In default skip list
+            new() { FileName = "Dawnguard.esm", FullPath = "Dawnguard.esm" }, // In default skip list
+            new() { FileName = "UserMod.esp", FullPath = "UserMod.esp" }, // NOT in skip list
+            new() { FileName = "AnotherMod.esp", FullPath = "AnotherMod.esp" } // NOT in skip list
         };
 
         var userSkipList = new List<string>(); // User hasn't added any custom entries
-        var mergedSkipList = new List<string> { "Skyrim.esm", "Update.esm", "Dawnguard.esm" }; // Defaults from AutoQAC Main.yaml
+        var mergedSkipList = new List<string>
+            { "Skyrim.esm", "Update.esm", "Dawnguard.esm" }; // Defaults from AutoQAC Main.yaml
 
         _stateSubject.OnNext(new AppState
         {
@@ -610,9 +607,9 @@ public sealed class SkipListViewModelTests
         // Arrange - user has some entries, default list has base game entries
         var loadedPlugins = new List<PluginInfo>
         {
-            new() { FileName = "Skyrim.esm", FullPath = "Skyrim.esm" },  // In default skip list
-            new() { FileName = "UserSkipped.esp", FullPath = "UserSkipped.esp" },  // In user skip list
-            new() { FileName = "CleanablePlugin.esp", FullPath = "CleanablePlugin.esp" }  // NOT in any skip list
+            new() { FileName = "Skyrim.esm", FullPath = "Skyrim.esm" }, // In default skip list
+            new() { FileName = "UserSkipped.esp", FullPath = "UserSkipped.esp" }, // In user skip list
+            new() { FileName = "CleanablePlugin.esp", FullPath = "CleanablePlugin.esp" } // NOT in any skip list
         };
 
         var userSkipList = new List<string> { "UserSkipped.esp" };

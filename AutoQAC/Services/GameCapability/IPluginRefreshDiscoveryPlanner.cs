@@ -7,18 +7,19 @@ using AutoQAC.Services.Plugin;
 namespace AutoQAC.Services.GameCapability;
 
 /// <summary>
-/// Creates resolved Plugin refresh discovery plans and exposes catalog facts without leaking discovery-mode decisions to callers.
+///     Creates resolved Plugin refresh discovery plans and exposes catalog facts without leaking discovery-mode decisions
+///     to callers.
 /// </summary>
 public interface IPluginRefreshDiscoveryPlanner
 {
     /// <summary>
-    /// Gets the games available for user selection in a stable display order.
+    ///     Gets the games available for user selection in a stable display order.
     /// </summary>
     /// <returns>All selectable games, excluding <see cref="GameType.Unknown" />.</returns>
     IReadOnlyList<GameType> GetAvailableGames();
 
     /// <summary>
-    /// Gets main-window affordances for the selected game and MO2 mode combination.
+    ///     Gets main-window affordances for the selected game and MO2 mode combination.
     /// </summary>
     /// <param name="gameType">Selected game.</param>
     /// <param name="mo2ModeEnabled">Whether MO2 mode is enabled.</param>
@@ -26,7 +27,7 @@ public interface IPluginRefreshDiscoveryPlanner
     PluginRefreshGameAffordance GetAffordance(GameType gameType, bool mo2ModeEnabled);
 
     /// <summary>
-    /// Creates a resolved plan for loading plugin rows in the requested game context.
+    ///     Creates a resolved plan for loading plugin rows in the requested game context.
     /// </summary>
     /// <param name="request">Selected game and optional direct-mode load-order path.</param>
     /// <param name="ct">Cancellation token.</param>
@@ -36,7 +37,7 @@ public interface IPluginRefreshDiscoveryPlanner
         CancellationToken ct = default);
 
     /// <summary>
-    /// Creates an opaque freshness token for the accepted Plugin refresh discovery plan.
+    ///     Creates an opaque freshness token for the accepted Plugin refresh discovery plan.
     /// </summary>
     /// <param name="plan">Accepted discovery plan.</param>
     /// <param name="ct">Cancellation token.</param>
@@ -46,7 +47,7 @@ public interface IPluginRefreshDiscoveryPlanner
         CancellationToken ct = default);
 
     /// <summary>
-    /// Checks whether current Discovery-affecting settings still match an accepted freshness token.
+    ///     Checks whether current Discovery-affecting settings still match an accepted freshness token.
     /// </summary>
     /// <param name="accepted">Opaque token stored with the accepted Plugin refresh publication.</param>
     /// <param name="current">Current AppState-owned context needed for freshness checking.</param>
@@ -58,7 +59,7 @@ public interface IPluginRefreshDiscoveryPlanner
         CancellationToken ct = default);
 
     /// <summary>
-    /// Loads plugin rows using a ready discovery plan.
+    ///     Loads plugin rows using a ready discovery plan.
     /// </summary>
     /// <param name="plan">Ready discovery plan returned by <see cref="CreatePlanAsync" />.</param>
     /// <param name="ct">Cancellation token.</param>

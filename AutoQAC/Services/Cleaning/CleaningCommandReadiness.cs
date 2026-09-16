@@ -6,7 +6,7 @@ using AutoQAC.Services.State;
 namespace AutoQAC.Services.Cleaning;
 
 /// <summary>
-/// Default Cleaning command readiness projection backed by Plugin refresh publication facts.
+///     Default Cleaning command readiness projection backed by Plugin refresh publication facts.
 /// </summary>
 internal sealed class CleaningCommandReadiness(
     IPluginRefreshModule pluginRefreshModule,
@@ -18,15 +18,10 @@ internal sealed class CleaningCommandReadiness(
     {
         var publication = await pluginRefreshModule.GetCurrentPublicationAsync(ct).ConfigureAwait(false);
         var state = stateService.CurrentState;
-        if (state.IsCleaning)
-        {
-            return CleaningCommandReadinessResult.Busy;
-        }
+        if (state.IsCleaning) return CleaningCommandReadinessResult.Busy;
 
         if (CleaningLaunchBlockerValidator.TryValidateSharedBlockers(publication, state, out var failure))
-        {
             return CleaningCommandReadinessResult.Blocked(failure);
-        }
 
         return CleaningCommandReadinessResult.Ready;
     }

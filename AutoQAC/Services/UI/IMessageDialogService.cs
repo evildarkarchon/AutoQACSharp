@@ -4,7 +4,7 @@ using AutoQAC.Models;
 namespace AutoQAC.Services.UI;
 
 /// <summary>
-/// Button options for message dialogs.
+///     Button options for message dialogs.
 /// </summary>
 public enum MessageDialogButtons
 {
@@ -16,7 +16,7 @@ public enum MessageDialogButtons
 }
 
 /// <summary>
-/// Icon type for message dialogs.
+///     Icon type for message dialogs.
 /// </summary>
 public enum MessageDialogIcon
 {
@@ -28,7 +28,7 @@ public enum MessageDialogIcon
 }
 
 /// <summary>
-/// Result from a message dialog.
+///     Result from a message dialog.
 /// </summary>
 public enum MessageDialogResult
 {
@@ -41,12 +41,12 @@ public enum MessageDialogResult
 }
 
 /// <summary>
-/// Service for displaying message dialogs to the user.
+///     Service for displaying message dialogs to the user.
 /// </summary>
 public interface IMessageDialogService
 {
     /// <summary>
-    /// Shows a message dialog with the specified options.
+    ///     Shows a message dialog with the specified options.
     /// </summary>
     Task<MessageDialogResult> ShowAsync(
         string title,
@@ -56,27 +56,27 @@ public interface IMessageDialogService
         string? details = null);
 
     /// <summary>
-    /// Shows an error dialog.
+    ///     Shows an error dialog.
     /// </summary>
     Task ShowErrorAsync(string title, string message, string? details = null);
 
     /// <summary>
-    /// Shows a warning dialog.
+    ///     Shows a warning dialog.
     /// </summary>
     Task ShowWarningAsync(string title, string message, string? details = null);
 
     /// <summary>
-    /// Shows an information dialog.
+    ///     Shows an information dialog.
     /// </summary>
     Task ShowInfoAsync(string title, string message);
 
     /// <summary>
-    /// Shows a confirmation dialog (Yes/No).
+    ///     Shows a confirmation dialog (Yes/No).
     /// </summary>
     Task<bool> ShowConfirmAsync(string title, string message);
 
     /// <summary>
-    /// Shows a two-choice dialog with custom button labels.
+    ///     Shows a two-choice dialog with custom button labels.
     /// </summary>
     /// <param name="title">Dialog title.</param>
     /// <param name="message">Dialog message shown to the user.</param>
@@ -89,12 +89,12 @@ public interface IMessageDialogService
         string secondaryButtonText, MessageDialogIcon icon = MessageDialogIcon.Question, string? details = null);
 
     /// <summary>
-    /// Shows a retry dialog.
+    ///     Shows a retry dialog.
     /// </summary>
     Task<bool> ShowRetryAsync(string title, string message, string? details = null);
 
     /// <summary>
-    /// Shows a backup failure dialog with three choices: Skip Plugin, Abort Session, or Continue Without Backup.
+    ///     Shows a backup failure dialog with three choices: Skip Plugin, Abort Session, or Continue Without Backup.
     /// </summary>
     /// <param name="pluginName">Name of the plugin that failed to back up.</param>
     /// <param name="errorMessage">Description of the backup failure.</param>

@@ -42,10 +42,7 @@ public sealed class ProcessExecutionServiceTests : IDisposable
 
     private static async Task WaitForCancellationAndThrowAsync(CancellationToken ct)
     {
-        if (ct.IsCancellationRequested)
-        {
-            ct.ThrowIfCancellationRequested();
-        }
+        if (ct.IsCancellationRequested) ct.ThrowIfCancellationRequested();
 
         var cancellationSignal = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         using var registration = ct.Register(() => cancellationSignal.TrySetResult(true));
@@ -185,7 +182,8 @@ public sealed class ProcessExecutionServiceTests : IDisposable
         startInfo.Arguments.Should().BeEmpty();
         startInfo.ArgumentList.Should().ContainSingle().Which.Should().Be("--info");
         startInfo.WorkingDirectory.Should().Be(Environment.CurrentDirectory);
-        startInfo.UseShellExecute.Should().BeTrue("logging changes must not mutate caller-supplied ProcessStartInfo values");
+        startInfo.UseShellExecute.Should()
+            .BeTrue("logging changes must not mutate caller-supplied ProcessStartInfo values");
         startInfo.CreateNoWindow.Should().BeTrue();
     }
 
@@ -193,7 +191,8 @@ public sealed class ProcessExecutionServiceTests : IDisposable
     /// Successful legacy-Arguments launches without plugin context must use a generic PID label instead of persisting launch text.
     /// </summary>
     [Fact]
-    public async Task ExecuteAsync_WhenProcessStartsWithLegacyArgumentsAndNoPluginName_ShouldTrackSafeExternalProcessLabel()
+    public async Task
+        ExecuteAsync_WhenProcessStartsWithLegacyArgumentsAndNoPluginName_ShouldTrackSafeExternalProcessLabel()
     {
         // Arrange
         using var service = CreateService(new RealProcessExitWaiter());
@@ -220,9 +219,7 @@ public sealed class ProcessExecutionServiceTests : IDisposable
             .Concat([legacyRawArguments, "--info"])
             .ToArray();
         foreach (var unsafeFragment in unsafeFragments)
-        {
             trackedAtStart[0].PluginName.Should().NotContain(unsafeFragment);
-        }
 
         AssertCapturedLogTextExcludes(unsafeFragments);
     }
@@ -379,8 +376,8 @@ public sealed class ProcessExecutionServiceTests : IDisposable
             .Returns(new ConfigPersistenceResult(
                 ConfigPersistenceStatusKind.NoOp,
                 ConfigPersistenceOperationKind.Flush,
-                Generation: 0,
-                Failure: null));
+                0,
+                null));
 
         // Default setup for GetSkipListAsync (with GameVariant parameter)
         configServiceMock.GetSkipListAsync(
@@ -406,7 +403,8 @@ public sealed class ProcessExecutionServiceTests : IDisposable
                 Arg.Any<string?>(),
                 Arg.Any<IProgress<BackupCopyProgress>?>(),
                 Arg.Any<CancellationToken>())
-            .Returns(new BackupRetentionCleanupResult(BackupOperationStatus.Complete, Array.Empty<BackupRetentionRowResult>()));
+            .Returns(new BackupRetentionCleanupResult(BackupOperationStatus.Complete,
+                Array.Empty<BackupRetentionRowResult>()));
 
         // Default setup for log file service (offset-based API)
         logFileServiceMock.GetLogFilePath(Arg.Any<string>(), Arg.Any<GameType>())
@@ -495,10 +493,13 @@ public sealed class ProcessExecutionServiceTests : IDisposable
         return (session, processServiceMock);
     }
 
-    private static string DotNetHostPath => RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "dotnet.exe" : "dotnet";
+    private static string DotNetHostPath =>
+        RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "dotnet.exe" : "dotnet";
 
-    private ProcessExecutionService CreateService(IProcessExitWaiter? processExitWaiter = null) =>
-        new(_mockLogger, _pidStore, _sessionProvider, processExitWaiter);
+    private ProcessExecutionService CreateService(IProcessExitWaiter? processExitWaiter = null)
+    {
+        return new ProcessExecutionService(_mockLogger, _pidStore, _sessionProvider, processExitWaiter);
+    }
 
     /// <summary>
     /// Asserts that captured log message templates and structured arguments did not receive unsafe launch details.
@@ -511,23 +512,25 @@ public sealed class ProcessExecutionServiceTests : IDisposable
                 .Where(argument => argument is not Exception)
                 .Select(argument => argument?.ToString() ?? string.Empty));
 
-        foreach (var unsafeFragment in unsafeFragments)
-        {
-            capturedText.Should().NotContain(unsafeFragment);
-        }
+        foreach (var unsafeFragment in unsafeFragments) capturedText.Should().NotContain(unsafeFragment);
     }
 
     private sealed class RealProcessExitWaiter : IProcessExitWaiter
     {
-        public Task WaitForExitAsync(Process process, CancellationToken ct) => process.WaitForExitAsync(ct);
+        public Task WaitForExitAsync(Process process, CancellationToken ct)
+        {
+            return process.WaitForExitAsync(ct);
+        }
     }
 
     private sealed class InMemoryPidStore : IPidStore
     {
         private IReadOnlyList<TrackedProcess> _entries = [];
 
-        public Task<IReadOnlyList<TrackedProcess>> LoadAsync(CancellationToken ct = default) =>
-            Task.FromResult(_entries);
+        public Task<IReadOnlyList<TrackedProcess>> LoadAsync(CancellationToken ct = default)
+        {
+            return Task.FromResult(_entries);
+        }
 
         public Task UpdateAsync(
             Func<IReadOnlyList<TrackedProcess>, IReadOnlyList<TrackedProcess>> update,
@@ -602,8 +605,8 @@ public sealed class ProcessExecutionServiceTests : IDisposable
             .Returns(new ConfigPersistenceResult(
                 ConfigPersistenceStatusKind.NoOp,
                 ConfigPersistenceOperationKind.Flush,
-                Generation: 0,
-                Failure: null));
+                0,
+                null));
         configServiceMock.GetSkipListAsync(
                 Arg.Any<GameType>(),
                 Arg.Any<GameVariant>(),
@@ -636,7 +639,8 @@ public sealed class ProcessExecutionServiceTests : IDisposable
                 Arg.Any<string?>(),
                 Arg.Any<IProgress<BackupCopyProgress>?>(),
                 Arg.Any<CancellationToken>())
-            .Returns(new BackupRetentionCleanupResult(BackupOperationStatus.Complete, Array.Empty<BackupRetentionRowResult>()));
+            .Returns(new BackupRetentionCleanupResult(BackupOperationStatus.Complete,
+                Array.Empty<BackupRetentionRowResult>()));
 
         var plugins = new List<PluginInfo>
         {

@@ -7,7 +7,7 @@ using AutoQAC.Services.Cleaning;
 namespace AutoQAC.Services.UI;
 
 /// <summary>
-/// Uses the application dialog service to collect user decisions required by a Cleaning session.
+///     Uses the application dialog service to collect user decisions required by a Cleaning session.
 /// </summary>
 public sealed class CleaningSessionDialogDecisionAdapter(IMessageDialogService messageDialog)
     : ICleaningSessionDecisionAdapter

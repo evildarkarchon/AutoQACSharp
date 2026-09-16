@@ -140,7 +140,8 @@ public sealed class SettingsViewModelTests
             null,
             5));
         fixture.ConfigService.FlushPendingSavesAsync(Arg.Any<CancellationToken>()).Returns(
-            new ConfigPersistenceResult(ConfigPersistenceStatusKind.Success, ConfigPersistenceOperationKind.Flush, 6, null));
+            new ConfigPersistenceResult(ConfigPersistenceStatusKind.Success, ConfigPersistenceOperationKind.Flush, 6,
+                null));
 
         await vm.SaveCommand.ExecuteAsync(null);
 
@@ -165,7 +166,8 @@ public sealed class SettingsViewModelTests
             null,
             7);
         fixture.ConfigService.FlushPendingSavesAsync(Arg.Any<CancellationToken>()).Returns(
-            new ConfigPersistenceResult(ConfigPersistenceStatusKind.Failed, ConfigPersistenceOperationKind.Flush, 7, failure));
+            new ConfigPersistenceResult(ConfigPersistenceStatusKind.Failed, ConfigPersistenceOperationKind.Flush, 7,
+                failure));
 
         await vm.SaveCommand.ExecuteAsync(null);
 
@@ -229,7 +231,7 @@ public sealed class SettingsViewModelTests
     [Fact]
     public void Failure_Subscription_DisposedOnDispose()
     {
-        var fixture = CreateFixture(useRecordingObservables: true);
+        var fixture = CreateFixture(true);
         using var vm = fixture.CreateViewModel();
 
         vm.Dispose();
@@ -309,7 +311,8 @@ public sealed class SettingsViewModelTests
         configService.SaveUserConfigAsync(Arg.Any<UserConfiguration>(), Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
         configService.FlushPendingSavesAsync(Arg.Any<CancellationToken>()).Returns(
-            new ConfigPersistenceResult(ConfigPersistenceStatusKind.Success, ConfigPersistenceOperationKind.Flush, 1, null));
+            new ConfigPersistenceResult(ConfigPersistenceStatusKind.Success, ConfigPersistenceOperationKind.Flush, 1,
+                null));
 
         return new Fixture(
             configService,
@@ -323,21 +326,24 @@ public sealed class SettingsViewModelTests
             recordingUserConfigurationChanged);
     }
 
-    private static UserConfiguration CreateConfig() => new()
+    private static UserConfiguration CreateConfig()
     {
-        Settings = new AutoQacSettings
+        return new UserConfiguration
         {
-            JournalExpiration = 30,
-            CleaningTimeout = 300,
-            CpuThreshold = 50,
-            Mo2Mode = false
-        },
-        XEdit = new XEditConfig(),
-        ModOrganizer = new ModOrganizerConfig(),
-        LoadOrder = new LoadOrderConfig(),
-        LogRetention = new RetentionSettings(),
-        Backup = new BackupSettings()
-    };
+            Settings = new AutoQacSettings
+            {
+                JournalExpiration = 30,
+                CleaningTimeout = 300,
+                CpuThreshold = 50,
+                Mo2Mode = false
+            },
+            XEdit = new XEditConfig(),
+            ModOrganizer = new ModOrganizerConfig(),
+            LoadOrder = new LoadOrderConfig(),
+            LogRetention = new RetentionSettings(),
+            Backup = new BackupSettings()
+        };
+    }
 
     private static void ApplyValidEditableValues(SettingsViewModel vm)
     {
@@ -355,16 +361,10 @@ public sealed class SettingsViewModelTests
         while (!string.IsNullOrEmpty(directory))
         {
             var candidate = Path.Combine(new[] { directory }.Concat(segments).ToArray());
-            if (File.Exists(candidate))
-            {
-                return candidate;
-            }
+            if (File.Exists(candidate)) return candidate;
 
             var parent = Directory.GetParent(directory);
-            if (parent is null)
-            {
-                break;
-            }
+            if (parent is null) break;
 
             directory = parent.FullName;
         }
@@ -383,21 +383,33 @@ public sealed class SettingsViewModelTests
         RecordingObservable<ConfigPersistenceResult>? RecordingResults,
         RecordingObservable<UserConfiguration>? RecordingUserConfigurationChanged)
     {
-        public SettingsViewModel CreateViewModel() => new(ConfigService, Logger, Dispatcher);
+        public SettingsViewModel CreateViewModel()
+        {
+            return new SettingsViewModel(ConfigService, Logger, Dispatcher);
+        }
     }
 
     private sealed class SynchronousUiDispatcher : IUiDispatcher
     {
-        public void Post(Action action) => action();
+        public void Post(Action action)
+        {
+            action();
+        }
 
-        public Task InvokeAsync(Func<Task> action) => action();
+        public Task InvokeAsync(Func<Task> action)
+        {
+            return action();
+        }
     }
 
     private sealed class RecordingObservable<T> : IObservable<T>
     {
         public int DisposeCount { get; private set; }
 
-        public IDisposable Subscribe(IObserver<T> observer) => new RecordingDisposable(this);
+        public IDisposable Subscribe(IObserver<T> observer)
+        {
+            return new RecordingDisposable(this);
+        }
 
         private sealed class RecordingDisposable : IDisposable
         {
@@ -411,10 +423,7 @@ public sealed class SettingsViewModelTests
 
             public void Dispose()
             {
-                if (_disposed)
-                {
-                    return;
-                }
+                if (_disposed) return;
 
                 _disposed = true;
                 _owner.DisposeCount++;

@@ -6,15 +6,15 @@ using QueryPlugins.Models;
 namespace QueryPlugins.Detectors.Games;
 
 /// <summary>
-/// Game-specific detector for Starfield.
-/// Detects deleted placed references and deleted navigation mesh records.
+///     Game-specific detector for Starfield.
+///     Detects deleted placed references and deleted navigation mesh records.
 /// </summary>
 public sealed class StarfieldDetector : IGameSpecificDetector
 {
     /// <inheritdoc />
     public IReadOnlySet<GameRelease> SupportedReleases { get; } = new HashSet<GameRelease>
     {
-        GameRelease.Starfield,
+        GameRelease.Starfield
     };
 
     /// <inheritdoc />
@@ -26,7 +26,11 @@ public sealed class StarfieldDetector : IGameSpecificDetector
                 nameof(plugin));
 
         return starfieldMod.EnumerateMajorRecords<IPlacedGetter>()
-            .Where(placed => { ct.ThrowIfCancellationRequested(); return placed.IsDeleted; })
+            .Where(placed =>
+            {
+                ct.ThrowIfCancellationRequested();
+                return placed.IsDeleted;
+            })
             .Select(placed => new PluginIssue(
                 placed.FormKey,
                 placed.EditorID,
@@ -42,7 +46,11 @@ public sealed class StarfieldDetector : IGameSpecificDetector
                 nameof(plugin));
 
         return starfieldMod.EnumerateMajorRecords<INavigationMeshGetter>()
-            .Where(navm => { ct.ThrowIfCancellationRequested(); return navm.IsDeleted; })
+            .Where(navm =>
+            {
+                ct.ThrowIfCancellationRequested();
+                return navm.IsDeleted;
+            })
             .Select(navm => new PluginIssue(
                 navm.FormKey,
                 navm.EditorID,

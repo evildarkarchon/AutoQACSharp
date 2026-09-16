@@ -10,7 +10,7 @@ using AutoQAC.Services.GameDetection;
 namespace AutoQAC.Services.Plugin;
 
 /// <summary>
-/// Variant-aware Skip list policy shared by Plugin refresh and Cleaning session preflight.
+///     Variant-aware Skip list policy shared by Plugin refresh and Cleaning session preflight.
 /// </summary>
 public sealed class SkipListPolicy(
     IConfigurationService configurationService,
@@ -47,8 +47,8 @@ public sealed class SkipListPolicy(
 
             return new SkipListPluginDecision(
                 enrichedPlugin,
-                IsInEffectiveSkipList: isInEffectiveSkipList,
-                ShouldSkipByPolicy: isInEffectiveSkipList);
+                isInEffectiveSkipList,
+                isInEffectiveSkipList);
         }).ToList();
 
         return new SkipListEvaluation(variant, decisions);

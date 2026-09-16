@@ -21,8 +21,13 @@ public sealed partial class RestoreViewModel(
     : ViewModelBase, IDisposable
 {
     private string? _backupRoot;
-    private string? _trustedRestoreRoot;
     private CancellationTokenSource? _restoreCts;
+    private string? _trustedRestoreRoot;
+
+    /// <summary>Design-time constructor.</summary>
+    public RestoreViewModel() : this(null!, null!, null!, new SynchronousFallbackDispatcher())
+    {
+    }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasSessions))]
@@ -68,14 +73,14 @@ public sealed partial class RestoreViewModel(
 
     public bool HasSessions => Sessions.Count > 0;
 
-    public event EventHandler? CloseRequested;
+    private bool HasTrustedRestoreRoot => !string.IsNullOrWhiteSpace(_trustedRestoreRoot);
 
-    /// <summary>Design-time constructor.</summary>
-    public RestoreViewModel() : this(null!, null!, null!, new SynchronousFallbackDispatcher())
+    public void Dispose()
     {
+        DisposeRestoreCancellationSource(true);
     }
 
-    private bool HasTrustedRestoreRoot => !string.IsNullOrWhiteSpace(_trustedRestoreRoot);
+    public event EventHandler? CloseRequested;
 
     partial void OnSelectedSessionChanged(BackupSession? value)
     {
@@ -84,10 +89,7 @@ public sealed partial class RestoreViewModel(
 
         if (value != null)
         {
-            foreach (var plugin in value.Plugins)
-            {
-                SelectedSessionPlugins.Add(plugin);
-            }
+            foreach (var plugin in value.Plugins) SelectedSessionPlugins.Add(plugin);
 
             StatusText = $"Session: {FormatSessionTimestamp(value.Timestamp)} - {value.Plugins.Count} plugin(s)";
         }
@@ -98,7 +100,7 @@ public sealed partial class RestoreViewModel(
     }
 
     /// <summary>
-    /// Sets the backup root path and triggers loading sessions. Called from the view before display.
+    ///     Sets the backup root path and triggers loading sessions. Called from the view before display.
     /// </summary>
     public async Task LoadSessionsAsync(string? dataFolderPath)
     {
@@ -123,7 +125,10 @@ public sealed partial class RestoreViewModel(
         await LoadSessions();
     }
 
-    private bool CanLoadSessions() => !IsRestoreActive;
+    private bool CanLoadSessions()
+    {
+        return !IsRestoreActive;
+    }
 
     [RelayCommand(CanExecute = nameof(CanLoadSessions))]
     private async Task LoadSessions()
@@ -142,10 +147,7 @@ public sealed partial class RestoreViewModel(
             var sessions = await backupService.GetBackupSessionsAsync(_backupRoot);
 
             Sessions.Clear();
-            foreach (var session in sessions)
-            {
-                Sessions.Add(session);
-            }
+            foreach (var session in sessions) Sessions.Add(session);
 
             OnPropertyChanged(nameof(HasSessions));
 
@@ -164,7 +166,10 @@ public sealed partial class RestoreViewModel(
         }
     }
 
-    private bool CanRestorePlugin() => SelectedPlugin != null && HasTrustedRestoreRoot && !IsRestoreActive;
+    private bool CanRestorePlugin()
+    {
+        return SelectedPlugin != null && HasTrustedRestoreRoot && !IsRestoreActive;
+    }
 
     [RelayCommand(CanExecute = nameof(CanRestorePlugin))]
     private async Task RestorePluginAsync()
@@ -210,12 +215,15 @@ public sealed partial class RestoreViewModel(
         }
         finally
         {
-            DisposeRestoreCancellationSource(cancel: false);
+            DisposeRestoreCancellationSource(false);
             IsRestoreActive = false;
         }
     }
 
-    private bool CanRestoreAll() => SelectedSession != null && HasTrustedRestoreRoot && !IsRestoreActive;
+    private bool CanRestoreAll()
+    {
+        return SelectedSession != null && HasTrustedRestoreRoot && !IsRestoreActive;
+    }
 
     [RelayCommand(CanExecute = nameof(CanRestoreAll))]
     private async Task RestoreAllAsync()
@@ -260,12 +268,15 @@ public sealed partial class RestoreViewModel(
         }
         finally
         {
-            DisposeRestoreCancellationSource(cancel: false);
+            DisposeRestoreCancellationSource(false);
             IsRestoreActive = false;
         }
     }
 
-    private bool CanCancelRestore() => IsRestoreActive;
+    private bool CanCancelRestore()
+    {
+        return IsRestoreActive;
+    }
 
     [RelayCommand(CanExecute = nameof(CanCancelRestore))]
     private void CancelRestore()
@@ -276,17 +287,19 @@ public sealed partial class RestoreViewModel(
     }
 
     /// <summary>
-    /// Plan 07-13: gates DeleteSessionCommand on a non-null/non-whitespace _backupRoot AND a
-    /// loaded trusted restore root, unifying Delete Session safety with Restore Selected/All
-    /// gating from Plan 07-11. _backupRoot is a private field rather than an [ObservableProperty],
-    /// so callers must invoke <see cref="System.Windows.Input.ICommand"/> NotifyCanExecuteChanged
-    /// after mutating it (see <see cref="LoadSessionsAsync"/>).
+    ///     Plan 07-13: gates DeleteSessionCommand on a non-null/non-whitespace _backupRoot AND a
+    ///     loaded trusted restore root, unifying Delete Session safety with Restore Selected/All
+    ///     gating from Plan 07-11. _backupRoot is a private field rather than an [ObservableProperty],
+    ///     so callers must invoke <see cref="System.Windows.Input.ICommand" /> NotifyCanExecuteChanged
+    ///     after mutating it (see <see cref="LoadSessionsAsync" />).
     /// </summary>
-    private bool CanDeleteSession() =>
-        SelectedSession != null &&
-        !string.IsNullOrWhiteSpace(_backupRoot) &&
-        HasTrustedRestoreRoot &&
-        !IsRestoreActive;
+    private bool CanDeleteSession()
+    {
+        return SelectedSession != null &&
+               !string.IsNullOrWhiteSpace(_backupRoot) &&
+               HasTrustedRestoreRoot &&
+               !IsRestoreActive;
+    }
 
     [RelayCommand(CanExecute = nameof(CanDeleteSession))]
     private async Task DeleteSessionAsync()
@@ -347,10 +360,13 @@ public sealed partial class RestoreViewModel(
     }
 
     [RelayCommand]
-    private void Close() => CloseRequested?.Invoke(this, EventArgs.Empty);
+    private void Close()
+    {
+        CloseRequested?.Invoke(this, EventArgs.Empty);
+    }
 
     /// <summary>
-    /// Clears the inline restore result state before a new restore operation starts.
+    ///     Clears the inline restore result state before a new restore operation starts.
     /// </summary>
     private void ClearRestoreResult()
     {
@@ -364,18 +380,18 @@ public sealed partial class RestoreViewModel(
     }
 
     /// <summary>
-    /// Creates and owns the cancellation source for exactly one active restore operation.
+    ///     Creates and owns the cancellation source for exactly one active restore operation.
     /// </summary>
     /// <returns>The newly created cancellation source.</returns>
     private CancellationTokenSource CreateRestoreCancellationSource()
     {
-        DisposeRestoreCancellationSource(cancel: false);
+        DisposeRestoreCancellationSource(false);
         _restoreCts = new CancellationTokenSource();
         return _restoreCts;
     }
 
     /// <summary>
-    /// Disposes the active restore cancellation source and optionally requests cancellation first.
+    ///     Disposes the active restore cancellation source and optionally requests cancellation first.
     /// </summary>
     /// <param name="cancel">True when disposal should also cancel active restore work.</param>
     private void DisposeRestoreCancellationSource(bool cancel)
@@ -386,25 +402,24 @@ public sealed partial class RestoreViewModel(
         if (cts == null)
             return;
 
-        if (cancel)
-        {
-            cts.Cancel();
-        }
+        if (cancel) cts.Cancel();
 
         cts.Dispose();
     }
 
     /// <summary>
-    /// Builds a progress reporter that translates byte-level service progress into restore-window text.
+    ///     Builds a progress reporter that translates byte-level service progress into restore-window text.
     /// </summary>
     /// <param name="plugins">Plugins included in the current restore operation.</param>
     /// <returns>A progress reporter safe for the backup service to call during restore copies.</returns>
-    private IProgress<BackupCopyProgress> CreateRestoreProgressReporter(IReadOnlyList<BackupPluginEntry> plugins) =>
-        new RestoreProgressReporter(progress =>
+    private IProgress<BackupCopyProgress> CreateRestoreProgressReporter(IReadOnlyList<BackupPluginEntry> plugins)
+    {
+        return new RestoreProgressReporter(progress =>
             uiDispatcher.Post(() => UpdateRestoreProgress(progress, plugins)));
+    }
 
     /// <summary>
-    /// Updates bindable progress fields with plugin position and decimal byte counts when available.
+    ///     Updates bindable progress fields with plugin position and decimal byte counts when available.
     /// </summary>
     /// <param name="progress">Latest copy progress from the backup service.</param>
     /// <param name="plugins">Plugins included in the active restore operation.</param>
@@ -425,40 +440,15 @@ public sealed partial class RestoreViewModel(
         var text = $"Restoring {currentCount} / {plugins.Count} plugins";
 
         if (progress.TotalBytes is { } totalBytes)
-        {
             text +=
                 $" — {BackupProgressTextFormatter.FormatBytes(progress.BytesCopied)} / {BackupProgressTextFormatter.FormatBytes(totalBytes)}";
-        }
 
         RestoreProgressText = text;
     }
 
     /// <summary>
-    /// Marshals service progress through the UI dispatcher before applying it to bindable state.
-    /// </summary>
-    private sealed class RestoreProgressReporter(Action<BackupCopyProgress> onProgress) : IProgress<BackupCopyProgress>
-    {
-        /// <summary>
-        /// Applies a progress update to the owning ViewModel.
-        /// </summary>
-        /// <param name="value">Progress value reported by the backup service.</param>
-        public void Report(BackupCopyProgress value) => onProgress(value);
-    }
-
-    /// <summary>
-    /// Design-time fallback dispatcher used only when the XAML designer invokes the parameterless constructor.
-    /// </summary>
-    private sealed class SynchronousFallbackDispatcher : IUiDispatcher
-    {
-        /// <inheritdoc />
-        public void Post(Action action) => action();
-
-        /// <inheritdoc />
-        public Task InvokeAsync(Func<Task> action) => action();
-    }
-
-    /// <summary>
-    /// Copies a structured restore service result into bindable inline result properties without exposing raw exception details.
+    ///     Copies a structured restore service result into bindable inline result properties without exposing raw exception
+    ///     details.
     /// </summary>
     /// <param name="result">Structured restore result returned by the backup service.</param>
     private void ApplyRestoreResult(BackupRestoreResult result)
@@ -473,10 +463,7 @@ public sealed partial class RestoreViewModel(
         };
 
         RestoreResults.Clear();
-        foreach (var row in result.Rows)
-        {
-            RestoreResults.Add(row);
-        }
+        foreach (var row in result.Rows) RestoreResults.Add(row);
 
         RestoreSummaryText = BuildRestoreSummaryText(result);
         StatusText = RestoreSummaryText;
@@ -484,7 +471,7 @@ public sealed partial class RestoreViewModel(
     }
 
     /// <summary>
-    /// Builds concise restore summary copy for the inline result panel.
+    ///     Builds concise restore summary copy for the inline result panel.
     /// </summary>
     /// <param name="result">Structured restore result to summarize.</param>
     /// <returns>User-facing summary text without raw file paths or exception details.</returns>
@@ -506,14 +493,45 @@ public sealed partial class RestoreViewModel(
     }
 
     /// <summary>
-    /// Formats session timestamps for restore confirmation copy so tests and dialogs use one consistent value.
+    ///     Formats session timestamps for restore confirmation copy so tests and dialogs use one consistent value.
     /// </summary>
     /// <param name="timestamp">Backup session timestamp.</param>
     /// <returns>Short local timestamp suitable for confirmation dialogs.</returns>
-    private static string FormatSessionTimestamp(DateTime timestamp) => timestamp.ToString("MMM d, yyyy h:mm tt");
-
-    public void Dispose()
+    private static string FormatSessionTimestamp(DateTime timestamp)
     {
-        DisposeRestoreCancellationSource(cancel: true);
+        return timestamp.ToString("MMM d, yyyy h:mm tt");
+    }
+
+    /// <summary>
+    ///     Marshals service progress through the UI dispatcher before applying it to bindable state.
+    /// </summary>
+    private sealed class RestoreProgressReporter(Action<BackupCopyProgress> onProgress) : IProgress<BackupCopyProgress>
+    {
+        /// <summary>
+        ///     Applies a progress update to the owning ViewModel.
+        /// </summary>
+        /// <param name="value">Progress value reported by the backup service.</param>
+        public void Report(BackupCopyProgress value)
+        {
+            onProgress(value);
+        }
+    }
+
+    /// <summary>
+    ///     Design-time fallback dispatcher used only when the XAML designer invokes the parameterless constructor.
+    /// </summary>
+    private sealed class SynchronousFallbackDispatcher : IUiDispatcher
+    {
+        /// <inheritdoc />
+        public void Post(Action action)
+        {
+            action();
+        }
+
+        /// <inheritdoc />
+        public Task InvokeAsync(Func<Task> action)
+        {
+            return action();
+        }
     }
 }

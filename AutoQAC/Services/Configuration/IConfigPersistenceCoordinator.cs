@@ -7,6 +7,13 @@ namespace AutoQAC.Services.Configuration;
 
 public interface IConfigPersistenceCoordinator
 {
+    IObservable<ConfigPersistenceFailure> Failures { get; }
+
+    IObservable<ConfigPersistenceResult> PersistenceResults { get; }
+
+    IObservable<UserConfiguration> ConfigurationAccepted { get; }
+
+    ConfigPersistenceFailure? LastFailure { get; }
     Task StartAsync(CancellationToken ct = default);
 
     Task StopAsync(CancellationToken ct = default);
@@ -20,12 +27,4 @@ public interface IConfigPersistenceCoordinator
     Task<ConfigPersistenceResult> ReloadFromDiskAsync(CancellationToken ct = default);
 
     void NotifySettingsFileChanged(ConfigFileSignalKind kind);
-
-    IObservable<ConfigPersistenceFailure> Failures { get; }
-
-    IObservable<ConfigPersistenceResult> PersistenceResults { get; }
-
-    IObservable<UserConfiguration> ConfigurationAccepted { get; }
-
-    ConfigPersistenceFailure? LastFailure { get; }
 }

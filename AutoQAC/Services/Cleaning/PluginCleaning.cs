@@ -5,7 +5,7 @@ using AutoQAC.Models;
 namespace AutoQAC.Services.Cleaning;
 
 /// <summary>
-/// Owns the per-plugin Plugin cleaning attempt inside a Cleaning session.
+///     Owns the per-plugin Plugin cleaning attempt inside a Cleaning session.
 /// </summary>
 public sealed class PluginCleaning(
     IPluginCleaningRunner runner,

@@ -17,14 +17,14 @@ public sealed class PluginRefreshPublicationStoreTests
         var token = CreateFreshnessToken();
 
         var snapshot = sut.PublishAcceptedPublication(
-            generation: 1,
+            1,
             GameType.SkyrimSe,
             plan,
             token,
             plan.Configuration,
             [
                 Published("Visible.esp"),
-                Published("Hidden.esp", isVisible: false, isSkippedByPolicy: true)
+                Published("Hidden.esp", false, isSkippedByPolicy: true)
             ],
             new PluginRefreshActivity(false, false),
             "Loaded",
@@ -47,7 +47,7 @@ public sealed class PluginRefreshPublicationStoreTests
         var plan = CreatePlan();
 
         sut.PublishAcceptedPublication(
-            generation: 1,
+            1,
             GameType.SkyrimSe,
             plan,
             CreateFreshnessToken(),
@@ -69,7 +69,7 @@ public sealed class PluginRefreshPublicationStoreTests
         using var sut = CreateStore(stateService);
         var plan = CreatePlan();
         sut.PublishAcceptedPublication(
-            generation: 1,
+            1,
             GameType.SkyrimSe,
             plan,
             CreateFreshnessToken(),
@@ -112,7 +112,7 @@ public sealed class PluginRefreshPublicationStoreTests
         var plan = CreatePlan();
         var token = CreateFreshnessToken();
         sut.PublishAcceptedPublication(
-            generation: 1,
+            1,
             GameType.SkyrimSe,
             plan,
             token,
@@ -145,9 +145,9 @@ public sealed class PluginRefreshPublicationStoreTests
     {
         var stateService = new StateService();
         using var sut = CreateStore(stateService);
-        var plan = CreatePlan(canAttemptIssueApproximation: true);
+        var plan = CreatePlan(true);
         sut.PublishAcceptedPublication(
-            generation: 1,
+            1,
             GameType.SkyrimSe,
             plan,
             CreateFreshnessToken(),
@@ -185,7 +185,7 @@ public sealed class PluginRefreshPublicationStoreTests
         using var sut = CreateStore(stateService);
         var plan = CreatePlan();
         sut.PublishAcceptedPublication(
-            generation: 1,
+            1,
             GameType.SkyrimSe,
             plan,
             CreateFreshnessToken(),
@@ -206,7 +206,7 @@ public sealed class PluginRefreshPublicationStoreTests
 
         var target = targets.Targets.Single(key => key.FileName == "Target.esp");
         var matched = sut.TryPublishInitialApproximationResult(
-            generation: 1,
+            1,
             targetLookup,
             new PluginIssueApproximationModuleResult(
                 target,
@@ -215,7 +215,7 @@ public sealed class PluginRefreshPublicationStoreTests
             Affordance(),
             () => true);
         var nonTargetMatched = sut.TryPublishInitialApproximationResult(
-            generation: 1,
+            1,
             targetLookup,
             new PluginIssueApproximationModuleResult(
                 new PluginRefreshRowKey("Other.esp", @"C:\Data\Other.esp"),
@@ -236,7 +236,7 @@ public sealed class PluginRefreshPublicationStoreTests
             plugin.Approximation.Status == PluginIssueApproximationStatus.Available);
 
         sut.TryFinalizeInitialApproximation(
-            generation: 1,
+            1,
             "Refreshed 1 plugin approximations.",
             Affordance(),
             () => true,
@@ -259,16 +259,18 @@ public sealed class PluginRefreshPublicationStoreTests
 
     private static PluginRefreshPublicationStore CreateStore(
         StateService stateService,
-        bool canAttemptIssueApproximation = true) =>
-        new(
+        bool canAttemptIssueApproximation = true)
+    {
+        return new PluginRefreshPublicationStore(
             new PluginRefreshAppStateMirror(stateService),
             new PluginRefreshCommandAvailabilityPolicy(),
             new PluginRefreshGameAffordance(
                 stateService.CurrentState.CurrentGameType,
-                IsMutagenSupported: true,
-                RequiresLoadOrderFile: false,
-                CanAttemptIssueApproximation: canAttemptIssueApproximation &&
-                                             stateService.CurrentState.CurrentGameType != GameType.Unknown));
+                true,
+                false,
+                canAttemptIssueApproximation &&
+                stateService.CurrentState.CurrentGameType != GameType.Unknown));
+    }
 
     private static StateService CreateStateWithRows(params PluginInfo[] rows)
     {
@@ -281,52 +283,56 @@ public sealed class PluginRefreshPublicationStoreTests
     private static PluginRefreshDiscoveryPlan CreatePlan(bool canAttemptIssueApproximation = true)
     {
         var configuration = new PluginRefreshConfigurationProjection(
-            LoadOrderPath: @"C:\SkyrimSe\plugins.txt",
-            GameDataFolder: @"C:\SkyrimSe\Data",
-            HasGameDataFolderOverride: true,
-            XEditPath: null,
-            Mo2Path: null,
-            Mo2ModeEnabled: false,
-            Mo2InstancePath: null,
-            IsMo2InstanceOverride: false,
-            IsMo2InstanceValid: null,
-            AvailableProfiles: [],
-            SelectedProfile: null,
-            CleaningTimeout: 300);
+            @"C:\SkyrimSe\plugins.txt",
+            @"C:\SkyrimSe\Data",
+            true,
+            null,
+            null,
+            false,
+            null,
+            false,
+            null,
+            [],
+            null,
+            300);
 
         return new PluginRefreshDiscoveryPlan(
             GameType.SkyrimSe,
             PluginRefreshDiscoveryMode.DirectLoadOrderFile,
             configuration,
-            DisableSkipLists: false,
-            CanAttemptIssueApproximation: canAttemptIssueApproximation,
-            DataFolderPath: @"C:\SkyrimSe\Data",
-            LoadOrderPath: @"C:\SkyrimSe\plugins.txt",
-            Mo2LoadOrderPath: null,
-            Mo2PathMap: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
-            Mo2BaseDataFolder: null);
+            false,
+            canAttemptIssueApproximation,
+            @"C:\SkyrimSe\Data",
+            @"C:\SkyrimSe\plugins.txt",
+            null,
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+            null);
     }
 
-    private static PluginRefreshDiscoveryFreshnessToken CreateFreshnessToken() =>
-        new(
+    private static PluginRefreshDiscoveryFreshnessToken CreateFreshnessToken()
+    {
+        return new PluginRefreshDiscoveryFreshnessToken(
             GameType.SkyrimSe,
-            mo2ModeEnabled: false,
-            mo2ExecutablePath: null,
-            loadOrderPath: @"C:\SkyrimSe\plugins.txt",
-            gameDataFolderOverride: null,
-            mo2InstancePath: null,
-            mo2Profile: null,
-            disableSkipLists: false,
-            skipLists: new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase));
+            false,
+            null,
+            @"C:\SkyrimSe\plugins.txt",
+            null,
+            null,
+            null,
+            false,
+            new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase));
+    }
 
     private static PluginRefreshGameAffordance Affordance(
         GameType gameType = GameType.SkyrimSe,
-        bool canAttemptIssueApproximation = true) =>
-        new(
+        bool canAttemptIssueApproximation = true)
+    {
+        return new PluginRefreshGameAffordance(
             gameType,
-            IsMutagenSupported: true,
-            RequiresLoadOrderFile: false,
-            CanAttemptIssueApproximation: canAttemptIssueApproximation && gameType != GameType.Unknown);
+            true,
+            false,
+            canAttemptIssueApproximation && gameType != GameType.Unknown);
+    }
 
     private static PluginRefreshPublishedRow Published(
         string fileName,
@@ -335,7 +341,7 @@ public sealed class PluginRefreshPublicationStoreTests
         bool isSkippedByPolicy = false,
         PluginIssueApproximation? approximation = null)
     {
-        var plugin = Plugin(fileName, approximation: approximation) with
+        var plugin = Plugin(fileName, approximation) with
         {
             IsInSkipList = isSkippedByPolicy
         };
@@ -349,13 +355,14 @@ public sealed class PluginRefreshPublicationStoreTests
 
     private static PluginInfo Plugin(
         string fileName,
-        PluginIssueApproximation? approximation = null) =>
-        new()
+        PluginIssueApproximation? approximation = null)
+    {
+        return new PluginInfo
         {
             FileName = fileName,
             FullPath = $@"C:\Data\{fileName}",
             DetectedGameType = GameType.SkyrimSe,
             Approximation = approximation ?? PluginIssueApproximation.Unavailable
         };
-
+    }
 }

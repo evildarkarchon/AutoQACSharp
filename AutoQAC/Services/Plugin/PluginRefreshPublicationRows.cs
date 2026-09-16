@@ -7,12 +7,12 @@ using AutoQAC.Models;
 namespace AutoQAC.Services.Plugin;
 
 /// <summary>
-/// Pure row transformer for Plugin refresh publications.
+///     Pure row transformer for Plugin refresh publications.
 /// </summary>
 internal static class PluginRefreshPublicationRows
 {
     /// <summary>
-    /// Creates the authoritative row set for an accepted Plugin refresh publication.
+    ///     Creates the authoritative row set for an accepted Plugin refresh publication.
     /// </summary>
     /// <param name="decisions">Skip list decisions produced for the discovered plugins.</param>
     /// <param name="initialApproximation">Initial approximation state to stamp onto every row.</param>
@@ -28,9 +28,9 @@ internal static class PluginRefreshPublicationRows
                 var plugin = decision.Plugin with { Approximation = initialApproximation };
                 return new PluginRefreshPublishedRow(
                     plugin,
-                    IsVisible: !decision.ShouldSkipByPolicy,
-                    IsSelected: decision.ShouldSkipByPolicy || !excludedPaths.Contains(plugin.FullPath),
-                    IsSkippedByPolicy: decision.ShouldSkipByPolicy,
+                    !decision.ShouldSkipByPolicy,
+                    decision.ShouldSkipByPolicy || !excludedPaths.Contains(plugin.FullPath),
+                    decision.ShouldSkipByPolicy,
                     new PluginRefreshRowKey(plugin.FileName, plugin.FullPath));
             })
             .ToList();
@@ -39,21 +39,24 @@ internal static class PluginRefreshPublicationRows
     }
 
     /// <summary>
-    /// Builds a commit result for an already authoritative full publication row list.
+    ///     Builds a commit result for an already authoritative full publication row list.
     /// </summary>
     /// <param name="rows">Full publication rows, including hidden Skip list rows.</param>
     /// <returns>Rows, visible projection, and AppState mirror facts.</returns>
-    internal static PluginRefreshPublicationRowsCommit Commit(IReadOnlyList<PluginRefreshPublishedRow> rows) =>
-        new(rows, ProjectVisibleRows(rows), CreateMirror(rows));
+    internal static PluginRefreshPublicationRowsCommit Commit(IReadOnlyList<PluginRefreshPublishedRow> rows)
+    {
+        return new PluginRefreshPublicationRowsCommit(rows, ProjectVisibleRows(rows), CreateMirror(rows));
+    }
 
     /// <summary>
-    /// Projects full publication rows into the visible row surface consumed by ViewModels.
+    ///     Projects full publication rows into the visible row surface consumed by ViewModels.
     /// </summary>
     /// <param name="rows">Full publication rows, including hidden rows.</param>
     /// <returns>Visible rows with selection and approximation facts copied from the full rows.</returns>
     internal static IReadOnlyList<PluginRefreshRow> ProjectVisibleRows(
-        IReadOnlyList<PluginRefreshPublishedRow> rows) =>
-        rows.Where(row => row.IsVisible)
+        IReadOnlyList<PluginRefreshPublishedRow> rows)
+    {
+        return rows.Where(row => row.IsVisible)
             .Select(row => new PluginRefreshRow(
                 row.Plugin.FileName,
                 row.Plugin.FullPath,
@@ -62,28 +65,31 @@ internal static class PluginRefreshPublicationRows
                 row.Plugin.IsInSkipList,
                 row.Plugin.Approximation))
             .ToList();
+    }
 
     /// <summary>
-    /// Projects legacy AppState rows into visible Plugin refresh rows when no publication is available yet.
+    ///     Projects legacy AppState rows into visible Plugin refresh rows when no publication is available yet.
     /// </summary>
     /// <param name="plugins">Compatibility plugin rows from AppState.</param>
     /// <param name="excludedPaths">Compatibility deselection paths from AppState.</param>
     /// <returns>Visible rows with hidden Skip list rows removed.</returns>
     internal static IReadOnlyList<PluginRefreshRow> ProjectStateVisibleRows(
         IReadOnlyList<PluginInfo> plugins,
-        IReadOnlySet<string> excludedPaths) =>
-        plugins.Where(plugin => !plugin.IsInSkipList)
+        IReadOnlySet<string> excludedPaths)
+    {
+        return plugins.Where(plugin => !plugin.IsInSkipList)
             .Select(plugin => new PluginRefreshRow(
                 plugin.FileName,
                 plugin.FullPath,
                 plugin.DetectedGameType,
-                IsSelected: !excludedPaths.Contains(plugin.FullPath),
+                !excludedPaths.Contains(plugin.FullPath),
                 plugin.IsInSkipList,
                 plugin.Approximation))
             .ToList();
+    }
 
     /// <summary>
-    /// Applies a user selection change to visible publication rows only.
+    ///     Applies a user selection change to visible publication rows only.
     /// </summary>
     /// <param name="rows">Full publication rows.</param>
     /// <param name="change">Selection mutation requested by the UI.</param>
@@ -107,10 +113,7 @@ internal static class PluginRefreshPublicationRows
             case PluginSelectionChange.SetOne setOne:
             {
                 var found = rows.Any(row => row.IsVisible && IsMatch(row.Key, setOne.Row));
-                if (!found)
-                {
-                    return new PluginRefreshPublicationRowsSelectionResult(false, Commit(rows));
-                }
+                if (!found) return new PluginRefreshPublicationRowsSelectionResult(false, Commit(rows));
 
                 var updatedRows = rows
                     .Select(row => row.IsVisible && IsMatch(row.Key, setOne.Row)
@@ -126,7 +129,7 @@ internal static class PluginRefreshPublicationRows
     }
 
     /// <summary>
-    /// Applies a selection change to legacy AppState exclusion facts when no publication is available yet.
+    ///     Applies a selection change to legacy AppState exclusion facts when no publication is available yet.
     /// </summary>
     /// <param name="visibleRows">Current visible snapshot rows.</param>
     /// <param name="excludedPaths">Current compatibility exclusion paths.</param>
@@ -137,20 +140,14 @@ internal static class PluginRefreshPublicationRows
         IReadOnlySet<string> excludedPaths,
         PluginSelectionChange change)
     {
-        if (visibleRows.Count == 0)
-        {
-            return new PluginRefreshPublicationRowsStateSelectionResult(false, excludedPaths);
-        }
+        if (visibleRows.Count == 0) return new PluginRefreshPublicationRowsStateSelectionResult(false, excludedPaths);
 
         switch (change)
         {
             case PluginSelectionChange.SelectAllVisible:
             {
                 var next = new HashSet<string>(excludedPaths, StringComparer.OrdinalIgnoreCase);
-                foreach (var row in visibleRows)
-                {
-                    next.Remove(row.FullPath);
-                }
+                foreach (var row in visibleRows) next.Remove(row.FullPath);
 
                 return new PluginRefreshPublicationRowsStateSelectionResult(
                     true,
@@ -160,10 +157,7 @@ internal static class PluginRefreshPublicationRows
             case PluginSelectionChange.DeselectAllVisible:
             {
                 var next = new HashSet<string>(excludedPaths, StringComparer.OrdinalIgnoreCase);
-                foreach (var row in visibleRows)
-                {
-                    next.Add(row.FullPath);
-                }
+                foreach (var row in visibleRows) next.Add(row.FullPath);
 
                 return new PluginRefreshPublicationRowsStateSelectionResult(
                     true,
@@ -173,26 +167,17 @@ internal static class PluginRefreshPublicationRows
             case PluginSelectionChange.SetOne setOne:
             {
                 var row = visibleRows.FirstOrDefault(visible => IsMatch(visible, setOne.Row));
-                if (row is null)
-                {
-                    return new PluginRefreshPublicationRowsStateSelectionResult(false, excludedPaths);
-                }
+                if (row is null) return new PluginRefreshPublicationRowsStateSelectionResult(false, excludedPaths);
 
                 var alreadyExcluded = excludedPaths.Contains(row.FullPath);
                 if (setOne.IsSelected ? !alreadyExcluded : alreadyExcluded)
-                {
                     return new PluginRefreshPublicationRowsStateSelectionResult(true, excludedPaths);
-                }
 
                 var next = new HashSet<string>(excludedPaths, StringComparer.OrdinalIgnoreCase);
                 if (setOne.IsSelected)
-                {
                     next.Remove(row.FullPath);
-                }
                 else
-                {
                     next.Add(row.FullPath);
-                }
 
                 return new PluginRefreshPublicationRowsStateSelectionResult(
                     true,
@@ -205,7 +190,7 @@ internal static class PluginRefreshPublicationRows
     }
 
     /// <summary>
-    /// Marks all rows contained in a target lookup with the supplied approximation state.
+    ///     Marks all rows contained in a target lookup with the supplied approximation state.
     /// </summary>
     /// <param name="rows">Full publication rows.</param>
     /// <param name="targetLookup">Target set used to identify rows.</param>
@@ -214,14 +199,16 @@ internal static class PluginRefreshPublicationRows
     internal static PluginRefreshPublicationRowsUpdate ApplyApproximationToTargets(
         IReadOnlyList<PluginRefreshPublishedRow> rows,
         TargetLookup targetLookup,
-        PluginIssueApproximation approximation) =>
-        UpdateRows(
+        PluginIssueApproximation approximation)
+    {
+        return UpdateRows(
             rows,
             row => targetLookup.Contains(row.Plugin),
             row => row with { Plugin = row.Plugin with { Approximation = approximation } });
+    }
 
     /// <summary>
-    /// Restores prior estimates for selected-reanalysis targets that never produced a result.
+    ///     Restores prior estimates for selected-reanalysis targets that never produced a result.
     /// </summary>
     /// <param name="rows">Full publication rows.</param>
     /// <param name="targets">Selected targets and their estimates from before reanalysis began.</param>
@@ -248,41 +235,47 @@ internal static class PluginRefreshPublicationRows
     }
 
     /// <summary>
-    /// Marks every still-pending row unavailable while preserving completed results.
+    ///     Marks every still-pending row unavailable while preserving completed results.
     /// </summary>
     /// <param name="rows">Full publication rows.</param>
     /// <returns>An update result containing terminal rows.</returns>
     internal static PluginRefreshPublicationRowsUpdate ApplyUnavailableToPendingRows(
-        IReadOnlyList<PluginRefreshPublishedRow> rows) =>
-        UpdateRows(
+        IReadOnlyList<PluginRefreshPublishedRow> rows)
+    {
+        return UpdateRows(
             rows,
             row => row.Plugin.Approximation.Status == PluginIssueApproximationStatus.Pending,
             row => row with { Plugin = row.Plugin with { Approximation = PluginIssueApproximation.Unavailable } });
+    }
 
     /// <summary>
-    /// Applies an authoritative keyed result to its exact publication row.
+    ///     Applies an authoritative keyed result to its exact publication row.
     /// </summary>
     /// <param name="rows">Full publication rows.</param>
     /// <param name="result">Keyed approximation result returned by the deep module.</param>
     /// <returns>An update result that reports whether the exact row key matched.</returns>
     internal static PluginRefreshPublicationRowsUpdate ApplyApproximationResult(
         IReadOnlyList<PluginRefreshPublishedRow> rows,
-        PluginIssueApproximationModuleResult result) =>
-        UpdateRows(
+        PluginIssueApproximationModuleResult result)
+    {
+        return UpdateRows(
             rows,
             row => IsExactMatch(row.Key, result.Target),
             row => row with { Plugin = row.Plugin with { Approximation = result.Approximation } });
+    }
 
     /// <summary>
-    /// Creates a lookup optimized for exact approximation target identity.
+    ///     Creates a lookup optimized for exact approximation target identity.
     /// </summary>
     /// <param name="targets">Target row identities.</param>
     /// <returns>A lookup that compares both filename and full path case-insensitively.</returns>
-    internal static TargetLookup CreateTargetLookup(IReadOnlyList<PluginRefreshRowKey> targets) =>
-        TargetLookup.Create(targets);
+    internal static TargetLookup CreateTargetLookup(IReadOnlyList<PluginRefreshRowKey> targets)
+    {
+        return TargetLookup.Create(targets);
+    }
 
     /// <summary>
-    /// Determines whether a visible row identity matches a requested row key.
+    ///     Determines whether a visible row identity matches a requested row key.
     /// </summary>
     /// <param name="row">Visible row identity.</param>
     /// <param name="target">Requested row identity.</param>
@@ -290,15 +283,13 @@ internal static class PluginRefreshPublicationRows
     internal static bool IsMatch(PluginRefreshRow row, PluginRefreshRowKey target)
     {
         if (HasUsablePath(row.FullPath) && HasUsablePath(target.FullPath))
-        {
             return string.Equals(row.FullPath, target.FullPath, StringComparison.OrdinalIgnoreCase);
-        }
 
         return string.Equals(row.FileName, target.FileName, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
-    /// Determines whether two row keys identify the same publication row.
+    ///     Determines whether two row keys identify the same publication row.
     /// </summary>
     /// <param name="row">Existing row identity.</param>
     /// <param name="target">Requested row identity.</param>
@@ -306,16 +297,16 @@ internal static class PluginRefreshPublicationRows
     internal static bool IsMatch(PluginRefreshRowKey row, PluginRefreshRowKey target)
     {
         if (HasUsablePath(row.FullPath) && HasUsablePath(target.FullPath))
-        {
             return string.Equals(row.FullPath, target.FullPath, StringComparison.OrdinalIgnoreCase);
-        }
 
         return string.Equals(row.FileName, target.FileName, StringComparison.OrdinalIgnoreCase);
     }
 
-    internal static bool IsExactMatch(PluginRefreshRowKey row, PluginRefreshRowKey target) =>
-        string.Equals(row.FileName, target.FileName, StringComparison.OrdinalIgnoreCase) &&
-        string.Equals(row.FullPath, target.FullPath, StringComparison.OrdinalIgnoreCase);
+    internal static bool IsExactMatch(PluginRefreshRowKey row, PluginRefreshRowKey target)
+    {
+        return string.Equals(row.FileName, target.FileName, StringComparison.OrdinalIgnoreCase) &&
+               string.Equals(row.FullPath, target.FullPath, StringComparison.OrdinalIgnoreCase);
+    }
 
     private static PluginRefreshPublicationRowsMirror CreateMirror(
         IReadOnlyList<PluginRefreshPublishedRow> rows)
@@ -339,10 +330,7 @@ internal static class PluginRefreshPublicationRows
         var matched = false;
         var updatedRows = rows.Select(row =>
         {
-            if (!shouldUpdate(row))
-            {
-                return row;
-            }
+            if (!shouldUpdate(row)) return row;
 
             matched = true;
             return update(row);
@@ -351,10 +339,13 @@ internal static class PluginRefreshPublicationRows
         return new PluginRefreshPublicationRowsUpdate(matched, Commit(matched ? updatedRows : rows));
     }
 
-    private static bool HasUsablePath(string? path) => !string.IsNullOrWhiteSpace(path);
+    private static bool HasUsablePath(string? path)
+    {
+        return !string.IsNullOrWhiteSpace(path);
+    }
 
     /// <summary>
-    /// Lookup for authoritative approximation targets using exact publication-row identity.
+    ///     Lookup for authoritative approximation targets using exact publication-row identity.
     /// </summary>
     internal sealed class TargetLookup
     {
@@ -367,55 +358,66 @@ internal static class PluginRefreshPublicationRows
         }
 
         /// <summary>
-        /// Gets the number of original targets in the lookup.
+        ///     Gets the number of original targets in the lookup.
         /// </summary>
         internal int Count { get; }
 
         /// <summary>
-        /// Creates a target lookup from row identities.
+        ///     Creates a target lookup from row identities.
         /// </summary>
         /// <param name="targets">Target row identities.</param>
         /// <returns>A lookup keyed by the complete row identity.</returns>
-        internal static TargetLookup Create(IReadOnlyList<PluginRefreshRowKey> targets) =>
-            new(
+        internal static TargetLookup Create(IReadOnlyList<PluginRefreshRowKey> targets)
+        {
+            return new TargetLookup(
                 targets.ToFrozenSet(PluginRefreshRowKeyComparer.Instance),
                 targets.Count);
+        }
 
         /// <summary>
-        /// Determines whether a plugin row belongs to this target set.
+        ///     Determines whether a plugin row belongs to this target set.
         /// </summary>
         /// <param name="plugin">Plugin row to test.</param>
         /// <returns>True when the plugin has the same filename and full path as an original target.</returns>
-        internal bool Contains(PluginInfo plugin) =>
-            Contains(new PluginRefreshRowKey(plugin.FileName, plugin.FullPath));
+        internal bool Contains(PluginInfo plugin)
+        {
+            return Contains(new PluginRefreshRowKey(plugin.FileName, plugin.FullPath));
+        }
 
         /// <summary>
-        /// Determines whether an authoritative row key belongs to this target set.
+        ///     Determines whether an authoritative row key belongs to this target set.
         /// </summary>
         /// <param name="target">Row key to test.</param>
         /// <returns>True when the complete row key belongs to the original target collection.</returns>
-        internal bool Contains(PluginRefreshRowKey target) => _targets.Contains(target);
+        internal bool Contains(PluginRefreshRowKey target)
+        {
+            return _targets.Contains(target);
+        }
 
         private sealed class PluginRefreshRowKeyComparer : IEqualityComparer<PluginRefreshRowKey>
         {
             internal static PluginRefreshRowKeyComparer Instance { get; } = new();
 
-            public bool Equals(PluginRefreshRowKey? x, PluginRefreshRowKey? y) =>
-                ReferenceEquals(x, y) ||
-                x is not null &&
-                y is not null &&
-                IsExactMatch(x, y);
+            public bool Equals(PluginRefreshRowKey? x, PluginRefreshRowKey? y)
+            {
+                return ReferenceEquals(x, y) ||
+                       x is not null &&
+                       y is not null &&
+                       IsExactMatch(x, y);
+            }
 
-            public int GetHashCode(PluginRefreshRowKey obj) =>
-                HashCode.Combine(
+            public int GetHashCode(PluginRefreshRowKey obj)
+            {
+                return HashCode.Combine(
                     StringComparer.OrdinalIgnoreCase.GetHashCode(obj.FileName),
                     StringComparer.OrdinalIgnoreCase.GetHashCode(obj.FullPath));
+            }
         }
     }
 }
 
 /// <summary>
-/// Row commit produced by the Plugin refresh publication row transformer.
+///     Row commit produced by the Plugin refresh publication row transformer.
 /// </summary>
 /// <param name="Rows">Full publication rows, including hidden Skip list rows.</param>
 /// <param name="VisibleRows">Visible row projection derived from the full rows.</param>
@@ -426,7 +428,7 @@ internal sealed record PluginRefreshPublicationRowsCommit(
     PluginRefreshPublicationRowsMirror Mirror);
 
 /// <summary>
-/// Result of applying a selection change to publication rows.
+///     Result of applying a selection change to publication rows.
 /// </summary>
 /// <param name="WasTargetFound">True when the selection request addressed one or more visible rows.</param>
 /// <param name="Commit">Rows, projection, and mirror facts after applying the request.</param>
@@ -435,7 +437,7 @@ internal sealed record PluginRefreshPublicationRowsSelectionResult(
     PluginRefreshPublicationRowsCommit Commit);
 
 /// <summary>
-/// Result of applying a selection change to legacy AppState exclusion facts.
+///     Result of applying a selection change to legacy AppState exclusion facts.
 /// </summary>
 /// <param name="WasTargetFound">True when the selection request addressed visible rows.</param>
 /// <param name="ExcludedPluginPaths">Updated compatibility exclusion paths.</param>
@@ -444,7 +446,7 @@ internal sealed record PluginRefreshPublicationRowsStateSelectionResult(
     IReadOnlySet<string> ExcludedPluginPaths);
 
 /// <summary>
-/// Result of applying an approximation update to publication rows.
+///     Result of applying an approximation update to publication rows.
 /// </summary>
 /// <param name="Matched">True when one or more rows matched the update target.</param>
 /// <param name="Commit">Rows, projection, and mirror facts after applying the update.</param>
@@ -453,7 +455,7 @@ internal sealed record PluginRefreshPublicationRowsUpdate(
     PluginRefreshPublicationRowsCommit Commit);
 
 /// <summary>
-/// Compatibility facts to mirror from a Plugin refresh publication into AppState.
+///     Compatibility facts to mirror from a Plugin refresh publication into AppState.
 /// </summary>
 /// <param name="PluginsToClean">Full plugin rows exposed for legacy Cleaning session compatibility.</param>
 /// <param name="ExcludedPluginPaths">Visible deselections exposed for legacy selection compatibility.</param>

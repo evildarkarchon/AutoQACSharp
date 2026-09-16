@@ -1,39 +1,45 @@
 namespace AutoQAC.Models;
 
 /// <summary>
-/// Result of a single plugin backup operation.
+///     Result of a single plugin backup operation.
 /// </summary>
 public sealed class BackupResult
 {
-    public bool Success { get; private init; }
-    public long FileSizeBytes { get; private init; }
-    public string? Error { get; private init; }
-
     private BackupResult()
     {
     }
 
-    /// <summary>
-    /// Creates a successful backup result.
-    /// </summary>
-    public static BackupResult Ok(long fileSizeBytes) => new()
-    {
-        Success = true,
-        FileSizeBytes = fileSizeBytes
-    };
+    public bool Success { get; private init; }
+    public long FileSizeBytes { get; private init; }
+    public string? Error { get; private init; }
 
     /// <summary>
-    /// Creates a failed backup result with an error message.
+    ///     Creates a successful backup result.
     /// </summary>
-    public static BackupResult Failure(string error) => new()
+    public static BackupResult Ok(long fileSizeBytes)
     {
-        Success = false,
-        Error = error
-    };
+        return new BackupResult
+        {
+            Success = true,
+            FileSizeBytes = fileSizeBytes
+        };
+    }
+
+    /// <summary>
+    ///     Creates a failed backup result with an error message.
+    /// </summary>
+    public static BackupResult Failure(string error)
+    {
+        return new BackupResult
+        {
+            Success = false,
+            Error = error
+        };
+    }
 }
 
 /// <summary>
-/// User choice when a backup operation fails for a plugin.
+///     User choice when a backup operation fails for a plugin.
 /// </summary>
 public enum BackupFailureChoice
 {

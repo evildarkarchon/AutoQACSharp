@@ -14,31 +14,32 @@ using AutoQAC.Services.State;
 namespace AutoQAC.Services.Plugin;
 
 /// <summary>
-/// Deep Plugin refresh module that accepts refresh/selection/cancellation intents and emits whole visible snapshots.
+///     Deep Plugin refresh module that accepts refresh/selection/cancellation intents and emits whole visible snapshots.
 /// </summary>
 public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
 {
     private static readonly PluginRefreshActivity IdleActivity = new(false, false);
 
     private readonly IPluginRefreshDiscoveryPlanner _discoveryPlanner;
-    private readonly IPluginIssueApproximationModule _pluginIssueApproximationModule;
-    private readonly IStateService _stateService;
-    private readonly ISkipListPolicy _skipListPolicy;
     private readonly ILoggingService? _logger;
+    private readonly IPluginIssueApproximationModule _pluginIssueApproximationModule;
     private readonly PluginRefreshPublicationStore _publicationStore;
+    private readonly ISkipListPolicy _skipListPolicy;
+    private readonly IDisposable? _skipListSubscription;
+    private readonly IStateService _stateService;
     private readonly IDisposable _stateSubscription;
     private readonly IDisposable? _userConfigurationSubscription;
-    private readonly IDisposable? _skipListSubscription;
+    private long _activeGeneration;
 
     private CancellationTokenSource? _activeRefreshCts;
-    private long _activeGeneration;
+    private bool _disposed;
     private int _freshnessRefreshVersion;
     private DiscoveryAffectingState _lastDiscoveryAffectingState;
     private bool _lastIsCleaning;
-    private bool _disposed;
 
     /// <summary>
-    /// Initializes a Plugin refresh module with the adapters needed for context assembly, publication, and AppState compatibility.
+    ///     Initializes a Plugin refresh module with the adapters needed for context assembly, publication, and AppState
+    ///     compatibility.
     /// </summary>
     internal PluginRefreshModule(
         IPluginRefreshDiscoveryPlanner discoveryPlanner,
@@ -68,59 +69,8 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         }
     }
 
-    /// <inheritdoc />
-    public IObservable<PluginRefreshSnapshot> Snapshots => _publicationStore.Snapshots;
-
-    /// <inheritdoc />
-    public Task<PluginRefreshPublication> GetCurrentPublicationAsync(CancellationToken cancellationToken = default) =>
-        GetCurrentPublicationWithFreshnessAsync(publishIfChanged: false, cancellationToken);
-
-    private async Task<PluginRefreshPublication> GetCurrentPublicationWithFreshnessAsync(
-        bool publishIfChanged,
-        CancellationToken cancellationToken = default)
-    {
-        var inspection = _publicationStore.GetFreshnessInspection();
-        var publication = inspection.Publication;
-        var freshnessToken = inspection.FreshnessToken;
-
-        if (freshnessToken is null || publication.DiscoveryPlan is null)
-        {
-            return publication with { Freshness = PluginRefreshFreshness.Missing };
-        }
-
-        var freshness = await _discoveryPlanner.CheckFreshnessAsync(
-                freshnessToken,
-                CreateFreshnessContext(_stateService.CurrentState),
-                cancellationToken)
-            .ConfigureAwait(false);
-        var refreshedPublication = publication with { Freshness = freshness };
-        if (publishIfChanged)
-        {
-            _publicationStore.PublishFreshnessIfCurrent(publication, freshnessToken, refreshedPublication.Freshness);
-        }
-
-        return refreshedPublication;
-    }
-
-    /// <inheritdoc />
-    public Task<PluginRefreshSnapshot> ExecuteAsync(
-        PluginRefreshIntent intent,
-        CancellationToken cancellationToken = default) =>
-        intent switch
-        {
-            PluginRefreshIntent.RefreshGame refresh => RefreshGameAsync(
-                refresh.GameType,
-                refresh.SelectedLoadOrderPath,
-                cancellationToken),
-            PluginRefreshIntent.RefreshSelectedIssueApproximations => RefreshSelectedIssueApproximationsAsync(
-                cancellationToken),
-            PluginRefreshIntent.ChangeSelection selection => Task.FromResult(ApplySelectionChange(selection.Change)),
-            PluginRefreshIntent.Cancel cancel => Task.FromResult(CancelActiveRefresh(cancel.Reason)),
-            _ => throw new ArgumentOutOfRangeException(nameof(intent), intent, "Unknown Plugin refresh intent.")
-        };
-
     /// <summary>
-    /// Releases observable and active cancellation resources owned by this singleton module.
+    ///     Releases observable and active cancellation resources owned by this singleton module.
     /// </summary>
     public void Dispose()
     {
@@ -134,6 +84,57 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         _publicationStore.Dispose();
     }
 
+    /// <inheritdoc />
+    public IObservable<PluginRefreshSnapshot> Snapshots => _publicationStore.Snapshots;
+
+    /// <inheritdoc />
+    public Task<PluginRefreshPublication> GetCurrentPublicationAsync(CancellationToken cancellationToken = default)
+    {
+        return GetCurrentPublicationWithFreshnessAsync(false, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public Task<PluginRefreshSnapshot> ExecuteAsync(
+        PluginRefreshIntent intent,
+        CancellationToken cancellationToken = default)
+    {
+        return intent switch
+        {
+            PluginRefreshIntent.RefreshGame refresh => RefreshGameAsync(
+                refresh.GameType,
+                refresh.SelectedLoadOrderPath,
+                cancellationToken),
+            PluginRefreshIntent.RefreshSelectedIssueApproximations => RefreshSelectedIssueApproximationsAsync(
+                cancellationToken),
+            PluginRefreshIntent.ChangeSelection selection => Task.FromResult(ApplySelectionChange(selection.Change)),
+            PluginRefreshIntent.Cancel cancel => Task.FromResult(CancelActiveRefresh(cancel.Reason)),
+            _ => throw new ArgumentOutOfRangeException(nameof(intent), intent, "Unknown Plugin refresh intent.")
+        };
+    }
+
+    private async Task<PluginRefreshPublication> GetCurrentPublicationWithFreshnessAsync(
+        bool publishIfChanged,
+        CancellationToken cancellationToken = default)
+    {
+        var inspection = _publicationStore.GetFreshnessInspection();
+        var publication = inspection.Publication;
+        var freshnessToken = inspection.FreshnessToken;
+
+        if (freshnessToken is null || publication.DiscoveryPlan is null)
+            return publication with { Freshness = PluginRefreshFreshness.Missing };
+
+        var freshness = await _discoveryPlanner.CheckFreshnessAsync(
+                freshnessToken,
+                CreateFreshnessContext(_stateService.CurrentState),
+                cancellationToken)
+            .ConfigureAwait(false);
+        var refreshedPublication = publication with { Freshness = freshness };
+        if (publishIfChanged)
+            _publicationStore.PublishFreshnessIfCurrent(publication, freshnessToken, refreshedPublication.Freshness);
+
+        return refreshedPublication;
+    }
+
     private async Task<PluginRefreshSnapshot> RefreshGameAsync(
         GameType gameType,
         string? selectedLoadOrderPath,
@@ -144,19 +145,16 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         var acceptedSnapshot = _publicationStore.GetCurrentSnapshot();
         var configuration = acceptedSnapshot.Configuration;
         var keepExistingRows = gameType != GameType.Unknown && gameType == acceptedSnapshot.GameType;
-        if (!keepExistingRows)
-        {
-            _publicationStore.ClearRowsForRefreshStart(gameType);
-        }
+        if (!keepExistingRows) _publicationStore.ClearRowsForRefreshStart(gameType);
 
         _publicationStore.PublishSnapshot(new PluginRefreshSnapshot(
-            generation,
-            gameType,
-            keepExistingRows ? acceptedSnapshot.Rows : [],
-            configuration,
-            new PluginRefreshActivity(IsPluginRefreshRunning: true, IsIssueApproximationRefreshRunning: false),
-            PluginRefreshPublicationStore.EmptyCommands,
-            gameType == GameType.Unknown ? "No game selected" : $"Loading plugins for {gameType}..."),
+                generation,
+                gameType,
+                keepExistingRows ? acceptedSnapshot.Rows : [],
+                configuration,
+                new PluginRefreshActivity(true, false),
+                PluginRefreshPublicationStore.EmptyCommands,
+                gameType == GameType.Unknown ? "No game selected" : $"Loading plugins for {gameType}..."),
             GetAffordance(gameType, configuration));
 
         try
@@ -179,7 +177,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                 generation,
                 gameType,
                 configuration,
-                new PluginRefreshActivity(IsPluginRefreshRunning: true, IsIssueApproximationRefreshRunning: false),
+                new PluginRefreshActivity(true, false),
                 $"Loading plugins for {gameType}...",
                 GetAffordance(gameType, configuration));
 
@@ -248,8 +246,8 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             var issueActivity = targets.Count == 0
                 ? IdleActivity
                 : new PluginRefreshActivity(
-                    IsPluginRefreshRunning: true,
-                    IsIssueApproximationRefreshRunning: true);
+                    true,
+                    true);
 
             _publicationStore.PublishAcceptedPublication(
                 generation,
@@ -278,10 +276,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                 return _publicationStore.GetCurrentSnapshot();
             }
 
-            if (targets.Count == 0)
-            {
-                return _publicationStore.GetCurrentSnapshot();
-            }
+            if (targets.Count == 0) return _publicationStore.GetCurrentSnapshot();
 
             try
             {
@@ -304,14 +299,12 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                     .ConfigureAwait(false);
 
                 if (IsVisible(generation, token))
-                {
                     _publicationStore.TryFinalizeInitialApproximation(
                         generation,
                         $"Refreshed {Volatile.Read(ref updatedCount)} plugin approximations.",
                         GetAffordance(plan.GameType, configuration),
                         () => IsVisible(generation, token),
                         out _);
-                }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -344,7 +337,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
     }
 
     /// <summary>
-    /// Reanalyzes selected rows from one fresh accepted publication and preserves terminal row state.
+    ///     Reanalyzes selected rows from one fresh accepted publication and preserves terminal row state.
     /// </summary>
     /// <param name="cancellationToken">Token that cancels the active selected-reanalysis generation.</param>
     /// <returns>The current visible snapshot after rejection, completion, failure, or cancellation.</returns>
@@ -360,13 +353,10 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             // Selected reanalysis must prove the accepted row identities are still current before
             // any row becomes Pending; rebuilding a plan here would combine new facts with old keys.
             var publication = await GetCurrentPublicationWithFreshnessAsync(
-                    publishIfChanged: true,
+                    true,
                     token)
                 .ConfigureAwait(false);
-            if (!IsVisible(generation, token))
-            {
-                return _publicationStore.GetCurrentSnapshot();
-            }
+            if (!IsVisible(generation, token)) return _publicationStore.GetCurrentSnapshot();
 
             var hasFreshnessLease =
                 freshnessVersion == Volatile.Read(ref _freshnessRefreshVersion);
@@ -441,15 +431,12 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                                 result,
                                 GetAffordance(plan.GameType, configuration),
                                 () => IsVisible(generation, token)))
-                        {
                             Interlocked.Increment(ref updatedCount);
-                        }
                     },
                     token)
                 .ConfigureAwait(false);
 
             if (IsVisible(generation, token))
-            {
                 _publicationStore.TryFinalizeSelectedIssueApproximation(
                     generation,
                     PluginRefreshSelectedIssueApproximationDisposition.Unavailable,
@@ -457,7 +444,6 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                     GetAffordance(plan.GameType, configuration),
                     () => IsVisible(generation, token),
                     out _);
-            }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
@@ -500,7 +486,6 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
     {
         var cts = Volatile.Read(ref _activeRefreshCts);
         if (cts is not null)
-        {
             try
             {
                 cts.Cancel();
@@ -509,7 +494,6 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             {
                 // The active generation may have completed between read and cancel; cancellation is best-effort.
             }
-        }
 
         var snapshot = _publicationStore.GetCurrentSnapshot();
         var statusText = reason == PluginRefreshCancelReason.Manual
@@ -524,9 +508,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                 GetAffordance(snapshot),
                 () => snapshot.Generation == Volatile.Read(ref _activeGeneration),
                 out var finalizedSelected))
-        {
             return finalizedSelected;
-        }
 
         if (snapshot.Activity.IsPluginRefreshRunning &&
             snapshot.Activity.IsIssueApproximationRefreshRunning &&
@@ -536,14 +518,9 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                 GetAffordance(snapshot),
                 () => snapshot.Generation == Volatile.Read(ref _activeGeneration),
                 out var finalized))
-        {
             return finalized;
-        }
 
-        if (reason == PluginRefreshCancelReason.Disposed)
-        {
-            return _publicationStore.GetCurrentSnapshot();
-        }
+        if (reason == PluginRefreshCancelReason.Disposed) return _publicationStore.GetCurrentSnapshot();
 
         return _publicationStore.PublishCurrentPublication(
             snapshot.Generation,
@@ -587,8 +564,8 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             out _);
         // The generation flip blocks old callbacks before retained rows are terminalized for the
         // replacement snapshot, preventing an inactive Pending estimate from surviving supersession.
-        _publicationStore.FinalizePendingRowsForSupersession(
-            () => activatedGeneration == Volatile.Read(ref _activeGeneration));
+        _publicationStore.FinalizePendingRowsForSupersession(() =>
+            activatedGeneration == Volatile.Read(ref _activeGeneration));
         return cts;
     }
 
@@ -599,30 +576,36 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         Interlocked.CompareExchange(ref _activeRefreshCts, null, cts);
     }
 
-    private bool IsVisible(long generation, CancellationToken cancellationToken) =>
-        !cancellationToken.IsCancellationRequested && generation == Volatile.Read(ref _activeGeneration);
+    private bool IsVisible(long generation, CancellationToken cancellationToken)
+    {
+        return !cancellationToken.IsCancellationRequested && generation == Volatile.Read(ref _activeGeneration);
+    }
 
-    private PluginRefreshGameAffordance GetAffordance(PluginRefreshSnapshot snapshot) =>
-        GetAffordance(snapshot.GameType, snapshot.Configuration);
+    private PluginRefreshGameAffordance GetAffordance(PluginRefreshSnapshot snapshot)
+    {
+        return GetAffordance(snapshot.GameType, snapshot.Configuration);
+    }
 
-    private PluginRefreshGameAffordance GetAffordance(PluginRefreshPublication publication) =>
-        GetAffordance(publication.GameType, publication.Configuration);
+    private PluginRefreshGameAffordance GetAffordance(PluginRefreshPublication publication)
+    {
+        return GetAffordance(publication.GameType, publication.Configuration);
+    }
 
     private PluginRefreshGameAffordance GetAffordance(
         GameType gameType,
-        PluginRefreshConfigurationProjection configuration) =>
-        _discoveryPlanner.GetAffordance(gameType, configuration.Mo2ModeEnabled);
+        PluginRefreshConfigurationProjection configuration)
+    {
+        return _discoveryPlanner.GetAffordance(gameType, configuration.Mo2ModeEnabled);
+    }
 
     private async Task<PluginRefreshDiscoveryPlanResult> GetPlanForSelectedRefreshAsync(CancellationToken ct)
     {
         var currentGame = _stateService.CurrentState.CurrentGameType;
         if (currentGame == GameType.Unknown)
-        {
             return new PluginRefreshDiscoveryPlanResult(
                 PluginRefreshDiscoveryPlanStatus.NoGameSelected,
                 null,
                 _publicationStore.GetCurrentSnapshot().Configuration);
-        }
 
         // Selected refreshes rebuild the plan so same-game MO2/profile/path changes are never cached stale.
         return await _discoveryPlanner.CreatePlanAsync(
@@ -649,7 +632,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
     }
 
     /// <summary>
-    /// Builds one full-refresh analysis request from the accepted discovery plan and publication rows.
+    ///     Builds one full-refresh analysis request from the accepted discovery plan and publication rows.
     /// </summary>
     /// <param name="plan">Discovery plan accepted by the active generation.</param>
     /// <param name="dataFolder">Resolved base data folder for import context.</param>
@@ -663,10 +646,8 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         IReadOnlyList<PluginRefreshRowKey> targets)
     {
         if (string.IsNullOrWhiteSpace(dataFolder))
-        {
             throw new InvalidOperationException(
                 "The accepted Plugin refresh plan did not resolve an Issue approximation data folder.");
-        }
 
         // Full refresh already accepted one ordered source. Reusing those exact keys prevents a
         // later direct-load-order enumeration or MO2 conflict change from replacing its context.
@@ -678,7 +659,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
     }
 
     /// <summary>
-    /// Builds selected reanalysis from the accepted plan, complete source rows, and ordered selected targets.
+    ///     Builds selected reanalysis from the accepted plan, complete source rows, and ordered selected targets.
     /// </summary>
     /// <param name="operation">Atomic selected-reanalysis facts captured from one fresh publication.</param>
     /// <returns>An authoritative keyed module request.</returns>
@@ -689,10 +670,8 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             operation.Plan,
             operation.SourceRows.FirstOrDefault()?.FullPath);
         if (string.IsNullOrWhiteSpace(dataFolder))
-        {
             throw new InvalidOperationException(
                 "The accepted Plugin refresh publication did not resolve an Issue approximation data folder.");
-        }
 
         // A resolved source is used for direct and MO2 publications alike so no filesystem
         // re-enumeration can replace accepted dependency rows or conflict-winning paths.
@@ -706,7 +685,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
     }
 
     /// <summary>
-    /// Publishes one exact keyed result with its deterministic progress count.
+    ///     Publishes one exact keyed result with its deterministic progress count.
     /// </summary>
     /// <param name="generation">Generation that owns the result.</param>
     /// <param name="token">Cancellation boundary for the generation.</param>
@@ -728,17 +707,12 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                 $"Analyzing {nextCount} of {targetLookup.Count} plugins.",
                 GetAffordance(_publicationStore.GetCurrentSnapshot()),
                 () => IsVisible(generation, token)))
-        {
             Volatile.Write(ref updatedCount, nextCount);
-        }
     }
 
     private void OnAppStateChanged(AppState state)
     {
-        if (_disposed)
-        {
-            return;
-        }
+        if (_disposed) return;
 
         var discoveryAffectingState = DiscoveryAffectingState.From(state);
         if (discoveryAffectingState != _lastDiscoveryAffectingState)
@@ -747,10 +721,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             OnDiscoveryAffectingSettingsChanged();
         }
 
-        if (state.IsCleaning == _lastIsCleaning)
-        {
-            return;
-        }
+        if (state.IsCleaning == _lastIsCleaning) return;
 
         _lastIsCleaning = state.IsCleaning;
         var commandInspection = _publicationStore.GetCommandAvailabilityInspection();
@@ -763,10 +734,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
 
     private void OnDiscoveryAffectingSettingsChanged()
     {
-        if (_disposed)
-        {
-            return;
-        }
+        if (_disposed) return;
 
         var requestId = Interlocked.Increment(ref _freshnessRefreshVersion);
         CancelSelectedApproximationForStaleness();
@@ -774,20 +742,17 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
     }
 
     /// <summary>
-    /// Restores unfinished selected targets when Discovery-affecting settings invalidate their freshness lease.
+    ///     Restores unfinished selected targets when Discovery-affecting settings invalidate their freshness lease.
     /// </summary>
     private void CancelSelectedApproximationForStaleness()
     {
         var snapshot = _publicationStore.GetCurrentSnapshot();
         if (snapshot.Activity.IsPluginRefreshRunning ||
             !snapshot.Activity.IsIssueApproximationRefreshRunning)
-        {
             return;
-        }
 
         var cts = Volatile.Read(ref _activeRefreshCts);
         if (cts is not null)
-        {
             try
             {
                 cts.Cancel();
@@ -796,7 +761,6 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             {
                 // A selected generation can finish while its settings-change notification is being dispatched.
             }
-        }
 
         _publicationStore.TryFinalizeSelectedIssueApproximation(
             snapshot.Generation,
@@ -811,26 +775,26 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
     {
         try
         {
-            await GetCurrentPublicationWithFreshnessAsync(publishIfChanged: true).ConfigureAwait(false);
+            await GetCurrentPublicationWithFreshnessAsync(true).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             if (requestId == Volatile.Read(ref _freshnessRefreshVersion) && !_disposed)
-            {
                 _logger?.Error(ex, "Failed to evaluate Plugin refresh publication freshness");
-            }
         }
     }
 
-    private static PluginRefreshDiscoveryFreshnessContext CreateFreshnessContext(AppState state) =>
-        new(
+    private static PluginRefreshDiscoveryFreshnessContext CreateFreshnessContext(AppState state)
+    {
+        return new PluginRefreshDiscoveryFreshnessContext(
             state.CurrentGameType,
             state.Mo2ModeEnabled,
             state.LoadOrderPath,
             state.Mo2Profile);
+    }
 
     /// <summary>
-    /// Resolves the accepted plan's analysis root, using a publication path only as a direct-mode fallback.
+    ///     Resolves the accepted plan's analysis root, using a publication path only as a direct-mode fallback.
     /// </summary>
     /// <param name="plan">Accepted discovery plan that owns the analysis source.</param>
     /// <param name="firstPublicationPath">First accepted row path, when the plan has no explicit direct data folder.</param>
@@ -839,23 +803,18 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         PluginRefreshDiscoveryPlan plan,
         string? firstPublicationPath)
     {
-        if (plan.Mode == PluginRefreshDiscoveryMode.Mo2LoadOrderFile)
-        {
-            return plan.Mo2BaseDataFolder;
-        }
+        if (plan.Mode == PluginRefreshDiscoveryMode.Mo2LoadOrderFile) return plan.Mo2BaseDataFolder;
 
-        if (!string.IsNullOrWhiteSpace(plan.DataFolderPath))
-        {
-            return plan.DataFolderPath;
-        }
+        if (!string.IsNullOrWhiteSpace(plan.DataFolderPath)) return plan.DataFolderPath;
 
         return string.IsNullOrWhiteSpace(firstPublicationPath)
             ? null
             : Path.GetDirectoryName(firstPublicationPath);
     }
 
-    private static string GetPlanStatusText(PluginRefreshDiscoveryPlanResult result, GameType gameType) =>
-        result.Status switch
+    private static string GetPlanStatusText(PluginRefreshDiscoveryPlanResult result, GameType gameType)
+    {
+        return result.Status switch
         {
             PluginRefreshDiscoveryPlanStatus.NoGameSelected => "No game selected",
             PluginRefreshDiscoveryPlanStatus.MissingLoadOrderFile =>
@@ -868,11 +827,14 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                 $"MO2 profile '{result.Configuration.SelectedProfile}' does not contain a loadorder.txt.",
             _ => "No plugins found in the selected load order."
         };
+    }
 
-    private static string GetNoPluginsFoundMessage(PluginRefreshDiscoveryPlan plan) =>
-        plan.Mode == PluginRefreshDiscoveryMode.DirectAutomatic
+    private static string GetNoPluginsFoundMessage(PluginRefreshDiscoveryPlan plan)
+    {
+        return plan.Mode == PluginRefreshDiscoveryMode.DirectAutomatic
             ? $"No plugins discovered via Mutagen for {plan.GameType}."
             : "No plugins found in the selected load order.";
+    }
 
     private sealed record DiscoveryAffectingState(
         GameType CurrentGameType,
@@ -880,12 +842,14 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         string? LoadOrderPath,
         string? Mo2Profile)
     {
-        public static DiscoveryAffectingState From(AppState state) =>
-            new(
+        public static DiscoveryAffectingState From(AppState state)
+        {
+            return new DiscoveryAffectingState(
                 state.CurrentGameType,
                 state.Mo2ModeEnabled,
                 state.LoadOrderPath,
                 state.Mo2Profile);
+        }
     }
 
     private sealed class StateChangedObserver(Action<AppState> onNext) : IObserver<AppState>
@@ -898,7 +862,10 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         {
         }
 
-        public void OnNext(AppState value) => onNext(value);
+        public void OnNext(AppState value)
+        {
+            onNext(value);
+        }
     }
 
     private sealed class ConfigurationChangedObserver<T>(Action<T> onNext) : IObserver<T>
@@ -911,6 +878,9 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         {
         }
 
-        public void OnNext(T value) => onNext(value);
+        public void OnNext(T value)
+        {
+            onNext(value);
+        }
     }
 }

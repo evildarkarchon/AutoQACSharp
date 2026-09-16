@@ -324,17 +324,23 @@ public sealed class PluginCleaningTests
         _terminationCoordinatorMock.Received(1).DetachProcess();
     }
 
-    private static PluginCleaningContext CreateContext(PluginInfo plugin) => new(
-        plugin,
-        GameType.SkyrimSe,
-        XEditDirectory,
-        TimeoutSeconds,
-        MaxRetryAttempts);
-
-    private static PluginInfo CreatePlugin(string fileName) => new()
+    private static PluginCleaningContext CreateContext(PluginInfo plugin)
     {
-        FileName = fileName,
-        FullPath = fileName,
-        DetectedGameType = GameType.SkyrimSe
-    };
+        return new PluginCleaningContext(
+            plugin,
+            GameType.SkyrimSe,
+            XEditDirectory,
+            TimeoutSeconds,
+            MaxRetryAttempts);
+    }
+
+    private static PluginInfo CreatePlugin(string fileName)
+    {
+        return new PluginInfo
+        {
+            FileName = fileName,
+            FullPath = fileName,
+            DetectedGameType = GameType.SkyrimSe
+        };
+    }
 }

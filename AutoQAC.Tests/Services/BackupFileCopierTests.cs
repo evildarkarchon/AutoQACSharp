@@ -24,14 +24,11 @@ public sealed class BackupFileCopierTests : IDisposable
 
     public void Dispose()
     {
-        if (!Directory.Exists(_testRoot))
-        {
-            return;
-        }
+        if (!Directory.Exists(_testRoot)) return;
 
         try
         {
-            Directory.Delete(_testRoot, recursive: true);
+            Directory.Delete(_testRoot, true);
         }
         catch
         {
@@ -54,7 +51,7 @@ public sealed class BackupFileCopierTests : IDisposable
             sourcePath,
             destinationPath,
             BackupCopyOptions.CreateNewBackup,
-            progress: null,
+            null,
             CancellationToken.None);
 
         result.Status.Should().Be(BackupOperationStatus.Failed);
@@ -69,7 +66,7 @@ public sealed class BackupFileCopierTests : IDisposable
     {
         var sourcePath = Path.Combine(_testRoot, "large-source.bin");
         var destinationPath = Path.Combine(_testRoot, "backup.bin");
-        await WritePatternFileAsync(sourcePath, sizeBytes: 32 * 1024 * 1024);
+        await WritePatternFileAsync(sourcePath, 32 * 1024 * 1024);
 
         using var cts = new CancellationTokenSource();
         var progress = new ImmediateProgress(_ => cts.Cancel());
@@ -91,7 +88,7 @@ public sealed class BackupFileCopierTests : IDisposable
     {
         var sourcePath = Path.Combine(_testRoot, "large-restore-source.bin");
         var destinationPath = Path.Combine(_testRoot, "existing-plugin.esp");
-        await WritePatternFileAsync(sourcePath, sizeBytes: 32 * 1024 * 1024);
+        await WritePatternFileAsync(sourcePath, 32 * 1024 * 1024);
         await File.WriteAllTextAsync(destinationPath, "original target content");
 
         using var cts = new CancellationTokenSource();
@@ -120,7 +117,7 @@ public sealed class BackupFileCopierTests : IDisposable
     {
         var sourcePath = Path.Combine(_testRoot, "large-restore-source-owned-temp.bin");
         var destinationPath = Path.Combine(_testRoot, "existing-owned-temp-plugin.esp");
-        await WritePatternFileAsync(sourcePath, sizeBytes: 32 * 1024 * 1024);
+        await WritePatternFileAsync(sourcePath, 32 * 1024 * 1024);
         await File.WriteAllTextAsync(destinationPath, "original target content");
 
         using var cts = new CancellationTokenSource();
@@ -146,7 +143,7 @@ public sealed class BackupFileCopierTests : IDisposable
     {
         var sourcePath = Path.Combine(_testRoot, "source.bin");
         var destinationPath = Path.Combine(_testRoot, "destination.bin");
-        await WritePatternFileAsync(sourcePath, sizeBytes: 2 * 1024 * 1024);
+        await WritePatternFileAsync(sourcePath, 2 * 1024 * 1024);
         var updates = new List<BackupCopyProgress>();
 
         var result = await _sut.CopyAsync(
@@ -173,7 +170,7 @@ public sealed class BackupFileCopierTests : IDisposable
             Path.Combine(_testRoot, "missing.esp"),
             Path.Combine(_testRoot, "destination.esp"),
             BackupCopyOptions.CreateNewBackup,
-            progress: null,
+            null,
             CancellationToken.None);
 
         result.Status.Should().Be(BackupOperationStatus.Failed);
@@ -195,7 +192,7 @@ public sealed class BackupFileCopierTests : IDisposable
             sourcePath,
             destinationPath,
             BackupCopyOptions.CreateNewBackup,
-            progress: null,
+            null,
             CancellationToken.None);
 
         result.Status.Should().Be(BackupOperationStatus.Failed);
@@ -206,10 +203,7 @@ public sealed class BackupFileCopierTests : IDisposable
     private static async Task WritePatternFileAsync(string path, int sizeBytes)
     {
         var pattern = new byte[81920];
-        for (var i = 0; i < pattern.Length; i++)
-        {
-            pattern[i] = (byte)(i % byte.MaxValue);
-        }
+        for (var i = 0; i < pattern.Length; i++) pattern[i] = (byte)(i % byte.MaxValue);
 
         await using var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
         var remaining = sizeBytes;
@@ -227,6 +221,9 @@ public sealed class BackupFileCopierTests : IDisposable
     private sealed class ImmediateProgress(Action<BackupCopyProgress> onProgress) : IProgress<BackupCopyProgress>
     {
         /// <inheritdoc />
-        public void Report(BackupCopyProgress value) => onProgress(value);
+        public void Report(BackupCopyProgress value)
+        {
+            onProgress(value);
+        }
     }
 }

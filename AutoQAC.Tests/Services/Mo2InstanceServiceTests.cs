@@ -100,10 +100,10 @@ public sealed class Mo2InstanceServiceTests : IDisposable
         Directory.CreateDirectory(dataDir);
 
         File.WriteAllText(Path.Combine(profileDir, "modlist.txt"), """
-            +HighPriority
-            +LowPriority
-            -Disabled
-            """);
+                                                                   +HighPriority
+                                                                   +LowPriority
+                                                                   -Disabled
+                                                                   """);
         File.WriteAllText(Path.Combine(instance.OverwriteDirectory, "OverwriteWins.esp"), string.Empty);
         File.WriteAllText(Path.Combine(instance.ModsDirectory, "HighPriority", "Conflict.esp"), string.Empty);
         File.WriteAllText(Path.Combine(instance.ModsDirectory, "LowPriority", "Conflict.esp"), string.Empty);
@@ -123,10 +123,7 @@ public sealed class Mo2InstanceServiceTests : IDisposable
 
     public void Dispose()
     {
-        if (Directory.Exists(_root))
-        {
-            Directory.Delete(_root, recursive: true);
-        }
+        if (Directory.Exists(_root)) Directory.Delete(_root, true);
     }
 
     private Mo2InstanceInfo CreateInstance()

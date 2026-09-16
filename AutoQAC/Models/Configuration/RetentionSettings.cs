@@ -3,23 +3,23 @@ using YamlDotNet.Serialization;
 namespace AutoQAC.Models.Configuration;
 
 /// <summary>
-/// Controls how old log/journal files are pruned.
+///     Controls how old log/journal files are pruned.
 /// </summary>
 public enum RetentionMode
 {
     /// <summary>
-    /// Delete files older than <see cref="RetentionSettings.MaxAgeDays"/> days.
+    ///     Delete files older than <see cref="RetentionSettings.MaxAgeDays" /> days.
     /// </summary>
     AgeBased,
 
     /// <summary>
-    /// Keep at most <see cref="RetentionSettings.MaxFileCount"/> files, deleting oldest first.
+    ///     Keep at most <see cref="RetentionSettings.MaxFileCount" /> files, deleting oldest first.
     /// </summary>
     CountBased
 }
 
 /// <summary>
-/// Settings that control log and journal file retention policy.
+///     Settings that control log and journal file retention policy.
 /// </summary>
 public sealed class RetentionSettings
 {
@@ -30,5 +30,8 @@ public sealed class RetentionSettings
     [YamlMember(Alias = "max_file_count")] public int MaxFileCount { get; set; } = 50;
 
     /// <summary>Deep copy of RetentionSettings (no YAML round-trip; see Phase 10 D-43).</summary>
-    public RetentionSettings Copy() => new() { Mode = Mode, MaxAgeDays = MaxAgeDays, MaxFileCount = MaxFileCount };
+    public RetentionSettings Copy()
+    {
+        return new RetentionSettings { Mode = Mode, MaxAgeDays = MaxAgeDays, MaxFileCount = MaxFileCount };
+    }
 }
