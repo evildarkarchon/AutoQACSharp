@@ -18,7 +18,9 @@ public sealed class PluginRefreshDiscoveryFreshnessToken
     private readonly bool _mo2ModeEnabled;
     private readonly string? _mo2Profile;
     private readonly IReadOnlyDictionary<string, IReadOnlyList<string>> _skipLists;
+    private readonly IReadOnlyDictionary<string, IReadOnlyList<string>> _variantSkipLists;
 
+    /// <summary>Captures discovery settings and optional variant candidates from the same pre-discovery configuration.</summary>
     internal PluginRefreshDiscoveryFreshnessToken(
         GameType gameType,
         bool mo2ModeEnabled,
@@ -28,7 +30,9 @@ public sealed class PluginRefreshDiscoveryFreshnessToken
         string? mo2InstancePath,
         string? mo2Profile,
         bool disableSkipLists,
-        IReadOnlyDictionary<string, IReadOnlyList<string>> skipLists)
+        IReadOnlyDictionary<string, IReadOnlyList<string>> skipLists,
+        IReadOnlyDictionary<string, IReadOnlyList<string>>? variantSkipLists = null,
+        GameVariant variant = GameVariant.None)
     {
         GameType = gameType;
         _mo2ModeEnabled = mo2ModeEnabled;
@@ -39,9 +43,30 @@ public sealed class PluginRefreshDiscoveryFreshnessToken
         _mo2Profile = mo2Profile;
         _disableSkipLists = disableSkipLists;
         _skipLists = skipLists;
+        _variantSkipLists = variantSkipLists ?? new Dictionary<string, IReadOnlyList<string>>();
+        Variant = variant;
     }
 
     internal GameType GameType { get; }
+    internal GameVariant Variant { get; }
+
+    /// <summary>Narrows a captured token to the Skip list keys used by the detected publication variant.</summary>
+    internal PluginRefreshDiscoveryFreshnessToken WithVariant(GameVariant variant)
+    {
+        if (variant == Variant) return this;
+
+        // Keep the pre-discovery snapshot: reloading settings after variant detection could bless edits
+        // that were not applied to the accepted rows. Enderal replaces the base list; TTW adds FO3.
+        var skipLists = variant == GameVariant.Enderal
+            ? new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, IReadOnlyList<string>>(_skipLists, StringComparer.OrdinalIgnoreCase);
+        var variantKey = variant == GameVariant.Enderal ? "Enderal" : "FO3";
+        if (_variantSkipLists.TryGetValue(variantKey, out var entries)) skipLists[variantKey] = entries;
+
+        return new PluginRefreshDiscoveryFreshnessToken(
+            GameType, _mo2ModeEnabled, _mo2ExecutablePath, _loadOrderPath, _gameDataFolderOverride,
+            _mo2InstancePath, _mo2Profile, _disableSkipLists, skipLists, variant: variant);
+    }
 
     internal PluginRefreshFreshness CompareWith(PluginRefreshDiscoveryFreshnessToken current)
     {

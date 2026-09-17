@@ -158,11 +158,67 @@ public sealed class PluginRefreshDiscoveryPlannerFreshnessTests
         var sut = CreateSut(userConfig, () => gameDataFolderOverride);
         var plan = CreateDirectPlan();
         var accepted = await sut.CreateFreshnessTokenAsync(plan);
-        userConfig.SkipLists["SkyrimSe"].Add("NewlySkipped.esp");
+        userConfig.SkipLists["SSE"].Add("NewlySkipped.esp");
 
         var freshness = await sut.CheckFreshnessAsync(accepted, CreateMatchingContext(plan));
 
         freshness.Should().Be(new PluginRefreshFreshness(false, PluginRefreshStalenessReason.SkipListSettingsChanged));
+    }
+
+    /// <summary>Changing a different game's Skip list must not block the accepted game's cleaning publication.</summary>
+    [Fact]
+    public async Task CheckFreshnessAsync_ReturnsFresh_WhenAnotherGamesSkipListChanges()
+    {
+        var userConfig = CreateUserConfig();
+        userConfig.SkipLists["FO4"] = ["FalloutCompleted.esp"];
+        var sut = CreateSut(userConfig, () => @"C:\Overrides\Skyrim\Data");
+        var plan = CreateDirectPlan();
+        var accepted = await sut.CreateFreshnessTokenAsync(plan);
+        userConfig.SkipLists["FO4"].Add("NewlySkipped.esp");
+
+        var freshness = await sut.CheckFreshnessAsync(accepted, CreateMatchingContext(plan));
+
+        freshness.Should().Be(PluginRefreshFreshness.Fresh);
+    }
+
+    /// <summary>Variant lists are captured before discovery and compared for the variant actually published.</summary>
+    [Theory]
+    [InlineData(GameType.SkyrimSe, GameVariant.Enderal, "Enderal")]
+    [InlineData(GameType.FalloutNewVegas, GameVariant.Ttw, "FO3")]
+    public async Task CheckFreshnessAsync_ReturnsStale_WhenPublishedVariantSkipListChanges(
+        GameType gameType, GameVariant variant, string key)
+    {
+        var userConfig = CreateUserConfig();
+        userConfig.SkipLists[key] = ["VariantCompleted.esp"];
+        var sut = CreateSut(userConfig, () => null);
+        var plan = CreateDirectPlan() with { GameType = gameType };
+        var captured = await sut.CreateFreshnessTokenAsync(plan);
+        userConfig.SkipLists[key].Add("NewlySkipped.esp");
+        var accepted = captured.WithVariant(variant);
+
+        var freshness = await sut.CheckFreshnessAsync(accepted, CreateMatchingContext(plan));
+
+        freshness.Should().Be(new PluginRefreshFreshness(false, PluginRefreshStalenessReason.SkipListSettingsChanged));
+    }
+
+    /// <summary>Enderal replaces the base game's list while ordinary FNV does not use the TTW FO3 list.</summary>
+    [Theory]
+    [InlineData(GameType.SkyrimSe, GameVariant.Enderal, "SSE")]
+    [InlineData(GameType.SkyrimSe, GameVariant.None, "Enderal")]
+    [InlineData(GameType.FalloutNewVegas, GameVariant.None, "FO3")]
+    public async Task CheckFreshnessAsync_ReturnsFresh_WhenUnusedVariantSkipListChanges(
+        GameType gameType, GameVariant variant, string key)
+    {
+        var userConfig = CreateUserConfig();
+        userConfig.SkipLists[key] = ["OtherVariantCompleted.esp"];
+        var sut = CreateSut(userConfig, () => null);
+        var plan = CreateDirectPlan() with { GameType = gameType };
+        var accepted = (await sut.CreateFreshnessTokenAsync(plan)).WithVariant(variant);
+        userConfig.SkipLists[key].Add("NewlySkipped.esp");
+
+        var freshness = await sut.CheckFreshnessAsync(accepted, CreateMatchingContext(plan));
+
+        freshness.Should().Be(PluginRefreshFreshness.Fresh);
     }
 
     private static PluginRefreshDiscoveryPlanner CreateSut(
@@ -192,7 +248,7 @@ public sealed class PluginRefreshDiscoveryPlannerFreshnessTests
             Settings = new AutoQacSettings { DisableSkipLists = disableSkipLists },
             SkipLists = new Dictionary<string, List<string>>
             {
-                ["SkyrimSe"] = ["Completed.esp"],
+                ["SSE"] = ["Completed.esp"],
                 ["Universal"] = ["Universal.esp"]
             }
         };

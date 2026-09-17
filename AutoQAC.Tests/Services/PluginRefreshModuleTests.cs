@@ -15,6 +15,43 @@ namespace AutoQAC.Tests.Services;
 
 public sealed class PluginRefreshModuleTests
 {
+    /// <summary>A failed plan cannot clear rows installed by a refresh started from its last loading notification.</summary>
+    [Fact]
+    public async Task RefreshGame_MissingPlanSupersededAfterLoadingSnapshot_PreservesNewerCompatibilityRows()
+    {
+        var state = new StateService();
+        var plan = CreateWiringPlan();
+        var planner = CreateReadyDiscoveryPlanner(plan, [Plugin("Winner.esp")]);
+        var planRequested = false;
+        planner.CreatePlanAsync(Arg.Any<PluginRefreshDiscoveryPlanRequest>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                if (planRequested)
+                    return new PluginRefreshDiscoveryPlanResult(PluginRefreshDiscoveryPlanStatus.Ready, plan, plan.Configuration);
+                planRequested = true;
+                return new PluginRefreshDiscoveryPlanResult(PluginRefreshDiscoveryPlanStatus.MissingLoadOrderFile, null, plan.Configuration);
+            });
+        using var sut = CreateModule(state, discoveryPlanner: planner);
+        Task<PluginRefreshSnapshot>? newer = null;
+        var supersede = true;
+        using var subscription = sut.Snapshots.Subscribe(snapshot =>
+        {
+            if (!supersede || !planRequested || !snapshot.Activity.IsPluginRefreshRunning) return;
+            supersede = false;
+            newer = sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+            var winner = newer.GetAwaiter().GetResult();
+            sut.ExecuteAsync(new PluginRefreshIntent.ChangeSelection(
+                new PluginSelectionChange.SetOne(winner.Rows.Single().Key, false))).GetAwaiter().GetResult();
+        });
+
+        await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+        await newer!;
+
+        state.CurrentState.PluginsToClean.Should().ContainSingle(row => row.FileName == "Winner.esp");
+        state.CurrentState.ExcludedPluginPaths.Should().ContainSingle().Which.Should().EndWith("Winner.esp");
+        (await sut.GetCurrentPublicationAsync()).Rows.Should().ContainSingle(row => row.Plugin.FileName == "Winner.esp");
+    }
+
     /// <summary>A superseded start cannot clear or replace the newer refresh's completed rows.</summary>
     [Theory]
     [InlineData(false)]
@@ -991,6 +1028,93 @@ public sealed class PluginRefreshModuleTests
             .LoadPluginsAsync(
                 Arg.Any<PluginRefreshDiscoveryPlan>(),
                 Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>Selected analysis survives operational saves but restores prior estimates for a discovery mismatch.</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task UserConfigurationChanged_CancelsSelectedAnalysisOnlyForDiscoveryMismatch(bool discoveryChanged)
+    {
+        var stateService = new StateService();
+        var configuration = CreateConfigurationService();
+        using var notifications = new Subject<UserConfiguration>();
+        configuration.UserConfigurationChanged.Returns(notifications);
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var selectedToken = CancellationToken.None;
+        var calls = 0;
+        var analyzer = new ResultPluginIssueApproximationModule(async (request, report, ct) =>
+        {
+            if (++calls > 1)
+            {
+                selectedToken = ct;
+                started.SetResult();
+                await release.Task.WaitAsync(ct);
+            }
+            foreach (var target in request.Targets)
+                report(new PluginIssueApproximationModuleResult(target, PluginIssueApproximation.Available(calls, 0, 0)));
+        });
+        using var sut = CreateModule(stateService, configuration, approximationModule: analyzer);
+        await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+        var selected = sut.ExecuteAsync(new PluginRefreshIntent.RefreshSelectedIssueApproximations());
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var saved = new UserConfiguration
+        {
+            Settings = new AutoQacSettings { CleaningTimeout = 600, DisableSkipLists = discoveryChanged }
+        };
+        configuration.LoadUserConfigAsync(Arg.Any<CancellationToken>()).Returns(saved);
+        notifications.OnNext(saved);
+
+        try
+        {
+            selectedToken.IsCancellationRequested.Should().Be(discoveryChanged);
+            if (!discoveryChanged)
+                stateService.CurrentState.PluginsToClean.Should().OnlyContain(plugin =>
+                    plugin.Approximation.Status == PluginIssueApproximationStatus.Pending);
+        }
+        finally
+        {
+            release.TrySetResult();
+            await selected.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        var expected = PluginIssueApproximation.Available(discoveryChanged ? 1 : 2, 0, 0);
+        stateService.CurrentState.PluginsToClean.Should().OnlyContain(plugin => plugin.Approximation == expected);
+    }
+
+    /// <summary>Late notification checks cannot overwrite a newer freshness verdict for the same rows.</summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task UserConfigurationChanged_OverlappingChecks_PreservesLatestFreshness(bool latestIsFresh)
+    {
+        var stateService = new StateService();
+        var configuration = CreateConfigurationService();
+        using var notifications = new Subject<UserConfiguration>();
+        configuration.UserConfigurationChanged.Returns(notifications);
+        var plan = CreateWiringPlan();
+        var planner = CreateReadyDiscoveryPlanner(plan, [Plugin("Selected.esp")]);
+        using var store = new PluginRefreshPublicationStore(new PluginRefreshAppStateMirror(stateService),
+            new PluginRefreshCommandAvailabilityPolicy(), planner.GetAffordance(plan.GameType, false));
+        using var sut = new PluginRefreshModule(planner, new ResultPluginIssueApproximationModule(), stateService,
+            new SkipListPolicy(configuration, CreateDefaultGameDetectionService()), store, configurationService: configuration);
+        await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+        // Inline continuations make releasing the older check a deterministic completion barrier.
+        var older = new TaskCompletionSource<PluginRefreshFreshness>();
+        var stale = new PluginRefreshFreshness(false, PluginRefreshStalenessReason.SkipListSettingsChanged);
+        var latest = latestIsFresh ? PluginRefreshFreshness.Fresh : stale;
+        var call = 0;
+        planner.CheckFreshnessAsync(Arg.Any<PluginRefreshDiscoveryFreshnessToken>(),
+                Arg.Any<PluginRefreshDiscoveryFreshnessContext>(), Arg.Any<CancellationToken>())
+            .Returns(_ => ++call == 1 ? older.Task : Task.FromResult(latest));
+
+        notifications.OnNext(new UserConfiguration());
+        notifications.OnNext(new UserConfiguration());
+        store.GetFreshnessInspection().Publication.Freshness.Should().Be(latest);
+        await Task.Run(() => older.SetResult(latestIsFresh ? stale : PluginRefreshFreshness.Fresh));
+
+        store.GetFreshnessInspection().Publication.Freshness.Should().Be(latest);
     }
 
     /// <summary>

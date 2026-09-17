@@ -94,7 +94,8 @@ public sealed class PluginRefreshDiscoveryPlanner : IPluginRefreshDiscoveryPlann
             NormalizePath(mo2Instance),
             NormalizeText(plan.Configuration.SelectedProfile),
             userConfig.Settings.DisableSkipLists,
-            NormalizeSkipLists(userConfig));
+            NormalizeSkipLists(userConfig, plan.GameType),
+            NormalizeVariantSkipLists(userConfig, plan.GameType));
     }
 
     /// <inheritdoc />
@@ -107,7 +108,7 @@ public sealed class PluginRefreshDiscoveryPlanner : IPluginRefreshDiscoveryPlann
         ArgumentNullException.ThrowIfNull(current);
 
         var currentToken = await CreateCurrentFreshnessTokenAsync(accepted.GameType, current, ct).ConfigureAwait(false);
-        return accepted.CompareWith(currentToken);
+        return accepted.CompareWith(currentToken.WithVariant(accepted.Variant));
     }
 
     /// <inheritdoc />
@@ -188,7 +189,8 @@ public sealed class PluginRefreshDiscoveryPlanner : IPluginRefreshDiscoveryPlann
                 : null),
             NormalizeText(current.Mo2ModeEnabled ? current.Mo2Profile : null),
             userConfig.Settings.DisableSkipLists,
-            NormalizeSkipLists(userConfig));
+            NormalizeSkipLists(userConfig, publicationGameType),
+            NormalizeVariantSkipLists(userConfig, publicationGameType));
     }
 
     private async Task<PluginRefreshDiscoveryPlanResult> CreateDirectPlanAsync(
@@ -382,17 +384,44 @@ public sealed class PluginRefreshDiscoveryPlanner : IPluginRefreshDiscoveryPlann
             : null;
     }
 
-    private static IReadOnlyDictionary<string, IReadOnlyList<string>> NormalizeSkipLists(UserConfiguration userConfig)
+    /// <summary>Snapshots the publication game's user Skip list without coupling freshness to other games' edits.</summary>
+    private static IReadOnlyDictionary<string, IReadOnlyList<string>> NormalizeSkipLists(
+        UserConfiguration userConfig,
+        GameType gameType)
     {
-        var normalized = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (key, values) in userConfig.SkipLists.OrderBy(kvp => kvp.Key, StringComparer.OrdinalIgnoreCase))
-            normalized[NormalizeText(key) ?? string.Empty] = (values ?? [])
-                .Where(value => !string.IsNullOrWhiteSpace(value))
-                .Select(value => value.Trim())
-                .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
-                .ToList();
+        // Configuration storage uses legacy game keys (for example SSE), not GameType enum names.
+        var key = ConfigurationService.GetGameKey(gameType);
+        return new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase)
+        {
+            [key] = NormalizeSkipList(userConfig, key)
+        };
+    }
 
-        return normalized;
+    /// <summary>Captures potential variant lists before discovery so later variant detection needs no configuration reload.</summary>
+    private static IReadOnlyDictionary<string, IReadOnlyList<string>> NormalizeVariantSkipLists(
+        UserConfiguration userConfig,
+        GameType gameType)
+    {
+        var key = gameType switch
+        {
+            GameType.SkyrimSe => "Enderal",
+            GameType.FalloutNewVegas => "FO3",
+            _ => null
+        };
+        var lists = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
+        if (key is not null) lists[key] = NormalizeSkipList(userConfig, key);
+        return lists;
+    }
+
+    /// <summary>Copies membership in stable order, treating absent and empty lists as equivalent.</summary>
+    private static IReadOnlyList<string> NormalizeSkipList(UserConfiguration userConfig, string key)
+    {
+        return (userConfig.SkipLists.GetValueOrDefault(key) ?? [])
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     private static string? NormalizePath(string? path)

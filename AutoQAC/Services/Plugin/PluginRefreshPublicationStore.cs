@@ -146,14 +146,6 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
     }
 
     /// <summary>
-    ///     Clears compatibility rows while leaving the current publication fallback to the next publish call.
-    /// </summary>
-    internal void ClearCompatibilityRows()
-    {
-        _appStateMirror.ClearRows();
-    }
-
-    /// <summary>
     ///     Selects visible rows currently targeted for issue approximation refresh.
     /// </summary>
     /// <returns>The snapshot used for selection plus selected row identities.</returns>
@@ -301,7 +293,7 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
     }
 
     /// <summary>
-    ///     Atomically publishes missing-publication facts unless their generation has been superseded.
+    ///     Clears compatibility rows and publishes missing-publication facts while the generation still owns the refresh.
     /// </summary>
     /// <param name="generation">Refresh generation associated with the snapshot.</param>
     /// <param name="gameType">Game context for the snapshot.</param>
@@ -309,6 +301,7 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
     /// <param name="activity">Current refresh activity.</param>
     /// <param name="statusText">User-facing status text.</param>
     /// <param name="affordance">Game affordance facts for the snapshot.</param>
+    /// <param name="canUpdate">Optional guard proving the refresh generation has not been canceled or superseded.</param>
     /// <returns>The committed snapshot.</returns>
     internal PluginRefreshSnapshot PublishMissingPublicationFromState(
         long generation,
@@ -316,24 +309,28 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
         PluginRefreshConfigurationProjection configuration,
         PluginRefreshActivity activity,
         string statusText,
-        PluginRefreshGameAffordance affordance)
+        PluginRefreshGameAffordance affordance,
+        Func<bool>? canUpdate = null)
     {
-        var state = _appStateMirror.CurrentState;
-        var snapshot = WithCommandAvailability(new PluginRefreshSnapshot(
-            generation, gameType, PluginRefreshAppStateMirror.ProjectVisibleRows(state),
-            configuration, activity, EmptyCommands, statusText), state, affordance);
         lock (_snapshotLock)
         {
             // Failure paths obey the same generation fence as accepted discovery, including settings invalidation.
-            if (_disposed || generation < _minimumPublicationGeneration || generation < _currentSnapshot.Generation)
-                return _currentSnapshot;
+            bool CanUpdate() => !_disposed && generation >= _minimumPublicationGeneration &&
+                generation >= _currentSnapshot.Generation && (canUpdate?.Invoke() ?? true);
+            if (!CanUpdate()) return _currentSnapshot;
+            _appStateMirror.ClearRows(CanUpdate);
+            // State observers run synchronously and can publish a newer generation while rows are cleared.
+            if (!CanUpdate()) return _currentSnapshot;
+            var state = _appStateMirror.CurrentState;
+            var snapshot = WithCommandAvailability(new PluginRefreshSnapshot(
+                generation, gameType, PluginRefreshAppStateMirror.ProjectVisibleRows(state),
+                configuration, activity, EmptyCommands, statusText), state, affordance);
             _currentSnapshot = snapshot;
             _currentPublication = CreateMissingPublication(snapshot);
             _currentPublicationFreshnessToken = null;
+            _snapshots.OnNext(snapshot);
+            return snapshot;
         }
-
-        _snapshots.OnNext(snapshot);
-        return snapshot;
     }
 
     /// <summary>
@@ -817,20 +814,24 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
     /// <param name="observedPublication">Publication observed before the planner freshness check.</param>
     /// <param name="observedFreshnessToken">Freshness token observed before the planner freshness check.</param>
     /// <param name="freshness">Freshness value returned by the planner.</param>
-    internal void PublishFreshnessIfCurrent(
+    /// <param name="canUpdate">Optional ownership check for the settings observation, evaluated at commit time.</param>
+    /// <returns>True when the observation is still current, including an unchanged freshness value.</returns>
+    internal bool PublishFreshnessIfCurrent(
         PluginRefreshPublication observedPublication,
         PluginRefreshDiscoveryFreshnessToken observedFreshnessToken,
-        PluginRefreshFreshness freshness)
+        PluginRefreshFreshness freshness,
+        Func<bool>? canUpdate = null)
     {
         PluginRefreshSnapshot snapshot;
         lock (_snapshotLock)
         {
-            if (_disposed ||
+            if (_disposed || canUpdate?.Invoke() == false ||
                 !ReferenceEquals(_currentPublicationFreshnessToken, observedFreshnessToken) ||
                 _currentPublication.Generation != observedPublication.Generation ||
-                _currentPublication.DiscoveryPlan != observedPublication.DiscoveryPlan ||
-                _currentPublication.Freshness == freshness)
-                return;
+                _currentPublication.DiscoveryPlan != observedPublication.DiscoveryPlan)
+                return false;
+
+            if (_currentPublication.Freshness == freshness) return true;
 
             _currentPublication = _currentPublication with { Freshness = freshness };
             snapshot = _currentSnapshot;
@@ -839,6 +840,7 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
         // Freshness is a publication fact, not a row refresh. Re-emit the current snapshot so callers
         // can re-query publication readiness without AutoQAC changing visible rows underneath them.
         _snapshots.OnNext(snapshot);
+        return true;
     }
 
     private bool TryApplySelectionChangeToPublication(

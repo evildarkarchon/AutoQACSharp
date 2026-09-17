@@ -9,6 +9,53 @@ namespace AutoQAC.Tests.Services;
 
 public sealed class PluginRefreshPublicationStoreTests
 {
+    /// <summary>Publishing discovery failure must clear both compatibility rows and their selection exclusions.</summary>
+    [Fact]
+    public void PublishMissingPublicationFromState_WhenCurrent_ShouldClearCompatibilityRows()
+    {
+        var stateService = new StateService();
+        using var sut = CreateStore(stateService);
+        var plan = CreatePlan();
+        sut.PublishAcceptedPublication(1, GameType.SkyrimSe, plan, CreateFreshnessToken(),
+            plan.Configuration, [Published("Old.esp", isSelected: false)], new(false, false), "Old", Affordance());
+
+        var result = sut.PublishMissingPublicationFromState(2, GameType.SkyrimSe,
+            plan.Configuration, new(false, false), "Discovery failed", Affordance());
+
+        result.Rows.Should().BeEmpty();
+        stateService.CurrentState.PluginsToClean.Should().BeEmpty();
+        stateService.CurrentState.ExcludedPluginPaths.Should().BeEmpty();
+        sut.GetFreshnessInspection().Publication.Freshness.Should().Be(PluginRefreshFreshness.Missing);
+    }
+
+    /// <summary>Synchronous state observers can supersede a failure clear before its snapshot is committed.</summary>
+    [Fact]
+    public void PublishMissingPublicationFromState_WhenSupersededDuringClear_ShouldPreserveWinningPublication()
+    {
+        var stateService = new StateService();
+        using var sut = CreateStore(stateService);
+        var plan = CreatePlan();
+        sut.PublishAcceptedPublication(1, GameType.SkyrimSe, plan, CreateFreshnessToken(),
+            plan.Configuration, [Published("Old.esp")], new(false, false), "Old", Affordance());
+        var supersede = true;
+        using var subscription = stateService.StateChanged.Subscribe(state =>
+        {
+            if (!supersede || state.PluginsToClean.Count != 0) return;
+            supersede = false;
+            sut.PublishAcceptedPublication(3, GameType.SkyrimSe, plan, CreateFreshnessToken(),
+                plan.Configuration, [Published("Winner.esp", isSelected: false)], new(false, false), "Winner", Affordance());
+        });
+
+        var result = sut.PublishMissingPublicationFromState(2, GameType.SkyrimSe,
+            plan.Configuration, new(false, false), "Discovery failed", Affordance());
+
+        result.Generation.Should().Be(3);
+        result.Rows.Should().ContainSingle(row => row.FileName == "Winner.esp");
+        stateService.CurrentState.PluginsToClean.Should().ContainSingle(row => row.FileName == "Winner.esp");
+        stateService.CurrentState.ExcludedPluginPaths.Should().Equal(@"C:\Data\Winner.esp");
+        sut.GetFreshnessInspection().Publication.Freshness.Should().Be(PluginRefreshFreshness.Fresh);
+    }
+
     /// <summary>Obsolete failure paths must preserve the winning publication and its freshness lease.</summary>
     [Theory]
     [InlineData(false)]
@@ -19,7 +66,7 @@ public sealed class PluginRefreshPublicationStoreTests
         using var sut = CreateStore(stateService);
         var plan = CreatePlan();
         sut.PublishAcceptedPublication(2, GameType.SkyrimSe, plan, CreateFreshnessToken(),
-            plan.Configuration, [Published("Winner.esp")], new(false, false), "Winner", Affordance());
+            plan.Configuration, [Published("Winner.esp", isSelected: false)], new(false, false), "Winner", Affordance());
         if (invalidate) sut.InvalidatePublication(3);
         var before = sut.GetFreshnessInspection();
         var snapshot = sut.GetCurrentSnapshot();
@@ -32,6 +79,8 @@ public sealed class PluginRefreshPublicationStoreTests
         result.Should().BeSameAs(snapshot);
         sut.GetCurrentSnapshot().Should().BeSameAs(snapshot);
         sut.GetFreshnessInspection().Should().BeEquivalentTo(before);
+        stateService.CurrentState.PluginsToClean.Should().ContainSingle(row => row.FileName == "Winner.esp");
+        stateService.CurrentState.ExcludedPluginPaths.Should().Equal(@"C:\Data\Winner.esp");
         notifications.Should().ContainSingle();
     }
 

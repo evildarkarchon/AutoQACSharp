@@ -174,10 +174,17 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         };
     }
 
+    /// <summary>Evaluates an accepted publication, committing only while its settings observation remains current.</summary>
+    /// <param name="publishIfChanged">Whether to publish the evaluated freshness.</param>
+    /// <param name="cancellationToken">Cancels the planner check.</param>
+    /// <param name="notificationVersion">Settings notification to evaluate and, if stale, cancel selected analysis for.</param>
+    /// <returns>The observed publication with its evaluated freshness.</returns>
     private async Task<PluginRefreshPublication> GetCurrentPublicationWithFreshnessAsync(
         bool publishIfChanged,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        int? notificationVersion = null)
     {
+        var freshnessVersion = notificationVersion ?? Volatile.Read(ref _freshnessRefreshVersion);
         var inspection = _publicationStore.GetFreshnessInspection();
         var publication = inspection.Publication;
         var freshnessToken = inspection.FreshnessToken;
@@ -191,8 +198,12 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                 cancellationToken)
             .ConfigureAwait(false);
         var refreshedPublication = publication with { Freshness = freshness };
-        if (publishIfChanged)
-            _publicationStore.PublishFreshnessIfCurrent(publication, freshnessToken, refreshedPublication.Freshness);
+        if (publishIfChanged && _publicationStore.PublishFreshnessIfCurrent(
+                publication, freshnessToken, refreshedPublication.Freshness,
+                () => !_disposed && freshnessVersion == Volatile.Read(ref _freshnessRefreshVersion)) &&
+            notificationVersion.HasValue && !freshness.IsFresh &&
+            freshnessVersion == Volatile.Read(ref _freshnessRefreshVersion))
+            CancelSelectedApproximationForStaleness(publication.Generation);
 
         return refreshedPublication;
     }
@@ -227,7 +238,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             if (gameType == GameType.Unknown)
             {
                 token.ThrowIfCancellationRequested();
-                PublishNoGameSelected(generation);
+                PublishNoGameSelected(generation, token);
                 var noGameSnapshot = _publicationStore.GetCurrentSnapshot();
                 if (IsVisible(generation, token) && noGameSnapshot.Generation == generation)
                     completion?.TrySetResult(new PluginRefreshCompletion(PluginRefreshCompletionStatus.NoGame, noGameSnapshot));
@@ -253,14 +264,14 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
 
             if (planResult.Plan is null)
             {
-                _publicationStore.ClearCompatibilityRows();
                 _publicationStore.PublishMissingPublicationFromState(
                     generation,
                     gameType,
                     configuration,
                     IdleActivity,
                     GetPlanStatusText(planResult, gameType),
-                    GetAffordance(gameType, configuration));
+                    GetAffordance(gameType, configuration),
+                    () => IsVisible(generation, token));
                 return _publicationStore.GetCurrentSnapshot();
             }
 
@@ -272,11 +283,11 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             if (loadedPlugins.LoadingStatus is PluginLoadingStatus.Failed or PluginLoadingStatus.DataFolderNotFound or PluginLoadingStatus.UnsupportedGame)
             {
                 // Empty successful load orders are valid; a loader failure must never grant a freshness lease to empty rows.
-                _publicationStore.ClearCompatibilityRows();
                 _publicationStore.PublishMissingPublicationFromState(
                     generation, gameType, configuration, IdleActivity,
                     "Plugin discovery failed. Check the game configuration and refresh plugins.",
-                    GetAffordance(gameType, configuration));
+                    GetAffordance(gameType, configuration),
+                    () => IsVisible(generation, token));
                 return _publicationStore.GetCurrentSnapshot();
             }
 
@@ -303,6 +314,8 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                     token)
                 .ConfigureAwait(false);
             if (!IsVisible(generation, token)) return _publicationStore.GetCurrentSnapshot();
+            // Variant detection uses the loaded rows; narrow the original settings snapshot without recapturing edits.
+            freshnessToken = freshnessToken.WithVariant(skipEvaluation.Variant);
 
             // Hidden Skip-list rows remain dependency context but never become targets, so begin
             // every row terminal and mark only this generation's authoritative targets Pending.
@@ -630,10 +643,10 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                generation == supersededGeneration && generation == activeGeneration - 1;
     }
 
-    private void PublishNoGameSelected(long generation)
+    /// <summary>Publishes the empty state only while the no-game refresh still owns its generation.</summary>
+    private void PublishNoGameSelected(long generation, CancellationToken token)
     {
-        _stateService.UpdateState(state => state with { CurrentGameType = GameType.Unknown });
-        _publicationStore.ClearCompatibilityRows();
+        // TryBeginRefresh already changed the current game under its generation guard.
         var configuration = _publicationStore.CreateConfigurationProjectionFromCurrentState();
         _publicationStore.PublishMissingPublicationFromState(
             generation,
@@ -641,7 +654,8 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             configuration,
             IdleActivity,
             "No game selected",
-            GetAffordance(GameType.Unknown, configuration));
+            GetAffordance(GameType.Unknown, configuration),
+            () => IsVisible(generation, token));
     }
 
     private CancellationTokenSource CreateAndActivateGeneration(
@@ -839,17 +853,18 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         if (_disposed) return;
 
         var requestId = Interlocked.Increment(ref _freshnessRefreshVersion);
-        CancelSelectedApproximationForStaleness();
+        // Operational saves also emit configuration notifications; only a confirmed mismatch invalidates analysis.
         _ = RefreshPublicationFreshnessAsync(requestId);
     }
 
     /// <summary>
     ///     Restores unfinished selected targets when Discovery-affecting settings invalidate their freshness lease.
     /// </summary>
-    private void CancelSelectedApproximationForStaleness()
+    /// <param name="generation">Publication generation whose freshness was checked.</param>
+    private void CancelSelectedApproximationForStaleness(long generation)
     {
         var snapshot = _publicationStore.GetCurrentSnapshot();
-        if (snapshot.Activity.IsPluginRefreshRunning ||
+        if (snapshot.Generation != generation || snapshot.Activity.IsPluginRefreshRunning ||
             !snapshot.Activity.IsIssueApproximationRefreshRunning)
             return;
 
@@ -873,11 +888,12 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             out _);
     }
 
+    /// <summary>Checks a settings notification without allowing an older completion to replace a newer verdict.</summary>
     private async Task RefreshPublicationFreshnessAsync(int requestId)
     {
         try
         {
-            await GetCurrentPublicationWithFreshnessAsync(true).ConfigureAwait(false);
+            await GetCurrentPublicationWithFreshnessAsync(true, notificationVersion: requestId).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

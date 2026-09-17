@@ -79,11 +79,16 @@ internal sealed class PluginRefreshAppStateMirror
     }
 
     /// <summary>
-    ///     Clears compatibility plugin rows without changing other runtime state.
+    ///     Clears compatibility rows and exclusions only while the requesting refresh owns the state mutation.
     /// </summary>
-    internal void ClearRows()
+    /// <param name="canUpdate">Checks generation ownership inside the state mutation.</param>
+    internal void ClearRows(Func<bool> canUpdate)
     {
-        _stateService.SetPluginsToClean([]);
+        _stateService.UpdateState(state => !canUpdate() ? state : state with
+        {
+            PluginsToClean = Array.Empty<PluginInfo>().ToList().AsReadOnly(),
+            ExcludedPluginPaths = Array.Empty<string>().ToFrozenSet(StringComparer.OrdinalIgnoreCase)
+        });
     }
 
     /// <summary>
