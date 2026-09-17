@@ -104,29 +104,37 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
     /// <inheritdoc />
     public Task<PluginRefreshCompletion> RefreshForSettingsAsync(GameType gameType, CancellationToken cancellationToken = default)
     {
-        if (cancellationToken.IsCancellationRequested)
+        if (cancellationToken.IsCancellationRequested || _admission?.IsCleaning == true)
             return Task.FromResult(new PluginRefreshCompletion(PluginRefreshCompletionStatus.Canceled));
         if (_disposed)
             return Task.FromResult(new PluginRefreshCompletion(PluginRefreshCompletionStatus.Failed));
         var completion = new TaskCompletionSource<PluginRefreshCompletion>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var lifetimeCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         // The module retains the generation and observes its remaining approximation work after the caller receives rows.
-        _ = ObserveSettingsRefreshAsync(gameType, cancellationToken, completion);
+        var lifetime = ObserveSettingsRefreshAsync(gameType, lifetimeCancellation, completion);
+        _admission?.TrackSettingsPublication(lifetime, lifetimeCancellation);
         return completion.Task;
     }
 
     /// <summary>Observes the complete refresh lifetime while its caller waits only for correlated publication.</summary>
-    private async Task ObserveSettingsRefreshAsync(GameType gameType, CancellationToken cancellationToken,
+    private async Task ObserveSettingsRefreshAsync(GameType gameType, CancellationTokenSource lifetimeCancellation,
         TaskCompletionSource<PluginRefreshCompletion> completion)
     {
         try
         {
-            await RefreshGameAsync(gameType, null, cancellationToken, completion).ConfigureAwait(false);
+            await RefreshGameAsync(gameType, null, lifetimeCancellation.Token, completion).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             _logger?.Error(ex, "Failed to refresh plugins for Discovery settings");
             completion.TrySetResult(new PluginRefreshCompletion(
-                cancellationToken.IsCancellationRequested ? PluginRefreshCompletionStatus.Canceled : PluginRefreshCompletionStatus.Failed));
+                lifetimeCancellation.IsCancellationRequested
+                    ? PluginRefreshCompletionStatus.Canceled
+                    : PluginRefreshCompletionStatus.Failed));
+        }
+        finally
+        {
+            lifetimeCancellation.Dispose();
         }
     }
 

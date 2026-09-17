@@ -575,6 +575,40 @@ public sealed class ConfigPersistenceCoordinatorTests
         await coordinator.StopAsync();
     }
 
+    /// <summary>A deferred disk change remains recoverable when the admitted app save fails.</summary>
+    [Fact]
+    public async Task Watcher_DuringAdmittedMutation_WhenAppSaveFails_AppliesDeferredExternalAfterRelease()
+    {
+        var store = new FakeUserConfigFileStore { CurrentContent = Serializer.Serialize(NewConfig(99)) };
+        var admission = new DiscoverySettingsAdmission();
+        var coordinator = CreateCoordinator(store, admission: admission);
+        await coordinator.StartAsync();
+        var mutation = await admission.TryEnterSettingsAsync();
+        mutation.Should().NotBeNull();
+
+        try
+        {
+            coordinator.NotifySettingsFileChanged(ConfigFileSignalKind.Changed);
+            await PumpUntilQuiescentAsync(coordinator);
+
+            store.WriteFailure = new IOException("locked");
+            await coordinator.SaveUserConfigAsync(NewConfig(42));
+            var result = await coordinator.FlushPendingSavesAsync().WaitAsync(TimeSpan.FromSeconds(2));
+            result.Status.Should().Be(ConfigPersistenceStatusKind.Failed);
+
+            mutation!.Dispose();
+            await PumpUntilQuiescentAsync(coordinator);
+
+            (await coordinator.LoadCurrentAsync()).Settings.CleaningTimeout.Should().Be(99,
+                "the failed app save did not overwrite the external file, so its deferred candidate must still apply");
+        }
+        finally
+        {
+            mutation?.Dispose();
+            await coordinator.StopAsync().WaitAsync(TimeSpan.FromSeconds(2));
+        }
+    }
+
     private static ConfigPersistenceCoordinator CreateCoordinator(
         FakeUserConfigFileStore? store = null,
         Func<AppState>? currentState = null,

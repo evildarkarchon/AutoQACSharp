@@ -155,9 +155,19 @@ public sealed class DiscoverySettingsModule : IDiscoverySettingsModule, IDisposa
                                     Complete(operation, DiscoverySettingsChangeStatus.Accepted);
                                 if (requiresPublication && _pending.Count > 0)
                                 {
-                                    var cancellation = new CancellationTokenSource();
-                                    _refreshCancellation = cancellation;
-                                    _ = PublishAsync(_revision, active.Copy(), cancellation);
+                                    if (_admission.IsCleaning)
+                                    {
+                                        CancelRemainingForCleaning();
+                                    }
+                                    else
+                                    {
+                                        var cancellation = new CancellationTokenSource();
+                                        _refreshCancellation = cancellation;
+                                        var publicationTask = PublishAsync(_revision, active.Copy(), cancellation);
+                                        // Register before releasing the settings lease so Cleaning cancellation and
+                                        // publication unwind remain on the same admission side of the handoff.
+                                        _admission.TrackSettingsPublication(publicationTask, cancellation);
+                                    }
                                 }
                             }
                         }
@@ -204,7 +214,12 @@ public sealed class DiscoverySettingsModule : IDiscoverySettingsModule, IDisposa
             var active = await _configuration.LoadUserConfigAsync(cancellation.Token).ConfigureAwait(false);
             lock (_sync)
             {
-                if (_disposed || revision != _revision || cancellation.IsCancellationRequested) return;
+                if (_disposed || revision != _revision) return;
+                if (cancellation.IsCancellationRequested)
+                {
+                    if (_admission.IsCleaning) CancelRemainingForCleaning();
+                    return;
+                }
                 if (DiscoverySettingsChanges.Fingerprint(active) != DiscoverySettingsChanges.Fingerprint(requested))
                 {
                     InvalidateExternalChange();
@@ -226,7 +241,10 @@ public sealed class DiscoverySettingsModule : IDiscoverySettingsModule, IDisposa
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
         {
-            // A newer mutation or caller cancellation owns completion of affected operations.
+            // Newer mutations and callers own their cancellations; Cleaning owns every saved change
+            // whose tracked publication it canceled while taking admission.
+            lock (_sync)
+                if (_admission.IsCleaning) CancelRemainingForCleaning();
         }
         catch (Exception ex)
         {
@@ -318,6 +336,13 @@ public sealed class DiscoverySettingsModule : IDiscoverySettingsModule, IDisposa
     {
         foreach (var operation in _pending.Where(p => p.Saved && !p.Mutating && p.RequiresPublication).ToArray())
             Complete(operation, DiscoverySettingsChangeStatus.RefreshFailed, RefreshFailure());
+    }
+
+    /// <summary>Cancels saved changes whose required publication cannot start after Cleaning reserves admission.</summary>
+    private void CancelRemainingForCleaning()
+    {
+        foreach (var operation in _pending.Where(p => p.Saved && !p.Mutating && p.RequiresPublication).ToArray())
+            Complete(operation, DiscoverySettingsChangeStatus.Canceled);
     }
 
     private static DiscoverySettingsChangeFailure RefreshFailure() => new(

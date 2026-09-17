@@ -41,4 +41,33 @@ public sealed class DiscoverySettingsAdmissionTests
         using var admitted = await next.WaitAsync(TimeSpan.FromSeconds(2));
         admitted.Should().NotBeNull();
     }
+
+    /// <summary>Cleaning cancels and drains a settings publication registered before its mutation lease is released.</summary>
+    [Fact]
+    public async Task CleaningReservation_WaitsForTrackedSettingsPublicationToUnwind()
+    {
+        var admission = new DiscoverySettingsAdmission();
+        using var mutation = await admission.TryEnterSettingsAsync();
+        using var publicationCancellation = new CancellationTokenSource();
+        var publication = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cancellationObserved = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var registration = publicationCancellation.Token.Register(cancellationObserved.SetResult);
+        admission.TrackSettingsPublication(publication.Task, publicationCancellation);
+
+        var cleaning = admission.EnterCleaningAsync();
+        await cancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        mutation!.Dispose();
+
+        try
+        {
+            var firstCompletion = await Task.WhenAny(cleaning, Task.Delay(TimeSpan.FromSeconds(1)));
+            firstCompletion.Should().NotBeSameAs(cleaning,
+                "Cleaning must retain admission until the canceled settings publication has fully unwound");
+        }
+        finally
+        {
+            publication.TrySetResult();
+            using var cleaningLease = await cleaning.WaitAsync(TimeSpan.FromSeconds(2));
+        }
+    }
 }

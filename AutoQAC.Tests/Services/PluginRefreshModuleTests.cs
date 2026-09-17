@@ -387,6 +387,57 @@ public sealed class PluginRefreshModuleTests
         }
     }
 
+    /// <summary>Cleaning admission waits for post-publication approximation cancellation to finish unwinding.</summary>
+    [Fact]
+    public async Task RefreshForSettings_CleaningReservation_WaitsForApproximationCancellationToUnwind()
+    {
+        var approximationStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cancellationObserved = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var allowApproximationToUnwind = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var approximation = new ResultPluginIssueApproximationModule(async (_, _, cancellationToken) =>
+        {
+            approximationStarted.TrySetResult();
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                throw new InvalidOperationException("An infinite approximation unexpectedly completed without cancellation.");
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                cancellationObserved.TrySetResult();
+            }
+
+            await allowApproximationToUnwind.Task;
+        });
+        var admission = new DiscoverySettingsAdmission();
+        using var state = new StateService();
+        using var sut = CreateModule(state, approximationModule: approximation, admission: admission);
+        Task<IDisposable>? cleaning = null;
+
+        try
+        {
+            var publication = await sut.RefreshForSettingsAsync(GameType.SkyrimSe)
+                .WaitAsync(TimeSpan.FromSeconds(5));
+            await approximationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            publication.Status.Should().Be(PluginRefreshCompletionStatus.Published);
+
+            cleaning = admission.EnterCleaningAsync();
+            await cancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+            var firstCompletion = await Task.WhenAny(cleaning, Task.Delay(TimeSpan.FromSeconds(1)));
+            firstCompletion.Should().NotBeSameAs(cleaning,
+                "Cleaning admission must drain approximation work retained after settings publication");
+        }
+        finally
+        {
+            allowApproximationToUnwind.TrySetResult();
+            if (cleaning is not null)
+            {
+                using var cleaningLease = await cleaning.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+        }
+    }
+
     /// <summary>An operation superseded while discovery ignores cancellation cannot borrow its successor's rows.</summary>
     [Fact]
     public async Task RefreshForSettings_SupersededDiscoveryNeverAcceptsSuccessorPublication()

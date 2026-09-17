@@ -236,7 +236,6 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
     {
         _appGeneration = Math.Max(_appGeneration, intent.Generation);
         _pendingApp = intent.Config.Copy();
-        _deferredCandidate = null;
         SetActive(intent.Config);
         SafePublishAccepted(intent.Config.Copy());
         ScheduleAutoFlush();
@@ -266,6 +265,8 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
             _lastWrittenHash = hash;
             _lastKnownExternalHash = hash;
             _pendingApp = null;
+            // The durable app write has now replaced any external content captured while admission was busy.
+            _deferredCandidate = null;
             _lastFailure = null;
             return new ConfigPersistenceResult(ConfigPersistenceStatusKind.Success,
                 ConfigPersistenceOperationKind.Flush, _appGeneration, null);

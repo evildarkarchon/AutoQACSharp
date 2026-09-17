@@ -48,6 +48,120 @@ public sealed class DiscoverySettingsModuleTests
         await config.DidNotReceive().SaveUserConfigAsync(Arg.Any<UserConfiguration>(), Arg.Any<CancellationToken>());
     }
 
+    /// <summary>A cleaning reservation that drains an admitted save must prevent its follow-up refresh from launching.</summary>
+    [Fact]
+    public async Task ExecuteAsync_CleaningReservedDuringSave_DoesNotLaunchRefresh()
+    {
+        var config = CreateConfiguration();
+        var active = new UserConfiguration { SelectedGame = nameof(GameType.SkyrimSe) };
+        var saveStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var continueSave = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        config.LoadUserConfigAsync(Arg.Any<CancellationToken>()).Returns(_ => active.Copy());
+        config.SaveUserConfigAsync(Arg.Any<UserConfiguration>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                saveStarted.TrySetResult();
+                await continueSave.Task;
+                active = call.Arg<UserConfiguration>()!.Copy();
+            });
+        using var state = new StateService();
+        using var refresh = new RecordingPluginRefreshModule();
+        var refreshLaunches = 0;
+        refresh.RefreshForSettingsHandler = async (_, cancellationToken) =>
+        {
+            Interlocked.Increment(ref refreshLaunches);
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                throw new InvalidOperationException("An infinite refresh unexpectedly completed without cancellation.");
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return new PluginRefreshCompletion(PluginRefreshCompletionStatus.Canceled);
+            }
+        };
+        var admission = new DiscoverySettingsAdmission();
+        using var sut = new DiscoverySettingsModule(config, state, refresh, admission);
+        using var changeCancellation = new CancellationTokenSource();
+        var change = sut.ExecuteAsync(new DiscoverySettingsIntent.SetMo2Mode(true), changeCancellation.Token);
+        await saveStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var cleaning = admission.EnterCleaningAsync();
+        cleaning.IsCompleted.Should().BeFalse();
+
+        continueSave.TrySetResult();
+        var cleaningLease = await cleaning.WaitAsync(TimeSpan.FromSeconds(5));
+        try
+        {
+            Volatile.Read(ref refreshLaunches).Should().Be(0,
+                "a cleaning reservation must prevent a settings refresh from launching after the save drains");
+        }
+        finally
+        {
+            changeCancellation.Cancel();
+            cleaningLease.Dispose();
+            await change.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+    }
+
+    /// <summary>Cleaning admission must wait for a just-launched settings refresh to finish cancellation cleanup.</summary>
+    [Fact]
+    public async Task ExecuteAsync_CleaningReservedDuringRefreshLaunch_WaitsForCanceledRefreshToUnwind()
+    {
+        var config = CreateConfiguration();
+        var active = new UserConfiguration { SelectedGame = nameof(GameType.SkyrimSe) };
+        config.LoadUserConfigAsync(Arg.Any<CancellationToken>()).Returns(_ => active.Copy());
+        config.SaveUserConfigAsync(Arg.Any<UserConfiguration>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                active = call.Arg<UserConfiguration>()!.Copy();
+                return Task.CompletedTask;
+            });
+        using var state = new StateService();
+        using var refresh = new RecordingPluginRefreshModule();
+        var admission = new DiscoverySettingsAdmission();
+        var refreshLaunched = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cancellationObserved = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var allowRefreshToUnwind = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Task<IDisposable>? cleaning = null;
+        refresh.RefreshForSettingsHandler = async (_, cancellationToken) =>
+        {
+            cleaning = admission.EnterCleaningAsync();
+            refreshLaunched.TrySetResult();
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                throw new InvalidOperationException("An infinite refresh unexpectedly completed without cancellation.");
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                cancellationObserved.TrySetResult();
+            }
+
+            await allowRefreshToUnwind.Task;
+            return new PluginRefreshCompletion(PluginRefreshCompletionStatus.Canceled);
+        };
+        using var sut = new DiscoverySettingsModule(config, state, refresh, admission);
+        var change = sut.ExecuteAsync(new DiscoverySettingsIntent.SetMo2Mode(true));
+
+        await refreshLaunched.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await cancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        cleaning.Should().NotBeNull();
+
+        try
+        {
+            var firstCompletion = await Task.WhenAny(cleaning!, Task.Delay(TimeSpan.FromSeconds(1)));
+            firstCompletion.Should().NotBeSameAs(cleaning,
+                "Cleaning admission must not complete while the canceled settings refresh is still unwinding");
+        }
+        finally
+        {
+            allowRefreshToUnwind.TrySetResult();
+            using var cleaningLease = await cleaning!.WaitAsync(TimeSpan.FromSeconds(5));
+            var result = await change.WaitAsync(TimeSpan.FromSeconds(5));
+            result.Status.Should().Be(DiscoverySettingsChangeStatus.Canceled);
+        }
+    }
+
     [Fact]
     public async Task ExecuteAsync_SelectGame_ShouldPersistSelectedGameAndRefreshPlugins()
     {

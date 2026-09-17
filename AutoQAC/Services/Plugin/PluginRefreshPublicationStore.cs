@@ -843,44 +843,55 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
         return true;
     }
 
+    /// <summary>
+    ///     Applies a selection change to the latest accepted publication, retrying when approximation progress
+    ///     replaces the observed rows before the selection can commit.
+    /// </summary>
     private bool TryApplySelectionChangeToPublication(
         PluginSelectionChange change,
         PluginRefreshGameAffordance affordance,
         out PluginRefreshSnapshot snapshot)
     {
-        PluginRefreshPublication publication;
-        PluginRefreshDiscoveryFreshnessToken? freshnessToken;
-        lock (_snapshotLock)
+        while (true)
         {
-            publication = _currentPublication;
-            freshnessToken = _currentPublicationFreshnessToken;
+            PluginRefreshPublication publication;
+            PluginRefreshDiscoveryFreshnessToken? freshnessToken;
+            lock (_snapshotLock)
+            {
+                publication = _currentPublication;
+                freshnessToken = _currentPublicationFreshnessToken;
+                snapshot = _currentSnapshot;
+                if (_disposed) return true;
+            }
+
+            if (publication.DiscoveryPlan is null || freshnessToken is null)
+            {
+                snapshot = null!;
+                return false;
+            }
+
+            if (publication.VisibleRows.Count == 0) return true;
+
+            var selection = PluginRefreshPublicationRows.ApplySelectionChange(publication.Rows, change);
+            if (!selection.WasTargetFound) return true;
+
+            var nextPublication = publication with
+            {
+                Rows = selection.Commit.Rows,
+                VisibleRows = selection.Commit.VisibleRows
+            };
+            if (TryPublishSelectionPublicationIfCurrent(
+                    publication,
+                    nextPublication,
+                    freshnessToken,
+                    selection.Commit.Mirror,
+                    affordance,
+                    out snapshot))
+                return true;
+
+            // Approximation callbacks replace the rows as whole immutable commits. Rebase the user's selection
+            // onto that latest commit instead of reporting success for the rejected stale candidate.
         }
-
-        if (publication.DiscoveryPlan is null || freshnessToken is null)
-        {
-            snapshot = null!;
-            return false;
-        }
-
-        snapshot = GetCurrentSnapshot();
-        if (publication.VisibleRows.Count == 0) return true;
-
-        var selection = PluginRefreshPublicationRows.ApplySelectionChange(publication.Rows, change);
-        if (!selection.WasTargetFound) return true;
-
-        var nextPublication = publication with
-        {
-            Rows = selection.Commit.Rows,
-            VisibleRows = selection.Commit.VisibleRows
-        };
-        TryPublishSelectionPublicationIfCurrent(
-            publication,
-            nextPublication,
-            freshnessToken,
-            selection.Commit.Mirror,
-            affordance,
-            out snapshot);
-        return true;
     }
 
     private PluginRefreshSnapshot ApplySelectionChangeToState(

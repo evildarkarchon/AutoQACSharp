@@ -105,9 +105,9 @@ public sealed class PluginRefreshPublicationStoreTests
         stateService.CurrentState.ExcludedPluginPaths.Should().Equal(@"C:\Data\Winner.esp");
     }
 
-    /// <summary>A result arriving during selection preparation must survive the selection commit.</summary>
+    /// <summary>An approximation result and the concurrent user selection must both survive publication.</summary>
     [Fact]
-    public void ApplySelectionChange_WhenApproximationArrivesDuringCommit_ShouldPreserveResult()
+    public void ApplySelectionChange_WhenApproximationReplacesRows_ShouldApplySelectionToLatestPublication()
     {
         var stateService = Substitute.For<IStateService>();
         var backingState = new StateService();
@@ -140,6 +140,7 @@ public sealed class PluginRefreshPublicationStoreTests
             .Should().Be(PluginIssueApproximation.Available(3, 2, 1));
         sut.GetCurrentSnapshot().Rows.Single().Approximation
             .Should().Be(PluginIssueApproximation.Available(3, 2, 1));
+        sut.GetCurrentSnapshot().Rows.Single().IsSelected.Should().BeFalse();
         backingState.CurrentState.PluginsToClean.Single().Approximation
             .Should().Be(PluginIssueApproximation.Available(3, 2, 1));
     }
