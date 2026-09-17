@@ -15,6 +15,117 @@ namespace AutoQAC.Tests.Services;
 
 public sealed class PluginRefreshModuleTests
 {
+    /// <summary>Cleaning admission cancels active analysis and rejects new Plugin mutations before AppState changes.</summary>
+    [Fact]
+    public async Task CleaningReservation_CancelsAnalysisAndRejectsPluginMutationsUntilReleased()
+    {
+        using var state = new StateService();
+        var admission = new DiscoverySettingsAdmission();
+        var selectedAnalysisStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var invocation = 0;
+        var approximation = new ResultPluginIssueApproximationModule(async (request, onResult, ct) =>
+        {
+            if (Interlocked.Increment(ref invocation) != 2)
+            {
+                foreach (var target in request.Targets)
+                    onResult(new PluginIssueApproximationModuleResult(
+                        target,
+                        PluginIssueApproximation.Available(1, 2, 3)));
+                return;
+            }
+
+            selectedAnalysisStarted.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+        });
+        using var sut = CreateModule(state, approximationModule: approximation, admission: admission);
+        await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+        approximation.Requests.Clear();
+        var selectedRefresh = sut.ExecuteAsync(new PluginRefreshIntent.RefreshSelectedIssueApproximations());
+        await selectedAnalysisStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        using var cleaning = await admission.EnterCleaningAsync();
+        await selectedRefresh.WaitAsync(TimeSpan.FromSeconds(5));
+
+        state.CurrentState.IsCleaning.Should().BeFalse("startup has reserved admission but has not published cleaning state");
+        var reserved = await sut.GetCurrentPublicationAsync();
+        reserved.Commands.CanSelectAll.Should().BeFalse();
+        reserved.Commands.CanDeselectAll.Should().BeFalse();
+        reserved.Commands.CanRefreshSelectedIssueApproximations.Should().BeFalse();
+        reserved.Activity.IsIssueApproximationRefreshRunning.Should().BeFalse();
+        reserved.Rows.Should().NotContain(row =>
+            row.Plugin.Approximation.Status == PluginIssueApproximationStatus.Pending);
+
+        await sut.ExecuteAsync(new PluginRefreshIntent.ChangeSelection(
+            new PluginSelectionChange.DeselectAllVisible()));
+        await sut.ExecuteAsync(new PluginRefreshIntent.RefreshSelectedIssueApproximations());
+
+        (await sut.GetCurrentPublicationAsync()).Rows.Should().OnlyContain(row => row.IsSelected);
+        approximation.Requests.Should().ContainSingle(
+            "the request already active when admission closed is canceled, and no new analysis is accepted");
+
+        cleaning.Dispose();
+
+        var released = await sut.GetCurrentPublicationAsync();
+        released.Commands.CanSelectAll.Should().BeTrue();
+        released.Commands.CanDeselectAll.Should().BeTrue();
+        released.Commands.CanRefreshSelectedIssueApproximations.Should().BeTrue();
+        await sut.ExecuteAsync(new PluginRefreshIntent.RefreshSelectedIssueApproximations());
+        approximation.Requests.Should().HaveCount(2);
+        await sut.ExecuteAsync(new PluginRefreshIntent.ChangeSelection(
+            new PluginSelectionChange.DeselectAllVisible()));
+        (await sut.GetCurrentPublicationAsync()).Rows.Should().OnlyContain(row => !row.IsSelected);
+    }
+
+    /// <summary>A queued selection cannot cross the point where Cleaning session admission becomes reserved.</summary>
+    [Fact]
+    public async Task CleaningReservation_RejectsSelectionQueuedBeforeReservationBoundary()
+    {
+        using var state = new StateService();
+        var admission = new DiscoverySettingsAdmission();
+        using var sut = CreateModule(state, admission: admission);
+        var loaded = await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+        using var heldMutation = await admission.TryEnterPluginMutationAsync();
+
+        var selection = sut.ExecuteAsync(new PluginRefreshIntent.ChangeSelection(
+            new PluginSelectionChange.DeselectAllVisible()));
+        var cleaningTask = admission.EnterCleaningAsync();
+        admission.IsCleaning.Should().BeTrue();
+        heldMutation.Should().NotBeNull();
+        heldMutation!.Dispose();
+
+        await selection.WaitAsync(TimeSpan.FromSeconds(5));
+        using var cleaning = await cleaningTask.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var reserved = await sut.GetCurrentPublicationAsync();
+        reserved.Rows.Select(row => row.IsSelected).Should().Equal(
+            loaded.Rows.Select(row => row.IsSelected));
+    }
+
+    /// <summary>Snapshot observer failures cannot escape the admission event and abort Cleaning session startup.</summary>
+    [Fact]
+    public async Task CleaningReservation_WhenSnapshotObserverThrows_DoesNotAbortAdmission()
+    {
+        using var state = new StateService();
+        var admission = new DiscoverySettingsAdmission();
+        using var sut = CreateModule(state, admission: admission);
+        await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+        var notificationCount = 0;
+        using var throwingObserver = sut.Snapshots.Subscribe(_ =>
+        {
+            if (Interlocked.Increment(ref notificationCount) > 1)
+                throw new InvalidOperationException("Observer failure");
+        });
+
+        Func<Task> reserveAndRelease = async () =>
+        {
+            using var cleaning = await admission.EnterCleaningAsync();
+            admission.IsCleaning.Should().BeTrue();
+        };
+
+        await reserveAndRelease.Should().NotThrowAsync();
+        admission.IsCleaning.Should().BeFalse();
+    }
+
     /// <summary>A failed plan cannot clear rows installed by a refresh started from its last loading notification.</summary>
     [Fact]
     public async Task RefreshGame_MissingPlanSupersededAfterLoadingSnapshot_PreservesNewerCompatibilityRows()
@@ -1676,7 +1787,8 @@ public sealed class PluginRefreshModuleTests
         IPluginLoadingService? pluginLoadingService = null,
         IPluginIssueApproximationModule? approximationModule = null,
         IGameDetectionService? gameDetectionService = null,
-        IPluginRefreshDiscoveryPlanner? discoveryPlanner = null)
+        IPluginRefreshDiscoveryPlanner? discoveryPlanner = null,
+        DiscoverySettingsAdmission? admission = null)
     {
         configurationService ??= CreateConfigurationService();
         pluginLoadingService ??= new TestPluginLoadingService();
@@ -1688,7 +1800,7 @@ public sealed class PluginRefreshModuleTests
         var initialConfiguration = PluginRefreshAppStateMirror.CreateConfigurationProjection(stateService.CurrentState);
         var publicationStore = new PluginRefreshPublicationStore(
             new PluginRefreshAppStateMirror(stateService),
-            new PluginRefreshCommandAvailabilityPolicy(),
+            new PluginRefreshCommandAvailabilityPolicy(admission),
             discoveryPlanner.GetAffordance(
                 stateService.CurrentState.CurrentGameType,
                 initialConfiguration.Mo2ModeEnabled));
@@ -1698,7 +1810,8 @@ public sealed class PluginRefreshModuleTests
             stateService,
             new SkipListPolicy(configurationService, gameDetectionService),
             publicationStore,
-            configurationService: configurationService);
+            configurationService: configurationService,
+            admission: admission);
     }
 
     private static StateService CreateStateWithRows(params PluginInfo[] rows)

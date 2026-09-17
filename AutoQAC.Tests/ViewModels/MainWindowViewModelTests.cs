@@ -73,9 +73,9 @@ public sealed class MainWindowViewModelTests
             .Returns(Observable.Never<GameType>());
     }
 
-    /// <summary>Cleaning startup disables settings before AppState announces active cleaning.</summary>
+    /// <summary>Cleaning startup disables settings and Plugin mutations before AppState announces active cleaning.</summary>
     [Fact]
-    public async Task CleaningAdmission_DisablesSettingsCommandsUntilReleased()
+    public async Task CleaningAdmission_DisablesSettingsAndPluginMutationsUntilReleased()
     {
         EnableSelectedGameSideEffects();
         using var state = new StateService();
@@ -84,13 +84,40 @@ public sealed class MainWindowViewModelTests
             _loggerMock, _fileDialogMock, _messageDialogMock, _pluginServiceMock, _pluginLoadingServiceMock,
             _uiDispatcher, _pluginRefreshModule, _discoveryPlanner, Substitute.For<IDiscoverySettingsModule>(),
             _cleaningCommandReadiness, admission: admission);
+        _pluginRefreshModule.Publish(RecordingPluginRefreshModule.CreateSnapshot(
+            GameType.SkyrimSe,
+            [new PluginRefreshRow(
+                "Selected.esp",
+                @"C:\Game\Data\Selected.esp",
+                GameType.SkyrimSe,
+                true,
+                false,
+                PluginIssueApproximation.Unavailable)],
+            commands: new PluginRefreshCommandAvailability(true, true, true, false)));
+        _pluginRefreshModule.Intents.Clear();
+
         using var cleaning = await admission.EnterCleaningAsync();
+
         vm.Configuration.ConfigureXEditCommand.CanExecute(null).Should().BeFalse();
         vm.Configuration.ResetSettingsCommand.CanExecute(null).Should().BeFalse();
         vm.Commands.ShowSettingsCommand.CanExecute(null).Should().BeFalse();
+        vm.PluginList.SelectAllCommand.CanExecute(null).Should().BeFalse();
+        vm.PluginList.DeselectAllCommand.CanExecute(null).Should().BeFalse();
+        vm.PluginList.RefreshSelectedApproximationsCommand.CanExecute(null).Should().BeFalse();
+
+        vm.PluginList.PluginsToClean.Single().IsSelected = false;
+
+        vm.PluginList.PluginsToClean.Single().IsSelected.Should().BeTrue(
+            "the authoritative Plugin selection remains frozen throughout cleaning startup");
+        _pluginRefreshModule.Intents.OfType<PluginRefreshIntent.ChangeSelection>().Should().BeEmpty();
+
         cleaning.Dispose();
+
         vm.Configuration.ConfigureXEditCommand.CanExecute(null).Should().BeTrue();
         vm.Commands.ShowSettingsCommand.CanExecute(null).Should().BeTrue();
+        vm.PluginList.SelectAllCommand.CanExecute(null).Should().BeTrue();
+        vm.PluginList.DeselectAllCommand.CanExecute(null).Should().BeTrue();
+        vm.PluginList.RefreshSelectedApproximationsCommand.CanExecute(null).Should().BeTrue();
     }
 
     /// <summary>Completion of an older choice cannot replay its snapshot over the current stream publication.</summary>

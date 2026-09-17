@@ -117,6 +117,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         if (_disposed) return;
         var reserved = _admission?.IsCleaning ?? false;
         Configuration.OnCleaningAdmissionChanged(reserved);
+        PluginList.OnCleaningAdmissionChanged(reserved);
         Commands.OnCleaningAdmissionChanged(reserved);
     }
 

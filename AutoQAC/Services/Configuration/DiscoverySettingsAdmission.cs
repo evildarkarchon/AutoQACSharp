@@ -21,7 +21,19 @@ public sealed class DiscoverySettingsAdmission
     public event EventHandler? AvailabilityChanged;
 
     /// <summary>Serializes settings writes; returns null if cleaning reserves admission before this write enters.</summary>
-    public async Task<IDisposable?> TryEnterSettingsAsync(CancellationToken ct = default)
+    public Task<IDisposable?> TryEnterSettingsAsync(CancellationToken ct = default)
+    {
+        return TryEnterMutationAsync(ct);
+    }
+
+    /// <summary>Serializes a Plugin selection commit with settings writes and Cleaning session startup.</summary>
+    internal Task<IDisposable?> TryEnterPluginMutationAsync(CancellationToken ct = default)
+    {
+        return TryEnterMutationAsync(ct);
+    }
+
+    /// <summary>Enters the shared pre-clean mutation lane unless Cleaning has already reserved it.</summary>
+    private async Task<IDisposable?> TryEnterMutationAsync(CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
         lock (_sync)

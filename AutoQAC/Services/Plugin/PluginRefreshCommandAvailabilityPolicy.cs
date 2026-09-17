@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using AutoQAC.Models;
+using AutoQAC.Services.Configuration;
 using AutoQAC.Services.GameCapability;
 
 namespace AutoQAC.Services.Plugin;
@@ -9,8 +10,10 @@ namespace AutoQAC.Services.Plugin;
 /// <summary>
 ///     Computes command availability from publication facts and game affordances.
 /// </summary>
-internal sealed class PluginRefreshCommandAvailabilityPolicy
+internal sealed class PluginRefreshCommandAvailabilityPolicy(DiscoverySettingsAdmission? admission = null)
 {
+    private readonly DiscoverySettingsAdmission? _admission = admission;
+
     /// <summary>
     ///     Creates command availability for the current visible rows and activity state.
     /// </summary>
@@ -32,6 +35,8 @@ internal sealed class PluginRefreshCommandAvailabilityPolicy
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentNullException.ThrowIfNull(affordance);
 
+        // Admission closes before AppState publishes active cleaning, so both facts must gate Plugin mutation commands.
+        isCleaning = isCleaning || _admission?.IsCleaning == true;
         var hasRows = rows.Count > 0;
         var isRunning = activity.IsPluginRefreshRunning || activity.IsIssueApproximationRefreshRunning;
         var canUseRows = hasRows && !isCleaning;

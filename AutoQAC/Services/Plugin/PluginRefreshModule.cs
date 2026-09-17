@@ -25,6 +25,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
     private readonly IPluginIssueApproximationModule _pluginIssueApproximationModule;
     private readonly PluginRefreshPublicationStore _publicationStore;
     private readonly ISkipListPolicy _skipListPolicy;
+    private readonly DiscoverySettingsAdmission? _admission;
     private readonly IDisposable? _skipListSubscription;
     private readonly IStateService _stateService;
     private readonly IDisposable _stateSubscription;
@@ -48,7 +49,8 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         ISkipListPolicy skipListPolicy,
         PluginRefreshPublicationStore publicationStore,
         ILoggingService? logger = null,
-        IConfigurationService? configurationService = null)
+        IConfigurationService? configurationService = null,
+        DiscoverySettingsAdmission? admission = null)
     {
         _discoveryPlanner = discoveryPlanner;
         _pluginIssueApproximationModule = pluginIssueApproximationModule;
@@ -56,6 +58,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         _skipListPolicy = skipListPolicy;
         _logger = logger;
         _publicationStore = publicationStore;
+        _admission = admission;
 
         _lastIsCleaning = _stateService.CurrentState.IsCleaning;
         _lastDiscoveryAffectingState = DiscoveryAffectingState.From(_stateService.CurrentState);
@@ -67,6 +70,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             _skipListSubscription = configurationService.SkipListChanged.Subscribe(
                 new ConfigurationChangedObserver<GameType>(_ => OnDiscoveryAffectingSettingsChanged()));
         }
+        if (_admission is not null) _admission.CleaningChanged += OnCleaningAdmissionChanged;
     }
 
     /// <summary>
@@ -75,6 +79,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
     public void Dispose()
     {
         _disposed = true;
+        if (_admission is not null) _admission.CleaningChanged -= OnCleaningAdmissionChanged;
         _stateSubscription.Dispose();
         _userConfigurationSubscription?.Dispose();
         _skipListSubscription?.Dispose();
@@ -166,9 +171,15 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                 refresh.GameType,
                 refresh.SelectedLoadOrderPath,
                 cancellationToken),
+            PluginRefreshIntent.RefreshSelectedIssueApproximations when IsPluginMutationBlocked =>
+                Task.FromResult(_publicationStore.GetCurrentSnapshot()),
             PluginRefreshIntent.RefreshSelectedIssueApproximations => RefreshSelectedIssueApproximationsAsync(
                 cancellationToken),
-            PluginRefreshIntent.ChangeSelection selection => Task.FromResult(ApplySelectionChange(selection.Change)),
+            PluginRefreshIntent.ChangeSelection when IsPluginMutationBlocked =>
+                Task.FromResult(_publicationStore.GetCurrentSnapshot()),
+            PluginRefreshIntent.ChangeSelection selection => ApplySelectionChangeAsync(
+                selection.Change,
+                cancellationToken),
             PluginRefreshIntent.Cancel cancel => Task.FromResult(CancelActiveRefresh(cancel.Reason)),
             _ => throw new ArgumentOutOfRangeException(nameof(intent), intent, "Unknown Plugin refresh intent.")
         };
@@ -450,6 +461,8 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
 
         try
         {
+            if (IsPluginMutationBlocked) return _publicationStore.GetCurrentSnapshot();
+
             // Selected reanalysis must prove the accepted row identities are still current before
             // any row becomes Pending; rebuilding a plan here would combine new facts with old keys.
             var publication = await GetCurrentPublicationWithFreshnessAsync(
@@ -494,6 +507,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                 GetAffordance(plan.GameType, configuration),
                 () =>
                     IsVisible(generation, token) &&
+                    !IsPluginMutationBlocked &&
                     freshnessVersion == Volatile.Read(ref _freshnessRefreshVersion));
             if (start.Status == PluginRefreshSelectedIssueApproximationStartStatus.Rejected)
             {
@@ -576,11 +590,29 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         return _publicationStore.GetCurrentSnapshot();
     }
 
-    private PluginRefreshSnapshot ApplySelectionChange(PluginSelectionChange change)
+    /// <summary>Commits selection only while its mutation lease precedes Cleaning session admission.</summary>
+    private async Task<PluginRefreshSnapshot> ApplySelectionChangeAsync(
+        PluginSelectionChange change,
+        CancellationToken cancellationToken)
     {
+        if (_admission is null)
+        {
+            var uncoordinatedSnapshot = _publicationStore.GetCurrentSnapshot();
+            return _stateService.CurrentState.IsCleaning
+                ? uncoordinatedSnapshot
+                : _publicationStore.ApplySelectionChange(change, GetAffordance(uncoordinatedSnapshot));
+        }
+
+        using var mutation = await _admission.TryEnterPluginMutationAsync(cancellationToken).ConfigureAwait(false);
         var snapshot = _publicationStore.GetCurrentSnapshot();
+        if (mutation is null || _stateService.CurrentState.IsCleaning) return snapshot;
+
+        // EnterCleaningAsync cannot pass the same mutation lane until this synchronous publication commit completes.
         return _publicationStore.ApplySelectionChange(change, GetAffordance(snapshot));
     }
+
+    private bool IsPluginMutationBlocked =>
+        _stateService.CurrentState.IsCleaning || _admission?.IsCleaning == true;
 
     /// <summary>Cancels active work and terminalizes estimates still owned by its publication.</summary>
     /// <param name="reason">Cancellation reason controlling the terminal status text.</param>
@@ -846,6 +878,49 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             commandInspection,
             GetAffordance(commandInspection.Publication),
             GetAffordance(commandInspection.Snapshot));
+    }
+
+    /// <summary>Cancels analysis and republishes command policy as soon as Cleaning session admission changes.</summary>
+    private void OnCleaningAdmissionChanged(object? sender, EventArgs args)
+    {
+        if (_disposed) return;
+
+        try
+        {
+            if (_admission?.IsCleaning == true)
+                CancelActiveRefresh(PluginRefreshCancelReason.CleaningStarted);
+        }
+        catch (Exception ex)
+        {
+            LogAdmissionHandlerFailure(ex);
+        }
+
+        try
+        {
+            var commandInspection = _publicationStore.GetCommandAvailabilityInspection();
+            _publicationStore.PublishCommandAvailabilityIfChanged(
+                _stateService.CurrentState,
+                commandInspection,
+                GetAffordance(commandInspection.Publication),
+                GetAffordance(commandInspection.Snapshot));
+        }
+        catch (Exception ex)
+        {
+            LogAdmissionHandlerFailure(ex);
+        }
+    }
+
+    /// <summary>Reports an admission callback failure without violating the admission event's no-throw contract.</summary>
+    private void LogAdmissionHandlerFailure(Exception exception)
+    {
+        try
+        {
+            _logger?.Error(exception, "Failed to update Plugin refresh state for Cleaning admission");
+        }
+        catch
+        {
+            // Admission callbacks must never abort Cleaning startup or finalization, even if diagnostics fail.
+        }
     }
 
     private void OnDiscoveryAffectingSettingsChanged()

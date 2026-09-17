@@ -63,7 +63,8 @@ public static class ServiceCollectionExtensions
             services.AddSingleton<IPluginRefreshDiscoveryPlanner, PluginRefreshDiscoveryPlanner>();
             services.AddSingleton(sp => new PluginRefreshAppStateMirror(
                 sp.GetRequiredService<IStateService>()));
-            services.AddSingleton(_ => new PluginRefreshCommandAvailabilityPolicy());
+            services.AddSingleton(sp => new PluginRefreshCommandAvailabilityPolicy(
+                sp.GetRequiredService<DiscoverySettingsAdmission>()));
             services.AddSingleton<PluginRefreshPublicationStore>(sp =>
             {
                 var state = sp.GetRequiredService<IStateService>().CurrentState;
@@ -82,7 +83,8 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<ISkipListPolicy>(),
                 sp.GetRequiredService<PluginRefreshPublicationStore>(),
                 sp.GetRequiredService<ILoggingService>(),
-                sp.GetRequiredService<IConfigurationService>()));
+                sp.GetRequiredService<IConfigurationService>(),
+                sp.GetRequiredService<DiscoverySettingsAdmission>()));
             services.AddSingleton<IDiscoverySettingsModule, DiscoverySettingsModule>();
             services.AddSingleton<IPidStorePathProvider, DefaultPidStorePathProvider>();
             services.AddSingleton<IProcessSessionIdProvider, ProcessSessionIdProvider>();

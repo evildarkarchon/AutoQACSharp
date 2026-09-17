@@ -203,6 +203,7 @@
                     <Button Grid.Column="5" Content="Manage Skip List" Command="{Binding Commands.ShowSkipListCommand}" />
                 </Grid>
                 <ListView Grid.Row="1" Margin="8" ItemsSource="{Binding PluginList.PluginsToClean, Mode=OneWay}"
+                          IsEnabled="{Binding PluginList.CanChangePluginSelection, Mode=OneWay}"
                           SelectedItem="{Binding PluginList.SelectedPlugin, Mode=TwoWay}">
                     <ListView.ItemTemplate>
                         <DataTemplate x:DataType="mw:PluginListItem">

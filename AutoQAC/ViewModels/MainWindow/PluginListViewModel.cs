@@ -16,6 +16,9 @@ namespace AutoQAC.ViewModels.MainWindow;
 public sealed partial class PluginListViewModel(IPluginRefreshModule pluginRefreshModule) : ViewModelBase, IDisposable
 {
     private readonly IPluginRefreshModule _pluginRefreshModule = pluginRefreshModule;
+    private PluginRefreshCommandAvailability _publishedCommands =
+        new(false, false, false, false);
+    private bool _cleaningReserved;
 
     public ObservableCollection<PluginListItem> PluginsToClean { get; } = [];
 
@@ -48,6 +51,7 @@ public sealed partial class PluginListViewModel(IPluginRefreshModule pluginRefre
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SelectAllCommand))]
+    [NotifyPropertyChangedFor(nameof(CanChangePluginSelection))]
     public partial bool CanSelectAllPlugins { get; set; }
 
     [ObservableProperty]
@@ -65,9 +69,19 @@ public sealed partial class PluginListViewModel(IPluginRefreshModule pluginRefre
 
     public bool CanRefreshApproximations => CanRefreshSelectedIssueApproximations;
 
+    /// <summary>Whether visible Plugin selection may be changed under the current publication and cleaning admission.</summary>
+    public bool CanChangePluginSelection => CanSelectAllPlugins;
+
     public void Dispose()
     {
         foreach (var item in PluginsToClean) DetachItem(item);
+    }
+
+    /// <summary>Projects cleaning startup admission immediately, before AppState publishes active cleaning.</summary>
+    public void OnCleaningAdmissionChanged(bool reserved)
+    {
+        _cleaningReserved = reserved;
+        ApplyCommandAvailability();
     }
 
     private bool CanSelectAll()
@@ -131,17 +145,24 @@ public sealed partial class PluginListViewModel(IPluginRefreshModule pluginRefre
     public void OnPluginRefreshSnapshot(PluginRefreshSnapshot snapshot)
     {
         HasPlugins = snapshot.Rows.Count > 0;
-        IsCleaning = !snapshot.Commands.CanSelectAll && HasPlugins;
         CurrentGameType = snapshot.GameType;
         HasSelectedVisiblePlugin = snapshot.Rows.Any(row => row.IsSelected);
         IsApproximationRefreshRunning =
             snapshot.Activity.IsIssueApproximationRefreshRunning || snapshot.Commands.CanCancelRefresh;
-        CanSelectAllPlugins = snapshot.Commands.CanSelectAll;
-        CanDeselectAllPlugins = snapshot.Commands.CanDeselectAll;
-        CanRefreshSelectedIssueApproximations = snapshot.Commands.CanRefreshSelectedIssueApproximations;
-        CanCancelRefresh = snapshot.Commands.CanCancelRefresh;
+        _publishedCommands = snapshot.Commands;
+        ApplyCommandAvailability();
 
         SyncRows(snapshot.Rows);
+    }
+
+    private void ApplyCommandAvailability()
+    {
+        IsCleaning = _cleaningReserved || (!_publishedCommands.CanSelectAll && HasPlugins);
+        CanSelectAllPlugins = !_cleaningReserved && _publishedCommands.CanSelectAll;
+        CanDeselectAllPlugins = !_cleaningReserved && _publishedCommands.CanDeselectAll;
+        CanRefreshSelectedIssueApproximations =
+            !_cleaningReserved && _publishedCommands.CanRefreshSelectedIssueApproximations;
+        CanCancelRefresh = _publishedCommands.CanCancelRefresh;
     }
 
     private void SyncRows(IReadOnlyList<PluginRefreshRow> rows)
@@ -195,6 +216,13 @@ public sealed partial class PluginListViewModel(IPluginRefreshModule pluginRefre
 
     private void OnRowSelectionToggled(PluginListItem item, bool isSelected)
     {
+        if (!CanChangePluginSelection)
+        {
+            // A checkbox can finish its binding update after admission closes; restore the authoritative publication value.
+            item.SetSelectedFromState(item.Info.IsSelected);
+            return;
+        }
+
         _ = _pluginRefreshModule.ExecuteAsync(
             new PluginRefreshIntent.ChangeSelection(
                 new PluginSelectionChange.SetOne(item.Key, isSelected)));
