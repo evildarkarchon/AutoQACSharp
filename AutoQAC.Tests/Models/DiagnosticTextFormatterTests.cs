@@ -189,10 +189,7 @@ public sealed class DiagnosticTextFormatterTests
     public static TheoryData<string> UnsafeDetailCases()
     {
         var data = new TheoryData<string>();
-        foreach (var unsafeDetail in UnsafeDetails)
-        {
-            data.Add(unsafeDetail);
-        }
+        foreach (var unsafeDetail in UnsafeDetails) data.Add(unsafeDetail);
 
         return data;
     }

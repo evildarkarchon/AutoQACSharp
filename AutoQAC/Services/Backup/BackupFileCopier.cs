@@ -9,7 +9,7 @@ using AutoQAC.Models;
 namespace AutoQAC.Services.Backup;
 
 /// <summary>
-/// Managed-stream implementation of <see cref="IBackupFileCopier"/> with safe cancellation cleanup.
+///     Managed-stream implementation of <see cref="IBackupFileCopier" /> with safe cancellation cleanup.
 /// </summary>
 public sealed class BackupFileCopier(ILoggingService logger) : IBackupFileCopier
 {
@@ -51,53 +51,62 @@ public sealed class BackupFileCopier(ILoggingService logger) : IBackupFileCopier
                 cancellationToken).ConfigureAwait(false);
 
             if (options.ExistingTargetPolicy == BackupCopyExistingTargetPolicy.ReplaceAtomically)
-            {
-                File.Move(actualOutputPath, destinationPath, overwrite: true);
-            }
+                File.Move(actualOutputPath, destinationPath, true);
 
-            logger.Debug("Copied {SourcePath} to {DestinationPath} ({BytesCopied} bytes)", sourcePath, destinationPath, copiedBytes);
+            logger.Debug("Copied {SourcePath} to {DestinationPath} ({BytesCopied} bytes)", sourcePath, destinationPath,
+                copiedBytes);
             return BackupCopyResult.Complete(sourcePath, destinationPath, copiedBytes, totalBytes);
         }
         catch (FileNotFoundException ex)
         {
             DeletePartialOutput(actualOutputPath, sourcePath, destinationPath, createdOutput);
-            logger.Warning("Backup copy source disappeared while copying {SourcePath} to {DestinationPath}: {Error}", sourcePath, destinationPath, ex.Message);
-            return BackupCopyResult.Failed(sourcePath, destinationPath, BackupFailureReason.SourceMissing, copiedBytes, totalBytes);
+            logger.Warning("Backup copy source disappeared while copying {SourcePath} to {DestinationPath}: {Error}",
+                sourcePath, destinationPath, ex.Message);
+            return BackupCopyResult.Failed(sourcePath, destinationPath, BackupFailureReason.SourceMissing, copiedBytes,
+                totalBytes);
         }
         catch (DirectoryNotFoundException ex)
         {
             DeletePartialOutput(actualOutputPath, sourcePath, destinationPath, createdOutput);
             var reason = totalBytes is null ? BackupFailureReason.SourceMissing : BackupFailureReason.TargetWriteFailed;
-            logger.Warning("Directory disappeared while copying {SourcePath} to {DestinationPath}: {Error}", sourcePath, destinationPath, ex.Message);
+            logger.Warning("Directory disappeared while copying {SourcePath} to {DestinationPath}: {Error}", sourcePath,
+                destinationPath, ex.Message);
             return BackupCopyResult.Failed(sourcePath, destinationPath, reason, copiedBytes, totalBytes);
         }
         catch (OperationCanceledException)
         {
             DeletePartialOutput(actualOutputPath, sourcePath, destinationPath, createdOutput);
-            logger.Information("Backup copy canceled for {SourcePath} to {DestinationPath}", sourcePath, destinationPath);
+            logger.Information("Backup copy canceled for {SourcePath} to {DestinationPath}", sourcePath,
+                destinationPath);
             return BackupCopyResult.Canceled(sourcePath, destinationPath, copiedBytes, totalBytes);
         }
         catch (UnauthorizedAccessException ex)
         {
             DeletePartialOutput(actualOutputPath, sourcePath, destinationPath, createdOutput);
-            logger.Warning("Access denied copying {SourcePath} to {DestinationPath}: {Error}", sourcePath, destinationPath, ex.Message);
-            return BackupCopyResult.Failed(sourcePath, destinationPath, BackupFailureReason.AccessDenied, copiedBytes, totalBytes);
+            logger.Warning("Access denied copying {SourcePath} to {DestinationPath}: {Error}", sourcePath,
+                destinationPath, ex.Message);
+            return BackupCopyResult.Failed(sourcePath, destinationPath, BackupFailureReason.AccessDenied, copiedBytes,
+                totalBytes);
         }
         catch (IOException ex)
         {
             DeletePartialOutput(actualOutputPath, sourcePath, destinationPath, createdOutput);
-            logger.Warning("I/O failure copying {SourcePath} to {DestinationPath}: {Error}", sourcePath, destinationPath, ex.Message);
-            return BackupCopyResult.Failed(sourcePath, destinationPath, BackupFailureReason.TargetWriteFailed, copiedBytes, totalBytes);
+            logger.Warning("I/O failure copying {SourcePath} to {DestinationPath}: {Error}", sourcePath,
+                destinationPath, ex.Message);
+            return BackupCopyResult.Failed(sourcePath, destinationPath, BackupFailureReason.TargetWriteFailed,
+                copiedBytes, totalBytes);
         }
     }
 
-    private static string GetOutputPath(string destinationPath, BackupCopyOptions options) =>
-        options.ExistingTargetPolicy == BackupCopyExistingTargetPolicy.ReplaceAtomically
+    private static string GetOutputPath(string destinationPath, BackupCopyOptions options)
+    {
+        return options.ExistingTargetPolicy == BackupCopyExistingTargetPolicy.ReplaceAtomically
             ? destinationPath + ".autoqac-tmp"
             : destinationPath;
+    }
 
     /// <summary>
-    /// Copies bytes from source to destination and reports when this attempt successfully opens the output stream.
+    ///     Copies bytes from source to destination and reports when this attempt successfully opens the output stream.
     /// </summary>
     private static async Task CopyFileContentsAsync(
         string sourcePath,
@@ -118,18 +127,17 @@ public sealed class BackupFileCopier(ILoggingService logger) : IBackupFileCopier
         var stopwatch = Stopwatch.StartNew();
         var lastProgressAt = TimeSpan.MinValue;
 
-        await using var source = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read, BufferSize, useAsync: true);
-        await using var destination = new FileStream(actualOutputPath, fileMode, FileAccess.Write, FileShare.None, BufferSize, useAsync: true);
+        await using var source = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read, BufferSize,
+            true);
+        await using var destination = new FileStream(actualOutputPath, fileMode, FileAccess.Write, FileShare.None,
+            BufferSize, true);
         onDestinationOpened?.Invoke(true);
 
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var bytesRead = await source.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
-            if (bytesRead == 0)
-            {
-                break;
-            }
+            if (bytesRead == 0) break;
 
             await destination.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken).ConfigureAwait(false);
             copiedBytes += bytesRead;
@@ -144,42 +152,36 @@ public sealed class BackupFileCopier(ILoggingService logger) : IBackupFileCopier
         }
 
         if (copiedBytes != totalBytes)
-        {
             throw new IOException($"Copy ended before all bytes were written for '{sourcePath}'.");
-        }
 
         // Ensure very fast small-file copies still publish at least one progress update for the UI.
         if (lastProgressAt == TimeSpan.MinValue)
-        {
             progress?.Report(new BackupCopyProgress(fileName, copiedBytes, totalBytes));
-        }
     }
 
-    private static bool ShouldReportProgress(TimeSpan elapsed, TimeSpan lastProgressAt, bool reachedCompletion) =>
-        reachedCompletion || lastProgressAt == TimeSpan.MinValue || elapsed - lastProgressAt >= ProgressInterval;
+    private static bool ShouldReportProgress(TimeSpan elapsed, TimeSpan lastProgressAt, bool reachedCompletion)
+    {
+        return reachedCompletion || lastProgressAt == TimeSpan.MinValue || elapsed - lastProgressAt >= ProgressInterval;
+    }
 
     /// <summary>
-    /// Deletes an incomplete output only when the active copy attempt owns the output path.
+    ///     Deletes an incomplete output only when the active copy attempt owns the output path.
     /// </summary>
-    private void DeletePartialOutput(string actualOutputPath, string sourcePath, string destinationPath, bool createdOutput)
+    private void DeletePartialOutput(string actualOutputPath, string sourcePath, string destinationPath,
+        bool createdOutput)
     {
         try
         {
             // FileMode.CreateNew can fail before this attempt owns the destination; never delete another backup in that case.
-            if (!createdOutput)
-            {
-                return;
-            }
+            if (!createdOutput) return;
 
-            if (File.Exists(actualOutputPath))
-            {
-                File.Delete(actualOutputPath);
-            }
+            if (File.Exists(actualOutputPath)) File.Delete(actualOutputPath);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // Cleanup failures are logged but not surfaced as raw exception text in user-facing copy results.
-            logger.Warning("Failed to delete partial backup copy {PartialPath} for {SourcePath} to {DestinationPath}: {Error}",
+            logger.Warning(
+                "Failed to delete partial backup copy {PartialPath} for {SourcePath} to {DestinationPath}: {Error}",
                 actualOutputPath,
                 sourcePath,
                 destinationPath,

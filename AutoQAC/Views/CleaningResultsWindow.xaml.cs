@@ -5,7 +5,7 @@ using Microsoft.UI.Xaml;
 
 namespace AutoQAC.Views;
 
-public sealed partial class CleaningResultsWindow : Window
+public sealed partial class CleaningResultsWindow
 {
     private CleaningResultsViewModel? _viewModel;
 

@@ -21,12 +21,10 @@ internal static class FileDialogFilterMapper
     {
         var entries = FileDialogFilterParser.Parse(filter);
         if (entries.Count == 0)
-        {
             return new Dictionary<string, IReadOnlyList<string>>
             {
                 ["All Files (*.*)"] = ["*"]
             };
-        }
 
         return entries.ToDictionary(
             entry => entry.Name,

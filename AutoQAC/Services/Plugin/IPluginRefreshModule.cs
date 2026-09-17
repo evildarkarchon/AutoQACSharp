@@ -1,3 +1,4 @@
+using AutoQAC.Models;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
@@ -5,17 +6,23 @@ using System.Threading.Tasks;
 namespace AutoQAC.Services.Plugin;
 
 /// <summary>
-/// Executes Plugin refresh intents and publishes whole visible refresh snapshots.
+///     Executes Plugin refresh intents and publishes whole visible refresh snapshots.
 /// </summary>
 public interface IPluginRefreshModule
 {
     /// <summary>
-    /// Gets the latest visible Plugin refresh publication snapshots.
+    ///     Gets the latest visible Plugin refresh publication snapshots.
     /// </summary>
     IObservable<PluginRefreshSnapshot> Snapshots { get; }
 
+    /// <summary>Synchronously fences previous discovery work and invalidates its publication after settings persist or are externally replaced.</summary>
+    void InvalidateForSettings();
+
+    /// <summary>Refreshes settings and completes when this operation publishes authoritative rows, before approximation finishes.</summary>
+    Task<PluginRefreshCompletion> RefreshForSettingsAsync(GameType gameType, CancellationToken cancellationToken = default);
+
     /// <summary>
-    /// Executes a Plugin refresh intent and returns the final visible snapshot accepted for that intent.
+    ///     Executes a Plugin refresh intent and returns the final visible snapshot accepted for that intent.
     /// </summary>
     /// <param name="intent">User or domain intent to apply to Plugin refresh state.</param>
     /// <param name="cancellationToken">Cancellation token for the accepted intent.</param>
@@ -25,8 +32,8 @@ public interface IPluginRefreshModule
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Gets the current authoritative Plugin refresh publication, including full row facts
-    /// and whether the accepted discovery plan still matches Discovery-affecting settings.
+    ///     Gets the current authoritative Plugin refresh publication, including full row facts
+    ///     and whether the accepted discovery plan still matches Discovery-affecting settings.
     /// </summary>
     /// <param name="cancellationToken">Cancellation token for freshness inspection.</param>
     /// <returns>The current Plugin refresh publication.</returns>

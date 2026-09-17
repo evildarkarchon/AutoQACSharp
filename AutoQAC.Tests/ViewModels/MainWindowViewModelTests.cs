@@ -21,6 +21,7 @@ namespace AutoQAC.Tests.ViewModels;
 public sealed class MainWindowViewModelTests
 {
     private readonly IConfigurationService _configServiceMock;
+    private UserConfiguration _persistedConfig = new();
     private readonly IStateService _stateServiceMock;
     private readonly ICleaningSession _cleaningSessionMock;
     private readonly ILoggingService _loggerMock;
@@ -36,6 +37,16 @@ public sealed class MainWindowViewModelTests
     public MainWindowViewModelTests()
     {
         _configServiceMock = Substitute.For<IConfigurationService>();
+        _configServiceMock.FlushPendingSavesAsync(Arg.Any<CancellationToken>()).Returns(
+            new ConfigPersistenceResult(ConfigPersistenceStatusKind.Success, ConfigPersistenceOperationKind.Flush, 1, null));
+        _configServiceMock.UserConfigurationChanged.Returns(Observable.Never<UserConfiguration>());
+        _configServiceMock.SaveUserConfigAsync(Arg.Any<UserConfiguration>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                _persistedConfig = call.Arg<UserConfiguration>().Copy();
+                _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>()).Returns(_ => _persistedConfig.Copy());
+                return Task.CompletedTask;
+            });
         _stateServiceMock = Substitute.For<IStateService>();
         _cleaningSessionMock = Substitute.For<ICleaningSession>();
         _loggerMock = Substitute.For<ILoggingService>();
@@ -49,7 +60,8 @@ public sealed class MainWindowViewModelTests
             _pluginLoadingServiceMock,
             Substitute.For<AutoQAC.Services.MO2.IMo2InstanceService>());
         _pluginRefreshModule = new RecordingPluginRefreshModule();
-        _pluginRefreshModule.PublicationHandler = _ => Task.FromResult(CreatePublicationFromState(_stateServiceMock.CurrentState));
+        _pluginRefreshModule.PublicationHandler =
+            _ => Task.FromResult(CreatePublicationFromState(_stateServiceMock.CurrentState));
         _cleaningCommandReadiness = new CleaningCommandReadiness(_pluginRefreshModule, _stateServiceMock);
 
         // Default setup for CleaningCompleted observable
@@ -59,6 +71,74 @@ public sealed class MainWindowViewModelTests
         // Default setup for SkipListChanged observable
         _configServiceMock.SkipListChanged
             .Returns(Observable.Never<GameType>());
+    }
+
+    /// <summary>Cleaning startup disables settings and Plugin mutations before AppState announces active cleaning.</summary>
+    [Fact]
+    public async Task CleaningAdmission_DisablesSettingsAndPluginMutationsUntilReleased()
+    {
+        EnableSelectedGameSideEffects();
+        using var state = new StateService();
+        var admission = new DiscoverySettingsAdmission();
+        using var vm = new MainWindowViewModel(_configServiceMock, state, _cleaningSessionMock,
+            _loggerMock, _fileDialogMock, _messageDialogMock, _pluginServiceMock, _pluginLoadingServiceMock,
+            _uiDispatcher, _pluginRefreshModule, _discoveryPlanner, Substitute.For<IDiscoverySettingsModule>(),
+            _cleaningCommandReadiness, admission: admission);
+        _pluginRefreshModule.Publish(RecordingPluginRefreshModule.CreateSnapshot(
+            GameType.SkyrimSe,
+            [new PluginRefreshRow(
+                "Selected.esp",
+                @"C:\Game\Data\Selected.esp",
+                GameType.SkyrimSe,
+                true,
+                false,
+                PluginIssueApproximation.Unavailable)],
+            commands: new PluginRefreshCommandAvailability(true, true, true, false)));
+        _pluginRefreshModule.Intents.Clear();
+
+        using var cleaning = await admission.EnterCleaningAsync();
+
+        vm.Configuration.ConfigureXEditCommand.CanExecute(null).Should().BeFalse();
+        vm.Configuration.ResetSettingsCommand.CanExecute(null).Should().BeFalse();
+        vm.Commands.ShowSettingsCommand.CanExecute(null).Should().BeFalse();
+        vm.PluginList.SelectAllCommand.CanExecute(null).Should().BeFalse();
+        vm.PluginList.DeselectAllCommand.CanExecute(null).Should().BeFalse();
+        vm.PluginList.RefreshSelectedApproximationsCommand.CanExecute(null).Should().BeFalse();
+
+        vm.PluginList.PluginsToClean.Single().IsSelected = false;
+
+        vm.PluginList.PluginsToClean.Single().IsSelected.Should().BeTrue(
+            "the authoritative Plugin selection remains frozen throughout cleaning startup");
+        _pluginRefreshModule.Intents.OfType<PluginRefreshIntent.ChangeSelection>().Should().BeEmpty();
+
+        cleaning.Dispose();
+
+        vm.Configuration.ConfigureXEditCommand.CanExecute(null).Should().BeTrue();
+        vm.Commands.ShowSettingsCommand.CanExecute(null).Should().BeTrue();
+        vm.PluginList.SelectAllCommand.CanExecute(null).Should().BeTrue();
+        vm.PluginList.DeselectAllCommand.CanExecute(null).Should().BeTrue();
+        vm.PluginList.RefreshSelectedApproximationsCommand.CanExecute(null).Should().BeTrue();
+    }
+
+    /// <summary>Completion of an older choice cannot replay its snapshot over the current stream publication.</summary>
+    [Fact]
+    public async Task DiscoveryCompletion_DoesNotReplayOlderSnapshot()
+    {
+        using var state = new StateService();
+        var settings = Substitute.For<IDiscoverySettingsModule>();
+        var completion = new TaskCompletionSource<DiscoverySettingsChangeResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        settings.ExecuteAsync(Arg.Any<DiscoverySettingsIntent>(), Arg.Any<CancellationToken>()).Returns(completion.Task);
+        _fileDialogMock.OpenFileDialogAsync(Arg.Any<string>(), Arg.Any<string>()).Returns("mo2.exe");
+        using var vm = new ConfigurationViewModel(_configServiceMock, state, _loggerMock,
+            _fileDialogMock, _messageDialogMock, _pluginServiceMock, _pluginLoadingServiceMock,
+            _pluginRefreshModule, _discoveryPlanner, settings);
+        var operation = vm.ConfigureMo2Command.ExecuteAsync(null);
+        var latest = RecordingPluginRefreshModule.CreateSnapshot(statusText: "Newest publication");
+        vm.OnPluginRefreshSnapshot(latest);
+        completion.SetResult(DiscoverySettingsChangeResult.Accepted(
+            RecordingPluginRefreshModule.CreateSnapshot(statusText: "Old publication")));
+        await operation;
+        vm.StatusText.Should().Be("Newest publication");
     }
 
     /// <summary>
@@ -72,10 +152,12 @@ public sealed class MainWindowViewModelTests
     /// </summary>
     private void EnableSelectedGameSideEffects()
     {
-        _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>())
-            .Returns(new UserConfiguration { LoadOrder = new(), XEdit = new(), ModOrganizer = new(), Settings = new() });
+        _persistedConfig = new UserConfiguration();
+        _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>()).Returns(_ => _persistedConfig.Copy());
+        _configServiceMock.SaveUserConfigAsync(Arg.Any<UserConfiguration>(), Arg.Any<CancellationToken>())
+            .Returns(call => { _persistedConfig = call.Arg<UserConfiguration>().Copy(); return Task.CompletedTask; });
         _configServiceMock.GetSelectedGameAsync(Arg.Any<CancellationToken>())
-            .Returns(GameType.Unknown);
+            .Returns(_ => Enum.TryParse<GameType>(_persistedConfig.SelectedGame, out var game) ? game : GameType.Unknown);
     }
 
     private static TaskCompletionSource<bool> CreateSignal()
@@ -87,12 +169,12 @@ public sealed class MainWindowViewModelTests
     {
         var gameType = state.CurrentGameType == GameType.Unknown ? GameType.SkyrimSe : state.CurrentGameType;
         var configuration = RecordingPluginRefreshModule.CreateConfiguration(
-            loadOrderPath: state.LoadOrderPath,
-            xEditPath: state.XEditExecutablePath,
-            mo2Path: state.Mo2ExecutablePath,
-            mo2ModeEnabled: state.Mo2ModeEnabled,
-            mo2InstancePath: state.Mo2ModeEnabled ? Path.GetTempPath() : null,
-            selectedProfile: state.Mo2Profile);
+            state.LoadOrderPath,
+            state.XEditExecutablePath,
+            state.Mo2ExecutablePath,
+            state.Mo2ModeEnabled,
+            state.Mo2ModeEnabled ? Path.GetTempPath() : null,
+            state.Mo2Profile);
         var mode = state.Mo2ModeEnabled
             ? PluginRefreshDiscoveryMode.Mo2LoadOrderFile
             : gameType is GameType.Fallout3 or GameType.FalloutNewVegas or GameType.Oblivion
@@ -102,14 +184,14 @@ public sealed class MainWindowViewModelTests
             gameType,
             mode,
             configuration,
-            loadOrderPath: mode == PluginRefreshDiscoveryMode.DirectLoadOrderFile ? state.LoadOrderPath : null,
-            mo2LoadOrderPath: state.Mo2ModeEnabled ? state.LoadOrderPath : null);
+            mode == PluginRefreshDiscoveryMode.DirectLoadOrderFile ? state.LoadOrderPath : null,
+            state.Mo2ModeEnabled ? state.LoadOrderPath : null);
         var rows = state.PluginsToClean
             .Select(plugin => RecordingPluginRefreshModule.CreatePublishedRow(
                 plugin,
-                isVisible: !plugin.IsInSkipList,
-                isSelected: !state.ExcludedPluginPaths.Contains(plugin.FullPath),
-                isSkippedByPolicy: plugin.IsInSkipList))
+                !plugin.IsInSkipList,
+                !state.ExcludedPluginPaths.Contains(plugin.FullPath),
+                plugin.IsInSkipList))
             .ToList();
         var snapshot = RecordingPluginRefreshModule.CreateSnapshot(gameType, configuration: configuration);
         return RecordingPluginRefreshModule.CreatePublication(
@@ -120,10 +202,20 @@ public sealed class MainWindowViewModelTests
     }
 
     private PluginRefreshModule CreatePluginRefreshModule(
-        IPluginIssueApproximationService approximationService,
-        IStateService? stateService = null)
+        IStateService? stateService = null,
+        IPluginIssueApproximationModule? approximationModule = null)
     {
         var effectiveStateService = stateService ?? _stateServiceMock;
+        if (approximationModule is null)
+        {
+            approximationModule = Substitute.For<IPluginIssueApproximationModule>();
+            approximationModule.AnalyzeAsync(
+                    Arg.Any<PluginIssueApproximationModuleRequest>(),
+                    Arg.Any<Action<PluginIssueApproximationModuleResult>>(),
+                    Arg.Any<CancellationToken>())
+                .Returns(Task.CompletedTask);
+        }
+
         var gameDetectionService = Substitute.For<AutoQAC.Services.GameDetection.IGameDetectionService>();
         gameDetectionService
             .DetectVariant(Arg.Any<GameType>(), Arg.Any<IReadOnlyList<string>>())
@@ -132,22 +224,33 @@ public sealed class MainWindowViewModelTests
             _configServiceMock,
             _pluginLoadingServiceMock,
             Substitute.For<AutoQAC.Services.MO2.IMo2InstanceService>());
+        var initialConfiguration = PluginRefreshAppStateMirror.CreateConfigurationProjection(
+            effectiveStateService.CurrentState);
+        var publicationStore = new PluginRefreshPublicationStore(
+            new PluginRefreshAppStateMirror(effectiveStateService),
+            new PluginRefreshCommandAvailabilityPolicy(),
+            discoveryPlanner.GetAffordance(
+                effectiveStateService.CurrentState.CurrentGameType,
+                initialConfiguration.Mo2ModeEnabled));
         return new PluginRefreshModule(
             discoveryPlanner,
-            approximationService,
+            approximationModule,
             effectiveStateService,
             new SkipListPolicy(_configServiceMock, gameDetectionService),
+            publicationStore,
             _loggerMock);
     }
 
     private IDiscoverySettingsModule CreateDiscoverySettingsModule(
         IConfigurationService? configService = null,
         IStateService? stateService = null,
-        IPluginRefreshModule? pluginRefreshModule = null) =>
-        new DiscoverySettingsModule(
+        IPluginRefreshModule? pluginRefreshModule = null)
+    {
+        return new DiscoverySettingsModule(
             configService ?? _configServiceMock,
             stateService ?? _stateServiceMock,
             pluginRefreshModule ?? _pluginRefreshModule);
+    }
 
     private static Task WaitForSignalAsync(TaskCompletionSource<bool> signal)
     {
@@ -155,12 +258,14 @@ public sealed class MainWindowViewModelTests
     }
 
     private static bool IsDirectApproximationRequest(
-        PluginIssueApproximationRequest request,
+        PluginIssueApproximationModuleRequest request,
         GameType gameType,
-        string dataFolder) =>
-        request.GameType == gameType &&
-        request.Source is PluginIssueApproximationSource.DirectDataFolder direct &&
-        direct.DataFolder == dataFolder;
+        string dataFolder)
+    {
+        return request.GameType == gameType &&
+               request.Source is PluginIssueApproximationModuleSource.ResolvedLoadOrder resolved &&
+               resolved.BaseDataFolder == dataFolder;
+    }
 
     private static async Task WaitForSignalAsync(Task signalTask, string because)
     {
@@ -202,7 +307,8 @@ public sealed class MainWindowViewModelTests
                 _discoveryPlanner,
                 CreateDiscoverySettingsModule(),
                 _cleaningCommandReadiness);
-            using var _ = vm.ShowProgressInteraction.RegisterHandler(_ => Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
+            using var _ = vm.ShowProgressInteraction.RegisterHandler(_ =>
+                Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
 
             // Manually set properties to satisfy CanExecute (use temp file path)
             vm.Configuration.LoadOrderPath = "plugins.txt";
@@ -254,7 +360,9 @@ public sealed class MainWindowViewModelTests
                 _discoveryPlanner,
                 CreateDiscoverySettingsModule(),
                 _cleaningCommandReadiness);
-            using var _ = vm.ShowProgressInteraction.RegisterHandler(_ => throw new ApplicationException("Progress window failed"));
+            using var _ =
+                vm.ShowProgressInteraction.RegisterHandler(_ =>
+                    throw new ApplicationException("Progress window failed"));
 
             await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
 
@@ -308,7 +416,8 @@ public sealed class MainWindowViewModelTests
                 _discoveryPlanner,
                 CreateDiscoverySettingsModule(),
                 _cleaningCommandReadiness);
-            using var _ = vm.ShowPreviewInteraction.RegisterHandler(_ => throw new ApplicationException("Preview window failed"));
+            using var _ =
+                vm.ShowPreviewInteraction.RegisterHandler(_ => throw new ApplicationException("Preview window failed"));
 
             await vm.Commands.PreviewCommand.ExecuteAsync(null);
 
@@ -359,15 +468,23 @@ public sealed class MainWindowViewModelTests
                 .Returns(tempFile);
 
             _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>())
-                .Returns(new UserConfiguration { LoadOrder = new(), XEdit = new(), ModOrganizer = new(), Settings = new() });
+                .Returns(new UserConfiguration
+                {
+                    SelectedGame = "FalloutNewVegas",
+                    LoadOrder = new LoadOrderConfig(),
+                    XEdit = new XEditConfig(),
+                    ModOrganizer = new ModOrganizerConfig(),
+                    Settings = new AutoQacSettings()
+                });
 
             var expectedPlugins = new List<PluginInfo>
             {
-                new PluginInfo { FileName = "Update.esm", FullPath = "Update.esm", DetectedGameType = GameType.Unknown },
-                new PluginInfo { FileName = "Dawnguard.esm", FullPath = "Dawnguard.esm", DetectedGameType = GameType.Unknown }
+                new() { FileName = "Update.esm", FullPath = "Update.esm", DetectedGameType = GameType.Unknown },
+                new() { FileName = "Dawnguard.esm", FullPath = "Dawnguard.esm", DetectedGameType = GameType.Unknown }
             };
 
-            _pluginLoadingServiceMock.GetPluginsFromFileAsync(tempFile, Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            _pluginLoadingServiceMock
+                .GetPluginsFromFileAsync(tempFile, Arg.Any<string?>(), Arg.Any<CancellationToken>())
                 .Returns(expectedPlugins);
 
             // Setup skip list (required for ApplySkipListStatus)
@@ -385,8 +502,10 @@ public sealed class MainWindowViewModelTests
             // Assert
             _pluginRefreshModule.Intents.OfType<PluginRefreshIntent.RefreshGame>()
                 .Should().ContainSingle(refresh =>
-                    refresh.GameType == GameType.FalloutNewVegas && refresh.SelectedLoadOrderPath == tempFile);
-            await _configServiceMock.Received().SetGameLoadOrderOverrideAsync(GameType.FalloutNewVegas, tempFile, Arg.Any<CancellationToken>());
+                    refresh.GameType == GameType.FalloutNewVegas);
+            await _configServiceMock.Received().SaveUserConfigAsync(
+                Arg.Is<UserConfiguration>(config => config.LoadOrderFileOverrides.Values.Contains(tempFile)),
+                Arg.Any<CancellationToken>());
         }
         finally
         {
@@ -423,7 +542,13 @@ public sealed class MainWindowViewModelTests
 
             // Setup config service to avoid NullReferenceException during InitializeAsync
             _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>())
-                .Returns(new UserConfiguration { LoadOrder = new(), XEdit = new(), ModOrganizer = new(), Settings = new() });
+                .Returns(new UserConfiguration
+                {
+                    LoadOrder = new LoadOrderConfig(),
+                    XEdit = new XEditConfig(),
+                    ModOrganizer = new ModOrganizerConfig(),
+                    Settings = new AutoQacSettings()
+                });
             _stateServiceMock.When(x => x.UpdateState(Arg.Any<Func<AppState, AppState>>()))
                 .Do(_ => initializationApplied.TrySetResult(true));
 
@@ -441,7 +566,8 @@ public sealed class MainWindowViewModelTests
                 _discoveryPlanner,
                 CreateDiscoverySettingsModule(),
                 _cleaningCommandReadiness);
-            using var _ = vm.ShowProgressInteraction.RegisterHandler(_ => Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
+            using var _ = vm.ShowProgressInteraction.RegisterHandler(_ =>
+                Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
 
             await WaitForSignalAsync(initializationApplied);
 
@@ -466,7 +592,8 @@ public sealed class MainWindowViewModelTests
                 .ShowErrorAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>());
 
             // Verify that the StartAsync error was logged
-            _loggerMock.Received().Error(Arg.Any<Exception>(), Arg.Is<string>(s => s.Contains("validation") || s.Contains("failed")));
+            _loggerMock.Received().Error(Arg.Any<Exception>(),
+                Arg.Is<string>(s => s.Contains("validation") || s.Contains("failed")));
         }
         finally
         {
@@ -518,8 +645,7 @@ public sealed class MainWindowViewModelTests
     }
 
     /// <summary>
-    /// Verifies that ConfigureLoadOrderCommand handles plugin parsing errors gracefully
-    /// and shows an error dialog.
+    /// Verifies that a refresh failure retains the saved load-order choice and shows a clear error dialog.
     /// </summary>
     [Fact]
     public async Task ConfigureLoadOrderCommand_ShouldHandlePluginParsingError()
@@ -534,7 +660,13 @@ public sealed class MainWindowViewModelTests
 
         // Setup config service to avoid NullReferenceException during InitializeAsync
         _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>())
-            .Returns(new UserConfiguration { LoadOrder = new(), XEdit = new(), ModOrganizer = new(), Settings = new() });
+            .Returns(new UserConfiguration
+            {
+                LoadOrder = new LoadOrderConfig(),
+                XEdit = new XEditConfig(),
+                ModOrganizer = new ModOrganizerConfig(),
+                Settings = new AutoQacSettings()
+            });
 
         // Create temp file to satisfy File.Exists check
         var tempFile = Path.GetTempFileName();
@@ -564,24 +696,27 @@ public sealed class MainWindowViewModelTests
                 .Returns(tempFile);
 
             // Plugin service throws exception for the corrupted file path
-            _pluginLoadingServiceMock.GetPluginsFromFileAsync(tempFile, Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            _pluginLoadingServiceMock
+                .GetPluginsFromFileAsync(tempFile, Arg.Any<string?>(), Arg.Any<CancellationToken>())
                 .ThrowsAsync(new InvalidOperationException("Failed to parse load order"));
             _pluginRefreshModule.ExecuteHandler = (_, _) =>
                 throw new InvalidOperationException("Failed to parse load order");
             vm.Configuration.SelectedGame = GameType.FalloutNewVegas;
+            _messageDialogMock.ClearReceivedCalls();
 
             // Act
             await vm.Configuration.ConfigureLoadOrderCommand.ExecuteAsync(null);
 
             // Assert
-            vm.Configuration.StatusText.Should().Contain("failed", "error should be reflected in status");
+            vm.Configuration.StatusText.Should().Contain("could not be refreshed");
+            (await _configServiceMock.LoadUserConfigAsync()).LoadOrderFileOverrides.Values.Should().Contain(tempFile,
+                "discovery failure must retain the saved choice for retry");
 
             // Verify error dialog was shown
             await _messageDialogMock.Received(1)
                 .ShowErrorAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>());
 
-            // Verify that the ConfigureLoadOrder error was logged
-            _loggerMock.Received().Error(Arg.Any<Exception>(), Arg.Is<string>(s => s.Contains("load order")));
+            // The module reports structured failure; the ViewModel must not depend on a thrown parsing exception.
         }
         finally
         {
@@ -716,13 +851,16 @@ public sealed class MainWindowViewModelTests
     public void StopTerminationDialogContent_ShouldExposeSharedStopCopyContract()
     {
         StopTerminationDialogContent.ConfirmationTitle.Should().Be("Force Terminate xEdit?");
-        StopTerminationDialogContent.ConfirmationMessage.Should().Be("xEdit did not exit after the stop request. AutoQAC can leave xEdit running, or force terminate it now. Force terminating can interrupt remaining file or log writes.");
+        StopTerminationDialogContent.ConfirmationMessage.Should().Be(
+            "xEdit did not exit after the stop request. AutoQAC can leave xEdit running, or force terminate it now. Force terminating can interrupt remaining file or log writes.");
         StopTerminationDialogContent.ForceTerminateButton.Should().Be("Force Terminate");
         StopTerminationDialogContent.LeaveRunningButton.Should().Be("Leave Running");
         StopTerminationDialogContent.ForceFailureTitle.Should().Be("Could Not Force Terminate xEdit");
-        StopTerminationDialogContent.ForceFailureMessage.Should().Be("AutoQAC could not force terminate xEdit. xEdit may still be running; close it manually before starting another cleaning session. Technical details are in the latest AutoQAC log.");
+        StopTerminationDialogContent.ForceFailureMessage.Should().Be(
+            "AutoQAC could not force terminate xEdit. xEdit may still be running; close it manually before starting another cleaning session. Technical details are in the latest AutoQAC log.");
         StopTerminationDialogContent.LeftRunningTitle.Should().Be("Cleaning Stopped");
-        StopTerminationDialogContent.LeftRunningMessage.Should().Be("AutoQAC stopped the cleaning session. xEdit was left running by your choice; close it manually when it is safe.");
+        StopTerminationDialogContent.LeftRunningMessage.Should().Be(
+            "AutoQAC stopped the cleaning session. xEdit was left running by your choice; close it manually when it is safe.");
     }
 
     [Fact]
@@ -862,7 +1000,8 @@ public sealed class MainWindowViewModelTests
             StopTerminationDialogContent.ForceFailureMessage,
             Arg.Any<string?>());
         vm.Commands.StatusText.Should().Be("Cleaning stopped; xEdit left running.");
-        _loggerMock.Received(1).Error(Arg.Any<ApplicationException>(), "Failed to show left-running stop warning dialog");
+        _loggerMock.Received(1)
+            .Error(Arg.Any<ApplicationException>(), "Failed to show left-running stop warning dialog");
     }
 
     [Fact]
@@ -884,10 +1023,13 @@ public sealed class MainWindowViewModelTests
                 Arg.Any<string>(),
                 Arg.Any<string?>())
             .Returns(selectedPath);
-        _pluginLoadingServiceMock.GetPluginsFromFileAsync(selectedPath, Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .ThrowsAsync(new InvalidOperationException("Access denied reading C:\\Users\\Alice\\AppData\\Local\\Skyrim Special Edition\\plugins.txt"));
+        _pluginLoadingServiceMock
+            .GetPluginsFromFileAsync(selectedPath, Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException(
+                "Access denied reading C:\\Users\\Alice\\AppData\\Local\\Skyrim Special Edition\\plugins.txt"));
         _pluginRefreshModule.ExecuteHandler = (_, _) =>
-            throw new InvalidOperationException("Access denied reading C:\\Users\\Alice\\AppData\\Local\\Skyrim Special Edition\\plugins.txt");
+            throw new InvalidOperationException(
+                "Access denied reading C:\\Users\\Alice\\AppData\\Local\\Skyrim Special Edition\\plugins.txt");
         _messageDialogMock.ShowErrorAsync(
                 Arg.Any<string>(),
                 Arg.Any<string>(),
@@ -978,7 +1120,8 @@ public sealed class MainWindowViewModelTests
 
         // Assert
         var userText = string.Join("\n", vm.Configuration.StatusText, dialogMessage, dialogDetails);
-        dialogMessage.Should().Be("Skyrim Special Edition data folder is unavailable. Choose a valid Data folder or reset the override.");
+        dialogMessage.Should()
+            .Be("Skyrim Special Edition data folder is unavailable. Choose a valid Data folder or reset the override.");
         userText.Should().NotContain(selectedFolder);
         userText.Should().NotContain("latest AutoQAC log");
     }
@@ -1157,9 +1300,17 @@ public sealed class MainWindowViewModelTests
         var refreshObserved = CreateSignal();
         UserConfiguration? savedConfig = null;
 
+        configService.FlushPendingSavesAsync(Arg.Any<CancellationToken>()).Returns(
+            new ConfigPersistenceResult(ConfigPersistenceStatusKind.Success, ConfigPersistenceOperationKind.Flush, 1, null));
         configService.SkipListChanged.Returns(Observable.Never<GameType>());
         configService.LoadUserConfigAsync(Arg.Any<CancellationToken>())
-            .Returns(_ => new UserConfiguration { LoadOrder = new(), XEdit = new(), ModOrganizer = new(), Settings = new() });
+            .Returns(_ => savedConfig?.Copy() ?? new UserConfiguration
+            {
+                LoadOrder = new LoadOrderConfig(),
+                XEdit = new XEditConfig(),
+                ModOrganizer = new ModOrganizerConfig(),
+                Settings = new AutoQacSettings()
+            });
         configService.GetSelectedGameAsync(Arg.Any<CancellationToken>())
             .Returns(GameType.Unknown);
         configService.SaveUserConfigAsync(Arg.Any<UserConfiguration>(), Arg.Any<CancellationToken>())
@@ -1171,10 +1322,7 @@ public sealed class MainWindowViewModelTests
 
         refreshModule.ExecuteHandler = (intent, _) =>
         {
-            if (intent is PluginRefreshIntent.RefreshGame)
-            {
-                refreshObserved.TrySetResult(true);
-            }
+            if (intent is PluginRefreshIntent.RefreshGame) refreshObserved.TrySetResult(true);
 
             return Task.FromResult(refreshModule.CurrentSnapshot);
         };
@@ -1187,12 +1335,12 @@ public sealed class MainWindowViewModelTests
             _messageDialogMock,
             _pluginServiceMock,
             _pluginLoadingServiceMock,
-            pluginRefreshModule: refreshModule,
-            discoveryPlanner: _discoveryPlanner,
-            discoverySettingsModule: CreateDiscoverySettingsModule(
-                configService: configService,
-                stateService: stateService,
-                pluginRefreshModule: refreshModule));
+            refreshModule,
+            _discoveryPlanner,
+            CreateDiscoverySettingsModule(
+                configService,
+                stateService,
+                refreshModule));
 
         try
         {
@@ -1224,7 +1372,13 @@ public sealed class MainWindowViewModelTests
 
         configService.SkipListChanged.Returns(Observable.Never<GameType>());
         configService.LoadUserConfigAsync(Arg.Any<CancellationToken>())
-            .Returns(_ => new UserConfiguration { LoadOrder = new(), XEdit = new(), ModOrganizer = new(), Settings = new() });
+            .Returns(_ => new UserConfiguration
+            {
+                LoadOrder = new LoadOrderConfig(),
+                XEdit = new XEditConfig(),
+                ModOrganizer = new ModOrganizerConfig(),
+                Settings = new AutoQacSettings()
+            });
         configService.GetSelectedGameAsync(Arg.Any<CancellationToken>())
             .Returns(GameType.Unknown);
         var vm = new ConfigurationViewModel(
@@ -1235,12 +1389,12 @@ public sealed class MainWindowViewModelTests
             _messageDialogMock,
             _pluginServiceMock,
             _pluginLoadingServiceMock,
-            pluginRefreshModule: refreshModule,
-            discoveryPlanner: _discoveryPlanner,
-            discoverySettingsModule: CreateDiscoverySettingsModule(
-                configService: configService,
-                stateService: stateService,
-                pluginRefreshModule: refreshModule));
+            refreshModule,
+            _discoveryPlanner,
+            CreateDiscoverySettingsModule(
+                configService,
+                stateService,
+                refreshModule));
 
         try
         {
@@ -1288,12 +1442,12 @@ public sealed class MainWindowViewModelTests
                 _messageDialogMock,
                 _pluginServiceMock,
                 _pluginLoadingServiceMock,
-                pluginRefreshModule: refreshModule,
-                discoveryPlanner: _discoveryPlanner,
-                discoverySettingsModule: CreateDiscoverySettingsModule(
-                    configService: configService,
-                    stateService: stateService,
-                    pluginRefreshModule: refreshModule));
+                refreshModule,
+                _discoveryPlanner,
+                CreateDiscoverySettingsModule(
+                    configService,
+                    stateService,
+                    refreshModule));
 
             await vm.InitializeAsync();
 
@@ -1400,14 +1554,11 @@ public sealed class MainWindowViewModelTests
         var stateSubject = new BehaviorSubject<AppState>(new AppState());
         _stateServiceMock.StateChanged.Returns(stateSubject);
         _stateServiceMock.CurrentState.Returns(new AppState());
-        _configServiceMock.SetSelectedGameAsync(Arg.Any<GameType>(), Arg.Any<CancellationToken>())
+        _configServiceMock.SaveUserConfigAsync(Arg.Any<UserConfiguration>(), Arg.Any<CancellationToken>())
             .Returns(callInfo =>
             {
-                if (callInfo.ArgAt<GameType>(0) == GameType.SkyrimSe)
-                {
-                    selectedGamePersisted.TrySetResult(true);
-                }
-
+                _persistedConfig = callInfo.Arg<UserConfiguration>().Copy();
+                if (_persistedConfig.SelectedGame == "SkyrimSe") selectedGamePersisted.TrySetResult(true);
                 return Task.CompletedTask;
             });
 
@@ -1432,7 +1583,7 @@ public sealed class MainWindowViewModelTests
         await WaitForSignalAsync(selectedGamePersisted);
 
         // Assert
-        await _configServiceMock.Received(1).SetSelectedGameAsync(GameType.SkyrimSe, Arg.Any<CancellationToken>());
+        (await _configServiceMock.LoadUserConfigAsync()).SelectedGame.Should().Be("SkyrimSe");
     }
 
     /// <summary>
@@ -1450,7 +1601,8 @@ public sealed class MainWindowViewModelTests
             new() { FileName = "Plugin2.esp", FullPath = "Data/Plugin2.esp" }
         };
 
-        _pluginLoadingServiceMock.TryGetPluginsAsync(GameType.SkyrimSe, Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _pluginLoadingServiceMock
+            .TryGetPluginsAsync(GameType.SkyrimSe, Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(new PluginLoadingResult
             {
                 Status = PluginLoadingStatus.Success,
@@ -1475,17 +1627,9 @@ public sealed class MainWindowViewModelTests
                 if (plugins.Count == 2 &&
                     plugins.Any(p => p.FileName == "Plugin1.esp") &&
                     plugins.Any(p => p.FileName == "Plugin2.esp"))
-                {
                     pluginsLoaded.TrySetResult(true);
-                }
             });
-        var approximationService = Substitute.For<IPluginIssueApproximationService>();
-        approximationService.GetApproximationsAsync(
-                Arg.Any<PluginIssueApproximationRequest>(),
-                Arg.Any<Action<PluginIssueApproximationResult>?>(),
-                Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<IReadOnlyList<PluginIssueApproximationResult>>([]));
-        using var refreshModule = CreatePluginRefreshModule(approximationService);
+        using var refreshModule = CreatePluginRefreshModule();
 
         var vm = new MainWindowViewModel(
             _configServiceMock,
@@ -1508,18 +1652,22 @@ public sealed class MainWindowViewModelTests
         await WaitForSignalAsync(pluginsLoaded);
 
         // Assert
-        await _pluginLoadingServiceMock.Received(1).TryGetPluginsAsync(GameType.SkyrimSe, Arg.Any<string?>(), Arg.Any<CancellationToken>());
-        _stateServiceMock.Received(1).SetPluginsToClean(Arg.Is<List<PluginInfo>>(list =>
+        await _pluginLoadingServiceMock.Received(1)
+            .TryGetPluginsAsync(GameType.SkyrimSe, Arg.Any<string?>(), Arg.Any<CancellationToken>());
+        _stateServiceMock.Received().SetPluginsToClean(Arg.Is<List<PluginInfo>>(list =>
             list.Count == 2 &&
             list.Any(p => p.FileName == "Plugin1.esp") &&
             list.Any(p => p.FileName == "Plugin2.esp")));
     }
 
+    /// <summary>
+    /// Verifies a selected game publishes Pending rows before merging authoritative results incrementally.
+    /// </summary>
     [Fact]
     public async Task SelectedGame_ShouldPublishPendingApproximationsThenMergeBackgroundResults()
     {
         EnableSelectedGameSideEffects();
-        var approximationServiceMock = Substitute.For<IPluginIssueApproximationService>();
+        var approximationModuleMock = Substitute.For<IPluginIssueApproximationModule>();
         var pendingPluginsPublished = CreateSignal();
         var approximationMergedBeforeCompletion = CreateSignal();
         var allowApproximationCompletion = CreateSignal();
@@ -1528,7 +1676,8 @@ public sealed class MainWindowViewModelTests
             new() { FileName = "Plugin1.esp", FullPath = @"C:\Games\SkyrimSE\Data\Plugin1.esp" }
         };
 
-        _pluginLoadingServiceMock.TryGetPluginsAsync(GameType.SkyrimSe, Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _pluginLoadingServiceMock
+            .TryGetPluginsAsync(GameType.SkyrimSe, Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(new PluginLoadingResult
             {
                 Status = PluginLoadingStatus.Success,
@@ -1536,34 +1685,23 @@ public sealed class MainWindowViewModelTests
                 DataFolder = @"C:\Games\SkyrimSE\Data"
             });
 
-        approximationServiceMock
-            .GetApproximationsAsync(
-                Arg.Is<PluginIssueApproximationRequest>(request =>
+        approximationModuleMock
+            .AnalyzeAsync(
+                Arg.Is<PluginIssueApproximationModuleRequest>(request =>
                     IsDirectApproximationRequest(request, GameType.SkyrimSe, @"C:\Games\SkyrimSE\Data")),
-                Arg.Any<Action<PluginIssueApproximationResult>>(),
+                Arg.Any<Action<PluginIssueApproximationModuleResult>>(),
                 Arg.Any<CancellationToken>())
             .Returns(async callInfo =>
             {
-                var callback = callInfo.ArgAt<Action<PluginIssueApproximationResult>>(1);
-                callback(new PluginIssueApproximationResult
-                {
-                    FileName = "Plugin1.esp",
-                    FullPath = @"C:\Games\SkyrimSE\Data\Plugin1.esp",
-                    Approximation = PluginIssueApproximation.Available(3, 2, 1)
-                });
+                var request = callInfo.ArgAt<PluginIssueApproximationModuleRequest>(0);
+                var callback = callInfo.ArgAt<Action<PluginIssueApproximationModuleResult>>(1);
+                callback(new PluginIssueApproximationModuleResult(
+                    request.Targets.Single(),
+                    PluginIssueApproximation.Available(3, 2, 1)));
 
-                await WaitForSignalAsync(approximationMergedBeforeCompletion.Task, "expected incremental approximation merge before completion");
+                await WaitForSignalAsync(approximationMergedBeforeCompletion.Task,
+                    "expected incremental approximation merge before completion");
                 await allowApproximationCompletion.Task;
-
-                return
-                [
-                    new PluginIssueApproximationResult
-                    {
-                        FileName = "Plugin1.esp",
-                        FullPath = @"C:\Games\SkyrimSE\Data\Plugin1.esp",
-                        Approximation = PluginIssueApproximation.Available(3, 2, 1)
-                    }
-                ];
             });
 
         _configServiceMock.GetSkipListAsync(
@@ -1577,9 +1715,7 @@ public sealed class MainWindowViewModelTests
         {
             if (state.PluginsToClean.Count == 1 &&
                 state.PluginsToClean[0].Approximation.Status == PluginIssueApproximationStatus.Pending)
-            {
                 pendingPluginsPublished.TrySetResult(true);
-            }
 
             if (state.PluginsToClean.Count == 1 &&
                 state.PluginsToClean[0].Approximation is
@@ -1587,12 +1723,12 @@ public sealed class MainWindowViewModelTests
                     Status: PluginIssueApproximationStatus.Available,
                     ItmCount: 3
                 })
-            {
                 approximationMergedBeforeCompletion.TrySetResult(true);
-            }
         });
 
-        using var refreshModule = CreatePluginRefreshModule(approximationServiceMock, stateService);
+        using var refreshModule = CreatePluginRefreshModule(
+            stateService,
+            approximationModuleMock);
 
         var vm = new MainWindowViewModel(
             _configServiceMock,
@@ -1606,7 +1742,7 @@ public sealed class MainWindowViewModelTests
             _uiDispatcher,
             refreshModule,
             _discoveryPlanner,
-            CreateDiscoverySettingsModule(pluginRefreshModule: refreshModule),
+            CreateDiscoverySettingsModule(stateService: stateService, pluginRefreshModule: refreshModule),
             new CleaningCommandReadiness(refreshModule, stateService));
 
         vm.Configuration.SelectedGame = GameType.SkyrimSe;
@@ -1618,19 +1754,22 @@ public sealed class MainWindowViewModelTests
             plugin.FileName == "Plugin1.esp" &&
             plugin.Approximation.Status == PluginIssueApproximationStatus.Available &&
             plugin.Approximation.ItmCount == 3);
-        await approximationServiceMock.Received(1)
-            .GetApproximationsAsync(
-                Arg.Is<PluginIssueApproximationRequest>(request =>
+        await approximationModuleMock.Received(1)
+            .AnalyzeAsync(
+                Arg.Is<PluginIssueApproximationModuleRequest>(request =>
                     IsDirectApproximationRequest(request, GameType.SkyrimSe, @"C:\Games\SkyrimSE\Data")),
-                Arg.Any<Action<PluginIssueApproximationResult>>(),
+                Arg.Any<Action<PluginIssueApproximationModuleResult>>(),
                 Arg.Any<CancellationToken>());
     }
 
+    /// <summary>
+    /// Verifies an Issue approximation failure leaves the discovered Plugin list loaded and terminal.
+    /// </summary>
     [Fact]
     public async Task SelectedGame_ShouldKeepPluginListLoadedWhenApproximationFails()
     {
         EnableSelectedGameSideEffects();
-        var approximationServiceMock = Substitute.For<IPluginIssueApproximationService>();
+        var approximationModuleMock = Substitute.For<IPluginIssueApproximationModule>();
         var pluginsLoaded = CreateSignal();
         var unavailableMerged = CreateSignal();
         var expectedPlugins = new List<PluginInfo>
@@ -1638,7 +1777,8 @@ public sealed class MainWindowViewModelTests
             new() { FileName = "Plugin1.esp", FullPath = @"C:\Games\SkyrimSE\Data\Plugin1.esp" }
         };
 
-        _pluginLoadingServiceMock.TryGetPluginsAsync(GameType.SkyrimSe, Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _pluginLoadingServiceMock
+            .TryGetPluginsAsync(GameType.SkyrimSe, Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(new PluginLoadingResult
             {
                 Status = PluginLoadingStatus.Success,
@@ -1646,11 +1786,11 @@ public sealed class MainWindowViewModelTests
                 DataFolder = @"C:\Games\SkyrimSE\Data"
             });
 
-        approximationServiceMock
-            .GetApproximationsAsync(
-                Arg.Is<PluginIssueApproximationRequest>(request =>
+        approximationModuleMock
+            .AnalyzeAsync(
+                Arg.Is<PluginIssueApproximationModuleRequest>(request =>
                     IsDirectApproximationRequest(request, GameType.SkyrimSe, @"C:\Games\SkyrimSE\Data")),
-                Arg.Any<Action<PluginIssueApproximationResult>>(),
+                Arg.Any<Action<PluginIssueApproximationModuleResult>>(),
                 Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("Approximation failed"));
 
@@ -1664,18 +1804,16 @@ public sealed class MainWindowViewModelTests
         using var stateSubscription = stateService.StateChanged.Subscribe(state =>
         {
             if (state.PluginsToClean.Count == 1 && state.PluginsToClean[0].FileName == "Plugin1.esp")
-            {
                 pluginsLoaded.TrySetResult(true);
-            }
 
             if (state.PluginsToClean.Count == 1 &&
                 state.PluginsToClean[0].Approximation.Status == PluginIssueApproximationStatus.Unavailable)
-            {
                 unavailableMerged.TrySetResult(true);
-            }
         });
 
-        using var refreshModule = CreatePluginRefreshModule(approximationServiceMock, stateService);
+        using var refreshModule = CreatePluginRefreshModule(
+            stateService,
+            approximationModuleMock);
 
         var vm = new MainWindowViewModel(
             _configServiceMock,
@@ -1689,7 +1827,7 @@ public sealed class MainWindowViewModelTests
             _uiDispatcher,
             refreshModule,
             _discoveryPlanner,
-            CreateDiscoverySettingsModule(pluginRefreshModule: refreshModule),
+            CreateDiscoverySettingsModule(stateService: stateService, pluginRefreshModule: refreshModule),
             new CleaningCommandReadiness(refreshModule, stateService));
 
         vm.Configuration.SelectedGame = GameType.SkyrimSe;
@@ -1701,11 +1839,14 @@ public sealed class MainWindowViewModelTests
             plugin.Approximation.Status == PluginIssueApproximationStatus.Unavailable);
     }
 
+    /// <summary>
+    /// Verifies a superseded Plugin load cannot publish rows or begin authoritative approximation.
+    /// </summary>
     [Fact]
     public async Task SelectedGame_StalePluginLoad_DoesNotOverwriteCurrentListOrStartApproximation()
     {
         EnableSelectedGameSideEffects();
-        var approximationServiceMock = Substitute.For<IPluginIssueApproximationService>();
+        var approximationModuleMock = Substitute.For<IPluginIssueApproximationModule>();
         var approximationAttempted = CreateSignal();
         var firstLoadStarted = CreateSignal();
         var unknownSelectionApplied = CreateSignal();
@@ -1717,7 +1858,8 @@ public sealed class MainWindowViewModelTests
             new() { FileName = "Plugin1.esp", FullPath = @"C:\Games\SkyrimSE\Data\Plugin1.esp" }
         };
 
-        _pluginLoadingServiceMock.TryGetPluginsAsync(GameType.SkyrimSe, Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _pluginLoadingServiceMock
+            .TryGetPluginsAsync(GameType.SkyrimSe, Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 firstLoadStarted.TrySetResult(true);
@@ -1730,39 +1872,35 @@ public sealed class MainWindowViewModelTests
                 Arg.Any<CancellationToken>())
             .Returns(new List<string>());
 
-        approximationServiceMock
-            .GetApproximationsAsync(
-                Arg.Any<PluginIssueApproximationRequest>(),
-                Arg.Any<Action<PluginIssueApproximationResult>>(),
+        approximationModuleMock
+            .AnalyzeAsync(
+                Arg.Any<PluginIssueApproximationModuleRequest>(),
+                Arg.Any<Action<PluginIssueApproximationModuleResult>>(),
                 Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 approximationAttempted.TrySetResult(true);
-                return Task.FromResult<IReadOnlyList<PluginIssueApproximationResult>>([]);
+                return Task.CompletedTask;
             });
 
         _stateServiceMock.When(x => x.SetPluginsToClean(Arg.Any<List<PluginInfo>>()))
             .Do(callInfo =>
             {
                 var plugins = callInfo.Arg<List<PluginInfo>>();
-                if (plugins.Count == 0)
-                {
-                    unknownSelectionApplied.TrySetResult(true);
-                }
+                if (plugins.Count == 0) unknownSelectionApplied.TrySetResult(true);
 
                 if (plugins.Count == 1 &&
                     plugins[0].FileName == "Plugin1.esp" &&
                     plugins[0].Approximation.Status == PluginIssueApproximationStatus.Pending)
-                {
                     stalePluginListApplied.TrySetResult(true);
-                }
             });
 
         var stateSubject = new BehaviorSubject<AppState>(new AppState());
         _stateServiceMock.StateChanged.Returns(stateSubject);
         _stateServiceMock.CurrentState.Returns(new AppState());
 
-        using var refreshModule = CreatePluginRefreshModule(approximationServiceMock);
+        using var refreshModule = CreatePluginRefreshModule(
+            approximationModule: approximationModuleMock);
 
         var vm = new MainWindowViewModel(
             _configServiceMock,
@@ -1801,10 +1939,10 @@ public sealed class MainWindowViewModelTests
             "stale plugin loads must not overwrite the current game's plugin list");
         approximationAttempted.Task.IsCompleted.Should().BeFalse(
             "stale plugin loads should not start a background approximation refresh");
-        await approximationServiceMock.DidNotReceive()
-            .GetApproximationsAsync(
-                Arg.Any<PluginIssueApproximationRequest>(),
-                Arg.Any<Action<PluginIssueApproximationResult>>(),
+        await approximationModuleMock.DidNotReceive()
+            .AnalyzeAsync(
+                Arg.Any<PluginIssueApproximationModuleRequest>(),
+                Arg.Any<Action<PluginIssueApproximationModuleResult>>(),
                 Arg.Any<CancellationToken>());
     }
 
@@ -1817,10 +1955,10 @@ public sealed class MainWindowViewModelTests
 
         var initialConfig = new UserConfiguration
         {
-            LoadOrder = new(),
-            XEdit = new() { Binary = oldPath },
-            ModOrganizer = new(),
-            Settings = new()
+            LoadOrder = new LoadOrderConfig(),
+            XEdit = new XEditConfig { Binary = oldPath },
+            ModOrganizer = new ModOrganizerConfig(),
+            Settings = new AutoQacSettings()
         };
         _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>()).Returns(initialConfig);
         _configServiceMock.GetSelectedGameAsync(Arg.Any<CancellationToken>()).Returns(GameType.Unknown);
@@ -1879,10 +2017,10 @@ public sealed class MainWindowViewModelTests
         {
             await configService.SaveUserConfigAsync(new UserConfiguration
             {
-                LoadOrder = new(),
-                XEdit = new() { Binary = oldPath },
-                ModOrganizer = new(),
-                Settings = new()
+                LoadOrder = new LoadOrderConfig(),
+                XEdit = new XEditConfig { Binary = oldPath },
+                ModOrganizer = new ModOrganizerConfig(),
+                Settings = new AutoQacSettings()
             });
             await configService.FlushPendingSavesAsync();
 
@@ -1903,9 +2041,9 @@ public sealed class MainWindowViewModelTests
                 refreshModule,
                 _discoveryPlanner,
                 CreateDiscoverySettingsModule(
-                    configService: configService,
-                    stateService: stateService,
-                    pluginRefreshModule: refreshModule));
+                    configService,
+                    stateService,
+                    refreshModule));
             await vm.InitializeAsync();
 
             // Act
@@ -1921,15 +2059,12 @@ public sealed class MainWindowViewModelTests
         {
             await configService.DisposeAsync();
             await freshService.DisposeAsync();
-            if (Directory.Exists(configDirectory))
-            {
-                Directory.Delete(configDirectory, true);
-            }
+            if (Directory.Exists(configDirectory)) Directory.Delete(configDirectory, true);
         }
     }
 
     [Fact]
-    public async Task ShowSettingsCommand_ShouldRefreshRuntimeConfigurationPaths_WhenSettingsAreSaved()
+    public async Task ShowSettingsCommand_DoesNotReplayConfigurationAfterDialogCompletion()
     {
         // Arrange
         const string loadOrderPath = @"C:\Users\Test\AppData\Local\Skyrim Special Edition\plugins.txt";
@@ -1971,7 +2106,9 @@ public sealed class MainWindowViewModelTests
         await vm.Commands.ShowSettingsCommand.ExecuteAsync(null);
 
         // Assert
-        _stateServiceMock.Received(1).UpdateConfigurationPaths(loadOrderPath, mo2Path, xEditPath);
+        _stateServiceMock.DidNotReceive().UpdateConfigurationPaths(
+            Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>());
+        vm.Commands.StatusText.Should().Be("Settings saved");
     }
 
     [Fact]
@@ -1984,10 +2121,10 @@ public sealed class MainWindowViewModelTests
 
         var initialConfig = new UserConfiguration
         {
-            LoadOrder = new(),
-            XEdit = new(),
-            ModOrganizer = new() { Binary = oldPath },
-            Settings = new()
+            LoadOrder = new LoadOrderConfig(),
+            XEdit = new XEditConfig(),
+            ModOrganizer = new ModOrganizerConfig { Binary = oldPath },
+            Settings = new AutoQacSettings()
         };
         _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>()).Returns(initialConfig);
         _configServiceMock.GetSelectedGameAsync(Arg.Any<CancellationToken>()).Returns(GameType.Unknown);
@@ -2048,10 +2185,10 @@ public sealed class MainWindowViewModelTests
 
         _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>()).Returns(new UserConfiguration
         {
-            LoadOrder = new(),
-            XEdit = new(),
-            ModOrganizer = new() { Binary = oldPath },
-            Settings = new()
+            LoadOrder = new LoadOrderConfig(),
+            XEdit = new XEditConfig(),
+            ModOrganizer = new ModOrganizerConfig { Binary = oldPath },
+            Settings = new AutoQacSettings()
         });
         _configServiceMock.GetSelectedGameAsync(Arg.Any<CancellationToken>()).Returns(GameType.Unknown);
 
@@ -2102,64 +2239,33 @@ public sealed class MainWindowViewModelTests
     [Fact]
     public async Task ResetSettingsAsync_ShouldProjectDefaultDisableSkipListsWithoutReSavingOldToggle()
     {
-        // Arrange
-        var configService = Substitute.For<IConfigurationService>();
-        using var stateService = new StateService();
-        using var refreshModule = new RecordingPluginRefreshModule();
-        var defaultsLoaded = false;
-
-        configService.SkipListChanged.Returns(Observable.Never<GameType>());
-        configService.LoadUserConfigAsync(Arg.Any<CancellationToken>()).Returns(_ =>
-            defaultsLoaded
-                ? new UserConfiguration { LoadOrder = new(), XEdit = new(), ModOrganizer = new(), Settings = new() }
-                : new UserConfiguration
-                {
-                    LoadOrder = new(),
-                    XEdit = new(),
-                    ModOrganizer = new(),
-                    Settings = new AutoQacSettings { DisableSkipLists = true }
-                });
-        configService.GetSelectedGameAsync(Arg.Any<CancellationToken>()).Returns(GameType.Unknown);
-        configService.ResetToDefaultsAsync(Arg.Any<CancellationToken>()).Returns(_ =>
+        using var state = new StateService();
+        using var notifications = new Subject<UserConfiguration>();
+        using var refresh = new RecordingPluginRefreshModule();
+        var config = Substitute.For<IConfigurationService>();
+        var saved = new UserConfiguration { Settings = new AutoQacSettings { DisableSkipLists = true } };
+        config.SkipListChanged.Returns(Observable.Never<GameType>());
+        config.UserConfigurationChanged.Returns(notifications);
+        config.LoadUserConfigAsync(Arg.Any<CancellationToken>()).Returns(_ => saved.Copy());
+        config.GetSelectedGameAsync(Arg.Any<CancellationToken>()).Returns(GameType.Unknown);
+        config.SaveUserConfigAsync(Arg.Any<UserConfiguration>(), Arg.Any<CancellationToken>()).Returns(call =>
         {
-            defaultsLoaded = true;
+            saved = call.Arg<UserConfiguration>().Copy();
+            notifications.OnNext(saved.Copy());
             return Task.CompletedTask;
         });
-
-        var vm = new ConfigurationViewModel(
-            configService,
-            stateService,
-            _loggerMock,
-            _fileDialogMock,
-            _messageDialogMock,
-            _pluginServiceMock,
-            _pluginLoadingServiceMock,
-            refreshModule,
-            _discoveryPlanner,
-            CreateDiscoverySettingsModule(
-                configService: configService,
-                stateService: stateService,
-                pluginRefreshModule: refreshModule));
-
-        try
-        {
-            await vm.InitializeAsync();
-            vm.DisableSkipListsEnabled.Should().BeTrue();
-
-            // Act
-            await vm.ResetSettingsCommand.ExecuteAsync(null);
-
-            // Assert
-            vm.DisableSkipListsEnabled.Should().BeFalse(
-                "reset defaults should be reflected in UI-only Discovery settings fields");
-            await configService.DidNotReceive().SaveUserConfigAsync(
-                Arg.Is<UserConfiguration>(config => config.Settings.DisableSkipLists),
-                Arg.Any<CancellationToken>());
-        }
-        finally
-        {
-            vm.Dispose();
-        }
+        config.FlushPendingSavesAsync(Arg.Any<CancellationToken>()).Returns(
+            new ConfigPersistenceResult(ConfigPersistenceStatusKind.Success, ConfigPersistenceOperationKind.Flush, 1, null));
+        using var module = new DiscoverySettingsModule(config, state, refresh);
+        using var vm = new MainWindowViewModel(config, state, _cleaningSessionMock, _loggerMock,
+            _fileDialogMock, _messageDialogMock, _pluginServiceMock, _pluginLoadingServiceMock, _uiDispatcher,
+            refresh, _discoveryPlanner, module, _cleaningCommandReadiness);
+        vm.Configuration.DisableSkipListsEnabled.Should().BeTrue();
+        await vm.Configuration.ResetSettingsCommand.ExecuteAsync(null);
+        vm.Configuration.DisableSkipListsEnabled.Should().BeFalse();
+        saved.Settings.DisableSkipLists.Should().BeFalse();
+        await config.DidNotReceive().SaveUserConfigAsync(
+            Arg.Is<UserConfiguration>(value => value.Settings.DisableSkipLists), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -2168,7 +2274,8 @@ public sealed class MainWindowViewModelTests
         // Arrange
         EnableSelectedGameSideEffects();
         var emptyPluginListPublished = CreateSignal();
-        _pluginLoadingServiceMock.TryGetPluginsAsync(GameType.SkyrimSe, Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _pluginLoadingServiceMock
+            .TryGetPluginsAsync(GameType.SkyrimSe, Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(new PluginLoadingResult
             {
                 Status = PluginLoadingStatus.NoPluginsDiscovered,
@@ -2188,18 +2295,9 @@ public sealed class MainWindowViewModelTests
         _stateServiceMock.When(x => x.SetPluginsToClean(Arg.Any<List<PluginInfo>>()))
             .Do(callInfo =>
             {
-                if (callInfo.Arg<List<PluginInfo>>().Count == 0)
-                {
-                    emptyPluginListPublished.TrySetResult(true);
-                }
+                if (callInfo.Arg<List<PluginInfo>>().Count == 0) emptyPluginListPublished.TrySetResult(true);
             });
-        var approximationService = Substitute.For<IPluginIssueApproximationService>();
-        approximationService.GetApproximationsAsync(
-                Arg.Any<PluginIssueApproximationRequest>(),
-                Arg.Any<Action<PluginIssueApproximationResult>?>(),
-                Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<IReadOnlyList<PluginIssueApproximationResult>>([]));
-        using var refreshModule = CreatePluginRefreshModule(approximationService);
+        using var refreshModule = CreatePluginRefreshModule();
 
         var vm = new MainWindowViewModel(
             _configServiceMock,

@@ -14,8 +14,8 @@ public interface ICleaningService
         CancellationToken ct = default);
 
     /// <summary>
-    /// Compatibility launch-readiness probe retained for legacy callers. Cleaning session
-    /// preflight is the authoritative validation path and does not call this method.
+    ///     Compatibility launch-readiness probe retained for legacy callers. Cleaning session
+    ///     preflight is the authoritative validation path and does not call this method.
     /// </summary>
     Task<bool> ValidateEnvironmentAsync(CancellationToken ct = default);
 }

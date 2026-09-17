@@ -14,7 +14,7 @@ public interface IGameDetectionService
     Task<GameType> DetectFromLoadOrderAsync(string loadOrderPath, CancellationToken ct = default);
 
     /// <summary>
-    /// Detect game variant (TTW, Enderal) by scanning the load order for marker plugins.
+    ///     Detect game variant (TTW, Enderal) by scanning the load order for marker plugins.
     /// </summary>
     GameVariant DetectVariant(GameType baseGame, IReadOnlyList<string>? pluginNames);
 

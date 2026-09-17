@@ -9,7 +9,7 @@ using AutoQAC.Services.Plugin;
 namespace AutoQAC.Services.Cleaning;
 
 /// <summary>
-/// Evaluates the cheap launch blockers shared by command readiness and full Cleaning preflight.
+///     Evaluates the cheap launch blockers shared by command readiness and full Cleaning preflight.
 /// </summary>
 internal static class CleaningLaunchBlockerValidator
 {
@@ -25,9 +25,7 @@ internal static class CleaningLaunchBlockerValidator
         if (TryValidatePublication(publication, out failure) ||
             TryValidateLaunchReadiness(publication, state, out failure) ||
             TryValidateSelection(publication, out failure))
-        {
             return true;
-        }
 
         failure = null!;
         return false;
@@ -188,7 +186,7 @@ internal static class CleaningLaunchBlockerValidator
             return true;
         }
 
-        if (!publication.Rows.Any(row => row.IsSelected && !row.IsSkippedByPolicy))
+        if (!publication.Rows.Any(row => row is { IsSelected: true, IsSkippedByPolicy: false }))
         {
             failure = CreateFailure(
                 CleaningPreflightFailureKind.NoPluginsSelected,
@@ -201,24 +199,37 @@ internal static class CleaningLaunchBlockerValidator
         return false;
     }
 
-    internal static CleaningPreflightFailure CreateMo2NotFoundFailure(string? path) =>
-        CreateFailure(
+    internal static CleaningPreflightFailure CreateMo2NotFoundFailure(string? path)
+    {
+        return CreateFailure(
             CleaningPreflightFailureKind.Mo2NotFound,
             MissingMo2Message(path),
             Mo2ActionHint);
+    }
 
     private static CleaningPreflightFailure CreateFailure(
         CleaningPreflightFailureKind kind,
         string safeMessage,
-        string? actionHint = null) =>
-        new(kind, safeMessage, actionHint);
+        string? actionHint = null)
+    {
+        return new CleaningPreflightFailure(kind, safeMessage, actionHint);
+    }
 
-    private static string MissingXEditMessage(string? path) =>
-        $"{DiagnosticTextFormatter.SafeFileIdentifier("xEdit Path", path, "xEdit executable")} is missing. {XEditActionHint}";
+    private static string MissingXEditMessage(string? path)
+    {
+        return
+            $"{DiagnosticTextFormatter.SafeFileIdentifier("xEdit Path", path, "xEdit executable")} is missing. {XEditActionHint}";
+    }
 
-    private static string MissingMo2Message(string? path) =>
-        $"{DiagnosticTextFormatter.SafeFileIdentifier("MO2 Path", path, "ModOrganizer.exe")} is missing. {Mo2ActionHint}";
+    private static string MissingMo2Message(string? path)
+    {
+        return
+            $"{DiagnosticTextFormatter.SafeFileIdentifier("MO2 Path", path, "ModOrganizer.exe")} is missing. {Mo2ActionHint}";
+    }
 
-    private static string MissingLoadOrderMessage(string? path) =>
-        $"{DiagnosticTextFormatter.SafeFileIdentifier("Load Order File", path, "load order file")} is missing. {LoadOrderActionHint}";
+    private static string MissingLoadOrderMessage(string? path)
+    {
+        return
+            $"{DiagnosticTextFormatter.SafeFileIdentifier("Load Order File", path, "load order file")} is missing. {LoadOrderActionHint}";
+    }
 }

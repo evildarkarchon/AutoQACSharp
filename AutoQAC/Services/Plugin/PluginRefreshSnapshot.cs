@@ -4,7 +4,7 @@ using AutoQAC.Models;
 namespace AutoQAC.Services.Plugin;
 
 /// <summary>
-/// Whole visible Plugin refresh publication snapshot ready for ViewModel binding.
+///     Whole visible Plugin refresh publication snapshot ready for ViewModel binding.
 /// </summary>
 /// <param name="Generation">Active long-running refresh generation that produced the snapshot.</param>
 /// <param name="GameType">Game associated with the snapshot.</param>
@@ -23,7 +23,7 @@ public sealed record PluginRefreshSnapshot(
     string StatusText);
 
 /// <summary>
-/// Visible plugin row with selection and issue approximation display policy already applied.
+///     Visible plugin row with selection and issue approximation display policy already applied.
 /// </summary>
 /// <param name="FileName">Plugin file name shown in the UI.</param>
 /// <param name="FullPath">Resolved full path used for identity and Cleaning session compatibility.</param>
@@ -40,22 +40,22 @@ public sealed record PluginRefreshRow(
     PluginIssueApproximation Approximation)
 {
     /// <summary>
-    /// Gets the stable row key used for selection intents.
+    ///     Gets the stable row key used for selection intents.
     /// </summary>
     public PluginRefreshRowKey Key => new(FileName, FullPath);
 
     /// <summary>
-    /// Gets whether the row has an available issue approximation preview.
+    ///     Gets whether the row has an available issue approximation preview.
     /// </summary>
     public bool HasApproximationPreview => Approximation.Status == PluginIssueApproximationStatus.Available;
 
     /// <summary>
-    /// Gets whether issue approximation analysis is pending for the row.
+    ///     Gets whether issue approximation analysis is pending for the row.
     /// </summary>
     public bool IsApproximationPending => Approximation.Status == PluginIssueApproximationStatus.Pending;
 
     /// <summary>
-    /// Gets display text for the issue approximation preview.
+    ///     Gets display text for the issue approximation preview.
     /// </summary>
     public string ApproximationDisplayText => Approximation.Status switch
     {
@@ -67,14 +67,14 @@ public sealed record PluginRefreshRow(
 }
 
 /// <summary>
-/// Immutable identity for a visible Plugin refresh row.
+///     Immutable identity for a visible Plugin refresh row.
 /// </summary>
-/// <param name="FileName">Plugin file name fallback identity.</param>
-/// <param name="FullPath">Resolved full path primary identity.</param>
+/// <param name="FileName">Plugin filename component of the row identity.</param>
+/// <param name="FullPath">Resolved full-path component of the row identity.</param>
 public sealed record PluginRefreshRowKey(string FileName, string FullPath);
 
 /// <summary>
-/// Running flags for Plugin refresh work.
+///     Running flags for Plugin refresh work.
 /// </summary>
 /// <param name="IsPluginRefreshRunning">Whether full plugin list refresh work is active.</param>
 /// <param name="IsIssueApproximationRefreshRunning">Whether issue approximation refresh work is active.</param>
@@ -83,7 +83,7 @@ public sealed record PluginRefreshActivity(
     bool IsIssueApproximationRefreshRunning);
 
 /// <summary>
-/// Command availability facts for the current Plugin refresh snapshot.
+///     Command availability facts for the current Plugin refresh snapshot.
 /// </summary>
 /// <param name="CanSelectAll">Whether all visible rows can be selected.</param>
 /// <param name="CanDeselectAll">Whether all visible rows can be deselected.</param>
@@ -96,7 +96,7 @@ public sealed record PluginRefreshCommandAvailability(
     bool CanCancelRefresh);
 
 /// <summary>
-/// Configuration display fields resolved during Plugin refresh context assembly.
+///     Configuration display fields resolved during Plugin refresh context assembly.
 /// </summary>
 /// <param name="LoadOrderPath">Effective direct-mode load-order path, if one is being used.</param>
 /// <param name="GameDataFolder">Effective game data folder used for loading or analysis, if resolved.</param>

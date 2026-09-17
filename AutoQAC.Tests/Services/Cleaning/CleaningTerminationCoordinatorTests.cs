@@ -32,12 +32,11 @@ public sealed class CleaningTerminationCoordinatorTests : IDisposable
     public void Dispose()
     {
         foreach (var process in _startedProcesses)
-        {
             try
             {
                 if (!process.HasExited)
                 {
-                    process.Kill(entireProcessTree: true);
+                    process.Kill(true);
                     process.WaitForExit(2000);
                 }
             }
@@ -49,7 +48,6 @@ public sealed class CleaningTerminationCoordinatorTests : IDisposable
             {
                 process.Dispose();
             }
-        }
     }
 
     [Fact]
@@ -58,7 +56,7 @@ public sealed class CleaningTerminationCoordinatorTests : IDisposable
         // Arrange
         using var process = StartSleeperProcess();
         _sut.AttachProcess(process);
-        _processMock.TerminateProcessAsync(process, forceKill: false, Arg.Any<CancellationToken>())
+        _processMock.TerminateProcessAsync(process, false, Arg.Any<CancellationToken>())
             .Returns(TerminationResult.GracePeriodExpired);
 
         // Act
@@ -69,7 +67,7 @@ public sealed class CleaningTerminationCoordinatorTests : IDisposable
         result.MayStillBeRunning.Should().BeTrue();
         _sut.IsStopRequested.Should().BeTrue();
         _sut.LastTerminationResult.Should().Be(TerminationResult.GracePeriodExpired);
-        await _processMock.Received(1).TerminateProcessAsync(process, forceKill: false, Arg.Any<CancellationToken>());
+        await _processMock.Received(1).TerminateProcessAsync(process, false, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -78,9 +76,9 @@ public sealed class CleaningTerminationCoordinatorTests : IDisposable
         // Arrange
         using var process = StartSleeperProcess();
         _sut.AttachProcess(process);
-        _processMock.TerminateProcessAsync(process, forceKill: false, Arg.Any<CancellationToken>())
+        _processMock.TerminateProcessAsync(process, false, Arg.Any<CancellationToken>())
             .Returns(TerminationResult.GracePeriodExpired);
-        _processMock.TerminateProcessAsync(process, forceKill: true, Arg.Any<CancellationToken>())
+        _processMock.TerminateProcessAsync(process, true, Arg.Any<CancellationToken>())
             .Returns(TerminationResult.ForceKilled);
 
         // Act
@@ -90,8 +88,8 @@ public sealed class CleaningTerminationCoordinatorTests : IDisposable
         // Assert
         result.TerminationResult.Should().Be(TerminationResult.ForceKilled);
         result.MayStillBeRunning.Should().BeFalse();
-        await _processMock.Received(1).TerminateProcessAsync(process, forceKill: false, Arg.Any<CancellationToken>());
-        await _processMock.Received(1).TerminateProcessAsync(process, forceKill: true, Arg.Any<CancellationToken>());
+        await _processMock.Received(1).TerminateProcessAsync(process, false, Arg.Any<CancellationToken>());
+        await _processMock.Received(1).TerminateProcessAsync(process, true, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -100,7 +98,7 @@ public sealed class CleaningTerminationCoordinatorTests : IDisposable
         // Arrange
         using var process = StartSleeperProcess();
         _sut.AttachProcess(process);
-        _processMock.TerminateProcessAsync(process, forceKill: true, Arg.Any<CancellationToken>())
+        _processMock.TerminateProcessAsync(process, true, Arg.Any<CancellationToken>())
             .Returns(TerminationResult.ForceKilled);
 
         // Act
@@ -108,7 +106,7 @@ public sealed class CleaningTerminationCoordinatorTests : IDisposable
 
         // Assert
         result.TerminationResult.Should().Be(TerminationResult.ForceKilled);
-        await _processMock.Received(1).TerminateProcessAsync(process, forceKill: true, Arg.Any<CancellationToken>());
+        await _processMock.Received(1).TerminateProcessAsync(process, true, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -180,7 +178,7 @@ public sealed class CleaningTerminationCoordinatorTests : IDisposable
         // Arrange
         using var process = StartSleeperProcess();
         _sut.AttachProcess(process);
-        _processMock.TerminateProcessAsync(process, forceKill: true, Arg.Any<CancellationToken>())
+        _processMock.TerminateProcessAsync(process, true, Arg.Any<CancellationToken>())
             .Returns(TerminationResult.ForceKillFailed);
 
         // Act
@@ -204,7 +202,7 @@ public sealed class CleaningTerminationCoordinatorTests : IDisposable
         // Arrange
         using var process = StartSleeperProcess();
         _sut.AttachProcess(process);
-        _processMock.TerminateProcessAsync(process, forceKill: false, Arg.Any<CancellationToken>())
+        _processMock.TerminateProcessAsync(process, false, Arg.Any<CancellationToken>())
             .Returns(TerminationResult.GracePeriodExpired);
         await _sut.StopAsync();
 
@@ -240,7 +238,7 @@ public sealed class CleaningTerminationCoordinatorTests : IDisposable
         // Arrange
         using var process = StartSleeperProcess();
         _sut.AttachProcess(process);
-        _processMock.TerminateProcessAsync(process, forceKill: false, Arg.Any<CancellationToken>())
+        _processMock.TerminateProcessAsync(process, false, Arg.Any<CancellationToken>())
             .Returns(TerminationResult.GracePeriodExpired);
 
         // Act
@@ -249,7 +247,7 @@ public sealed class CleaningTerminationCoordinatorTests : IDisposable
         // Assert
         await _processMock.Received(1).TerminateProcessAsync(
             process,
-            forceKill: false,
+            false,
             Arg.Is<CancellationToken>(ct => ct == CancellationToken.None));
     }
 
@@ -280,12 +278,12 @@ public sealed class CleaningTerminationCoordinatorTests : IDisposable
         _sut.AttachProcess(process);
         _processMock.TerminateProcessAsync(
                 process,
-                forceKill: false,
+                false,
                 Arg.Is<CancellationToken>(ct => ct == CancellationToken.None))
             .Returns(TerminationResult.GracePeriodExpired);
         _processMock.TerminateProcessAsync(
                 Arg.Any<Process>(),
-                forceKill: true,
+                true,
                 Arg.Is<CancellationToken>(ct => ct == CancellationToken.None))
             .Returns(TerminationResult.ForceKilled);
 
@@ -301,7 +299,7 @@ public sealed class CleaningTerminationCoordinatorTests : IDisposable
         result.MayStillBeRunning.Should().BeFalse("D-06 requires a terminal confirmed force-stop result");
         await _processMock.Received(1).TerminateProcessAsync(
             Arg.Any<Process>(),
-            forceKill: true,
+            true,
             Arg.Is<CancellationToken>(ct => ct == CancellationToken.None));
     }
 
@@ -311,9 +309,9 @@ public sealed class CleaningTerminationCoordinatorTests : IDisposable
         // Arrange
         using var process = StartSleeperProcess();
         _sut.AttachProcess(process);
-        _processMock.TerminateProcessAsync(process, forceKill: false, Arg.Any<CancellationToken>())
+        _processMock.TerminateProcessAsync(process, false, Arg.Any<CancellationToken>())
             .Returns(TerminationResult.GracePeriodExpired);
-        _processMock.TerminateProcessAsync(Arg.Any<Process>(), forceKill: true, Arg.Any<CancellationToken>())
+        _processMock.TerminateProcessAsync(Arg.Any<Process>(), true, Arg.Any<CancellationToken>())
             .Returns(TerminationResult.ForceKilled);
 
         // Act
@@ -326,7 +324,7 @@ public sealed class CleaningTerminationCoordinatorTests : IDisposable
         hasActiveProcessAfterDetach.Should().BeFalse(
             "D-04 keeps active cleaning semantics separate from pending force-escalation ownership");
         result.TerminationResult.Should().Be(TerminationResult.ForceKilled);
-        await _processMock.Received(1).TerminateProcessAsync(Arg.Any<Process>(), forceKill: true, Arg.Any<CancellationToken>());
+        await _processMock.Received(1).TerminateProcessAsync(Arg.Any<Process>(), true, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -335,11 +333,12 @@ public sealed class CleaningTerminationCoordinatorTests : IDisposable
         // Arrange
         using var process = StartSelfExitingProcess();
         _sut.AttachProcess(process);
-        _processMock.TerminateProcessAsync(process, forceKill: false, Arg.Any<CancellationToken>())
+        _processMock.TerminateProcessAsync(process, false, Arg.Any<CancellationToken>())
             .Returns(TerminationResult.GracePeriodExpired);
 
         // Act
-        process.HasExited.Should().BeFalse("the target must still be alive when StopAsync captures durable pending identity");
+        process.HasExited.Should()
+            .BeFalse("the target must still be alive when StopAsync captures durable pending identity");
         await _sut.StopAsync();
         _sut.DetachProcess();
         process.WaitForExit(5000).Should().BeTrue("the helper process is intentionally short-lived");
@@ -350,7 +349,7 @@ public sealed class CleaningTerminationCoordinatorTests : IDisposable
             TerminationResult.ForceKillFailed,
             "D-08 requires an unavailable durable pending target to surface explicit force failure");
         result.MayStillBeRunning.Should().BeTrue();
-        await _processMock.DidNotReceive().TerminateProcessAsync(process, forceKill: true, Arg.Any<CancellationToken>());
+        await _processMock.DidNotReceive().TerminateProcessAsync(process, true, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -359,9 +358,9 @@ public sealed class CleaningTerminationCoordinatorTests : IDisposable
         // Arrange
         using var process = StartSleeperProcess();
         _sut.AttachProcess(process);
-        _processMock.TerminateProcessAsync(process, forceKill: false, Arg.Any<CancellationToken>())
+        _processMock.TerminateProcessAsync(process, false, Arg.Any<CancellationToken>())
             .Returns(TerminationResult.GracePeriodExpired);
-        _processMock.TerminateProcessAsync(Arg.Any<Process>(), forceKill: true, Arg.Any<CancellationToken>())
+        _processMock.TerminateProcessAsync(Arg.Any<Process>(), true, Arg.Any<CancellationToken>())
             .Returns(TerminationResult.ForceKillFailed);
 
         // Act
@@ -373,9 +372,10 @@ public sealed class CleaningTerminationCoordinatorTests : IDisposable
         result.TerminationResult.Should().Be(
             TerminationResult.ForceKillFailed,
             "D-08 requires unavailable or unprovable confirmed force targets to surface explicit force failure");
-        result.TerminationResult.Should().NotBe(TerminationResult.GracePeriodExpired, "D-06 forbids reusing cached grace expiry after confirmation");
+        result.TerminationResult.Should().NotBe(TerminationResult.GracePeriodExpired,
+            "D-06 forbids reusing cached grace expiry after confirmation");
         result.MayStillBeRunning.Should().BeTrue();
-        await _processMock.Received(1).TerminateProcessAsync(Arg.Any<Process>(), forceKill: true, Arg.Any<CancellationToken>());
+        await _processMock.Received(1).TerminateProcessAsync(Arg.Any<Process>(), true, Arg.Any<CancellationToken>());
     }
 
     private Process StartSleeperProcess()

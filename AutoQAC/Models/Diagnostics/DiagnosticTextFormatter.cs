@@ -7,17 +7,18 @@ using System.Text.RegularExpressions;
 namespace AutoQAC.Models.Diagnostics;
 
 /// <summary>
-/// Formats shared user-facing diagnostic text while keeping paths, command fragments, and raw exception details out of UI/export copy.
+///     Formats shared user-facing diagnostic text while keeping paths, command fragments, and raw exception details out of
+///     UI/export copy.
 /// </summary>
-public static class DiagnosticTextFormatter
+public static partial class DiagnosticTextFormatter
 {
     /// <summary>
-    /// Safe details sentence for user-facing dialogs when technical data was written to the latest AutoQAC log.
+    ///     Safe details sentence for user-facing dialogs when technical data was written to the latest AutoQAC log.
     /// </summary>
     public const string LatestLogDetails = "Technical details were written to the latest AutoQAC log.";
 
     /// <summary>
-    /// Export report disclaimer explaining why technical diagnostics are not repeated in report text.
+    ///     Export report disclaimer explaining why technical diagnostics are not repeated in report text.
     /// </summary>
     public const string ReportDisclaimer =
         "Technical details are intentionally kept in AutoQAC logs and are not repeated in this report.";
@@ -26,19 +27,17 @@ public static class DiagnosticTextFormatter
 
     private static readonly char[] ExplicitUnsafeNameCharacters = ['\'', '"', '`', '|', '&', ';', '<', '>'];
     private static readonly HashSet<char> InvalidFileNameCharacters = Path.GetInvalidFileNameChars().ToHashSet();
-    private static readonly Regex DriveRootedPathPattern = new(@"[A-Za-z]:[\\/]", RegexOptions.Compiled);
+    private static readonly Regex DriveRootedPathPattern = DriveRootedPathPatternRegex();
 
-    private static readonly Regex NamespaceStackFramePattern = new(@"\bat\s+[A-Za-z_][\w]*(\.[A-Za-z_][\w]*)+",
-        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex NamespaceStackFramePattern = NamespaceStackFramePatternRegex();
 
     private static readonly Regex ExeCommandMarkerPattern =
-        new(@"\.exe(?=$|[\s""'`])", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        ExeCommandMarkerPatternRegex();
 
-    private static readonly Regex PluginCommandFlagPattern = new(@"(?:[\s_-]*(?:-QAC|-autoload))+(?=\.[^./\\]+$|$)",
-        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex PluginCommandFlagPattern = PluginCommandFlagPatternRegex();
 
     /// <summary>
-    /// Builds operation-specific unexpected-failure copy with latest-log guidance and no raw technical detail.
+    ///     Builds operation-specific unexpected-failure copy with latest-log guidance and no raw technical detail.
     /// </summary>
     /// <param name="operation">The user-facing operation name, such as Cleaning or Preview.</param>
     /// <returns>Safe failure text suitable for dialogs and status text.</returns>
@@ -49,7 +48,7 @@ public static class DiagnosticTextFormatter
     }
 
     /// <summary>
-    /// Formats a setting/resource label with a sanitized basename from a path while omitting the containing directory.
+    ///     Formats a setting/resource label with a sanitized basename from a path while omitting the containing directory.
     /// </summary>
     /// <param name="label">The setting or resource label to show to the user.</param>
     /// <param name="path">The raw file path or filename candidate.</param>
@@ -64,7 +63,7 @@ public static class DiagnosticTextFormatter
     }
 
     /// <summary>
-    /// Builds safe folder-problem copy using the game/folder label instead of a full local folder path.
+    ///     Builds safe folder-problem copy using the game/folder label instead of a full local folder path.
     /// </summary>
     /// <param name="gameDisplayName">The safe game display name.</param>
     /// <param name="folderLabel">The folder role to include, defaulting to data folder.</param>
@@ -77,7 +76,7 @@ public static class DiagnosticTextFormatter
     }
 
     /// <summary>
-    /// Extracts and sanitizes a plugin filename or plugin-name candidate for user-facing diagnostic rows.
+    ///     Extracts and sanitizes a plugin filename or plugin-name candidate for user-facing diagnostic rows.
     /// </summary>
     /// <param name="pluginNameOrPath">The raw plugin filename or path candidate.</param>
     /// <param name="fallbackName">The safe fallback when no displayable plugin name remains.</param>
@@ -92,23 +91,28 @@ public static class DiagnosticTextFormatter
     }
 
     /// <summary>
-    /// Builds the safe failed-cleaning row copy for a plugin result.
+    ///     Builds the safe failed-cleaning row copy for a plugin result.
     /// </summary>
     /// <param name="pluginNameOrPath">The raw plugin filename or path candidate.</param>
     /// <returns>Safe failed-cleaning text preserving only the sanitized plugin filename and latest-log guidance.</returns>
-    public static string CleaningFailedForPlugin(string? pluginNameOrPath) =>
-        $"{SafePluginName(pluginNameOrPath)}: Cleaning failed. {LatestLogShort}";
+    public static string CleaningFailedForPlugin(string? pluginNameOrPath)
+    {
+        return $"{SafePluginName(pluginNameOrPath)}: Cleaning failed. {LatestLogShort}";
+    }
 
     /// <summary>
-    /// Builds the safe xEdit exception-log row copy for a plugin result without repeating exception-log content.
+    ///     Builds the safe xEdit exception-log row copy for a plugin result without repeating exception-log content.
     /// </summary>
     /// <param name="pluginNameOrPath">The raw plugin filename or path candidate.</param>
     /// <returns>Safe xEdit failure text preserving only the sanitized plugin filename and latest-log guidance.</returns>
-    public static string XEditReportedError(string? pluginNameOrPath) =>
-        $"xEdit reported an error for {SafePluginName(pluginNameOrPath)}. {LatestLogShort}";
+    public static string XEditReportedError(string? pluginNameOrPath)
+    {
+        return $"xEdit reported an error for {SafePluginName(pluginNameOrPath)}. {LatestLogShort}";
+    }
 
     /// <summary>
-    /// Returns a trimmed candidate summary only when it lacks known unsafe path, command, exception, and stack-frame details.
+    ///     Returns a trimmed candidate summary only when it lacks known unsafe path, command, exception, and stack-frame
+    ///     details.
     /// </summary>
     /// <param name="candidate">The proposed user-facing failure summary.</param>
     /// <param name="fallback">The safe fallback to use when the candidate is empty or unsafe.</param>
@@ -119,29 +123,28 @@ public static class DiagnosticTextFormatter
             ? "Operation failed. See the latest AutoQAC log."
             : fallback.Trim();
 
-        if (string.IsNullOrWhiteSpace(candidate))
-        {
-            return safeFallback;
-        }
+        if (string.IsNullOrWhiteSpace(candidate)) return safeFallback;
 
         var trimmed = candidate.Trim();
         return ContainsUnsafeDetail(trimmed) ? safeFallback : trimmed;
     }
 
-    private static bool ContainsUnsafeDetail(string candidate) =>
-        candidate.Contains("System.", StringComparison.OrdinalIgnoreCase)
-        || candidate.Contains("Exception", StringComparison.OrdinalIgnoreCase)
-        || candidate.Contains("UnauthorizedAccess", StringComparison.OrdinalIgnoreCase)
-        || candidate.Contains("IOException", StringComparison.OrdinalIgnoreCase)
-        || candidate.Contains("Access denied", StringComparison.OrdinalIgnoreCase)
-        || candidate.Contains(" at AutoQAC.", StringComparison.OrdinalIgnoreCase)
-        || candidate.Contains("\\\\", StringComparison.Ordinal)
-        || candidate.Contains("-QAC", StringComparison.OrdinalIgnoreCase)
-        || candidate.Contains("-autoload", StringComparison.OrdinalIgnoreCase)
-        || candidate.IndexOfAny(['\n', '\r', '\t']) >= 0
-        || DriveRootedPathPattern.IsMatch(candidate)
-        || NamespaceStackFramePattern.IsMatch(candidate)
-        || ExeCommandMarkerPattern.IsMatch(candidate);
+    private static bool ContainsUnsafeDetail(string candidate)
+    {
+        return candidate.Contains("System.", StringComparison.OrdinalIgnoreCase)
+               || candidate.Contains("Exception", StringComparison.OrdinalIgnoreCase)
+               || candidate.Contains("UnauthorizedAccess", StringComparison.OrdinalIgnoreCase)
+               || candidate.Contains("IOException", StringComparison.OrdinalIgnoreCase)
+               || candidate.Contains("Access denied", StringComparison.OrdinalIgnoreCase)
+               || candidate.Contains(" at AutoQAC.", StringComparison.OrdinalIgnoreCase)
+               || candidate.Contains("\\\\", StringComparison.Ordinal)
+               || candidate.Contains("-QAC", StringComparison.OrdinalIgnoreCase)
+               || candidate.Contains("-autoload", StringComparison.OrdinalIgnoreCase)
+               || candidate.IndexOfAny(['\n', '\r', '\t']) >= 0
+               || DriveRootedPathPattern.IsMatch(candidate)
+               || NamespaceStackFramePattern.IsMatch(candidate)
+               || ExeCommandMarkerPattern.IsMatch(candidate);
+    }
 
     private static string SanitizeDisplayName(string? candidate, string fallback)
     {
@@ -155,4 +158,18 @@ public static class DiagnosticTextFormatter
 
         return string.IsNullOrWhiteSpace(sanitized) ? fallback : sanitized;
     }
+
+    [GeneratedRegex(@"[A-Za-z]:[\\/]")]
+    private static partial Regex DriveRootedPathPatternRegex();
+
+    [GeneratedRegex(@"\bat\s+[A-Za-z_][\w]*(\.[A-Za-z_][\w]*)+", RegexOptions.IgnoreCase,
+        "en-US")]
+    private static partial Regex NamespaceStackFramePatternRegex();
+
+    [GeneratedRegex(@"\.exe(?=$|[\s""'`])", RegexOptions.IgnoreCase, "en-US")]
+    private static partial Regex ExeCommandMarkerPatternRegex();
+
+    [GeneratedRegex(@"(?:[\s_-]*(?:-QAC|-autoload))+(?=\.[^./\\]+$|$)", RegexOptions.IgnoreCase,
+        "en-US")]
+    private static partial Regex PluginCommandFlagPatternRegex();
 }

@@ -39,6 +39,7 @@
                 <Grid ColumnDefinitions="120,*,Auto" ColumnSpacing="8">
                     <TextBlock Grid.Column="0" Text="Game:" VerticalAlignment="Center" />
                     <ComboBox
+                        IsEnabled="{Binding Configuration.CanChangeSettings, Mode=OneWay}"
                         Grid.Column="1"
                         AutomationProperties.AutomationId="GameComboBox"
                         ItemsSource="{Binding Configuration.AvailableGames, Mode=OneWay}"
@@ -148,6 +149,7 @@
                       Visibility="{Binding Configuration.ShowProfileSelector, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}">
                     <TextBlock Grid.Column="0" Text="Profile:" VerticalAlignment="Center" />
                     <ComboBox
+                        IsEnabled="{Binding Configuration.CanChangeSettings, Mode=OneWay}"
                         Grid.Column="1"
                         ItemsSource="{Binding Configuration.AvailableProfiles, Mode=OneWay}"
                         SelectedItem="{Binding Configuration.SelectedProfile, Mode=TwoWay}"
@@ -155,10 +157,10 @@
                 </Grid>
 
                 <StackPanel Orientation="Horizontal" Spacing="12">
-                    <CheckBox Content="MO2 Mode" IsChecked="{Binding Configuration.Mo2ModeEnabled, Mode=TwoWay}" />
-                    <CheckBox Content="Partial Forms (Experimental)"
+                    <CheckBox IsEnabled="{Binding Configuration.CanChangeSettings, Mode=OneWay}" Content="MO2 Mode" IsChecked="{Binding Configuration.Mo2ModeEnabled, Mode=TwoWay}" />
+                    <CheckBox IsEnabled="{Binding Configuration.CanChangeSettings, Mode=OneWay}" Content="Partial Forms (Experimental)"
                               IsChecked="{Binding Configuration.PartialFormsEnabled, Mode=TwoWay}" />
-                    <CheckBox Content="Disable Skip Lists"
+                    <CheckBox IsEnabled="{Binding Configuration.CanChangeSettings, Mode=OneWay}" Content="Disable Skip Lists"
                               IsChecked="{Binding Configuration.DisableSkipListsEnabled, Mode=TwoWay}"
                               ToolTipService.ToolTip="Show all plugins, ignoring skip and ignore lists" />
                     <Button Content="Reset Settings" Command="{Binding Configuration.ResetSettingsCommand}" />
@@ -173,7 +175,8 @@
                             <DataTemplate x:DataType="m:ValidationError">
                                 <StackPanel Margin="0,4">
                                     <TextBlock Text="{Binding Title}" Style="{StaticResource BodyStrongTextBlockStyle}" />
-                                    <TextBlock Text="{Binding Message}" TextWrapping="Wrap" />
+                                    <TextBlock Text="{Binding Message}" TextWrapping="Wrap"
+                                               Visibility="{Binding Message, Converter={StaticResource StringToVisibilityConverter}, Mode=OneWay}" />
                                     <TextBlock Text="{Binding FixStep}" TextWrapping="Wrap"
                                                Style="{StaticResource CaptionTextBlockStyle}" />
                                 </StackPanel>
@@ -200,6 +203,7 @@
                     <Button Grid.Column="5" Content="Manage Skip List" Command="{Binding Commands.ShowSkipListCommand}" />
                 </Grid>
                 <ListView Grid.Row="1" Margin="8" ItemsSource="{Binding PluginList.PluginsToClean, Mode=OneWay}"
+                          IsEnabled="{Binding PluginList.CanChangePluginSelection, Mode=OneWay}"
                           SelectedItem="{Binding PluginList.SelectedPlugin, Mode=TwoWay}">
                     <ListView.ItemTemplate>
                         <DataTemplate x:DataType="mw:PluginListItem">
@@ -235,4 +239,3 @@
         </Border>
     </Grid>
 </Window>
-

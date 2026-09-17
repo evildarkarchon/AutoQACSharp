@@ -508,3 +508,5 @@ vendor/
 coverage/
 .cache/
 .kilo/package-lock.json
+.mcp.json
+.codegraph/

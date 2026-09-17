@@ -3,7 +3,7 @@ using AutoQAC.Models;
 namespace AutoQAC.Services.GameCapability;
 
 /// <summary>
-/// Describes the AutoQAC behaviors available for a selected game.
+///     Describes the AutoQAC behaviors available for a selected game.
 /// </summary>
 /// <param name="GameType">Game this capability row describes.</param>
 /// <param name="PluginDiscoveryMode">How AutoQAC can discover plugin rows for this game.</param>
@@ -14,17 +14,17 @@ internal sealed record GameCapability(
     bool SupportsIssueApproximation)
 {
     /// <summary>
-    /// Gets whether AutoQAC can load plugin rows for this game.
+    ///     Gets whether AutoQAC can load plugin rows for this game.
     /// </summary>
     public bool SupportsPluginLoading => PluginDiscoveryMode != PluginDiscoveryMode.None;
 
     /// <summary>
-    /// Gets whether direct-mode plugin refresh requires an explicit load-order file.
+    ///     Gets whether direct-mode plugin refresh requires an explicit load-order file.
     /// </summary>
     public bool RequiresLoadOrderFile => PluginDiscoveryMode == PluginDiscoveryMode.LoadOrderFile;
 
     /// <summary>
-    /// Gets whether AutoQAC can discover plugin rows automatically from the game installation.
+    ///     Gets whether AutoQAC can discover plugin rows automatically from the game installation.
     /// </summary>
     public bool SupportsAutomaticPluginDiscovery => PluginDiscoveryMode == PluginDiscoveryMode.Automatic;
 }

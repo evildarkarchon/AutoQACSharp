@@ -27,7 +27,6 @@ public sealed class ConfigurationServiceTests : IDisposable
     public void Dispose()
     {
         if (Directory.Exists(_testDirectory))
-        {
             try
             {
                 Directory.Delete(_testDirectory, true);
@@ -36,7 +35,6 @@ public sealed class ConfigurationServiceTests : IDisposable
             {
                 // Ignore cleanup errors
             }
-        }
     }
 
     /// <summary>
@@ -70,7 +68,7 @@ public sealed class ConfigurationServiceTests : IDisposable
         config.Should().NotBeNull();
         flushResult.Status.Should().Be(
             ConfigPersistenceStatusKind.Success,
-            because: "D-05 forced flush returns typed success result");
+            "D-05 forced flush returns typed success result");
         File.Exists(expectedPath).Should().BeTrue();
     }
 
@@ -94,7 +92,7 @@ public sealed class ConfigurationServiceTests : IDisposable
         // Assert
         result.Should().BeSameAs(
             barrierResult,
-            because: "D-05 forced flush is a coordinator queue barrier even when the facade has no pending app save");
+            "D-05 forced flush is a coordinator queue barrier even when the facade has no pending app save");
         result.Generation.Should().Be(99);
         await coordinator.Received(1).FlushPendingSavesAsync(Arg.Any<CancellationToken>());
     }
@@ -128,7 +126,7 @@ public sealed class ConfigurationServiceTests : IDisposable
         // Assert
         observed.Should().BeSameAs(
             failure,
-            because: "D-24 exposes the coordinator's safe recoverable failure stream without transformation");
+            "D-24 exposes the coordinator's safe recoverable failure stream without transformation");
     }
 
     [Fact]
@@ -153,7 +151,7 @@ public sealed class ConfigurationServiceTests : IDisposable
         // Act / Assert
         service.LastFailure.Should().BeSameAs(
             failure,
-            because: "D-27 requires the public configuration facade to expose the coordinator's current failure snapshot");
+            "D-27 requires the public configuration facade to expose the coordinator's current failure snapshot");
     }
 
     [Fact]
@@ -217,10 +215,12 @@ public sealed class ConfigurationServiceTests : IDisposable
             0);
 
         coordinator.ReloadFromDiskAsync(Arg.Any<CancellationToken>()).Returns(
-            new ConfigPersistenceResult(ConfigPersistenceStatusKind.Failed, ConfigPersistenceOperationKind.Reload, 0, failure));
+            new ConfigPersistenceResult(ConfigPersistenceStatusKind.Failed, ConfigPersistenceOperationKind.Reload, 0,
+                failure));
         coordinator.LoadCurrentAsync(Arg.Any<CancellationToken>()).Returns(pendingConfig);
         coordinator.FlushPendingSavesAsync(Arg.Any<CancellationToken>()).Returns(
-            new ConfigPersistenceResult(ConfigPersistenceStatusKind.Success, ConfigPersistenceOperationKind.Flush, 1, null));
+            new ConfigPersistenceResult(ConfigPersistenceStatusKind.Success, ConfigPersistenceOperationKind.Flush, 1,
+                null));
 
         using var service = new ConfigurationService(coordinator, Substitute.For<ILoggingService>(), _testDirectory);
         await service.SaveUserConfigAsync(pendingConfig);
@@ -233,7 +233,7 @@ public sealed class ConfigurationServiceTests : IDisposable
         // Assert
         loaded.Settings.CleaningTimeout.Should().Be(
             111,
-            because: "failed reloads must leave pending facade state pointing at the unsaved user edit");
+            "failed reloads must leave pending facade state pointing at the unsaved user edit");
         await coordinator.Received(1).FlushPendingSavesAsync(Arg.Any<CancellationToken>());
     }
 
@@ -251,9 +251,11 @@ public sealed class ConfigurationServiceTests : IDisposable
         };
 
         coordinator.ReloadFromDiskAsync(Arg.Any<CancellationToken>()).Returns(
-            new ConfigPersistenceResult(ConfigPersistenceStatusKind.Success, ConfigPersistenceOperationKind.Reload, 1, null));
+            new ConfigPersistenceResult(ConfigPersistenceStatusKind.Success, ConfigPersistenceOperationKind.Reload, 1,
+                null));
         coordinator.FlushPendingSavesAsync(Arg.Any<CancellationToken>()).Returns(
-            new ConfigPersistenceResult(ConfigPersistenceStatusKind.Success, ConfigPersistenceOperationKind.Flush, 2, null));
+            new ConfigPersistenceResult(ConfigPersistenceStatusKind.Success, ConfigPersistenceOperationKind.Flush, 2,
+                null));
 
         using var service = new ConfigurationService(coordinator, Substitute.For<ILoggingService>(), _testDirectory);
         await service.SaveUserConfigAsync(pendingConfig);
@@ -265,7 +267,7 @@ public sealed class ConfigurationServiceTests : IDisposable
         // Assert
         result.Status.Should().Be(
             ConfigPersistenceStatusKind.Success,
-            because: "forced flush remains a coordinator barrier after successful reloads clear pending facade work");
+            "forced flush remains a coordinator barrier after successful reloads clear pending facade work");
         await coordinator.Received(1).FlushPendingSavesAsync(Arg.Any<CancellationToken>());
     }
 
@@ -341,7 +343,7 @@ public sealed class ConfigurationServiceTests : IDisposable
     {
         // Arrange
         var service = new ConfigurationService(Substitute.For<ILoggingService>(), _testDirectory);
-        
+
         var loFile = Path.Combine(_testDirectory, "plugins.txt");
         var xEditFile = Path.Combine(_testDirectory, "SSEEdit.exe");
         await File.WriteAllTextAsync(loFile, "");
@@ -410,7 +412,8 @@ Settings: [not: properly: closed
 
         // Assert
         config.Should().NotBeNull("Phase 10 keeps a usable in-memory configuration when external YAML is invalid");
-        service.LastFailure.Should().NotBeNull("invalid external YAML is now surfaced through the typed recoverable failure path");
+        service.LastFailure.Should()
+            .NotBeNull("invalid external YAML is now surfaced through the typed recoverable failure path");
         service.LastFailure!.Kind.Should().Be(ConfigPersistenceFailureKind.InvalidExternalYaml);
     }
 
@@ -727,7 +730,6 @@ AutoQAC_Data:
         var writer = Task.Run(async () =>
         {
             for (var i = 0; i < 100; i++)
-            {
                 try
                 {
                     var config = await service.LoadUserConfigAsync(cts.Token);
@@ -738,13 +740,11 @@ AutoQAC_Data:
                 {
                     errors.Add(ex);
                 }
-            }
         }, cts.Token);
 
         var readers = Enumerable.Range(0, 6).Select(_ => Task.Run(async () =>
         {
             for (var i = 0; i < 100; i++)
-            {
                 try
                 {
                     var config = await service.LoadUserConfigAsync(cts.Token);
@@ -756,7 +756,6 @@ AutoQAC_Data:
                 {
                     errors.Add(ex);
                 }
-            }
         }, cts.Token));
 
         await Task.WhenAll(readers.Append(writer));
@@ -787,10 +786,7 @@ AutoQAC_Data:
         var revertedToLastKnownGood = CreateSignal();
         using var revertSubscription = service.UserConfigurationChanged.Subscribe(config =>
         {
-            if (config.Settings.CleaningTimeout == 123)
-            {
-                revertedToLastKnownGood.TrySetResult(true);
-            }
+            if (config.Settings.CleaningTimeout == 123) revertedToLastKnownGood.TrySetResult(true);
         });
 
         // Act

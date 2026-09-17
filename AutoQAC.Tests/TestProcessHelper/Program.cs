@@ -2,10 +2,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 
-if (args.Length == 0)
-{
-    return 2;
-}
+if (args.Length == 0) return 2;
 
 switch (args[0])
 {
@@ -31,8 +28,10 @@ switch (args[0])
         return 2;
 }
 
-static int ParseMilliseconds(string[] args) =>
-    args.Length > 1 && int.TryParse(args[1], out var value) ? value : 30_000;
+static int ParseMilliseconds(string[] args)
+{
+    return args.Length > 1 && int.TryParse(args[1], out var value) ? value : 30_000;
+}
 
 static async Task SpawnChildAsync(int milliseconds)
 {
@@ -45,10 +44,7 @@ static async Task SpawnChildAsync(int milliseconds)
         CreateNoWindow = true
     });
 
-    if (child is null)
-    {
-        return;
-    }
+    if (child is null) return;
 
     await child.WaitForExitAsync();
 }

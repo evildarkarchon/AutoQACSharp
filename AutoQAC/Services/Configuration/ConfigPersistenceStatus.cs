@@ -3,7 +3,7 @@ using System;
 namespace AutoQAC.Services.Configuration;
 
 /// <summary>
-/// Describes the terminal status for a configuration persistence operation.
+///     Describes the terminal status for a configuration persistence operation.
 /// </summary>
 public enum ConfigPersistenceStatusKind
 {
@@ -14,7 +14,7 @@ public enum ConfigPersistenceStatusKind
 }
 
 /// <summary>
-/// Identifies the configuration persistence operation that produced a result or failure.
+///     Identifies the configuration persistence operation that produced a result or failure.
 /// </summary>
 public enum ConfigPersistenceOperationKind
 {
@@ -26,7 +26,7 @@ public enum ConfigPersistenceOperationKind
 }
 
 /// <summary>
-/// Classifies recoverable configuration persistence failures without exposing raw exceptions.
+///     Classifies recoverable configuration persistence failures without exposing raw exceptions.
 /// </summary>
 public enum ConfigPersistenceFailureKind
 {
@@ -38,10 +38,10 @@ public enum ConfigPersistenceFailureKind
 }
 
 /// <summary>
-/// Safe failure payload for ViewModel-facing configuration persistence status. Per D-28,
-/// <paramref name="SafeSummary" /> is category-shaped human text such as
-/// "Could not write settings file (write_failed)" and must not contain raw exception types,
-/// stack traces, or full internal paths.
+///     Safe failure payload for ViewModel-facing configuration persistence status. Per D-28,
+///     <paramref name="SafeSummary" /> is category-shaped human text such as
+///     "Could not write settings file (write_failed)" and must not contain raw exception types,
+///     stack traces, or full internal paths.
 /// </summary>
 /// <param name="Operation">The operation that failed.</param>
 /// <param name="Kind">The recoverable failure category.</param>
@@ -56,8 +56,8 @@ public sealed record ConfigPersistenceFailure(
     long Generation);
 
 /// <summary>
-/// Typed result returned by barrier configuration persistence operations so callers can branch on
-/// success, no-op, failure, or rejection before continuing workflow steps.
+///     Typed result returned by barrier configuration persistence operations so callers can branch on
+///     success, no-op, failure, or rejection before continuing workflow steps.
 /// </summary>
 /// <param name="Status">The operation status.</param>
 /// <param name="Operation">The operation that completed.</param>
@@ -70,24 +70,19 @@ public sealed record ConfigPersistenceResult(
     ConfigPersistenceFailure? Failure);
 
 /// <summary>
-/// Thrown when a required persistence operation fails in a context that must abort
-/// the calling workflow. Phase 10 D-26: pre-cleaning flush failures must block xEdit
-/// launch and surface the typed payload to ViewModel mapping (D-28).
+///     Thrown when a required persistence operation fails in a context that must abort
+///     the calling workflow. Phase 10 D-26: pre-cleaning flush failures must block xEdit
+///     launch and surface the typed payload to ViewModel mapping (D-28).
 /// </summary>
 /// <remarks>
-/// Derives from <see cref="InvalidOperationException" /> so existing cleaning callers'
-/// catch sites continue to handle it as an actionable configuration failure without
-/// requiring additional catch clauses (Phase 10 backwards-compatibility).
+///     Derives from <see cref="InvalidOperationException" /> so existing cleaning callers'
+///     catch sites continue to handle it as an actionable configuration failure without
+///     requiring additional catch clauses (Phase 10 backwards-compatibility).
 /// </remarks>
 public sealed class ConfigPersistenceFailureException : InvalidOperationException
 {
     /// <summary>
-    /// Gets the typed safe failure payload that callers such as ViewModels may map.
-    /// </summary>
-    public ConfigPersistenceFailure Failure { get; }
-
-    /// <summary>
-    /// Creates an exception carrying the safe persistence failure payload and user-safe summary.
+    ///     Creates an exception carrying the safe persistence failure payload and user-safe summary.
     /// </summary>
     /// <param name="failure">The typed failure payload produced by the persistence coordinator.</param>
     /// <param name="safeSummary">The safe exception message; must not contain raw exception details or stack traces.</param>
@@ -96,4 +91,9 @@ public sealed class ConfigPersistenceFailureException : InvalidOperationExceptio
     {
         Failure = failure;
     }
+
+    /// <summary>
+    ///     Gets the typed safe failure payload that callers such as ViewModels may map.
+    /// </summary>
+    public ConfigPersistenceFailure Failure { get; }
 }

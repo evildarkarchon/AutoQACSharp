@@ -27,17 +27,17 @@ public sealed class GameSelectionIntegrationTests
         var discoveryPlanner = provider.GetRequiredService<IPluginRefreshDiscoveryPlanner>();
 
         // Act & Assert - automatic discovery games
-        discoveryPlanner.GetAffordance(GameType.SkyrimSe, mo2ModeEnabled: false).IsMutagenSupported.Should().BeTrue();
-        discoveryPlanner.GetAffordance(GameType.SkyrimLe, mo2ModeEnabled: false).IsMutagenSupported.Should().BeTrue();
-        discoveryPlanner.GetAffordance(GameType.SkyrimVr, mo2ModeEnabled: false).IsMutagenSupported.Should().BeTrue();
-        discoveryPlanner.GetAffordance(GameType.Fallout4, mo2ModeEnabled: false).IsMutagenSupported.Should().BeTrue();
-        discoveryPlanner.GetAffordance(GameType.Fallout4Vr, mo2ModeEnabled: false).IsMutagenSupported.Should().BeTrue();
+        discoveryPlanner.GetAffordance(GameType.SkyrimSe, false).IsMutagenSupported.Should().BeTrue();
+        discoveryPlanner.GetAffordance(GameType.SkyrimLe, false).IsMutagenSupported.Should().BeTrue();
+        discoveryPlanner.GetAffordance(GameType.SkyrimVr, false).IsMutagenSupported.Should().BeTrue();
+        discoveryPlanner.GetAffordance(GameType.Fallout4, false).IsMutagenSupported.Should().BeTrue();
+        discoveryPlanner.GetAffordance(GameType.Fallout4Vr, false).IsMutagenSupported.Should().BeTrue();
 
         // File-load-order or unsupported games
-        discoveryPlanner.GetAffordance(GameType.Fallout3, mo2ModeEnabled: false).IsMutagenSupported.Should().BeFalse();
-        discoveryPlanner.GetAffordance(GameType.FalloutNewVegas, mo2ModeEnabled: false).IsMutagenSupported.Should().BeFalse();
-        discoveryPlanner.GetAffordance(GameType.Oblivion, mo2ModeEnabled: false).IsMutagenSupported.Should().BeFalse();
-        discoveryPlanner.GetAffordance(GameType.Unknown, mo2ModeEnabled: false).IsMutagenSupported.Should().BeFalse();
+        discoveryPlanner.GetAffordance(GameType.Fallout3, false).IsMutagenSupported.Should().BeFalse();
+        discoveryPlanner.GetAffordance(GameType.FalloutNewVegas, false).IsMutagenSupported.Should().BeFalse();
+        discoveryPlanner.GetAffordance(GameType.Oblivion, false).IsMutagenSupported.Should().BeFalse();
+        discoveryPlanner.GetAffordance(GameType.Unknown, false).IsMutagenSupported.Should().BeFalse();
     }
 
     [Fact]
@@ -104,10 +104,7 @@ public sealed class GameSelectionIntegrationTests
         finally
         {
             // Cleanup
-            if (Directory.Exists(tempDir))
-            {
-                Directory.Delete(tempDir, true);
-            }
+            if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true);
         }
     }
 
@@ -148,10 +145,7 @@ public sealed class GameSelectionIntegrationTests
         finally
         {
             // Cleanup
-            if (Directory.Exists(tempDir))
-            {
-                Directory.Delete(tempDir, true);
-            }
+            if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true);
         }
     }
 }

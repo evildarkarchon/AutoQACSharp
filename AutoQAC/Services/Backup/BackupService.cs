@@ -11,7 +11,7 @@ using AutoQAC.Models;
 namespace AutoQAC.Services.Backup;
 
 /// <summary>
-/// Manages plugin file backup, restore, and session retention.
+///     Manages plugin file backup, restore, and session retention.
 /// </summary>
 public sealed class BackupService : IBackupService
 {
@@ -21,11 +21,11 @@ public sealed class BackupService : IBackupService
     };
 
     private readonly IBackupFileCopier _fileCopier;
-    private readonly IBackupSessionDeleter _sessionDeleter;
     private readonly ILoggingService _logger;
+    private readonly IBackupSessionDeleter _sessionDeleter;
 
     /// <summary>
-    /// Creates the backup service with injectable file-copy behavior for async backup and restore operations.
+    ///     Creates the backup service with injectable file-copy behavior for async backup and restore operations.
     /// </summary>
     /// <param name="fileCopier">Copy service used for cancellable backup and atomic restore work.</param>
     /// <param name="logger">Logger for technical diagnostics that should not be exposed in user-facing result rows.</param>
@@ -39,11 +39,11 @@ public sealed class BackupService : IBackupService
     }
 
     /// <summary>
-    /// Creates the backup service with the default managed-stream file copier.
+    ///     Creates the backup service with the default managed-stream file copier.
     /// </summary>
     /// <param name="logger">Logger for technical diagnostics that should not be exposed in user-facing result rows.</param>
     public BackupService(ILoggingService logger)
-        : this(new BackupFileCopier(logger), logger, sessionDeleter: null)
+        : this(new BackupFileCopier(logger), logger, null)
     {
     }
 
@@ -68,14 +68,10 @@ public sealed class BackupService : IBackupService
         try
         {
             if (string.IsNullOrEmpty(plugin.FullPath) || !Path.IsPathRooted(plugin.FullPath))
-            {
                 return BackupResult.Failure($"Plugin path is not a valid rooted path: '{plugin.FullPath}'");
-            }
 
             if (!File.Exists(plugin.FullPath))
-            {
                 return BackupResult.Failure($"Source file does not exist: '{plugin.FullPath}'");
-            }
 
             // Ensure session directory exists (idempotent)
             Directory.CreateDirectory(sessionDir);
@@ -87,7 +83,7 @@ public sealed class BackupService : IBackupService
                 return BackupResult.Failure("Invalid plugin file name for backup.");
             }
 
-            File.Copy(plugin.FullPath, destPath, overwrite: false);
+            File.Copy(plugin.FullPath, destPath, false);
 
             var fileSize = new FileInfo(destPath).Length;
             _logger.Debug("Backed up {Plugin} ({Size} bytes) to {Dest}", plugin.FileName, fileSize, destPath);
@@ -118,8 +114,8 @@ public sealed class BackupService : IBackupService
             return new BackupCreateResult(
                 BackupOperationStatus.Failed,
                 plugin.FileName,
-                BytesCopied: 0,
-                TotalBytes: null,
+                0,
+                null,
                 BackupFailureReason.SourceMissing);
         }
 
@@ -135,8 +131,8 @@ public sealed class BackupService : IBackupService
             return new BackupCreateResult(
                 BackupOperationStatus.Failed,
                 plugin.FileName,
-                BytesCopied: 0,
-                TotalBytes: null,
+                0,
+                null,
                 ex is UnauthorizedAccessException
                     ? BackupFailureReason.AccessDenied
                     : BackupFailureReason.TargetFolderCreationFailed);
@@ -149,8 +145,8 @@ public sealed class BackupService : IBackupService
             return new BackupCreateResult(
                 BackupOperationStatus.Failed,
                 plugin.FileName,
-                BytesCopied: 0,
-                TotalBytes: null,
+                0,
+                null,
                 BackupFailureReason.SourceMissing);
         }
 
@@ -184,10 +180,7 @@ public sealed class BackupService : IBackupService
     {
         var sessions = new List<BackupSession>();
 
-        if (!Directory.Exists(backupRoot))
-        {
-            return sessions;
-        }
+        if (!Directory.Exists(backupRoot)) return sessions;
 
         var directories = Directory.GetDirectories(backupRoot)
             .OrderByDescending(d => Path.GetFileName(d))
@@ -211,10 +204,8 @@ public sealed class BackupService : IBackupService
                     .ConfigureAwait(false);
 
                 if (session != null)
-                {
                     // Populate SessionDirectory from filesystem path (not stored in JSON)
                     sessions.Add(session with { SessionDirectory = dir });
-                }
             }
             catch (JsonException ex)
             {
@@ -237,19 +228,13 @@ public sealed class BackupService : IBackupService
             throw new InvalidOperationException("Backup metadata is not safe to restore.");
         }
 
-        if (!File.Exists(backupPath))
-        {
-            throw new FileNotFoundException($"Backup file not found: '{backupPath}'");
-        }
+        if (!File.Exists(backupPath)) throw new FileNotFoundException($"Backup file not found: '{backupPath}'");
 
         // Ensure the target directory exists
         var targetDir = Path.GetDirectoryName(targetPath);
-        if (!string.IsNullOrEmpty(targetDir))
-        {
-            Directory.CreateDirectory(targetDir);
-        }
+        if (!string.IsNullOrEmpty(targetDir)) Directory.CreateDirectory(targetDir);
 
-        File.Copy(backupPath, targetPath, overwrite: true);
+        File.Copy(backupPath, targetPath, true);
         _logger.Information("Restored {Plugin} to {Path}", entry.FileName, targetPath);
     }
 
@@ -298,10 +283,7 @@ public sealed class BackupService : IBackupService
 
     public void CleanupOldSessions(string backupRoot, int maxSessionCount, string? currentSessionDir = null)
     {
-        if (!Directory.Exists(backupRoot))
-        {
-            return;
-        }
+        if (!Directory.Exists(backupRoot)) return;
 
         var directories = Directory.GetDirectories(backupRoot)
             .OrderByDescending(d => Path.GetFileName(d))
@@ -317,29 +299,22 @@ public sealed class BackupService : IBackupService
             if (currentSessionDir != null &&
                 string.Equals(Path.GetFullPath(dir), Path.GetFullPath(currentSessionDir),
                     StringComparison.OrdinalIgnoreCase))
-            {
                 continue;
-            }
 
             keepCount++;
-            if (keepCount > maxSessionCount)
-            {
-                toDelete.Add(dir);
-            }
+            if (keepCount > maxSessionCount) toDelete.Add(dir);
         }
 
         foreach (var dir in toDelete)
-        {
             try
             {
-                Directory.Delete(dir, recursive: true);
+                Directory.Delete(dir, true);
                 _logger.Information("Deleted old backup session: {Dir}", dir);
             }
             catch (Exception ex)
             {
                 _logger.Warning("Failed to delete old backup session {Dir}: {Error}", dir, ex.Message);
             }
-        }
     }
 
     public async Task<BackupRetentionCleanupResult> CleanupOldSessionsAsync(
@@ -351,9 +326,7 @@ public sealed class BackupService : IBackupService
     {
         var rows = new List<BackupRetentionRowResult>();
         if (!Directory.Exists(backupRoot))
-        {
             return new BackupRetentionCleanupResult(BackupOperationStatus.Complete, rows);
-        }
 
         if (ct.IsCancellationRequested)
         {
@@ -437,11 +410,9 @@ public sealed class BackupService : IBackupService
         // The dialog/status text in RestoreViewModel uses the canonical out-of-root sentence
         // for both this branch and the IsContained-rejection branch below.
         if (string.IsNullOrWhiteSpace(backupRoot) || string.IsNullOrWhiteSpace(session.SessionDirectory))
-        {
             return new BackupSessionDeleteResult(
                 BackupSessionDeleteStatus.RejectedOutsideBackupRoot,
                 session.SessionDirectory ?? string.Empty);
-        }
 
         // Delegate to the shared containment helper (Plan 07-14) so backup, restore, and delete
         // safety boundaries all use the same string-level normalization+trailing-separator policy.
@@ -482,10 +453,8 @@ public sealed class BackupService : IBackupService
     {
         var parentDir = Path.GetDirectoryName(dataFolderPath);
         if (string.IsNullOrEmpty(parentDir))
-        {
             // Fallback: use the data folder itself as parent
             parentDir = dataFolderPath;
-        }
 
         return Path.Combine(parentDir, "AutoQAC Backups");
     }
@@ -499,24 +468,17 @@ public sealed class BackupService : IBackupService
     {
         if (!ValidateRestoreEntry(entry, sessionDir, trustedRestoreRoot, out var backupPath, out var targetPath,
                 out var failureReason))
-        {
             return new BackupRestoreRowResult(entry.FileName, BackupRestoreRowStatus.Failed, failureReason, 0,
                 entry.FileSizeBytes);
-        }
 
         if (!File.Exists(backupPath))
-        {
             return new BackupRestoreRowResult(entry.FileName, BackupRestoreRowStatus.Failed,
                 BackupFailureReason.MissingBackupFile, 0, entry.FileSizeBytes);
-        }
 
         var targetDir = Path.GetDirectoryName(targetPath);
         try
         {
-            if (!string.IsNullOrEmpty(targetDir))
-            {
-                Directory.CreateDirectory(targetDir);
-            }
+            if (!string.IsNullOrEmpty(targetDir)) Directory.CreateDirectory(targetDir);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException
                                        or NotSupportedException)
@@ -546,38 +508,38 @@ public sealed class BackupService : IBackupService
         };
     }
 
-    private static BackupFailureReason MapRestoreFailure(BackupFailureReason? reason) => reason switch
+    private static BackupFailureReason MapRestoreFailure(BackupFailureReason? reason)
     {
-        BackupFailureReason.SourceMissing => BackupFailureReason.MissingBackupFile,
-        BackupFailureReason.AccessDenied => BackupFailureReason.AccessDenied,
-        BackupFailureReason.Canceled => BackupFailureReason.Canceled,
-        BackupFailureReason.TargetFolderCreationFailed => BackupFailureReason.TargetFolderCreationFailed,
-        _ => BackupFailureReason.TargetWriteFailed
-    };
+        return reason switch
+        {
+            BackupFailureReason.SourceMissing => BackupFailureReason.MissingBackupFile,
+            BackupFailureReason.AccessDenied => BackupFailureReason.AccessDenied,
+            BackupFailureReason.Canceled => BackupFailureReason.Canceled,
+            BackupFailureReason.TargetFolderCreationFailed => BackupFailureReason.TargetFolderCreationFailed,
+            _ => BackupFailureReason.TargetWriteFailed
+        };
+    }
 
     /// <summary>
-    /// Validates a backup destination file name and resolves the final backup path only after containment is proven.
+    ///     Validates a backup destination file name and resolves the final backup path only after containment is proven.
     /// </summary>
-    /// <param name="plugin">Plugin metadata whose file name came from discovery/configuration and is treated as untrusted path input.</param>
+    /// <param name="plugin">
+    ///     Plugin metadata whose file name came from discovery/configuration and is treated as untrusted path
+    ///     input.
+    /// </param>
     /// <param name="sessionDir">Backup session directory that must contain the resolved destination path.</param>
     /// <param name="destinationPath">Resolved destination path when validation succeeds; otherwise an empty string.</param>
     /// <returns>True when the plugin file name is simple and the resolved destination remains inside the session directory.</returns>
     private static bool ValidateBackupDestination(PluginInfo plugin, string sessionDir, out string destinationPath)
     {
         destinationPath = string.Empty;
-        if (!IsSafeSessionRelativeName(plugin.FileName, requirePluginExtension: false))
-        {
-            return false;
-        }
+        if (!IsSafeSessionRelativeName(plugin.FileName, false)) return false;
 
         try
         {
             var sessionRoot = EnsureTrailingDirectorySeparator(Path.GetFullPath(sessionDir));
             var resolvedDestinationPath = Path.GetFullPath(Path.Combine(sessionRoot, plugin.FileName));
-            if (!resolvedDestinationPath.StartsWith(sessionRoot, StringComparison.OrdinalIgnoreCase))
-            {
-                return false;
-            }
+            if (!resolvedDestinationPath.StartsWith(sessionRoot, StringComparison.OrdinalIgnoreCase)) return false;
 
             destinationPath = resolvedDestinationPath;
             return true;
@@ -590,31 +552,26 @@ public sealed class BackupService : IBackupService
     }
 
     /// <summary>
-    /// Checks whether a backup metadata name is a simple session-relative file name safe for path composition.
+    ///     Checks whether a backup metadata name is a simple session-relative file name safe for path composition.
     /// </summary>
     /// <param name="fileName">Candidate file name from plugin discovery or backup session metadata.</param>
     /// <param name="requirePluginExtension">True to allow only active plugin extensions (.esm, .esp, .esl).</param>
     /// <returns>True when the name is non-rooted, single-segment, ADS-free, and optionally has an approved plugin extension.</returns>
     private static bool IsSafeSessionRelativeName(string fileName, bool requirePluginExtension)
     {
-        if (string.IsNullOrWhiteSpace(fileName) || Path.IsPathRooted(fileName))
-        {
-            return false;
-        }
+        if (string.IsNullOrWhiteSpace(fileName) || Path.IsPathRooted(fileName)) return false;
 
         if (!string.Equals(Path.GetFileName(fileName), fileName, StringComparison.Ordinal) ||
             fileName.Contains(Path.DirectorySeparatorChar) ||
             fileName.Contains(Path.AltDirectorySeparatorChar) ||
             fileName.Contains(':'))
-        {
             return false;
-        }
 
         return !requirePluginExtension || IsApprovedPluginExtension(fileName);
     }
 
     /// <summary>
-    /// Checks whether a path ends with an active Bethesda plugin extension accepted by Phase 7 restore policy.
+    ///     Checks whether a path ends with an active Bethesda plugin extension accepted by Phase 7 restore policy.
     /// </summary>
     private static bool IsApprovedPluginExtension(string path)
     {
@@ -625,9 +582,9 @@ public sealed class BackupService : IBackupService
     }
 
     /// <summary>
-    /// Validates untrusted restore metadata before it is used for source or target filesystem paths.
-    /// Backup file names must remain simple session-contained names, and restore targets must be rooted paths
-    /// whose file name and extension match the backed-up plugin before overwrite attempts.
+    ///     Validates untrusted restore metadata before it is used for source or target filesystem paths.
+    ///     Backup file names must remain simple session-contained names, and restore targets must be rooted paths
+    ///     whose file name and extension match the backed-up plugin before overwrite attempts.
     /// </summary>
     private static bool ValidateRestoreEntry(
         BackupPluginEntry entry,
@@ -640,9 +597,9 @@ public sealed class BackupService : IBackupService
         backupPath = string.Empty;
         targetPath = string.Empty;
 
-        if (!IsSafeSessionRelativeName(entry.FileName, requirePluginExtension: true))
+        if (!IsSafeSessionRelativeName(entry.FileName, true))
         {
-            failureReason = IsSafeSessionRelativeName(entry.FileName, requirePluginExtension: false)
+            failureReason = IsSafeSessionRelativeName(entry.FileName, false)
                 ? BackupFailureReason.TargetFolderCreationFailed
                 : BackupFailureReason.MissingBackupFile;
             return false;
@@ -696,7 +653,7 @@ public sealed class BackupService : IBackupService
     }
 
     /// <summary>
-    /// Checks untrusted restore target metadata before directory creation or copy operations.
+    ///     Checks untrusted restore target metadata before directory creation or copy operations.
     /// </summary>
     /// <param name="entry">Backup entry whose original target path came from session metadata.</param>
     /// <returns>True when the target is a local-drive rooted plugin path whose file name matches the backup file name.</returns>
@@ -707,72 +664,71 @@ public sealed class BackupService : IBackupService
             entry.OriginalPath.StartsWith(@"\\", StringComparison.Ordinal) ||
             entry.OriginalPath.StartsWith(@"\\?\", StringComparison.Ordinal) ||
             entry.OriginalPath.StartsWith(@"\\.\", StringComparison.Ordinal))
-        {
             return false;
-        }
 
-        if (!string.Equals(Path.GetFileName(entry.OriginalPath), entry.FileName, StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
+        if (!string.Equals(Path.GetFileName(entry.OriginalPath), entry.FileName,
+                StringComparison.OrdinalIgnoreCase)) return false;
 
         return IsApprovedPluginExtension(entry.OriginalPath);
     }
 
     /// <summary>
-    /// Checks string-level containment of a normalized restore target under the trusted Data-folder root.
-    /// Delegates to <see cref="BackupPathContainment.IsContained"/> so the canonical containment policy
-    /// is shared with <see cref="DeleteSessionAsync"/> (Plan 07-13) and any future delete/restore
-    /// safety boundaries. Does not resolve NTFS reparse points or symlinks; callers still constrain
-    /// metadata before filesystem writes.
+    ///     Checks string-level containment of a normalized restore target under the trusted Data-folder root.
+    ///     Delegates to <see cref="BackupPathContainment.IsContained" /> so the canonical containment policy
+    ///     is shared with <see cref="DeleteSessionAsync" /> (Plan 07-13) and any future delete/restore
+    ///     safety boundaries. Does not resolve NTFS reparse points or symlinks; callers still constrain
+    ///     metadata before filesystem writes.
     /// </summary>
     /// <param name="targetPath">Restore target path that must remain inside the trusted root.</param>
     /// <param name="trustedRestoreRoot">Configured game Data folder that bounds restore overwrites.</param>
     /// <returns>True when both paths normalize and the target has the trusted root as a directory prefix.</returns>
-    private static bool IsRestoreTargetInsideTrustedRoot(string targetPath, string? trustedRestoreRoot) =>
-        BackupPathContainment.IsContained(targetPath, trustedRestoreRoot);
+    private static bool IsRestoreTargetInsideTrustedRoot(string targetPath, string? trustedRestoreRoot)
+    {
+        return BackupPathContainment.IsContained(targetPath, trustedRestoreRoot);
+    }
 
     /// <summary>
-    /// Checks whether a path root is a normal Windows local drive root such as <c>C:\</c>.
+    ///     Checks whether a path root is a normal Windows local drive root such as <c>C:\</c>.
     /// </summary>
-    private static bool IsNormalLocalDriveRoot(string? root) =>
-        root is { Length: 3 } &&
-        char.IsLetter(root[0]) &&
-        root[1] == ':' &&
-        (root[2] == Path.DirectorySeparatorChar || root[2] == Path.AltDirectorySeparatorChar);
+    private static bool IsNormalLocalDriveRoot(string? root)
+    {
+        return root is { Length: 3 } &&
+               char.IsLetter(root[0]) &&
+               root[1] == ':' &&
+               (root[2] == Path.DirectorySeparatorChar || root[2] == Path.AltDirectorySeparatorChar);
+    }
 
     /// <summary>
-    /// Ensures session containment checks compare against a directory prefix instead of a similarly named sibling.
+    ///     Ensures session containment checks compare against a directory prefix instead of a similarly named sibling.
     /// </summary>
-    private static string EnsureTrailingDirectorySeparator(string path) =>
-        Path.EndsInDirectorySeparator(path) ? path : path + Path.DirectorySeparatorChar;
+    private static string EnsureTrailingDirectorySeparator(string path)
+    {
+        return Path.EndsInDirectorySeparator(path) ? path : path + Path.DirectorySeparatorChar;
+    }
 
     /// <summary>
-    /// Reports count-only retention cleanup progress through the shared backup progress model.
+    ///     Reports count-only retention cleanup progress through the shared backup progress model.
     /// </summary>
     private static void ReportRetentionProgress(
         IProgress<BackupCopyProgress>? progress,
         string sessionDirectory,
         int filesCompleted,
-        int totalFiles) =>
+        int totalFiles)
+    {
         progress?.Report(new BackupCopyProgress(
             Path.GetFileName(sessionDirectory),
-            BytesCopied: 0,
-            TotalBytes: null,
+            0,
+            null,
             filesCompleted,
             totalFiles));
+    }
 
     private static BackupOperationStatus GetRestoreStatus(IReadOnlyCollection<BackupRestoreRowResult> rows)
     {
         if (rows.Count == 0 || rows.All(row => row.Status == BackupRestoreRowStatus.Restored))
-        {
             return BackupOperationStatus.Complete;
-        }
 
-        if (rows.Any(row => row.Status == BackupRestoreRowStatus.Restored))
-        {
-            return BackupOperationStatus.Partial;
-        }
+        if (rows.Any(row => row.Status == BackupRestoreRowStatus.Restored)) return BackupOperationStatus.Partial;
 
         return rows.Any(row => row.Status == BackupRestoreRowStatus.Canceled)
             ? BackupOperationStatus.Canceled
@@ -875,10 +831,7 @@ public sealed class BackupService : IBackupService
     {
         foreach (var candidate in candidates)
         {
-            if (rows.Any(row => IsSamePath(row.SessionDirectory, candidate.Directory)))
-            {
-                continue;
-            }
+            if (rows.Any(row => IsSamePath(row.SessionDirectory, candidate.Directory))) continue;
 
             var reason = IsSamePath(candidate.Directory, currentSessionFullPath)
                 ? (BackupFailureReason?)null
@@ -892,22 +845,23 @@ public sealed class BackupService : IBackupService
     {
         foreach (var directory in directories)
         {
-            if (rows.Any(row => IsSamePath(row.SessionDirectory, directory)))
-            {
-                continue;
-            }
+            if (rows.Any(row => IsSamePath(row.SessionDirectory, directory))) continue;
 
             rows.Add(new BackupRetentionRowResult(directory, BackupRetentionRowStatus.Kept,
                 BackupFailureReason.Canceled));
         }
     }
 
-    private static string? GetComparableFullPath(string? path) =>
-        string.IsNullOrWhiteSpace(path) ? null : Path.GetFullPath(path);
+    private static string? GetComparableFullPath(string? path)
+    {
+        return string.IsNullOrWhiteSpace(path) ? null : Path.GetFullPath(path);
+    }
 
-    private static bool IsSamePath(string? left, string? right) =>
-        left is not null && right is not null &&
-        string.Equals(Path.GetFullPath(left), right, StringComparison.OrdinalIgnoreCase);
+    private static bool IsSamePath(string? left, string? right)
+    {
+        return left is not null && right is not null &&
+               string.Equals(Path.GetFullPath(left), right, StringComparison.OrdinalIgnoreCase);
+    }
 
     private sealed record RetentionSessionCandidate(string Directory, DateTime Timestamp);
 }

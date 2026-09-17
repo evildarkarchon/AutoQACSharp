@@ -5,7 +5,7 @@ using AutoQAC.Services.GameCapability;
 namespace AutoQAC.Services.Plugin;
 
 /// <summary>
-/// Authoritative Plugin refresh publication consumed by later Cleaning session preflight.
+///     Authoritative Plugin refresh publication consumed by later Cleaning session preflight.
 /// </summary>
 /// <param name="Generation">Plugin refresh generation that accepted this publication.</param>
 /// <param name="GameType">Selected game context for this publication.</param>
@@ -30,7 +30,7 @@ public sealed record PluginRefreshPublication(
     string StatusText);
 
 /// <summary>
-/// Freshness facts for an accepted Plugin refresh publication.
+///     Freshness facts for an accepted Plugin refresh publication.
 /// </summary>
 /// <param name="IsFresh">True when Discovery-affecting settings still match the accepted publication.</param>
 /// <param name="StalenessReason">The first detected freshness mismatch, or null when fresh.</param>
@@ -46,7 +46,7 @@ public sealed record PluginRefreshFreshness(
 }
 
 /// <summary>
-/// Reasons a Plugin refresh publication is unavailable or no longer matches Discovery-affecting settings.
+///     Reasons a Plugin refresh publication is unavailable or no longer matches Discovery-affecting settings.
 /// </summary>
 public enum PluginRefreshStalenessReason
 {
@@ -62,7 +62,7 @@ public enum PluginRefreshStalenessReason
 }
 
 /// <summary>
-/// Full Plugin refresh row facts used by Cleaning session preflight.
+///     Full Plugin refresh row facts used by Cleaning session preflight.
 /// </summary>
 /// <param name="Plugin">Full plugin row published by Plugin refresh.</param>
 /// <param name="IsVisible">Whether the row is visible in the UI.</param>

@@ -12,21 +12,20 @@ using AutoQAC.Services.State;
 namespace AutoQAC.Services.Cleaning;
 
 /// <summary>
-/// Coordinates cleaning-session backup directory creation, per-plugin backups, metadata writes,
-/// retention cleanup, and active backup-operation cancellation.
+///     Coordinates cleaning-session backup directory creation, per-plugin backups, metadata writes,
+///     retention cleanup, and active backup-operation cancellation.
 /// </summary>
 public sealed class BackupSessionCoordinator : IBackupSessionCoordinator
 {
-    private readonly IBackupService _backupService;
-    private readonly IStateService _stateService;
-    private readonly ILoggingService _logger;
-
     private readonly Lock _backupOperationLock = new();
+    private readonly IBackupService _backupService;
+    private readonly ILoggingService _logger;
+    private readonly IStateService _stateService;
     private CancellationTokenSource? _backupOperationCts;
 
     /// <summary>
-    /// Creates the coordinator with backup, state, and logging collaborators; the coordinator owns
-    /// only its short-lived non-xEdit operation CTS state.
+    ///     Creates the coordinator with backup, state, and logging collaborators; the coordinator owns
+    ///     only its short-lived non-xEdit operation CTS state.
     /// </summary>
     /// <param name="backupService">Backup service used for file copies, metadata, and retention cleanup.</param>
     /// <param name="stateService">State service used to publish and clear visible backup-operation progress.</param>
@@ -43,10 +42,7 @@ public sealed class BackupSessionCoordinator : IBackupSessionCoordinator
     {
         sessionToken.ThrowIfCancellationRequested();
 
-        if (!plan.BackupEnabled)
-        {
-            return Task.FromResult<string?>(null);
-        }
+        if (!plan.BackupEnabled) return Task.FromResult<string?>(null);
 
         if (plan.IsMo2ModeActive)
         {
@@ -101,7 +97,6 @@ public sealed class BackupSessionCoordinator : IBackupSessionCoordinator
         }
 
         if (backupResult.Status == BackupOperationStatus.Complete)
-        {
             return new PluginBackupOutcome
             {
                 Kind = PluginBackupOutcomeKind.Succeeded,
@@ -112,7 +107,6 @@ public sealed class BackupSessionCoordinator : IBackupSessionCoordinator
                     FileSizeBytes = backupResult.TotalBytes ?? backupResult.BytesCopied
                 }
             };
-        }
 
         var choice = await decisions.ChooseBackupFailureAsync(plugin.FileName, reasonText, sessionToken)
             .ConfigureAwait(false);
@@ -160,10 +154,7 @@ public sealed class BackupSessionCoordinator : IBackupSessionCoordinator
         int maxSessions,
         CancellationToken sessionToken)
     {
-        if (entries.Count == 0)
-        {
-            return null;
-        }
+        if (entries.Count == 0) return null;
 
         var backupSession = new BackupSession
         {
@@ -192,10 +183,7 @@ public sealed class BackupSessionCoordinator : IBackupSessionCoordinator
         IReadOnlyList<BackupPluginEntry> entries,
         CancellationToken ct)
     {
-        if (entries.Count == 0)
-        {
-            return;
-        }
+        if (entries.Count == 0) return;
 
         try
         {
@@ -239,7 +227,7 @@ public sealed class BackupSessionCoordinator : IBackupSessionCoordinator
     }
 
     /// <summary>
-    /// Runs a single-plugin backup with a file-operation CTS and publishes progress through state.
+    ///     Runs a single-plugin backup with a file-operation CTS and publishes progress through state.
     /// </summary>
     /// <param name="plugin">Plugin to back up before xEdit runs.</param>
     /// <param name="sessionDir">Backup session directory that receives the copied file.</param>
@@ -291,7 +279,7 @@ public sealed class BackupSessionCoordinator : IBackupSessionCoordinator
     }
 
     /// <summary>
-    /// Runs retention cleanup before final session completion and publishes cleanup progress through state.
+    ///     Runs retention cleanup before final session completion and publishes cleanup progress through state.
     /// </summary>
     /// <param name="backupRoot">Root directory containing backup session directories.</param>
     /// <param name="maxSessionCount">Maximum retained session count.</param>
@@ -347,7 +335,7 @@ public sealed class BackupSessionCoordinator : IBackupSessionCoordinator
     }
 
     /// <summary>
-    /// Creates the current non-xEdit operation CTS linked to the overall cleaning session.
+    ///     Creates the current non-xEdit operation CTS linked to the overall cleaning session.
     /// </summary>
     private CancellationTokenSource CreateBackupOperationCts(CancellationToken sessionToken)
     {
@@ -361,7 +349,7 @@ public sealed class BackupSessionCoordinator : IBackupSessionCoordinator
     }
 
     /// <summary>
-    /// Clears and disposes the active non-xEdit operation CTS when the owning operation exits.
+    ///     Clears and disposes the active non-xEdit operation CTS when the owning operation exits.
     /// </summary>
     private void ClearBackupOperationCts(CancellationTokenSource? expected = null)
     {
@@ -378,6 +366,8 @@ public sealed class BackupSessionCoordinator : IBackupSessionCoordinator
         toDispose?.Dispose();
     }
 
-    private static string GetBackupFailureReasonText(BackupCreateResult result) =>
-        result.DisplayReason ?? result.FailureReason?.ToString() ?? "Backup failed";
+    private static string GetBackupFailureReasonText(BackupCreateResult result)
+    {
+        return result.DisplayReason ?? result.FailureReason?.ToString() ?? "Backup failed";
+    }
 }

@@ -46,7 +46,7 @@ public sealed class ConfigPersistenceCoordinatorTests
         await coordinator.SaveUserConfigAsync(NewConfig(1));
         await coordinator.SaveUserConfigAsync(NewConfig(2));
         await coordinator.FlushPendingSavesAsync();
-        store.WriteCount.Should().Be(1, because: "D-04 coalesces to latest pending");
+        store.WriteCount.Should().Be(1, "D-04 coalesces to latest pending");
         (await coordinator.LoadCurrentAsync()).Settings.CleaningTimeout.Should().Be(2);
     }
 
@@ -57,7 +57,7 @@ public sealed class ConfigPersistenceCoordinatorTests
         await coordinator.StartAsync();
         await coordinator.SaveUserConfigAsync(NewConfig(44));
         var result = await coordinator.FlushPendingSavesAsync();
-        result.Status.Should().Be(ConfigPersistenceStatusKind.Success, because: "D-05 forced flush returns success");
+        result.Status.Should().Be(ConfigPersistenceStatusKind.Success, "D-05 forced flush returns success");
         result.Operation.Should().Be(ConfigPersistenceOperationKind.Flush);
         result.Generation.Should().BeGreaterThan(0);
     }
@@ -89,7 +89,8 @@ public sealed class ConfigPersistenceCoordinatorTests
         result.Status.Should().Be(ConfigPersistenceStatusKind.Failed);
         result.Failure!.Kind.Should().Be(ConfigPersistenceFailureKind.WriteFailed);
         result.Failure.SafeSummary.Should().NotContain("Exception");
-        (await coordinator.LoadCurrentAsync()).Settings.CleaningTimeout.Should().Be(10, because: "D-12 rolls back to last known good");
+        (await coordinator.LoadCurrentAsync()).Settings.CleaningTimeout.Should()
+            .Be(10, "D-12 rolls back to last known good");
         failures.Should().ContainSingle();
     }
 
@@ -143,7 +144,8 @@ public sealed class ConfigPersistenceCoordinatorTests
         await coordinator.SaveUserConfigAsync(NewConfig(12));
         coordinator.NotifySettingsFileChanged(ConfigFileSignalKind.Changed);
         await coordinator.FlushPendingSavesAsync();
-        (await coordinator.LoadCurrentAsync()).Settings.CleaningTimeout.Should().Be(12, because: "D-16 app save wins close timing race");
+        (await coordinator.LoadCurrentAsync()).Settings.CleaningTimeout.Should()
+            .Be(12, "D-16 app save wins close timing race");
     }
 
     [Fact]
@@ -158,7 +160,8 @@ public sealed class ConfigPersistenceCoordinatorTests
         store.CurrentHash = FakeUserConfigFileStore.ComputeHash(store.CurrentContent);
         coordinator.NotifySettingsFileChanged(ConfigFileSignalKind.Changed);
         await PumpUntilQuiescentAsync(coordinator);
-        (await coordinator.LoadCurrentAsync()).Settings.CleaningTimeout.Should().Be(13, because: "D-17 later external edit can apply");
+        (await coordinator.LoadCurrentAsync()).Settings.CleaningTimeout.Should()
+            .Be(13, "D-17 later external edit can apply");
     }
 
     [Fact]
@@ -212,7 +215,7 @@ public sealed class ConfigPersistenceCoordinatorTests
         await PumpUntilQuiescentAsync(coordinator);
 
         (await coordinator.LoadCurrentAsync()).Settings.CleaningTimeout.Should().Be(99,
-            because: "a later app save must not be overwritten by an older external candidate deferred during cleaning");
+            "a later app save must not be overwritten by an older external candidate deferred during cleaning");
     }
 
     [Fact]
@@ -230,7 +233,8 @@ public sealed class ConfigPersistenceCoordinatorTests
         stateSource.Current = stateSource.Current with { IsCleaning = false };
         subject.OnNext(stateSource.Current);
         await PumpUntilQuiescentAsync(coordinator);
-        failures.Should().Contain(f => f.Kind == ConfigPersistenceFailureKind.InvalidExternalYaml && !f.SafeSummary.Contains("Exception"));
+        failures.Should().Contain(f =>
+            f.Kind == ConfigPersistenceFailureKind.InvalidExternalYaml && !f.SafeSummary.Contains("Exception"));
     }
 
     [Fact]
@@ -243,7 +247,8 @@ public sealed class ConfigPersistenceCoordinatorTests
         await coordinator.StartAsync();
         coordinator.NotifySettingsFileChanged(ConfigFileSignalKind.Deleted);
         await PumpUntilQuiescentAsync(coordinator);
-        failures.Should().Contain(f => f.Kind == ConfigPersistenceFailureKind.MissingFile && !f.SafeSummary.Contains("Exception"));
+        failures.Should().Contain(f =>
+            f.Kind == ConfigPersistenceFailureKind.MissingFile && !f.SafeSummary.Contains("Exception"));
     }
 
     /// <summary>
@@ -267,7 +272,8 @@ public sealed class ConfigPersistenceCoordinatorTests
         coordinator.NotifySettingsFileChanged(ConfigFileSignalKind.Changed);
         await PumpUntilQuiescentAsync(coordinator);
 
-        failures.Should().Contain(f => f.Operation == ConfigPersistenceOperationKind.Watcher && f.Kind == ConfigPersistenceFailureKind.ReadFailed);
+        failures.Should().Contain(f =>
+            f.Operation == ConfigPersistenceOperationKind.Watcher && f.Kind == ConfigPersistenceFailureKind.ReadFailed);
         results.Should().Contain(r =>
             r.Operation == ConfigPersistenceOperationKind.Watcher
             && r.Status == ConfigPersistenceStatusKind.Failed
@@ -280,7 +286,8 @@ public sealed class ConfigPersistenceCoordinatorTests
         coordinator.NotifySettingsFileChanged(ConfigFileSignalKind.Changed);
         await PumpUntilQuiescentAsync(coordinator);
 
-        (await coordinator.LoadCurrentAsync()).Settings.CleaningTimeout.Should().Be(44, because: "a transient hash failure must not stop the coordinator consumer loop");
+        (await coordinator.LoadCurrentAsync()).Settings.CleaningTimeout.Should().Be(44,
+            "a transient hash failure must not stop the coordinator consumer loop");
     }
 
     [Fact]
@@ -297,7 +304,8 @@ public sealed class ConfigPersistenceCoordinatorTests
         coordinator.NotifySettingsFileChanged(ConfigFileSignalKind.Error);
         await PumpUntilQuiescentAsync(coordinator);
 
-        failures.Should().Contain(f => f.Operation == ConfigPersistenceOperationKind.Watcher && f.Kind == ConfigPersistenceFailureKind.ReadFailed);
+        failures.Should().Contain(f =>
+            f.Operation == ConfigPersistenceOperationKind.Watcher && f.Kind == ConfigPersistenceFailureKind.ReadFailed);
         results.Should().Contain(r =>
             r.Operation == ConfigPersistenceOperationKind.Watcher
             && r.Status == ConfigPersistenceStatusKind.Failed
@@ -310,7 +318,8 @@ public sealed class ConfigPersistenceCoordinatorTests
     [Fact]
     public void ConfigWatcherService_ForwardsFileSystemWatcherErrors_StaticGuard()
     {
-        var source = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "AutoQAC", "Services", "Configuration", "ConfigWatcherService.cs"));
+        var source = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "AutoQAC",
+            "Services", "Configuration", "ConfigWatcherService.cs"));
 
         source.Should().Contain("NotifySettingsFileChanged(ConfigFileSignalKind.Error)");
     }
@@ -444,9 +453,11 @@ public sealed class ConfigPersistenceCoordinatorTests
             var result = await coordinator.ReloadFromDiskAsync().WaitAsync(TimeSpan.FromSeconds(2));
             var active = await coordinator.LoadCurrentAsync();
 
-            store.WriteCount.Should().BeGreaterThanOrEqualTo(1, because: "pending app saves must reach disk before explicit reload reads disk");
+            store.WriteCount.Should()
+                .BeGreaterThanOrEqualTo(1, "pending app saves must reach disk before explicit reload reads disk");
             result.Status.Should().Be(ConfigPersistenceStatusKind.Success);
-            active.Settings.CleaningTimeout.Should().Be(99, because: "the flushed app save becomes the disk content reloaded by the explicit request");
+            active.Settings.CleaningTimeout.Should().Be(99,
+                "the flushed app save becomes the disk content reloaded by the explicit request");
         }
         finally
         {
@@ -475,11 +486,14 @@ public sealed class ConfigPersistenceCoordinatorTests
             var result = await coordinator.ReloadFromDiskAsync().WaitAsync(TimeSpan.FromSeconds(2));
 
             result.Status.Should().Be(ConfigPersistenceStatusKind.Failed);
-            result.Operation.Should().Be(ConfigPersistenceOperationKind.Flush, because: "the failed prerequisite flush is the reload result that matters");
+            result.Operation.Should().Be(ConfigPersistenceOperationKind.Flush,
+                "the failed prerequisite flush is the reload result that matters");
             result.Failure!.Kind.Should().Be(ConfigPersistenceFailureKind.WriteFailed);
             store.CallLog.Should().Contain("Write");
-            store.CallLog.Skip(store.CallLog.LastIndexOf("Write") + 1).Should().NotContain("Read", because: "a failed prerequisite flush must stop explicit reload before disk content is read");
-            (await coordinator.LoadCurrentAsync()).Settings.CleaningTimeout.Should().Be(10, because: "failed flush rolls back to last known good and must not accept stale disk content as a successful reload");
+            store.CallLog.Skip(store.CallLog.LastIndexOf("Write") + 1).Should().NotContain("Read",
+                "a failed prerequisite flush must stop explicit reload before disk content is read");
+            (await coordinator.LoadCurrentAsync()).Settings.CleaningTimeout.Should().Be(10,
+                "failed flush rolls back to last known good and must not accept stale disk content as a successful reload");
         }
         finally
         {
@@ -513,15 +527,93 @@ public sealed class ConfigPersistenceCoordinatorTests
     [Fact]
     public void TestSourceContains_NoProductionThrottleSleeps_StaticGuard()
     {
-        var source = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "Services", "Configuration", "ConfigPersistenceCoordinatorTests.cs"));
+        var source = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "Services",
+            "Configuration", "ConfigPersistenceCoordinatorTests.cs"));
         source.Should().NotContain("Task.Delay(" + "500");
         source.Should().NotContain("Thread.Sleep(" + "500");
+    }
+
+    /// <summary>Disk changes must wait for the startup reservation even before IsCleaning state becomes true.</summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ExternalReload_DuringCleaningStartup_DefersUntilReservationReleased(bool explicitReload)
+    {
+        var store = new FakeUserConfigFileStore { CurrentContent = Serializer.Serialize(NewConfig(99)) };
+        var admission = new DiscoverySettingsAdmission();
+        var coordinator = CreateCoordinator(store, admission: admission);
+        await coordinator.StartAsync();
+        using var cleaning = await admission.EnterCleaningAsync();
+        if (explicitReload)
+            await coordinator.ReloadFromDiskAsync();
+        else
+            coordinator.NotifySettingsFileChanged(ConfigFileSignalKind.Changed);
+        await PumpUntilQuiescentAsync(coordinator);
+        (await coordinator.LoadCurrentAsync()).Settings.CleaningTimeout.Should().NotBe(99);
+        cleaning.Dispose();
+        await PumpUntilQuiescentAsync(coordinator);
+        (await coordinator.LoadCurrentAsync()).Settings.CleaningTimeout.Should().Be(99);
+        await coordinator.StopAsync();
+    }
+
+    /// <summary>External reload cannot block the consumer while the mutation owner awaits a save and flush.</summary>
+    [Fact]
+    public async Task ExternalReload_DuringAdmittedMutation_DoesNotDeadlockOrOverwriteSavedChoice()
+    {
+        var store = new FakeUserConfigFileStore { CurrentContent = Serializer.Serialize(NewConfig(99)) };
+        var admission = new DiscoverySettingsAdmission();
+        var coordinator = CreateCoordinator(store, admission: admission);
+        await coordinator.StartAsync();
+        using var mutation = await admission.TryEnterSettingsAsync();
+        await coordinator.ReloadFromDiskAsync().WaitAsync(TimeSpan.FromSeconds(2));
+        (await coordinator.LoadCurrentAsync()).Settings.CleaningTimeout.Should().NotBe(99);
+        await coordinator.SaveUserConfigAsync(NewConfig(42));
+        await coordinator.FlushPendingSavesAsync().WaitAsync(TimeSpan.FromSeconds(2));
+        mutation!.Dispose();
+        await PumpUntilQuiescentAsync(coordinator);
+        (await coordinator.LoadCurrentAsync()).Settings.CleaningTimeout.Should().Be(42);
+        await coordinator.StopAsync();
+    }
+
+    /// <summary>A deferred disk change remains recoverable when the admitted app save fails.</summary>
+    [Fact]
+    public async Task Watcher_DuringAdmittedMutation_WhenAppSaveFails_AppliesDeferredExternalAfterRelease()
+    {
+        var store = new FakeUserConfigFileStore { CurrentContent = Serializer.Serialize(NewConfig(99)) };
+        var admission = new DiscoverySettingsAdmission();
+        var coordinator = CreateCoordinator(store, admission: admission);
+        await coordinator.StartAsync();
+        var mutation = await admission.TryEnterSettingsAsync();
+        mutation.Should().NotBeNull();
+
+        try
+        {
+            coordinator.NotifySettingsFileChanged(ConfigFileSignalKind.Changed);
+            await PumpUntilQuiescentAsync(coordinator);
+
+            store.WriteFailure = new IOException("locked");
+            await coordinator.SaveUserConfigAsync(NewConfig(42));
+            var result = await coordinator.FlushPendingSavesAsync().WaitAsync(TimeSpan.FromSeconds(2));
+            result.Status.Should().Be(ConfigPersistenceStatusKind.Failed);
+
+            mutation!.Dispose();
+            await PumpUntilQuiescentAsync(coordinator);
+
+            (await coordinator.LoadCurrentAsync()).Settings.CleaningTimeout.Should().Be(99,
+                "the failed app save did not overwrite the external file, so its deferred candidate must still apply");
+        }
+        finally
+        {
+            mutation?.Dispose();
+            await coordinator.StopAsync().WaitAsync(TimeSpan.FromSeconds(2));
+        }
     }
 
     private static ConfigPersistenceCoordinator CreateCoordinator(
         FakeUserConfigFileStore? store = null,
         Func<AppState>? currentState = null,
-        IObservable<AppState>? stateChanged = null)
+        IObservable<AppState>? stateChanged = null,
+        DiscoverySettingsAdmission? admission = null)
     {
         var stateService = Substitute.For<IStateService>();
         stateService.CurrentState.Returns(_ => currentState?.Invoke() ?? new AppState { IsCleaning = false });
@@ -530,7 +622,7 @@ public sealed class ConfigPersistenceCoordinatorTests
             store ?? new FakeUserConfigFileStore(),
             stateService,
             Substitute.For<ILoggingService>(),
-            TimeSpan.Zero);
+            TimeSpan.Zero, admission);
     }
 
     private static async Task PumpUntilQuiescentAsync(ConfigPersistenceCoordinator coordinator)
@@ -538,17 +630,23 @@ public sealed class ConfigPersistenceCoordinatorTests
         await coordinator.FlushPendingSavesAsync().WaitAsync(TimeSpan.FromSeconds(2));
     }
 
-    private static UserConfiguration NewConfig(int timeout) => new()
+    private static UserConfiguration NewConfig(int timeout)
     {
-        SelectedGame = "SkyrimSe",
-        Settings = new AutoQacSettings { CleaningTimeout = timeout },
-        XEdit = new XEditConfig { Binary = $@"C:\Tools\xEdit-{timeout}.exe" }
-    };
+        return new UserConfiguration
+        {
+            SelectedGame = "SkyrimSe",
+            Settings = new AutoQacSettings { CleaningTimeout = timeout },
+            XEdit = new XEditConfig { Binary = $@"C:\Tools\xEdit-{timeout}.exe" }
+        };
+    }
 
     private sealed class TestAppStateSource(AppState current)
     {
         public AppState Current { get; set; } = current;
 
-        public AppState GetCurrent() => Current;
+        public AppState GetCurrent()
+        {
+            return Current;
+        }
     }
 }

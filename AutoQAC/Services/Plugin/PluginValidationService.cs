@@ -12,7 +12,7 @@ namespace AutoQAC.Services.Plugin;
 public sealed class PluginValidationService(ILoggingService logger) : IPluginValidationService
 {
     /// <summary>
-    /// Valid plugin file extensions (case-insensitive).
+    ///     Valid plugin file extensions (case-insensitive).
     /// </summary>
     private static readonly HashSet<string> ValidExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -20,8 +20,8 @@ public sealed class PluginValidationService(ILoggingService logger) : IPluginVal
     };
 
     /// <summary>
-    /// Prefix characters used by plugins.txt and MO2 load order files.
-    /// * = enabled, + = MO2 enabled mod, - = MO2 disabled mod.
+    ///     Prefix characters used by plugins.txt and MO2 load order files.
+    ///     * = enabled, + = MO2 enabled mod, - = MO2 disabled mod.
     /// </summary>
     private static readonly HashSet<char> PrefixChars = ['*', '+', '-'];
 
@@ -47,7 +47,10 @@ public sealed class PluginValidationService(ILoggingService logger) : IPluginVal
                 let fullPath = dataFolderPath is not null
                     ? Path.Combine(dataFolderPath, processed)
                     : processed
-                select new PluginInfo { FileName = processed, FullPath = fullPath, IsInSkipList = false, DetectedGameType = GameType.Unknown });
+                select new PluginInfo
+                {
+                    FileName = processed, FullPath = fullPath, IsInSkipList = false, DetectedGameType = GameType.Unknown
+                });
         }
         catch (Exception ex)
         {
@@ -100,21 +103,21 @@ public sealed class PluginValidationService(ILoggingService logger) : IPluginVal
     }
 
     /// <summary>
-    /// Read all lines from a file with BOM auto-detection.
-    /// StreamReader with detectEncodingFromByteOrderMarks handles UTF-8 BOM,
-    /// UTF-16 LE/BE BOM, and UTF-32 BOM automatically. Falls back to UTF-8 by default.
+    ///     Read all lines from a file with BOM auto-detection.
+    ///     StreamReader with detectEncodingFromByteOrderMarks handles UTF-8 BOM,
+    ///     UTF-16 LE/BE BOM, and UTF-32 BOM automatically. Falls back to UTF-8 by default.
     /// </summary>
     private static async Task<string[]> ReadLinesWithEncodingDetectionAsync(
         string path, CancellationToken ct)
     {
-        using var reader = new StreamReader(path, detectEncodingFromByteOrderMarks: true);
+        using var reader = new StreamReader(path, true);
         var content = await reader.ReadToEndAsync(ct).ConfigureAwait(false);
         return content.Split(["\r\n", "\r", "\n"], StringSplitOptions.None);
     }
 
     /// <summary>
-    /// Process a single line through the validation pipeline.
-    /// Returns the validated plugin filename, or null if the line should be skipped.
+    ///     Process a single line through the validation pipeline.
+    ///     Returns the validated plugin filename, or null if the line should be skipped.
     /// </summary>
     private string? ProcessLine(string line)
     {
@@ -129,10 +132,7 @@ public sealed class PluginValidationService(ILoggingService logger) : IPluginVal
             return null;
 
         // Step 3: Strip leading prefix character (* + -) then re-trim
-        if (trimmed.Length > 0 && PrefixChars.Contains(trimmed[0]))
-        {
-            trimmed = trimmed[1..].Trim();
-        }
+        if (trimmed.Length > 0 && PrefixChars.Contains(trimmed[0])) trimmed = trimmed[1..].Trim();
 
         // Step 4: If empty after stripping prefix, skip (separator line)
         if (string.IsNullOrWhiteSpace(trimmed))
@@ -170,7 +170,7 @@ public sealed class PluginValidationService(ILoggingService logger) : IPluginVal
     }
 
     /// <summary>
-    /// Sanitize a string for logging by replacing control characters with their escape sequences.
+    ///     Sanitize a string for logging by replacing control characters with their escape sequences.
     /// </summary>
     private static string SanitizeForLog(string input)
     {

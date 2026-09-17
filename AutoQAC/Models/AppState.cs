@@ -1,11 +1,12 @@
-using System.Collections.Generic;
+using System;
 using System.Collections.Frozen;
+using System.Collections.Generic;
 using System.Linq;
 
 namespace AutoQAC.Models;
 
 /// <summary>
-/// Identifies the non-xEdit file operation currently shown in the cleaning progress surface.
+///     Identifies the non-xEdit file operation currently shown in the cleaning progress surface.
 /// </summary>
 public enum BackupOperationKind
 {
@@ -17,7 +18,7 @@ public enum BackupOperationKind
 }
 
 /// <summary>
-/// Describes visible progress for backup or retention work that must not reuse xEdit stop state.
+///     Describes visible progress for backup or retention work that must not reuse xEdit stop state.
 /// </summary>
 public sealed record BackupOperationState
 {
@@ -73,20 +74,20 @@ public sealed record AppState
     public IReadOnlyList<PluginInfo> PluginsToClean { get; init; } = [];
 
     /// <summary>
-    /// Progress for backup or retention file operations that are separate from xEdit process control.
+    ///     Progress for backup or retention file operations that are separate from xEdit process control.
     /// </summary>
     public BackupOperationState? BackupOperation { get; init; }
 
     /// <summary>
-    /// Full paths (case-insensitive) of plugins the user has explicitly deselected from
-    /// the visible plugin list. Default is empty (everything selected). Storing exclusions
-    /// rather than selections keeps the default behaviour stable as <see cref="PluginsToClean"/>
-    /// is replaced by approximation merges. Path identity (rather than file name) prevents
-    /// deselections leaking across game switches or load-order changes when two plugins
-    /// happen to share a file name.
+    ///     Full paths (case-insensitive) of plugins the user has explicitly deselected from
+    ///     the visible plugin list. Default is empty (everything selected). Storing exclusions
+    ///     rather than selections keeps the default behaviour stable as <see cref="PluginsToClean" />
+    ///     is replaced by approximation merges. Path identity (rather than file name) prevents
+    ///     deselections leaking across game switches or load-order changes when two plugins
+    ///     happen to share a file name.
     /// </summary>
     public IReadOnlySet<string> ExcludedPluginPaths { get; init; } =
-        Enumerable.Empty<string>().ToFrozenSet(System.StringComparer.OrdinalIgnoreCase);
+        Enumerable.Empty<string>().ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
     // Results
     public IReadOnlySet<string> CleanedPlugins { get; init; } = Enumerable.Empty<string>().ToFrozenSet();

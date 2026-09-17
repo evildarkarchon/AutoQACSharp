@@ -11,7 +11,7 @@ public sealed record CleaningResult
     public CleaningStatistics? Statistics { get; init; }
 
     /// <summary>
-    /// Indicates if the cleaning operation timed out.
+    ///     Indicates if the cleaning operation timed out.
     /// </summary>
     public bool TimedOut { get; init; }
 }

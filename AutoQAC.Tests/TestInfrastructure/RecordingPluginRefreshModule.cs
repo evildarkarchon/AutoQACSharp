@@ -29,6 +29,26 @@ public sealed class RecordingPluginRefreshModule : IPluginRefreshModule, IDispos
 
     public Func<CancellationToken, Task<PluginRefreshPublication>>? PublicationHandler { get; set; }
 
+    /// <inheritdoc />
+    public void InvalidateForSettings()
+    {
+        CurrentPublication = CurrentPublication with { Freshness = PluginRefreshFreshness.Missing };
+    }
+
+    /// <summary>Overrides correlated completion for settings workflow tests.</summary>
+    public Func<GameType, CancellationToken, Task<PluginRefreshCompletion>>? RefreshForSettingsHandler { get; set; }
+
+    /// <inheritdoc />
+    public async Task<PluginRefreshCompletion> RefreshForSettingsAsync(GameType gameType, CancellationToken cancellationToken = default)
+    {
+        if (RefreshForSettingsHandler is not null)
+            return await RefreshForSettingsHandler(gameType, cancellationToken);
+        var snapshot = await ExecuteAsync(new PluginRefreshIntent.RefreshGame(gameType), cancellationToken);
+        return new PluginRefreshCompletion(
+            gameType == GameType.Unknown ? PluginRefreshCompletionStatus.NoGame : PluginRefreshCompletionStatus.Published,
+            snapshot, CurrentPublication);
+    }
+
     public IObservable<PluginRefreshSnapshot> Snapshots => _snapshots;
 
     public Task<PluginRefreshSnapshot> ExecuteAsync(
@@ -39,8 +59,10 @@ public sealed class RecordingPluginRefreshModule : IPluginRefreshModule, IDispos
         return ExecuteHandler?.Invoke(intent, cancellationToken) ?? Task.FromResult(CurrentSnapshot);
     }
 
-    public Task<PluginRefreshPublication> GetCurrentPublicationAsync(CancellationToken cancellationToken = default) =>
-        PublicationHandler?.Invoke(cancellationToken) ?? Task.FromResult(CurrentPublication);
+    public Task<PluginRefreshPublication> GetCurrentPublicationAsync(CancellationToken cancellationToken = default)
+    {
+        return PublicationHandler?.Invoke(cancellationToken) ?? Task.FromResult(CurrentPublication);
+    }
 
     public void Publish(PluginRefreshSnapshot snapshot)
     {
@@ -55,33 +77,35 @@ public sealed class RecordingPluginRefreshModule : IPluginRefreshModule, IDispos
         PluginRefreshConfigurationProjection? configuration = null,
         PluginRefreshActivity? activity = null,
         PluginRefreshCommandAvailability? commands = null,
-        string statusText = "Ready") =>
-        new(
-            Generation: 1,
-            GameType: gameType,
-            Rows: rows ?? [],
-            Configuration: configuration ?? new PluginRefreshConfigurationProjection(
-                LoadOrderPath: null,
-                GameDataFolder: null,
-                HasGameDataFolderOverride: false,
-                XEditPath: null,
-                Mo2Path: null,
-                Mo2ModeEnabled: false,
-                Mo2InstancePath: null,
-                IsMo2InstanceOverride: false,
-                IsMo2InstanceValid: null,
-                AvailableProfiles: [],
-                SelectedProfile: null,
-                CleaningTimeout: 300),
-            Activity: activity ?? new PluginRefreshActivity(false, false),
-            Commands: commands ?? new PluginRefreshCommandAvailability(false, false, false, false),
-            StatusText: statusText);
+        string statusText = "Ready")
+    {
+        return new PluginRefreshSnapshot(
+            1,
+            gameType,
+            rows ?? [],
+            configuration ?? new PluginRefreshConfigurationProjection(
+                null,
+                null,
+                false,
+                null,
+                null,
+                false,
+                null,
+                false,
+                null,
+                [],
+                null,
+                300),
+            activity ?? new PluginRefreshActivity(false, false),
+            commands ?? new PluginRefreshCommandAvailability(false, false, false, false),
+            statusText);
+    }
 
     public static PluginRefreshPublication CreatePublication(
         PluginRefreshSnapshot? snapshot = null,
         IReadOnlyList<PluginRefreshPublishedRow>? rows = null,
         PluginRefreshFreshness? freshness = null,
-        AutoQAC.Services.GameCapability.PluginRefreshDiscoveryPlan? discoveryPlan = null)
+        PluginRefreshDiscoveryPlan? discoveryPlan = null)
     {
         var currentSnapshot = snapshot ?? CreateSnapshot();
         return new PluginRefreshPublication(
@@ -135,50 +159,59 @@ public sealed class RecordingPluginRefreshModule : IPluginRefreshModule, IDispos
         string? mo2Path = null,
         bool mo2ModeEnabled = false,
         string? mo2InstancePath = null,
-        string? selectedProfile = null) =>
-        new(
-            LoadOrderPath: loadOrderPath,
-            GameDataFolder: null,
-            HasGameDataFolderOverride: false,
-            XEditPath: xEditPath,
-            Mo2Path: mo2Path,
-            Mo2ModeEnabled: mo2ModeEnabled,
-            Mo2InstancePath: mo2InstancePath,
-            IsMo2InstanceOverride: false,
-            IsMo2InstanceValid: string.IsNullOrWhiteSpace(mo2InstancePath) ? null : true,
-            AvailableProfiles: string.IsNullOrWhiteSpace(selectedProfile) ? [] : [selectedProfile],
-            SelectedProfile: selectedProfile,
-            CleaningTimeout: 300);
+        string? selectedProfile = null)
+    {
+        return new PluginRefreshConfigurationProjection(
+            loadOrderPath,
+            null,
+            false,
+            xEditPath,
+            mo2Path,
+            mo2ModeEnabled,
+            mo2InstancePath,
+            false,
+            string.IsNullOrWhiteSpace(mo2InstancePath) ? null : true,
+            string.IsNullOrWhiteSpace(selectedProfile) ? [] : [selectedProfile],
+            selectedProfile,
+            300);
+    }
 
     public static PluginRefreshDiscoveryPlan CreateDiscoveryPlan(
         GameType gameType = GameType.SkyrimSe,
         PluginRefreshDiscoveryMode mode = PluginRefreshDiscoveryMode.DirectAutomatic,
         PluginRefreshConfigurationProjection? configuration = null,
         string? loadOrderPath = null,
-        string? mo2LoadOrderPath = null) =>
-        new(
+        string? mo2LoadOrderPath = null)
+    {
+        return new PluginRefreshDiscoveryPlan(
             gameType,
             mode,
-            configuration ?? CreateConfiguration(loadOrderPath: loadOrderPath),
-            DisableSkipLists: false,
-            CanAttemptIssueApproximation: true,
-            DataFolderPath: null,
-            LoadOrderPath: loadOrderPath,
-            Mo2LoadOrderPath: mo2LoadOrderPath,
-            Mo2PathMap: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
-            Mo2BaseDataFolder: null);
+            configuration ?? CreateConfiguration(loadOrderPath),
+            false,
+            true,
+            null,
+            loadOrderPath,
+            mo2LoadOrderPath,
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+            null);
+    }
 
     public static PluginRefreshPublishedRow CreatePublishedRow(
         PluginInfo plugin,
         bool isVisible = true,
         bool isSelected = true,
-        bool isSkippedByPolicy = false) =>
-        new(
+        bool isSkippedByPolicy = false)
+    {
+        return new PluginRefreshPublishedRow(
             plugin,
             isVisible,
             isSelected,
             isSkippedByPolicy,
             new PluginRefreshRowKey(plugin.FileName, plugin.FullPath));
+    }
 
-    public void Dispose() => _snapshots.Dispose();
+    public void Dispose()
+    {
+        _snapshots.Dispose();
+    }
 }

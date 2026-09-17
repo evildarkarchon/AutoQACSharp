@@ -12,8 +12,27 @@ namespace AutoQAC.ViewModels;
 
 public sealed partial class CleaningResultsViewModel : ViewModelBase
 {
-    private readonly ILoggingService? _logger;
     private readonly IFileDialogService? _fileDialog;
+    private readonly ILoggingService? _logger;
+
+    /// <summary>Design-time constructor for XAML previewer.</summary>
+    public CleaningResultsViewModel()
+    {
+        SessionResult = CleaningSessionResult.CreateEmpty();
+        PluginResults = [];
+    }
+
+    public CleaningResultsViewModel(
+        CleaningSessionResult sessionResult,
+        ILoggingService logger,
+        IFileDialogService fileDialog)
+    {
+        SessionResult = sessionResult;
+        _logger = logger;
+        _fileDialog = fileDialog;
+
+        PluginResults = new ObservableCollection<PluginCleaningResult>(sessionResult.PluginResults);
+    }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(WindowTitle))]
@@ -57,25 +76,6 @@ public sealed partial class CleaningResultsViewModel : ViewModelBase
     /// <summary>Raised when the user clicks Close. The view closes the window.</summary>
     public event EventHandler? CloseRequested;
 
-    /// <summary>Design-time constructor for XAML previewer.</summary>
-    public CleaningResultsViewModel()
-    {
-        SessionResult = CleaningSessionResult.CreateEmpty();
-        PluginResults = [];
-    }
-
-    public CleaningResultsViewModel(
-        CleaningSessionResult sessionResult,
-        ILoggingService logger,
-        IFileDialogService fileDialog)
-    {
-        SessionResult = sessionResult;
-        _logger = logger;
-        _fileDialog = fileDialog;
-
-        PluginResults = new ObservableCollection<PluginCleaningResult>(sessionResult.PluginResults);
-    }
-
     [RelayCommand]
     private async Task ExportReportAsync()
     {
@@ -104,5 +104,8 @@ public sealed partial class CleaningResultsViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private void Close() => CloseRequested?.Invoke(this, EventArgs.Empty);
+    private void Close()
+    {
+        CloseRequested?.Invoke(this, EventArgs.Empty);
+    }
 }

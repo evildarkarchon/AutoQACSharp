@@ -123,10 +123,7 @@ public sealed class BackupPathContainmentTests : IDisposable
     {
         try
         {
-            if (Directory.Exists(_testRoot))
-            {
-                Directory.Delete(_testRoot, recursive: true);
-            }
+            if (Directory.Exists(_testRoot)) Directory.Delete(_testRoot, true);
         }
         catch
         {

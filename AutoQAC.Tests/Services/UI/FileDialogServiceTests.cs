@@ -190,8 +190,10 @@ public sealed class FileDialogServiceTests
     /// Parses the filter string through the framework-neutral helper used by
     /// UI-specific file dialog service implementations.
     /// </summary>
-    private static IReadOnlyList<FileDialogFilterEntry> InvokeParseFilter(string filter) =>
-        FileDialogFilterParser.Parse(filter);
+    private static IReadOnlyList<FileDialogFilterEntry> InvokeParseFilter(string filter)
+    {
+        return FileDialogFilterParser.Parse(filter);
+    }
 
     #endregion
 }

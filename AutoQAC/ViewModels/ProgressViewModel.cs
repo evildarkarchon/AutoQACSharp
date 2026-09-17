@@ -16,12 +16,38 @@ namespace AutoQAC.ViewModels;
 public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
 {
     private readonly ICleaningSession _cleaningSession;
-    private readonly IMessageDialogService _messageDialog;
     private readonly ILoggingService _logger;
+    private readonly IMessageDialogService _messageDialog;
     private readonly List<IDisposable> _subscriptions = [];
+    private bool _hangWarningDismissed;
 
     private bool _wasPreviouslyCleaning;
-    private bool _hangWarningDismissed;
+
+    public ProgressViewModel(IStateService stateService, ICleaningSession cleaningSession,
+        IMessageDialogService messageDialog, ILoggingService logger, IUiDispatcher uiDispatcher)
+    {
+        _cleaningSession = cleaningSession;
+        _messageDialog = messageDialog;
+        _logger = logger;
+
+        _subscriptions.Add(stateService.StateChanged.Subscribe(
+            new CallbackObserver<AppState>(state => uiDispatcher.Post(() => OnStateChanged(state)))));
+
+        _subscriptions.Add(stateService.DetailedPluginResult.Subscribe(
+            new CallbackObserver<PluginCleaningResult>(result => uiDispatcher.Post(() => OnDetailedResult(result)))));
+
+        _subscriptions.Add(stateService.CleaningCompleted.Subscribe(
+            new CallbackObserver<CleaningSessionResult>(session =>
+                uiDispatcher.Post(() => OnCleaningCompleted(session)))));
+
+        _subscriptions.Add(_cleaningSession.HangDetected.Subscribe(
+            new CallbackObserver<bool>(isHung => uiDispatcher.Post(() => OnHangDetected(isHung)))));
+
+        _subscriptions.Add(stateService.IsTerminatingChanged.Subscribe(
+            new CallbackObserver<bool>(isTerminating => uiDispatcher.Post(() => IsTerminating = isTerminating))));
+
+        OnStateChanged(stateService.CurrentState);
+    }
 
     [ObservableProperty] public partial string? CurrentPlugin { get; set; }
 
@@ -130,63 +156,44 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
     public string BackupOperationProgressText => FormatBackupOperationProgress(BackupOperation);
 
     /// <summary>
-    /// Gets whether the completed-cleaning summary panel should be visible instead of the active or preview panels.
+    ///     Gets whether the completed-cleaning summary panel should be visible instead of the active or preview panels.
     /// </summary>
     public bool IsResultsSummaryVisible => IsShowingResults && !IsPreviewMode;
 
     /// <summary>
-    /// Gets whether a persistent stop outcome warning should remain visible in the results summary.
+    ///     Gets whether a persistent stop outcome warning should remain visible in the results summary.
     /// </summary>
     public bool HasStopOutcomeWarning => !string.IsNullOrWhiteSpace(StopOutcomeWarningText);
+
+    public void Dispose()
+    {
+        foreach (var sub in _subscriptions) sub.Dispose();
+
+        _subscriptions.Clear();
+    }
 
     /// <summary>Event raised when the window should close.</summary>
     public event EventHandler? CloseRequested;
 
-    public ProgressViewModel(IStateService stateService, ICleaningSession cleaningSession,
-        IMessageDialogService messageDialog, ILoggingService logger, IUiDispatcher uiDispatcher)
-    {
-        _cleaningSession = cleaningSession;
-        _messageDialog = messageDialog;
-        _logger = logger;
-
-        _subscriptions.Add(stateService.StateChanged.Subscribe(
-            new CallbackObserver<AppState>(state => uiDispatcher.Post(() => OnStateChanged(state)))));
-
-        _subscriptions.Add(stateService.DetailedPluginResult.Subscribe(
-            new CallbackObserver<PluginCleaningResult>(result => uiDispatcher.Post(() => OnDetailedResult(result)))));
-
-        _subscriptions.Add(stateService.CleaningCompleted.Subscribe(
-            new CallbackObserver<CleaningSessionResult>(session =>
-                uiDispatcher.Post(() => OnCleaningCompleted(session)))));
-
-        _subscriptions.Add(_cleaningSession.HangDetected.Subscribe(
-            new CallbackObserver<bool>(isHung => uiDispatcher.Post(() => OnHangDetected(isHung)))));
-
-        _subscriptions.Add(stateService.IsTerminatingChanged.Subscribe(
-            new CallbackObserver<bool>(isTerminating => uiDispatcher.Post(() => IsTerminating = isTerminating))));
-
-        OnStateChanged(stateService.CurrentState);
-    }
-
     /// <summary>
-    /// Loads dry-run preview results into the ViewModel. Sets IsPreviewMode true and populates the
-    /// DryRunResults collection.
+    ///     Loads dry-run preview results into the ViewModel. Sets IsPreviewMode true and populates the
+    ///     DryRunResults collection.
     /// </summary>
     public void LoadDryRunResults(List<DryRunResult> results)
     {
         IsPreviewMode = true;
         DryRunResults.Clear();
-        foreach (var result in results)
-        {
-            DryRunResults.Add(result);
-        }
+        foreach (var result in results) DryRunResults.Add(result);
 
         WillCleanCount = results.Count(r => r.Status == DryRunStatus.WillClean);
         WillSkipCount = results.Count(r => r.Status == DryRunStatus.WillSkip);
         IsShowingResults = true;
     }
 
-    private bool CanStop() => IsCleaning && !IsTerminating;
+    private bool CanStop()
+    {
+        return IsCleaning && !IsTerminating;
+    }
 
     [RelayCommand(CanExecute = nameof(CanStop))]
     private async Task StopAsync()
@@ -204,7 +211,10 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
     }
 
     [RelayCommand]
-    private void Close() => CloseRequested?.Invoke(this, EventArgs.Empty);
+    private void Close()
+    {
+        CloseRequested?.Invoke(this, EventArgs.Empty);
+    }
 
     [RelayCommand]
     private void DismissHangWarning()
@@ -231,24 +241,19 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>
-    /// Reports control outcomes through the shared safe dialog copy and persistent Progress summary warning.
+    ///     Reports control outcomes through the shared safe dialog copy and persistent Progress summary warning.
     /// </summary>
     /// <param name="result">The structured control result returned by the Cleaning session.</param>
     private async Task ReportControlWarningIfNeededAsync(CleaningSessionControlResult result)
     {
         if (result.Status == CleaningSessionControlStatus.LeftRunningByUser)
-        {
             StopOutcomeWarningText = StopTerminationDialogContent.LeftRunningMessage;
-        }
 
-        if (result.Status == CleaningSessionControlStatus.ForceKillFailed)
-        {
-            await ShowForceFailureDialogSafelyAsync();
-        }
+        if (result.Status == CleaningSessionControlStatus.ForceKillFailed) await ShowForceFailureDialogSafelyAsync();
     }
 
     /// <summary>
-    /// Persists the shared force-failure warning and best-effort displays the matching dialog.
+    ///     Persists the shared force-failure warning and best-effort displays the matching dialog.
     /// </summary>
     private async Task ShowForceFailureDialogSafelyAsync()
     {
@@ -267,18 +272,17 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>
-    /// Requests cancellation of the active backup or retention file operation without using the xEdit Stop path.
+    ///     Requests cancellation of the active backup or retention file operation without using the xEdit Stop path.
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanCancelBackupOperation))]
-    private async Task CancelBackupOperationAsync() =>
+    private async Task CancelBackupOperationAsync()
+    {
         await _cleaningSession.ControlAsync(CleaningSessionControl.CancelBackupOperation);
+    }
 
     private void OnStateChanged(AppState state)
     {
-        if (state.IsCleaning && !_wasPreviouslyCleaning)
-        {
-            ResetForNewSession();
-        }
+        if (state.IsCleaning && !_wasPreviouslyCleaning) ResetForNewSession();
 
         _wasPreviouslyCleaning = state.IsCleaning;
 
@@ -293,19 +297,19 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
         BackupOperation = state.BackupOperation is { IsActive: true } operation ? operation : null;
     }
 
-    private bool CanCancelBackupOperation() => BackupOperation is { IsActive: true, CanCancel: true };
+    private bool CanCancelBackupOperation()
+    {
+        return BackupOperation is { IsActive: true, CanCancel: true };
+    }
 
     /// <summary>
-    /// Formats count-only retention progress or byte-aware backup copy progress for the cleaning progress band.
+    ///     Formats count-only retention progress or byte-aware backup copy progress for the cleaning progress band.
     /// </summary>
     /// <param name="operation">The currently active non-xEdit file operation, or null when no file work is active.</param>
     /// <returns>A concise user-facing progress string; empty when no operation is active.</returns>
     private static string FormatBackupOperationProgress(BackupOperationState? operation)
     {
-        if (operation is not { IsActive: true })
-        {
-            return string.Empty;
-        }
+        if (operation is not { IsActive: true }) return string.Empty;
 
         var totalFiles = operation.TotalFiles ?? 0;
         var countText = totalFiles > 0
@@ -349,10 +353,7 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
     {
         if (isHung)
         {
-            if (!_hangWarningDismissed)
-            {
-                IsHangWarningVisible = true;
-            }
+            if (!_hangWarningDismissed) IsHangWarningVisible = true;
         }
         else
         {
@@ -384,15 +385,5 @@ public sealed partial class ProgressViewModel : ViewModelBase, IDisposable
         IsHangWarningVisible = false;
         BackupOperation = null;
         _hangWarningDismissed = false;
-    }
-
-    public void Dispose()
-    {
-        foreach (var sub in _subscriptions)
-        {
-            sub.Dispose();
-        }
-
-        _subscriptions.Clear();
     }
 }

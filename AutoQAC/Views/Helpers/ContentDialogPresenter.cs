@@ -18,10 +18,7 @@ public static class ContentDialogPresenter
         Action<Action<bool>> subscribeCloseRequested,
         Action<Action<bool>> unsubscribeCloseRequested)
     {
-        if (!windowContextProvider.TryGetContext(out _, out var xamlRoot))
-        {
-            return false;
-        }
+        if (!windowContextProvider.TryGetContext(out _, out var xamlRoot)) return false;
 
         await DialogLock.WaitAsync();
         try
@@ -61,10 +58,7 @@ public static class ContentDialogPresenter
         string title,
         FrameworkElement content)
     {
-        if (!windowContextProvider.TryGetContext(out _, out var xamlRoot))
-        {
-            return;
-        }
+        if (!windowContextProvider.TryGetContext(out _, out var xamlRoot)) return;
 
         await DialogLock.WaitAsync();
         try
@@ -91,9 +85,7 @@ public static class ContentDialogPresenter
 
         if (Application.Current.Resources.TryGetValue("DefaultContentDialogStyle", out var style) &&
             style is Style contentDialogStyle)
-        {
             dialog.Style = contentDialogStyle;
-        }
 
         return dialog;
     }

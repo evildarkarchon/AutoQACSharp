@@ -17,9 +17,9 @@ public interface IProcessExecutionService
         string? pluginName = null);
 
     /// <summary>
-    /// Terminate a process with escalation support.
-    /// When forceKill is false: attempts CloseMainWindow with a 2.5s grace period.
-    /// When forceKill is true: immediately kills the entire process tree.
+    ///     Terminate a process with escalation support.
+    ///     When forceKill is false: attempts CloseMainWindow with a 2.5s grace period.
+    ///     When forceKill is true: immediately kills the entire process tree.
     /// </summary>
     Task<TerminationResult> TerminateProcessAsync(
         System.Diagnostics.Process process,
@@ -27,18 +27,18 @@ public interface IProcessExecutionService
         CancellationToken ct = default);
 
     /// <summary>
-    /// Detect and kill orphaned xEdit processes from the PID tracking file.
-    /// Called on startup and before each cleaning run.
+    ///     Detect and kill orphaned xEdit processes from the PID tracking file.
+    ///     Called on startup and before each cleaning run.
     /// </summary>
     Task CleanOrphanedProcessesAsync(CancellationToken ct = default);
 
     /// <summary>
-    /// Write a PID entry to the tracking file after a process starts.
+    ///     Write a PID entry to the tracking file after a process starts.
     /// </summary>
     Task TrackProcessAsync(System.Diagnostics.Process process, string pluginName, CancellationToken ct = default);
 
     /// <summary>
-    /// Remove a PID entry from the tracking file after a process exits.
+    ///     Remove a PID entry from the tracking file after a process exits.
     /// </summary>
     Task UntrackProcessAsync(int pid, CancellationToken ct = default);
 }

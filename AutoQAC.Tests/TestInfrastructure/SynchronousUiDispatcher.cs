@@ -11,7 +11,13 @@ namespace AutoQAC.Tests.TestInfrastructure;
 /// </summary>
 public sealed class SynchronousUiDispatcher : IUiDispatcher
 {
-    public void Post(Action action) => action();
+    public void Post(Action action)
+    {
+        action();
+    }
 
-    public Task InvokeAsync(Func<Task> action) => action();
+    public Task InvokeAsync(Func<Task> action)
+    {
+        return action();
+    }
 }

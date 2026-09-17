@@ -59,9 +59,7 @@ public sealed class PluginResultFinalizer(
                 if (result is { Success: true, Status: CleaningStatus.Cleaned }
                     && logResult.LogLines.Any(outputParser.IsCompletionLine)
                     && logStats is { ItemsRemoved: 0, ItemsUndeleted: 0, ItemsSkipped: 0, PartialFormsCreated: 0 })
-                {
                     finalStatus = CleaningStatus.AlreadyClean;
-                }
             }
 
             // PAR-03: Exception log surfacing (per D-06)

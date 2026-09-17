@@ -301,10 +301,7 @@ public sealed class PluginLoadingServiceTests
         // Assert
         // Result should be null (no game installed) or an actual path (if game is installed)
         // But it should NOT be empty string
-        if (result != null)
-        {
-            result.Should().NotBeEmpty("empty override should be treated as no override");
-        }
+        if (result != null) result.Should().NotBeEmpty("empty override should be treated as no override");
     }
 
     [Theory]
@@ -343,10 +340,7 @@ public sealed class PluginLoadingServiceTests
         }
         finally
         {
-            if (Directory.Exists(tempRoot))
-            {
-                Directory.Delete(tempRoot, recursive: true);
-            }
+            if (Directory.Exists(tempRoot)) Directory.Delete(tempRoot, true);
         }
     }
 
@@ -369,10 +363,7 @@ public sealed class PluginLoadingServiceTests
         }
         finally
         {
-            if (Directory.Exists(tempRoot))
-            {
-                Directory.Delete(tempRoot, recursive: true);
-            }
+            if (Directory.Exists(tempRoot)) Directory.Delete(tempRoot, true);
         }
     }
 

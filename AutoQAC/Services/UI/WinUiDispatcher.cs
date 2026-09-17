@@ -26,10 +26,7 @@ public sealed class WinUiDispatcher(DispatcherQueue? dispatcherQueue = null) : I
     {
         ArgumentNullException.ThrowIfNull(action);
 
-        if (_dispatcherQueue == null || _dispatcherQueue.HasThreadAccess)
-        {
-            return action();
-        }
+        if (_dispatcherQueue == null || _dispatcherQueue.HasThreadAccess) return action();
 
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         if (!_dispatcherQueue.TryEnqueue(() =>
@@ -49,23 +46,15 @@ public sealed class WinUiDispatcher(DispatcherQueue? dispatcherQueue = null) : I
                     completedTask =>
                     {
                         if (completedTask.Exception != null)
-                        {
                             completion.SetException(completedTask.Exception.InnerExceptions);
-                        }
                         else if (completedTask.IsCanceled)
-                        {
                             completion.SetCanceled();
-                        }
                         else
-                        {
                             completion.SetResult();
-                        }
                     },
                     TaskScheduler.Default);
             }))
-        {
             completion.SetException(new InvalidOperationException("Failed to enqueue work on the UI dispatcher."));
-        }
 
         return completion.Task;
     }

@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 namespace AutoQAC.Services.Backup;
 
 /// <summary>
-/// Deletes backup session directories using the local filesystem.
+///     Deletes backup session directories using the local filesystem.
 /// </summary>
 public sealed class DirectoryBackupSessionDeleter : IBackupSessionDeleter
 {
@@ -13,7 +13,7 @@ public sealed class DirectoryBackupSessionDeleter : IBackupSessionDeleter
     public Task DeleteAsync(string sessionDirectory, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        Directory.Delete(sessionDirectory, recursive: true);
+        Directory.Delete(sessionDirectory, true);
         return Task.CompletedTask;
     }
 }

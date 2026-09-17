@@ -26,7 +26,7 @@ public sealed class SkipListPolicyTests
             }
         };
 
-        var result = await sut.EvaluateAsync(GameType.SkyrimSe, plugins, disableSkipLists: true);
+        var result = await sut.EvaluateAsync(GameType.SkyrimSe, plugins, true);
 
         result.Decisions.Should().ContainSingle().Which.Should().Match<SkipListPluginDecision>(decision =>
             !decision.Plugin.IsInSkipList &&
@@ -48,7 +48,7 @@ public sealed class SkipListPolicyTests
         var sut = new SkipListPolicy(configurationService, gameDetectionService);
         var plugins = CreatePlugins("EnderalPatch.esp", "Keep.esp");
 
-        var result = await sut.EvaluateAsync(GameType.SkyrimSe, plugins, disableSkipLists: false);
+        var result = await sut.EvaluateAsync(GameType.SkyrimSe, plugins, false);
 
         result.Variant.Should().Be(GameVariant.Enderal);
         result.Decisions.Should().Contain(decision =>
@@ -73,7 +73,7 @@ public sealed class SkipListPolicyTests
         var sut = new SkipListPolicy(configurationService, gameDetectionService);
         var plugins = CreatePlugins("Fallout3CarriedForward.esm", "Keep.esp");
 
-        var result = await sut.EvaluateAsync(GameType.FalloutNewVegas, plugins, disableSkipLists: false);
+        var result = await sut.EvaluateAsync(GameType.FalloutNewVegas, plugins, false);
 
         result.Variant.Should().Be(GameVariant.Ttw);
         result.Decisions.Should().Contain(decision =>
@@ -94,7 +94,7 @@ public sealed class SkipListPolicyTests
         var sut = new SkipListPolicy(configurationService, gameDetectionService);
         var plugins = CreatePlugins("UniversalPlugin.esp");
 
-        var result = await sut.EvaluateAsync(GameType.Fallout4, plugins, disableSkipLists: false);
+        var result = await sut.EvaluateAsync(GameType.Fallout4, plugins, false);
 
         result.Decisions.Should().ContainSingle().Which.Should().Match<SkipListPluginDecision>(decision =>
             decision.Plugin.IsInSkipList && decision.ShouldSkipByPolicy);
@@ -108,11 +108,13 @@ public sealed class SkipListPolicyTests
         return gameDetectionService;
     }
 
-    private static IReadOnlyList<PluginInfo> CreatePlugins(params string[] fileNames) =>
-        fileNames.Select(fileName => new PluginInfo
+    private static IReadOnlyList<PluginInfo> CreatePlugins(params string[] fileNames)
+    {
+        return fileNames.Select(fileName => new PluginInfo
         {
             FileName = fileName,
             FullPath = $@"C:\Game\Data\{fileName}",
             DetectedGameType = GameType.Unknown
         }).ToList();
+    }
 }

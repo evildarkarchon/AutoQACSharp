@@ -31,10 +31,14 @@ public sealed class LogRetentionServiceTests : IDisposable
     public void Dispose()
     {
         if (Directory.Exists(_testRoot))
-        {
-            try { Directory.Delete(_testRoot, recursive: true); }
-            catch { /* Best-effort cleanup */ }
-        }
+            try
+            {
+                Directory.Delete(_testRoot, true);
+            }
+            catch
+            {
+                /* Best-effort cleanup */
+            }
     }
 
     private string LogsDir => Path.Combine(_testRoot, "logs");
@@ -71,7 +75,7 @@ public sealed class LogRetentionServiceTests : IDisposable
         // Arrange
         var logsPath = LogsDir;
         if (Directory.Exists(logsPath))
-            Directory.Delete(logsPath, recursive: true);
+            Directory.Delete(logsPath, true);
 
         SetupConfig(RetentionMode.AgeBased);
 
@@ -91,7 +95,7 @@ public sealed class LogRetentionServiceTests : IDisposable
     public async Task CleanupAsync_AgeBased_DeletesOldFiles()
     {
         // Arrange
-        SetupConfig(RetentionMode.AgeBased, maxAgeDays: 7);
+        SetupConfig(RetentionMode.AgeBased, 7);
 
         var now = DateTime.UtcNow;
         // Recent file (1 day old) -- should be kept
@@ -124,7 +128,7 @@ public sealed class LogRetentionServiceTests : IDisposable
 
         var now = DateTime.UtcNow;
         // Create 6 files with varying dates (newest first in naming for clarity)
-        CreateLogFile("autoqac-f1.log", now);           // #1 newest (active, always kept)
+        CreateLogFile("autoqac-f1.log", now); // #1 newest (active, always kept)
         CreateLogFile("autoqac-f2.log", now.AddHours(-1)); // #2 kept (within count)
         CreateLogFile("autoqac-f3.log", now.AddHours(-2)); // #3 kept (within count)
         CreateLogFile("autoqac-f4.log", now.AddHours(-3)); // #4 should be deleted
@@ -172,7 +176,7 @@ public sealed class LogRetentionServiceTests : IDisposable
     public async Task CleanupAsync_AlwaysKeepsNewestFile()
     {
         // Arrange -- 2 files, both older than retention cutoff
-        SetupConfig(RetentionMode.AgeBased, maxAgeDays: 1);
+        SetupConfig(RetentionMode.AgeBased, 1);
 
         var now = DateTime.UtcNow;
         var newer = CreateLogFile("autoqac-newer.log", now.AddDays(-5));
@@ -194,7 +198,7 @@ public sealed class LogRetentionServiceTests : IDisposable
     public async Task CleanupAsync_SingleFile_DoesNothing()
     {
         // Arrange
-        SetupConfig(RetentionMode.AgeBased, maxAgeDays: 1);
+        SetupConfig(RetentionMode.AgeBased, 1);
         CreateLogFile("autoqac-only.log", DateTime.UtcNow.AddDays(-30));
 
         // Act

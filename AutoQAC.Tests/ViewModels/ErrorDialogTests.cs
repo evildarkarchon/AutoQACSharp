@@ -37,6 +37,14 @@ public sealed class ErrorDialogTests
     public ErrorDialogTests()
     {
         _configServiceMock = Substitute.For<IConfigurationService>();
+        _configServiceMock.FlushPendingSavesAsync(Arg.Any<CancellationToken>()).Returns(
+            new ConfigPersistenceResult(ConfigPersistenceStatusKind.Success, ConfigPersistenceOperationKind.Flush, 1, null));
+        _configServiceMock.SaveUserConfigAsync(Arg.Any<UserConfiguration>(), Arg.Any<CancellationToken>()).Returns(call =>
+        {
+            var saved = call.Arg<UserConfiguration>().Copy();
+            _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>()).Returns(_ => saved.Copy());
+            return Task.CompletedTask;
+        });
         _stateServiceMock = Substitute.For<IStateService>();
         _cleaningSessionMock = Substitute.For<ICleaningSession>();
         _loggerMock = Substitute.For<ILoggingService>();
@@ -58,7 +66,13 @@ public sealed class ErrorDialogTests
         _configServiceMock.SkipListChanged
             .Returns(Observable.Never<GameType>());
         _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>())
-            .Returns(new UserConfiguration { LoadOrder = new(), XEdit = new(), ModOrganizer = new(), Settings = new() });
+            .Returns(new UserConfiguration
+            {
+                LoadOrder = new LoadOrderConfig(),
+                XEdit = new XEditConfig(),
+                ModOrganizer = new ModOrganizerConfig(),
+                Settings = new AutoQacSettings()
+            });
         _configServiceMock.GetSkipListAsync(
                 Arg.Any<GameType>(),
                 Arg.Any<GameVariant>(),
@@ -69,26 +83,31 @@ public sealed class ErrorDialogTests
     private IPluginRefreshModule CreateRefreshModule()
     {
         var refreshModule = new RecordingPluginRefreshModule();
-        refreshModule.PublicationHandler = _ => Task.FromResult(CreatePublicationFromState(_stateServiceMock.CurrentState));
+        refreshModule.PublicationHandler =
+            _ => Task.FromResult(CreatePublicationFromState(_stateServiceMock.CurrentState));
         return refreshModule;
     }
 
-    private ICleaningCommandReadiness CreateReadiness(IPluginRefreshModule refreshModule) =>
-        new CleaningCommandReadiness(refreshModule, _stateServiceMock);
+    private ICleaningCommandReadiness CreateReadiness(IPluginRefreshModule refreshModule)
+    {
+        return new CleaningCommandReadiness(refreshModule, _stateServiceMock);
+    }
 
-    private IDiscoverySettingsModule CreateDiscoverySettingsModule(IPluginRefreshModule refreshModule) =>
-        new DiscoverySettingsModule(_configServiceMock, _stateServiceMock, refreshModule);
+    private IDiscoverySettingsModule CreateDiscoverySettingsModule(IPluginRefreshModule refreshModule)
+    {
+        return new DiscoverySettingsModule(_configServiceMock, _stateServiceMock, refreshModule);
+    }
 
     private static PluginRefreshPublication CreatePublicationFromState(AppState state)
     {
         var gameType = state.CurrentGameType == GameType.Unknown ? GameType.SkyrimSe : state.CurrentGameType;
         var configuration = RecordingPluginRefreshModule.CreateConfiguration(
-            loadOrderPath: state.LoadOrderPath,
-            xEditPath: state.XEditExecutablePath,
-            mo2Path: state.Mo2ExecutablePath,
-            mo2ModeEnabled: state.Mo2ModeEnabled,
-            mo2InstancePath: state.Mo2ModeEnabled ? Path.GetTempPath() : null,
-            selectedProfile: state.Mo2Profile);
+            state.LoadOrderPath,
+            state.XEditExecutablePath,
+            state.Mo2ExecutablePath,
+            state.Mo2ModeEnabled,
+            state.Mo2ModeEnabled ? Path.GetTempPath() : null,
+            state.Mo2Profile);
         var mode = state.Mo2ModeEnabled
             ? PluginRefreshDiscoveryMode.Mo2LoadOrderFile
             : gameType is GameType.Fallout3 or GameType.FalloutNewVegas or GameType.Oblivion
@@ -98,14 +117,14 @@ public sealed class ErrorDialogTests
             gameType,
             mode,
             configuration,
-            loadOrderPath: mode == PluginRefreshDiscoveryMode.DirectLoadOrderFile ? state.LoadOrderPath : null,
-            mo2LoadOrderPath: state.Mo2ModeEnabled ? state.LoadOrderPath : null);
+            mode == PluginRefreshDiscoveryMode.DirectLoadOrderFile ? state.LoadOrderPath : null,
+            state.Mo2ModeEnabled ? state.LoadOrderPath : null);
         var rows = state.PluginsToClean
             .Select(plugin => RecordingPluginRefreshModule.CreatePublishedRow(
                 plugin,
-                isVisible: !plugin.IsInSkipList,
-                isSelected: !state.ExcludedPluginPaths.Contains(plugin.FullPath),
-                isSkippedByPolicy: plugin.IsInSkipList))
+                !plugin.IsInSkipList,
+                !state.ExcludedPluginPaths.Contains(plugin.FullPath),
+                plugin.IsInSkipList))
             .ToList();
         var snapshot = RecordingPluginRefreshModule.CreateSnapshot(gameType, configuration: configuration);
         return RecordingPluginRefreshModule.CreatePublication(
@@ -191,7 +210,8 @@ public sealed class ErrorDialogTests
             "should show xEdit not configured error");
 
         // No modal dialog should be shown
-        await _messageDialogMock.DidNotReceive().ShowErrorAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>());
+        await _messageDialogMock.DidNotReceive()
+            .ShowErrorAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>());
 
         // Orchestrator should NOT be called
         await _cleaningSessionMock.DidNotReceive().StartAsync(Arg.Any<CancellationToken>());
@@ -296,7 +316,8 @@ public sealed class ErrorDialogTests
         vm.Commands.ValidationErrors.Should().Contain(e => e.Title == "xEdit not found",
             "should show xEdit not found error");
         var error = vm.Commands.ValidationErrors.Single(e => e.Title == "xEdit not found");
-        error.Message.Should().Be("xEdit Path (SSEEdit.exe) is missing. Choose the correct xEdit executable in Settings.");
+        error.Message.Should()
+            .Be("xEdit Path (SSEEdit.exe) is missing. Choose the correct xEdit executable in Settings.");
         AssertValidationErrorDoesNotContainFullPath(error, @"C:\Users\Alice");
     }
 
@@ -338,7 +359,8 @@ public sealed class ErrorDialogTests
 
         // Assert
         var error = vm.Commands.ValidationErrors.Single(e => e.Title == "xEdit not found");
-        error.Message.Should().Be("xEdit Path (xEdit executable) is missing. Choose the correct xEdit executable in Settings.");
+        error.Message.Should()
+            .Be("xEdit Path (xEdit executable) is missing. Choose the correct xEdit executable in Settings.");
         AssertValidationErrorDoesNotContainFullPath(error, @"C:\Users\Alice");
     }
 
@@ -394,10 +416,7 @@ public sealed class ErrorDialogTests
         }
         finally
         {
-            if (File.Exists(tempFile))
-            {
-                File.Delete(tempFile);
-            }
+            if (File.Exists(tempFile)) File.Delete(tempFile);
         }
     }
 
@@ -419,9 +438,9 @@ public sealed class ErrorDialogTests
 
         // Assert
         await _messageDialogMock.Received(1).ShowErrorAsync(
-                "File Not Found",
-                Arg.Any<string>(),
-                Arg.Any<string?>());
+            "File Not Found",
+            Arg.Any<string>(),
+            Arg.Any<string?>());
     }
 
     [Fact]
@@ -432,10 +451,13 @@ public sealed class ErrorDialogTests
         try
         {
             using var refreshModule = new RecordingPluginRefreshModule();
-            refreshModule.ExecuteHandler = (_, _) => Task.FromResult(
-                RecordingPluginRefreshModule.CreateSnapshot(
-                    gameType: GameType.FalloutNewVegas,
-                    statusText: "No plugins found in the selected load order."));
+            refreshModule.ExecuteHandler = (_, _) =>
+            {
+                var snapshot = RecordingPluginRefreshModule.CreateSnapshot(
+                    GameType.FalloutNewVegas, statusText: "No plugins found in the selected load order.");
+                refreshModule.Publish(snapshot);
+                return Task.FromResult(snapshot);
+            };
             var vm = CreateViewModel(refreshModule);
 
             _fileDialogMock.OpenFileDialogAsync(
@@ -445,10 +467,17 @@ public sealed class ErrorDialogTests
                 .Returns(tempFile);
 
             _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>())
-                .Returns(new UserConfiguration { LoadOrder = new(), XEdit = new(), ModOrganizer = new(), Settings = new() });
+                .Returns(new UserConfiguration
+                {
+                    LoadOrder = new LoadOrderConfig(),
+                    XEdit = new XEditConfig(),
+                    ModOrganizer = new ModOrganizerConfig(),
+                    Settings = new AutoQacSettings()
+                });
 
             // Return empty list from the coordinator-backed load-order path.
-            _pluginLoadingServiceMock.GetPluginsFromFileAsync(tempFile, Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            _pluginLoadingServiceMock
+                .GetPluginsFromFileAsync(tempFile, Arg.Any<string?>(), Arg.Any<CancellationToken>())
                 .Returns(new List<PluginInfo>());
             vm.Configuration.SelectedGame = GameType.FalloutNewVegas;
 
@@ -483,18 +512,20 @@ public sealed class ErrorDialogTests
                 .Returns(tempFile);
 
             // Throw IOException from the coordinator-backed load-order path.
-            _pluginLoadingServiceMock.GetPluginsFromFileAsync(tempFile, Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            _pluginLoadingServiceMock
+                .GetPluginsFromFileAsync(tempFile, Arg.Any<string?>(), Arg.Any<CancellationToken>())
                 .ThrowsAsync(new IOException("File in use"));
             vm.Configuration.SelectedGame = GameType.FalloutNewVegas;
+            _messageDialogMock.ClearReceivedCalls();
 
             // Act
             await vm.Configuration.ConfigureLoadOrderCommand.ExecuteAsync(null);
 
             // Assert
             await _messageDialogMock.Received(1).ShowErrorAsync(
-                    "Read Error",
-                    Arg.Any<string>(),
-                    Arg.Any<string?>());
+                "Plugin Refresh Failed",
+                Arg.Is<string>(message => message.Contains("saved") && !message.Contains("File in use")),
+                Arg.Any<string?>());
         }
         finally
         {
@@ -515,7 +546,8 @@ public sealed class ErrorDialogTests
         try
         {
             var vm = CreateViewModelWithValidState(tempFile);
-            using var _ = vm.ShowProgressInteraction.RegisterHandler(_ => Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
+            using var _ = vm.ShowProgressInteraction.RegisterHandler(_ =>
+                Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
             vm.Configuration.XEditPath = tempFile;
 
             _cleaningSessionMock.StartAsync(Arg.Any<CancellationToken>())
@@ -531,7 +563,8 @@ public sealed class ErrorDialogTests
             vm.Commands.StatusText.Should().Contain("error");
 
             // No modal dialog should be shown
-            await _messageDialogMock.DidNotReceive().ShowErrorAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>());
+            await _messageDialogMock.DidNotReceive()
+                .ShowErrorAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>());
         }
         finally
         {
@@ -548,7 +581,8 @@ public sealed class ErrorDialogTests
         try
         {
             var vm = CreateViewModelWithValidState(tempFile);
-            using var _ = vm.ShowProgressInteraction.RegisterHandler(_ => Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
+            using var _ = vm.ShowProgressInteraction.RegisterHandler(_ =>
+                Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
             vm.Configuration.XEditPath = tempFile;
 
             _cleaningSessionMock.StartAsync(Arg.Any<CancellationToken>())
@@ -559,9 +593,9 @@ public sealed class ErrorDialogTests
 
             // Assert - generic exceptions still use modal dialog (truly unexpected)
             await _messageDialogMock.Received(1).ShowErrorAsync(
-                    "Cleaning Failed",
-                    Arg.Any<string>(),
-                    Arg.Any<string?>());
+                "Cleaning Failed",
+                Arg.Any<string>(),
+                Arg.Any<string?>());
         }
         finally
         {
@@ -614,7 +648,8 @@ public sealed class ErrorDialogTests
 
             // Assert
             var error = vm.Commands.ValidationErrors.Single(e => e.Title == "Load order not found");
-            error.Message.Should().Be("Load Order File (plugins.txt) is missing. Choose the current plugins.txt or loadorder.txt file.");
+            error.Message.Should()
+                .Be("Load Order File (plugins.txt) is missing. Choose the current plugins.txt or loadorder.txt file.");
             AssertValidationErrorDoesNotContainFullPath(error, @"C:\Users\Alice");
         }
         finally
@@ -666,7 +701,8 @@ public sealed class ErrorDialogTests
             await vm.Commands.StartCleaningCommand.ExecuteAsync(null);
 
             // Assert
-            vm.Commands.ValidationErrors.Should().NotContain(e => e.Title.StartsWith("Load order", StringComparison.Ordinal));
+            vm.Commands.ValidationErrors.Should()
+                .NotContain(e => e.Title.StartsWith("Load order", StringComparison.Ordinal));
         }
         finally
         {
@@ -717,7 +753,8 @@ public sealed class ErrorDialogTests
 
             // Assert
             var error = vm.Commands.ValidationErrors.Single(e => e.Title == "MO2 not found");
-            error.Message.Should().Be("MO2 Path (ModOrganizer.exe) is missing. Choose ModOrganizer.exe or disable MO2 Mode.");
+            error.Message.Should()
+                .Be("MO2 Path (ModOrganizer.exe) is missing. Choose ModOrganizer.exe or disable MO2 Mode.");
             AssertValidationErrorDoesNotContainFullPath(error, @"C:\Users\Alice");
         }
         finally
@@ -771,7 +808,8 @@ public sealed class ErrorDialogTests
             // Assert
             var error = vm.Commands.ValidationErrors.Should().ContainSingle().Subject;
             error.Title.Should().Be("MO2 not found");
-            error.Message.Should().Be("MO2 Path (ModOrganizer.exe) is missing. Choose ModOrganizer.exe or disable MO2 Mode.");
+            error.Message.Should()
+                .Be("MO2 Path (ModOrganizer.exe) is missing. Choose ModOrganizer.exe or disable MO2 Mode.");
             AssertValidationErrorDoesNotContainFullPath(error, @"C:\Users\Alice");
             await _cleaningSessionMock.DidNotReceive().StartAsync(Arg.Any<CancellationToken>());
         }
@@ -789,9 +827,11 @@ public sealed class ErrorDialogTests
         var tempFile = Path.GetTempFileName();
         try
         {
-            var unsafeSentinel = @"C:\Users\Alice\Tools\SSEEdit.exe -QAC System.InvalidOperationException: boom at AutoQAC.Services.Cleaning Stack Trace";
+            var unsafeSentinel =
+                @"C:\Users\Alice\Tools\SSEEdit.exe -QAC System.InvalidOperationException: boom at AutoQAC.Services.Cleaning Stack Trace";
             var vm = CreateViewModelWithValidState(tempFile);
-            using var _ = vm.ShowProgressInteraction.RegisterHandler(_ => Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
+            using var _ = vm.ShowProgressInteraction.RegisterHandler(_ =>
+                Task.FromResult(default(AutoQAC.Services.UI.Interactions.Unit)));
             vm.Configuration.XEditPath = tempFile;
 
             _cleaningSessionMock.StartAsync(Arg.Any<CancellationToken>())
@@ -828,7 +868,8 @@ public sealed class ErrorDialogTests
         var tempFile = Path.GetTempFileName();
         try
         {
-            var unsafeSentinel = @"C:\Users\Alice\Tools\SSEEdit.exe -QAC System.InvalidOperationException: boom at AutoQAC.Services.Cleaning Stack Trace";
+            var unsafeSentinel =
+                @"C:\Users\Alice\Tools\SSEEdit.exe -QAC System.InvalidOperationException: boom at AutoQAC.Services.Cleaning Stack Trace";
             var vm = CreateViewModelWithValidState(tempFile);
             vm.Configuration.XEditPath = tempFile;
 
@@ -859,7 +900,8 @@ public sealed class ErrorDialogTests
         }
     }
 
-    private static void AssertDoesNotContainUnsafeDiagnosticDetails(IEnumerable<string?> userVisibleTexts, string unsafeSentinel)
+    private static void AssertDoesNotContainUnsafeDiagnosticDetails(IEnumerable<string?> userVisibleTexts,
+        string unsafeSentinel)
     {
         var forbiddenFragments = new[]
         {
@@ -872,12 +914,8 @@ public sealed class ErrorDialogTests
         };
 
         foreach (var text in userVisibleTexts)
-        {
             foreach (var fragment in forbiddenFragments)
-            {
                 text.Should().NotContain(fragment);
-            }
-        }
     }
 
     private static void AssertValidationErrorDoesNotContainFullPath(ValidationError error, string forbiddenPathPrefix)
@@ -886,10 +924,10 @@ public sealed class ErrorDialogTests
         foreach (var text in userVisibleTexts)
         {
             text.Should().NotContain(forbiddenPathPrefix);
-            text.Should().NotContain("latest AutoQAC log", "simple missing-path validation should give direct fix guidance only");
+            text.Should().NotContain("latest AutoQAC log",
+                "simple missing-path validation should give direct fix guidance only");
         }
     }
 
     #endregion
-
 }

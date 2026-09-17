@@ -11,21 +11,172 @@ namespace AutoQAC.Tests.Services.Configuration;
 
 public sealed class DiscoverySettingsModuleTests
 {
+    /// <summary>A queued in-memory save must not be mistaken for durable acceptance.</summary>
+    [Fact]
+    public async Task ExecuteAsync_WhenDiskWriteFails_DoesNotAcceptOrRefresh()
+    {
+        var config = CreateConfiguration();
+        config.LoadUserConfigAsync(Arg.Any<CancellationToken>()).Returns(new UserConfiguration());
+        config.FlushPendingSavesAsync(Arg.Any<CancellationToken>()).Returns(new ConfigPersistenceResult(
+            ConfigPersistenceStatusKind.Failed, ConfigPersistenceOperationKind.Flush, 1,
+            new ConfigPersistenceFailure(ConfigPersistenceOperationKind.Flush,
+                ConfigPersistenceFailureKind.WriteFailed, "Could not save settings.", null, 1)));
+        using var state = new StateService();
+        using var refresh = new RecordingPluginRefreshModule();
+        using var sut = new DiscoverySettingsModule(config, state, refresh);
+
+        var result = await sut.ExecuteAsync(new DiscoverySettingsIntent.SetMo2Mode(true));
+
+        result.Status.ToString().Should().Be("SaveFailed");
+        refresh.Intents.OfType<PluginRefreshIntent.RefreshGame>().Should().BeEmpty();
+    }
+
+    /// <summary>Programmatic callers receive the same cleaning exclusion as the UI.</summary>
+    [Fact]
+    public async Task ExecuteAsync_DuringCleaning_RejectsWithoutSaving()
+    {
+        var config = CreateConfiguration();
+        config.LoadUserConfigAsync(Arg.Any<CancellationToken>()).Returns(new UserConfiguration());
+        using var state = new StateService();
+        state.UpdateState(s => s with { IsCleaning = true });
+        using var refresh = new RecordingPluginRefreshModule();
+        using var sut = new DiscoverySettingsModule(config, state, refresh);
+
+        var result = await sut.ExecuteAsync(new DiscoverySettingsIntent.SetMo2Mode(true));
+
+        result.Status.Should().Be(DiscoverySettingsChangeStatus.Rejected);
+        await config.DidNotReceive().SaveUserConfigAsync(Arg.Any<UserConfiguration>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>A cleaning reservation that drains an admitted save must prevent its follow-up refresh from launching.</summary>
+    [Fact]
+    public async Task ExecuteAsync_CleaningReservedDuringSave_DoesNotLaunchRefresh()
+    {
+        var config = CreateConfiguration();
+        var active = new UserConfiguration { SelectedGame = nameof(GameType.SkyrimSe) };
+        var saveStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var continueSave = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        config.LoadUserConfigAsync(Arg.Any<CancellationToken>()).Returns(_ => active.Copy());
+        config.SaveUserConfigAsync(Arg.Any<UserConfiguration>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                saveStarted.TrySetResult();
+                await continueSave.Task;
+                active = call.Arg<UserConfiguration>()!.Copy();
+            });
+        using var state = new StateService();
+        using var refresh = new RecordingPluginRefreshModule();
+        var refreshLaunches = 0;
+        refresh.RefreshForSettingsHandler = async (_, cancellationToken) =>
+        {
+            Interlocked.Increment(ref refreshLaunches);
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                throw new InvalidOperationException("An infinite refresh unexpectedly completed without cancellation.");
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return new PluginRefreshCompletion(PluginRefreshCompletionStatus.Canceled);
+            }
+        };
+        var admission = new DiscoverySettingsAdmission();
+        using var sut = new DiscoverySettingsModule(config, state, refresh, admission);
+        using var changeCancellation = new CancellationTokenSource();
+        var change = sut.ExecuteAsync(new DiscoverySettingsIntent.SetMo2Mode(true), changeCancellation.Token);
+        await saveStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var cleaning = admission.EnterCleaningAsync();
+        cleaning.IsCompleted.Should().BeFalse();
+
+        continueSave.TrySetResult();
+        var cleaningLease = await cleaning.WaitAsync(TimeSpan.FromSeconds(5));
+        try
+        {
+            Volatile.Read(ref refreshLaunches).Should().Be(0,
+                "a cleaning reservation must prevent a settings refresh from launching after the save drains");
+        }
+        finally
+        {
+            changeCancellation.Cancel();
+            cleaningLease.Dispose();
+            await change.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+    }
+
+    /// <summary>Cleaning admission must wait for a just-launched settings refresh to finish cancellation cleanup.</summary>
+    [Fact]
+    public async Task ExecuteAsync_CleaningReservedDuringRefreshLaunch_WaitsForCanceledRefreshToUnwind()
+    {
+        var config = CreateConfiguration();
+        var active = new UserConfiguration { SelectedGame = nameof(GameType.SkyrimSe) };
+        config.LoadUserConfigAsync(Arg.Any<CancellationToken>()).Returns(_ => active.Copy());
+        config.SaveUserConfigAsync(Arg.Any<UserConfiguration>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                active = call.Arg<UserConfiguration>()!.Copy();
+                return Task.CompletedTask;
+            });
+        using var state = new StateService();
+        using var refresh = new RecordingPluginRefreshModule();
+        var admission = new DiscoverySettingsAdmission();
+        var refreshLaunched = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cancellationObserved = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var allowRefreshToUnwind = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Task<IDisposable>? cleaning = null;
+        refresh.RefreshForSettingsHandler = async (_, cancellationToken) =>
+        {
+            cleaning = admission.EnterCleaningAsync();
+            refreshLaunched.TrySetResult();
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                throw new InvalidOperationException("An infinite refresh unexpectedly completed without cancellation.");
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                cancellationObserved.TrySetResult();
+            }
+
+            await allowRefreshToUnwind.Task;
+            return new PluginRefreshCompletion(PluginRefreshCompletionStatus.Canceled);
+        };
+        using var sut = new DiscoverySettingsModule(config, state, refresh, admission);
+        var change = sut.ExecuteAsync(new DiscoverySettingsIntent.SetMo2Mode(true));
+
+        await refreshLaunched.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await cancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        cleaning.Should().NotBeNull();
+
+        try
+        {
+            var firstCompletion = await Task.WhenAny(cleaning!, Task.Delay(TimeSpan.FromSeconds(1)));
+            firstCompletion.Should().NotBeSameAs(cleaning,
+                "Cleaning admission must not complete while the canceled settings refresh is still unwinding");
+        }
+        finally
+        {
+            allowRefreshToUnwind.TrySetResult();
+            using var cleaningLease = await cleaning!.WaitAsync(TimeSpan.FromSeconds(5));
+            var result = await change.WaitAsync(TimeSpan.FromSeconds(5));
+            result.Status.Should().Be(DiscoverySettingsChangeStatus.Canceled);
+        }
+    }
+
     [Fact]
     public async Task ExecuteAsync_SelectGame_ShouldPersistSelectedGameAndRefreshPlugins()
     {
-        var config = Substitute.For<IConfigurationService>();
+        var config = CreateConfiguration();
         using var state = new StateService();
         using var refresh = new RecordingPluginRefreshModule();
         var expectedSnapshot = RecordingPluginRefreshModule.CreateSnapshot(
             GameType.SkyrimSe,
             statusText: "Loaded SkyrimSe");
         refresh.ExecuteHandler = (_, _) => Task.FromResult(expectedSnapshot);
-        var sut = new DiscoverySettingsModule(config, state, refresh);
+        using var sut = new DiscoverySettingsModule(config, state, refresh);
 
         var result = await sut.ExecuteAsync(new DiscoverySettingsIntent.SelectGame(GameType.SkyrimSe));
 
-        await config.Received(1).SetSelectedGameAsync(GameType.SkyrimSe, Arg.Any<CancellationToken>());
+        (await config.LoadUserConfigAsync()).SelectedGame.Should().Be(nameof(GameType.SkyrimSe));
         refresh.Intents.Should().ContainSingle()
             .Which.Should().Be(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
         result.Status.Should().Be(DiscoverySettingsChangeStatus.Accepted);
@@ -35,18 +186,16 @@ public sealed class DiscoverySettingsModuleTests
     [Fact]
     public async Task ExecuteAsync_SetMo2Mode_ShouldPersistSettingAndRefreshCurrentGame()
     {
-        var config = Substitute.For<IConfigurationService>();
+        var config = CreateConfiguration();
         using var state = new StateService();
         state.UpdateState(current => current with { CurrentGameType = GameType.Fallout4 });
         using var refresh = new RecordingPluginRefreshModule();
-        var userConfig = new UserConfiguration();
+        var userConfig = new UserConfiguration { SelectedGame = nameof(GameType.Fallout4) };
         UserConfiguration? savedConfig = null;
-        config.LoadUserConfigAsync(Arg.Any<CancellationToken>()).Returns(userConfig);
-        config.SaveUserConfigAsync(
-                Arg.Do<UserConfiguration>(value => savedConfig = value.Copy()),
-                Arg.Any<CancellationToken>())
-            .Returns(Task.CompletedTask);
-        var sut = new DiscoverySettingsModule(config, state, refresh);
+        await config.SaveUserConfigAsync(userConfig);
+        config.When(c => c.SaveUserConfigAsync(Arg.Any<UserConfiguration>(), Arg.Any<CancellationToken>()))
+            .Do(call => savedConfig = call.Arg<UserConfiguration>().Copy());
+        using var sut = new DiscoverySettingsModule(config, state, refresh);
 
         var result = await sut.ExecuteAsync(new DiscoverySettingsIntent.SetMo2Mode(true));
 
@@ -58,27 +207,28 @@ public sealed class DiscoverySettingsModuleTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_SetLoadOrderPath_ShouldRefreshWithSelectedPathBeforePersistingOverride()
+    public async Task ExecuteAsync_SetLoadOrderPath_ShouldPersistAndFlushBeforeDiscovery()
     {
         var loadOrderPath = Path.Combine(Path.GetTempPath(), $"AutoQAC-{Guid.NewGuid():N}.txt");
         await File.WriteAllTextAsync(loadOrderPath, string.Empty);
-        var config = Substitute.For<IConfigurationService>();
+        var config = CreateConfiguration();
+        await config.SaveUserConfigAsync(new UserConfiguration { SelectedGame = nameof(GameType.FalloutNewVegas) });
         using var state = new StateService();
         using var refresh = new RecordingPluginRefreshModule();
         var order = new List<string>();
         refresh.ExecuteHandler = (intent, _) =>
         {
-            intent.Should().Be(new PluginRefreshIntent.RefreshGame(GameType.FalloutNewVegas, loadOrderPath));
+            intent.Should().Be(new PluginRefreshIntent.RefreshGame(GameType.FalloutNewVegas));
             order.Add("refresh");
             return Task.FromResult(refresh.CurrentSnapshot);
         };
-        config.SetGameLoadOrderOverrideAsync(GameType.FalloutNewVegas, loadOrderPath, Arg.Any<CancellationToken>())
+        config.FlushPendingSavesAsync(Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 order.Add("persist");
-                return Task.CompletedTask;
+                return Task.FromResult(new ConfigPersistenceResult(ConfigPersistenceStatusKind.Success, ConfigPersistenceOperationKind.Flush, 1, null));
             });
-        var sut = new DiscoverySettingsModule(config, state, refresh);
+        using var sut = new DiscoverySettingsModule(config, state, refresh);
 
         try
         {
@@ -86,7 +236,7 @@ public sealed class DiscoverySettingsModuleTests
                 new DiscoverySettingsIntent.SetLoadOrderPath(GameType.FalloutNewVegas, loadOrderPath));
 
             result.Status.Should().Be(DiscoverySettingsChangeStatus.Accepted);
-            order.Should().Equal("refresh", "persist");
+            order.Should().Equal("persist", "refresh");
         }
         finally
         {
@@ -98,10 +248,10 @@ public sealed class DiscoverySettingsModuleTests
     public async Task ExecuteAsync_SetLoadOrderPath_WhenFileMissing_ShouldRejectWithoutSavingOrRefreshing()
     {
         var missingPath = Path.Combine(Path.GetTempPath(), $"AutoQAC-missing-{Guid.NewGuid():N}.txt");
-        var config = Substitute.For<IConfigurationService>();
+        var config = CreateConfiguration();
         using var state = new StateService();
         using var refresh = new RecordingPluginRefreshModule();
-        var sut = new DiscoverySettingsModule(config, state, refresh);
+        using var sut = new DiscoverySettingsModule(config, state, refresh);
 
         var result = await sut.ExecuteAsync(
             new DiscoverySettingsIntent.SetLoadOrderPath(GameType.FalloutNewVegas, missingPath));
@@ -118,14 +268,14 @@ public sealed class DiscoverySettingsModuleTests
     [Fact]
     public async Task ExecuteAsync_Reset_ShouldCancelActiveRefreshResetConfigClearStateAndPublishNoGame()
     {
-        var config = Substitute.For<IConfigurationService>();
+        var config = CreateConfiguration();
         var defaultConfig = new UserConfiguration
         {
             ModOrganizer = new ModOrganizerConfig { Binary = "default-mo2.exe" },
             XEdit = new XEditConfig { Binary = "default-xedit.exe" },
             Settings = new AutoQacSettings { Mo2Mode = false, CleaningTimeout = 300 }
         };
-        config.LoadUserConfigAsync(Arg.Any<CancellationToken>()).Returns(defaultConfig);
+        await config.SaveUserConfigAsync(defaultConfig);
         using var state = new StateService();
         state.UpdateState(current => current with
         {
@@ -141,17 +291,28 @@ public sealed class DiscoverySettingsModuleTests
             ]
         });
         using var refresh = new RecordingPluginRefreshModule();
-        var sut = new DiscoverySettingsModule(config, state, refresh);
+        using var sut = new DiscoverySettingsModule(config, state, refresh);
 
         var result = await sut.ExecuteAsync(new DiscoverySettingsIntent.Reset());
 
-        await config.Received(1).ResetToDefaultsAsync(Arg.Any<CancellationToken>());
+        (await config.LoadUserConfigAsync()).SelectedGame.Should().Be("Unknown");
         refresh.Intents.Should().Equal(
-            new PluginRefreshIntent.Cancel(PluginRefreshCancelReason.Reset),
             new PluginRefreshIntent.RefreshGame(GameType.Unknown));
         state.CurrentState.PluginsToClean.Should().BeEmpty();
-        state.CurrentState.Mo2ExecutablePath.Should().Be(defaultConfig.ModOrganizer.Binary);
-        state.CurrentState.XEditExecutablePath.Should().Be(defaultConfig.XEdit.Binary);
+        state.CurrentState.Mo2ExecutablePath.Should().BeNull();
+        state.CurrentState.XEditExecutablePath.Should().BeNull();
         result.Status.Should().Be(DiscoverySettingsChangeStatus.Accepted);
+    }
+    /// <summary>Models the latest active values and a successful disk barrier without mocking mutation behavior.</summary>
+    private static IConfigurationService CreateConfiguration()
+    {
+        var config = Substitute.For<IConfigurationService>();
+        var active = new UserConfiguration();
+        config.LoadUserConfigAsync(Arg.Any<CancellationToken>()).Returns(_ => active.Copy());
+        config.SaveUserConfigAsync(Arg.Any<UserConfiguration>(), Arg.Any<CancellationToken>())
+            .Returns(call => { active = call.Arg<UserConfiguration>().Copy(); return Task.CompletedTask; });
+        config.FlushPendingSavesAsync(Arg.Any<CancellationToken>()).Returns(new ConfigPersistenceResult(
+            ConfigPersistenceStatusKind.Success, ConfigPersistenceOperationKind.Flush, 1, null));
+        return config;
     }
 }

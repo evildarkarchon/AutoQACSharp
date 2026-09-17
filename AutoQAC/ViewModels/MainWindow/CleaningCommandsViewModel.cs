@@ -19,13 +19,11 @@ using CommunityToolkit.Mvvm.Input;
 namespace AutoQAC.ViewModels.MainWindow;
 
 /// <summary>
-/// Manages cleaning commands (start/stop/preview), validation errors,
-/// status text during cleaning, and pre-clean validation.
+///     Manages cleaning commands (start/stop/preview), validation errors,
+///     status text during cleaning, and pre-clean validation.
 /// </summary>
 public sealed partial class CleaningCommandsViewModel(
-    IStateService stateService,
     ICleaningSession cleaningSession,
-    IConfigurationService configService,
     ICleaningCommandReadiness cleaningCommandReadiness,
     IPluginRefreshModule pluginRefreshModule,
     ILoggingService logger,
@@ -40,10 +38,10 @@ public sealed partial class CleaningCommandsViewModel(
     : ViewModelBase, IDisposable
 {
     private readonly IPluginRefreshModule _pluginRefreshModule = pluginRefreshModule;
-    private readonly ICleaningCommandReadiness _cleaningCommandReadiness = cleaningCommandReadiness;
+    private CleaningPreflightFailureKind? _currentReadinessFailureKind;
     private CancellationTokenSource? _readinessCts;
     private int _readinessRequestId;
-    private CleaningPreflightFailureKind? _currentReadinessFailureKind;
+    private bool _cleaningReserved;
 
     [ObservableProperty] public partial string StatusText { get; set; } = "Ready";
 
@@ -54,6 +52,7 @@ public sealed partial class CleaningCommandsViewModel(
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(StopCleaningCommand))]
     [NotifyCanExecuteChangedFor(nameof(ShowSkipListCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ShowSettingsCommand))]
     [NotifyCanExecuteChangedFor(nameof(RestoreBackupsCommand))]
     public partial bool IsCleaning { get; set; }
 
@@ -62,41 +61,54 @@ public sealed partial class CleaningCommandsViewModel(
     [NotifyCanExecuteChangedFor(nameof(PreviewCommand))]
     public partial bool CanStartCleaning { get; set; }
 
+    public void Dispose()
+    {
+        var cts = Interlocked.Exchange(ref _readinessCts, null);
+        cts?.Cancel();
+        cts?.Dispose();
+    }
+
     /// <summary>
-    /// Updates VM state from application state. Called by the parent VM when
-    /// <c>IStateService.StateChanged</c> fires; the parent has already marshaled
-    /// onto the UI thread via <c>IUiDispatcher</c>, so we just apply directly here.
+    ///     Updates VM state from application state. Called by the parent VM when
+    ///     <c>IStateService.StateChanged</c> fires; the parent has already marshaled
+    ///     onto the UI thread via <c>IUiDispatcher</c>, so we just apply directly here.
     /// </summary>
     public void OnStateChanged(AppState state)
     {
         ApplyState(state);
-        ScheduleReadinessRefresh(projectFailure: true);
+        ScheduleReadinessRefresh(true);
     }
 
     /// <summary>
-    /// Re-evaluates command readiness when Plugin refresh publication facts may have changed.
+    ///     Re-evaluates command readiness when Plugin refresh publication facts may have changed.
     /// </summary>
     public void OnPluginRefreshSnapshot(PluginRefreshSnapshot snapshot)
     {
         _ = snapshot;
-        ScheduleReadinessRefresh(projectFailure: true);
+        ScheduleReadinessRefresh(true);
+    }
+
+    /// <summary>Disables settings and related mutation dialogs throughout startup admission.</summary>
+    public void OnCleaningAdmissionChanged(bool reserved)
+    {
+        _cleaningReserved = reserved;
+        ShowSettingsCommand.NotifyCanExecuteChanged();
+        ShowSkipListCommand.NotifyCanExecuteChanged();
+        RestoreBackupsCommand.NotifyCanExecuteChanged();
     }
 
     private void ApplyState(AppState state)
     {
         IsCleaning = state.IsCleaning;
-        if (state.IsCleaning)
-        {
-            CanStartCleaning = false;
-        }
+        if (state.IsCleaning) CanStartCleaning = false;
 
-        if (state.IsCleaning)
-        {
-            StatusText = $"Cleaning: {state.CurrentPlugin} ({state.Progress}/{state.TotalPlugins})";
-        }
+        if (state.IsCleaning) StatusText = $"Cleaning: {state.CurrentPlugin} ({state.Progress}/{state.TotalPlugins})";
     }
 
-    private bool CanStart() => CanStartCleaning;
+    private bool CanStart()
+    {
+        return CanStartCleaning;
+    }
 
     [RelayCommand(CanExecute = nameof(CanStart))]
     private async Task StartCleaningAsync()
@@ -104,10 +116,7 @@ public sealed partial class CleaningCommandsViewModel(
         ValidationErrors.Clear();
         HasValidationErrors = false;
 
-        if (!await ValidatePreCleanAsync().ConfigureAwait(true))
-        {
-            return;
-        }
+        if (!await ValidatePreCleanAsync().ConfigureAwait(true)) return;
 
         try
         {
@@ -159,10 +168,7 @@ public sealed partial class CleaningCommandsViewModel(
         ValidationErrors.Clear();
         HasValidationErrors = false;
 
-        if (!await ValidatePreCleanAsync().ConfigureAwait(true))
-        {
-            return;
-        }
+        if (!await ValidatePreCleanAsync().ConfigureAwait(true)) return;
 
         try
         {
@@ -207,7 +213,10 @@ public sealed partial class CleaningCommandsViewModel(
         }
     }
 
-    private bool CanStop() => IsCleaning;
+    private bool CanStop()
+    {
+        return IsCleaning;
+    }
 
     [RelayCommand(CanExecute = nameof(CanStop))]
     private async Task StopCleaningAsync()
@@ -227,7 +236,7 @@ public sealed partial class CleaningCommandsViewModel(
     }
 
     /// <summary>
-    /// Projects the session-owned stop decision outcome without reimplementing stop escalation policy.
+    ///     Projects the session-owned stop decision outcome without reimplementing stop escalation policy.
     /// </summary>
     private async Task ProjectStopControlResultAsync(CleaningSessionControlResult result)
     {
@@ -245,7 +254,7 @@ public sealed partial class CleaningCommandsViewModel(
     }
 
     /// <summary>
-    /// Shows the left-running acknowledgement without converting dialog failures into force-termination failures.
+    ///     Shows the left-running acknowledgement without converting dialog failures into force-termination failures.
     /// </summary>
     private async Task ShowLeftRunningWarningSafelyAsync()
     {
@@ -262,7 +271,7 @@ public sealed partial class CleaningCommandsViewModel(
     }
 
     /// <summary>
-    /// Shows the shared force-failure dialog without letting dialog-service failures escape the stop command.
+    ///     Shows the shared force-failure dialog without letting dialog-service failures escape the stop command.
     /// </summary>
     private async Task ShowStopFailureDialogSafelyAsync()
     {
@@ -298,7 +307,8 @@ public sealed partial class CleaningCommandsViewModel(
         }
     }
 
-    [RelayCommand]
+    /// <summary>Opens settings; saving and runtime projection belong to the settings module.</summary>
+    [RelayCommand(CanExecute = nameof(CanShowSkipList))]
     private async Task ShowSettingsAsync()
     {
         try
@@ -307,18 +317,6 @@ public sealed partial class CleaningCommandsViewModel(
 
             if (result)
             {
-                var config = await configService.LoadUserConfigAsync();
-
-                stateService.UpdateConfigurationPaths(
-                    config.LoadOrder.File,
-                    config.ModOrganizer.Binary,
-                    config.XEdit.Binary);
-                stateService.UpdateState(s => s with
-                {
-                    Mo2ModeEnabled = config.Settings.Mo2Mode,
-                    CleaningTimeout = config.Settings.CleaningTimeout
-                });
-
                 StatusText = "Settings saved";
                 logger.Information("Settings updated from settings dialog");
             }
@@ -330,7 +328,10 @@ public sealed partial class CleaningCommandsViewModel(
         }
     }
 
-    private bool CanShowSkipList() => !IsCleaning;
+    private bool CanShowSkipList()
+    {
+        return !IsCleaning && !_cleaningReserved;
+    }
 
     [RelayCommand(CanExecute = nameof(CanShowSkipList))]
     private async Task ShowSkipListAsync()
@@ -352,7 +353,10 @@ public sealed partial class CleaningCommandsViewModel(
         }
     }
 
-    private bool CanRestoreBackups() => !IsCleaning;
+    private bool CanRestoreBackups()
+    {
+        return !IsCleaning && !_cleaningReserved;
+    }
 
     [RelayCommand(CanExecute = nameof(CanRestoreBackups))]
     private async Task RestoreBackupsAsync()
@@ -377,8 +381,8 @@ public sealed partial class CleaningCommandsViewModel(
 
     private async Task<bool> ValidatePreCleanAsync()
     {
-        var readiness = await _cleaningCommandReadiness.EvaluateAsync().ConfigureAwait(true);
-        ApplyReadiness(readiness, projectFailure: true);
+        var readiness = await cleaningCommandReadiness.EvaluateAsync().ConfigureAwait(true);
+        ApplyReadiness(readiness, true);
         return readiness.CanStartOrPreview;
     }
 
@@ -400,11 +404,8 @@ public sealed partial class CleaningCommandsViewModel(
     {
         try
         {
-            var readiness = await _cleaningCommandReadiness.EvaluateAsync(ct).ConfigureAwait(true);
-            if (ct.IsCancellationRequested || requestId != Volatile.Read(ref _readinessRequestId))
-            {
-                return;
-            }
+            var readiness = await cleaningCommandReadiness.EvaluateAsync(ct).ConfigureAwait(true);
+            if (ct.IsCancellationRequested || requestId != Volatile.Read(ref _readinessRequestId)) return;
 
             ApplyReadiness(readiness, projectFailure);
         }
@@ -427,10 +428,7 @@ public sealed partial class CleaningCommandsViewModel(
             return;
         }
 
-        if (projectFailure && readiness.Failure is not null && !IsCleaning)
-        {
-            ProjectReadinessFailure(readiness.Failure);
-        }
+        if (projectFailure && readiness.Failure is not null && !IsCleaning) ProjectReadinessFailure(readiness.Failure);
     }
 
     private void ProjectReadinessFailure(CleaningPreflightFailure failure)
@@ -441,20 +439,19 @@ public sealed partial class CleaningCommandsViewModel(
 
     private void ClearReadinessValidationIfCurrent()
     {
-        if (_currentReadinessFailureKind is null)
-        {
-            return;
-        }
+        if (_currentReadinessFailureKind is null) return;
 
         ValidationErrors.Clear();
         HasValidationErrors = false;
         _currentReadinessFailureKind = null;
     }
 
-    private static CleaningPreflightFailure ToPreflightFailure(ConfigPersistenceFailureException ex) =>
-        new(
+    private static CleaningPreflightFailure ToPreflightFailure(ConfigPersistenceFailureException ex)
+    {
+        return new CleaningPreflightFailure(
             CleaningPreflightFailureKind.ConfigPersistenceFailed,
             ex.Failure.SafeSummary);
+    }
 
     private void ProjectPreflightFailure(CleaningPreflightFailure failure)
     {
@@ -471,7 +468,8 @@ public sealed partial class CleaningCommandsViewModel(
             CleaningPreflightFailureKind.MissingPluginRefreshPublication =>
                 ("Plugins not refreshed", "Select a game and refresh plugins before cleaning."),
             CleaningPreflightFailureKind.StalePluginRefreshPublication =>
-                ("Plugins need refresh", "Refresh plugins after changing game, load order, MO2, or skip list settings."),
+                ("Plugins need refresh",
+                    "Refresh plugins after changing game, load order, MO2, or skip list settings."),
             CleaningPreflightFailureKind.NoGameSelected =>
                 ("No game selected", "Select a game before cleaning."),
             CleaningPreflightFailureKind.XEditNotConfigured =>
@@ -501,16 +499,14 @@ public sealed partial class CleaningCommandsViewModel(
             _ => ("Configuration error", "Check your configuration in Edit > Settings.")
         };
 
+        // The no-game title and action already communicate the full problem; a middle paraphrase only repeats them.
+        var message = failure.Kind == CleaningPreflightFailureKind.NoGameSelected
+            ? string.Empty
+            : failure.SafeMessage;
+
         return new ValidationError(
             title,
-            failure.SafeMessage,
+            message,
             failure.ActionHint ?? action);
-    }
-
-    public void Dispose()
-    {
-        var cts = Interlocked.Exchange(ref _readinessCts, null);
-        cts?.Cancel();
-        cts?.Dispose();
     }
 }

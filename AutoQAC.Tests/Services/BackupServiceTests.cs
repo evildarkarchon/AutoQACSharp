@@ -32,10 +32,14 @@ public sealed class BackupServiceTests : IDisposable
     public void Dispose()
     {
         if (Directory.Exists(_testRoot))
-        {
-            try { Directory.Delete(_testRoot, recursive: true); }
-            catch { /* Best-effort cleanup */ }
-        }
+            try
+            {
+                Directory.Delete(_testRoot, true);
+            }
+            catch
+            {
+                /* Best-effort cleanup */
+            }
     }
 
     #region CreateSessionDirectory
@@ -204,7 +208,9 @@ public sealed class BackupServiceTests : IDisposable
         var sourceFile = Path.Combine(_testRoot, "TraversalAsyncSource.esp");
         await File.WriteAllTextAsync(sourceFile, "fake plugin");
         var sessionDir = Path.Combine(_testRoot, "session_traversal_backup_async");
-        var copier = new CountingBackupFileCopier(BackupCopyResult.Complete(sourceFile, Path.Combine(sessionDir, "ignored.esp"), 11, 11));
+        var copier =
+            new CountingBackupFileCopier(BackupCopyResult.Complete(sourceFile, Path.Combine(sessionDir, "ignored.esp"),
+                11, 11));
         var sut = new BackupService(copier, _mockLogger);
         var plugin = new PluginInfo { FileName = "..\\outside.esp", FullPath = sourceFile };
 
@@ -430,7 +436,8 @@ public sealed class BackupServiceTests : IDisposable
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("Backup metadata is not safe to restore.");
         File.Exists(targetPath).Should().BeFalse("unsafe sync metadata must not be copied");
-        Directory.Exists(Path.GetDirectoryName(targetPath)!).Should().BeFalse("unsafe sync metadata must not create target directories");
+        Directory.Exists(Path.GetDirectoryName(targetPath)!).Should()
+            .BeFalse("unsafe sync metadata must not create target directories");
     }
 
     /// <summary>
@@ -570,8 +577,8 @@ public sealed class BackupServiceTests : IDisposable
         var copier = new CapturingBackupFileCopier(BackupCopyResult.Canceled(
             Path.Combine(sessionDir, "Existing.esp"),
             targetPath,
-            bytesCopied: 5,
-            totalBytes: 26));
+            5,
+            26));
         var sut = new BackupService(copier, _mockLogger);
         var entry = new BackupPluginEntry
         {
@@ -741,7 +748,8 @@ public sealed class BackupServiceTests : IDisposable
     /// Verifies restore rejects non-plugin target extensions before overwrite attempts.
     /// </summary>
     [Fact]
-    public async Task RestorePluginAsync_NonPluginOriginalPathExtension_ReturnsTargetFolderCreationFailedAndDoesNotCopy()
+    public async Task
+        RestorePluginAsync_NonPluginOriginalPathExtension_ReturnsTargetFolderCreationFailedAndDoesNotCopy()
     {
         // Arrange
         var sessionDir = Path.Combine(_testRoot, "restore_target_extension_session");
@@ -831,7 +839,8 @@ public sealed class BackupServiceTests : IDisposable
     /// Verifies restore rejects same-name plugin metadata that targets a path outside the trusted restore root.
     /// </summary>
     [Fact]
-    public async Task RestorePluginAsync_OriginalPathOutsideTrustedRoot_ReturnsTargetFolderCreationFailedAndDoesNotCopy()
+    public async Task
+        RestorePluginAsync_OriginalPathOutsideTrustedRoot_ReturnsTargetFolderCreationFailedAndDoesNotCopy()
     {
         // Arrange
         var sessionDir = Path.Combine(_testRoot, "restore_outside_trusted_root_session");
@@ -856,7 +865,8 @@ public sealed class BackupServiceTests : IDisposable
         result.Status.Should().Be(BackupOperationStatus.Failed);
         result.Rows.Single().FailureReason.Should().Be(BackupFailureReason.TargetFolderCreationFailed);
         copier.CallCount.Should().Be(0, "out-of-root restore targets must be rejected before copying");
-        Directory.Exists(Path.GetDirectoryName(outsideTarget)!).Should().BeFalse("out-of-root restore targets must not create directories");
+        Directory.Exists(Path.GetDirectoryName(outsideTarget)!).Should()
+            .BeFalse("out-of-root restore targets must not create directories");
         File.Exists(outsideTarget).Should().BeFalse();
     }
 
@@ -899,7 +909,8 @@ public sealed class BackupServiceTests : IDisposable
     [Theory]
     [InlineData(null)]
     [InlineData("")]
-    public async Task RestorePluginAsync_MissingTrustedRestoreRoot_ReturnsTargetFolderCreationFailedAndDoesNotCopy(string? trustedRestoreRoot)
+    public async Task RestorePluginAsync_MissingTrustedRestoreRoot_ReturnsTargetFolderCreationFailedAndDoesNotCopy(
+        string? trustedRestoreRoot)
     {
         // Arrange
         var sessionDir = Path.Combine(_testRoot, "restore_missing_trusted_root_session", trustedRestoreRoot ?? "null");
@@ -948,7 +959,7 @@ public sealed class BackupServiceTests : IDisposable
             Directory.CreateDirectory(Path.Combine(backupRoot, d));
 
         // Act
-        _sut.CleanupOldSessions(backupRoot, maxSessionCount: 3);
+        _sut.CleanupOldSessions(backupRoot, 3);
 
         // Assert
         var remaining = Directory.GetDirectories(backupRoot).Select(Path.GetFileName).OrderBy(n => n).ToList();
@@ -973,7 +984,7 @@ public sealed class BackupServiceTests : IDisposable
         Directory.CreateDirectory(newest);
 
         // Act -- keep only 1, but protect the oldest (current session)
-        _sut.CleanupOldSessions(backupRoot, maxSessionCount: 1, currentSessionDir: oldest);
+        _sut.CleanupOldSessions(backupRoot, 1, oldest);
 
         // Assert
         Directory.Exists(oldest).Should().BeTrue("current session is always protected");
@@ -985,7 +996,7 @@ public sealed class BackupServiceTests : IDisposable
     public void CleanupOldSessions_NonexistentRoot_DoesNotThrow()
     {
         // Act
-        var act = () => _sut.CleanupOldSessions(Path.Combine(_testRoot, "nonexistent"), maxSessionCount: 3);
+        var act = () => _sut.CleanupOldSessions(Path.Combine(_testRoot, "nonexistent"), 3);
 
         // Assert
         act.Should().NotThrow();
@@ -1002,13 +1013,14 @@ public sealed class BackupServiceTests : IDisposable
         var sut = CreateBackupService(deleter);
 
         // Act
-        var result = await sut.CleanupOldSessionsAsync(backupRoot, maxSessionCount: 0, currentSessionDir: current);
+        var result = await sut.CleanupOldSessionsAsync(backupRoot, 0, current);
 
         // Assert
         result.Status.Should().Be(BackupOperationStatus.Complete);
         deleter.DeletedDirectories.Should().NotContain(current, "the current session must never be deleted");
         deleter.DeletedDirectories.Should().Contain(newer, "maxSessionCount 0 keeps no non-current valid sessions");
-        result.Rows.Should().Contain(row => row.SessionDirectory == current && row.Status == BackupRetentionRowStatus.Kept);
+        result.Rows.Should()
+            .Contain(row => row.SessionDirectory == current && row.Status == BackupRetentionRowStatus.Kept);
     }
 
     [Fact]
@@ -1023,13 +1035,15 @@ public sealed class BackupServiceTests : IDisposable
         var sut = CreateBackupService(deleter);
 
         // Act
-        var result = await sut.CleanupOldSessionsAsync(backupRoot, maxSessionCount: 2);
+        var result = await sut.CleanupOldSessionsAsync(backupRoot, 2);
 
         // Assert
         result.Status.Should().Be(BackupOperationStatus.Complete);
         deleter.DeletedDirectories.Should().Equal(oldest);
-        result.Rows.Should().Contain(row => row.SessionDirectory == newest && row.Status == BackupRetentionRowStatus.Kept);
-        result.Rows.Should().Contain(row => row.SessionDirectory == middle && row.Status == BackupRetentionRowStatus.Kept);
+        result.Rows.Should()
+            .Contain(row => row.SessionDirectory == newest && row.Status == BackupRetentionRowStatus.Kept);
+        result.Rows.Should()
+            .Contain(row => row.SessionDirectory == middle && row.Status == BackupRetentionRowStatus.Kept);
     }
 
     [Fact]
@@ -1044,13 +1058,15 @@ public sealed class BackupServiceTests : IDisposable
         var sut = CreateBackupService(deleter);
 
         // Act
-        var result = await sut.CleanupOldSessionsAsync(backupRoot, maxSessionCount: 0);
+        var result = await sut.CleanupOldSessionsAsync(backupRoot, 0);
 
         // Assert
         result.Status.Should().Be(BackupOperationStatus.Complete);
         deleter.DeletedDirectories.Should().Contain(valid);
-        deleter.DeletedDirectories.Should().NotContain(malformed, "malformed directories are not valid cleanup candidates");
-        result.Rows.Should().Contain(row => row.SessionDirectory == malformed && row.Status == BackupRetentionRowStatus.Kept);
+        deleter.DeletedDirectories.Should()
+            .NotContain(malformed, "malformed directories are not valid cleanup candidates");
+        result.Rows.Should().Contain(row =>
+            row.SessionDirectory == malformed && row.Status == BackupRetentionRowStatus.Kept);
     }
 
     [Fact]
@@ -1064,7 +1080,7 @@ public sealed class BackupServiceTests : IDisposable
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
 
         // Act
-        var result = await sut.CleanupOldSessionsAsync(backupRoot, maxSessionCount: 0, ct: cts.Token);
+        var result = await sut.CleanupOldSessionsAsync(backupRoot, 0, ct: cts.Token);
 
         // Assert
         result.Status.Should().Be(BackupOperationStatus.Canceled);
@@ -1085,7 +1101,7 @@ public sealed class BackupServiceTests : IDisposable
         cts.Cancel();
 
         // Act
-        var result = await sut.CleanupOldSessionsAsync(backupRoot, maxSessionCount: 0, ct: cts.Token);
+        var result = await sut.CleanupOldSessionsAsync(backupRoot, 0, ct: cts.Token);
 
         // Assert
         result.Status.Should().Be(BackupOperationStatus.Canceled);
@@ -1109,23 +1125,21 @@ public sealed class BackupServiceTests : IDisposable
         using var cts = new CancellationTokenSource();
         var progress = new SynchronousProgress<BackupCopyProgress>(update =>
         {
-            if (update.FilesCompleted == 1)
-            {
-                cts.Cancel();
-            }
+            if (update.FilesCompleted == 1) cts.Cancel();
         });
 
         // Act
         var result = await sut.CleanupOldSessionsAsync(
             backupRoot,
-            maxSessionCount: 1,
+            1,
             progress: progress,
             ct: cts.Token);
 
         // Assert
         result.Status.Should().Be(BackupOperationStatus.Canceled);
         result.RemainingCount.Should().Be(2);
-        deleter.DeletedDirectories.Should().BeEmpty("cancellation before deletion should stop before deleting old sessions");
+        deleter.DeletedDirectories.Should()
+            .BeEmpty("cancellation before deletion should stop before deleting old sessions");
         result.Rows.Should().Contain(row =>
             row.SessionDirectory == newestSession &&
             row.Status == BackupRetentionRowStatus.Kept &&
@@ -1149,7 +1163,7 @@ public sealed class BackupServiceTests : IDisposable
         var sut = CreateBackupService(deleter);
 
         // Act
-        var result = await sut.CleanupOldSessionsAsync(backupRoot, maxSessionCount: 0);
+        var result = await sut.CleanupOldSessionsAsync(backupRoot, 0);
 
         // Assert
         result.Status.Should().Be(BackupOperationStatus.Warning);
@@ -1175,7 +1189,7 @@ public sealed class BackupServiceTests : IDisposable
         // Act
         await _sut.CleanupOldSessionsAsync(
             backupRoot,
-            maxSessionCount: 1,
+            1,
             progress: new Progress<BackupCopyProgress>(progressUpdates.Add));
 
         // Assert
@@ -1193,11 +1207,13 @@ public sealed class BackupServiceTests : IDisposable
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    public async Task DeleteSessionAsync_NullOrEmptyBackupRoot_ReturnsRejectedAndDoesNotInvokeDeleter(string? backupRoot)
+    public async Task DeleteSessionAsync_NullOrEmptyBackupRoot_ReturnsRejectedAndDoesNotInvokeDeleter(
+        string? backupRoot)
     {
         // Null/empty/whitespace backupRoot must short-circuit before any deletion.
         var deleter = new RecordingBackupSessionDeleter();
-        var sut = new BackupService(new CountingBackupFileCopier(BackupCopyResult.Complete("", "", 0, 0)), _mockLogger, deleter);
+        var sut = new BackupService(new CountingBackupFileCopier(BackupCopyResult.Complete("", "", 0, 0)), _mockLogger,
+            deleter);
         var session = new BackupSession { SessionDirectory = @"C:\Backups\session", Plugins = [] };
 
         var result = await sut.DeleteSessionAsync(session, backupRoot!, CancellationToken.None);
@@ -1215,7 +1231,8 @@ public sealed class BackupServiceTests : IDisposable
         var outsideSession = Path.Combine(_testRoot, "OutsideSession");
         Directory.CreateDirectory(outsideSession);
         var deleter = new RecordingBackupSessionDeleter();
-        var sut = new BackupService(new CountingBackupFileCopier(BackupCopyResult.Complete("", "", 0, 0)), _mockLogger, deleter);
+        var sut = new BackupService(new CountingBackupFileCopier(BackupCopyResult.Complete("", "", 0, 0)), _mockLogger,
+            deleter);
         var session = new BackupSession { SessionDirectory = outsideSession, Plugins = [] };
 
         var result = await sut.DeleteSessionAsync(session, backupRoot, CancellationToken.None);
@@ -1235,7 +1252,8 @@ public sealed class BackupServiceTests : IDisposable
         var siblingSession = Path.Combine(_testRoot, "Backups 2", "2026-01-01_10-00-00");
         Directory.CreateDirectory(siblingSession);
         var deleter = new RecordingBackupSessionDeleter();
-        var sut = new BackupService(new CountingBackupFileCopier(BackupCopyResult.Complete("", "", 0, 0)), _mockLogger, deleter);
+        var sut = new BackupService(new CountingBackupFileCopier(BackupCopyResult.Complete("", "", 0, 0)), _mockLogger,
+            deleter);
         var session = new BackupSession { SessionDirectory = siblingSession, Plugins = [] };
 
         var result = await sut.DeleteSessionAsync(session, backupRoot, CancellationToken.None);
@@ -1254,7 +1272,8 @@ public sealed class BackupServiceTests : IDisposable
         var traversalPath = Path.Combine(backupRoot, "..", "OutsideSession");
         Directory.CreateDirectory(Path.GetFullPath(traversalPath));
         var deleter = new RecordingBackupSessionDeleter();
-        var sut = new BackupService(new CountingBackupFileCopier(BackupCopyResult.Complete("", "", 0, 0)), _mockLogger, deleter);
+        var sut = new BackupService(new CountingBackupFileCopier(BackupCopyResult.Complete("", "", 0, 0)), _mockLogger,
+            deleter);
         var session = new BackupSession { SessionDirectory = traversalPath, Plugins = [] };
 
         var result = await sut.DeleteSessionAsync(session, backupRoot, CancellationToken.None);
@@ -1270,14 +1289,12 @@ public sealed class BackupServiceTests : IDisposable
         var sessionDir = Path.Combine(backupRoot, "2026-04-29_07-30-00");
         Directory.CreateDirectory(sessionDir);
         // The recording deleter performs the actual delete so disk-state post-conditions can be observed.
-        var deleter = new RecordingBackupSessionDeleter(onDelete: dir =>
+        var deleter = new RecordingBackupSessionDeleter(dir =>
         {
-            if (Directory.Exists(dir))
-            {
-                Directory.Delete(dir, recursive: true);
-            }
+            if (Directory.Exists(dir)) Directory.Delete(dir, true);
         });
-        var sut = new BackupService(new CountingBackupFileCopier(BackupCopyResult.Complete("", "", 0, 0)), _mockLogger, deleter);
+        var sut = new BackupService(new CountingBackupFileCopier(BackupCopyResult.Complete("", "", 0, 0)), _mockLogger,
+            deleter);
         var session = new BackupSession { SessionDirectory = sessionDir, Plugins = [] };
 
         var result = await sut.DeleteSessionAsync(session, backupRoot, CancellationToken.None);
@@ -1299,7 +1316,8 @@ public sealed class BackupServiceTests : IDisposable
         var result = await sut.DeleteSessionAsync(session, backupRoot, CancellationToken.None);
 
         result.Status.Should().Be(BackupSessionDeleteStatus.Deleted);
-        Directory.Exists(sessionDir).Should().BeFalse("the convenience constructor must still wire the default directory deleter");
+        Directory.Exists(sessionDir).Should()
+            .BeFalse("the convenience constructor must still wire the default directory deleter");
     }
 
     [Fact]
@@ -1308,7 +1326,8 @@ public sealed class BackupServiceTests : IDisposable
         var backupRoot = Path.Combine(_testRoot, "Backups");
         var outsideSession = Path.Combine(_testRoot, "OutsideSession");
         var deleter = new RecordingBackupSessionDeleter();
-        var sut = new BackupService(new CountingBackupFileCopier(BackupCopyResult.Complete("", "", 0, 0)), _mockLogger, deleter);
+        var sut = new BackupService(new CountingBackupFileCopier(BackupCopyResult.Complete("", "", 0, 0)), _mockLogger,
+            deleter);
         var session = new BackupSession { SessionDirectory = outsideSession, Plugins = [] };
         using var cts = new CancellationTokenSource();
         cts.Cancel();
@@ -1330,7 +1349,8 @@ public sealed class BackupServiceTests : IDisposable
         // The recording deleter rethrows the configured exception on first call to simulate
         // a Windows AV/Explorer lock or transient IO failure.
         var deleter = new ThrowingBackupSessionDeleter(ioException);
-        var sut = new BackupService(new CountingBackupFileCopier(BackupCopyResult.Complete("", "", 0, 0)), _mockLogger, deleter);
+        var sut = new BackupService(new CountingBackupFileCopier(BackupCopyResult.Complete("", "", 0, 0)), _mockLogger,
+            deleter);
         var session = new BackupSession { SessionDirectory = sessionDir, Plugins = [] };
 
         var result = await sut.DeleteSessionAsync(session, backupRoot, CancellationToken.None);
@@ -1338,7 +1358,8 @@ public sealed class BackupServiceTests : IDisposable
         result.Status.Should().Be(BackupSessionDeleteStatus.Failed);
         // Log call must reference the exception so on-call diagnostics can correlate the failure.
         // Use object[] (non-nullable) to match the ILoggingService.Error params signature exactly.
-        _mockLogger.Received().Error(Arg.Is<Exception>(e => ReferenceEquals(e, ioException)), Arg.Any<string>(), Arg.Any<object[]>());
+        _mockLogger.Received().Error(Arg.Is<Exception>(e => ReferenceEquals(e, ioException)), Arg.Any<string>(),
+            Arg.Any<object[]>());
     }
 
     #endregion
@@ -1377,8 +1398,10 @@ public sealed class BackupServiceTests : IDisposable
         await File.WriteAllTextAsync(path, json);
     }
 
-    private BackupService CreateBackupService(IBackupSessionDeleter deleter) =>
-        new(new BackupFileCopier(_mockLogger), _mockLogger, deleter);
+    private BackupService CreateBackupService(IBackupSessionDeleter deleter)
+    {
+        return new BackupService(new BackupFileCopier(_mockLogger), _mockLogger, deleter);
+    }
 
     private static async Task<string> CreateSessionDirectoryWithMetadata(string backupRoot, string directoryName)
     {
@@ -1426,7 +1449,8 @@ public sealed class BackupServiceTests : IDisposable
         }
     }
 
-    private sealed class FailingThenCancelingBackupFileCopier(CancellationTokenSource cancellationSource) : IBackupFileCopier
+    private sealed class FailingThenCancelingBackupFileCopier(CancellationTokenSource cancellationSource)
+        : IBackupFileCopier
     {
         private readonly CancellationTokenSource _cancellationSource = cancellationSource;
 
@@ -1491,7 +1515,10 @@ public sealed class BackupServiceTests : IDisposable
     private sealed class SynchronousProgress<T>(Action<T> onReport) : IProgress<T>
     {
         /// <inheritdoc />
-        public void Report(T value) => onReport(value);
+        public void Report(T value)
+        {
+            onReport(value);
+        }
     }
 
     #endregion

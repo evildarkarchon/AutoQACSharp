@@ -9,8 +9,8 @@ using AutoQAC.Models.Configuration;
 namespace AutoQAC.Services.Configuration;
 
 /// <summary>
-/// Cleans up old log files on app startup according to configured retention policy.
-/// Always skips the most recent log file (the active Serilog file).
+///     Cleans up old log files on app startup according to configured retention policy.
+///     Always skips the most recent log file (the active Serilog file).
 /// </summary>
 public sealed class LogRetentionService(
     IConfigurationService configService,
@@ -90,13 +90,9 @@ public sealed class LogRetentionService(
             }
 
             if (deletedCount > 0)
-            {
                 logger.Information("[LogRetention] Cleaned up {Count} old log files", deletedCount);
-            }
             else
-            {
                 logger.Debug("[LogRetention] No log files exceeded retention policy");
-            }
         }
         catch (OperationCanceledException)
         {

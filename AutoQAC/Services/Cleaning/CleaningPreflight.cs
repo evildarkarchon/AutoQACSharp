@@ -15,8 +15,8 @@ using AutoQAC.Services.State;
 namespace AutoQAC.Services.Cleaning;
 
 /// <summary>
-/// Shared preflight/selection pipeline (D-13). Consumed by both StartAsync and
-/// PreviewAsync. No cleaning state mutation, no process launch, no backup, no CTS creation (D-14).
+///     Shared preflight/selection pipeline (D-13). Consumed by both StartAsync and
+///     PreviewAsync. No cleaning state mutation, no process launch, no backup, no CTS creation (D-14).
 /// </summary>
 public sealed class CleaningPreflight(
     IConfigurationService configService,
@@ -49,22 +49,17 @@ public sealed class CleaningPreflight(
                     ConfigPersistenceOperationKind.Flush,
                     ConfigPersistenceFailureKind.Unknown,
                     safeSummary,
-                    LogReference: null,
-                    Generation: flushResult.Generation),
+                    null,
+                    flushResult.Generation),
                 safeSummary);
         }
 
         var publication = await pluginRefreshModule.GetCurrentPublicationAsync(ct).ConfigureAwait(false);
-        if (CleaningLaunchBlockerValidator.TryValidatePublication(publication, out var failure))
-        {
-            ThrowFailure(failure);
-        }
+        if (CleaningLaunchBlockerValidator.TryValidatePublication(publication, out var failure)) ThrowFailure(failure);
 
         var config = stateService.CurrentState;
         if (CleaningLaunchBlockerValidator.TryValidateLaunchReadiness(publication, config, out failure))
-        {
             ThrowFailure(failure);
-        }
 
         await ValidateMo2ExecutableSemanticsAsync(publication, config).ConfigureAwait(false);
 
@@ -72,10 +67,7 @@ public sealed class CleaningPreflight(
         // checked through publication freshness above.
         var userConfig = await configService.LoadUserConfigAsync(ct).ConfigureAwait(false);
         var rows = new List<PreflightPluginRow>();
-        if (CleaningLaunchBlockerValidator.TryValidateSelection(publication, out failure))
-        {
-            ThrowFailure(failure);
-        }
+        if (CleaningLaunchBlockerValidator.TryValidateSelection(publication, out failure)) ThrowFailure(failure);
 
         var isMo2Mode = publication.Configuration.Mo2ModeEnabled;
         foreach (var publishedRow in publication.Rows)
@@ -109,7 +101,7 @@ public sealed class CleaningPreflight(
                 }
             }
 
-            rows.Add(new PreflightPluginRow(plugin, PreflightDecision.Clean, SkipReason: null));
+            rows.Add(new PreflightPluginRow(plugin, PreflightDecision.Clean, null));
         }
 
         if (!isMo2Mode)
@@ -154,32 +146,27 @@ public sealed class CleaningPreflight(
     private async Task ValidateMo2ExecutableSemanticsAsync(PluginRefreshPublication publication, AppState state)
     {
         var plan = publication.DiscoveryPlan!;
-        if (plan.Mode != PluginRefreshDiscoveryMode.Mo2LoadOrderFile)
-        {
-            return;
-        }
+        if (plan.Mode != PluginRefreshDiscoveryMode.Mo2LoadOrderFile) return;
 
         var mo2Path = state.Mo2ExecutablePath;
-        if (string.IsNullOrWhiteSpace(mo2Path))
-        {
-            return;
-        }
+        if (string.IsNullOrWhiteSpace(mo2Path)) return;
 
         if (!await mo2Validation.ValidateMo2ExecutableAsync(mo2Path).ConfigureAwait(false))
-        {
             ThrowFailure(CleaningLaunchBlockerValidator.CreateMo2NotFoundFailure(mo2Path));
-        }
     }
 
-    private static void ThrowFailure(CleaningPreflightFailure failure) =>
+    private static void ThrowFailure(CleaningPreflightFailure failure)
+    {
         throw new CleaningPreflightException(failure);
+    }
 
     /// <summary>
-    /// Maps a PluginWarningKind validation result to a PreflightSkipReason.
-    /// Per R-05: uses the actual enum from AutoQAC/Models/PluginInfo.cs:6-14.
+    ///     Maps a PluginWarningKind validation result to a PreflightSkipReason.
+    ///     Per R-05: uses the actual enum from AutoQAC/Models/PluginInfo.cs:6-14.
     /// </summary>
-    private static PreflightSkipReason MapPluginWarningToReason(PluginWarningKind warning) =>
-        warning switch
+    private static PreflightSkipReason MapPluginWarningToReason(PluginWarningKind warning)
+    {
+        return warning switch
         {
             PluginWarningKind.NotFound => PreflightSkipReason.FileNotFound,
             PluginWarningKind.Unreadable => PreflightSkipReason.Unreadable,
@@ -188,12 +175,14 @@ public sealed class CleaningPreflight(
             PluginWarningKind.InvalidExtension => PreflightSkipReason.InvalidExtension,
             _ => throw new InvalidOperationException($"Unexpected PluginWarningKind: {warning}")
         };
+    }
 
     /// <summary>
-    /// Converts a file-validation skip reason back to the legacy warning label used in summary logging.
+    ///     Converts a file-validation skip reason back to the legacy warning label used in summary logging.
     /// </summary>
-    private static string MapReasonToPluginWarningLabel(PreflightSkipReason reason) =>
-        reason switch
+    private static string MapReasonToPluginWarningLabel(PreflightSkipReason reason)
+    {
+        return reason switch
         {
             PreflightSkipReason.FileNotFound => nameof(PluginWarningKind.NotFound),
             PreflightSkipReason.Unreadable => nameof(PluginWarningKind.Unreadable),
@@ -202,15 +191,17 @@ public sealed class CleaningPreflight(
             PreflightSkipReason.InvalidExtension => nameof(PluginWarningKind.InvalidExtension),
             _ => reason.ToString()
         };
+    }
 
     /// <summary>
-    /// True for skip reasons produced by on-disk plugin validation.
+    ///     True for skip reasons produced by on-disk plugin validation.
     /// </summary>
-    private static bool IsFileValidationReason(PreflightSkipReason? reason) =>
-        reason is PreflightSkipReason.FileNotFound
+    private static bool IsFileValidationReason(PreflightSkipReason? reason)
+    {
+        return reason is PreflightSkipReason.FileNotFound
             or PreflightSkipReason.Unreadable
             or PreflightSkipReason.ZeroByte
             or PreflightSkipReason.MalformedEntry
             or PreflightSkipReason.InvalidExtension;
-
+    }
 }

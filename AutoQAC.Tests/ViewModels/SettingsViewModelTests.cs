@@ -2,6 +2,7 @@ using System.Reactive.Subjects;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models.Configuration;
 using AutoQAC.Services.Configuration;
+using AutoQAC.Tests.TestInfrastructure;
 using AutoQAC.Services.UI;
 using AutoQAC.ViewModels;
 using FluentAssertions;
@@ -15,6 +16,34 @@ namespace AutoQAC.Tests.ViewModels;
 /// </summary>
 public sealed class SettingsViewModelTests
 {
+    /// <summary>The editor hands its baseline and changed values to the same module as the main window.</summary>
+    [Fact]
+    public async Task SaveAsync_UsesDiscoverySettingsOutcomeInsteadOfSavingDirectly()
+    {
+        var fixture = CreateFixture();
+        var changes = Substitute.For<IDiscoverySettingsModule>();
+        changes.ExecuteAsync(Arg.Any<DiscoverySettingsIntent>(), Arg.Any<CancellationToken>())
+            .Returns(new DiscoverySettingsChangeResult(DiscoverySettingsChangeStatus.RefreshFailed, null,
+                new DiscoverySettingsChangeFailure(DiscoverySettingsChangeFailureKind.PublicationFailed,
+                    "Settings were saved, but plugins could not be refreshed."))
+            { SettingsSaved = true });
+        using var vm = new SettingsViewModel(fixture.ConfigService, fixture.Logger, fixture.Dispatcher,
+            discoverySettingsModule: changes);
+        await vm.LoadSettingsAsync();
+        ApplyValidEditableValues(vm);
+        vm.Mo2Mode = true;
+        bool? closed = null;
+        vm.CloseRequested += result => closed = result;
+
+        await vm.SaveCommand.ExecuteAsync(null);
+
+        vm.PersistenceBannerText.Should().Contain("saved, but plugins");
+        closed.Should().BeNull();
+        await fixture.ConfigService.DidNotReceive().SaveUserConfigAsync(Arg.Any<UserConfiguration>(), Arg.Any<CancellationToken>());
+        await changes.Received(1).ExecuteAsync(Arg.Is<DiscoverySettingsIntent.ApplySettings>(edit =>
+            !edit.Baseline.Settings.Mo2Mode && edit.Requested.Settings.Mo2Mode), Arg.Any<CancellationToken>());
+    }
+
     [Fact]
     public void Failure_Save_WriteFailed_PopulatesBannerWithSafeSummary()
     {
@@ -139,8 +168,8 @@ public sealed class SettingsViewModelTests
             "Could not write settings file (write_failed)",
             null,
             5));
-        fixture.ConfigService.FlushPendingSavesAsync(Arg.Any<CancellationToken>()).Returns(
-            new ConfigPersistenceResult(ConfigPersistenceStatusKind.Success, ConfigPersistenceOperationKind.Flush, 6, null));
+        fixture.Discovery.ExecuteAsync(Arg.Any<DiscoverySettingsIntent>(), Arg.Any<CancellationToken>())
+            .Returns(DiscoverySettingsChangeResult.Accepted(RecordingPluginRefreshModule.CreateSnapshot()));
 
         await vm.SaveCommand.ExecuteAsync(null);
 
@@ -164,8 +193,9 @@ public sealed class SettingsViewModelTests
             "Could not write settings file (write_failed)",
             null,
             7);
-        fixture.ConfigService.FlushPendingSavesAsync(Arg.Any<CancellationToken>()).Returns(
-            new ConfigPersistenceResult(ConfigPersistenceStatusKind.Failed, ConfigPersistenceOperationKind.Flush, 7, failure));
+        fixture.Discovery.ExecuteAsync(Arg.Any<DiscoverySettingsIntent>(), Arg.Any<CancellationToken>())
+            .Returns(new DiscoverySettingsChangeResult(DiscoverySettingsChangeStatus.SaveFailed, null,
+                new DiscoverySettingsChangeFailure(DiscoverySettingsChangeFailureKind.PersistenceFailed, failure.SafeSummary)));
 
         await vm.SaveCommand.ExecuteAsync(null);
 
@@ -183,8 +213,8 @@ public sealed class SettingsViewModelTests
         ApplyValidEditableValues(vm);
         bool? closeResult = null;
         vm.CloseRequested += result => closeResult = result;
-        fixture.ConfigService.SaveUserConfigAsync(Arg.Any<UserConfiguration>(), Arg.Any<CancellationToken>())
-            .Returns(_ => Task.FromException(new InvalidOperationException("save failed")));
+        fixture.Discovery.ExecuteAsync(Arg.Any<DiscoverySettingsIntent>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromException<DiscoverySettingsChangeResult>(new InvalidOperationException("save failed")));
 
         await vm.SaveCommand.ExecuteAsync(null);
 
@@ -229,7 +259,7 @@ public sealed class SettingsViewModelTests
     [Fact]
     public void Failure_Subscription_DisposedOnDispose()
     {
-        var fixture = CreateFixture(useRecordingObservables: true);
+        var fixture = CreateFixture(true);
         using var vm = fixture.CreateViewModel();
 
         vm.Dispose();
@@ -309,7 +339,8 @@ public sealed class SettingsViewModelTests
         configService.SaveUserConfigAsync(Arg.Any<UserConfiguration>(), Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
         configService.FlushPendingSavesAsync(Arg.Any<CancellationToken>()).Returns(
-            new ConfigPersistenceResult(ConfigPersistenceStatusKind.Success, ConfigPersistenceOperationKind.Flush, 1, null));
+            new ConfigPersistenceResult(ConfigPersistenceStatusKind.Success, ConfigPersistenceOperationKind.Flush, 1,
+                null));
 
         return new Fixture(
             configService,
@@ -323,21 +354,24 @@ public sealed class SettingsViewModelTests
             recordingUserConfigurationChanged);
     }
 
-    private static UserConfiguration CreateConfig() => new()
+    private static UserConfiguration CreateConfig()
     {
-        Settings = new AutoQacSettings
+        return new UserConfiguration
         {
-            JournalExpiration = 30,
-            CleaningTimeout = 300,
-            CpuThreshold = 50,
-            Mo2Mode = false
-        },
-        XEdit = new XEditConfig(),
-        ModOrganizer = new ModOrganizerConfig(),
-        LoadOrder = new LoadOrderConfig(),
-        LogRetention = new RetentionSettings(),
-        Backup = new BackupSettings()
-    };
+            Settings = new AutoQacSettings
+            {
+                JournalExpiration = 30,
+                CleaningTimeout = 300,
+                CpuThreshold = 50,
+                Mo2Mode = false
+            },
+            XEdit = new XEditConfig(),
+            ModOrganizer = new ModOrganizerConfig(),
+            LoadOrder = new LoadOrderConfig(),
+            LogRetention = new RetentionSettings(),
+            Backup = new BackupSettings()
+        };
+    }
 
     private static void ApplyValidEditableValues(SettingsViewModel vm)
     {
@@ -355,16 +389,10 @@ public sealed class SettingsViewModelTests
         while (!string.IsNullOrEmpty(directory))
         {
             var candidate = Path.Combine(new[] { directory }.Concat(segments).ToArray());
-            if (File.Exists(candidate))
-            {
-                return candidate;
-            }
+            if (File.Exists(candidate)) return candidate;
 
             var parent = Directory.GetParent(directory);
-            if (parent is null)
-            {
-                break;
-            }
+            if (parent is null) break;
 
             directory = parent.FullName;
         }
@@ -383,21 +411,44 @@ public sealed class SettingsViewModelTests
         RecordingObservable<ConfigPersistenceResult>? RecordingResults,
         RecordingObservable<UserConfiguration>? RecordingUserConfigurationChanged)
     {
-        public SettingsViewModel CreateViewModel() => new(ConfigService, Logger, Dispatcher);
+        public IDiscoverySettingsModule Discovery { get; } = CreateDiscovery();
+
+        /// <summary>The editor tests project operation outcomes; persistence is exercised through module tests.</summary>
+        private static IDiscoverySettingsModule CreateDiscovery()
+        {
+            var module = Substitute.For<IDiscoverySettingsModule>();
+            module.ExecuteAsync(Arg.Any<DiscoverySettingsIntent>(), Arg.Any<CancellationToken>())
+                .Returns(DiscoverySettingsChangeResult.Accepted(RecordingPluginRefreshModule.CreateSnapshot()));
+            return module;
+        }
+
+        public SettingsViewModel CreateViewModel()
+        {
+            return new SettingsViewModel(ConfigService, Logger, Dispatcher, discoverySettingsModule: Discovery);
+        }
     }
 
     private sealed class SynchronousUiDispatcher : IUiDispatcher
     {
-        public void Post(Action action) => action();
+        public void Post(Action action)
+        {
+            action();
+        }
 
-        public Task InvokeAsync(Func<Task> action) => action();
+        public Task InvokeAsync(Func<Task> action)
+        {
+            return action();
+        }
     }
 
     private sealed class RecordingObservable<T> : IObservable<T>
     {
         public int DisposeCount { get; private set; }
 
-        public IDisposable Subscribe(IObserver<T> observer) => new RecordingDisposable(this);
+        public IDisposable Subscribe(IObserver<T> observer)
+        {
+            return new RecordingDisposable(this);
+        }
 
         private sealed class RecordingDisposable : IDisposable
         {
@@ -411,10 +462,7 @@ public sealed class SettingsViewModelTests
 
             public void Dispose()
             {
-                if (_disposed)
-                {
-                    return;
-                }
+                if (_disposed) return;
 
                 _disposed = true;
                 _owner.DisposeCount++;

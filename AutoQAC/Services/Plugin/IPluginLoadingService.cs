@@ -6,16 +6,16 @@ using AutoQAC.Models;
 namespace AutoQAC.Services.Plugin;
 
 /// <summary>
-/// Service for loading plugins from various sources.
-/// Uses Mutagen for supported games, falls back to file-based loading.
+///     Service for loading plugins from various sources.
+///     Uses Mutagen for supported games, falls back to file-based loading.
 /// </summary>
 public interface IPluginLoadingService
 {
     /// <summary>
-    /// Gets plugins for the specified game.
-    /// Uses Mutagen for supported games and returns an empty list when loading is unsuccessful.
-    /// Callers that need detailed failure reasons should use TryGetPluginsAsync.
-    /// Callers that want file-based loading should call GetPluginsFromFileAsync explicitly.
+    ///     Gets plugins for the specified game.
+    ///     Uses Mutagen for supported games and returns an empty list when loading is unsuccessful.
+    ///     Callers that need detailed failure reasons should use TryGetPluginsAsync.
+    ///     Callers that want file-based loading should call GetPluginsFromFileAsync explicitly.
     /// </summary>
     /// <param name="gameType">The game type to load plugins for.</param>
     /// <param name="customDataFolder">Optional custom data folder path to override registry detection.</param>
@@ -27,9 +27,9 @@ public interface IPluginLoadingService
         CancellationToken ct = default);
 
     /// <summary>
-    /// Attempts to load plugins for a Mutagen-supported game and returns a typed outcome.
-    /// This allows callers to distinguish unsupported game, missing data folder, empty listings,
-    /// and runtime failures without inferring state from plugin count alone.
+    ///     Attempts to load plugins for a Mutagen-supported game and returns a typed outcome.
+    ///     This allows callers to distinguish unsupported game, missing data folder, empty listings,
+    ///     and runtime failures without inferring state from plugin count alone.
     /// </summary>
     /// <param name="gameType">The game type to load plugins for.</param>
     /// <param name="customDataFolder">Optional explicit data folder path to use instead of auto-detection.</param>
@@ -41,7 +41,7 @@ public interface IPluginLoadingService
         CancellationToken ct = default);
 
     /// <summary>
-    /// Gets plugins from a specific load order file path (fallback mode).
+    ///     Gets plugins from a specific load order file path (fallback mode).
     /// </summary>
     /// <param name="loadOrderPath">Path to the load order file.</param>
     /// <param name="dataFolderPath">Optional game data folder path for resolving FullPath.</param>
@@ -53,8 +53,8 @@ public interface IPluginLoadingService
         CancellationToken ct = default);
 
     /// <summary>
-    /// Gets the data folder path for a game.
-    /// Returns the custom override if provided, otherwise auto-detects via Mutagen and/or registry.
+    ///     Gets the data folder path for a game.
+    ///     Returns the custom override if provided, otherwise auto-detects via Mutagen and/or registry.
     /// </summary>
     /// <param name="gameType">The game type.</param>
     /// <param name="customDataFolderOverride">Optional custom data folder path to use instead of registry detection.</param>
@@ -62,8 +62,8 @@ public interface IPluginLoadingService
     string? GetGameDataFolder(GameType gameType, string? customDataFolderOverride = null);
 
     /// <summary>
-    /// Gets the default load order file path for a game from My Games folder.
-    /// Returns null if the file doesn't exist.
+    ///     Gets the default load order file path for a game from My Games folder.
+    ///     Returns null if the file doesn't exist.
     /// </summary>
     /// <param name="gameType">The game type to get the load order path for.</param>
     /// <returns>The path to plugins.txt if found, otherwise null.</returns>

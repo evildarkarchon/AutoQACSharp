@@ -1,29 +1,30 @@
 using System;
+using System.Reactive.Disposables;
 using System.Reactive.Linq;
 using AutoQAC.Infrastructure.Logging;
 
 namespace AutoQAC.Services.Monitoring;
 
 /// <summary>
-/// CPU-based hang detection for xEdit processes. Polls Process.TotalProcessorTime
-/// at regular intervals and flags a process as hung when CPU usage is near-zero
-/// for a sustained duration (default 60 seconds).
+///     CPU-based hang detection for xEdit processes. Polls Process.TotalProcessorTime
+///     at regular intervals and flags a process as hung when CPU usage is near-zero
+///     for a sustained duration (default 60 seconds).
 /// </summary>
 public sealed class HangDetectionService(ILoggingService logger) : IHangDetectionService
 {
     /// <summary>
-    /// How often to poll CPU usage, in milliseconds.
+    ///     How often to poll CPU usage, in milliseconds.
     /// </summary>
     public const int PollIntervalMs = 5_000;
 
     /// <summary>
-    /// How long near-zero CPU must persist before flagging as hung, in milliseconds.
+    ///     How long near-zero CPU must persist before flagging as hung, in milliseconds.
     /// </summary>
     public const int HangThresholdMs = 60_000;
 
     /// <summary>
-    /// CPU usage percentage below which activity is considered "near-zero".
-    /// Process.TotalProcessorTime delta divided by wall-clock delta * 100.
+    ///     CPU usage percentage below which activity is considered "near-zero".
+    ///     Process.TotalProcessorTime delta divided by wall-clock delta * 100.
     /// </summary>
     public const double CpuThreshold = 0.5;
 
@@ -38,13 +39,13 @@ public sealed class HangDetectionService(ILoggingService logger) : IHangDetectio
                 if (process.HasExited)
                 {
                     observer.OnCompleted();
-                    return System.Reactive.Disposables.Disposable.Empty;
+                    return Disposable.Empty;
                 }
             }
             catch (InvalidOperationException)
             {
                 observer.OnCompleted();
-                return System.Reactive.Disposables.Disposable.Empty;
+                return Disposable.Empty;
             }
 
             TimeSpan lastCpuTime;
@@ -56,7 +57,7 @@ public sealed class HangDetectionService(ILoggingService logger) : IHangDetectio
             {
                 // Process exited between HasExited check and TotalProcessorTime read
                 observer.OnCompleted();
-                return System.Reactive.Disposables.Disposable.Empty;
+                return Disposable.Empty;
             }
 
             var lastCheckTime = DateTime.UtcNow;
@@ -87,7 +88,7 @@ public sealed class HangDetectionService(ILoggingService logger) : IHangDetectio
                         }
 
                         var cpuDelta = (currentCpuTime - lastCpuTime).TotalMilliseconds;
-                        var cpuPercent = (cpuDelta / elapsed.TotalMilliseconds) * 100.0;
+                        var cpuPercent = cpuDelta / elapsed.TotalMilliseconds * 100.0;
 
                         if (cpuPercent < CpuThreshold)
                         {
