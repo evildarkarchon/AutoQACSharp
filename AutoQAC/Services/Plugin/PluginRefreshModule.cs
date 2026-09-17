@@ -217,21 +217,13 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                     ? PluginRefreshCompletionStatus.Canceled : PluginRefreshCompletionStatus.Superseded)));
         var acceptedSnapshot = _publicationStore.GetCurrentSnapshot();
         var configuration = acceptedSnapshot.Configuration;
-        var keepExistingRows = gameType != GameType.Unknown && gameType == acceptedSnapshot.GameType;
-        if (!keepExistingRows) _publicationStore.ClearRowsForRefreshStart(gameType);
-
-        _publicationStore.PublishSnapshot(new PluginRefreshSnapshot(
-                generation,
-                gameType,
-                keepExistingRows ? acceptedSnapshot.Rows : [],
-                configuration,
-                new PluginRefreshActivity(true, false),
-                PluginRefreshPublicationStore.EmptyCommands,
-                gameType == GameType.Unknown ? "No game selected" : $"Loading plugins for {gameType}..."),
-            GetAffordance(gameType, configuration));
 
         try
         {
+            if (!_publicationStore.TryBeginRefresh(generation, gameType,
+                    GetAffordance(gameType, configuration), () => IsVisible(generation, token)))
+                return _publicationStore.GetCurrentSnapshot();
+
             if (gameType == GameType.Unknown)
             {
                 token.ThrowIfCancellationRequested();

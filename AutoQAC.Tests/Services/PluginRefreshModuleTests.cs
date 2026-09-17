@@ -15,6 +15,74 @@ namespace AutoQAC.Tests.Services;
 
 public sealed class PluginRefreshModuleTests
 {
+    /// <summary>A superseded start cannot clear or replace the newer refresh's completed rows.</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RefreshGame_SupersededBeforeStart_PreservesNewerSnapshotAndRows(bool duringRowClear)
+    {
+        var state = new StateService();
+        var planner = CreateReadyDiscoveryPlanner(CreateWiringPlan(), [Plugin("New.esp")]);
+        using var sut = CreateModule(state, discoveryPlanner: planner);
+        Task<PluginRefreshSnapshot>? newer = null;
+        var supersede = true;
+        using var subscription = state.StateChanged.Subscribe(value =>
+        {
+            if (!duringRowClear || !supersede || value.CurrentGameType != GameType.Fallout4) return;
+            supersede = false;
+            newer = sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+        });
+        planner.GetAffordance(Arg.Any<GameType>(), Arg.Any<bool>()).Returns(call =>
+        {
+            if (!duringRowClear && supersede)
+            {
+                supersede = false;
+                newer = sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+            }
+            return new PluginRefreshGameAffordance(call.ArgAt<GameType>(0), true, false, true);
+        });
+        var older = await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.Fallout4));
+        var expected = await newer!;
+
+        older.Generation.Should().Be(expected.Generation);
+        older.GameType.Should().Be(GameType.SkyrimSe);
+        older.Activity.IsPluginRefreshRunning.Should().BeFalse();
+        state.CurrentState.PluginsToClean.Should().ContainSingle(plugin => plugin.FileName == "New.esp");
+    }
+
+    /// <summary>Selection on retained rows must survive discovery's subsequent publication commit.</summary>
+    [Fact]
+    public async Task RefreshGame_SelectionChangesBeforeCommit_PreservesLatestExclusion()
+    {
+        var state = new StateService();
+        var planner = CreateReadyDiscoveryPlanner(CreateWiringPlan(), [Plugin("Selected.esp")]);
+        var detection = CreateDefaultGameDetectionService();
+        using var sut = CreateModule(state, discoveryPlanner: planner, gameDetectionService: detection);
+        var first = await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+        var changeSelection = false;
+        detection.DetectVariant(Arg.Any<GameType>(), Arg.Any<IReadOnlyList<string>>()).Returns(_ =>
+        {
+            changeSelection = true;
+            return GameVariant.None;
+        });
+        planner.GetAffordance(Arg.Any<GameType>(), Arg.Any<bool>()).Returns(call =>
+        {
+            if (changeSelection)
+            {
+                changeSelection = false;
+                sut.ExecuteAsync(new PluginRefreshIntent.ChangeSelection(
+                    new PluginSelectionChange.SetOne(first.Rows[0].Key, false))).GetAwaiter().GetResult();
+            }
+            return new PluginRefreshGameAffordance(call.ArgAt<GameType>(0), true, false, true);
+        });
+
+        var refreshed = await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+
+        refreshed.Rows.Should().ContainSingle(row => !row.IsSelected);
+        (await sut.GetCurrentPublicationAsync()).Rows.Should().ContainSingle(row => !row.IsSelected);
+        state.CurrentState.ExcludedPluginPaths.Should().Contain(first.Rows[0].Key.FullPath!);
+    }
+
     /// <summary>Settings invalidation must end pending estimates even when no replacement refresh starts.</summary>
     [Theory]
     [InlineData(false)]

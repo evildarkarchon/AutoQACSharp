@@ -66,10 +66,11 @@ internal sealed class PluginRefreshAppStateMirror
     ///     Clears compatibility rows when a refresh switches to a different game.
     /// </summary>
     /// <param name="gameType">Game that is about to become current.</param>
-    internal void ClearRowsForRefreshStart(GameType gameType)
+    /// <param name="canUpdate">Checks generation ownership inside the state mutation.</param>
+    internal void ClearRowsForRefreshStart(GameType gameType, Func<bool> canUpdate)
     {
         // Start/Preview gates read AppState, so clear stale rows before async discovery can be canceled.
-        _stateService.UpdateState(state => state with
+        _stateService.UpdateState(state => !canUpdate() ? state : state with
         {
             CurrentGameType = gameType,
             PluginsToClean = Array.Empty<PluginInfo>().ToList().AsReadOnly(),

@@ -100,7 +100,7 @@ internal static class DiscoverySettingsChanges
         Edit("xEdit", baseline.XEdit.Binary, edited.XEdit.Binary, v => target.XEdit.Binary = v);
         Edit("loadOrder", baseline.LoadOrder.File, edited.LoadOrder.File, v => target.LoadOrder.File = v);
         if (baseline.LoadOrder.File != edited.LoadOrder.File &&
-            Enum.TryParse<GameType>(target.SelectedGame, out var selectedGame) && selectedGame != GameType.Unknown)
+            Enum.TryParse<GameType>(target.SelectedGame, ignoreCase: true, out var selectedGame) && selectedGame != GameType.Unknown)
         {
             // Discovery prefers the selected game's override; updating only the global fallback would accept old rows.
             Set(target.LoadOrderFileOverrides, selectedGame, edited.LoadOrder.File);

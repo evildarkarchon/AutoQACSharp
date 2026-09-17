@@ -30,6 +30,7 @@ public sealed class DiscoverySettingsModule : IDiscoverySettingsModule, IDisposa
     private readonly IDisposable _skipListSubscription;
     private CancellationTokenSource? _refreshCancellation;
     private string? _expectedConfiguration;
+    private string? _rollbackConfiguration;
     private long _revision;
     private long _nextIntent;
     private long _resetFence;
@@ -99,7 +100,7 @@ public sealed class DiscoverySettingsModule : IDiscoverySettingsModule, IDisposa
                     }
                     // Own-save notifications must not be confused with an external settings replacement.
                     _expectedConfiguration = DiscoverySettingsChanges.Fingerprint(requested);
-                    if (requiresPublication) _refresh.InvalidateForSettings();
+                    _rollbackConfiguration = DiscoverySettingsChanges.Fingerprint(current);
                 }
                 var admitted = operation;
                 registration = ct.Register(() => CancelOperation(admitted));
@@ -134,7 +135,13 @@ public sealed class DiscoverySettingsModule : IDiscoverySettingsModule, IDisposa
                             operation.Mutating = false;
                             if (!_disposed && _pending.Contains(operation))
                             {
-                                if (requiresPublication) MirrorConfiguration(active, intent is DiscoverySettingsIntent.Reset);
+                                if (requiresPublication)
+                                {
+                                    // Admission excludes cleaning while the write settles. Revoke the old lease only
+                                    // after durability succeeds so a failed write leaves unchanged discovery usable.
+                                    _refresh.InvalidateForSettings();
+                                    MirrorConfiguration(active, intent is DiscoverySettingsIntent.Reset);
+                                }
                                 else
                                     // Operational editor changes must retain paths resolved by the accepted discovery plan.
                                     _state.UpdateState(state => state with
@@ -170,6 +177,10 @@ public sealed class DiscoverySettingsModule : IDiscoverySettingsModule, IDisposa
                         if (requiresPublication) FailRemaining();
                     }
                 }
+                finally
+                {
+                    lock (_sync) _rollbackConfiguration = null;
+                }
             }
             return await operation.Completion.Task.ConfigureAwait(false);
         }
@@ -188,7 +199,7 @@ public sealed class DiscoverySettingsModule : IDiscoverySettingsModule, IDisposa
     {
         try
         {
-            var game = Enum.TryParse<GameType>(requested.SelectedGame, out var selected) ? selected : GameType.Unknown;
+            var game = Enum.TryParse<GameType>(requested.SelectedGame, ignoreCase: true, out var selected) ? selected : GameType.Unknown;
             var completion = await _refresh.RefreshForSettingsAsync(game, cancellation.Token).ConfigureAwait(false);
             var active = await _configuration.LoadUserConfigAsync(cancellation.Token).ConfigureAwait(false);
             lock (_sync)
@@ -234,7 +245,7 @@ public sealed class DiscoverySettingsModule : IDiscoverySettingsModule, IDisposa
     /// <summary>Mirrors only durable values; discovery later supplies resolved paths and profiles.</summary>
     private void MirrorConfiguration(UserConfiguration config, bool reset)
     {
-        var game = Enum.TryParse<GameType>(config.SelectedGame, out var selected) ? selected : GameType.Unknown;
+        var game = Enum.TryParse<GameType>(config.SelectedGame, ignoreCase: true, out var selected) ? selected : GameType.Unknown;
         _state.UpdateState(state => state with
         {
             CurrentGameType = game,
@@ -257,7 +268,9 @@ public sealed class DiscoverySettingsModule : IDiscoverySettingsModule, IDisposa
         lock (_sync)
         {
             var fingerprint = DiscoverySettingsChanges.Fingerprint(config);
-            if (fingerprint != _expectedConfiguration) InvalidateExternalChange();
+            // The coordinator republishes the previous durable values when a write fails. That exact
+            // rollback is an own-save outcome, not an external replacement that must revoke discovery.
+            if (fingerprint != _expectedConfiguration && fingerprint != _rollbackConfiguration) InvalidateExternalChange();
             _expectedConfiguration = fingerprint;
         }
     }

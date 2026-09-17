@@ -19,6 +19,53 @@ namespace AutoQAC.Tests.Services.Configuration;
 /// <summary>Exercises settings acceptance through real discovery planning and authoritative publication.</summary>
 public sealed class DiscoverySettingsPublicationIntegrationTests
 {
+    /// <summary>A rejected disk write must leave the unchanged accepted discovery usable, including rollback notifications.</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FailedSettingsSave_PreservesAcceptedPublication(bool throws)
+    {
+        using var fixture = new Fixture();
+        var initial = await fixture.Refresh.RefreshForSettingsAsync(GameType.SkyrimSe);
+        var accepted = await fixture.Refresh.GetCurrentPublicationAsync();
+        accepted.Freshness.IsFresh.Should().BeTrue();
+        var original = fixture.Saved.Copy();
+        fixture.Config.FlushPendingSavesAsync(Arg.Any<CancellationToken>()).Returns(_ =>
+        {
+            fixture.RestoreConfiguration(original);
+            if (throws) throw new IOException("The settings file is unavailable.");
+            return Task.FromResult(new ConfigPersistenceResult(ConfigPersistenceStatusKind.Failed,
+                ConfigPersistenceOperationKind.Flush, 1,
+                new ConfigPersistenceFailure(ConfigPersistenceOperationKind.Flush,
+                    ConfigPersistenceFailureKind.WriteFailed, "Could not save settings.", null, 1)));
+        });
+
+        var result = await fixture.Settings.ExecuteAsync(new DiscoverySettingsIntent.SetDisableSkipLists(true));
+        var current = await fixture.Refresh.GetCurrentPublicationAsync();
+
+        result.Status.Should().Be(DiscoverySettingsChangeStatus.SaveFailed);
+        current.Freshness.IsFresh.Should().BeTrue();
+        current.Generation.Should().Be(initial.Snapshot!.Generation);
+        current.Rows.Select(row => row.Key).Should().Equal(accepted.Rows.Select(row => row.Key));
+    }
+
+    /// <summary>Existing case-insensitive game names retain their game and rows when another discovery setting changes.</summary>
+    [Fact]
+    public async Task LowercasePersistedGame_SettingChangeKeepsGameAndPublishesRows()
+    {
+        using var fixture = new Fixture();
+        fixture.Saved.SelectedGame = "skyrimse";
+
+        var result = await fixture.Settings.ExecuteAsync(new DiscoverySettingsIntent.SetDisableSkipLists(true));
+        var publication = await fixture.Refresh.GetCurrentPublicationAsync();
+
+        result.Status.Should().Be(DiscoverySettingsChangeStatus.Accepted);
+        fixture.State.CurrentState.CurrentGameType.Should().Be(GameType.SkyrimSe);
+        publication.GameType.Should().Be(GameType.SkyrimSe);
+        publication.Rows.Should().ContainSingle();
+        publication.Freshness.IsFresh.Should().BeTrue();
+    }
+
     /// <summary>The first settings mutation must initialize the real facade before admission can defer external reloads.</summary>
     [Fact]
     public async Task ColdConfiguration_FirstMutationPreservesExistingDiskSettings()
@@ -57,15 +104,17 @@ public sealed class DiscoverySettingsPublicationIntegrationTests
     }
 
     /// <summary>A dialog load-order edit replaces the selected game's override, so accepted rows reflect the new choice.</summary>
-    [Fact]
-    public async Task DialogLoadOrderChange_ReplacesExistingSelectedGameOverride()
+    [Theory]
+    [InlineData("FalloutNewVegas")]
+    [InlineData("falloutnewvegas")]
+    public async Task DialogLoadOrderChange_ReplacesExistingSelectedGameOverride(string selectedGame)
     {
         var original = Path.GetTempFileName();
         var replacement = Path.GetTempFileName();
         try
         {
             using var fixture = new Fixture();
-            fixture.Saved.SelectedGame = "FalloutNewVegas";
+            fixture.Saved.SelectedGame = selectedGame;
             fixture.Saved.LoadOrder.File = original;
             fixture.Saved.LoadOrderFileOverrides["FNV"] = original;
             fixture.State.UpdateState(state => state with { CurrentGameType = GameType.FalloutNewVegas });
@@ -158,6 +207,13 @@ public sealed class DiscoverySettingsPublicationIntegrationTests
         private TaskCompletionSource ReleaseApproximation { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public PluginRefreshModule Refresh { get; }
         public DiscoverySettingsModule Settings { get; }
+
+        /// <summary>Models the persistence coordinator restoring and publishing its last durable configuration.</summary>
+        public void RestoreConfiguration(UserConfiguration configuration)
+        {
+            Saved = configuration.Copy();
+            ConfigurationChanged.OnNext(Saved.Copy());
+        }
 
         /// <summary>Only filesystem discovery, persistence, and estimation are controlled; both coordinating modules are real.</summary>
         public Fixture()

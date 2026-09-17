@@ -116,12 +116,33 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
     }
 
     /// <summary>
-    ///     Clears compatibility rows at the start of a refresh that changes game context.
+    ///     Commits refresh-start rows and activity only while the requesting generation owns the refresh.
     /// </summary>
+    /// <param name="generation">Generation requesting the loading snapshot.</param>
     /// <param name="gameType">Game that is becoming current.</param>
-    internal void ClearRowsForRefreshStart(GameType gameType)
+    /// <param name="affordance">Game facts used to project commands.</param>
+    /// <param name="canUpdate">Checks active generation ownership and cancellation.</param>
+    /// <returns>Whether the loading snapshot was committed.</returns>
+    internal bool TryBeginRefresh(long generation, GameType gameType,
+        PluginRefreshGameAffordance affordance, Func<bool> canUpdate)
     {
-        _appStateMirror.ClearRowsForRefreshStart(gameType);
+        lock (_snapshotLock)
+        {
+            if (_disposed || !canUpdate() || generation < _minimumPublicationGeneration ||
+                generation < _currentSnapshot.Generation) return false;
+            var accepted = _currentSnapshot;
+            var keepRows = gameType != GameType.Unknown && gameType == accepted.GameType;
+            if (!keepRows) _appStateMirror.ClearRowsForRefreshStart(gameType, canUpdate);
+            // Clearing the compatibility state invokes observers synchronously; one can start a newer refresh.
+            if (!canUpdate() || generation < _currentSnapshot.Generation) return false;
+            _currentSnapshot = WithCommandAvailability(new PluginRefreshSnapshot(
+                generation, gameType, keepRows ? accepted.Rows : [], accepted.Configuration,
+                new PluginRefreshActivity(true, false), EmptyCommands,
+                gameType == GameType.Unknown ? "No game selected" : $"Loading plugins for {gameType}..."),
+                _appStateMirror.CurrentState, affordance);
+            _snapshots.OnNext(_currentSnapshot);
+            return true;
+        }
     }
 
     /// <summary>
@@ -949,6 +970,8 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
         var next = WithCommandAvailability(snapshot, state, affordance);
         lock (_snapshotLock)
         {
+            if (snapshot.Generation < _minimumPublicationGeneration || snapshot.Generation < _currentSnapshot.Generation)
+                return _currentSnapshot;
             _currentSnapshot = next;
         }
 
@@ -980,6 +1003,30 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
             // A settings mutation can arrive during compatibility mirroring; never restore its revoked freshness lease.
             if (publication.Generation < _minimumPublicationGeneration || publication.Generation < _currentSnapshot.Generation)
                 return _currentSnapshot;
+            if (mirror is not null)
+            {
+                // Retained rows stay selectable during discovery. Reconcile under the selection commit lock
+                // so accepting discovery cannot restore exclusions captured before the user's latest click.
+                var currentState = _appStateMirror.CurrentState;
+                var exclusions = currentState.ExcludedPluginPaths;
+                var retainedPaths = new HashSet<string>(currentState.PluginsToClean.Select(row => row.FullPath),
+                    StringComparer.OrdinalIgnoreCase);
+                var rowCommit = PluginRefreshPublicationRows.Commit(publication.Rows.Select(row => row with
+                {
+                    IsSelected = retainedPaths.Contains(row.Plugin.FullPath)
+                        ? row.IsSkippedByPolicy || !exclusions.Contains(row.Plugin.FullPath)
+                        : row.IsSelected
+                }).ToList());
+                nextPublication = publication with
+                {
+                    Rows = rowCommit.Rows,
+                    VisibleRows = rowCommit.VisibleRows,
+                    Commands = CreateCommandAvailability(publication.GameType, rowCommit.VisibleRows,
+                        publication.Activity, publication.Configuration, _appStateMirror.CurrentState.IsCleaning, affordance)
+                };
+                snapshot = ToSnapshot(nextPublication);
+                mirror = rowCommit.Mirror;
+            }
             _currentPublication = nextPublication;
             _currentPublicationFreshnessToken = freshnessToken;
             _currentSnapshot = snapshot;

@@ -15,7 +15,7 @@ public interface IPluginRefreshModule
     /// </summary>
     IObservable<PluginRefreshSnapshot> Snapshots { get; }
 
-    /// <summary>Synchronously fences previous discovery work and invalidates its publication before a settings mutation.</summary>
+    /// <summary>Synchronously fences previous discovery work and invalidates its publication after settings persist or are externally replaced.</summary>
     void InvalidateForSettings();
 
     /// <summary>Refreshes settings and completes when this operation publishes authoritative rows, before approximation finishes.</summary>
