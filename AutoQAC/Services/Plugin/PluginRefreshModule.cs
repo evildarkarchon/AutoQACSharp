@@ -90,7 +90,9 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         // Fence old callbacks before invalidating: a same-value retry must still require its own successful publication.
         var minimumGeneration = Interlocked.Increment(ref _activeGeneration);
         Interlocked.Increment(ref _freshnessRefreshVersion);
-        CancelActiveRefresh(PluginRefreshCancelReason.Manual);
+        // Token callbacks must observe supersession, but cancellation cleanup may still terminalize
+        // the old publication because a failed settings save may never launch a replacement refresh.
+        CancelActiveRefresh(PluginRefreshCancelReason.Manual, minimumGeneration - 1);
         _publicationStore.InvalidatePublication(minimumGeneration);
     }
 
@@ -575,7 +577,11 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         return _publicationStore.ApplySelectionChange(change, GetAffordance(snapshot));
     }
 
-    private PluginRefreshSnapshot CancelActiveRefresh(PluginRefreshCancelReason reason)
+    /// <summary>Cancels active work and terminalizes estimates still owned by its publication.</summary>
+    /// <param name="reason">Cancellation reason controlling the terminal status text.</param>
+    /// <param name="supersededGeneration">Immediately fenced settings generation allowed to finish cleanup only.</param>
+    /// <returns>The current snapshot after cancellation cleanup.</returns>
+    private PluginRefreshSnapshot CancelActiveRefresh(PluginRefreshCancelReason reason, long? supersededGeneration = null)
     {
         var cts = Volatile.Read(ref _activeRefreshCts);
         if (cts is not null)
@@ -599,7 +605,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                 PluginRefreshSelectedIssueApproximationDisposition.RestorePrior,
                 statusText,
                 GetAffordance(snapshot),
-                () => snapshot.Generation == Volatile.Read(ref _activeGeneration),
+                () => CanFinalizeCancellation(snapshot.Generation, supersededGeneration),
                 out var finalizedSelected))
             return finalizedSelected;
 
@@ -609,7 +615,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                 snapshot.Generation,
                 statusText,
                 GetAffordance(snapshot),
-                () => snapshot.Generation == Volatile.Read(ref _activeGeneration),
+                () => CanFinalizeCancellation(snapshot.Generation, supersededGeneration),
                 out var finalized))
             return finalized;
 
@@ -622,6 +628,14 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             IdleActivity,
             statusText,
             GetAffordance(snapshot));
+    }
+
+    /// <summary>Allows cleanup of the current or immediately fenced generation without accepting its late results.</summary>
+    private bool CanFinalizeCancellation(long generation, long? supersededGeneration)
+    {
+        var activeGeneration = Volatile.Read(ref _activeGeneration);
+        return generation == activeGeneration ||
+               generation == supersededGeneration && generation == activeGeneration - 1;
     }
 
     private void PublishNoGameSelected(long generation)

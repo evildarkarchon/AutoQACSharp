@@ -15,6 +15,64 @@ namespace AutoQAC.Tests.Services;
 
 public sealed class PluginRefreshModuleTests
 {
+    /// <summary>Settings invalidation must end pending estimates even when no replacement refresh starts.</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task InvalidateForSettings_DuringApproximation_FinalizesPendingRows(bool selectedRefresh)
+    {
+        var state = new StateService();
+        var analysisStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseAnalysis = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var invocation = 0;
+        Action<PluginIssueApproximationModuleResult>? lateCallback = null;
+        PluginIssueApproximationModuleRequest? activeRequest = null;
+        var approximationModule = new ResultPluginIssueApproximationModule(async (request, onResult, _) =>
+        {
+            if (Interlocked.Increment(ref invocation) == 1 && selectedRefresh)
+            {
+                foreach (var target in request.Targets)
+                    onResult(new PluginIssueApproximationModuleResult(target, PluginIssueApproximation.Available(2, 2, 2)));
+                return;
+            }
+
+            activeRequest = request;
+            lateCallback = onResult;
+            onResult(new PluginIssueApproximationModuleResult(request.Targets[0], PluginIssueApproximation.Available(9, 9, 9)));
+            analysisStarted.SetResult();
+            // Hold completion independently of cancellation so the invalidation itself must terminalize the rows.
+            await releaseAnalysis.Task;
+        });
+        using var sut = CreateModule(state, approximationModule: approximationModule);
+        if (selectedRefresh)
+            await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+        var refresh = sut.ExecuteAsync(selectedRefresh
+            ? new PluginRefreshIntent.RefreshSelectedIssueApproximations()
+            : new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+        await analysisStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        try
+        {
+            sut.InvalidateForSettings();
+            lateCallback!(new PluginIssueApproximationModuleResult(activeRequest!.Targets[1], PluginIssueApproximation.Available(99, 99, 99)));
+            var publication = await sut.GetCurrentPublicationAsync();
+
+            publication.Activity.Should().Be(new PluginRefreshActivity(false, false));
+            publication.Commands.CanCancelRefresh.Should().BeFalse();
+            publication.Rows.Should().NotContain(row => row.Plugin.Approximation.Status == PluginIssueApproximationStatus.Pending);
+            publication.Rows[0].Plugin.Approximation.Should().Be(PluginIssueApproximation.Available(9, 9, 9));
+            publication.Rows.Skip(1).Should().OnlyContain(row => selectedRefresh
+                ? row.Plugin.Approximation == PluginIssueApproximation.Available(2, 2, 2)
+                : row.Plugin.Approximation.Status == PluginIssueApproximationStatus.Unavailable);
+            state.CurrentState.PluginsToClean.Should().Equal(publication.Rows.Select(row => row.Plugin));
+        }
+        finally
+        {
+            releaseAnalysis.TrySetResult();
+            await refresh.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+    }
+
     /// <summary>A Reset re-entering compatibility projection must not be undone by the former game's remaining writes.</summary>
     [Fact]
     public async Task RefreshForSettings_ResetDuringConfigurationProjection_RemainsNoGame()

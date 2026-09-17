@@ -3,11 +3,98 @@ using AutoQAC.Services.GameCapability;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Services.State;
 using FluentAssertions;
+using NSubstitute;
 
 namespace AutoQAC.Tests.Services;
 
 public sealed class PluginRefreshPublicationStoreTests
 {
+    /// <summary>Obsolete failure paths must preserve the winning publication and its freshness lease.</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void PublishMissingPublicationFromState_WhenSuperseded_ShouldPreserveCurrentPublication(bool invalidate)
+    {
+        var stateService = new StateService();
+        using var sut = CreateStore(stateService);
+        var plan = CreatePlan();
+        sut.PublishAcceptedPublication(2, GameType.SkyrimSe, plan, CreateFreshnessToken(),
+            plan.Configuration, [Published("Winner.esp")], new(false, false), "Winner", Affordance());
+        if (invalidate) sut.InvalidatePublication(3);
+        var before = sut.GetFreshnessInspection();
+        var snapshot = sut.GetCurrentSnapshot();
+        var notifications = new List<PluginRefreshSnapshot>();
+        using var subscription = sut.Snapshots.Subscribe(notifications.Add);
+
+        var result = sut.PublishMissingPublicationFromState(invalidate ? 2 : 1, GameType.SkyrimSe,
+            plan.Configuration, new(false, false), "Obsolete failure", Affordance());
+
+        result.Should().BeSameAs(snapshot);
+        sut.GetCurrentSnapshot().Should().BeSameAs(snapshot);
+        sut.GetFreshnessInspection().Should().BeEquivalentTo(before);
+        notifications.Should().ContainSingle();
+    }
+
+    /// <summary>Rejected discovery must not overwrite compatibility rows or selection exclusions.</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void PublishAcceptedPublication_WhenSuperseded_ShouldPreserveCompatibilityRows(bool invalidate)
+    {
+        var stateService = new StateService();
+        using var sut = CreateStore(stateService);
+        var plan = CreatePlan();
+        var snapshot = sut.PublishAcceptedPublication(2, GameType.SkyrimSe, plan, CreateFreshnessToken(),
+            plan.Configuration, [Published("Winner.esp", isSelected: false)], new(false, false), "Winner", Affordance());
+        if (invalidate) sut.InvalidatePublication(3);
+
+        var result = sut.PublishAcceptedPublication(invalidate ? 2 : 1, GameType.SkyrimSe, plan, CreateFreshnessToken(),
+            plan.Configuration, [Published("Obsolete.esp")], new(false, false), "Obsolete", Affordance());
+
+        result.Should().BeSameAs(snapshot);
+        stateService.CurrentState.PluginsToClean.Should().ContainSingle(row => row.FileName == "Winner.esp");
+        stateService.CurrentState.ExcludedPluginPaths.Should().Equal(@"C:\Data\Winner.esp");
+    }
+
+    /// <summary>A result arriving during selection preparation must survive the selection commit.</summary>
+    [Fact]
+    public void ApplySelectionChange_WhenApproximationArrivesDuringCommit_ShouldPreserveResult()
+    {
+        var stateService = Substitute.For<IStateService>();
+        var backingState = new StateService();
+        Action? beforeStateRead = null;
+        stateService.CurrentState.Returns(_ =>
+        {
+            var callback = beforeStateRead;
+            beforeStateRead = null;
+            callback?.Invoke();
+            return backingState.CurrentState;
+        });
+        stateService.When(service => service.SetPluginsToClean(Arg.Any<List<PluginInfo>>()))
+            .Do(call => backingState.SetPluginsToClean(call.Arg<List<PluginInfo>>()!));
+        stateService.When(service => service.UpdateExcludedPlugins(Arg.Any<Func<IReadOnlySet<string>, IReadOnlySet<string>>>()))
+            .Do(call => backingState.UpdateExcludedPlugins(call.Arg<Func<IReadOnlySet<string>, IReadOnlySet<string>>>()!));
+        using var sut = new PluginRefreshPublicationStore(new PluginRefreshAppStateMirror(stateService),
+            new PluginRefreshCommandAvailabilityPolicy(), Affordance());
+        var plan = CreatePlan();
+        var target = new PluginRefreshRowKey("Target.esp", @"C:\Data\Target.esp");
+        sut.PublishAcceptedPublication(1, GameType.SkyrimSe, plan, CreateFreshnessToken(),
+            plan.Configuration, [Published("Target.esp", approximation: PluginIssueApproximation.Pending)],
+            new(true, true), "Analyzing", Affordance());
+        beforeStateRead = () => sut.TryPublishInitialApproximationResult(1,
+            PluginRefreshPublicationRows.CreateTargetLookup([target]),
+            new(target, PluginIssueApproximation.Available(3, 2, 1)), "Result arrived", Affordance(), () => true);
+
+        sut.ApplySelectionChange(new PluginSelectionChange.SetOne(target, false), Affordance());
+
+        sut.GetFreshnessInspection().Publication.Rows.Single().Plugin.Approximation
+            .Should().Be(PluginIssueApproximation.Available(3, 2, 1));
+        sut.GetCurrentSnapshot().Rows.Single().Approximation
+            .Should().Be(PluginIssueApproximation.Available(3, 2, 1));
+        backingState.CurrentState.PluginsToClean.Single().Approximation
+            .Should().Be(PluginIssueApproximation.Available(3, 2, 1));
+    }
+
     [Fact]
     public void PublishAcceptedPublication_ShouldMirrorFullRowsAndPublishVisibleSnapshot()
     {

@@ -280,7 +280,7 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
     }
 
     /// <summary>
-    ///     Publishes a missing publication whose visible rows come from AppState compatibility facts.
+    ///     Atomically publishes missing-publication facts unless their generation has been superseded.
     /// </summary>
     /// <param name="generation">Refresh generation associated with the snapshot.</param>
     /// <param name="gameType">Game context for the snapshot.</param>
@@ -297,13 +297,21 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
         string statusText,
         PluginRefreshGameAffordance affordance)
     {
-        var snapshot = PublishSnapshotFromState(generation, gameType, configuration, activity, statusText, affordance);
+        var state = _appStateMirror.CurrentState;
+        var snapshot = WithCommandAvailability(new PluginRefreshSnapshot(
+            generation, gameType, PluginRefreshAppStateMirror.ProjectVisibleRows(state),
+            configuration, activity, EmptyCommands, statusText), state, affordance);
         lock (_snapshotLock)
         {
+            // Failure paths obey the same generation fence as accepted discovery, including settings invalidation.
+            if (_disposed || generation < _minimumPublicationGeneration || generation < _currentSnapshot.Generation)
+                return _currentSnapshot;
+            _currentSnapshot = snapshot;
             _currentPublication = CreateMissingPublication(snapshot);
             _currentPublicationFreshnessToken = null;
         }
 
+        _snapshots.OnNext(snapshot);
         return snapshot;
     }
 
@@ -872,16 +880,17 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
             affordance);
     }
 
+    /// <summary>Commits compatibility rows only when their publication wins the generation check.</summary>
     private PluginRefreshSnapshot PublishPublicationWithMirroredRows(
         PluginRefreshPublication publication,
         PluginRefreshDiscoveryFreshnessToken freshnessToken,
         PluginRefreshPublicationRowsMirror mirror,
         PluginRefreshGameAffordance affordance)
     {
-        _appStateMirror.MirrorRows(mirror);
-        return PublishPublication(publication, freshnessToken, _appStateMirror.CurrentState, affordance);
+        return PublishPublication(publication, freshnessToken, _appStateMirror.CurrentState, affordance, mirror);
     }
 
+    /// <summary>Commits selection only if its source rows are unchanged, preserving streamed approximation results.</summary>
     private bool TryPublishSelectionPublicationIfCurrent(
         PluginRefreshPublication observedPublication,
         PluginRefreshPublication nextPublication,
@@ -909,6 +918,7 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
         lock (_snapshotLock)
         {
             if (!ReferenceEquals(_currentPublicationFreshnessToken, observedFreshnessToken) ||
+                !ReferenceEquals(_currentPublication.Rows, observedPublication.Rows) ||
                 _currentPublication.Generation != observedPublication.Generation ||
                 _currentPublication.DiscoveryPlan != observedPublication.DiscoveryPlan)
             {
@@ -921,9 +931,10 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
             _currentPublicationFreshnessToken = observedFreshnessToken;
             _currentSnapshot = ToSnapshot(committedPublication);
             snapshot = _currentSnapshot;
+            // Keep selection exclusions and rows under the same generation ownership as the publication.
+            _appStateMirror.MirrorRows(mirror);
         }
 
-        _appStateMirror.MirrorRows(mirror);
         _snapshots.OnNext(snapshot);
         return true;
     }
@@ -945,11 +956,13 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
         return next;
     }
 
+    /// <summary>Commits a winning publication and optional compatibility rows under one generation guard.</summary>
     private PluginRefreshSnapshot PublishPublication(
         PluginRefreshPublication publication,
         PluginRefreshDiscoveryFreshnessToken freshnessToken,
         AppState state,
-        PluginRefreshGameAffordance affordance)
+        PluginRefreshGameAffordance affordance,
+        PluginRefreshPublicationRowsMirror? mirror = null)
     {
         if (_disposed) return GetCurrentSnapshot();
 
@@ -970,6 +983,9 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
             _currentPublication = nextPublication;
             _currentPublicationFreshnessToken = freshnessToken;
             _currentSnapshot = snapshot;
+            // Install ownership before mirroring: synchronous state observers can revoke this lease,
+            // and no delayed write may restore it or overwrite a newer generation's compatibility rows.
+            if (mirror is not null) _appStateMirror.MirrorRows(mirror);
         }
 
         _snapshots.OnNext(snapshot);
