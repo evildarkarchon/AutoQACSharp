@@ -37,6 +37,14 @@ public sealed class ErrorDialogTests
     public ErrorDialogTests()
     {
         _configServiceMock = Substitute.For<IConfigurationService>();
+        _configServiceMock.FlushPendingSavesAsync(Arg.Any<CancellationToken>()).Returns(
+            new ConfigPersistenceResult(ConfigPersistenceStatusKind.Success, ConfigPersistenceOperationKind.Flush, 1, null));
+        _configServiceMock.SaveUserConfigAsync(Arg.Any<UserConfiguration>(), Arg.Any<CancellationToken>()).Returns(call =>
+        {
+            var saved = call.Arg<UserConfiguration>().Copy();
+            _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>()).Returns(_ => saved.Copy());
+            return Task.CompletedTask;
+        });
         _stateServiceMock = Substitute.For<IStateService>();
         _cleaningSessionMock = Substitute.For<ICleaningSession>();
         _loggerMock = Substitute.For<ILoggingService>();
@@ -60,7 +68,9 @@ public sealed class ErrorDialogTests
         _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>())
             .Returns(new UserConfiguration
             {
-                LoadOrder = new LoadOrderConfig(), XEdit = new XEditConfig(), ModOrganizer = new ModOrganizerConfig(),
+                LoadOrder = new LoadOrderConfig(),
+                XEdit = new XEditConfig(),
+                ModOrganizer = new ModOrganizerConfig(),
                 Settings = new AutoQacSettings()
             });
         _configServiceMock.GetSkipListAsync(
@@ -441,10 +451,13 @@ public sealed class ErrorDialogTests
         try
         {
             using var refreshModule = new RecordingPluginRefreshModule();
-            refreshModule.ExecuteHandler = (_, _) => Task.FromResult(
-                RecordingPluginRefreshModule.CreateSnapshot(
-                    GameType.FalloutNewVegas,
-                    statusText: "No plugins found in the selected load order."));
+            refreshModule.ExecuteHandler = (_, _) =>
+            {
+                var snapshot = RecordingPluginRefreshModule.CreateSnapshot(
+                    GameType.FalloutNewVegas, statusText: "No plugins found in the selected load order.");
+                refreshModule.Publish(snapshot);
+                return Task.FromResult(snapshot);
+            };
             var vm = CreateViewModel(refreshModule);
 
             _fileDialogMock.OpenFileDialogAsync(
@@ -456,8 +469,10 @@ public sealed class ErrorDialogTests
             _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>())
                 .Returns(new UserConfiguration
                 {
-                    LoadOrder = new LoadOrderConfig(), XEdit = new XEditConfig(),
-                    ModOrganizer = new ModOrganizerConfig(), Settings = new AutoQacSettings()
+                    LoadOrder = new LoadOrderConfig(),
+                    XEdit = new XEditConfig(),
+                    ModOrganizer = new ModOrganizerConfig(),
+                    Settings = new AutoQacSettings()
                 });
 
             // Return empty list from the coordinator-backed load-order path.
@@ -501,14 +516,15 @@ public sealed class ErrorDialogTests
                 .GetPluginsFromFileAsync(tempFile, Arg.Any<string?>(), Arg.Any<CancellationToken>())
                 .ThrowsAsync(new IOException("File in use"));
             vm.Configuration.SelectedGame = GameType.FalloutNewVegas;
+            _messageDialogMock.ClearReceivedCalls();
 
             // Act
             await vm.Configuration.ConfigureLoadOrderCommand.ExecuteAsync(null);
 
             // Assert
             await _messageDialogMock.Received(1).ShowErrorAsync(
-                "Read Error",
-                Arg.Any<string>(),
+                "Plugin Refresh Failed",
+                Arg.Is<string>(message => message.Contains("saved") && !message.Contains("File in use")),
                 Arg.Any<string?>());
         }
         finally
@@ -898,8 +914,8 @@ public sealed class ErrorDialogTests
         };
 
         foreach (var text in userVisibleTexts)
-        foreach (var fragment in forbiddenFragments)
-            text.Should().NotContain(fragment);
+            foreach (var fragment in forbiddenFragments)
+                text.Should().NotContain(fragment);
     }
 
     private static void AssertValidationErrorDoesNotContainFullPath(ValidationError error, string forbiddenPathPrefix)

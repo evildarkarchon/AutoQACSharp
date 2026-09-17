@@ -3,7 +3,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <Grid RowDefinitions="*,Auto" RowSpacing="16" MinWidth="560" MaxHeight="680">
-        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
+        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" IsEnabled="{Binding CanEditSettings, Mode=OneWay}">
             <StackPanel Spacing="16">
                 <InfoBar
                     IsOpen="{Binding HasPersistenceBanner, Mode=OneWay}"

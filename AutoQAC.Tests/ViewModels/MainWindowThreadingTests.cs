@@ -103,9 +103,7 @@ public sealed class MainWindowThreadingTests
         readiness.EvaluateAsync(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(CleaningCommandReadinessResult.Ready));
         var viewModel = new CleaningCommandsViewModel(
-            Substitute.For<IStateService>(),
             Substitute.For<ICleaningSession>(),
-            Substitute.For<IConfigurationService>(),
             readiness,
             new RecordingPluginRefreshModule(),
             Substitute.For<ILoggingService>(),

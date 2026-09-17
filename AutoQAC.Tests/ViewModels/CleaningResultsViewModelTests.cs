@@ -329,11 +329,12 @@ public sealed class CleaningResultsViewModelTests
             .Information(Arg.Any<string>(), Arg.Any<object[]>());
     }
 
+    /// <summary>Exports into an owned temporary file so success does not depend on a machine-specific directory.</summary>
     [Fact]
     public async Task ExportReportCommand_WhenUserSelectsPath_ShouldLogSuccess()
     {
         // Arrange
-        var testPath = "C:\\test\\report.txt";
+        var testPath = Path.Combine(Path.GetTempPath(), $"AutoQAC-report-{Guid.NewGuid():N}.txt");
         _fileDialogMock.SaveFileDialogAsync(
                 Arg.Any<string>(),
                 Arg.Any<string>(),
@@ -343,12 +344,20 @@ public sealed class CleaningResultsViewModelTests
 
         var vm = CreateViewModel();
 
-        // Act
-        await vm.ExportReportCommand.ExecuteAsync(null);
+        try
+        {
+            // Act
+            await vm.ExportReportCommand.ExecuteAsync(null);
 
-        // Assert
-        _loggerMock.Received(1)
-            .Information(Arg.Any<string>(), Arg.Is<object[]>(args => args[0].ToString() == testPath));
+            // Assert
+            (await File.ReadAllTextAsync(testPath)).Should().NotBeNullOrWhiteSpace();
+            _loggerMock.Received(1)
+                .Information(Arg.Any<string>(), Arg.Is<object[]>(args => args[0].ToString() == testPath));
+        }
+        finally
+        {
+            File.Delete(testPath);
+        }
     }
 
     [Fact]

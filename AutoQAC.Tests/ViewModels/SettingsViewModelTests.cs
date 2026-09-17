@@ -2,6 +2,7 @@ using System.Reactive.Subjects;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models.Configuration;
 using AutoQAC.Services.Configuration;
+using AutoQAC.Tests.TestInfrastructure;
 using AutoQAC.Services.UI;
 using AutoQAC.ViewModels;
 using FluentAssertions;
@@ -15,6 +16,34 @@ namespace AutoQAC.Tests.ViewModels;
 /// </summary>
 public sealed class SettingsViewModelTests
 {
+    /// <summary>The editor hands its baseline and changed values to the same module as the main window.</summary>
+    [Fact]
+    public async Task SaveAsync_UsesDiscoverySettingsOutcomeInsteadOfSavingDirectly()
+    {
+        var fixture = CreateFixture();
+        var changes = Substitute.For<IDiscoverySettingsModule>();
+        changes.ExecuteAsync(Arg.Any<DiscoverySettingsIntent>(), Arg.Any<CancellationToken>())
+            .Returns(new DiscoverySettingsChangeResult(DiscoverySettingsChangeStatus.RefreshFailed, null,
+                new DiscoverySettingsChangeFailure(DiscoverySettingsChangeFailureKind.PublicationFailed,
+                    "Settings were saved, but plugins could not be refreshed."))
+            { SettingsSaved = true });
+        using var vm = new SettingsViewModel(fixture.ConfigService, fixture.Logger, fixture.Dispatcher,
+            discoverySettingsModule: changes);
+        await vm.LoadSettingsAsync();
+        ApplyValidEditableValues(vm);
+        vm.Mo2Mode = true;
+        bool? closed = null;
+        vm.CloseRequested += result => closed = result;
+
+        await vm.SaveCommand.ExecuteAsync(null);
+
+        vm.PersistenceBannerText.Should().Contain("saved, but plugins");
+        closed.Should().BeNull();
+        await fixture.ConfigService.DidNotReceive().SaveUserConfigAsync(Arg.Any<UserConfiguration>(), Arg.Any<CancellationToken>());
+        await changes.Received(1).ExecuteAsync(Arg.Is<DiscoverySettingsIntent.ApplySettings>(edit =>
+            !edit.Baseline.Settings.Mo2Mode && edit.Requested.Settings.Mo2Mode), Arg.Any<CancellationToken>());
+    }
+
     [Fact]
     public void Failure_Save_WriteFailed_PopulatesBannerWithSafeSummary()
     {
@@ -139,9 +168,8 @@ public sealed class SettingsViewModelTests
             "Could not write settings file (write_failed)",
             null,
             5));
-        fixture.ConfigService.FlushPendingSavesAsync(Arg.Any<CancellationToken>()).Returns(
-            new ConfigPersistenceResult(ConfigPersistenceStatusKind.Success, ConfigPersistenceOperationKind.Flush, 6,
-                null));
+        fixture.Discovery.ExecuteAsync(Arg.Any<DiscoverySettingsIntent>(), Arg.Any<CancellationToken>())
+            .Returns(DiscoverySettingsChangeResult.Accepted(RecordingPluginRefreshModule.CreateSnapshot()));
 
         await vm.SaveCommand.ExecuteAsync(null);
 
@@ -165,9 +193,9 @@ public sealed class SettingsViewModelTests
             "Could not write settings file (write_failed)",
             null,
             7);
-        fixture.ConfigService.FlushPendingSavesAsync(Arg.Any<CancellationToken>()).Returns(
-            new ConfigPersistenceResult(ConfigPersistenceStatusKind.Failed, ConfigPersistenceOperationKind.Flush, 7,
-                failure));
+        fixture.Discovery.ExecuteAsync(Arg.Any<DiscoverySettingsIntent>(), Arg.Any<CancellationToken>())
+            .Returns(new DiscoverySettingsChangeResult(DiscoverySettingsChangeStatus.SaveFailed, null,
+                new DiscoverySettingsChangeFailure(DiscoverySettingsChangeFailureKind.PersistenceFailed, failure.SafeSummary)));
 
         await vm.SaveCommand.ExecuteAsync(null);
 
@@ -185,8 +213,8 @@ public sealed class SettingsViewModelTests
         ApplyValidEditableValues(vm);
         bool? closeResult = null;
         vm.CloseRequested += result => closeResult = result;
-        fixture.ConfigService.SaveUserConfigAsync(Arg.Any<UserConfiguration>(), Arg.Any<CancellationToken>())
-            .Returns(_ => Task.FromException(new InvalidOperationException("save failed")));
+        fixture.Discovery.ExecuteAsync(Arg.Any<DiscoverySettingsIntent>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromException<DiscoverySettingsChangeResult>(new InvalidOperationException("save failed")));
 
         await vm.SaveCommand.ExecuteAsync(null);
 
@@ -383,9 +411,20 @@ public sealed class SettingsViewModelTests
         RecordingObservable<ConfigPersistenceResult>? RecordingResults,
         RecordingObservable<UserConfiguration>? RecordingUserConfigurationChanged)
     {
+        public IDiscoverySettingsModule Discovery { get; } = CreateDiscovery();
+
+        /// <summary>The editor tests project operation outcomes; persistence is exercised through module tests.</summary>
+        private static IDiscoverySettingsModule CreateDiscovery()
+        {
+            var module = Substitute.For<IDiscoverySettingsModule>();
+            module.ExecuteAsync(Arg.Any<DiscoverySettingsIntent>(), Arg.Any<CancellationToken>())
+                .Returns(DiscoverySettingsChangeResult.Accepted(RecordingPluginRefreshModule.CreateSnapshot()));
+            return module;
+        }
+
         public SettingsViewModel CreateViewModel()
         {
-            return new SettingsViewModel(ConfigService, Logger, Dispatcher);
+            return new SettingsViewModel(ConfigService, Logger, Dispatcher, discoverySettingsModule: Discovery);
         }
     }
 

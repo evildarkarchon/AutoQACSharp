@@ -22,7 +22,12 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
 {
     private readonly IDisposable _pluginRefreshSnapshotSubscription;
     private readonly IDisposable _stateSubscription;
+    private readonly IDisposable? _configurationSubscription;
+    private readonly DiscoverySettingsAdmission? _admission;
+    private readonly IUiDispatcher _uiDispatcher;
+    private bool _disposed;
 
+    /// <summary>Composes the main window and dispatches state, configuration, and cleaning admission updates onto the UI thread.</summary>
     public MainWindowViewModel(
         IConfigurationService configService,
         IStateService stateService,
@@ -37,8 +42,11 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         IPluginRefreshDiscoveryPlanner discoveryPlanner,
         IDiscoverySettingsModule discoverySettingsModule,
         ICleaningCommandReadiness cleaningCommandReadiness,
-        IAppLifetime? appLifetime = null)
+        IAppLifetime? appLifetime = null,
+        DiscoverySettingsAdmission? admission = null)
     {
+        _admission = admission;
+        _uiDispatcher = uiDispatcher;
         Configuration = new ConfigurationViewModel(
             configService, stateService, logger, fileDialog,
             messageDialog, pluginService, pluginLoadingService,
@@ -49,7 +57,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         PluginList = new PluginListViewModel(pluginRefreshModule);
 
         Commands = new CleaningCommandsViewModel(
-            stateService, cleaningSession, configService,
+            cleaningSession,
             cleaningCommandReadiness,
             pluginRefreshModule,
             logger, messageDialog, appLifetime ?? NoOpAppLifetime.Instance,
@@ -64,7 +72,14 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         _stateSubscription = stateService.StateChanged.Subscribe(
             new CallbackObserver<AppState>(state => uiDispatcher.Post(() => OnStateChanged(state))));
 
+        _configurationSubscription = configService.UserConfigurationChanged?.Subscribe(
+            new CallbackObserver<AutoQAC.Models.Configuration.UserConfiguration>(config =>
+            {
+                if (config is not null) uiDispatcher.Post(() => Configuration.OnUserConfigurationChanged(config));
+            }));
+        if (_admission is not null) _admission.CleaningChanged += OnCleaningAdmissionChanged;
         OnStateChanged(stateService.CurrentState);
+        ApplyCleaningAdmission();
 
         _ = Configuration.InitializeAsync();
     }
@@ -83,11 +98,26 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
+        _disposed = true;
+        if (_admission is not null) _admission.CleaningChanged -= OnCleaningAdmissionChanged;
+        _configurationSubscription?.Dispose();
         _pluginRefreshSnapshotSubscription.Dispose();
         _stateSubscription.Dispose();
         Configuration.Dispose();
         PluginList.Dispose();
         Commands.Dispose();
+    }
+
+    /// <summary>Marshals startup admission transitions before projecting command availability.</summary>
+    private void OnCleaningAdmissionChanged(object? sender, EventArgs e) => _uiDispatcher.Post(ApplyCleaningAdmission);
+
+    /// <summary>Projects the current reservation, avoiding stale queued transition values.</summary>
+    private void ApplyCleaningAdmission()
+    {
+        if (_disposed) return;
+        var reserved = _admission?.IsCleaning ?? false;
+        Configuration.OnCleaningAdmissionChanged(reserved);
+        Commands.OnCleaningAdmissionChanged(reserved);
     }
 
     private void OnStateChanged(AppState state)

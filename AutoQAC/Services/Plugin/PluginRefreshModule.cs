@@ -85,6 +85,66 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
     }
 
     /// <inheritdoc />
+    public void InvalidateForSettings()
+    {
+        // Fence old callbacks before invalidating: a same-value retry must still require its own successful publication.
+        var minimumGeneration = Interlocked.Increment(ref _activeGeneration);
+        Interlocked.Increment(ref _freshnessRefreshVersion);
+        CancelActiveRefresh(PluginRefreshCancelReason.Manual);
+        _publicationStore.InvalidatePublication(minimumGeneration);
+    }
+
+    /// <inheritdoc />
+    public Task<PluginRefreshCompletion> RefreshForSettingsAsync(GameType gameType, CancellationToken cancellationToken = default)
+    {
+        if (cancellationToken.IsCancellationRequested)
+            return Task.FromResult(new PluginRefreshCompletion(PluginRefreshCompletionStatus.Canceled));
+        if (_disposed)
+            return Task.FromResult(new PluginRefreshCompletion(PluginRefreshCompletionStatus.Failed));
+        var completion = new TaskCompletionSource<PluginRefreshCompletion>(TaskCreationOptions.RunContinuationsAsynchronously);
+        // The module retains the generation and observes its remaining approximation work after the caller receives rows.
+        _ = ObserveSettingsRefreshAsync(gameType, cancellationToken, completion);
+        return completion.Task;
+    }
+
+    /// <summary>Observes the complete refresh lifetime while its caller waits only for correlated publication.</summary>
+    private async Task ObserveSettingsRefreshAsync(GameType gameType, CancellationToken cancellationToken,
+        TaskCompletionSource<PluginRefreshCompletion> completion)
+    {
+        try
+        {
+            await RefreshGameAsync(gameType, null, cancellationToken, completion).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger?.Error(ex, "Failed to refresh plugins for Discovery settings");
+            completion.TrySetResult(new PluginRefreshCompletion(
+                cancellationToken.IsCancellationRequested ? PluginRefreshCompletionStatus.Canceled : PluginRefreshCompletionStatus.Failed));
+        }
+    }
+
+    /// <summary>Accepts only this generation's fresh publication; estimate completion is deliberately independent.</summary>
+    private async Task CompleteSettingsPublicationAsync(long generation, CancellationToken token,
+        TaskCompletionSource<PluginRefreshCompletion>? completion)
+    {
+        if (completion is null) return;
+        var version = Volatile.Read(ref _freshnessRefreshVersion);
+        var publication = await GetCurrentPublicationWithFreshnessAsync(true, token).ConfigureAwait(false);
+        var snapshot = _publicationStore.GetCurrentSnapshot();
+        if (!IsVisible(generation, token) || version != Volatile.Read(ref _freshnessRefreshVersion) ||
+            publication.Generation != generation || snapshot.Generation != generation)
+        {
+            completion.TrySetResult(new PluginRefreshCompletion(
+                generation == Volatile.Read(ref _activeGeneration) && token.IsCancellationRequested
+                    ? PluginRefreshCompletionStatus.Canceled : PluginRefreshCompletionStatus.Superseded));
+            return;
+        }
+        completion.TrySetResult(publication.Freshness.IsFresh
+            ? new PluginRefreshCompletion(PluginRefreshCompletionStatus.Published, snapshot, publication)
+            : new PluginRefreshCompletion(PluginRefreshCompletionStatus.Superseded));
+    }
+
+    /// <inheritdoc />
     public IObservable<PluginRefreshSnapshot> Snapshots => _publicationStore.Snapshots;
 
     /// <inheritdoc />
@@ -135,13 +195,24 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         return refreshedPublication;
     }
 
+    /// <summary>Owns a full refresh generation and its estimates, optionally acknowledging its earlier settings publication.</summary>
+    /// <param name="gameType">Game selected by this operation.</param>
+    /// <param name="selectedLoadOrderPath">Explicit load order override, or null to resolve configured discovery.</param>
+    /// <param name="cancellationToken">Cancels discovery and any remaining approximation work.</param>
+    /// <param name="completion">Optional operation-owned publication completion; never receives another generation's snapshot.</param>
     private async Task<PluginRefreshSnapshot> RefreshGameAsync(
         GameType gameType,
         string? selectedLoadOrderPath,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        TaskCompletionSource<PluginRefreshCompletion>? completion = null)
     {
         using var linkedCts = CreateAndActivateGeneration(cancellationToken, out var generation);
         var token = linkedCts.Token;
+        // Cancellation must release the settings caller even if a discovery adapter ignores its token.
+        using var completionCancellation = completion is null ? default : token.Register(() =>
+            completion.TrySetResult(new PluginRefreshCompletion(
+                generation == Volatile.Read(ref _activeGeneration)
+                    ? PluginRefreshCompletionStatus.Canceled : PluginRefreshCompletionStatus.Superseded)));
         var acceptedSnapshot = _publicationStore.GetCurrentSnapshot();
         var configuration = acceptedSnapshot.Configuration;
         var keepExistingRows = gameType != GameType.Unknown && gameType == acceptedSnapshot.GameType;
@@ -161,8 +232,12 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         {
             if (gameType == GameType.Unknown)
             {
+                token.ThrowIfCancellationRequested();
                 PublishNoGameSelected(generation);
-                return _publicationStore.GetCurrentSnapshot();
+                var noGameSnapshot = _publicationStore.GetCurrentSnapshot();
+                if (IsVisible(generation, token) && noGameSnapshot.Generation == generation)
+                    completion?.TrySetResult(new PluginRefreshCompletion(PluginRefreshCompletionStatus.NoGame, noGameSnapshot));
+                return noGameSnapshot;
             }
 
             var planResult = await _discoveryPlanner.CreatePlanAsync(
@@ -172,7 +247,8 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             configuration = planResult.Configuration;
             if (!IsVisible(generation, token)) return _publicationStore.GetCurrentSnapshot();
 
-            PublishRuntimeConfiguration(configuration, gameType);
+            PublishRuntimeConfiguration(configuration, gameType, generation, token);
+            if (!IsVisible(generation, token)) return _publicationStore.GetCurrentSnapshot();
             _publicationStore.PublishSnapshotFromState(
                 generation,
                 gameType,
@@ -199,6 +275,17 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             var loadedPlugins = await _discoveryPlanner.LoadPluginsAsync(plan, token).ConfigureAwait(false);
             if (!IsVisible(generation, token)) return _publicationStore.GetCurrentSnapshot();
 
+            if (loadedPlugins.LoadingStatus is PluginLoadingStatus.Failed or PluginLoadingStatus.DataFolderNotFound or PluginLoadingStatus.UnsupportedGame)
+            {
+                // Empty successful load orders are valid; a loader failure must never grant a freshness lease to empty rows.
+                _publicationStore.ClearCompatibilityRows();
+                _publicationStore.PublishMissingPublicationFromState(
+                    generation, gameType, configuration, IdleActivity,
+                    "Plugin discovery failed. Check the game configuration and refresh plugins.",
+                    GetAffordance(gameType, configuration));
+                return _publicationStore.GetCurrentSnapshot();
+            }
+
             if (loadedPlugins.Plugins.Count == 0)
             {
                 _publicationStore.PublishAcceptedPublication(
@@ -211,6 +298,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                     IdleActivity,
                     GetNoPluginsFoundMessage(plan),
                     GetAffordance(gameType, configuration));
+                await CompleteSettingsPublicationAsync(generation, token, completion).ConfigureAwait(false);
                 return _publicationStore.GetCurrentSnapshot();
             }
 
@@ -263,6 +351,8 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                         : $"Analyzing 0 of {targets.Count} plugins."
                     : $"Loading plugins for {plan.GameType}...",
                 GetAffordance(plan.GameType, configuration));
+
+            await CompleteSettingsPublicationAsync(generation, token, completion).ConfigureAwait(false);
 
             if (!plan.CanAttemptIssueApproximation)
             {
@@ -330,6 +420,9 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         }
         finally
         {
+            completion?.TrySetResult(new PluginRefreshCompletion(
+                generation != Volatile.Read(ref _activeGeneration) ? PluginRefreshCompletionStatus.Superseded :
+                token.IsCancellationRequested ? PluginRefreshCompletionStatus.Canceled : PluginRefreshCompletionStatus.Failed));
             ReleaseGeneration(linkedCts);
         }
 
@@ -614,17 +707,20 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             .ConfigureAwait(false);
     }
 
+    /// <summary>Projects a generation's resolved settings in one state update so observers cannot interleave Reset between fields.</summary>
     private void PublishRuntimeConfiguration(
         PluginRefreshConfigurationProjection configuration,
-        GameType gameType)
+        GameType gameType,
+        long generation,
+        CancellationToken token)
     {
-        _stateService.UpdateConfigurationPaths(
-            configuration.Mo2ModeEnabled ? null : configuration.LoadOrderPath,
-            configuration.Mo2Path,
-            configuration.XEditPath,
-            configuration.SelectedProfile);
-        _stateService.UpdateState(state => state with
+        // The guard runs inside the state update; a superseded generation cannot restore its former game or paths.
+        _stateService.UpdateState(state => !IsVisible(generation, token) ? state : state with
         {
+            LoadOrderPath = configuration.Mo2ModeEnabled ? null : configuration.LoadOrderPath,
+            Mo2ExecutablePath = configuration.Mo2Path,
+            XEditExecutablePath = configuration.XEditPath,
+            Mo2Profile = configuration.SelectedProfile,
             CurrentGameType = gameType,
             Mo2ModeEnabled = configuration.Mo2ModeEnabled,
             CleaningTimeout = configuration.CleaningTimeout

@@ -32,6 +32,7 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
     private readonly Subject<ConfigPersistenceResult> _persistenceResults = new();
     private readonly Lock _snapshotLock = new();
     private readonly IStateService _stateService;
+    private readonly DiscoverySettingsAdmission? _admission;
     private readonly IDeserializer _yamlValidator;
 
     private UserConfiguration _activeConfig = new();
@@ -54,9 +55,11 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
         IUserConfigFileStore fileStore,
         IStateService stateService,
         ILoggingService logger,
-        TimeSpan? autoFlushDelay = null)
+        TimeSpan? autoFlushDelay = null,
+        DiscoverySettingsAdmission? admission = null)
     {
         _fileStore = fileStore;
+        _admission = admission;
         _stateService = stateService;
         _logger = logger;
         _autoFlushDelay = autoFlushDelay ?? TimeSpan.FromMilliseconds(500);
@@ -85,6 +88,7 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
         if (Interlocked.Exchange(ref _started, 1) == 1) return Task.CompletedTask;
 
         _consumerCts = new CancellationTokenSource();
+        if (_admission is not null) _admission.AvailabilityChanged += OnAdmissionAvailable;
         _cleaningSubscription = _stateService.StateChanged
             .Select(state => state.IsCleaning)
             .DistinctUntilChanged()
@@ -105,6 +109,7 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
         if (_autoFlushCts != null) await _autoFlushCts.CancelAsync().ConfigureAwait(false);
 
         _cleaningSubscription?.Dispose();
+        if (_admission is not null) _admission.AvailabilityChanged -= OnAdmissionAvailable;
 
         if (_consumerTask == null)
         {
@@ -283,6 +288,7 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
         }
     }
 
+    /// <summary>Reads a distinct watcher candidate and applies it only when settings admission is available.</summary>
     private async Task ApplyWatcherAsync(WatcherObserved op, CancellationToken ct)
     {
         if (op.Kind == ConfigFileSignalKind.Error)
@@ -348,7 +354,8 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
             return;
         }
 
-        if (_stateService.CurrentState.IsCleaning)
+        using var externalLease = _admission?.TryEnterExternalSettings();
+        if (IsCleaning || (_admission is not null && externalLease is null))
         {
             _deferredCandidate = read.ReadResult;
             _lastKnownExternalHash = read.ReadResult.Hash ?? currentHash;
@@ -360,9 +367,17 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
         ApplyCandidate(read.ReadResult, ConfigPersistenceOperationKind.Watcher);
     }
 
+    private bool IsCleaning => (_admission?.IsCleaning ?? false) || _stateService.CurrentState.IsCleaning;
+
+    /// <summary>Queues a retry after settings mutation or cleaning releases its admission lease.</summary>
+    private void OnAdmissionAvailable(object? sender, EventArgs e) => TryWrite(new CleaningStateChanged(false));
+
+    /// <summary>Applies the latest deferred candidate once cleaning and admitted settings writes have finished.</summary>
     private Task ApplyCleaningStateAsync(CleaningStateChanged cleaning)
     {
-        if (cleaning.IsCleaning || _deferredCandidate == null) return Task.CompletedTask;
+        if (cleaning.IsCleaning || IsCleaning || _deferredCandidate == null) return Task.CompletedTask;
+        using var externalLease = _admission?.TryEnterExternalSettings();
+        if (_admission is not null && externalLease is null) return Task.CompletedTask;
 
         var candidate = _deferredCandidate;
         _deferredCandidate = null;
@@ -371,6 +386,7 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
         return Task.CompletedTask;
     }
 
+    /// <summary>Flushes queued app writes before reading disk; returns NoOp when application is deferred by admission.</summary>
     private async Task ApplyReloadRequestAsync(ReloadRequest reload, CancellationToken ct)
     {
         if (_pendingApp != null)
@@ -390,7 +406,19 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
         }
 
         var read = await ReadForReloadAsync(ConfigPersistenceOperationKind.Reload, ct).ConfigureAwait(false);
-        var result = read.Result ?? ValidateAndApply(read.ReadResult, ConfigPersistenceOperationKind.Reload);
+        using var externalLease = _admission?.TryEnterExternalSettings();
+        ConfigPersistenceResult result;
+        if (read.Result is not null)
+            result = read.Result;
+        else if (IsCleaning || (_admission is not null && externalLease is null))
+        {
+            // Never await admission inside the consumer: the admitted settings caller may be awaiting our flush.
+            _deferredCandidate = read.ReadResult;
+            result = new ConfigPersistenceResult(ConfigPersistenceStatusKind.NoOp,
+                ConfigPersistenceOperationKind.Reload, _appGeneration, null);
+        }
+        else
+            result = ValidateAndApply(read.ReadResult, ConfigPersistenceOperationKind.Reload);
         SafePublishResult(result);
         reload.Completion.TrySetResult(result);
     }

@@ -20,17 +20,31 @@ public sealed partial class SkipListViewModel : ViewModelBase, IDisposable
     private readonly IConfigurationService _configService;
     private readonly ILoggingService _logger;
     private readonly IStateService _stateService;
+    private readonly IDiscoverySettingsModule? _discoverySettingsModule;
+    private readonly DiscoverySettingsAdmission? _admission;
+    private readonly AutoQAC.Services.UI.IUiDispatcher? _uiDispatcher;
 
     private List<string> _originalSkipList = [];
+    private readonly CancellationTokenSource _lifetime = new();
+    private bool _closed;
+    private bool _disposed;
 
+    /// <summary>Edits a local Skip list draft and submits saves through shared settings admission.</summary>
     public SkipListViewModel(
         IConfigurationService configService,
         IStateService stateService,
-        ILoggingService logger)
+        ILoggingService logger,
+        IDiscoverySettingsModule? discoverySettingsModule = null,
+        DiscoverySettingsAdmission? admission = null,
+        AutoQAC.Services.UI.IUiDispatcher? uiDispatcher = null)
     {
         _configService = configService;
         _stateService = stateService;
         _logger = logger;
+        _discoverySettingsModule = discoverySettingsModule;
+        _admission = admission;
+        _uiDispatcher = uiDispatcher;
+        if (_admission is not null) _admission.CleaningChanged += OnCleaningChanged;
 
         AvailableGames = Enum.GetValues<GameType>()
             .Where(g => g != GameType.Unknown)
@@ -65,11 +79,21 @@ public sealed partial class SkipListViewModel : ViewModelBase, IDisposable
 
     [ObservableProperty] public partial bool HasUnsavedChanges { get; set; }
 
+    [ObservableProperty] public partial string? SaveError { get; set; }
+
     [ObservableProperty] public partial bool IsLoading { get; set; }
 
+    /// <summary>Cancels pending acceptance and disconnects admission notifications without closing the dialog again.</summary>
+    /// <summary>Cancels pending acceptance and removes subscriptions; persisted Skip list choices remain saved.</summary>
     public void Dispose()
     {
+        if (_disposed) return;
+        _disposed = true;
+        _closed = true;
+        _lifetime.Cancel();
+        _lifetime.Dispose();
         SkipListEntries.CollectionChanged -= OnSkipListEntriesChanged;
+        if (_admission is not null) _admission.CleaningChanged -= OnCleaningChanged;
     }
 
     /// <summary>Raised when the user picks Save or Cancel. The view closes the dialog with this value.</summary>
@@ -248,13 +272,40 @@ public sealed partial class SkipListViewModel : ViewModelBase, IDisposable
         _logger.Debug("Removed {Plugin} from skip list", entry);
     }
 
-    [RelayCommand]
+    /// <summary>Refreshes Save availability on the UI thread when cleaning reserves or releases settings.</summary>
+    private void OnCleaningChanged(object? sender, EventArgs e)
+    {
+        if (_uiDispatcher is not null) _uiDispatcher.Post(SaveCommand.NotifyCanExecuteChanged);
+        else SaveCommand.NotifyCanExecuteChanged();
+    }
+
+    private bool CanSave() => !_closed && !(_admission?.IsCleaning ?? false) && !_stateService.CurrentState.IsCleaning;
+
+    /// <summary>Submits the edited Skip list through durable settings acceptance; failed saves keep the dialog open.</summary>
+    [RelayCommand(CanExecute = nameof(CanSave))]
     private async Task SaveAsync()
     {
         try
         {
+            if (_closed) return;
+            SaveError = null;
+            if (!CanSave())
+            {
+                SaveError = "Settings cannot change while cleaning is starting or active.";
+                return;
+            }
             var skipList = SkipListEntries.ToList();
-            await _configService.UpdateSkipListAsync(SelectedGame, skipList);
+            var module = _discoverySettingsModule ?? throw new InvalidOperationException("Settings module is unavailable.");
+            var token = _lifetime.Token;
+            // The dialog owns waiting, not the write: closing stops acceptance while already-saved choices remain intact.
+            var result = await module.ExecuteAsync(new DiscoverySettingsIntent.SetSkipList(SelectedGame, skipList), token)
+                .WaitAsync(token);
+            if (_closed || result.Status is DiscoverySettingsChangeStatus.Superseded or DiscoverySettingsChangeStatus.Canceled) return;
+            if (result.Status != DiscoverySettingsChangeStatus.Accepted)
+            {
+                SaveError = result.Failure?.SafeMessage ?? "Skip list changes were not accepted. Please retry.";
+                return;
+            }
 
             _originalSkipList = skipList.ToList();
             RecomputeHasUnsavedChanges();
@@ -263,16 +314,24 @@ public sealed partial class SkipListViewModel : ViewModelBase, IDisposable
 
             CloseRequested?.Invoke(true);
         }
+        catch (OperationCanceledException) when (_closed)
+        {
+            // Cancel and disposal end the dialog's wait without reporting an error or claiming acceptance.
+        }
         catch (Exception ex)
         {
             _logger.Error(ex, "Failed to save skip list");
-            CloseRequested?.Invoke(false);
+            SaveError = "Could not save the Skip list. Please retry.";
         }
     }
 
+    /// <summary>Cancels pending acceptance before requesting that the view close without an accepted save.</summary>
     [RelayCommand]
     private void Cancel()
     {
+        if (_closed) return;
+        _closed = true;
+        _lifetime.Cancel();
         CloseRequested?.Invoke(false);
     }
 

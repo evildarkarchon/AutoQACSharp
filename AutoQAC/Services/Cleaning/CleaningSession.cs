@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.Process;
+using AutoQAC.Services.Configuration;
 
 namespace AutoQAC.Services.Cleaning;
 
@@ -21,10 +22,12 @@ public sealed class CleaningSession(
     ICleaningSessionStatePublisher statePublisher,
     ICleaningSessionDecisionAdapter decisions,
     ILoggingService logger,
-    IProcessExecutionService processService)
+    IProcessExecutionService processService,
+    DiscoverySettingsAdmission? admission = null)
     : ICleaningSession, IDisposable
 {
     private readonly Lock _ctsLock = new();
+    private readonly DiscoverySettingsAdmission _admission = admission ?? new();
     private CancellationTokenSource? _cleaningCts;
     private int _sessionActive;
 
@@ -40,15 +43,17 @@ public sealed class CleaningSession(
         string? backupSessionDir = null;
         var backupEntries = new List<BackupPluginEntry>();
 
-        // Reset stop flags at the start of each cleaning session.
-        terminationCoordinator.ResetForNewSession();
+        IDisposable? admissionLease = null;
 
         try
         {
-            logger.Information("Starting cleaning workflow");
-
             // Create the session CTS before cancellable startup work so stop can cancel orphan cleanup / preflight.
             var cts = CreateSessionCts(ct);
+            admissionLease = await _admission.EnterCleaningAsync(cts.Token).ConfigureAwait(false);
+
+            // Reset stop flags at the start of each cleaning session.
+            terminationCoordinator.ResetForNewSession();
+            logger.Information("Starting cleaning workflow");
 
             // Clean orphaned processes before starting.
             await processService.CleanOrphanedProcessesAsync(cts.Token).ConfigureAwait(false);
@@ -124,9 +129,23 @@ public sealed class CleaningSession(
         }
         finally
         {
-            terminationCoordinator.CompleteSessionFinalization();
-            DisposeSessionCts();
-            ExitSession();
+            try
+            {
+                terminationCoordinator.CompleteSessionFinalization();
+            }
+            finally
+            {
+                try
+                {
+                    DisposeSessionCts();
+                }
+                finally
+                {
+                    // Finalization failures must still reopen settings admission and the single session slot.
+                    try { admissionLease?.Dispose(); }
+                    finally { ExitSession(); }
+                }
+            }
         }
 
         return;
@@ -434,8 +453,12 @@ public sealed class CleaningSession(
     {
         var session = new CleaningSessionResult
         {
-            StartTime = context.StartTime, EndTime = DateTime.Now, GameType = context.GameType,
-            WasCancelled = context.WasCancelled, PluginResults = context.Results, BackupCleanup = context.BackupCleanup
+            StartTime = context.StartTime,
+            EndTime = DateTime.Now,
+            GameType = context.GameType,
+            WasCancelled = context.WasCancelled,
+            PluginResults = context.Results,
+            BackupCleanup = context.BackupCleanup
         };
         statePublisher.PublishCompleted(session);
         LogSessionSummary(session);
@@ -448,12 +471,14 @@ public sealed class CleaningSession(
             ? new DryRunResult(row.Plugin.FileName, DryRunStatus.WillClean, "Ready for cleaning")
             : new DryRunResult(row.Plugin.FileName, DryRunStatus.WillSkip, row.SkipReason switch
             {
-                PreflightSkipReason.NotSelected => "Not selected", PreflightSkipReason.InSkipList => "In skip list",
+                PreflightSkipReason.NotSelected => "Not selected",
+                PreflightSkipReason.InSkipList => "In skip list",
                 PreflightSkipReason.FileNotFound => "File not found",
                 PreflightSkipReason.Unreadable => "File is unreadable",
                 PreflightSkipReason.ZeroByte => "Zero-byte file",
                 PreflightSkipReason.MalformedEntry => "Malformed file name",
-                PreflightSkipReason.InvalidExtension => "Invalid file extension", _ => "Skipped"
+                PreflightSkipReason.InvalidExtension => "Invalid file extension",
+                _ => "Skipped"
             });
     }
 
@@ -485,7 +510,8 @@ public sealed class CleaningSession(
             PreflightSkipReason.Unreadable => nameof(PluginWarningKind.Unreadable),
             PreflightSkipReason.ZeroByte => nameof(PluginWarningKind.ZeroByte),
             PreflightSkipReason.MalformedEntry => nameof(PluginWarningKind.MalformedEntry),
-            PreflightSkipReason.InvalidExtension => nameof(PluginWarningKind.InvalidExtension), _ => reason.ToString()
+            PreflightSkipReason.InvalidExtension => nameof(PluginWarningKind.InvalidExtension),
+            _ => reason.ToString()
         };
     }
 

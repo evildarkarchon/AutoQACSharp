@@ -1,12 +1,23 @@
 using AutoQAC.Models;
+using AutoQAC.Models.Configuration;
+using System.Collections.Generic;
 
 namespace AutoQAC.Services.Configuration;
 
 /// <summary>
-///     Describes a user or app intent to change one Discovery-affecting setting.
+///     Describes a user or app intent to change Discovery-affecting settings.
 /// </summary>
 public abstract record DiscoverySettingsIntent
 {
+    /// <summary>
+    ///     Saves dialog edits relative to its loaded baseline, preserving settings changed elsewhere meanwhile.
+    ///     Both configurations are copied on entry; callers may reuse their editor after completion.
+    /// </summary>
+    public sealed record ApplySettings(UserConfiguration Baseline, UserConfiguration Requested) : DiscoverySettingsIntent;
+
+    /// <summary>Replaces one game's user Skip list through the same durable acceptance and cleaning exclusion.</summary>
+    public sealed record SetSkipList(GameType GameType, IReadOnlyList<string> Plugins) : DiscoverySettingsIntent;
+
     /// <summary>
     ///     Changes the selected game and refreshes Plugin refresh publication for that game.
     /// </summary>

@@ -25,6 +25,7 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
 
     private PluginRefreshSnapshot _currentSnapshot;
     private bool _disposed;
+    private long _minimumPublicationGeneration;
 
     /// <summary>
     ///     Initializes a publication store from the current AppState mirror.
@@ -88,6 +89,21 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
                 publication,
                 _currentPublicationFreshnessToken);
         }
+    }
+
+    /// <summary>Removes the freshness lease while retaining visible choices until replacement discovery completes.</summary>
+    internal void InvalidatePublication(long minimumGeneration)
+    {
+        PluginRefreshSnapshot snapshot;
+        lock (_snapshotLock)
+        {
+            _minimumPublicationGeneration = Math.Max(_minimumPublicationGeneration, minimumGeneration);
+            _currentPublicationFreshnessToken = null;
+            _currentPublication = _currentPublication with { Freshness = PluginRefreshFreshness.Missing };
+            snapshot = _currentSnapshot;
+        }
+        // Readiness observers must re-evaluate even when the rows themselves have not changed.
+        if (!_disposed) _snapshots.OnNext(snapshot);
     }
 
     /// <summary>
@@ -948,6 +964,9 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
         var snapshot = ToSnapshot(nextPublication);
         lock (_snapshotLock)
         {
+            // A settings mutation can arrive during compatibility mirroring; never restore its revoked freshness lease.
+            if (publication.Generation < _minimumPublicationGeneration || publication.Generation < _currentSnapshot.Generation)
+                return _currentSnapshot;
             _currentPublication = nextPublication;
             _currentPublicationFreshnessToken = freshnessToken;
             _currentSnapshot = snapshot;

@@ -63,5 +63,24 @@ User choices that can change a Plugin refresh discovery plan or the published pl
 _Avoid_: Configuration generation, dirty config, any setting change
 
 **Discovery settings change**:
-A user or app intent that updates one Discovery-affecting setting and results in either an accepted Plugin refresh publication or a typed rejection.
+A user or app intent to update one or more Discovery-affecting settings, whose outcome distinguishes acceptance from rejection, save failure, failed Plugin refresh, cancellation, or supersession by a newer choice. Changes to different settings preserve their combined choices and may share acceptance through a publication that represents all of them.
 _Avoid_: Settings mutation, config save, refresh trigger
+
+**Accepted Discovery settings change**:
+A Discovery settings change whose requested setting has been saved to disk and whose matching Plugin refresh publication has become authoritative, without waiting for Issue approximation to finish. Reset and changes made with no game selected intentionally accept a no-game outcome with empty publication rows and cleaning unavailable.
+_Avoid_: Current snapshot returned, refresh finished
+
+**Failed Discovery settings refresh**:
+A Discovery settings change whose setting was saved but whose required Plugin refresh failed; the saved choice remains available for retry. Cleaning remains blocked until a matching Plugin refresh publication succeeds.
+
+**Superseded Discovery settings change**:
+An unfinished Discovery settings change replaced by a newer valid choice for the same setting, such as selecting another MO2 profile; an invalid choice does not supersede valid work. It cannot overwrite the newer choice's publication or claim acceptance from that publication.
+
+**Canceled Discovery settings change**:
+A Discovery settings change interrupted before acceptance; cancellation after saving preserves the saved choice. Cleaning remains blocked until a matching Plugin refresh publication succeeds.
+
+**Discovery settings reset**:
+A return to default settings and a no-game outcome that supersedes every unfinished Discovery settings change. Older changes cannot subsequently restore their settings or publication rows.
+
+**Rejected Discovery settings change**:
+A Discovery settings change that cannot proceed because its choices are invalid or a Cleaning session is starting or active. Discovery settings reset is also rejected during that period.

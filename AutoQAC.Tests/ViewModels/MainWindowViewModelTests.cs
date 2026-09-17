@@ -21,6 +21,7 @@ namespace AutoQAC.Tests.ViewModels;
 public sealed class MainWindowViewModelTests
 {
     private readonly IConfigurationService _configServiceMock;
+    private UserConfiguration _persistedConfig = new();
     private readonly IStateService _stateServiceMock;
     private readonly ICleaningSession _cleaningSessionMock;
     private readonly ILoggingService _loggerMock;
@@ -36,6 +37,16 @@ public sealed class MainWindowViewModelTests
     public MainWindowViewModelTests()
     {
         _configServiceMock = Substitute.For<IConfigurationService>();
+        _configServiceMock.FlushPendingSavesAsync(Arg.Any<CancellationToken>()).Returns(
+            new ConfigPersistenceResult(ConfigPersistenceStatusKind.Success, ConfigPersistenceOperationKind.Flush, 1, null));
+        _configServiceMock.UserConfigurationChanged.Returns(Observable.Never<UserConfiguration>());
+        _configServiceMock.SaveUserConfigAsync(Arg.Any<UserConfiguration>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                _persistedConfig = call.Arg<UserConfiguration>().Copy();
+                _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>()).Returns(_ => _persistedConfig.Copy());
+                return Task.CompletedTask;
+            });
         _stateServiceMock = Substitute.For<IStateService>();
         _cleaningSessionMock = Substitute.For<ICleaningSession>();
         _loggerMock = Substitute.For<ILoggingService>();
@@ -62,6 +73,47 @@ public sealed class MainWindowViewModelTests
             .Returns(Observable.Never<GameType>());
     }
 
+    /// <summary>Cleaning startup disables settings before AppState announces active cleaning.</summary>
+    [Fact]
+    public async Task CleaningAdmission_DisablesSettingsCommandsUntilReleased()
+    {
+        EnableSelectedGameSideEffects();
+        using var state = new StateService();
+        var admission = new DiscoverySettingsAdmission();
+        using var vm = new MainWindowViewModel(_configServiceMock, state, _cleaningSessionMock,
+            _loggerMock, _fileDialogMock, _messageDialogMock, _pluginServiceMock, _pluginLoadingServiceMock,
+            _uiDispatcher, _pluginRefreshModule, _discoveryPlanner, Substitute.For<IDiscoverySettingsModule>(),
+            _cleaningCommandReadiness, admission: admission);
+        using var cleaning = await admission.EnterCleaningAsync();
+        vm.Configuration.ConfigureXEditCommand.CanExecute(null).Should().BeFalse();
+        vm.Configuration.ResetSettingsCommand.CanExecute(null).Should().BeFalse();
+        vm.Commands.ShowSettingsCommand.CanExecute(null).Should().BeFalse();
+        cleaning.Dispose();
+        vm.Configuration.ConfigureXEditCommand.CanExecute(null).Should().BeTrue();
+        vm.Commands.ShowSettingsCommand.CanExecute(null).Should().BeTrue();
+    }
+
+    /// <summary>Completion of an older choice cannot replay its snapshot over the current stream publication.</summary>
+    [Fact]
+    public async Task DiscoveryCompletion_DoesNotReplayOlderSnapshot()
+    {
+        using var state = new StateService();
+        var settings = Substitute.For<IDiscoverySettingsModule>();
+        var completion = new TaskCompletionSource<DiscoverySettingsChangeResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        settings.ExecuteAsync(Arg.Any<DiscoverySettingsIntent>(), Arg.Any<CancellationToken>()).Returns(completion.Task);
+        _fileDialogMock.OpenFileDialogAsync(Arg.Any<string>(), Arg.Any<string>()).Returns("mo2.exe");
+        using var vm = new ConfigurationViewModel(_configServiceMock, state, _loggerMock,
+            _fileDialogMock, _messageDialogMock, _pluginServiceMock, _pluginLoadingServiceMock,
+            _pluginRefreshModule, _discoveryPlanner, settings);
+        var operation = vm.ConfigureMo2Command.ExecuteAsync(null);
+        var latest = RecordingPluginRefreshModule.CreateSnapshot(statusText: "Newest publication");
+        vm.OnPluginRefreshSnapshot(latest);
+        completion.SetResult(DiscoverySettingsChangeResult.Accepted(
+            RecordingPluginRefreshModule.CreateSnapshot(statusText: "Old publication")));
+        await operation;
+        vm.StatusText.Should().Be("Newest publication");
+    }
+
     /// <summary>
     /// Tests that need <c>SelectedGame</c> assignment to trigger the auto-save / refresh
     /// pipeline must mark <see cref="ConfigurationViewModel"/> as initialized. The
@@ -73,14 +125,12 @@ public sealed class MainWindowViewModelTests
     /// </summary>
     private void EnableSelectedGameSideEffects()
     {
-        _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>())
-            .Returns(new UserConfiguration
-            {
-                LoadOrder = new LoadOrderConfig(), XEdit = new XEditConfig(), ModOrganizer = new ModOrganizerConfig(),
-                Settings = new AutoQacSettings()
-            });
+        _persistedConfig = new UserConfiguration();
+        _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>()).Returns(_ => _persistedConfig.Copy());
+        _configServiceMock.SaveUserConfigAsync(Arg.Any<UserConfiguration>(), Arg.Any<CancellationToken>())
+            .Returns(call => { _persistedConfig = call.Arg<UserConfiguration>().Copy(); return Task.CompletedTask; });
         _configServiceMock.GetSelectedGameAsync(Arg.Any<CancellationToken>())
-            .Returns(GameType.Unknown);
+            .Returns(_ => Enum.TryParse<GameType>(_persistedConfig.SelectedGame, out var game) ? game : GameType.Unknown);
     }
 
     private static TaskCompletionSource<bool> CreateSignal()
@@ -393,8 +443,11 @@ public sealed class MainWindowViewModelTests
             _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>())
                 .Returns(new UserConfiguration
                 {
-                    LoadOrder = new LoadOrderConfig(), XEdit = new XEditConfig(),
-                    ModOrganizer = new ModOrganizerConfig(), Settings = new AutoQacSettings()
+                    SelectedGame = "FalloutNewVegas",
+                    LoadOrder = new LoadOrderConfig(),
+                    XEdit = new XEditConfig(),
+                    ModOrganizer = new ModOrganizerConfig(),
+                    Settings = new AutoQacSettings()
                 });
 
             var expectedPlugins = new List<PluginInfo>
@@ -422,9 +475,10 @@ public sealed class MainWindowViewModelTests
             // Assert
             _pluginRefreshModule.Intents.OfType<PluginRefreshIntent.RefreshGame>()
                 .Should().ContainSingle(refresh =>
-                    refresh.GameType == GameType.FalloutNewVegas && refresh.SelectedLoadOrderPath == tempFile);
-            await _configServiceMock.Received()
-                .SetGameLoadOrderOverrideAsync(GameType.FalloutNewVegas, tempFile, Arg.Any<CancellationToken>());
+                    refresh.GameType == GameType.FalloutNewVegas);
+            await _configServiceMock.Received().SaveUserConfigAsync(
+                Arg.Is<UserConfiguration>(config => config.LoadOrderFileOverrides.Values.Contains(tempFile)),
+                Arg.Any<CancellationToken>());
         }
         finally
         {
@@ -463,8 +517,10 @@ public sealed class MainWindowViewModelTests
             _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>())
                 .Returns(new UserConfiguration
                 {
-                    LoadOrder = new LoadOrderConfig(), XEdit = new XEditConfig(),
-                    ModOrganizer = new ModOrganizerConfig(), Settings = new AutoQacSettings()
+                    LoadOrder = new LoadOrderConfig(),
+                    XEdit = new XEditConfig(),
+                    ModOrganizer = new ModOrganizerConfig(),
+                    Settings = new AutoQacSettings()
                 });
             _stateServiceMock.When(x => x.UpdateState(Arg.Any<Func<AppState, AppState>>()))
                 .Do(_ => initializationApplied.TrySetResult(true));
@@ -562,8 +618,7 @@ public sealed class MainWindowViewModelTests
     }
 
     /// <summary>
-    /// Verifies that ConfigureLoadOrderCommand handles plugin parsing errors gracefully
-    /// and shows an error dialog.
+    /// Verifies that a refresh failure retains the saved load-order choice and shows a clear error dialog.
     /// </summary>
     [Fact]
     public async Task ConfigureLoadOrderCommand_ShouldHandlePluginParsingError()
@@ -580,7 +635,9 @@ public sealed class MainWindowViewModelTests
         _configServiceMock.LoadUserConfigAsync(Arg.Any<CancellationToken>())
             .Returns(new UserConfiguration
             {
-                LoadOrder = new LoadOrderConfig(), XEdit = new XEditConfig(), ModOrganizer = new ModOrganizerConfig(),
+                LoadOrder = new LoadOrderConfig(),
+                XEdit = new XEditConfig(),
+                ModOrganizer = new ModOrganizerConfig(),
                 Settings = new AutoQacSettings()
             });
 
@@ -618,19 +675,21 @@ public sealed class MainWindowViewModelTests
             _pluginRefreshModule.ExecuteHandler = (_, _) =>
                 throw new InvalidOperationException("Failed to parse load order");
             vm.Configuration.SelectedGame = GameType.FalloutNewVegas;
+            _messageDialogMock.ClearReceivedCalls();
 
             // Act
             await vm.Configuration.ConfigureLoadOrderCommand.ExecuteAsync(null);
 
             // Assert
-            vm.Configuration.StatusText.Should().Contain("failed", "error should be reflected in status");
+            vm.Configuration.StatusText.Should().Contain("could not be refreshed");
+            (await _configServiceMock.LoadUserConfigAsync()).LoadOrderFileOverrides.Values.Should().Contain(tempFile,
+                "discovery failure must retain the saved choice for retry");
 
             // Verify error dialog was shown
             await _messageDialogMock.Received(1)
                 .ShowErrorAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>());
 
-            // Verify that the ConfigureLoadOrder error was logged
-            _loggerMock.Received().Error(Arg.Any<Exception>(), Arg.Is<string>(s => s.Contains("load order")));
+            // The module reports structured failure; the ViewModel must not depend on a thrown parsing exception.
         }
         finally
         {
@@ -1214,11 +1273,15 @@ public sealed class MainWindowViewModelTests
         var refreshObserved = CreateSignal();
         UserConfiguration? savedConfig = null;
 
+        configService.FlushPendingSavesAsync(Arg.Any<CancellationToken>()).Returns(
+            new ConfigPersistenceResult(ConfigPersistenceStatusKind.Success, ConfigPersistenceOperationKind.Flush, 1, null));
         configService.SkipListChanged.Returns(Observable.Never<GameType>());
         configService.LoadUserConfigAsync(Arg.Any<CancellationToken>())
-            .Returns(_ => new UserConfiguration
+            .Returns(_ => savedConfig?.Copy() ?? new UserConfiguration
             {
-                LoadOrder = new LoadOrderConfig(), XEdit = new XEditConfig(), ModOrganizer = new ModOrganizerConfig(),
+                LoadOrder = new LoadOrderConfig(),
+                XEdit = new XEditConfig(),
+                ModOrganizer = new ModOrganizerConfig(),
                 Settings = new AutoQacSettings()
             });
         configService.GetSelectedGameAsync(Arg.Any<CancellationToken>())
@@ -1284,7 +1347,9 @@ public sealed class MainWindowViewModelTests
         configService.LoadUserConfigAsync(Arg.Any<CancellationToken>())
             .Returns(_ => new UserConfiguration
             {
-                LoadOrder = new LoadOrderConfig(), XEdit = new XEditConfig(), ModOrganizer = new ModOrganizerConfig(),
+                LoadOrder = new LoadOrderConfig(),
+                XEdit = new XEditConfig(),
+                ModOrganizer = new ModOrganizerConfig(),
                 Settings = new AutoQacSettings()
             });
         configService.GetSelectedGameAsync(Arg.Any<CancellationToken>())
@@ -1462,11 +1527,11 @@ public sealed class MainWindowViewModelTests
         var stateSubject = new BehaviorSubject<AppState>(new AppState());
         _stateServiceMock.StateChanged.Returns(stateSubject);
         _stateServiceMock.CurrentState.Returns(new AppState());
-        _configServiceMock.SetSelectedGameAsync(Arg.Any<GameType>(), Arg.Any<CancellationToken>())
+        _configServiceMock.SaveUserConfigAsync(Arg.Any<UserConfiguration>(), Arg.Any<CancellationToken>())
             .Returns(callInfo =>
             {
-                if (callInfo.ArgAt<GameType>(0) == GameType.SkyrimSe) selectedGamePersisted.TrySetResult(true);
-
+                _persistedConfig = callInfo.Arg<UserConfiguration>().Copy();
+                if (_persistedConfig.SelectedGame == "SkyrimSe") selectedGamePersisted.TrySetResult(true);
                 return Task.CompletedTask;
             });
 
@@ -1491,7 +1556,7 @@ public sealed class MainWindowViewModelTests
         await WaitForSignalAsync(selectedGamePersisted);
 
         // Assert
-        await _configServiceMock.Received(1).SetSelectedGameAsync(GameType.SkyrimSe, Arg.Any<CancellationToken>());
+        (await _configServiceMock.LoadUserConfigAsync()).SelectedGame.Should().Be("SkyrimSe");
     }
 
     /// <summary>
@@ -1650,7 +1715,7 @@ public sealed class MainWindowViewModelTests
             _uiDispatcher,
             refreshModule,
             _discoveryPlanner,
-            CreateDiscoverySettingsModule(pluginRefreshModule: refreshModule),
+            CreateDiscoverySettingsModule(stateService: stateService, pluginRefreshModule: refreshModule),
             new CleaningCommandReadiness(refreshModule, stateService));
 
         vm.Configuration.SelectedGame = GameType.SkyrimSe;
@@ -1735,7 +1800,7 @@ public sealed class MainWindowViewModelTests
             _uiDispatcher,
             refreshModule,
             _discoveryPlanner,
-            CreateDiscoverySettingsModule(pluginRefreshModule: refreshModule),
+            CreateDiscoverySettingsModule(stateService: stateService, pluginRefreshModule: refreshModule),
             new CleaningCommandReadiness(refreshModule, stateService));
 
         vm.Configuration.SelectedGame = GameType.SkyrimSe;
@@ -1972,7 +2037,7 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
-    public async Task ShowSettingsCommand_ShouldRefreshRuntimeConfigurationPaths_WhenSettingsAreSaved()
+    public async Task ShowSettingsCommand_DoesNotReplayConfigurationAfterDialogCompletion()
     {
         // Arrange
         const string loadOrderPath = @"C:\Users\Test\AppData\Local\Skyrim Special Edition\plugins.txt";
@@ -2014,7 +2079,9 @@ public sealed class MainWindowViewModelTests
         await vm.Commands.ShowSettingsCommand.ExecuteAsync(null);
 
         // Assert
-        _stateServiceMock.Received(1).UpdateConfigurationPaths(loadOrderPath, mo2Path, xEditPath);
+        _stateServiceMock.DidNotReceive().UpdateConfigurationPaths(
+            Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>());
+        vm.Commands.StatusText.Should().Be("Settings saved");
     }
 
     [Fact]
@@ -2145,68 +2212,33 @@ public sealed class MainWindowViewModelTests
     [Fact]
     public async Task ResetSettingsAsync_ShouldProjectDefaultDisableSkipListsWithoutReSavingOldToggle()
     {
-        // Arrange
-        var configService = Substitute.For<IConfigurationService>();
-        using var stateService = new StateService();
-        using var refreshModule = new RecordingPluginRefreshModule();
-        var defaultsLoaded = false;
-
-        configService.SkipListChanged.Returns(Observable.Never<GameType>());
-        configService.LoadUserConfigAsync(Arg.Any<CancellationToken>()).Returns(_ =>
-            defaultsLoaded
-                ? new UserConfiguration
-                {
-                    LoadOrder = new LoadOrderConfig(), XEdit = new XEditConfig(),
-                    ModOrganizer = new ModOrganizerConfig(), Settings = new AutoQacSettings()
-                }
-                : new UserConfiguration
-                {
-                    LoadOrder = new LoadOrderConfig(),
-                    XEdit = new XEditConfig(),
-                    ModOrganizer = new ModOrganizerConfig(),
-                    Settings = new AutoQacSettings { DisableSkipLists = true }
-                });
-        configService.GetSelectedGameAsync(Arg.Any<CancellationToken>()).Returns(GameType.Unknown);
-        configService.ResetToDefaultsAsync(Arg.Any<CancellationToken>()).Returns(_ =>
+        using var state = new StateService();
+        using var notifications = new Subject<UserConfiguration>();
+        using var refresh = new RecordingPluginRefreshModule();
+        var config = Substitute.For<IConfigurationService>();
+        var saved = new UserConfiguration { Settings = new AutoQacSettings { DisableSkipLists = true } };
+        config.SkipListChanged.Returns(Observable.Never<GameType>());
+        config.UserConfigurationChanged.Returns(notifications);
+        config.LoadUserConfigAsync(Arg.Any<CancellationToken>()).Returns(_ => saved.Copy());
+        config.GetSelectedGameAsync(Arg.Any<CancellationToken>()).Returns(GameType.Unknown);
+        config.SaveUserConfigAsync(Arg.Any<UserConfiguration>(), Arg.Any<CancellationToken>()).Returns(call =>
         {
-            defaultsLoaded = true;
+            saved = call.Arg<UserConfiguration>().Copy();
+            notifications.OnNext(saved.Copy());
             return Task.CompletedTask;
         });
-
-        var vm = new ConfigurationViewModel(
-            configService,
-            stateService,
-            _loggerMock,
-            _fileDialogMock,
-            _messageDialogMock,
-            _pluginServiceMock,
-            _pluginLoadingServiceMock,
-            refreshModule,
-            _discoveryPlanner,
-            CreateDiscoverySettingsModule(
-                configService,
-                stateService,
-                refreshModule));
-
-        try
-        {
-            await vm.InitializeAsync();
-            vm.DisableSkipListsEnabled.Should().BeTrue();
-
-            // Act
-            await vm.ResetSettingsCommand.ExecuteAsync(null);
-
-            // Assert
-            vm.DisableSkipListsEnabled.Should().BeFalse(
-                "reset defaults should be reflected in UI-only Discovery settings fields");
-            await configService.DidNotReceive().SaveUserConfigAsync(
-                Arg.Is<UserConfiguration>(config => config.Settings.DisableSkipLists),
-                Arg.Any<CancellationToken>());
-        }
-        finally
-        {
-            vm.Dispose();
-        }
+        config.FlushPendingSavesAsync(Arg.Any<CancellationToken>()).Returns(
+            new ConfigPersistenceResult(ConfigPersistenceStatusKind.Success, ConfigPersistenceOperationKind.Flush, 1, null));
+        using var module = new DiscoverySettingsModule(config, state, refresh);
+        using var vm = new MainWindowViewModel(config, state, _cleaningSessionMock, _loggerMock,
+            _fileDialogMock, _messageDialogMock, _pluginServiceMock, _pluginLoadingServiceMock, _uiDispatcher,
+            refresh, _discoveryPlanner, module, _cleaningCommandReadiness);
+        vm.Configuration.DisableSkipListsEnabled.Should().BeTrue();
+        await vm.Configuration.ResetSettingsCommand.ExecuteAsync(null);
+        vm.Configuration.DisableSkipListsEnabled.Should().BeFalse();
+        saved.Settings.DisableSkipLists.Should().BeFalse();
+        await config.DidNotReceive().SaveUserConfigAsync(
+            Arg.Is<UserConfiguration>(value => value.Settings.DisableSkipLists), Arg.Any<CancellationToken>());
     }
 
     [Fact]

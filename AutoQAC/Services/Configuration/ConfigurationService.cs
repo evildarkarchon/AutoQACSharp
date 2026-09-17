@@ -596,7 +596,7 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
         return Path.Combine(baseDir, "AutoQAC Data");
     }
 
-    private static string GetGameKey(GameType gameType)
+    internal static string GetGameKey(GameType gameType)
     {
         return gameType switch
         {

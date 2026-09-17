@@ -19,6 +19,12 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
     private readonly IDisposable? _configChangedClearSubscription;
 
     private readonly IConfigurationService? _configService;
+    private readonly IDiscoverySettingsModule? _discoverySettingsModule;
+    private readonly DiscoverySettingsAdmission? _admission;
+    private readonly IUiDispatcher? _dispatcher;
+    private readonly CancellationTokenSource _lifetime = new();
+    private UserConfiguration? _baseline;
+    private bool _disposed;
     private readonly IDisposable? _failuresSubscription;
     private readonly IFileDialogService? _fileDialog;
     private readonly DebouncedAction _loadOrderValidate;
@@ -61,11 +67,14 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
         ResetToDefaults();
     }
 
+    /// <summary>Creates an editor whose saves cross the shared settings seam; notifications are marshaled to its UI dispatcher.</summary>
     public SettingsViewModel(
         IConfigurationService configService,
         ILoggingService logger,
         IUiDispatcher uiDispatcher,
-        IFileDialogService? fileDialog = null)
+        IFileDialogService? fileDialog = null,
+        IDiscoverySettingsModule? discoverySettingsModule = null,
+        DiscoverySettingsAdmission? admission = null)
     {
         ArgumentNullException.ThrowIfNull(configService);
         ArgumentNullException.ThrowIfNull(logger);
@@ -74,6 +83,14 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
         _configService = configService;
         _logger = logger;
         _fileDialog = fileDialog;
+        _discoverySettingsModule = discoverySettingsModule;
+        _admission = admission;
+        _dispatcher = uiDispatcher;
+        if (admission is not null)
+        {
+            admission.CleaningChanged += OnCleaningAdmissionChanged;
+            IsCleaning = admission.IsCleaning;
+        }
 
         _xEditValidate = new DebouncedAction(uiDispatcher, TimeSpan.FromMilliseconds(400));
         _mo2Validate = new DebouncedAction(uiDispatcher, TimeSpan.FromMilliseconds(400));
@@ -195,14 +212,34 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
         BackupEnabled != _originalBackupSettings.Enabled ||
         BackupMaxSessions != _originalBackupSettings.MaxSessions;
 
+    /// <summary>Withdraws pending acceptance and releases subscriptions without rolling back any persisted edit.</summary>
     public void Dispose()
     {
+        if (_disposed) return;
+        _disposed = true;
+        _lifetime.Cancel();
+        _lifetime.Dispose();
+        if (_admission is not null) _admission.CleaningChanged -= OnCleaningAdmissionChanged;
         _failuresSubscription?.Dispose();
         _resultsSubscription?.Dispose();
         _configChangedClearSubscription?.Dispose();
         _xEditValidate.Dispose();
         _mo2Validate.Dispose();
         _loadOrderValidate.Dispose();
+    }
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
+    [NotifyPropertyChangedFor(nameof(CanEditSettings))]
+    public partial bool IsCleaning { get; set; }
+
+    /// <summary>Whether the editor may change settings while the Cleaning session owns admission.</summary>
+    public bool CanEditSettings => !IsCleaning;
+
+    /// <summary>Marshals startup and finalization transitions to the editor's UI thread.</summary>
+    private void OnCleaningAdmissionChanged(object? sender, EventArgs args)
+    {
+        _dispatcher?.Post(() => { if (!_disposed) IsCleaning = _admission?.IsCleaning == true; });
     }
 
     /// <summary>Raised when the user picks Save or Cancel. The view closes the dialog with this value.</summary>
@@ -327,6 +364,7 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
             }
 
             var config = await configService.LoadUserConfigAsync();
+            _baseline = config.Copy();
             _originalSettings = config.Settings;
             _originalRetention = config.LogRetention;
 
@@ -394,18 +432,18 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
 
     private bool CanSave()
     {
-        return _configService is not null && _loadSucceeded && !HasValidationErrors;
+        return _discoverySettingsModule is not null && _loadSucceeded && !HasValidationErrors && !IsCleaning;
     }
 
+    /// <summary>Submits editor changes against their loaded baseline and closes only after durable acceptance.</summary>
     [RelayCommand(CanExecute = nameof(CanSave))]
     private async Task SaveAsync()
     {
-        var configService = _configService;
-        if (configService is null || !_loadSucceeded || HasValidationErrors) return;
+        if (_discoverySettingsModule is null || _baseline is null || !CanSave() || _disposed) return;
 
         try
         {
-            var config = await configService.LoadUserConfigAsync();
+            var config = _baseline.Copy();
 
             config.Settings.JournalExpiration = JournalExpiration;
             config.Settings.CleaningTimeout = CleaningTimeout;
@@ -423,18 +461,22 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
             config.Backup.Enabled = BackupEnabled;
             config.Backup.MaxSessions = BackupMaxSessions;
 
-            await configService.SaveUserConfigAsync(config);
-            var flushResult = await configService.FlushPendingSavesAsync();
-            if (flushResult.Status is ConfigPersistenceStatusKind.Failed or ConfigPersistenceStatusKind.Rejected)
+            var result = await _discoverySettingsModule.ExecuteAsync(
+                new DiscoverySettingsIntent.ApplySettings(_baseline, config), _lifetime.Token);
+            if (_disposed || _lifetime.IsCancellationRequested) return;
+            if (result.Status != DiscoverySettingsChangeStatus.Accepted)
             {
-                PersistenceBannerText = MapExplicitSaveFlushFailureToBanner(flushResult.Failure);
+                if (result.Status == DiscoverySettingsChangeStatus.SaveFailed)
+                    PersistenceBannerText = SaveFailureBanner;
+                else if (result.Failure is not null)
+                    PersistenceBannerText = result.Failure.SafeMessage;
                 return;
             }
 
             _logger?.Information("Settings saved successfully");
 
-            // D-27: explicit Settings Save only closes after the flush barrier proves disk persistence
-            // succeeded (Success/NoOp). Otherwise a later async failure could surface after close.
+            // D-27: explicit Settings Save only closes after the module proves disk persistence and
+            // matching publication. Otherwise a later failure could surface after the editor closed.
             ClearPersistenceBanner();
 
             CloseRequested?.Invoke(true);
@@ -447,23 +489,11 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
         }
     }
 
-    /// <summary>
-    ///     Maps the Settings dialog's explicit save barrier failure without using cleaning-specific copy.
-    /// </summary>
-    /// <param name="failure">Optional coordinator failure payload returned by the flush barrier.</param>
-    /// <returns>User-facing banner text for the Settings Save command.</returns>
-    private static string MapExplicitSaveFlushFailureToBanner(ConfigPersistenceFailure? failure)
-    {
-        if (failure is { Kind: ConfigPersistenceFailureKind.WriteFailed }) return SaveFailureBanner;
-
-        return failure is not null
-            ? MapFailureToBanner(failure)
-            : SaveFailureBanner;
-    }
-
+    /// <summary>Withdraws any pending acceptance and closes the editor without rolling back saved choices.</summary>
     [RelayCommand]
     private void Cancel()
     {
+        _lifetime.Cancel();
         CloseRequested?.Invoke(false);
     }
 

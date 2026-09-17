@@ -42,6 +42,7 @@ public sealed partial class CleaningSessionTests : IDisposable
     private readonly string _loadOrderCompatibilityPath;
     private readonly RecordingPluginRefreshModule _pluginRefreshModule;
     private readonly CleaningSession _cleaningSession;
+    private readonly DiscoverySettingsAdmission _admission = new();
 
     public CleaningSessionTests()
     {
@@ -146,7 +147,68 @@ public sealed partial class CleaningSessionTests : IDisposable
             new StateServiceCleaningSessionStatePublisher(_stateServiceMock),
             _decisionsMock,
             _loggerMock,
-            _processServiceMock);
+            _processServiceMock, _admission);
+    }
+
+    /// <summary>Startup owns settings exclusion even before cleaning state is published and releases it on failure.</summary>
+    [Fact]
+    public async Task StartupFailure_HoldsAdmissionDuringOrphanCleanup_ThenReleasesIt()
+    {
+        var cleanup = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _processServiceMock.CleanOrphanedProcessesAsync(Arg.Any<CancellationToken>()).Returns(cleanup.Task);
+        var session = _cleaningSession.StartAsync();
+        _admission.IsCleaning.Should().BeTrue();
+        (await _admission.TryEnterSettingsAsync()).Should().BeNull();
+        cleanup.SetException(new IOException("orphan cleanup failed"));
+        await FluentActions.Awaiting(() => session).Should().ThrowAsync<IOException>();
+        _admission.IsCleaning.Should().BeFalse();
+        using var mutation = await _admission.TryEnterSettingsAsync();
+        mutation.Should().NotBeNull();
+    }
+
+    /// <summary>Startup cannot read configuration until an admitted settings write has completed.</summary>
+    [Fact]
+    public async Task Startup_WaitsForAdmittedMutationBeforeStartingOrphanCleanup()
+    {
+        using var mutation = await _admission.TryEnterSettingsAsync();
+        var cleanupStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cleanup = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _processServiceMock.CleanOrphanedProcessesAsync(Arg.Any<CancellationToken>()).Returns(_ =>
+        {
+            cleanupStarted.TrySetResult();
+            return cleanup.Task;
+        });
+        var session = _cleaningSession.StartAsync();
+        _admission.IsCleaning.Should().BeTrue();
+        cleanupStarted.Task.IsCompleted.Should().BeFalse();
+        mutation!.Dispose();
+        await cleanupStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        cleanup.SetException(new IOException("stop at startup"));
+        await FluentActions.Awaiting(() => session).Should().ThrowAsync<IOException>();
+        _admission.IsCleaning.Should().BeFalse();
+    }
+
+    /// <summary>Reentrant termination reset callbacks cannot mutate settings once startup has begun.</summary>
+    [Fact]
+    public async Task Startup_ReservesAdmissionBeforeTerminationResetCallbacks()
+    {
+        var termination = Substitute.For<ICleaningTerminationCoordinator>();
+        IDisposable? reentrantMutation = null;
+        termination.When(value => value.ResetForNewSession()).Do(_ =>
+        {
+            reentrantMutation = _admission.TryEnterSettingsAsync().GetAwaiter().GetResult();
+            reentrantMutation?.Dispose();
+        });
+        _processServiceMock.CleanOrphanedProcessesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new IOException("stop after reset")));
+        using var session = new CleaningSession(CreatePreflight(),
+            new BackupSessionCoordinator(_backupServiceMock, _stateServiceMock, _loggerMock),
+            termination, CreatePluginCleaning(termination),
+            new StateServiceCleaningSessionStatePublisher(_stateServiceMock), _decisionsMock,
+            _loggerMock, _processServiceMock, _admission);
+        await FluentActions.Awaiting(() => session.StartAsync()).Should().ThrowAsync<IOException>();
+        reentrantMutation.Should().BeNull();
+        reentrantMutation?.Dispose();
     }
 
     private ICleaningPreflight CreatePreflight()
@@ -2640,7 +2702,7 @@ public sealed partial class CleaningSessionTests : IDisposable
     {
         // Arrange
         var plugin = new PluginInfo
-            { FileName = "CanceledCleanup.esp", FullPath = @"C:\Games\Data\CanceledCleanup.esp" };
+        { FileName = "CanceledCleanup.esp", FullPath = @"C:\Games\Data\CanceledCleanup.esp" };
         _stateServiceMock.CurrentState.Returns(new AppState
         {
             LoadOrderPath = "plugins.txt",

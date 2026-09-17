@@ -239,6 +239,12 @@ public sealed class PluginListViewModelTests
 
     private sealed class RecordingPluginRefreshModule : IPluginRefreshModule, IDisposable
     {
+        /// <inheritdoc />
+        public void InvalidateForSettings() => throw new NotSupportedException();
+
+        /// <inheritdoc />
+        public Task<PluginRefreshCompletion> RefreshForSettingsAsync(GameType gameType, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
         private readonly Subject<PluginRefreshSnapshot> _snapshots = new();
         private PluginRefreshSnapshot _lastSnapshot = Snapshot();
 

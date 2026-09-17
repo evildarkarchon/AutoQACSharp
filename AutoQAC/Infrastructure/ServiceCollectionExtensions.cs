@@ -30,6 +30,8 @@ public static class ServiceCollectionExtensions
 
         public IServiceCollection AddConfiguration()
         {
+            // One admission instance fences settings writes against Cleaning session startup and execution.
+            services.AddSingleton<DiscoverySettingsAdmission>();
             // Persistence coordinator + file store registered first; ConfigurationService and ConfigWatcherService both depend on the coordinator (Phase 10 D-08, D-15).
             services.AddSingleton<IUserConfigFileStore, UserConfigFileStore>();
             services.AddSingleton<ConfigPersistenceCoordinator>();

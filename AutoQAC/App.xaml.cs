@@ -57,7 +57,8 @@ public sealed partial class App
 
         _mainWindow = new MainWindow(viewModel, logger, fileDialog, configService, stateService,
             cleaningSession, backupService, messageDialog, uiDispatcher, uiFrameworkVersionProvider,
-            windowContextProvider);
+            windowContextProvider, Services.GetRequiredService<IDiscoverySettingsModule>(),
+            Services.GetRequiredService<DiscoverySettingsAdmission>());
 
         LogStartupInfo(logger, stateService);
 

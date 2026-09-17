@@ -23,9 +23,7 @@ namespace AutoQAC.ViewModels.MainWindow;
 ///     status text during cleaning, and pre-clean validation.
 /// </summary>
 public sealed partial class CleaningCommandsViewModel(
-    IStateService stateService,
     ICleaningSession cleaningSession,
-    IConfigurationService configService,
     ICleaningCommandReadiness cleaningCommandReadiness,
     IPluginRefreshModule pluginRefreshModule,
     ILoggingService logger,
@@ -43,6 +41,7 @@ public sealed partial class CleaningCommandsViewModel(
     private CleaningPreflightFailureKind? _currentReadinessFailureKind;
     private CancellationTokenSource? _readinessCts;
     private int _readinessRequestId;
+    private bool _cleaningReserved;
 
     [ObservableProperty] public partial string StatusText { get; set; } = "Ready";
 
@@ -53,6 +52,7 @@ public sealed partial class CleaningCommandsViewModel(
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(StopCleaningCommand))]
     [NotifyCanExecuteChangedFor(nameof(ShowSkipListCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ShowSettingsCommand))]
     [NotifyCanExecuteChangedFor(nameof(RestoreBackupsCommand))]
     public partial bool IsCleaning { get; set; }
 
@@ -86,6 +86,15 @@ public sealed partial class CleaningCommandsViewModel(
     {
         _ = snapshot;
         ScheduleReadinessRefresh(true);
+    }
+
+    /// <summary>Disables settings and related mutation dialogs throughout startup admission.</summary>
+    public void OnCleaningAdmissionChanged(bool reserved)
+    {
+        _cleaningReserved = reserved;
+        ShowSettingsCommand.NotifyCanExecuteChanged();
+        ShowSkipListCommand.NotifyCanExecuteChanged();
+        RestoreBackupsCommand.NotifyCanExecuteChanged();
     }
 
     private void ApplyState(AppState state)
@@ -298,7 +307,8 @@ public sealed partial class CleaningCommandsViewModel(
         }
     }
 
-    [RelayCommand]
+    /// <summary>Opens settings; saving and runtime projection belong to the settings module.</summary>
+    [RelayCommand(CanExecute = nameof(CanShowSkipList))]
     private async Task ShowSettingsAsync()
     {
         try
@@ -307,18 +317,6 @@ public sealed partial class CleaningCommandsViewModel(
 
             if (result)
             {
-                var config = await configService.LoadUserConfigAsync();
-
-                stateService.UpdateConfigurationPaths(
-                    config.LoadOrder.File,
-                    config.ModOrganizer.Binary,
-                    config.XEdit.Binary);
-                stateService.UpdateState(s => s with
-                {
-                    Mo2ModeEnabled = config.Settings.Mo2Mode,
-                    CleaningTimeout = config.Settings.CleaningTimeout
-                });
-
                 StatusText = "Settings saved";
                 logger.Information("Settings updated from settings dialog");
             }
@@ -332,7 +330,7 @@ public sealed partial class CleaningCommandsViewModel(
 
     private bool CanShowSkipList()
     {
-        return !IsCleaning;
+        return !IsCleaning && !_cleaningReserved;
     }
 
     [RelayCommand(CanExecute = nameof(CanShowSkipList))]
@@ -357,7 +355,7 @@ public sealed partial class CleaningCommandsViewModel(
 
     private bool CanRestoreBackups()
     {
-        return !IsCleaning;
+        return !IsCleaning && !_cleaningReserved;
     }
 
     [RelayCommand(CanExecute = nameof(CanRestoreBackups))]
@@ -501,9 +499,14 @@ public sealed partial class CleaningCommandsViewModel(
             _ => ("Configuration error", "Check your configuration in Edit > Settings.")
         };
 
+        // The no-game title and action already communicate the full problem; a middle paraphrase only repeats them.
+        var message = failure.Kind == CleaningPreflightFailureKind.NoGameSelected
+            ? string.Empty
+            : failure.SafeMessage;
+
         return new ValidationError(
             title,
-            failure.SafeMessage,
+            message,
             failure.ActionHint ?? action);
     }
 }

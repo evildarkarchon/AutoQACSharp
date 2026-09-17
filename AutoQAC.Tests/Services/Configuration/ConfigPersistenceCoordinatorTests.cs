@@ -533,10 +533,53 @@ public sealed class ConfigPersistenceCoordinatorTests
         source.Should().NotContain("Thread.Sleep(" + "500");
     }
 
+    /// <summary>Disk changes must wait for the startup reservation even before IsCleaning state becomes true.</summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ExternalReload_DuringCleaningStartup_DefersUntilReservationReleased(bool explicitReload)
+    {
+        var store = new FakeUserConfigFileStore { CurrentContent = Serializer.Serialize(NewConfig(99)) };
+        var admission = new DiscoverySettingsAdmission();
+        var coordinator = CreateCoordinator(store, admission: admission);
+        await coordinator.StartAsync();
+        using var cleaning = await admission.EnterCleaningAsync();
+        if (explicitReload)
+            await coordinator.ReloadFromDiskAsync();
+        else
+            coordinator.NotifySettingsFileChanged(ConfigFileSignalKind.Changed);
+        await PumpUntilQuiescentAsync(coordinator);
+        (await coordinator.LoadCurrentAsync()).Settings.CleaningTimeout.Should().NotBe(99);
+        cleaning.Dispose();
+        await PumpUntilQuiescentAsync(coordinator);
+        (await coordinator.LoadCurrentAsync()).Settings.CleaningTimeout.Should().Be(99);
+        await coordinator.StopAsync();
+    }
+
+    /// <summary>External reload cannot block the consumer while the mutation owner awaits a save and flush.</summary>
+    [Fact]
+    public async Task ExternalReload_DuringAdmittedMutation_DoesNotDeadlockOrOverwriteSavedChoice()
+    {
+        var store = new FakeUserConfigFileStore { CurrentContent = Serializer.Serialize(NewConfig(99)) };
+        var admission = new DiscoverySettingsAdmission();
+        var coordinator = CreateCoordinator(store, admission: admission);
+        await coordinator.StartAsync();
+        using var mutation = await admission.TryEnterSettingsAsync();
+        await coordinator.ReloadFromDiskAsync().WaitAsync(TimeSpan.FromSeconds(2));
+        (await coordinator.LoadCurrentAsync()).Settings.CleaningTimeout.Should().NotBe(99);
+        await coordinator.SaveUserConfigAsync(NewConfig(42));
+        await coordinator.FlushPendingSavesAsync().WaitAsync(TimeSpan.FromSeconds(2));
+        mutation!.Dispose();
+        await PumpUntilQuiescentAsync(coordinator);
+        (await coordinator.LoadCurrentAsync()).Settings.CleaningTimeout.Should().Be(42);
+        await coordinator.StopAsync();
+    }
+
     private static ConfigPersistenceCoordinator CreateCoordinator(
         FakeUserConfigFileStore? store = null,
         Func<AppState>? currentState = null,
-        IObservable<AppState>? stateChanged = null)
+        IObservable<AppState>? stateChanged = null,
+        DiscoverySettingsAdmission? admission = null)
     {
         var stateService = Substitute.For<IStateService>();
         stateService.CurrentState.Returns(_ => currentState?.Invoke() ?? new AppState { IsCleaning = false });
@@ -545,7 +588,7 @@ public sealed class ConfigPersistenceCoordinatorTests
             store ?? new FakeUserConfigFileStore(),
             stateService,
             Substitute.For<ILoggingService>(),
-            TimeSpan.Zero);
+            TimeSpan.Zero, admission);
     }
 
     private static async Task PumpUntilQuiescentAsync(ConfigPersistenceCoordinator coordinator)

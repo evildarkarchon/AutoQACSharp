@@ -29,6 +29,26 @@ public sealed class RecordingPluginRefreshModule : IPluginRefreshModule, IDispos
 
     public Func<CancellationToken, Task<PluginRefreshPublication>>? PublicationHandler { get; set; }
 
+    /// <inheritdoc />
+    public void InvalidateForSettings()
+    {
+        CurrentPublication = CurrentPublication with { Freshness = PluginRefreshFreshness.Missing };
+    }
+
+    /// <summary>Overrides correlated completion for settings workflow tests.</summary>
+    public Func<GameType, CancellationToken, Task<PluginRefreshCompletion>>? RefreshForSettingsHandler { get; set; }
+
+    /// <inheritdoc />
+    public async Task<PluginRefreshCompletion> RefreshForSettingsAsync(GameType gameType, CancellationToken cancellationToken = default)
+    {
+        if (RefreshForSettingsHandler is not null)
+            return await RefreshForSettingsHandler(gameType, cancellationToken);
+        var snapshot = await ExecuteAsync(new PluginRefreshIntent.RefreshGame(gameType), cancellationToken);
+        return new PluginRefreshCompletion(
+            gameType == GameType.Unknown ? PluginRefreshCompletionStatus.NoGame : PluginRefreshCompletionStatus.Published,
+            snapshot, CurrentPublication);
+    }
+
     public IObservable<PluginRefreshSnapshot> Snapshots => _snapshots;
 
     public Task<PluginRefreshSnapshot> ExecuteAsync(

@@ -1,3 +1,4 @@
+using AutoQAC.Models;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
@@ -13,6 +14,12 @@ public interface IPluginRefreshModule
     ///     Gets the latest visible Plugin refresh publication snapshots.
     /// </summary>
     IObservable<PluginRefreshSnapshot> Snapshots { get; }
+
+    /// <summary>Synchronously fences previous discovery work and invalidates its publication before a settings mutation.</summary>
+    void InvalidateForSettings();
+
+    /// <summary>Refreshes settings and completes when this operation publishes authoritative rows, before approximation finishes.</summary>
+    Task<PluginRefreshCompletion> RefreshForSettingsAsync(GameType gameType, CancellationToken cancellationToken = default);
 
     /// <summary>
     ///     Executes a Plugin refresh intent and returns the final visible snapshot accepted for that intent.

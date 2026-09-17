@@ -15,6 +15,150 @@ namespace AutoQAC.Tests.Services;
 
 public sealed class PluginRefreshModuleTests
 {
+    /// <summary>A Reset re-entering compatibility projection must not be undone by the former game's remaining writes.</summary>
+    [Fact]
+    public async Task RefreshForSettings_ResetDuringConfigurationProjection_RemainsNoGame()
+    {
+        var state = new StateService();
+        var plan = CreateWiringPlan();
+        using var sut = CreateModule(state, discoveryPlanner: CreateReadyDiscoveryPlanner(plan, []));
+        Task<PluginRefreshCompletion>? reset = null;
+        var resetStarted = false;
+        using var subscription = state.StateChanged.Subscribe(value =>
+        {
+            if (resetStarted || value.LoadOrderPath is null) return;
+            resetStarted = true;
+            sut.InvalidateForSettings();
+            reset = sut.RefreshForSettingsAsync(GameType.Unknown);
+        });
+        var old = await sut.RefreshForSettingsAsync(GameType.SkyrimSe);
+        (await reset!).Status.Should().Be(PluginRefreshCompletionStatus.NoGame);
+        old.Status.Should().Be(PluginRefreshCompletionStatus.Superseded);
+        state.CurrentState.CurrentGameType.Should().Be(GameType.Unknown);
+        (await sut.GetCurrentPublicationAsync()).GameType.Should().Be(GameType.Unknown);
+    }
+
+    /// <summary>Discovery failure must not masquerade as a successful empty load order.</summary>
+    [Theory]
+    [InlineData(PluginLoadingStatus.Failed)]
+    [InlineData(PluginLoadingStatus.DataFolderNotFound)]
+    [InlineData(PluginLoadingStatus.UnsupportedGame)]
+    public async Task RefreshForSettings_LoadFailureDoesNotPublishAcceptedEmptyRows(PluginLoadingStatus loadingStatus)
+    {
+        var plan = CreateWiringPlan();
+        var planner = CreateReadyDiscoveryPlanner(plan, []);
+        planner.LoadPluginsAsync(plan, Arg.Any<CancellationToken>())
+            .Returns(new PluginRefreshDiscoveredPlugins(plan, [], loadingStatus));
+        using var sut = CreateModule(new StateService(), discoveryPlanner: planner);
+        var completion = await sut.RefreshForSettingsAsync(GameType.SkyrimSe);
+        completion.Status.Should().Be(PluginRefreshCompletionStatus.Failed);
+        (await sut.GetCurrentPublicationAsync()).Freshness.IsFresh.Should().BeFalse();
+    }
+
+    /// <summary>Invalidation during compatibility mirroring must not let the old operation restore cleaning readiness.</summary>
+    [Fact]
+    public async Task RefreshForSettings_InvalidatedDuringRowPublication_CannotRestoreFreshness()
+    {
+        var state = new StateService();
+        using var sut = CreateModule(state);
+        var invalidated = false;
+        using var subscription = state.StateChanged.Subscribe(value =>
+        {
+            if (invalidated || value.PluginsToClean.Count == 0) return;
+            invalidated = true;
+            sut.InvalidateForSettings();
+        });
+        var completion = await sut.RefreshForSettingsAsync(GameType.SkyrimSe);
+        var publication = await sut.GetCurrentPublicationAsync();
+        completion.Status.Should().Be(PluginRefreshCompletionStatus.Superseded);
+        publication.Freshness.IsFresh.Should().BeFalse();
+    }
+
+    /// <summary>A same-value settings attempt must block cleaning even when its old freshness token still matches.</summary>
+    [Fact]
+    public async Task InvalidateForSettings_PreventsReuseOfMatchingPublication()
+    {
+        using var sut = CreateModule(new StateService());
+        await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+        sut.InvalidateForSettings();
+        var publication = await sut.GetCurrentPublicationAsync();
+        publication.Freshness.IsFresh.Should().BeFalse();
+        publication.Rows.Should().HaveCount(3);
+    }
+
+    /// <summary>Acceptance must not wait for estimates once matching rows have become authoritative.</summary>
+    [Fact]
+    public async Task RefreshForSettings_CompletesBeforeBlockedApproximation()
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var approximation = new ResultPluginIssueApproximationModule(async (_, _, ct) =>
+        {
+            entered.TrySetResult();
+            await release.Task.WaitAsync(ct);
+        });
+        using var sut = CreateModule(new StateService(), approximationModule: approximation);
+        try
+        {
+            var completion = await sut.RefreshForSettingsAsync(GameType.SkyrimSe).WaitAsync(TimeSpan.FromSeconds(5));
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            completion.Status.Should().Be(PluginRefreshCompletionStatus.Published);
+            completion.Publication!.Freshness.IsFresh.Should().BeTrue();
+            completion.Snapshot!.Rows.Should().HaveCount(3);
+            completion.Snapshot.Activity.IsIssueApproximationRefreshRunning.Should().BeTrue();
+        }
+        finally
+        {
+            release.TrySetResult();
+        }
+    }
+
+    /// <summary>An operation superseded while discovery ignores cancellation cannot borrow its successor's rows.</summary>
+    [Fact]
+    public async Task RefreshForSettings_SupersededDiscoveryNeverAcceptsSuccessorPublication()
+    {
+        var plan = CreateWiringPlan();
+        var planner = CreateReadyDiscoveryPlanner(plan, [Plugin("Old.esp")]);
+        var loading = new TaskCompletionSource<PluginRefreshDiscoveredPlugins>(TaskCreationOptions.RunContinuationsAsynchronously);
+        planner.LoadPluginsAsync(plan, Arg.Any<CancellationToken>()).Returns(loading.Task);
+        using var sut = CreateModule(new StateService(), discoveryPlanner: planner);
+        var old = sut.RefreshForSettingsAsync(GameType.SkyrimSe);
+        var newer = await sut.RefreshForSettingsAsync(GameType.Unknown);
+        loading.SetResult(new PluginRefreshDiscoveredPlugins(plan, [Plugin("Old.esp")], null));
+        var completion = await old;
+        newer.Status.Should().Be(PluginRefreshCompletionStatus.NoGame);
+        newer.Snapshot!.Rows.Should().BeEmpty();
+        completion.Status.Should().Be(PluginRefreshCompletionStatus.Superseded);
+        completion.Snapshot.Should().BeNull();
+        completion.Publication.Should().BeNull();
+    }
+
+    /// <summary>A missing discovery plan cannot acknowledge settings using older rows.</summary>
+    [Fact]
+    public async Task RefreshForSettings_MissingPlanFails()
+    {
+        var plan = CreateWiringPlan();
+        var planner = CreateReadyDiscoveryPlanner(plan, []);
+        planner.CreatePlanAsync(Arg.Any<PluginRefreshDiscoveryPlanRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new PluginRefreshDiscoveryPlanResult(PluginRefreshDiscoveryPlanStatus.MissingLoadOrderFile, null, plan.Configuration));
+        using var sut = CreateModule(new StateService(), discoveryPlanner: planner);
+        var completion = await sut.RefreshForSettingsAsync(GameType.SkyrimSe);
+        completion.Status.Should().Be(PluginRefreshCompletionStatus.Failed);
+        completion.Publication.Should().BeNull();
+    }
+
+    /// <summary>Pre-cancellation must not produce a successful no-game publication.</summary>
+    [Fact]
+    public async Task RefreshForSettings_CanceledRequestCannotAcceptNoGame()
+    {
+        using var sut = CreateModule(new StateService());
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        var completion = await sut.RefreshForSettingsAsync(GameType.Unknown, cts.Token);
+        completion.Status.Should().Be(PluginRefreshCompletionStatus.Canceled);
+        completion.Snapshot.Should().BeNull();
+    }
+
     /// <summary>
     /// Verifies direct full refresh reuses accepted targets and publishes deterministic incremental progress.
     /// </summary>

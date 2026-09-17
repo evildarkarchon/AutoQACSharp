@@ -55,9 +55,7 @@ public sealed class CleaningCommandsViewModelTests
         });
 
         var viewModel = new CleaningCommandsViewModel(
-            stateService,
             cleaningSession,
-            Substitute.For<IConfigurationService>(),
             new CleaningCommandReadiness(refreshModule, stateService),
             refreshModule,
             Substitute.For<ILoggingService>(),
@@ -112,9 +110,7 @@ public sealed class CleaningCommandsViewModelTests
         using var progressRegistration = progressInteraction.RegisterHandler(_ => Task.FromResult(Unit.Default));
 
         var viewModel = new CleaningCommandsViewModel(
-            stateService,
             cleaningSession,
-            Substitute.For<IConfigurationService>(),
             new CleaningCommandReadiness(refreshModule, stateService),
             refreshModule,
             Substitute.For<ILoggingService>(),
@@ -172,9 +168,7 @@ public sealed class CleaningCommandsViewModelTests
         }
 
         var viewModel = new CleaningCommandsViewModel(
-            stateService,
             cleaningSession,
-            Substitute.For<IConfigurationService>(),
             new CleaningCommandReadiness(refreshModule, stateService),
             refreshModule,
             Substitute.For<ILoggingService>(),
@@ -204,14 +198,50 @@ public sealed class CleaningCommandsViewModelTests
         }
     }
 
+    /// <summary>
+    /// Verifies that the no-game banner omits the explanatory sentence that merely repeats its title and action.
+    /// </summary>
+    [Fact]
+    public void OnStateChanged_WhenNoGameIsSelected_ShouldOmitRedundantValidationMessage()
+    {
+        var stateService = new StateService();
+        using var refreshModule = new RecordingPluginRefreshModule();
+        var viewModel = new CleaningCommandsViewModel(
+            Substitute.For<ICleaningSession>(),
+            new CleaningCommandReadiness(refreshModule, stateService),
+            refreshModule,
+            Substitute.For<ILoggingService>(),
+            Substitute.For<IMessageDialogService>(),
+            Substitute.For<IAppLifetime>(),
+            new Interaction<ICleaningSession, Unit>(),
+            new Interaction<List<DryRunResult>, Unit>(),
+            new Interaction<Unit, bool>(),
+            new Interaction<Unit, bool>(),
+            new Interaction<Unit, Unit>(),
+            new Interaction<Unit, Unit>());
+
+        try
+        {
+            viewModel.OnStateChanged(stateService.CurrentState);
+
+            var error = viewModel.ValidationErrors.Should().ContainSingle().Subject;
+            error.Title.Should().Be("No game selected");
+            error.Message.Should().BeEmpty();
+            error.FixStep.Should().Be("Select a game before cleaning.");
+        }
+        finally
+        {
+            viewModel.Dispose();
+            stateService.Dispose();
+        }
+    }
+
     [Fact]
     public void ExitCommand_ShouldRequestApplicationShutdown()
     {
         var appLifetime = Substitute.For<IAppLifetime>();
         var viewModel = new CleaningCommandsViewModel(
-            Substitute.For<IStateService>(),
             Substitute.For<ICleaningSession>(),
-            Substitute.For<IConfigurationService>(),
             Substitute.For<ICleaningCommandReadiness>(),
             new RecordingPluginRefreshModule(),
             Substitute.For<ILoggingService>(),

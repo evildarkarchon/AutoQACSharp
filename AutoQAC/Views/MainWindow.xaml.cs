@@ -21,6 +21,8 @@ public sealed partial class MainWindow
     private readonly IBackupService? _backupService;
     private readonly ICleaningSession? _cleaningSession;
     private readonly IConfigurationService? _configService;
+    private readonly IDiscoverySettingsModule? _discoverySettingsModule;
+    private readonly DiscoverySettingsAdmission? _discoverySettingsAdmission;
     private readonly IFileDialogService? _fileDialog;
     private readonly List<IDisposable> _interactionRegistrations = [];
     private readonly ILoggingService? _logger;
@@ -48,12 +50,16 @@ public sealed partial class MainWindow
         IMessageDialogService messageDialog,
         IUiDispatcher uiDispatcher,
         IUiFrameworkVersionProvider uiFrameworkVersionProvider,
-        IWindowContextProvider windowContextProvider) : this()
+        IWindowContextProvider windowContextProvider,
+        IDiscoverySettingsModule discoverySettingsModule,
+        DiscoverySettingsAdmission discoverySettingsAdmission) : this()
     {
         _windowContextProvider = windowContextProvider;
         _logger = logger;
         _fileDialog = fileDialog;
         _configService = configService;
+        _discoverySettingsModule = discoverySettingsModule;
+        _discoverySettingsAdmission = discoverySettingsAdmission;
         _stateService = stateService;
         _cleaningSession = cleaningSession;
         _backupService = backupService;
@@ -119,7 +125,8 @@ public sealed partial class MainWindow
         if (_logger is null || _configService is null || _uiDispatcher is null ||
             _windowContextProvider is null) return false;
 
-        var settingsViewModel = new SettingsViewModel(_configService, _logger, _uiDispatcher, _fileDialog);
+        var settingsViewModel = new SettingsViewModel(_configService, _logger, _uiDispatcher, _fileDialog,
+            _discoverySettingsModule, _discoverySettingsAdmission);
         await settingsViewModel.LoadSettingsAsync();
 
         try
@@ -138,7 +145,8 @@ public sealed partial class MainWindow
         if (_logger is null || _configService is null || _stateService is null ||
             _windowContextProvider is null) return false;
 
-        var skipListViewModel = new SkipListViewModel(_configService, _stateService, _logger);
+        var skipListViewModel = new SkipListViewModel(_configService, _stateService, _logger,
+            _discoverySettingsModule, _discoverySettingsAdmission, _uiDispatcher);
         await skipListViewModel.LoadSkipListAsync();
 
         try
