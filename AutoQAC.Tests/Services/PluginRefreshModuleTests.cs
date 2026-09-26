@@ -116,6 +116,69 @@ public sealed class PluginRefreshModuleTests
         (await sut.GetCurrentPublicationAsync()).Rows.Should().OnlyContain(row => !row.IsSelected);
     }
 
+    /// <summary>Cleaning admission drains a manually started selected approximation even when import ignores cancellation.</summary>
+    [Fact]
+    public async Task RefreshSelectedIssueApproximations_CleaningReservation_WaitsForCancellationToUnwind()
+    {
+        var approximationStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cancellationObserved = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var allowApproximationToUnwind = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var invocation = 0;
+        var approximation = new ResultPluginIssueApproximationModule(async (request, onResult, cancellationToken) =>
+        {
+            if (Interlocked.Increment(ref invocation) == 1)
+            {
+                foreach (var target in request.Targets)
+                    onResult(new PluginIssueApproximationModuleResult(
+                        target,
+                        PluginIssueApproximation.Available(1, 2, 3)));
+                return;
+            }
+
+            approximationStarted.TrySetResult();
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                throw new InvalidOperationException("An infinite approximation unexpectedly completed without cancellation.");
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                cancellationObserved.TrySetResult();
+            }
+
+            await allowApproximationToUnwind.Task;
+        });
+        var admission = new DiscoverySettingsAdmission();
+        using var state = new StateService();
+        using var sut = CreateModule(state, approximationModule: approximation, admission: admission);
+        Task<IDisposable>? cleaning = null;
+
+        try
+        {
+            await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+            var selectedRefresh = sut.ExecuteAsync(new PluginRefreshIntent.RefreshSelectedIssueApproximations());
+            await approximationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+            cleaning = admission.EnterCleaningAsync();
+            await cancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+            var firstCompletion = await Task.WhenAny(cleaning, Task.Delay(TimeSpan.FromSeconds(1)));
+            firstCompletion.Should().NotBeSameAs(cleaning,
+                "Cleaning admission must drain the active selected approximation before xEdit can launch");
+
+            allowApproximationToUnwind.TrySetResult();
+            await selectedRefresh.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            allowApproximationToUnwind.TrySetResult();
+            if (cleaning is not null)
+            {
+                using var cleaningLease = await cleaning.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+        }
+    }
+
     /// <summary>A queued selection cannot cross the point where Cleaning session admission becomes reserved.</summary>
     [Fact]
     public async Task CleaningReservation_RejectsSelectionQueuedBeforeReservationBoundary()
