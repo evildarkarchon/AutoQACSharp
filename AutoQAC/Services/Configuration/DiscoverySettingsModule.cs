@@ -153,7 +153,7 @@ public sealed class DiscoverySettingsModule : IDiscoverySettingsModule, IDisposa
                                     Complete(operation, DiscoverySettingsChangeStatus.Canceled);
                                 else if (!requiresPublication)
                                     Complete(operation, DiscoverySettingsChangeStatus.Accepted);
-                                if (requiresPublication && _pending.Count > 0)
+                                if (requiresPublication)
                                 {
                                     if (_admission.IsCleaning)
                                     {
@@ -311,14 +311,14 @@ public sealed class DiscoverySettingsModule : IDiscoverySettingsModule, IDisposa
         }
     }
 
-    /// <summary>Cancels only this operation's interest; independent pending choices retain their shared refresh.</summary>
+    /// <summary>Withdraws this operation's acceptance wait while saved choices retain their replacement publication.</summary>
     private void CancelOperation(PendingChange operation)
     {
         lock (_sync)
         {
             operation.CancelRequested = true;
+            // A durable discovery change needs fresh rows even when its last caller stops waiting.
             if (!operation.Mutating) Complete(operation, DiscoverySettingsChangeStatus.Canceled);
-            if (_pending.Count == 0) CancelRefresh();
         }
     }
 

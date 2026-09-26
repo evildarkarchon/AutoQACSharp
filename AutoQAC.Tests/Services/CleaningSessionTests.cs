@@ -188,6 +188,46 @@ public sealed partial class CleaningSessionTests : IDisposable
         _admission.IsCleaning.Should().BeFalse();
     }
 
+    /// <summary>Cleaning waits for a preview's file-validation lifetime before orphan cleanup can lead to xEdit launch.</summary>
+    [Fact]
+    public async Task Startup_DrainsActivePreviewBeforeOrphanCleanup()
+    {
+        var previewEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finishPreview = new TaskCompletionSource<ConfigPersistenceResult>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        _configServiceMock.FlushPendingSavesAsync(Arg.Any<CancellationToken>()).Returns(_ =>
+        {
+            previewEntered.TrySetResult();
+            return finishPreview.Task;
+        });
+        var cleanupStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finishCleanup = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _processServiceMock.CleanOrphanedProcessesAsync(Arg.Any<CancellationToken>()).Returns(_ =>
+        {
+            cleanupStarted.TrySetResult();
+            return finishCleanup.Task;
+        });
+
+        var preview = _cleaningSession.PreviewAsync();
+        await previewEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var cleaning = _cleaningSession.StartAsync();
+
+        try
+        {
+            _admission.IsCleaning.Should().BeTrue();
+            var firstCompletion = await Task.WhenAny(cleanupStarted.Task, Task.Delay(TimeSpan.FromSeconds(1)));
+            firstCompletion.Should().NotBeSameAs(cleanupStarted.Task,
+                "Cleaning must drain preview preflight before process cleanup and launch");
+        }
+        finally
+        {
+            finishPreview.TrySetException(new IOException("preview released"));
+            await FluentActions.Awaiting(() => preview).Should().ThrowAsync<IOException>();
+            finishCleanup.TrySetException(new IOException("stop after preview"));
+            await FluentActions.Awaiting(() => cleaning).Should().ThrowAsync<IOException>();
+        }
+    }
+
     /// <summary>Reentrant termination reset callbacks cannot mutate settings once startup has begun.</summary>
     [Fact]
     public async Task Startup_ReservesAdmissionBeforeTerminationResetCallbacks()

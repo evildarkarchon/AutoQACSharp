@@ -49,6 +49,91 @@ public sealed class DiscoverySettingsPublicationIntegrationTests
         current.Rows.Select(row => row.Key).Should().Equal(accepted.Rows.Select(row => row.Key));
     }
 
+    /// <summary>A canceled caller still leaves a saved discovery choice with a matching background publication.</summary>
+    [Fact]
+    public async Task CancellationDuringFlush_RepublishesSavedDiscoveryChoice()
+    {
+        using var fixture = new Fixture();
+        var initial = await fixture.Refresh.RefreshForSettingsAsync(GameType.SkyrimSe);
+        var flushEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finishFlush = new TaskCompletionSource<ConfigPersistenceResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        fixture.Config.FlushPendingSavesAsync(Arg.Any<CancellationToken>()).Returns(_ =>
+        {
+            flushEntered.TrySetResult();
+            return finishFlush.Task;
+        });
+        var replacementPublished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var subscription = fixture.Refresh.Snapshots.Subscribe(snapshot =>
+        {
+            if (snapshot.Generation > initial.Snapshot!.Generation && snapshot.Activity.IsIssueApproximationRefreshRunning)
+                replacementPublished.TrySetResult();
+        });
+        using var cancellation = new CancellationTokenSource();
+
+        var change = fixture.Settings.ExecuteAsync(new DiscoverySettingsIntent.SetDisableSkipLists(true), cancellation.Token);
+        await flushEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await cancellation.CancelAsync();
+        finishFlush.SetResult(new ConfigPersistenceResult(ConfigPersistenceStatusKind.Success,
+            ConfigPersistenceOperationKind.Flush, 1, null));
+
+        var result = await change.WaitAsync(TimeSpan.FromSeconds(5));
+        result.Status.Should().Be(DiscoverySettingsChangeStatus.Canceled);
+        result.SettingsSaved.Should().BeTrue();
+        fixture.Saved.Settings.DisableSkipLists.Should().BeTrue();
+        await replacementPublished.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var publication = await fixture.Refresh.GetCurrentPublicationAsync();
+        publication.Freshness.IsFresh.Should().BeTrue();
+        publication.DiscoveryPlan!.DisableSkipLists.Should().BeTrue();
+        publication.Rows.Should().ContainSingle();
+    }
+
+    /// <summary>Withdrawing acceptance after a save must not cancel the publication needed to restore freshness.</summary>
+    [Fact]
+    public async Task CancellationDuringDiscovery_CompletesCallerButPublishesSavedChoice()
+    {
+        using var fixture = new Fixture();
+        var initial = await fixture.Refresh.RefreshForSettingsAsync(GameType.SkyrimSe);
+        var loadingEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finishLoading = new TaskCompletionSource<PluginLoadingResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        fixture.Loading.TryGetPluginsAsync(GameType.SkyrimSe, Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                loadingEntered.TrySetResult();
+                return finishLoading.Task;
+            });
+        var replacementPublished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var subscription = fixture.Refresh.Snapshots.Subscribe(snapshot =>
+        {
+            if (snapshot.Generation > initial.Snapshot!.Generation && snapshot.Activity.IsIssueApproximationRefreshRunning)
+                replacementPublished.TrySetResult();
+        });
+        using var cancellation = new CancellationTokenSource();
+
+        var change = fixture.Settings.ExecuteAsync(new DiscoverySettingsIntent.SetDisableSkipLists(true), cancellation.Token);
+        await loadingEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await cancellation.CancelAsync();
+        var result = await change.WaitAsync(TimeSpan.FromSeconds(5));
+        result.Status.Should().Be(DiscoverySettingsChangeStatus.Canceled);
+        result.SettingsSaved.Should().BeTrue();
+        finishLoading.SetResult(new PluginLoadingResult
+        {
+            Status = PluginLoadingStatus.Success,
+            DataFolder = Path.GetTempPath(),
+            Plugins = [new PluginInfo
+            {
+                FileName = "Chosen.esp",
+                FullPath = Path.Combine(Path.GetTempPath(), "Chosen.esp"),
+                DetectedGameType = GameType.SkyrimSe
+            }]
+        });
+
+        await replacementPublished.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var publication = await fixture.Refresh.GetCurrentPublicationAsync();
+        publication.Freshness.IsFresh.Should().BeTrue();
+        publication.DiscoveryPlan!.DisableSkipLists.Should().BeTrue();
+        publication.Rows.Should().ContainSingle();
+    }
+
     /// <summary>Existing case-insensitive game names retain their game and rows when another discovery setting changes.</summary>
     [Fact]
     public async Task LowercasePersistedGame_SettingChangeKeepsGameAndPublishesRows()

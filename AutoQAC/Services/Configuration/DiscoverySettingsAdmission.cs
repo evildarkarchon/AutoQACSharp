@@ -5,12 +5,13 @@ using System.Threading.Tasks;
 
 namespace AutoQAC.Services.Configuration;
 
-/// <summary>Coordinates settings mutation with the complete Cleaning session lifetime, including startup.</summary>
+/// <summary>Coordinates discovery mutations, previews, and refresh work with the complete Cleaning session lifetime.</summary>
 public sealed class DiscoverySettingsAdmission
 {
     private readonly Lock _sync = new();
     private readonly SemaphoreSlim _mutation = new(1, 1);
-    private readonly HashSet<SettingsPublicationRegistration> _settingsPublications = [];
+    private readonly HashSet<RefreshRegistration> _refreshes = [];
+    private CancellationTokenSource? _activePreviewCancellation;
     private bool _isCleaning;
 
     /// <summary>Whether cleaning has reserved admission, including while already-admitted writes drain.</summary>
@@ -32,6 +33,34 @@ public sealed class DiscoverySettingsAdmission
     internal Task<IDisposable?> TryEnterPluginMutationAsync(CancellationToken ct = default)
     {
         return TryEnterMutationAsync(ct);
+    }
+
+    /// <summary>Admits preview preflight before Cleaning reserves admission and holds its mutation lane until it unwinds.</summary>
+    /// <param name="cancellation">Caller-owned source canceled when Cleaning reserves admission.</param>
+    /// <param name="ct">Cancels the wait for the mutation lane.</param>
+    /// <returns>A lease to release after all preview file reads finish, or null if Cleaning reserved admission.</returns>
+    internal async Task<IDisposable?> TryEnterPreviewAsync(
+        CancellationTokenSource cancellation,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(cancellation);
+        var mutation = await TryEnterMutationAsync(ct).ConfigureAwait(false);
+        if (mutation is null) return null;
+
+        bool cleaningReserved;
+        lock (_sync)
+        {
+            cleaningReserved = _isCleaning;
+            if (!cleaningReserved) _activePreviewCancellation = cancellation;
+        }
+        if (cleaningReserved)
+        {
+            // Cleaning may reserve admission between the mutation lease and preview registration.
+            mutation.Dispose();
+            return null;
+        }
+
+        return new Lease(() => ReleasePreview(cancellation, mutation));
     }
 
     /// <summary>Enters the shared pre-clean mutation lane unless Cleaning has already reserved it.</summary>
@@ -64,39 +93,66 @@ public sealed class DiscoverySettingsAdmission
     /// <param name="cancellation">Cancellation source owned by the publication task.</param>
     internal void TrackSettingsPublication(Task publication, CancellationTokenSource cancellation)
     {
-        ArgumentNullException.ThrowIfNull(publication);
+        TrackRefresh(publication, cancellation, rejectWhenCleaning: false);
+    }
+
+    /// <summary>
+    ///     Registers a manually started Plugin refresh before it can begin, so Cleaning drains its import.
+    /// </summary>
+    /// <param name="refresh">Task completed after the Plugin refresh has fully unwound.</param>
+    /// <param name="cancellation">Cancellation source owned by the refresh caller.</param>
+    /// <returns>False when Cleaning has already reserved admission and the caller must not start the refresh.</returns>
+    internal bool TryTrackManualRefresh(Task refresh, CancellationTokenSource cancellation)
+    {
+        return TrackRefresh(refresh, cancellation, rejectWhenCleaning: true);
+    }
+
+    /// <summary>Registers a refresh lifetime atomically with the Cleaning reservation boundary.</summary>
+    /// <param name="refresh">Task representing all remaining work in this refresh.</param>
+    /// <param name="cancellation">Source to cancel if Cleaning reserves admission.</param>
+    /// <param name="rejectWhenCleaning">Whether a new manual refresh must be rejected after reservation.</param>
+    /// <returns>Whether the refresh was registered for cancellation and draining.</returns>
+    private bool TrackRefresh(Task refresh, CancellationTokenSource cancellation, bool rejectWhenCleaning)
+    {
+        ArgumentNullException.ThrowIfNull(refresh);
         ArgumentNullException.ThrowIfNull(cancellation);
 
-        var registration = new SettingsPublicationRegistration(publication, cancellation);
+        var registration = new RefreshRegistration(refresh, cancellation);
         bool cancelForCleaning;
         lock (_sync)
         {
-            _settingsPublications.Add(registration);
+            if (rejectWhenCleaning && _isCleaning) return false;
+            _refreshes.Add(registration);
             cancelForCleaning = _isCleaning;
         }
 
-        _ = publication.ContinueWith(
-            _ => RemoveSettingsPublication(registration),
+        _ = refresh.ContinueWith(
+            _ => RemoveRefresh(registration),
             CancellationToken.None,
             TaskContinuationOptions.ExecuteSynchronously,
             TaskScheduler.Default);
-        if (cancelForCleaning) RequestPublicationCancellation(cancellation);
+        if (cancelForCleaning) RequestRefreshCancellation(cancellation);
+        return true;
     }
 
-    /// <summary>Reserves cleaning before awaiting earlier settings writes. Dispose the returned lease after finalization.</summary>
+    /// <summary>Reserves cleaning before draining earlier settings writes, previews, and refresh work.</summary>
+    /// <returns>A lease to dispose after Cleaning session finalization.</returns>
     /// <exception cref="InvalidOperationException">Another Cleaning session already reserved admission.</exception>
     public async Task<IDisposable> EnterCleaningAsync(CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        List<SettingsPublicationRegistration> publicationsToCancel;
+        List<RefreshRegistration> refreshesToCancel;
+        CancellationTokenSource? previewToCancel;
         lock (_sync)
         {
             if (_isCleaning) throw new InvalidOperationException("A cleaning session is already in progress.");
             _isCleaning = true;
-            publicationsToCancel = [.. _settingsPublications];
+            refreshesToCancel = [.. _refreshes];
+            previewToCancel = _activePreviewCancellation;
         }
-        foreach (var publication in publicationsToCancel)
-            RequestPublicationCancellation(publication.Cancellation);
+        if (previewToCancel is not null) RequestRefreshCancellation(previewToCancel);
+        foreach (var refresh in refreshesToCancel)
+            RequestRefreshCancellation(refresh.Cancellation);
 
         var mutationAcquired = false;
         try
@@ -106,16 +162,26 @@ public sealed class DiscoverySettingsAdmission
             await _mutation.WaitAsync(ct).ConfigureAwait(false);
             mutationAcquired = true;
 
-            Task[] publicationsToDrain;
+            Task[] refreshesToDrain;
             lock (_sync)
             {
-                publicationsToDrain = new Task[_settingsPublications.Count];
+                refreshesToDrain = new Task[_refreshes.Count];
                 var index = 0;
-                foreach (var publication in _settingsPublications)
-                    publicationsToDrain[index++] = publication.Publication;
+                foreach (var refresh in _refreshes)
+                    refreshesToDrain[index++] = refresh.Refresh;
             }
-            if (publicationsToDrain.Length > 0)
-                await Task.WhenAll(publicationsToDrain).WaitAsync(ct).ConfigureAwait(false);
+            if (refreshesToDrain.Length > 0)
+            {
+                var drain = Task.WhenAll(refreshesToDrain);
+                try
+                {
+                    await drain.WaitAsync(ct).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (drain.IsCanceled && !ct.IsCancellationRequested)
+                {
+                    // Cleaning requested this cancellation; the refresh has finished unwinding.
+                }
+            }
 
             _mutation.Release();
             mutationAcquired = false;
@@ -129,14 +195,14 @@ public sealed class DiscoverySettingsAdmission
         }
     }
 
-    /// <summary>Removes publication work after its complete success, failure, or cancellation unwind.</summary>
-    private void RemoveSettingsPublication(SettingsPublicationRegistration registration)
+    /// <summary>Removes refresh work after its complete success, failure, or cancellation unwind.</summary>
+    private void RemoveRefresh(RefreshRegistration registration)
     {
-        lock (_sync) _settingsPublications.Remove(registration);
+        lock (_sync) _refreshes.Remove(registration);
     }
 
-    /// <summary>Requests cancellation without allowing a concurrently completed publication to break admission.</summary>
-    private static void RequestPublicationCancellation(CancellationTokenSource cancellation)
+    /// <summary>Requests cancellation without allowing a concurrently completed refresh to break admission.</summary>
+    private static void RequestRefreshCancellation(CancellationTokenSource cancellation)
     {
         try
         {
@@ -148,11 +214,19 @@ public sealed class DiscoverySettingsAdmission
         }
     }
 
-    /// <summary>Releases the serialized mutation and lets deferred external changes retry.</summary>
+    /// <summary>Releases the shared pre-clean lane and lets deferred external changes retry.</summary>
     private void ReleaseMutation()
     {
         _mutation.Release();
         AvailabilityChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>Clears a preview's cancellation target before reopening the shared mutation lane.</summary>
+    private void ReleasePreview(CancellationTokenSource cancellation, IDisposable mutation)
+    {
+        lock (_sync)
+            if (ReferenceEquals(_activePreviewCancellation, cancellation)) _activePreviewCancellation = null;
+        mutation.Dispose();
     }
 
     /// <summary>Reopens admission after cleaning finalization or canceled startup.</summary>
@@ -171,7 +245,7 @@ public sealed class DiscoverySettingsAdmission
         public void Dispose() => Interlocked.Exchange(ref _release, null)?.Invoke();
     }
 
-    private sealed record SettingsPublicationRegistration(
-        Task Publication,
+    private sealed record RefreshRegistration(
+        Task Refresh,
         CancellationTokenSource Cancellation);
 }
