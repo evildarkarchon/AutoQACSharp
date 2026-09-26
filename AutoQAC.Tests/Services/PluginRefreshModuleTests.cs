@@ -179,9 +179,11 @@ public sealed class PluginRefreshModuleTests
         }
     }
 
-    /// <summary>Cleaning admission drains a full Plugin refresh after it publishes rows but before its importer exits.</summary>
-    [Fact]
-    public async Task RefreshGame_CleaningReservation_WaitsForCancellationToUnwind()
+    /// <summary>Cleaning admission drains a full refresh when it or Start cancels a published-row approximation.</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RefreshGame_CleaningReservation_WaitsForCancellationToUnwind(bool cancelBeforeAdmission)
     {
         var approximationStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var cancellationObserved = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -211,6 +213,12 @@ public sealed class PluginRefreshModuleTests
         {
             await approximationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
             (await sut.GetCurrentPublicationAsync()).Rows.Should().NotBeEmpty();
+
+            if (cancelBeforeAdmission)
+            {
+                await sut.ExecuteAsync(new PluginRefreshIntent.Cancel(PluginRefreshCancelReason.CleaningStarted));
+                await cancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            }
 
             cleaning = admission.EnterCleaningAsync();
             await cancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
