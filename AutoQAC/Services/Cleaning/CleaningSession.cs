@@ -258,10 +258,17 @@ public sealed class CleaningSession(
     }
 
     /// <inheritdoc />
+    /// <exception cref="InvalidOperationException">Cleaning reserved admission before preview entered.</exception>
     public async Task<IReadOnlyList<DryRunResult>> PreviewAsync(CancellationToken ct = default)
     {
+        using var previewCancellation = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        using var previewLease = await _admission.TryEnterPreviewAsync(previewCancellation, ct).ConfigureAwait(false);
+        if (previewLease is null)
+            throw new InvalidOperationException("A cleaning session is already in progress.");
+
+        // The lease keeps Cleaning startup behind preview even when synchronous file validation ignores cancellation.
         logger.Information("Starting dry-run preview");
-        var preflightPlan = await preflight.PrepareAsync(ct).ConfigureAwait(false);
+        var preflightPlan = await preflight.PrepareAsync(previewCancellation.Token).ConfigureAwait(false);
         var results = preflightPlan.PluginRows.Select(ToDryRunResult).ToList();
         logger.Information("Dry-run preview complete: {WillClean} will clean, {WillSkip} will skip",
             results.Count(r => r.Status == DryRunStatus.WillClean),

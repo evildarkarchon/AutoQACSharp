@@ -42,6 +42,7 @@ public sealed partial class CleaningCommandsViewModel(
     private CancellationTokenSource? _readinessCts;
     private int _readinessRequestId;
     private bool _cleaningReserved;
+    private int _cleaningAdmissionGeneration;
 
     [ObservableProperty] public partial string StatusText { get; set; } = "Ready";
 
@@ -88,10 +89,18 @@ public sealed partial class CleaningCommandsViewModel(
         ScheduleReadinessRefresh(true);
     }
 
-    /// <summary>Disables settings and related mutation dialogs throughout startup admission.</summary>
+    /// <summary>Disables Start, Preview, and mutation dialogs throughout cleaning admission.</summary>
     public void OnCleaningAdmissionChanged(bool reserved)
     {
         _cleaningReserved = reserved;
+        if (reserved)
+        {
+            Interlocked.Increment(ref _cleaningAdmissionGeneration);
+            CanStartCleaning = false;
+        }
+        else
+            ScheduleReadinessRefresh(true);
+
         ShowSettingsCommand.NotifyCanExecuteChanged();
         ShowSkipListCommand.NotifyCanExecuteChanged();
         RestoreBackupsCommand.NotifyCanExecuteChanged();
@@ -107,16 +116,19 @@ public sealed partial class CleaningCommandsViewModel(
 
     private bool CanStart()
     {
-        return CanStartCleaning;
+        return CanStartCleaning && !_cleaningReserved;
     }
 
     [RelayCommand(CanExecute = nameof(CanStart))]
     private async Task StartCleaningAsync()
     {
+        var admissionGeneration = Volatile.Read(ref _cleaningAdmissionGeneration);
+        if (IsCleaningAdmissionSuperseded(admissionGeneration)) return;
+
         ValidationErrors.Clear();
         HasValidationErrors = false;
 
-        if (!await ValidatePreCleanAsync().ConfigureAwait(true)) return;
+        if (!await ValidatePreCleanAsync(admissionGeneration).ConfigureAwait(true)) return;
 
         try
         {
@@ -162,35 +174,44 @@ public sealed partial class CleaningCommandsViewModel(
         }
     }
 
+    /// <summary>Shows a preview only while its readiness and result still precede Cleaning admission.</summary>
     [RelayCommand(CanExecute = nameof(CanStart))]
     private async Task PreviewAsync()
     {
+        var admissionGeneration = Volatile.Read(ref _cleaningAdmissionGeneration);
+        if (IsCleaningAdmissionSuperseded(admissionGeneration)) return;
+
         ValidationErrors.Clear();
         HasValidationErrors = false;
 
-        if (!await ValidatePreCleanAsync().ConfigureAwait(true)) return;
+        if (!await ValidatePreCleanAsync(admissionGeneration).ConfigureAwait(true)) return;
 
         try
         {
             StatusText = "Running preview...";
             var results = await cleaningSession.PreviewAsync();
+            if (IsCleaningAdmissionSuperseded(admissionGeneration)) return;
 
             await showPreviewInteraction.Handle(results.ToList());
+            if (IsCleaningAdmissionSuperseded(admissionGeneration)) return;
 
             StatusText = "Preview complete";
         }
         catch (CleaningPreflightException ex)
         {
+            if (IsCleaningAdmissionSuperseded(admissionGeneration)) return;
             logger.Error(ex, "Cleaning preflight failed before preview");
             ProjectPreflightFailure(ex.Failure);
         }
         catch (ConfigPersistenceFailureException ex)
         {
+            if (IsCleaningAdmissionSuperseded(admissionGeneration)) return;
             logger.Error(ex, "Configuration persistence failed before preview");
             ProjectPreflightFailure(ToPreflightFailure(ex));
         }
         catch (InvalidOperationException ex)
         {
+            if (IsCleaningAdmissionSuperseded(admissionGeneration)) return;
             logger.Error(ex, "Configuration validation failed before preview");
             var message = DiagnosticTextFormatter.OperationFailed("Configuration validation");
             ValidationErrors.Clear();
@@ -203,6 +224,7 @@ public sealed partial class CleaningCommandsViewModel(
         }
         catch (Exception ex)
         {
+            if (IsCleaningAdmissionSuperseded(admissionGeneration)) return;
             logger.Error(ex, "RunPreviewAsync failed");
             var message = DiagnosticTextFormatter.OperationFailed("Preview");
             StatusText = message;
@@ -211,6 +233,16 @@ public sealed partial class CleaningCommandsViewModel(
                 message,
                 DiagnosticTextFormatter.LatestLogDetails);
         }
+    }
+
+    /// <summary>
+    ///     Detects a Cleaning session that superseded a pending command, including one that has released admission.
+    /// </summary>
+    /// <param name="admissionGeneration">Admission generation captured before command validation started.</param>
+    /// <returns>True when the pending command must stop before further work or UI projection.</returns>
+    private bool IsCleaningAdmissionSuperseded(int admissionGeneration)
+    {
+        return _cleaningReserved || IsCleaning || admissionGeneration != Volatile.Read(ref _cleaningAdmissionGeneration);
     }
 
     private bool CanStop()
@@ -379,9 +411,17 @@ public sealed partial class CleaningCommandsViewModel(
         HasValidationErrors = false;
     }
 
-    private async Task<bool> ValidatePreCleanAsync()
+    /// <summary>Checks launch readiness while the caller's Cleaning admission generation remains current.</summary>
+    /// <param name="admissionGeneration">Admission generation captured before the command began.</param>
+    /// <returns>True when the latest readiness facts permit Start or Preview without an intervening Cleaning session.</returns>
+    private async Task<bool> ValidatePreCleanAsync(int admissionGeneration)
     {
+        if (IsCleaningAdmissionSuperseded(admissionGeneration)) return false;
+
         var readiness = await cleaningCommandReadiness.EvaluateAsync().ConfigureAwait(true);
+        // Admission can be reserved while readiness awaits publication; plugin reads must not start afterward.
+        if (IsCleaningAdmissionSuperseded(admissionGeneration)) return false;
+
         ApplyReadiness(readiness, true);
         return readiness.CanStartOrPreview;
     }
@@ -421,14 +461,15 @@ public sealed partial class CleaningCommandsViewModel(
 
     private void ApplyReadiness(CleaningCommandReadinessResult readiness, bool projectFailure)
     {
-        CanStartCleaning = readiness.CanStartOrPreview;
+        CanStartCleaning = readiness.CanStartOrPreview && !_cleaningReserved;
         if (readiness.CanStartOrPreview)
         {
             ClearReadinessValidationIfCurrent();
             return;
         }
 
-        if (projectFailure && readiness.Failure is not null && !IsCleaning) ProjectReadinessFailure(readiness.Failure);
+        if (projectFailure && readiness.Failure is not null && !IsCleaning && !_cleaningReserved)
+            ProjectReadinessFailure(readiness.Failure);
     }
 
     private void ProjectReadinessFailure(CleaningPreflightFailure failure)
