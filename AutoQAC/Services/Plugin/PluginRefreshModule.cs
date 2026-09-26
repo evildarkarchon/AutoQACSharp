@@ -175,13 +175,13 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
     {
         return intent switch
         {
-            PluginRefreshIntent.RefreshGame refresh => RefreshGameAsync(
-                refresh.GameType,
-                refresh.SelectedLoadOrderPath,
+            PluginRefreshIntent.RefreshGame refresh => StartManualRefresh(
+                token => RefreshGameAsync(refresh.GameType, refresh.SelectedLoadOrderPath, token),
                 cancellationToken),
             PluginRefreshIntent.RefreshSelectedIssueApproximations when IsPluginMutationBlocked =>
                 Task.FromResult(_publicationStore.GetCurrentSnapshot()),
-            PluginRefreshIntent.RefreshSelectedIssueApproximations => RefreshSelectedIssueApproximationsAsync(
+            PluginRefreshIntent.RefreshSelectedIssueApproximations => StartManualRefresh(
+                RefreshSelectedIssueApproximationsAsync,
                 cancellationToken),
             PluginRefreshIntent.ChangeSelection when IsPluginMutationBlocked =>
                 Task.FromResult(_publicationStore.GetCurrentSnapshot()),
@@ -453,6 +453,49 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         }
 
         return _publicationStore.GetCurrentSnapshot();
+    }
+
+    /// <summary>Registers manual Plugin refresh work before it can publish rows or begin analysis.</summary>
+    /// <param name="refresh">Full or selected refresh operation to run after admission accepts it.</param>
+    /// <param name="cancellationToken">Caller cancellation linked to the tracked refresh lifetime.</param>
+    /// <returns>The current snapshot if admission is closed, or the refresh result.</returns>
+    private Task<PluginRefreshSnapshot> StartManualRefresh(
+        Func<CancellationToken, Task<PluginRefreshSnapshot>> refresh,
+        CancellationToken cancellationToken)
+    {
+        if (_admission is null) return refresh(cancellationToken);
+
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var lifetimeCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        // Register before starting discovery or analysis: Cleaning must drain work after rows become usable.
+        if (!_admission.TryTrackManualRefresh(completion.Task, lifetimeCancellation))
+        {
+            lifetimeCancellation.Dispose();
+            return Task.FromResult(_publicationStore.GetCurrentSnapshot());
+        }
+
+        return ObserveManualRefreshAsync(refresh, lifetimeCancellation, completion);
+    }
+
+    /// <summary>Signals admission only after a manual refresh and any canceled importer have unwound.</summary>
+    /// <param name="refresh">Refresh operation accepted by admission.</param>
+    /// <param name="lifetimeCancellation">Source owned by this refresh and canceled by Cleaning admission.</param>
+    /// <param name="completion">Signals that all refresh work has exited before Cleaning continues.</param>
+    /// <returns>The visible snapshot returned by the refresh.</returns>
+    private static async Task<PluginRefreshSnapshot> ObserveManualRefreshAsync(
+        Func<CancellationToken, Task<PluginRefreshSnapshot>> refresh,
+        CancellationTokenSource lifetimeCancellation,
+        TaskCompletionSource completion)
+    {
+        try
+        {
+            return await refresh(lifetimeCancellation.Token).ConfigureAwait(false);
+        }
+        finally
+        {
+            lifetimeCancellation.Dispose();
+            completion.TrySetResult();
+        }
     }
 
     /// <summary>
