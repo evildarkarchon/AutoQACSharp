@@ -54,6 +54,19 @@ public sealed class PluginCleaningTests
             _terminationCoordinatorMock);
     }
 
+    /// <summary>
+    /// Rejects a missing per-plugin context with a caller-facing argument error before starting an attempt.
+    /// </summary>
+    [Fact]
+    public async Task CleanAsync_WhenContextIsNull_ThrowsArgumentNullException()
+    {
+        // Act
+        var act = async () => await _sut.CleanAsync(null!, CancellationToken.None);
+
+        // Assert
+        await act.Should().ThrowAsync<ArgumentNullException>().WithParameterName("context");
+    }
+
     [Fact]
     public async Task CleanAsync_WhenLaunchSucceeds_ReturnsFinalPluginResultFromLogSlice()
     {

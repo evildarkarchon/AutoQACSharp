@@ -756,7 +756,8 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
     /// <param name="inspection">Publication and snapshot facts observed before affordance lookup.</param>
     /// <param name="publicationAffordance">Game affordance facts for the observed publication.</param>
     /// <param name="snapshotAffordance">Game affordance facts for the observed snapshot.</param>
-    internal void PublishCommandAvailabilityIfChanged(
+    /// <returns>True when the inspected publication is still current; false when the caller must inspect again.</returns>
+    internal bool PublishCommandAvailabilityIfChanged(
         AppState state,
         PluginRefreshCommandAvailabilityInspection inspection,
         PluginRefreshGameAffordance publicationAffordance,
@@ -765,9 +766,10 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
         PluginRefreshSnapshot? nextSnapshot = null;
         lock (_snapshotLock)
         {
+            if (_disposed) return true;
             if (!ReferenceEquals(_currentPublication, inspection.Publication) ||
                 !ReferenceEquals(_currentSnapshot, inspection.Snapshot))
-                return;
+                return false;
 
             var publicationCommands = CreateCommandAvailability(
                 _currentPublication.GameType,
@@ -786,7 +788,7 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
 
             if (publicationCommands == _currentPublication.Commands &&
                 snapshotCommands == _currentSnapshot.Commands)
-                return;
+                return true;
 
             _currentPublication = _currentPublication with { Commands = publicationCommands };
             _currentSnapshot = _currentSnapshot with { Commands = snapshotCommands };
@@ -794,6 +796,7 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
         }
 
         _snapshots.OnNext(nextSnapshot!);
+        return true;
     }
 
     /// <summary>

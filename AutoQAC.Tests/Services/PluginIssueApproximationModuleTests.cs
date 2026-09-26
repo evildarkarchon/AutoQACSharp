@@ -176,16 +176,18 @@ public sealed class PluginIssueApproximationModuleTests
             .OnlyContain(result => result.Approximation.Status == PluginIssueApproximationStatus.Available);
     }
 
-    [Fact]
-    public async Task AnalyzeAsync_WhenTargetsDisappearOrFail_ReportsUnavailableAndContinuesInOrder()
+    /// <summary>A failed target import must fence later targets that could depend on its records.</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AnalyzeAsync_WhenTargetImportFails_DoesNotAnalyzeLaterTargetsWithIncompleteContext(bool missing)
     {
         using var fixture = new SkyrimSePluginFixture();
-        var missingKey = fixture.WritePlugin("Missing.esp");
-        var unreadableKey = fixture.WritePlugin("Unreadable.esp");
-        var brokenKey = fixture.WritePlugin("Broken.esp");
+        var earlierKey = fixture.WritePlugin("Earlier.esp");
+        var failedKey = fixture.WritePlugin("Failed.esp");
         var laterKey = fixture.WritePlugin("Later.esp");
-        File.Delete(missingKey.FullPath);
-        File.WriteAllText(unreadableKey.FullPath, "not a plugin");
+        if (missing) File.Delete(failedKey.FullPath);
+        else File.WriteAllText(failedKey.FullPath, "not a plugin");
         var analyzed = new List<ModKey>();
         var reported = new List<PluginIssueApproximationModuleResult>();
 
@@ -199,9 +201,6 @@ public sealed class PluginIssueApproximationModuleTests
             {
                 var plugin = call.ArgAt<IModGetter>(0);
                 analyzed.Add(plugin.ModKey);
-                if (plugin.ModKey == ModKey.FromFileName(brokenKey.FileName))
-                    throw new InvalidOperationException("Target-specific query failure.");
-
                 return new PluginAnalysisResult(
                 [
                     new PluginIssue(FormKey.Null, null, IssueType.DeletedReference)
@@ -213,21 +212,51 @@ public sealed class PluginIssueApproximationModuleTests
             GameType.SkyrimSe,
             new PluginIssueApproximationModuleSource.ResolvedLoadOrder(
                 fixture.DataFolder,
-                [missingKey, unreadableKey, brokenKey, laterKey]),
-            [missingKey, unreadableKey, brokenKey, laterKey]);
+                [earlierKey, failedKey, laterKey]),
+            [earlierKey, failedKey, laterKey]);
 
         await sut.AnalyzeAsync(request, reported.Add, CancellationToken.None);
 
-        analyzed.Should().Equal(
-            ModKey.FromFileName(brokenKey.FileName),
-            ModKey.FromFileName(laterKey.FileName));
-        reported.Select(result => result.Target).Should().Equal(missingKey, unreadableKey, brokenKey, laterKey);
+        analyzed.Should().Equal(ModKey.FromFileName(earlierKey.FileName));
+        reported.Select(result => result.Target).Should().Equal(earlierKey, failedKey, laterKey);
+        reported.Select(result => result.Approximation.Status).Should().Equal(
+            PluginIssueApproximationStatus.Available,
+            PluginIssueApproximationStatus.Unavailable,
+            PluginIssueApproximationStatus.Unavailable);
+        reported[0].Approximation.DeletedReferenceCount.Should().Be(1);
+    }
+
+    /// <summary>A query failure affects its target only because the imported load-order context remains complete.</summary>
+    [Fact]
+    public async Task AnalyzeAsync_WhenTargetQueryFails_ContinuesToLaterTarget()
+    {
+        using var fixture = new SkyrimSePluginFixture();
+        var brokenKey = fixture.WritePlugin("Broken.esp");
+        var laterKey = fixture.WritePlugin("Later.esp");
+        var reported = new List<PluginIssueApproximationModuleResult>();
+        _queryService
+            .Analyse(Arg.Any<IModGetter>(), Arg.Any<ILinkCache>(), GameRelease.SkyrimSE,
+                Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                if (call.ArgAt<IModGetter>(0).ModKey == ModKey.FromFileName(brokenKey.FileName))
+                    throw new InvalidOperationException("Target-specific query failure.");
+                return new PluginAnalysisResult([]);
+            });
+
+        IPluginIssueApproximationModule sut = new PluginIssueApproximationModule(_queryService);
+        var request = new PluginIssueApproximationModuleRequest(
+            GameType.SkyrimSe,
+            new PluginIssueApproximationModuleSource.ResolvedLoadOrder(
+                fixture.DataFolder, [brokenKey, laterKey]),
+            [brokenKey, laterKey]);
+
+        await sut.AnalyzeAsync(request, reported.Add, CancellationToken.None);
+
+        reported.Select(result => result.Target).Should().Equal(brokenKey, laterKey);
         reported.Select(result => result.Approximation.Status).Should().Equal(
             PluginIssueApproximationStatus.Unavailable,
-            PluginIssueApproximationStatus.Unavailable,
-            PluginIssueApproximationStatus.Unavailable,
             PluginIssueApproximationStatus.Available);
-        reported[3].Approximation.DeletedReferenceCount.Should().Be(1);
     }
 
     [Fact]

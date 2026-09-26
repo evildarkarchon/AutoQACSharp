@@ -94,7 +94,8 @@ public sealed class PluginIssueApproximationModule(IPluginQueryService pluginQue
                         $"Issue approximation dependency context row '{row.ModKey.FileName}' disappeared.",
                         row.FullPath);
 
-                continue;
+                // Later targets may use this target as lower-priority context; only the imported prefix is safe.
+                break;
             }
 
             try
@@ -109,7 +110,8 @@ public sealed class PluginIssueApproximationModule(IPluginQueryService pluginQue
             }
             catch when (targetPaths.Contains(row.FullPath))
             {
-                // An unreadable target is terminal for that row, while non-target context failures abort setup.
+                // A failed target import also invalidates the context for every later row.
+                break;
             }
         }
 

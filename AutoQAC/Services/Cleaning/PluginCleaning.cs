@@ -1,3 +1,4 @@
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Models;
@@ -17,6 +18,8 @@ public sealed class PluginCleaning(
     /// <inheritdoc />
     public async Task<PluginCleaningResult> CleanAsync(PluginCleaningContext context, CancellationToken ct)
     {
+        ArgumentNullException.ThrowIfNull(context);
+
         var runnerOutput = await runner.RunAsync(
                 context.Plugin,
                 context.GameType,

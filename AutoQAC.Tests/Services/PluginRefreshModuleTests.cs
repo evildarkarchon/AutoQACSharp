@@ -15,6 +15,46 @@ namespace AutoQAC.Tests.Services;
 
 public sealed class PluginRefreshModuleTests
 {
+    /// <summary>A freshness update between command inspection and projection must not lose Cleaning's command gate.</summary>
+    [Fact]
+    public async Task CleaningStateChanged_WhenFreshnessReplacesInspectedPublication_ReprojectsCommands()
+    {
+        using var state = new StateService();
+        var plan = CreateWiringPlan();
+        var planner = CreateReadyDiscoveryPlanner(plan, [Plugin("Selected.esp")]);
+        var store = new PluginRefreshPublicationStore(
+            new PluginRefreshAppStateMirror(state),
+            new PluginRefreshCommandAvailabilityPolicy(),
+            new PluginRefreshGameAffordance(GameType.Unknown, false, false, false));
+        using var sut = CreateModule(state, discoveryPlanner: planner, publicationStore: store);
+        await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+        store.GetCurrentSnapshot().Commands.CanSelectAll.Should().BeTrue();
+
+        var replacedDuringAffordanceLookup = false;
+        planner.GetAffordance(Arg.Any<GameType>(), Arg.Any<bool>()).Returns(call =>
+        {
+            if (state.CurrentState.IsCleaning && !replacedDuringAffordanceLookup)
+            {
+                replacedDuringAffordanceLookup = true;
+                var inspection = store.GetFreshnessInspection();
+                store.PublishFreshnessIfCurrent(
+                    inspection.Publication,
+                    inspection.FreshnessToken!,
+                    new PluginRefreshFreshness(false, PluginRefreshStalenessReason.LoadOrderPathChanged));
+            }
+
+            return new PluginRefreshGameAffordance(call.ArgAt<GameType>(0), true, false, true);
+        });
+
+        state.StartCleaning([Plugin("Selected.esp")]);
+
+        replacedDuringAffordanceLookup.Should().BeTrue();
+        var duringCleaning = store.GetCurrentSnapshot();
+        duringCleaning.Commands.CanSelectAll.Should().BeFalse();
+        duringCleaning.Commands.CanDeselectAll.Should().BeFalse();
+        duringCleaning.Commands.CanRefreshSelectedIssueApproximations.Should().BeFalse();
+    }
+
     /// <summary>Cleaning admission cancels active analysis and rejects new Plugin mutations before AppState changes.</summary>
     [Fact]
     public async Task CleaningReservation_CancelsAnalysisAndRejectsPluginMutationsUntilReleased()
@@ -1839,7 +1879,8 @@ public sealed class PluginRefreshModuleTests
         IPluginIssueApproximationModule? approximationModule = null,
         IGameDetectionService? gameDetectionService = null,
         IPluginRefreshDiscoveryPlanner? discoveryPlanner = null,
-        DiscoverySettingsAdmission? admission = null)
+        DiscoverySettingsAdmission? admission = null,
+        PluginRefreshPublicationStore? publicationStore = null)
     {
         configurationService ??= CreateConfigurationService();
         pluginLoadingService ??= new TestPluginLoadingService();
@@ -1849,7 +1890,7 @@ public sealed class PluginRefreshModuleTests
             pluginLoadingService,
             Substitute.For<IMo2InstanceService>());
         var initialConfiguration = PluginRefreshAppStateMirror.CreateConfigurationProjection(stateService.CurrentState);
-        var publicationStore = new PluginRefreshPublicationStore(
+        publicationStore ??= new PluginRefreshPublicationStore(
             new PluginRefreshAppStateMirror(stateService),
             new PluginRefreshCommandAvailabilityPolicy(admission),
             discoveryPlanner.GetAffordance(

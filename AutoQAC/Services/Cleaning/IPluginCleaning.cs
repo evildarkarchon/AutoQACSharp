@@ -1,3 +1,4 @@
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Models;
@@ -18,5 +19,6 @@ public interface IPluginCleaning
     /// <param name="context">Small per-plugin context resolved by the Cleaning session preflight.</param>
     /// <param name="ct">Cancellation token for launch, retry decision, and log-read work.</param>
     /// <returns>The final cleaning result for the plugin.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="context"/> is null.</exception>
     Task<PluginCleaningResult> CleanAsync(PluginCleaningContext context, CancellationToken ct);
 }

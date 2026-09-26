@@ -880,12 +880,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         if (state.IsCleaning == _lastIsCleaning) return;
 
         _lastIsCleaning = state.IsCleaning;
-        var commandInspection = _publicationStore.GetCommandAvailabilityInspection();
-        _publicationStore.PublishCommandAvailabilityIfChanged(
-            state,
-            commandInspection,
-            GetAffordance(commandInspection.Publication),
-            GetAffordance(commandInspection.Snapshot));
+        PublishCurrentCommandAvailability();
     }
 
     /// <summary>Cancels analysis and republishes command policy as soon as Cleaning session admission changes.</summary>
@@ -905,16 +900,30 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
 
         try
         {
-            var commandInspection = _publicationStore.GetCommandAvailabilityInspection();
-            _publicationStore.PublishCommandAvailabilityIfChanged(
-                _stateService.CurrentState,
-                commandInspection,
-                GetAffordance(commandInspection.Publication),
-                GetAffordance(commandInspection.Snapshot));
+            PublishCurrentCommandAvailability();
         }
         catch (Exception ex)
         {
             LogAdmissionHandlerFailure(ex);
+        }
+    }
+
+    /// <summary>Re-inspects command facts if freshness or row publication changes during affordance lookup.</summary>
+    private void PublishCurrentCommandAvailability()
+    {
+        while (!_disposed)
+        {
+            var inspection = _publicationStore.GetCommandAvailabilityInspection();
+            var publicationAffordance = GetAffordance(inspection.Publication);
+            var snapshotAffordance = GetAffordance(inspection.Snapshot);
+            if (_publicationStore.PublishCommandAvailabilityIfChanged(
+                    _stateService.CurrentState,
+                    inspection,
+                    publicationAffordance,
+                    snapshotAffordance))
+                return;
+
+            // A concurrent publication can replace the inspected facts without another cleaning-state event.
         }
     }
 

@@ -5,7 +5,14 @@ using AutoQAC.Services.GameCapability;
 using AutoQAC.Services.MO2;
 using AutoQAC.Services.Plugin;
 using FluentAssertions;
+using Mutagen.Bethesda;
+using Mutagen.Bethesda.Plugins;
+using Mutagen.Bethesda.Plugins.Cache;
+using Mutagen.Bethesda.Plugins.Records;
+using Mutagen.Bethesda.Skyrim;
 using NSubstitute;
+using QueryPlugins;
+using QueryPlugins.Models;
 
 namespace AutoQAC.Tests.Services;
 
@@ -378,6 +385,64 @@ public sealed class PluginRefreshDiscoveryPlannerTests
                 @"C:\MO2\profiles\Default\loadorder.txt",
                 null,
                 Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>An unresolved MO2 entry must become unavailable without preventing a mapped plugin's estimate.</summary>
+    [Fact]
+    public async Task LoadPluginsAsync_WithUnresolvedMo2Row_PreservesMappedApproximation()
+    {
+        var tempDirectory = Path.Combine(Path.GetTempPath(), "AutoQAC_Mo2Unresolved_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDirectory);
+        try
+        {
+            var mappedPath = Path.Combine(tempDirectory, "Mapped.esp");
+            var loadOrderPath = Path.Combine(tempDirectory, "loadorder.txt");
+            new SkyrimMod(ModKey.FromNameAndExtension("Mapped.esp"), SkyrimRelease.SkyrimSE)
+                .BeginWrite.ToPath(mappedPath).WithNoLoadOrder().Write();
+            File.WriteAllText(loadOrderPath, "Mapped.esp\nMissing.esp\n");
+
+            var plan = CreatePlan(
+                PluginRefreshDiscoveryMode.Mo2LoadOrderFile,
+                GameType.SkyrimSe,
+                tempDirectory,
+                mo2LoadOrderPath: loadOrderPath,
+                mo2PathMap: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["Mapped.esp"] = mappedPath
+                });
+            var loader = Substitute.For<IPluginLoadingService>();
+            loader.GetPluginsFromFileAsync(loadOrderPath, null, Arg.Any<CancellationToken>())
+                .Returns([
+                    Plugin("Mapped.esp", "Mapped.esp", GameType.SkyrimSe),
+                    Plugin("Missing.esp", "Missing.esp", GameType.SkyrimSe)
+                ]);
+            var discovered = await CreateSut(pluginLoadingService: loader).LoadPluginsAsync(plan);
+            var keys = discovered.Plugins
+                .Select(plugin => new PluginRefreshRowKey(plugin.FileName, plugin.FullPath))
+                .ToList();
+            var queryService = Substitute.For<IPluginQueryService>();
+            queryService.Analyse(Arg.Any<IModGetter>(), Arg.Any<ILinkCache>(), GameRelease.SkyrimSE,
+                    Arg.Any<CancellationToken>())
+                .Returns(new PluginAnalysisResult([]));
+            var results = new List<PluginIssueApproximationModuleResult>();
+            var approximation = new PluginIssueApproximationModule(queryService);
+
+            await approximation.AnalyzeAsync(
+                new PluginIssueApproximationModuleRequest(
+                    GameType.SkyrimSe,
+                    new PluginIssueApproximationModuleSource.ResolvedLoadOrder(tempDirectory, keys),
+                    keys),
+                results.Add);
+
+            discovered.Plugins[0].FullPath.Should().Be(mappedPath);
+            results.Select(result => result.Target.FileName).Should().Equal("Mapped.esp", "Missing.esp");
+            results[0].Approximation.Should().Be(PluginIssueApproximation.Available(0, 0, 0));
+            results[1].Approximation.Should().Be(PluginIssueApproximation.Unavailable);
+        }
+        finally
+        {
+            Directory.Delete(tempDirectory, true);
+        }
     }
 
     private static PluginRefreshDiscoveryPlanner CreateSut(

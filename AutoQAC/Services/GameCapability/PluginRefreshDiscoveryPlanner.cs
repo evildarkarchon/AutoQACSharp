@@ -146,20 +146,29 @@ public sealed class PluginRefreshDiscoveryPlanner : IPluginRefreshDiscoveryPlann
 
             case PluginRefreshDiscoveryMode.Mo2LoadOrderFile:
             {
-                if (string.IsNullOrWhiteSpace(plan.Mo2LoadOrderPath))
+                var mo2LoadOrderPath = plan.Mo2LoadOrderPath;
+                if (string.IsNullOrWhiteSpace(mo2LoadOrderPath))
                     return new PluginRefreshDiscoveredPlugins(plan, [], null);
 
                 var plugins = await _pluginLoadingService.GetPluginsFromFileAsync(
-                        plan.Mo2LoadOrderPath,
+                        mo2LoadOrderPath,
                         null,
                         ct)
                     .ConfigureAwait(false);
-                if (plan.Mo2PathMap.Count == 0) return new PluginRefreshDiscoveredPlugins(plan, plugins, null);
 
                 var mappedPlugins = plugins.Select(plugin =>
-                        plan.Mo2PathMap.TryGetValue(plugin.FileName, out var fullPath)
-                            ? plugin with { FullPath = fullPath }
-                            : plugin)
+                    {
+                        if (plan.Mo2PathMap.TryGetValue(plugin.FileName, out var fullPath))
+                            return plugin with { FullPath = fullPath };
+                        if (Path.IsPathFullyQualified(plugin.FullPath)) return plugin;
+
+                        // A child of the load-order file cannot exist while that file exists. Keep the missing
+                        // entry rooted so it receives Unavailable without invalidating every resolved target.
+                        return plugin with
+                        {
+                            FullPath = Path.GetFullPath(Path.Combine(mo2LoadOrderPath, plugin.FileName))
+                        };
+                    })
                     .ToList();
                 return new PluginRefreshDiscoveredPlugins(plan, mappedPlugins, null);
             }
