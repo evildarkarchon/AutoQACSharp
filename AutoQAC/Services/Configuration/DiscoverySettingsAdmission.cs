@@ -97,12 +97,12 @@ public sealed class DiscoverySettingsAdmission
     }
 
     /// <summary>
-    ///     Registers a manually started selected approximation before it can begin, so Cleaning drains its import.
+    ///     Registers a manually started Plugin refresh before it can begin, so Cleaning drains its import.
     /// </summary>
-    /// <param name="refresh">Task completed after the selected approximation has fully unwound.</param>
-    /// <param name="cancellation">Cancellation source owned by the selected refresh caller.</param>
+    /// <param name="refresh">Task completed after the Plugin refresh has fully unwound.</param>
+    /// <param name="cancellation">Cancellation source owned by the refresh caller.</param>
     /// <returns>False when Cleaning has already reserved admission and the caller must not start the refresh.</returns>
-    internal bool TryTrackSelectedRefresh(Task refresh, CancellationTokenSource cancellation)
+    internal bool TryTrackManualRefresh(Task refresh, CancellationTokenSource cancellation)
     {
         return TrackRefresh(refresh, cancellation, rejectWhenCleaning: true);
     }
@@ -171,7 +171,17 @@ public sealed class DiscoverySettingsAdmission
                     refreshesToDrain[index++] = refresh.Refresh;
             }
             if (refreshesToDrain.Length > 0)
-                await Task.WhenAll(refreshesToDrain).WaitAsync(ct).ConfigureAwait(false);
+            {
+                var drain = Task.WhenAll(refreshesToDrain);
+                try
+                {
+                    await drain.WaitAsync(ct).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (drain.IsCanceled && !ct.IsCancellationRequested)
+                {
+                    // Cleaning requested this cancellation; the refresh has finished unwinding.
+                }
+            }
 
             _mutation.Release();
             mutationAcquired = false;

@@ -175,7 +175,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
     {
         return intent switch
         {
-            PluginRefreshIntent.RefreshGame refresh => RefreshGameAsync(
+            PluginRefreshIntent.RefreshGame refresh => StartFullRefresh(
                 refresh.GameType,
                 refresh.SelectedLoadOrderPath,
                 cancellationToken),
@@ -455,6 +455,54 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         return _publicationStore.GetCurrentSnapshot();
     }
 
+    /// <summary>Registers a full Plugin refresh before discovery starts, so Cleaning can drain its entire lifetime.</summary>
+    /// <param name="gameType">Game selected by this refresh.</param>
+    /// <param name="selectedLoadOrderPath">Optional explicit load-order path for file-based discovery.</param>
+    /// <param name="cancellationToken">Caller cancellation linked to the tracked refresh lifetime.</param>
+    /// <returns>The current snapshot if admission is closed, or the full refresh result.</returns>
+    private Task<PluginRefreshSnapshot> StartFullRefresh(
+        GameType gameType,
+        string? selectedLoadOrderPath,
+        CancellationToken cancellationToken)
+    {
+        if (_admission is null) return RefreshGameAsync(gameType, selectedLoadOrderPath, cancellationToken);
+
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var lifetimeCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        // Register before discovery can publish rows; Cleaning must drain its later Issue approximation too.
+        if (!_admission.TryTrackManualRefresh(completion.Task, lifetimeCancellation))
+        {
+            lifetimeCancellation.Dispose();
+            return Task.FromResult(_publicationStore.GetCurrentSnapshot());
+        }
+
+        return ObserveFullRefreshAsync(gameType, selectedLoadOrderPath, lifetimeCancellation, completion);
+    }
+
+    /// <summary>Signals admission only after the full refresh and any canceled importer have unwound.</summary>
+    /// <param name="gameType">Game selected by this refresh.</param>
+    /// <param name="selectedLoadOrderPath">Optional explicit load-order path for file-based discovery.</param>
+    /// <param name="lifetimeCancellation">Source owned by this refresh and canceled by Cleaning admission.</param>
+    /// <param name="completion">Signals that the entire refresh has exited before Cleaning continues.</param>
+    /// <returns>The visible snapshot returned by the full refresh.</returns>
+    private async Task<PluginRefreshSnapshot> ObserveFullRefreshAsync(
+        GameType gameType,
+        string? selectedLoadOrderPath,
+        CancellationTokenSource lifetimeCancellation,
+        TaskCompletionSource completion)
+    {
+        try
+        {
+            return await RefreshGameAsync(gameType, selectedLoadOrderPath, lifetimeCancellation.Token)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            lifetimeCancellation.Dispose();
+            completion.TrySetResult();
+        }
+    }
+
     /// <summary>
     ///     Registers selected approximation work with Cleaning admission before starting its generation.
     /// </summary>
@@ -467,7 +515,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var lifetimeCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         // Register before starting analysis: reservation can otherwise pass its drain snapshot while import begins.
-        if (!_admission.TryTrackSelectedRefresh(completion.Task, lifetimeCancellation))
+        if (!_admission.TryTrackManualRefresh(completion.Task, lifetimeCancellation))
         {
             lifetimeCancellation.Dispose();
             return Task.FromResult(_publicationStore.GetCurrentSnapshot());

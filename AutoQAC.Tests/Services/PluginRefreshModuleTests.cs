@@ -179,6 +179,75 @@ public sealed class PluginRefreshModuleTests
         }
     }
 
+    /// <summary>Cleaning admission drains a full Plugin refresh after it publishes rows but before its importer exits.</summary>
+    [Fact]
+    public async Task RefreshGame_CleaningReservation_WaitsForCancellationToUnwind()
+    {
+        var approximationStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cancellationObserved = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var allowApproximationToUnwind = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var approximation = new ResultPluginIssueApproximationModule(async (_, _, cancellationToken) =>
+        {
+            approximationStarted.TrySetResult();
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                throw new InvalidOperationException("An infinite approximation unexpectedly completed without cancellation.");
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                cancellationObserved.TrySetResult();
+            }
+
+            await allowApproximationToUnwind.Task;
+        });
+        var admission = new DiscoverySettingsAdmission();
+        using var state = new StateService();
+        using var sut = CreateModule(state, approximationModule: approximation, admission: admission);
+        var refresh = sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+        Task<IDisposable>? cleaning = null;
+
+        try
+        {
+            await approximationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            (await sut.GetCurrentPublicationAsync()).Rows.Should().NotBeEmpty();
+
+            cleaning = admission.EnterCleaningAsync();
+            await cancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+            var firstCompletion = await Task.WhenAny(cleaning, Task.Delay(TimeSpan.FromMilliseconds(250)));
+            firstCompletion.Should().NotBeSameAs(cleaning,
+                "Cleaning admission must drain the full Plugin refresh before xEdit can launch");
+        }
+        finally
+        {
+            allowApproximationToUnwind.TrySetResult();
+            await refresh.WaitAsync(TimeSpan.FromSeconds(5));
+            if (cleaning is not null)
+            {
+                using var cleaningLease = await cleaning.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+        }
+    }
+
+    /// <summary>A full Plugin refresh cannot replace Cleaning's accepted publication after admission closes.</summary>
+    [Fact]
+    public async Task RefreshGame_CleaningReservation_RejectsNewRefresh()
+    {
+        var admission = new DiscoverySettingsAdmission();
+        using var state = new StateService();
+        using var sut = CreateModule(state, admission: admission);
+        await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+
+        using var cleaning = await admission.EnterCleaningAsync();
+        var before = await sut.GetCurrentPublicationAsync();
+        await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.Fallout4));
+        var after = await sut.GetCurrentPublicationAsync();
+
+        after.Generation.Should().Be(before.Generation);
+        after.GameType.Should().Be(GameType.SkyrimSe);
+    }
+
     /// <summary>A queued selection cannot cross the point where Cleaning session admission becomes reserved.</summary>
     [Fact]
     public async Task CleaningReservation_RejectsSelectionQueuedBeforeReservationBoundary()

@@ -70,4 +70,26 @@ public sealed class DiscoverySettingsAdmissionTests
             using var cleaningLease = await cleaning.WaitAsync(TimeSpan.FromSeconds(2));
         }
     }
+
+    /// <summary>A tracked refresh canceled for Cleaning must drain without canceling the Cleaning reservation.</summary>
+    [Fact]
+    public async Task CleaningReservation_CanceledTrackedRefreshStillAdmitsCleaning()
+    {
+        var admission = new DiscoverySettingsAdmission();
+        using var mutation = await admission.TryEnterSettingsAsync();
+        using var refreshCancellation = new CancellationTokenSource();
+        var refresh = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cancellationObserved = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var registration = refreshCancellation.Token.Register(cancellationObserved.SetResult);
+        admission.TrackSettingsPublication(refresh.Task, refreshCancellation);
+        admission.CleaningChanged += (_, _) => mutation!.Dispose();
+
+        var cleaning = admission.EnterCleaningAsync();
+        await cancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        cleaning.IsCompleted.Should().BeFalse("Cleaning must wait for the tracked refresh to unwind");
+
+        refresh.SetCanceled(refreshCancellation.Token);
+        using var cleaningLease = await cleaning.WaitAsync(TimeSpan.FromSeconds(2));
+        admission.IsCleaning.Should().BeTrue();
+    }
 }
