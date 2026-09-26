@@ -95,8 +95,9 @@ dotnet build AutoQAC/AutoQAC.csproj -c Release
 
 ### Issue tracker
 
-Track issues locally under `.scratch/<feature>/`. Before creating, fetching,
-or updating tickets, read `docs/agents/issue-tracker.md`.
+Track issues and specs in GitHub Issues for `evildarkarchon/AutoQACSharp`.
+Before creating, fetching, updating, or triaging tickets, read
+`docs/agents/issue-tracker.md`.
 
 ### Triage labels
 

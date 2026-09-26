@@ -1,31 +1,49 @@
-# Issue tracker: Local Markdown
+# Issue tracker: GitHub
 
-Issues and specs live as Markdown files in `.scratch/`.
+Issues and specs for this repo live in GitHub Issues for
+`evildarkarchon/AutoQACSharp`. Use the `gh` CLI for tracker operations.
+Run every `gh` command outside the sandbox because authentication uses
+the user's Windows Credential Manager. From another directory, pass
+`--repo evildarkarchon/AutoQACSharp`.
 
 ## Conventions
 
-- One feature per directory: `.scratch/<feature-slug>/`.
-- Spec: `.scratch/<feature-slug>/spec.md`.
-- Tickets: `.scratch/<feature-slug>/issues/<NN>-<slug>.md`,
-  numbered from `01`, one file per ticket.
-- Record triage state in a `Status:` line near the top, using
-  `triage-labels.md`.
-- Append conversation history under `## Comments`.
+- Create: `gh issue create --title "..." --body-file <path>`.
+  Write multiline bodies to a temporary file first.
+- Read: `gh issue view <number> --json number,title,body,state,labels,comments`.
+- List: `gh issue list --state open --json number,title,body,labels`,
+  adding `--label` or changing `--state` as needed.
+- Comment: `gh issue comment <number> --body-file <path>`.
+- Apply or remove labels: `gh issue edit <number> --add-label "..."` or
+  `--remove-label "..."`.
+- Close: `gh issue close <number> --comment "..."`.
 
-Publishing means creating the appropriate spec or ticket file.
-Fetching means reading its referenced path. Resolve bare ticket numbers
-within their feature directory; ask for the feature if ambiguous.
+Use the label strings in `triage-labels.md`.
+
+## Pull requests as a triage surface
+
+**PRs as a request surface: no.** Set this to `yes` if external pull
+requests should enter the triage queue. When enabled, use `gh pr` to
+read, list, comment on, label, and close those requests. GitHub shares
+issue and PR numbers; resolve an ambiguous `#<number>` before editing.
+
+## Skill operations
+
+Publishing to the issue tracker means creating a GitHub issue.
+Fetching a ticket means reading its issue body, labels, and comments.
 
 ## Wayfinding operations
 
-- Map: `.scratch/<effort>/map.md`, containing Notes, Decisions-so-far,
-  and Fog.
-- Children use the numbered ticket paths above and a `Type:` line:
-  `research`, `prototype`, `grilling`, or `task`.
-- Wayfinding tickets use `Status: open`, `claimed`, or `resolved`.
-- Record dependencies as `Blocked by: NN, NN`.
-- A ticket is unblocked when every listed dependency is resolved.
-- Select the lowest-numbered open, unblocked ticket.
-- Claim it by saving `Status: claimed` before starting work.
-- Resolve it by appending `## Answer`, setting `Status: resolved`,
-  and adding a gist and link to the map's Decisions-so-far.
+- Map: one issue labelled `wayfinder:map`, with Notes,
+  Decisions-so-far, and Fog in its body.
+- Child: a GitHub sub-issue linked to the map, labelled
+  `wayfinder:<type>` (`research`, `prototype`, `grilling`, or `task`).
+  If sub-issues are unavailable, link it in the map's task list and
+  put `Part of #<map>` in the child body.
+- Blocking: use GitHub's native issue dependencies. If unavailable,
+  put `Blocked by: #<n>, #<n>` in the child body.
+- Frontier: choose the first open, unassigned map child whose blockers
+  are all closed.
+- Claim: `gh issue edit <number> --add-assignee @me`.
+- Resolve: comment with the answer, close the child, and add a gist
+  and link to the map's Decisions-so-far.

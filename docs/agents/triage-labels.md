@@ -1,8 +1,8 @@
 # Triage Labels
 
-Use these strings in local tickets' `Status:` lines.
+Use these GitHub issue labels for the five canonical triage roles.
 
-| Canonical role | Tracker string | Meaning |
+| Canonical role | GitHub label | Meaning |
 | --- | --- | --- |
 | needs-triage | needs-triage | Needs evaluation |
 | needs-info | needs-info | Waiting for more information |
@@ -10,5 +10,4 @@ Use these strings in local tickets' `Status:` lines.
 | ready-for-human | ready-for-human | Requires human implementation |
 | wontfix | wontfix | Will not be actioned |
 
-When a skill requests a triage role, use its tracker string.
-Wayfinding lifecycle statuses are defined in `issue-tracker.md`.
+When a skill requests a triage role, apply its GitHub label.
