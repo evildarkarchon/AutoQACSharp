@@ -29,8 +29,7 @@ public sealed class CleaningResultsViewModelTests
     {
         var results = new List<PluginCleaningResult>();
 
-        for (int i = 0; i < cleaned; i++)
-        {
+        for (var i = 0; i < cleaned; i++)
             results.Add(new PluginCleaningResult
             {
                 PluginName = $"Cleaned{i + 1}.esp",
@@ -43,26 +42,21 @@ public sealed class CleaningResultsViewModelTests
                     ItemsUndeleted = 2 + i
                 }
             });
-        }
 
-        for (int i = 0; i < skipped; i++)
-        {
+        for (var i = 0; i < skipped; i++)
             results.Add(new PluginCleaningResult
             {
                 PluginName = $"Skipped{i + 1}.esp",
                 Status = CleaningStatus.Skipped
             });
-        }
 
-        for (int i = 0; i < failed; i++)
-        {
+        for (var i = 0; i < failed; i++)
             results.Add(new PluginCleaningResult
             {
                 PluginName = $"Failed{i + 1}.esp",
                 Status = CleaningStatus.Failed,
                 Message = "Timeout"
             });
-        }
 
         return new CleaningSessionResult
         {
@@ -118,7 +112,7 @@ public sealed class CleaningResultsViewModelTests
     public void WindowTitle_WhenSuccessful_ShouldBeCleaningCompleted()
     {
         // Arrange
-        var vm = CreateViewModel(CreateTestSessionResult(cleaned: 2, failed: 0, wasCancelled: false));
+        var vm = CreateViewModel(CreateTestSessionResult(2, failed: 0, wasCancelled: false));
 
         // Assert
         vm.WindowTitle.Should().Be("Cleaning Completed");
@@ -138,7 +132,7 @@ public sealed class CleaningResultsViewModelTests
     public void WindowTitle_WhenHasErrors_ShouldIndicateErrors()
     {
         // Arrange
-        var vm = CreateViewModel(CreateTestSessionResult(cleaned: 1, failed: 1));
+        var vm = CreateViewModel(CreateTestSessionResult(1, failed: 1));
 
         // Assert
         vm.WindowTitle.Should().Be("Cleaning Completed with Errors");
@@ -152,7 +146,7 @@ public sealed class CleaningResultsViewModelTests
     public void TotalPlugins_ShouldReturnCorrectCount()
     {
         // Arrange
-        var vm = CreateViewModel(CreateTestSessionResult(cleaned: 3, skipped: 2, failed: 1));
+        var vm = CreateViewModel(CreateTestSessionResult(3, 2, 1));
 
         // Assert
         vm.TotalPlugins.Should().Be(6);
@@ -162,7 +156,7 @@ public sealed class CleaningResultsViewModelTests
     public void CleanedCount_ShouldReturnCorrectCount()
     {
         // Arrange
-        var vm = CreateViewModel(CreateTestSessionResult(cleaned: 5));
+        var vm = CreateViewModel(CreateTestSessionResult(5));
 
         // Assert
         vm.CleanedCount.Should().Be(5);
@@ -192,7 +186,7 @@ public sealed class CleaningResultsViewModelTests
     public void TotalItms_ShouldSumAllItms()
     {
         // Arrange - 2 cleaned plugins with 10+0=10 and 10+1=11 ITMs
-        var vm = CreateViewModel(CreateTestSessionResult(cleaned: 2));
+        var vm = CreateViewModel(CreateTestSessionResult(2));
 
         // Assert
         vm.TotalItms.Should().Be(21); // 10 + 11
@@ -202,7 +196,7 @@ public sealed class CleaningResultsViewModelTests
     public void TotalUdrs_ShouldSumAllUdrs()
     {
         // Arrange - 2 cleaned plugins with 2+0=2 and 2+1=3 UDRs
-        var vm = CreateViewModel(CreateTestSessionResult(cleaned: 2));
+        var vm = CreateViewModel(CreateTestSessionResult(2));
 
         // Assert
         vm.TotalUdrs.Should().Be(5); // 2 + 3
@@ -222,8 +216,8 @@ public sealed class CleaningResultsViewModelTests
     public void IsSuccess_ShouldReflectSessionResult()
     {
         // Arrange
-        var successVm = CreateViewModel(CreateTestSessionResult(cleaned: 2, failed: 0));
-        var failedVm = CreateViewModel(CreateTestSessionResult(cleaned: 1, failed: 1));
+        var successVm = CreateViewModel(CreateTestSessionResult(2, failed: 0));
+        var failedVm = CreateViewModel(CreateTestSessionResult(1, failed: 1));
 
         // Assert
         successVm.IsSuccess.Should().BeTrue();
@@ -319,10 +313,10 @@ public sealed class CleaningResultsViewModelTests
     {
         // Arrange
         _fileDialogMock.SaveFileDialogAsync(
-            Arg.Any<string>(),
-            Arg.Any<string>(),
-            Arg.Any<string>(),
-            Arg.Any<string>())
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<string>())
             .Returns((string?)null);
 
         var vm = CreateViewModel();
@@ -335,26 +329,35 @@ public sealed class CleaningResultsViewModelTests
             .Information(Arg.Any<string>(), Arg.Any<object[]>());
     }
 
+    /// <summary>Exports into an owned temporary file so success does not depend on a machine-specific directory.</summary>
     [Fact]
     public async Task ExportReportCommand_WhenUserSelectsPath_ShouldLogSuccess()
     {
         // Arrange
-        var testPath = "C:\\test\\report.txt";
+        var testPath = Path.Combine(Path.GetTempPath(), $"AutoQAC-report-{Guid.NewGuid():N}.txt");
         _fileDialogMock.SaveFileDialogAsync(
-            Arg.Any<string>(),
-            Arg.Any<string>(),
-            Arg.Any<string>(),
-            Arg.Any<string>())
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<string>())
             .Returns(testPath);
 
         var vm = CreateViewModel();
 
-        // Act
-        await vm.ExportReportCommand.ExecuteAsync(null);
+        try
+        {
+            // Act
+            await vm.ExportReportCommand.ExecuteAsync(null);
 
-        // Assert
-        _loggerMock.Received(1)
-            .Information(Arg.Any<string>(), Arg.Is<object[]>(args => args[0].ToString() == testPath));
+            // Assert
+            (await File.ReadAllTextAsync(testPath)).Should().NotBeNullOrWhiteSpace();
+            _loggerMock.Received(1)
+                .Information(Arg.Any<string>(), Arg.Is<object[]>(args => args[0].ToString() == testPath));
+        }
+        finally
+        {
+            File.Delete(testPath);
+        }
     }
 
     [Fact]
@@ -365,10 +368,10 @@ public sealed class CleaningResultsViewModelTests
         var expectedPrefix = $"AutoQAC_Report_{sessionResult.StartTime:yyyyMMdd_HHmmss}";
 
         _fileDialogMock.SaveFileDialogAsync(
-            Arg.Any<string>(),
-            Arg.Any<string>(),
-            Arg.Is<string>(name => name.StartsWith(expectedPrefix)),
-            Arg.Any<string>())
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Is<string>(name => name.StartsWith(expectedPrefix)),
+                Arg.Any<string>())
             .Returns((string?)null);
 
         var vm = CreateViewModel(sessionResult);

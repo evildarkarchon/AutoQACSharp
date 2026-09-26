@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Models;
 using AutoQAC.Models.Diagnostics;
+using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
@@ -79,10 +80,7 @@ public sealed class MessageDialogService(
 
         return ShowSerializedAsync(async () =>
         {
-            if (!windowContextProvider.TryGetContext(out _, out var xamlRoot))
-            {
-                return BackupFailureChoice.SkipPlugin;
-            }
+            if (!windowContextProvider.TryGetContext(out _, out var xamlRoot)) return BackupFailureChoice.SkipPlugin;
 
             var dialog = new ContentDialog
             {
@@ -114,10 +112,7 @@ public sealed class MessageDialogService(
     {
         return ShowSerializedAsync(async () =>
         {
-            if (!windowContextProvider.TryGetContext(out _, out var xamlRoot))
-            {
-                return buttonConfiguration.CloseResult;
-            }
+            if (!windowContextProvider.TryGetContext(out _, out var xamlRoot)) return buttonConfiguration.CloseResult;
 
             var dialog = new ContentDialog
             {
@@ -176,14 +171,12 @@ public sealed class MessageDialogService(
 
         var iconGlyph = GetIconGlyph(icon);
         if (!string.IsNullOrEmpty(iconGlyph))
-        {
             messagePanel.Children.Add(new TextBlock
             {
                 Text = iconGlyph,
                 FontSize = 28,
                 VerticalAlignment = VerticalAlignment.Top
             });
-        }
 
         messagePanel.Children.Add(new TextBlock
         {
@@ -194,7 +187,6 @@ public sealed class MessageDialogService(
         panel.Children.Add(messagePanel);
 
         if (!string.IsNullOrWhiteSpace(details))
-        {
             panel.Children.Add(new Expander
             {
                 Header = "Details",
@@ -209,13 +201,13 @@ public sealed class MessageDialogService(
                     }
                 }
             });
-        }
 
         return panel;
     }
 
-    private static FrameworkElement BuildBackupFailureContent(string pluginName, string errorMessage) =>
-        new StackPanel
+    private static FrameworkElement BuildBackupFailureContent(string pluginName, string errorMessage)
+    {
+        return new StackPanel
         {
             Spacing = 12,
             MaxWidth = 520,
@@ -224,7 +216,7 @@ public sealed class MessageDialogService(
                 new TextBlock
                 {
                     Text = $"Failed to back up '{pluginName}'",
-                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                    FontWeight = FontWeights.SemiBold,
                     TextWrapping = TextWrapping.Wrap
                 },
                 new TextBlock
@@ -239,9 +231,11 @@ public sealed class MessageDialogService(
                 }
             }
         };
+    }
 
-    private static string GetIconGlyph(MessageDialogIcon icon) =>
-        icon switch
+    private static string GetIconGlyph(MessageDialogIcon icon)
+    {
+        return icon switch
         {
             MessageDialogIcon.Information => "ℹ",
             MessageDialogIcon.Warning => "⚠",
@@ -249,4 +243,5 @@ public sealed class MessageDialogService(
             MessageDialogIcon.Question => "?",
             _ => string.Empty
         };
+    }
 }

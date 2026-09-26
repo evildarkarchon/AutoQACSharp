@@ -57,7 +57,8 @@ public sealed partial class App
 
         _mainWindow = new MainWindow(viewModel, logger, fileDialog, configService, stateService,
             cleaningSession, backupService, messageDialog, uiDispatcher, uiFrameworkVersionProvider,
-            windowContextProvider);
+            windowContextProvider, Services.GetRequiredService<IDiscoverySettingsModule>(),
+            Services.GetRequiredService<DiscoverySettingsAdmission>());
 
         LogStartupInfo(logger, stateService);
 
@@ -76,10 +77,7 @@ public sealed partial class App
 
     internal static void ActivateMainWindow()
     {
-        if (Current is not App { _mainWindow: { } mainWindow })
-        {
-            return;
-        }
+        if (Current is not App { _mainWindow: { } mainWindow }) return;
 
         mainWindow.DispatcherQueue.TryEnqueue(() =>
         {
@@ -88,10 +86,7 @@ public sealed partial class App
             if (hWnd != IntPtr.Zero)
             {
                 var foregroundSet = SetForegroundWindow(hWnd);
-                if (!foregroundSet)
-                {
-                    mainWindow.Activate();
-                }
+                if (!foregroundSet) mainWindow.Activate();
             }
         });
     }
@@ -101,10 +96,7 @@ public sealed partial class App
         try
         {
             configWatcher.Dispose();
-            if (Services is IDisposable disposableServices)
-            {
-                disposableServices.Dispose();
-            }
+            if (Services is IDisposable disposableServices) disposableServices.Dispose();
         }
         catch (Exception ex)
         {

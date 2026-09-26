@@ -101,7 +101,8 @@ public sealed class CleaningServiceTests
         // Assert
         result.Success.Should().BeTrue();
         result.Status.Should().Be(CleaningStatus.Skipped);
-        await _mockProcess.DidNotReceive().ExecuteAsync(Arg.Any<System.Diagnostics.ProcessStartInfo>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+        await _mockProcess.DidNotReceive().ExecuteAsync(Arg.Any<System.Diagnostics.ProcessStartInfo>(),
+            Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }
 
     #region Error Path Tests
@@ -159,7 +160,8 @@ public sealed class CleaningServiceTests
     /// Verifies that unexpected launch exceptions use shared safe plugin-failure copy for unsafe basenames.
     /// </summary>
     [Fact]
-    public async Task CleanPluginAsync_WhenUnexpectedLaunchExceptionWithUnsafePluginName_ShouldReturnSanitizedFailureMessage()
+    public async Task
+        CleanPluginAsync_WhenUnexpectedLaunchExceptionWithUnsafePluginName_ShouldReturnSanitizedFailureMessage()
     {
         // Arrange
         var service = new CleaningService(
@@ -187,7 +189,9 @@ public sealed class CleaningServiceTests
 
         var startInfo = new System.Diagnostics.ProcessStartInfo("SSEEdit.exe");
         _mockCommandBuilder.BuildCommand(plugin, GameType.SkyrimSe).Returns(startInfo);
-        var exception = new InvalidOperationException(@"System.InvalidOperationException launching C:\Users\Alice\Tools\SSEEdit.exe -QAC");
+        var exception =
+            new InvalidOperationException(
+                @"System.InvalidOperationException launching C:\Users\Alice\Tools\SSEEdit.exe -QAC");
         _mockProcess.ExecuteAsync(
                 startInfo,
                 Arg.Any<TimeSpan?>(),
@@ -813,7 +817,8 @@ public sealed class CleaningServiceTests
         _mockCommandBuilder.BuildCommand(plugin, GameType.SkyrimSe)
             .Returns(startInfo);
 
-        var exception = new InvalidOperationException(@"Failed to launch C:\Tools With Spaces\SSEEdit.exe via C:\MO2 With Spaces\ModOrganizer.exe run -a -autoload LaunchException.esp");
+        var exception = new InvalidOperationException(
+            @"Failed to launch C:\Tools With Spaces\SSEEdit.exe via C:\MO2 With Spaces\ModOrganizer.exe run -a -autoload LaunchException.esp");
         _mockProcess.ExecuteAsync(
                 startInfo,
                 Arg.Any<TimeSpan?>(),
@@ -907,10 +912,7 @@ public sealed class CleaningServiceTests
         }
         finally
         {
-            if (File.Exists(tempXEdit))
-            {
-                File.Delete(tempXEdit);
-            }
+            if (File.Exists(tempXEdit)) File.Delete(tempXEdit);
         }
     }
 
@@ -948,10 +950,7 @@ public sealed class CleaningServiceTests
         }
         finally
         {
-            if (File.Exists(tempXEdit))
-            {
-                File.Delete(tempXEdit);
-            }
+            if (File.Exists(tempXEdit)) File.Delete(tempXEdit);
         }
     }
 
@@ -968,10 +967,7 @@ public sealed class CleaningServiceTests
                 .Where(argument => argument is not Exception)
                 .Select(argument => argument?.ToString() ?? string.Empty));
 
-        foreach (var unsafeFragment in unsafeFragments)
-        {
-            capturedText.Should().NotContain(unsafeFragment);
-        }
+        foreach (var unsafeFragment in unsafeFragments) capturedText.Should().NotContain(unsafeFragment);
     }
 
     /// <summary>

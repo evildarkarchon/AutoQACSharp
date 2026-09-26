@@ -32,7 +32,6 @@ public sealed class CleaningService(
         {
             // 1. Validation
             if (plugin.IsInSkipList)
-            {
                 return new CleaningResult
                 {
                     Success = true,
@@ -40,7 +39,6 @@ public sealed class CleaningService(
                     Message = "Plugin is in skip list.",
                     Duration = sw.Elapsed
                 };
-            }
 
             // 2. Build Command
             // Snapshot state once so launch-mode messaging matches the mode used to build the command.
@@ -48,10 +46,8 @@ public sealed class CleaningService(
             // Determine game type from state if available, otherwise detect
             var gameType = state.CurrentGameType;
             if (gameType == GameType.Unknown)
-            {
                 // Fallback or error? Orchestrator usually sets this.
                 gameType = plugin.DetectedGameType;
-            }
 
             var safePluginName = DiagnosticTextFormatter.SafePluginName(plugin.FileName);
             var command = commandBuilder.BuildCommand(plugin, gameType);
@@ -187,25 +183,23 @@ public sealed class CleaningService(
     {
         var state = stateService.CurrentState;
         if (string.IsNullOrWhiteSpace(state.XEditExecutablePath) || !File.Exists(state.XEditExecutablePath))
-        {
             return Task.FromResult(false);
-        }
 
         if (GameCapabilityCatalog.Get(state.CurrentGameType).RequiresLoadOrderFile)
-        {
             return Task.FromResult(!string.IsNullOrWhiteSpace(state.LoadOrderPath) && File.Exists(state.LoadOrderPath));
-        }
 
         return Task.FromResult(true);
     }
 
     /// <summary>
-    /// Counts the launch arguments without reconstructing or logging the command payload.
+    ///     Counts the launch arguments without reconstructing or logging the command payload.
     /// </summary>
-    private static int GetArgumentCount(ProcessStartInfo startInfo) =>
-        startInfo.ArgumentList.Count > 0
+    private static int GetArgumentCount(ProcessStartInfo startInfo)
+    {
+        return startInfo.ArgumentList.Count > 0
             ? startInfo.ArgumentList.Count
             : string.IsNullOrWhiteSpace(startInfo.Arguments)
                 ? 0
                 : 1;
+    }
 }

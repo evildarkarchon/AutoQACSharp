@@ -20,10 +20,14 @@ public sealed class PluginValidationServiceTests : IDisposable
     public void Dispose()
     {
         foreach (var file in _tempFiles)
-        {
-            try { if (File.Exists(file)) File.Delete(file); }
-            catch { /* cleanup best-effort */ }
-        }
+            try
+            {
+                if (File.Exists(file)) File.Delete(file);
+            }
+            catch
+            {
+                /* cleanup best-effort */
+            }
     }
 
     private string CreateTempFile(string content)
@@ -68,9 +72,20 @@ public sealed class PluginValidationServiceTests : IDisposable
         // Arrange
         var plugins = new List<PluginInfo>
         {
-            new() { FileName = "Skyrim.esm", FullPath = "Skyrim.esm", DetectedGameType = GameType.Unknown, IsInSkipList = false },
-            new() { FileName = "Update.esm", FullPath = "Update.esm", DetectedGameType = GameType.Unknown, IsInSkipList = false },
-            new() { FileName = "Mod.esp", FullPath = "Mod.esp", DetectedGameType = GameType.Unknown, IsInSkipList = false }
+            new()
+            {
+                FileName = "Skyrim.esm", FullPath = "Skyrim.esm", DetectedGameType = GameType.Unknown,
+                IsInSkipList = false
+            },
+            new()
+            {
+                FileName = "Update.esm", FullPath = "Update.esm", DetectedGameType = GameType.Unknown,
+                IsInSkipList = false
+            },
+            new()
+            {
+                FileName = "Mod.esp", FullPath = "Mod.esp", DetectedGameType = GameType.Unknown, IsInSkipList = false
+            }
         };
 
         var skipList = new List<string> { "Skyrim.esm", "Update.esm" };
@@ -401,7 +416,9 @@ public sealed class PluginValidationServiceTests : IDisposable
     public void ValidatePluginFile_ShouldReturnZeroByte_ForEmptyFile()
     {
         // Arrange
-        var tempFile = CreateTempFile(""); // zero-byte file (GetTempFileName creates empty file, WriteAllText with "" keeps it empty)
+        var tempFile =
+            CreateTempFile(
+                ""); // zero-byte file (GetTempFileName creates empty file, WriteAllText with "" keeps it empty)
         // Need to ensure it's truly zero bytes
         File.WriteAllBytes(tempFile, Array.Empty<byte>());
         var plugin = new PluginInfo { FileName = "Empty.esp", FullPath = tempFile };

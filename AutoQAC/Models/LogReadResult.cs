@@ -3,9 +3,9 @@ using System.Collections.Generic;
 namespace AutoQAC.Models;
 
 /// <summary>
-/// Result of reading xEdit log files after a cleaning run.
-/// Contains lines from the main log appended during this session,
-/// any exception log content, and optional warning information.
+///     Result of reading xEdit log files after a cleaning run.
+///     Contains lines from the main log appended during this session,
+///     any exception log content, and optional warning information.
 /// </summary>
 public sealed record LogReadResult
 {

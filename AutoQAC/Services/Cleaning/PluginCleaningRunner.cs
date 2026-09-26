@@ -38,10 +38,8 @@ public sealed class PluginCleaningRunner(
                 attemptNumber++;
 
                 if (attemptNumber > 1)
-                {
                     logger.Information("Retry attempt {Attempt} for plugin: {Plugin}",
                         attemptNumber, plugin.FileName);
-                }
 
                 // Capture log offsets before each xEdit launch (per D-03: per-plugin, inside retry loop)
                 var mainLogPath = logFileService.GetLogFilePath(xEditDir, gameType);
@@ -51,8 +49,8 @@ public sealed class PluginCleaningRunner(
 
                 result = await cleaningService.CleanPluginAsync(
                     plugin,
-                    onProcessStarted: attachProcess,
-                    ct: ct).ConfigureAwait(false);
+                    attachProcess,
+                    ct).ConfigureAwait(false);
 
                 // If timed out, ask the session decision adapter whether to retry before the retry ceiling.
                 if (result.TimedOut && attemptNumber < maxRetryAttempts)

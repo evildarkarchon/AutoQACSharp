@@ -9,36 +9,14 @@ using AutoQAC.Models;
 namespace AutoQAC.Services.Cleaning;
 
 /// <summary>
-/// Locates and reads xEdit log files using game-aware naming and offset-based reading.
-/// xEdit writes its main log to <c>{wbAppName}Edit_log.txt</c> (e.g., <c>SSEEdit_log.txt</c>)
-/// and exception log to <c>{wbAppName}EditException.log</c> in its install directory.
-/// Both files are appended to across sessions (truncated at 3MB), so offset-based
-/// reading isolates only the current session's output.
+///     Locates and reads xEdit log files using game-aware naming and offset-based reading.
+///     xEdit writes its main log to <c>{wbAppName}Edit_log.txt</c> (e.g., <c>SSEEdit_log.txt</c>)
+///     and exception log to <c>{wbAppName}EditException.log</c> in its install directory.
+///     Both files are appended to across sessions (truncated at 3MB), so offset-based
+///     reading isolates only the current session's output.
 /// </summary>
 public sealed class XEditLogFileService(ILoggingService logger) : IXEditLogFileService
 {
-    // ────────────────────────────────────────────────────────────────────
-    //  Game-aware methods (offset-based API)
-    // ────────────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Maps a <see cref="GameType"/> to xEdit's internal <c>wbAppName</c> prefix.
-    /// Source: xEdit <c>xeInit.pas</c> lines 798-944.
-    /// </summary>
-    internal static string GetXEditAppName(GameType gameType) => gameType switch
-    {
-        GameType.SkyrimLe => "TES5",
-        GameType.SkyrimSe => "SSE",
-        GameType.SkyrimVr => "TES5VR",
-        GameType.Fallout4 => "FO4",
-        GameType.Fallout4Vr => "FO4VR",
-        GameType.Fallout3 => "FO3",
-        GameType.FalloutNewVegas => "FNV",
-        GameType.Oblivion => "TES4",
-        _ => throw new ArgumentOutOfRangeException(nameof(gameType), gameType,
-            "Unsupported game type for xEdit log file resolution")
-    };
-
     /// <inheritdoc />
     public string GetLogFilePath(string xEditDirectory, GameType gameType)
     {
@@ -112,10 +90,34 @@ public sealed class XEditLogFileService(ILoggingService logger) : IXEditLogFileS
             Warning = null
         };
     }
+    // ────────────────────────────────────────────────────────────────────
+    //  Game-aware methods (offset-based API)
+    // ────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Reads file content from the given byte offset with exponential backoff retry on IOException.
-    /// Handles file truncation by resetting offset to 0 when offset exceeds file length.
+    ///     Maps a <see cref="GameType" /> to xEdit's internal <c>wbAppName</c> prefix.
+    ///     Source: xEdit <c>xeInit.pas</c> lines 798-944.
+    /// </summary>
+    internal static string GetXEditAppName(GameType gameType)
+    {
+        return gameType switch
+        {
+            GameType.SkyrimLe => "TES5",
+            GameType.SkyrimSe => "SSE",
+            GameType.SkyrimVr => "TES5VR",
+            GameType.Fallout4 => "FO4",
+            GameType.Fallout4Vr => "FO4VR",
+            GameType.Fallout3 => "FO3",
+            GameType.FalloutNewVegas => "FNV",
+            GameType.Oblivion => "TES4",
+            _ => throw new ArgumentOutOfRangeException(nameof(gameType), gameType,
+                "Unsupported game type for xEdit log file resolution")
+        };
+    }
+
+    /// <summary>
+    ///     Reads file content from the given byte offset with exponential backoff retry on IOException.
+    ///     Handles file truncation by resetting offset to 0 when offset exceeds file length.
     /// </summary>
     private async Task<string> ReadFromOffsetWithRetryAsync(
         string filePath, long offset, CancellationToken ct)
@@ -126,8 +128,7 @@ public sealed class XEditLogFileService(ILoggingService logger) : IXEditLogFileS
         const int maxRetries = 3;
         const int baseDelayMs = 100;
 
-        for (int attempt = 0; attempt <= maxRetries; attempt++)
-        {
+        for (var attempt = 0; attempt <= maxRetries; attempt++)
             try
             {
                 await using var fs = new FileStream(
@@ -162,7 +163,6 @@ public sealed class XEditLogFileService(ILoggingService logger) : IXEditLogFileS
                     maxRetries, filePath, ex.Message);
                 return string.Empty;
             }
-        }
 
         // Unreachable, but compiler needs it
         return string.Empty;

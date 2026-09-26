@@ -23,7 +23,7 @@ public sealed class CleaningPreflightTests
         {
             using var refresh = new RecordingPluginRefreshModule();
             refresh.CurrentPublication = CreateFreshPublication(CreatePlugin("Update.esm"));
-            var sut = CreateSut(CreateState(xEditPath: xEditPath), refresh);
+            var sut = CreateSut(CreateState(xEditPath), refresh);
 
             var first = await sut.PrepareAsync(CancellationToken.None);
             var second = await sut.PrepareAsync(CancellationToken.None);
@@ -51,7 +51,7 @@ public sealed class CleaningPreflightTests
                 mo2Path,
                 instanceDirectory.FullName,
                 loadOrderPath,
-                selectedProfile: "Default");
+                "Default");
             var config = CreateConfig(new UserConfiguration
             {
                 Backup = new BackupSettings { Enabled = true },
@@ -60,9 +60,9 @@ public sealed class CleaningPreflightTests
             var mo2Validation = Substitute.For<IMo2ValidationService>();
             mo2Validation.ValidateMo2ExecutableAsync(mo2Path).Returns(true);
             var sut = CreateSut(
-                CreateState(xEditPath: xEditPath, mo2Mode: true, mo2Path: mo2Path, mo2Profile: "Default"),
+                CreateState(xEditPath, true, mo2Path, "Default"),
                 refresh,
-                config: config,
+                config,
                 mo2Validation: mo2Validation);
 
             var plan = await sut.PrepareAsync(CancellationToken.None);
@@ -77,7 +77,7 @@ public sealed class CleaningPreflightTests
             File.Delete(xEditPath);
             DeleteTempMo2Executable(mo2Path);
             File.Delete(loadOrderPath);
-            instanceDirectory.Delete(recursive: true);
+            instanceDirectory.Delete(true);
         }
     }
 
@@ -97,7 +97,7 @@ public sealed class CleaningPreflightTests
             var validation = Substitute.For<IPluginValidationService>();
             validation.ValidatePluginFile(Arg.Is<PluginInfo>(p => p.FileName == plugin.FileName))
                 .Returns(warning);
-            var sut = CreateSut(CreateState(xEditPath: xEditPath), refresh, validation: validation);
+            var sut = CreateSut(CreateState(xEditPath), refresh, validation: validation);
 
             var plan = await sut.PrepareAsync(CancellationToken.None);
 
@@ -119,7 +119,7 @@ public sealed class CleaningPreflightTests
             using var refresh = new RecordingPluginRefreshModule();
             refresh.CurrentPublication = CreateFreshPublication(CreatePlugin("Update.esm"));
             var state = Substitute.For<IStateService>();
-            state.CurrentState.Returns(CreateState(xEditPath: xEditPath));
+            state.CurrentState.Returns(CreateState(xEditPath));
             var sut = CreateSut(state.CurrentState, refresh, stateService: state);
 
             await sut.PrepareAsync(CancellationToken.None);
@@ -140,7 +140,7 @@ public sealed class CleaningPreflightTests
         {
             using var refresh = new RecordingPluginRefreshModule(
                 RecordingPluginRefreshModule.CreateSnapshot(GameType.SkyrimSe));
-            var sut = CreateSut(CreateState(xEditPath: xEditPath), refresh);
+            var sut = CreateSut(CreateState(xEditPath), refresh);
 
             var act = () => sut.PrepareAsync(CancellationToken.None);
 
@@ -165,7 +165,7 @@ public sealed class CleaningPreflightTests
             {
                 Freshness = new PluginRefreshFreshness(false, PluginRefreshStalenessReason.SkipListSettingsChanged)
             };
-            var sut = CreateSut(CreateState(xEditPath: xEditPath), refresh);
+            var sut = CreateSut(CreateState(xEditPath), refresh);
 
             var act = () => sut.PrepareAsync(CancellationToken.None);
 
@@ -193,18 +193,22 @@ public sealed class CleaningPreflightTests
                 RecordingPluginRefreshModule.CreatePublishedRow(notSelected, isSelected: false),
                 RecordingPluginRefreshModule.CreatePublishedRow(
                     skipped,
-                    isVisible: false,
-                    isSelected: true,
-                    isSkippedByPolicy: true));
+                    false,
+                    true,
+                    true));
             var config = CreateConfig();
-            var sut = CreateSut(CreateState(xEditPath: xEditPath), refresh, config: config);
+            var sut = CreateSut(CreateState(xEditPath), refresh, config);
 
             var result = await sut.PrepareAsync(CancellationToken.None);
 
-            result.PluginRows.Should().Contain(row => row.Plugin.FileName == "Clean.esp" && row.Decision == PreflightDecision.Clean);
-            result.PluginRows.Should().Contain(row => row.Plugin.FileName == "NotSelected.esp" && row.SkipReason == PreflightSkipReason.NotSelected);
-            result.PluginRows.Should().Contain(row => row.Plugin.FileName == "Skipped.esp" && row.SkipReason == PreflightSkipReason.InSkipList);
-            await config.DidNotReceive().GetSkipListAsync(Arg.Any<GameType>(), Arg.Any<GameVariant>(), Arg.Any<CancellationToken>());
+            result.PluginRows.Should().Contain(row =>
+                row.Plugin.FileName == "Clean.esp" && row.Decision == PreflightDecision.Clean);
+            result.PluginRows.Should().Contain(row =>
+                row.Plugin.FileName == "NotSelected.esp" && row.SkipReason == PreflightSkipReason.NotSelected);
+            result.PluginRows.Should().Contain(row =>
+                row.Plugin.FileName == "Skipped.esp" && row.SkipReason == PreflightSkipReason.InSkipList);
+            await config.DidNotReceive()
+                .GetSkipListAsync(Arg.Any<GameType>(), Arg.Any<GameVariant>(), Arg.Any<CancellationToken>());
         }
         finally
         {
@@ -220,7 +224,7 @@ public sealed class CleaningPreflightTests
         {
             using var refresh = new RecordingPluginRefreshModule();
             refresh.CurrentPublication = RecordingPluginRefreshModule.CreateFreshPublication(rows: []);
-            var sut = CreateSut(CreateState(xEditPath: xEditPath), refresh);
+            var sut = CreateSut(CreateState(xEditPath), refresh);
 
             var act = () => sut.PrepareAsync(CancellationToken.None);
 
@@ -242,7 +246,7 @@ public sealed class CleaningPreflightTests
             using var refresh = new RecordingPluginRefreshModule();
             refresh.CurrentPublication = CreateFreshPublication(
                 RecordingPluginRefreshModule.CreatePublishedRow(CreatePlugin("Deselected.esp"), isSelected: false));
-            var sut = CreateSut(CreateState(xEditPath: xEditPath), refresh);
+            var sut = CreateSut(CreateState(xEditPath), refresh);
 
             var act = () => sut.PrepareAsync(CancellationToken.None);
 
@@ -264,7 +268,7 @@ public sealed class CleaningPreflightTests
     {
         using var refresh = new RecordingPluginRefreshModule();
         refresh.CurrentPublication = CreateFreshPublication(CreatePlugin("Update.esm"));
-        var sut = CreateSut(CreateState(xEditPath: xEditPath), refresh);
+        var sut = CreateSut(CreateState(xEditPath), refresh);
 
         var act = () => sut.PrepareAsync(CancellationToken.None);
 
@@ -277,7 +281,7 @@ public sealed class CleaningPreflightTests
     {
         using var refresh = new RecordingPluginRefreshModule();
         refresh.CurrentPublication = CreateFreshPublication(CreatePlugin("Update.esm"));
-        var state = CreateState(xEditPath: @"C:\Users\Alice\Tools\SSEEdit.exe");
+        var state = CreateState(@"C:\Users\Alice\Tools\SSEEdit.exe");
         var stateService = Substitute.For<IStateService>();
         stateService.CurrentState.Returns(state);
         var readiness = new CleaningCommandReadiness(refresh, stateService);
@@ -308,7 +312,7 @@ public sealed class CleaningPreflightTests
             refresh.CurrentPublication = RecordingPluginRefreshModule.CreateFreshPublication(
                 discoveryPlan: plan,
                 configuration: configuration);
-            var sut = CreateSut(CreateState(xEditPath: xEditPath), refresh);
+            var sut = CreateSut(CreateState(xEditPath), refresh);
 
             var act = () => sut.PrepareAsync(CancellationToken.None);
 
@@ -329,8 +333,8 @@ public sealed class CleaningPreflightTests
         {
             var loadOrderPath = @"C:\Missing\plugins.txt";
             var configuration = RecordingPluginRefreshModule.CreateConfiguration(
-                loadOrderPath: loadOrderPath,
-                xEditPath: xEditPath);
+                loadOrderPath,
+                xEditPath);
             var plan = RecordingPluginRefreshModule.CreateDiscoveryPlan(
                 mode: PluginRefreshDiscoveryMode.DirectLoadOrderFile,
                 configuration: configuration,
@@ -339,7 +343,7 @@ public sealed class CleaningPreflightTests
             refresh.CurrentPublication = RecordingPluginRefreshModule.CreateFreshPublication(
                 discoveryPlan: plan,
                 configuration: configuration);
-            var sut = CreateSut(CreateState(xEditPath: xEditPath, loadOrderPath: loadOrderPath), refresh);
+            var sut = CreateSut(CreateState(xEditPath, loadOrderPath: loadOrderPath), refresh);
 
             var act = () => sut.PrepareAsync(CancellationToken.None);
 
@@ -367,11 +371,11 @@ public sealed class CleaningPreflightTests
                 mo2Path,
                 instanceDirectory.FullName,
                 loadOrderPath,
-                selectedProfile: "Default");
+                "Default");
             var mo2Validation = Substitute.For<IMo2ValidationService>();
             mo2Validation.ValidateMo2ExecutableAsync(mo2Path).Returns(false);
             var sut = CreateSut(
-                CreateState(xEditPath: xEditPath, mo2Mode: true, mo2Path: mo2Path, mo2Profile: "Default"),
+                CreateState(xEditPath, true, mo2Path, "Default"),
                 refresh,
                 mo2Validation: mo2Validation);
 
@@ -386,7 +390,7 @@ public sealed class CleaningPreflightTests
             File.Delete(xEditPath);
             DeleteTempMo2Executable(mo2Path);
             File.Delete(loadOrderPath);
-            instanceDirectory.Delete(recursive: true);
+            instanceDirectory.Delete(true);
         }
     }
 
@@ -402,7 +406,7 @@ public sealed class CleaningPreflightTests
                 .Returns(CreateFlushResult(ConfigPersistenceStatusKind.Failed, failure));
             using var refresh = new RecordingPluginRefreshModule();
             refresh.CurrentPublication = CreateFreshPublication(CreatePlugin("Update.esm"));
-            var sut = CreateSut(CreateState(xEditPath: xEditPath), refresh, config: config);
+            var sut = CreateSut(CreateState(xEditPath), refresh, config);
 
             var act = () => sut.PrepareAsync(CancellationToken.None);
 
@@ -431,11 +435,11 @@ public sealed class CleaningPreflightTests
             using var refresh = new RecordingPluginRefreshModule();
             refresh.CurrentPublication = CreateFreshPublication(CreatePlugin("Update.esm"));
             var sut = CreateSut(
-                CreateState(xEditPath: xEditPath),
+                CreateState(xEditPath),
                 refresh,
-                config: config,
-                validation: validation,
-                mo2Validation: mo2Validation);
+                config,
+                validation,
+                mo2Validation);
 
             var act = () => sut.PrepareAsync(CancellationToken.None);
 
@@ -454,7 +458,8 @@ public sealed class CleaningPreflightTests
     [Theory]
     [InlineData(ConfigPersistenceStatusKind.Success)]
     [InlineData(ConfigPersistenceStatusKind.NoOp)]
-    public async Task PrepareAsync_SuccessfulFlush_ProceedsToPublicationPreflight(ConfigPersistenceStatusKind flushStatus)
+    public async Task PrepareAsync_SuccessfulFlush_ProceedsToPublicationPreflight(
+        ConfigPersistenceStatusKind flushStatus)
     {
         var xEditPath = await CreateTempFileAsync();
         try
@@ -466,7 +471,7 @@ public sealed class CleaningPreflightTests
             validation.ValidatePluginFile(Arg.Any<PluginInfo>()).Returns(PluginWarningKind.None);
             using var refresh = new RecordingPluginRefreshModule();
             refresh.CurrentPublication = CreateFreshPublication(CreatePlugin("Update.esm"));
-            var sut = CreateSut(CreateState(xEditPath: xEditPath), refresh, config: config, validation: validation);
+            var sut = CreateSut(CreateState(xEditPath), refresh, config, validation);
 
             var plan = await sut.PrepareAsync(CancellationToken.None);
 
@@ -493,7 +498,7 @@ public sealed class CleaningPreflightTests
             var logger = Substitute.For<ILoggingService>();
             using var refresh = new RecordingPluginRefreshModule();
             refresh.CurrentPublication = CreateFreshPublication(CreatePlugin("Update.esm"));
-            var sut = CreateSut(CreateState(xEditPath: xEditPath), refresh, config: config, logger: logger);
+            var sut = CreateSut(CreateState(xEditPath), refresh, config, logger: logger);
 
             var act = () => sut.PrepareAsync(CancellationToken.None);
 
@@ -550,8 +555,9 @@ public sealed class CleaningPreflightTests
         bool mo2Mode = false,
         string? mo2Path = null,
         string? mo2Profile = null,
-        string? loadOrderPath = null) =>
-        new()
+        string? loadOrderPath = null)
+    {
+        return new AppState
         {
             CurrentGameType = GameType.SkyrimSe,
             XEditExecutablePath = xEditPath,
@@ -561,12 +567,18 @@ public sealed class CleaningPreflightTests
             Mo2ModeEnabled = mo2Mode,
             CleaningTimeout = 300
         };
+    }
 
-    private static PluginRefreshPublication CreateFreshPublication(params PluginInfo[] plugins) =>
-        CreateFreshPublication(plugins.Select(plugin => RecordingPluginRefreshModule.CreatePublishedRow(plugin)).ToArray());
+    private static PluginRefreshPublication CreateFreshPublication(params PluginInfo[] plugins)
+    {
+        return CreateFreshPublication(plugins.Select(plugin => RecordingPluginRefreshModule.CreatePublishedRow(plugin))
+            .ToArray());
+    }
 
-    private static PluginRefreshPublication CreateFreshPublication(params PluginRefreshPublishedRow[] rows) =>
-        RecordingPluginRefreshModule.CreateFreshPublication(rows: rows);
+    private static PluginRefreshPublication CreateFreshPublication(params PluginRefreshPublishedRow[] rows)
+    {
+        return RecordingPluginRefreshModule.CreateFreshPublication(rows: rows);
+    }
 
     private static PluginRefreshPublication CreateMo2Publication(
         string xEditPath,
@@ -590,33 +602,42 @@ public sealed class CleaningPreflightTests
             configuration: configuration);
     }
 
-    private static PluginInfo CreatePlugin(string fileName) =>
-        new()
+    private static PluginInfo CreatePlugin(string fileName)
+    {
+        return new PluginInfo
         {
             FileName = fileName,
             FullPath = $@"C:\Games\Skyrim Special Edition\Data\{fileName}",
             DetectedGameType = GameType.SkyrimSe
         };
+    }
 
-    private static ConfigPersistenceFailure CreateFlushFailure() =>
-        new(
+    private static ConfigPersistenceFailure CreateFlushFailure()
+    {
+        return new ConfigPersistenceFailure(
             ConfigPersistenceOperationKind.Flush,
             ConfigPersistenceFailureKind.WriteFailed,
             "Could not write settings file (write_failed)",
-            LogReference: null,
-            Generation: 1);
+            null,
+            1);
+    }
 
     private static ConfigPersistenceResult CreateFlushResult(
         ConfigPersistenceStatusKind status,
-        ConfigPersistenceFailure? failure = null) =>
-        new(
+        ConfigPersistenceFailure? failure = null)
+    {
+        return new ConfigPersistenceResult(
             status,
             ConfigPersistenceOperationKind.Flush,
-            Generation: 1,
+            1,
             failure);
+    }
 
-    private static bool ContainsSafeSummary(object[] args) =>
-        args.Length > 0 && args[0] is string summary && summary.Contains("write_failed", StringComparison.Ordinal);
+    private static bool ContainsSafeSummary(object[] args)
+    {
+        return args.Length > 0 && args[0] is string summary &&
+               summary.Contains("write_failed", StringComparison.Ordinal);
+    }
 
     private static async Task<string> CreateTempFileAsync()
     {
@@ -637,9 +658,6 @@ public sealed class CleaningPreflightTests
     {
         File.Delete(path);
         var directory = Path.GetDirectoryName(path);
-        if (!string.IsNullOrWhiteSpace(directory) && Directory.Exists(directory))
-        {
-            Directory.Delete(directory, recursive: true);
-        }
+        if (!string.IsNullOrWhiteSpace(directory) && Directory.Exists(directory)) Directory.Delete(directory, true);
     }
 }

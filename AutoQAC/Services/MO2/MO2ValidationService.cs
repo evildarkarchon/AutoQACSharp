@@ -13,10 +13,7 @@ public sealed class Mo2ValidationService : IMo2ValidationService
         }
         finally
         {
-            foreach (var process in processes)
-            {
-                process.Dispose();
-            }
+            foreach (var process in processes) process.Dispose();
         }
     }
 

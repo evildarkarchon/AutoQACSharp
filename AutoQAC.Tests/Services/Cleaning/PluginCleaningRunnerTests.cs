@@ -36,7 +36,8 @@ public sealed class PluginCleaningRunnerTests
         var plugin = CreatePlugin("Retry.esp");
         _cleaningServiceMock.CleanPluginAsync(plugin, Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>())
             .Returns(
-                new CleaningResult { Success = false, Status = CleaningStatus.Failed, Message = "Timeout", TimedOut = true },
+                new CleaningResult
+                    { Success = false, Status = CleaningStatus.Failed, Message = "Timeout", TimedOut = true },
                 new CleaningResult { Success = true, Status = CleaningStatus.Cleaned, Message = "Cleaned" });
         _decisionsMock.ShouldRetryTimedOutPluginAsync(
                 Arg.Any<string>(),
@@ -74,7 +75,8 @@ public sealed class PluginCleaningRunnerTests
         // Arrange
         var plugin = CreatePlugin("NoRetry.esp");
         _cleaningServiceMock.CleanPluginAsync(plugin, Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>())
-            .Returns(new CleaningResult { Success = false, Status = CleaningStatus.Failed, Message = "Timeout", TimedOut = true });
+            .Returns(new CleaningResult
+                { Success = false, Status = CleaningStatus.Failed, Message = "Timeout", TimedOut = true });
         _decisionsMock.ShouldRetryTimedOutPluginAsync(
                 Arg.Any<string>(),
                 Arg.Any<int>(),
@@ -142,7 +144,8 @@ public sealed class PluginCleaningRunnerTests
         var detachCount = 0;
         _cleaningServiceMock.CleanPluginAsync(plugin, Arg.Any<Action<Process>?>(), Arg.Any<CancellationToken>())
             .Returns(
-                new CleaningResult { Success = false, Status = CleaningStatus.Failed, Message = "Timeout", TimedOut = true },
+                new CleaningResult
+                    { Success = false, Status = CleaningStatus.Failed, Message = "Timeout", TimedOut = true },
                 new CleaningResult { Success = true, Status = CleaningStatus.Cleaned, Message = "Cleaned" });
         _decisionsMock.ShouldRetryTimedOutPluginAsync(
                 Arg.Any<string>(),
@@ -169,10 +172,13 @@ public sealed class PluginCleaningRunnerTests
         detachCount.Should().Be(1);
     }
 
-    private static PluginInfo CreatePlugin(string fileName) => new()
+    private static PluginInfo CreatePlugin(string fileName)
     {
-        FileName = fileName,
-        FullPath = fileName,
-        DetectedGameType = GameType.SkyrimSe
-    };
+        return new PluginInfo
+        {
+            FileName = fileName,
+            FullPath = fileName,
+            DetectedGameType = GameType.SkyrimSe
+        };
+    }
 }

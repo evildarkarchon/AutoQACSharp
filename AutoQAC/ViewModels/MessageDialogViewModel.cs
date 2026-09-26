@@ -41,20 +41,38 @@ public sealed partial class MessageDialogViewModel : ViewModelBase
     public event Action<MessageDialogResult>? CloseRequested;
 
     [RelayCommand]
-    private void Ok() => CloseRequested?.Invoke(MessageDialogResult.Ok);
+    private void Ok()
+    {
+        CloseRequested?.Invoke(MessageDialogResult.Ok);
+    }
 
     [RelayCommand]
-    private void Cancel() => CloseRequested?.Invoke(MessageDialogResult.Cancel);
+    private void Cancel()
+    {
+        CloseRequested?.Invoke(MessageDialogResult.Cancel);
+    }
 
     [RelayCommand]
-    private void Yes() => CloseRequested?.Invoke(MessageDialogResult.Yes);
+    private void Yes()
+    {
+        CloseRequested?.Invoke(MessageDialogResult.Yes);
+    }
 
     [RelayCommand]
-    private void No() => CloseRequested?.Invoke(MessageDialogResult.No);
+    private void No()
+    {
+        CloseRequested?.Invoke(MessageDialogResult.No);
+    }
 
     [RelayCommand]
-    private void Retry() => CloseRequested?.Invoke(MessageDialogResult.Retry);
+    private void Retry()
+    {
+        CloseRequested?.Invoke(MessageDialogResult.Retry);
+    }
 
     [RelayCommand]
-    private void ToggleDetails() => ShowDetailsExpanded = !ShowDetailsExpanded;
+    private void ToggleDetails()
+    {
+        ShowDetailsExpanded = !ShowDetailsExpanded;
+    }
 }

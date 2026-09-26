@@ -50,7 +50,7 @@ public class XEditOutputParserTests
         // Assert
         result.Should().Be(expected);
     }
-    
+
     [Fact]
     public void ParseOutput_HandlesEmptyInput()
     {
@@ -227,7 +227,7 @@ public class XEditOutputParserTests
         {
             "Undeleting: Record 1",
             "Undeleting: Record 2",
-            "Removing: Bad record",
+            "Removing: Bad record"
             // No "Done." line - process was terminated
         };
 

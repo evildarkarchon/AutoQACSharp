@@ -1,7 +1,7 @@
 namespace AutoQAC.Services.Process;
 
 /// <summary>
-/// Provides the PID tracking file path so production and tests can use different storage locations.
+///     Provides the PID tracking file path so production and tests can use different storage locations.
 /// </summary>
 public interface IPidStorePathProvider
 {

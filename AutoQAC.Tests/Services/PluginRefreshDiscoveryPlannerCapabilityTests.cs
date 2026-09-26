@@ -33,14 +33,15 @@ public sealed class PluginRefreshDiscoveryPlannerCapabilityTests
     {
         var sut = CreateSut();
 
-        var directAffordance = sut.GetAffordance(gameType, mo2ModeEnabled: false);
-        var mo2Affordance = sut.GetAffordance(gameType, mo2ModeEnabled: true);
+        var directAffordance = sut.GetAffordance(gameType, false);
+        var mo2Affordance = sut.GetAffordance(gameType, true);
 
         directAffordance.GameType.Should().Be(gameType);
         directAffordance.IsMutagenSupported.Should().Be(isMutagenSupported);
         directAffordance.RequiresLoadOrderFile.Should().Be(requiresLoadOrderFileInDirectMode);
         directAffordance.CanAttemptIssueApproximation.Should().Be(canAttemptIssueApproximation);
-        mo2Affordance.RequiresLoadOrderFile.Should().BeFalse("MO2 mode uses the profile load order instead of the direct-mode file selector");
+        mo2Affordance.RequiresLoadOrderFile.Should()
+            .BeFalse("MO2 mode uses the profile load order instead of the direct-mode file selector");
     }
 
     [Fact]
@@ -58,9 +59,11 @@ public sealed class PluginRefreshDiscoveryPlannerCapabilityTests
             options => options.WithStrictOrdering());
     }
 
-    private static PluginRefreshDiscoveryPlanner CreateSut() =>
-        new(
+    private static PluginRefreshDiscoveryPlanner CreateSut()
+    {
+        return new PluginRefreshDiscoveryPlanner(
             Substitute.For<IConfigurationService>(),
             Substitute.For<IPluginLoadingService>(),
             Substitute.For<IMo2InstanceService>());
+    }
 }

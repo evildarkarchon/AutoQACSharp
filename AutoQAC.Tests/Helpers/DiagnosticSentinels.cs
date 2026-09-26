@@ -23,5 +23,8 @@ public static class DiagnosticSentinels
     /// <summary>
     /// Creates one unsafe payload containing every sentinel so tests exercise the shared negative-disclosure contract.
     /// </summary>
-    public static string CreateUnsafePayload() => string.Join(" | ", UnsafeDiagnosticSentinels);
+    public static string CreateUnsafePayload()
+    {
+        return string.Join(" | ", UnsafeDiagnosticSentinels);
+    }
 }

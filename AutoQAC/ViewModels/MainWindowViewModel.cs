@@ -14,27 +14,20 @@ using AutoQAC.ViewModels.MainWindow;
 namespace AutoQAC.ViewModels;
 
 /// <summary>
-/// Slim orchestrator that composes Configuration, PluginList, and CleaningCommands
-/// sub-ViewModels. Owns Interactions (registered in MainWindow.xaml.cs code-behind)
-/// and mediates cross-VM state changes.
+///     Slim orchestrator that composes Configuration, PluginList, and CleaningCommands
+///     sub-ViewModels. Owns Interactions (registered in MainWindow.xaml.cs code-behind)
+///     and mediates cross-VM state changes.
 /// </summary>
 public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
 {
-    private readonly IDisposable _stateSubscription;
     private readonly IDisposable _pluginRefreshSnapshotSubscription;
+    private readonly IDisposable _stateSubscription;
+    private readonly IDisposable? _configurationSubscription;
+    private readonly DiscoverySettingsAdmission? _admission;
+    private readonly IUiDispatcher _uiDispatcher;
+    private bool _disposed;
 
-    public ConfigurationViewModel Configuration { get; }
-    public PluginListViewModel PluginList { get; }
-    public CleaningCommandsViewModel Commands { get; }
-
-    public Interaction<ICleaningSession, Unit> ShowProgressInteraction { get; } = new();
-    public Interaction<List<DryRunResult>, Unit> ShowPreviewInteraction { get; } = new();
-    public Interaction<CleaningSessionResult, Unit> ShowCleaningResultsInteraction { get; } = new();
-    public Interaction<Unit, bool> ShowSettingsInteraction { get; } = new();
-    public Interaction<Unit, bool> ShowSkipListInteraction { get; } = new();
-    public Interaction<Unit, Unit> ShowRestoreInteraction { get; } = new();
-    public Interaction<Unit, Unit> ShowAboutInteraction { get; } = new();
-
+    /// <summary>Composes the main window and dispatches state, configuration, and cleaning admission updates onto the UI thread.</summary>
     public MainWindowViewModel(
         IConfigurationService configService,
         IStateService stateService,
@@ -49,8 +42,11 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         IPluginRefreshDiscoveryPlanner discoveryPlanner,
         IDiscoverySettingsModule discoverySettingsModule,
         ICleaningCommandReadiness cleaningCommandReadiness,
-        IAppLifetime? appLifetime = null)
+        IAppLifetime? appLifetime = null,
+        DiscoverySettingsAdmission? admission = null)
     {
+        _admission = admission;
+        _uiDispatcher = uiDispatcher;
         Configuration = new ConfigurationViewModel(
             configService, stateService, logger, fileDialog,
             messageDialog, pluginService, pluginLoadingService,
@@ -61,7 +57,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         PluginList = new PluginListViewModel(pluginRefreshModule);
 
         Commands = new CleaningCommandsViewModel(
-            stateService, cleaningSession, configService,
+            cleaningSession,
             cleaningCommandReadiness,
             pluginRefreshModule,
             logger, messageDialog, appLifetime ?? NoOpAppLifetime.Instance,
@@ -76,9 +72,53 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         _stateSubscription = stateService.StateChanged.Subscribe(
             new CallbackObserver<AppState>(state => uiDispatcher.Post(() => OnStateChanged(state))));
 
+        _configurationSubscription = configService.UserConfigurationChanged?.Subscribe(
+            new CallbackObserver<AutoQAC.Models.Configuration.UserConfiguration>(config =>
+            {
+                if (config is not null) uiDispatcher.Post(() => Configuration.OnUserConfigurationChanged(config));
+            }));
+        if (_admission is not null) _admission.CleaningChanged += OnCleaningAdmissionChanged;
         OnStateChanged(stateService.CurrentState);
+        ApplyCleaningAdmission();
 
         _ = Configuration.InitializeAsync();
+    }
+
+    public ConfigurationViewModel Configuration { get; }
+    public PluginListViewModel PluginList { get; }
+    public CleaningCommandsViewModel Commands { get; }
+
+    public Interaction<ICleaningSession, Unit> ShowProgressInteraction { get; } = new();
+    public Interaction<List<DryRunResult>, Unit> ShowPreviewInteraction { get; } = new();
+    public Interaction<CleaningSessionResult, Unit> ShowCleaningResultsInteraction { get; } = new();
+    public Interaction<Unit, bool> ShowSettingsInteraction { get; } = new();
+    public Interaction<Unit, bool> ShowSkipListInteraction { get; } = new();
+    public Interaction<Unit, Unit> ShowRestoreInteraction { get; } = new();
+    public Interaction<Unit, Unit> ShowAboutInteraction { get; } = new();
+
+    public void Dispose()
+    {
+        _disposed = true;
+        if (_admission is not null) _admission.CleaningChanged -= OnCleaningAdmissionChanged;
+        _configurationSubscription?.Dispose();
+        _pluginRefreshSnapshotSubscription.Dispose();
+        _stateSubscription.Dispose();
+        Configuration.Dispose();
+        PluginList.Dispose();
+        Commands.Dispose();
+    }
+
+    /// <summary>Marshals startup admission transitions before projecting command availability.</summary>
+    private void OnCleaningAdmissionChanged(object? sender, EventArgs e) => _uiDispatcher.Post(ApplyCleaningAdmission);
+
+    /// <summary>Projects the current reservation, avoiding stale queued transition values.</summary>
+    private void ApplyCleaningAdmission()
+    {
+        if (_disposed) return;
+        var reserved = _admission?.IsCleaning ?? false;
+        Configuration.OnCleaningAdmissionChanged(reserved);
+        PluginList.OnCleaningAdmissionChanged(reserved);
+        Commands.OnCleaningAdmissionChanged(reserved);
     }
 
     private void OnStateChanged(AppState state)
@@ -95,18 +135,12 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>
-    /// Shows a non-modal migration warning banner in the main window.
-    /// Delegates to ConfigurationViewModel.
+    ///     Shows a non-modal migration warning banner in the main window.
+    ///     Delegates to ConfigurationViewModel.
     /// </summary>
-    public void ShowMigrationWarning(string message) => Configuration.ShowMigrationWarning(message);
-
-    public void Dispose()
+    public void ShowMigrationWarning(string message)
     {
-        _pluginRefreshSnapshotSubscription.Dispose();
-        _stateSubscription.Dispose();
-        Configuration.Dispose();
-        PluginList.Dispose();
-        Commands.Dispose();
+        Configuration.ShowMigrationWarning(message);
     }
 
     private sealed class NoOpAppLifetime : IAppLifetime
@@ -117,5 +151,4 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
         {
         }
     }
-
 }

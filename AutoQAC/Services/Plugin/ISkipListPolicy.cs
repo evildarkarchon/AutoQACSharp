@@ -7,12 +7,12 @@ using AutoQAC.Models;
 namespace AutoQAC.Services.Plugin;
 
 /// <summary>
-/// Centralizes variant-aware Skip list decisions so Plugin refresh rows and Cleaning session preflight cannot drift.
+///     Centralizes variant-aware Skip list decisions so Plugin refresh rows and Cleaning session preflight cannot drift.
 /// </summary>
 public interface ISkipListPolicy
 {
     /// <summary>
-    /// Detects the game variant, loads the effective Skip list unless disabled, and returns per-plugin decisions.
+    ///     Detects the game variant, loads the effective Skip list unless disabled, and returns per-plugin decisions.
     /// </summary>
     /// <param name="gameType">Game context for Skip list lookup.</param>
     /// <param name="plugins">Plugin rows whose names determine variant and policy matches.</param>
@@ -27,7 +27,7 @@ public interface ISkipListPolicy
 }
 
 /// <summary>
-/// Complete Skip list evaluation for one game context.
+///     Complete Skip list evaluation for one game context.
 /// </summary>
 /// <param name="Variant">Detected variant such as TTW or Enderal.</param>
 /// <param name="Decisions">Per-plugin policy decisions with enriched rows.</param>
@@ -36,13 +36,13 @@ public sealed record SkipListEvaluation(
     IReadOnlyList<SkipListPluginDecision> Decisions)
 {
     /// <summary>
-    /// The plugin rows after applying visible Skip list state.
+    ///     The plugin rows after applying visible Skip list state.
     /// </summary>
     public IReadOnlyList<PluginInfo> Plugins => Decisions.Select(decision => decision.Plugin).ToList();
 }
 
 /// <summary>
-/// Skip list decision for a single plugin row.
+///     Skip list decision for a single plugin row.
 /// </summary>
 /// <param name="Plugin">Plugin row enriched with current game and visible Skip list state.</param>
 /// <param name="IsInEffectiveSkipList">True when the effective Skip list contains this plugin name.</param>

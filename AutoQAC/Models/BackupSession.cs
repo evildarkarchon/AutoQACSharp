@@ -5,8 +5,8 @@ using System.Text.Json.Serialization;
 namespace AutoQAC.Models;
 
 /// <summary>
-/// Represents a single backup session containing one or more plugin backups.
-/// Serialized to session.json in the session directory.
+///     Represents a single backup session containing one or more plugin backups.
+///     Serialized to session.json in the session directory.
 /// </summary>
 public sealed record BackupSession
 {
@@ -15,8 +15,8 @@ public sealed record BackupSession
     [JsonPropertyName("game_type")] public string GameType { get; init; } = string.Empty;
 
     /// <summary>
-    /// Absolute path to the session directory on disk.
-    /// Not serialized -- populated at load time from the filesystem path.
+    ///     Absolute path to the session directory on disk.
+    ///     Not serialized -- populated at load time from the filesystem path.
     /// </summary>
     [JsonIgnore]
     public string SessionDirectory { get; init; } = string.Empty;
@@ -25,7 +25,7 @@ public sealed record BackupSession
 }
 
 /// <summary>
-/// Represents a single backed-up plugin within a backup session.
+///     Represents a single backed-up plugin within a backup session.
 /// </summary>
 public sealed record BackupPluginEntry
 {

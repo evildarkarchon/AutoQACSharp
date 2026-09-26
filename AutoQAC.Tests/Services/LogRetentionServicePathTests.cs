@@ -18,7 +18,8 @@ public sealed class LogRetentionServicePathTests : IDisposable
         _configService = Substitute.For<IConfigurationService>();
         _logger = Substitute.For<ILoggingService>();
 
-        _simulatedCurrentDirectoryRoot = Path.Combine(Path.GetTempPath(), $"autoqac_logretention_cwd_{Guid.NewGuid():N}");
+        _simulatedCurrentDirectoryRoot =
+            Path.Combine(Path.GetTempPath(), $"autoqac_logretention_cwd_{Guid.NewGuid():N}");
         Directory.CreateDirectory(_simulatedCurrentDirectoryRoot);
 
         _logDirectory = Path.Combine(Path.GetTempPath(), $"autoqac_logretention_logs_{Guid.NewGuid():N}");
@@ -27,15 +28,9 @@ public sealed class LogRetentionServicePathTests : IDisposable
 
     public void Dispose()
     {
-        if (Directory.Exists(_logDirectory))
-        {
-            Directory.Delete(_logDirectory, recursive: true);
-        }
+        if (Directory.Exists(_logDirectory)) Directory.Delete(_logDirectory, true);
 
-        if (Directory.Exists(_simulatedCurrentDirectoryRoot))
-        {
-            Directory.Delete(_simulatedCurrentDirectoryRoot, recursive: true);
-        }
+        if (Directory.Exists(_simulatedCurrentDirectoryRoot)) Directory.Delete(_simulatedCurrentDirectoryRoot, true);
     }
 
     [Fact]
@@ -56,7 +51,8 @@ public sealed class LogRetentionServicePathTests : IDisposable
         var oldConfiguredLog = CreateLogFile(_logDirectory, "autoqac-old.log", DateTime.UtcNow.AddDays(-10));
 
         var currentWorkingDirectoryLogs = Path.Combine(_simulatedCurrentDirectoryRoot, "logs");
-        var recentCwdLog = CreateLogFile(currentWorkingDirectoryLogs, "autoqac-cwd-recent.log", DateTime.UtcNow.AddDays(-1));
+        var recentCwdLog = CreateLogFile(currentWorkingDirectoryLogs, "autoqac-cwd-recent.log",
+            DateTime.UtcNow.AddDays(-1));
         var oldCwdLog = CreateLogFile(currentWorkingDirectoryLogs, "autoqac-cwd-old.log", DateTime.UtcNow.AddDays(-10));
 
         await sut.CleanupAsync();

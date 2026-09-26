@@ -6,24 +6,23 @@ using QueryPlugins.Models;
 namespace QueryPlugins.Detectors;
 
 /// <summary>
-/// Game-agnostic ITM (Identical to Master) detector. Works on any <see cref="IModGetter"/>
-/// using Mutagen's <see cref="ILinkCache.ResolveAllSimpleContexts"/> and the deep equality
-/// provided by Loqui-generated <c>Equals(object)</c> overrides on every record class.
+///     Game-agnostic ITM (Identical to Master) detector. Works on any <see cref="IModGetter" />
+///     using Mutagen's <see cref="ILinkCache.ResolveAllSimpleContexts" /> and the deep equality
+///     provided by Loqui-generated <c>Equals(object)</c> overrides on every record class.
 /// </summary>
 public sealed class ItmDetector : IItmDetector
 {
     /// <inheritdoc />
-    public IEnumerable<PluginIssue> FindItmRecords(IModGetter plugin, ILinkCache linkCache, CancellationToken ct = default)
+    public IEnumerable<PluginIssue> FindItmRecords(IModGetter plugin, ILinkCache linkCache,
+        CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
         var pluginModKey = plugin.ModKey;
 
         if (!linkCache.ListedOrder.Any(mod => mod.ModKey == pluginModKey))
-        {
             throw new ArgumentException(
                 $"The supplied link cache does not contain analyzed plugin {pluginModKey}.",
                 nameof(linkCache));
-        }
 
         return EnumerateItmRecords(plugin, linkCache, pluginModKey, ct);
     }
@@ -56,9 +55,7 @@ public sealed class ItmDetector : IItmDetector
             var formLinkInfo = FormLinkInformation.Factory(record);
 
             if (IsIdenticalToImmediateLowerPriorityContext(linkCache, formLinkInfo, pluginModKey, record.FormKey, ct))
-            {
                 yield return new PluginIssue(record.FormKey, record.EditorID, IssueType.ItmRecord);
-            }
         }
     }
 
@@ -81,10 +78,7 @@ public sealed class ItmDetector : IItmDetector
 
             if (pluginContext is null)
             {
-                if (context.ModKey == pluginModKey)
-                {
-                    pluginContext = context;
-                }
+                if (context.ModKey == pluginModKey) pluginContext = context;
 
                 continue;
             }
@@ -96,11 +90,9 @@ public sealed class ItmDetector : IItmDetector
         }
 
         if (pluginContext is null)
-        {
             throw new ArgumentException(
                 $"The supplied link cache does not contain analyzed plugin {pluginModKey} for record {recordFormKey}.",
                 nameof(linkCache));
-        }
 
         // The plugin is the lowest-priority context for this FormKey, so there is no lower-priority
         // overridden version to compare against.

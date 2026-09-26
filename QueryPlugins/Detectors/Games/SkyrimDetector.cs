@@ -6,9 +6,9 @@ using QueryPlugins.Models;
 namespace QueryPlugins.Detectors.Games;
 
 /// <summary>
-/// Game-specific detector for Skyrim (LE, SE, VR) and Enderal variants.
-/// Detects deleted placed references (REFR/ACHR and equivalents) and deleted
-/// navigation mesh records (NAVM) using Mutagen's typed record enumeration.
+///     Game-specific detector for Skyrim (LE, SE, VR) and Enderal variants.
+///     Detects deleted placed references (REFR/ACHR and equivalents) and deleted
+///     navigation mesh records (NAVM) using Mutagen's typed record enumeration.
 /// </summary>
 public sealed class SkyrimDetector : IGameSpecificDetector
 {
@@ -20,7 +20,7 @@ public sealed class SkyrimDetector : IGameSpecificDetector
         GameRelease.SkyrimSEGog,
         GameRelease.SkyrimVR,
         GameRelease.EnderalLE,
-        GameRelease.EnderalSE,
+        GameRelease.EnderalSE
     };
 
     /// <inheritdoc />
@@ -32,7 +32,11 @@ public sealed class SkyrimDetector : IGameSpecificDetector
                 nameof(plugin));
 
         return skyrimMod.EnumerateMajorRecords<IPlacedGetter>()
-            .Where(placed => { ct.ThrowIfCancellationRequested(); return placed.IsDeleted; })
+            .Where(placed =>
+            {
+                ct.ThrowIfCancellationRequested();
+                return placed.IsDeleted;
+            })
             .Select(placed => new PluginIssue(
                 placed.FormKey,
                 placed.EditorID,
@@ -48,7 +52,11 @@ public sealed class SkyrimDetector : IGameSpecificDetector
                 nameof(plugin));
 
         return skyrimMod.EnumerateMajorRecords<INavigationMeshGetter>()
-            .Where(navm => { ct.ThrowIfCancellationRequested(); return navm.IsDeleted; })
+            .Where(navm =>
+            {
+                ct.ThrowIfCancellationRequested();
+                return navm.IsDeleted;
+            })
             .Select(navm => new PluginIssue(
                 navm.FormKey,
                 navm.EditorID,

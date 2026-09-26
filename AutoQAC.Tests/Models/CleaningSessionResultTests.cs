@@ -155,8 +155,8 @@ public sealed class CleaningSessionResultTests
         {
             PluginResults = new List<PluginCleaningResult>
             {
-                CreateResult("Plugin1.esp", CleaningStatus.Cleaned, itms: 10),
-                CreateResult("Plugin2.esp", CleaningStatus.Cleaned, itms: 5),
+                CreateResult("Plugin1.esp", CleaningStatus.Cleaned, 10),
+                CreateResult("Plugin2.esp", CleaningStatus.Cleaned, 5),
                 CreateResult("Plugin3.esp", CleaningStatus.Skipped) // No ITMs
             }
         };
@@ -368,7 +368,7 @@ public sealed class CleaningSessionResultTests
         {
             PluginResults = new List<PluginCleaningResult>
             {
-                CreateResult("Plugin1.esp", CleaningStatus.Cleaned, itms: 10, udrs: 5),
+                CreateResult("Plugin1.esp", CleaningStatus.Cleaned, 10, 5),
                 CreateResult("Plugin2.esp", CleaningStatus.Skipped),
                 CreateResult("Plugin3.esp", CleaningStatus.Failed)
             }
@@ -418,7 +418,7 @@ public sealed class CleaningSessionResultTests
         {
             PluginResults = new List<PluginCleaningResult>
             {
-                CreateResult("Plugin1.esp", CleaningStatus.Cleaned, itms: 5)
+                CreateResult("Plugin1.esp", CleaningStatus.Cleaned, 5)
             }
         };
 
@@ -540,7 +540,7 @@ public sealed class CleaningSessionResultTests
         {
             PluginResults = new List<PluginCleaningResult>
             {
-                CreateResult(cleanedPluginName, CleaningStatus.Cleaned, itms: 1),
+                CreateResult(cleanedPluginName, CleaningStatus.Cleaned, 1),
                 CreateResult(alreadyCleanPluginName, CleaningStatus.AlreadyClean),
                 CreateResult(skippedPluginName, CleaningStatus.Skipped),
                 new()
@@ -655,8 +655,10 @@ public sealed class CleaningSessionResultTests
 
     #endregion
 
-    private static int CountOccurrences(string text, string value) =>
-        text.Split(value).Length - 1;
+    private static int CountOccurrences(string text, string value)
+    {
+        return text.Split(value).Length - 1;
+    }
 
     private static void AssertSafeReportBoundary(string text)
     {

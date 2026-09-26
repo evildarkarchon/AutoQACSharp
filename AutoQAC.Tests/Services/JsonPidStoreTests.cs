@@ -137,8 +137,10 @@ public sealed class JsonPidStoreTests
     {
         private IReadOnlyList<TrackedProcess> _entries = [];
 
-        public Task<IReadOnlyList<TrackedProcess>> LoadAsync(CancellationToken ct = default) =>
-            Task.FromResult(_entries);
+        public Task<IReadOnlyList<TrackedProcess>> LoadAsync(CancellationToken ct = default)
+        {
+            return Task.FromResult(_entries);
+        }
 
         public Task UpdateAsync(
             Func<IReadOnlyList<TrackedProcess>, IReadOnlyList<TrackedProcess>> update,
@@ -161,7 +163,10 @@ public sealed class JsonPidStoreTests
 
         public string PidFilePath { get; }
 
-        public static TempPidStore Create() => new(Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N")));
+        public static TempPidStore Create()
+        {
+            return new TempPidStore(Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N")));
+        }
 
         public JsonPidStore CreateStore()
         {
@@ -171,10 +176,7 @@ public sealed class JsonPidStoreTests
 
         public void Dispose()
         {
-            if (Directory.Exists(DirectoryPath))
-            {
-                Directory.Delete(DirectoryPath, recursive: true);
-            }
+            if (Directory.Exists(DirectoryPath)) Directory.Delete(DirectoryPath, true);
         }
     }
 }

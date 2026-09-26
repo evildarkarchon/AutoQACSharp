@@ -52,12 +52,15 @@ public sealed class ViewSubscriptionLifecycleTests
         var source = File.ReadAllText(GetRepoFilePath("AutoQAC/Views/ProgressWindow.xaml.cs"));
 
         // Assert
-        source.Should().Contain("ProgressViewModel? _subscribedViewModel", "window should track current VM subscription");
+        source.Should().Contain("ProgressViewModel? _subscribedViewModel",
+            "window should track current VM subscription");
         source.Should().Contain("bool _disposeHandled", "window should guard against double disposal");
-        source.Should().Contain("_subscribedViewModel.CloseRequested -= OnCloseRequested;", "old VM subscriptions must be removed");
+        source.Should().Contain("_subscribedViewModel.CloseRequested -= OnCloseRequested;",
+            "old VM subscriptions must be removed");
         source.Should().Contain("DisposeViewModelIfNeeded()", "cleanup must be centralized");
         source.Should().Contain("if (_disposeHandled)", "double-dispose guard must short-circuit");
-        source.Should().Contain("DataContextChanged -= OnDataContextChanged;", "DataContext handler should be detached on dispose");
+        source.Should().Contain("DataContextChanged -= OnDataContextChanged;",
+            "DataContext handler should be detached on dispose");
         source.Should().Contain("Closed -= OnClosed;", "Closed handler should be detached on dispose");
     }
 
@@ -112,22 +115,19 @@ public sealed class ViewSubscriptionLifecycleTests
         var source = File.ReadAllText(GetRepoFilePath("AutoQAC/Views/Helpers/ContentDialogPresenter.cs"));
 
         // Assert
-        Regex.IsMatch(source, @"finally\s*\{[\s\S]*unsubscribeCloseRequested\(OnCloseRequested\);[\s\S]*\}").Should().BeTrue(
-            "ShowBooleanAsync must unsubscribe from ViewModel CloseRequested even if ContentDialog.ShowAsync faults or is dismissed");
+        Regex.IsMatch(source, @"finally\s*\{[\s\S]*unsubscribeCloseRequested\(OnCloseRequested\);[\s\S]*\}").Should()
+            .BeTrue(
+                "ShowBooleanAsync must unsubscribe from ViewModel CloseRequested even if ContentDialog.ShowAsync faults or is dismissed");
     }
 
     private static string GetRepoFilePath(string relativePath)
     {
         var current = new DirectoryInfo(AppContext.BaseDirectory);
         while (current != null && !Directory.Exists(Path.Combine(current.FullName, "AutoQAC")))
-        {
             current = current.Parent;
-        }
 
         if (current == null)
-        {
             throw new DirectoryNotFoundException("Unable to locate repository root for source assertions.");
-        }
 
         return Path.Combine(current.FullName, relativePath.Replace('/', Path.DirectorySeparatorChar));
     }

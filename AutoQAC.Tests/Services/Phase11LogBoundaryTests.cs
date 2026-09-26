@@ -54,16 +54,15 @@ public sealed class Phase11LogBoundaryTests
 
         var capturedText = CaptureNonExceptionLogArguments(logger);
         foreach (var sentinel in DiagnosticSentinels.UnsafeDiagnosticSentinels)
-        {
             capturedText.Should().NotContain(sentinel);
-        }
     }
 
     /// <summary>
     /// Successful legacy-Arguments starts must not leak raw launch text into logs or PID tracking entries.
     /// </summary>
     [Fact]
-    public async Task ProcessExecutionService_WhenLegacyArgumentsStartSucceeds_ShouldTrackAndLogSafeExternalProcessLabel()
+    public async Task
+        ProcessExecutionService_WhenLegacyArgumentsStartSucceeds_ShouldTrackAndLogSafeExternalProcessLabel()
     {
         // Arrange
         var logger = Substitute.For<ILoggingService>();
@@ -109,7 +108,8 @@ public sealed class Phase11LogBoundaryTests
         var repositoryRoot = FindRepositoryRoot();
         var sources = string.Join(Environment.NewLine, new[]
         {
-            File.ReadAllText(Path.Combine(repositoryRoot, "AutoQAC", "Services", "Process", "ProcessExecutionService.cs")),
+            File.ReadAllText(Path.Combine(repositoryRoot, "AutoQAC", "Services", "Process",
+                "ProcessExecutionService.cs")),
             File.ReadAllText(Path.Combine(repositoryRoot, "AutoQAC", "Services", "Cleaning", "CleaningService.cs")),
             File.ReadAllText(Path.Combine(repositoryRoot, "AutoQAC", "App.xaml.cs"))
         });
@@ -126,21 +126,21 @@ public sealed class Phase11LogBoundaryTests
         // Act / Assert
         sources.Should().Contain("DiagnosticTextFormatter.SafeFileIdentifier(\"xEdit Path\"");
         sources.Should().Contain("argumentCount={ArgumentCount}");
-        foreach (var forbiddenTemplate in forbiddenTemplates)
-        {
-            sources.Should().NotContain(forbiddenTemplate);
-        }
+        foreach (var forbiddenTemplate in forbiddenTemplates) sources.Should().NotContain(forbiddenTemplate);
     }
 
     /// <summary>
     /// Captures log templates and structured argument values while excluding exception objects that local logs may render separately.
     /// </summary>
-    private static string CaptureNonExceptionLogArguments(ILoggingService logger) => string.Join(
-        Environment.NewLine,
-        logger.ReceivedCalls()
-            .SelectMany(call => call.GetArguments())
-            .Where(argument => argument is not Exception)
-            .Select(argument => argument?.ToString() ?? string.Empty));
+    private static string CaptureNonExceptionLogArguments(ILoggingService logger)
+    {
+        return string.Join(
+            Environment.NewLine,
+            logger.ReceivedCalls()
+                .SelectMany(call => call.GetArguments())
+                .Where(argument => argument is not Exception)
+                .Select(argument => argument?.ToString() ?? string.Empty));
+    }
 
     /// <summary>
     /// Finds the repository root from the test output directory so source guards work under dotnet test.
@@ -152,9 +152,7 @@ public sealed class Phase11LogBoundaryTests
         {
             if (Directory.Exists(Path.Combine(directory.FullName, "AutoQAC")) &&
                 Directory.Exists(Path.Combine(directory.FullName, "AutoQAC.Tests")))
-            {
                 return directory.FullName;
-            }
 
             directory = directory.Parent;
         }
@@ -171,14 +169,20 @@ public sealed class Phase11LogBoundaryTests
 
     private sealed class RealProcessExitWaiter : IProcessExitWaiter
     {
-        public Task WaitForExitAsync(Process process, CancellationToken ct) => process.WaitForExitAsync(ct);
+        public Task WaitForExitAsync(Process process, CancellationToken ct)
+        {
+            return process.WaitForExitAsync(ct);
+        }
     }
 
     private sealed class InMemoryPidStore : IPidStore
     {
         private IReadOnlyList<TrackedProcess> _entries = [];
 
-        public Task<IReadOnlyList<TrackedProcess>> LoadAsync(CancellationToken ct = default) => Task.FromResult(_entries);
+        public Task<IReadOnlyList<TrackedProcess>> LoadAsync(CancellationToken ct = default)
+        {
+            return Task.FromResult(_entries);
+        }
 
         public Task UpdateAsync(
             Func<IReadOnlyList<TrackedProcess>, IReadOnlyList<TrackedProcess>> update,

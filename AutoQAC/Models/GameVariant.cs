@@ -1,7 +1,7 @@
 namespace AutoQAC.Models;
 
 /// <summary>
-/// Represents a game variant that requires special skip list handling.
+///     Represents a game variant that requires special skip list handling.
 /// </summary>
 public enum GameVariant
 {

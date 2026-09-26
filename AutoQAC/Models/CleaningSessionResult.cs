@@ -1,116 +1,117 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using AutoQAC.Models.Diagnostics;
 
 namespace AutoQAC.Models;
 
 /// <summary>
-/// Represents the complete results of a cleaning session (all plugins processed).
+///     Represents the complete results of a cleaning session (all plugins processed).
 /// </summary>
 public sealed record CleaningSessionResult
 {
     /// <summary>
-    /// When the cleaning session started.
+    ///     When the cleaning session started.
     /// </summary>
     public DateTime StartTime { get; init; }
 
     /// <summary>
-    /// When the cleaning session finished.
+    ///     When the cleaning session finished.
     /// </summary>
     public DateTime EndTime { get; init; }
 
     /// <summary>
-    /// Total duration of the cleaning session.
+    ///     Total duration of the cleaning session.
     /// </summary>
     public TimeSpan TotalDuration => EndTime - StartTime;
 
     /// <summary>
-    /// The game type that was cleaned.
+    ///     The game type that was cleaned.
     /// </summary>
     public GameType GameType { get; init; }
 
     /// <summary>
-    /// Whether the session was cancelled by the user.
+    ///     Whether the session was cancelled by the user.
     /// </summary>
     public bool WasCancelled { get; init; }
 
     /// <summary>
-    /// Detailed results for each plugin processed.
+    ///     Detailed results for each plugin processed.
     /// </summary>
     public IReadOnlyList<PluginCleaningResult> PluginResults { get; init; } = [];
 
     /// <summary>
-    /// Structured result for post-cleaning backup retention cleanup, if backup cleanup ran.
+    ///     Structured result for post-cleaning backup retention cleanup, if backup cleanup ran.
     /// </summary>
     public BackupRetentionCleanupResult? BackupCleanup { get; init; }
 
     /// <summary>
-    /// Gets plugins that were successfully cleaned (includes AlreadyClean).
+    ///     Gets plugins that were successfully cleaned (includes AlreadyClean).
     /// </summary>
     public IEnumerable<PluginCleaningResult> CleanedPlugins =>
         PluginResults.Where(r => r.Status is CleaningStatus.Cleaned or CleaningStatus.AlreadyClean);
 
     /// <summary>
-    /// Gets plugins that completed but had nothing to clean.
+    ///     Gets plugins that completed but had nothing to clean.
     /// </summary>
     public IEnumerable<PluginCleaningResult> AlreadyCleanPlugins =>
         PluginResults.Where(r => r.Status == CleaningStatus.AlreadyClean);
 
     /// <summary>
-    /// Gets plugins that failed to clean.
+    ///     Gets plugins that failed to clean.
     /// </summary>
     public IEnumerable<PluginCleaningResult> FailedPlugins =>
         PluginResults.Where(r => r.Status == CleaningStatus.Failed);
 
     /// <summary>
-    /// Gets plugins that were skipped.
+    ///     Gets plugins that were skipped.
     /// </summary>
     public IEnumerable<PluginCleaningResult> SkippedPlugins =>
         PluginResults.Where(r => r.Status == CleaningStatus.Skipped);
 
     /// <summary>
-    /// Total number of plugins processed.
+    ///     Total number of plugins processed.
     /// </summary>
     public int TotalPlugins => PluginResults.Count;
 
     /// <summary>
-    /// Number of plugins successfully cleaned.
+    ///     Number of plugins successfully cleaned.
     /// </summary>
     public int CleanedCount => CleanedPlugins.Count();
 
     /// <summary>
-    /// Number of plugins that failed.
+    ///     Number of plugins that failed.
     /// </summary>
     public int FailedCount => FailedPlugins.Count();
 
     /// <summary>
-    /// Number of plugins that were skipped.
+    ///     Number of plugins that were skipped.
     /// </summary>
     public int SkippedCount => SkippedPlugins.Count();
 
     /// <summary>
-    /// Total ITMs removed across all plugins.
+    ///     Total ITMs removed across all plugins.
     /// </summary>
     public int TotalItemsRemoved => PluginResults.Sum(r => r.ItemsRemoved);
 
     /// <summary>
-    /// Total UDRs fixed across all plugins.
+    ///     Total UDRs fixed across all plugins.
     /// </summary>
     public int TotalItemsUndeleted => PluginResults.Sum(r => r.ItemsUndeleted);
 
     /// <summary>
-    /// Total partial forms created across all plugins.
+    ///     Total partial forms created across all plugins.
     /// </summary>
     public int TotalPartialFormsCreated => PluginResults.Sum(r => r.PartialFormsCreated);
 
     /// <summary>
-    /// Whether the session completed successfully (no failures, not cancelled).
+    ///     Whether the session completed successfully (no failures, not cancelled).
     /// </summary>
     public bool IsSuccess => !WasCancelled && FailedCount == 0;
 
     /// <summary>
-    /// Gets a summary string for the entire session.
+    ///     Gets a summary string for the entire session.
     /// </summary>
     public string SessionSummary
     {
@@ -139,23 +140,26 @@ public sealed record CleaningSessionResult
     }
 
     /// <summary>
-    /// Creates an empty session result for design-time use.
+    ///     Creates an empty session result for design-time use.
     /// </summary>
-    public static CleaningSessionResult CreateEmpty() => new()
+    public static CleaningSessionResult CreateEmpty()
     {
-        StartTime = DateTime.Now,
-        EndTime = DateTime.Now,
-        GameType = GameType.Unknown,
-        WasCancelled = false,
-        PluginResults = []
-    };
+        return new CleaningSessionResult
+        {
+            StartTime = DateTime.Now,
+            EndTime = DateTime.Now,
+            GameType = GameType.Unknown,
+            WasCancelled = false,
+            PluginResults = []
+        };
+    }
 
     /// <summary>
-    /// Generates a detailed report suitable for logging or export.
+    ///     Generates a detailed report suitable for logging or export.
     /// </summary>
     public string GenerateReport()
     {
-        var sb = new System.Text.StringBuilder();
+        var sb = new StringBuilder();
 
         sb.AppendLine("=== AutoQAC Cleaning Report ===");
         sb.AppendLine($"Date: {StartTime:yyyy-MM-dd HH:mm:ss}");
@@ -194,9 +198,7 @@ public sealed record CleaningSessionResult
         {
             sb.AppendLine("--- Already Clean Plugins ---");
             foreach (var result in AlreadyCleanPlugins)
-            {
                 sb.AppendLine($"  {DiagnosticTextFormatter.SafePluginName(result.PluginName)}");
-            }
 
             sb.AppendLine();
         }
@@ -205,9 +207,7 @@ public sealed record CleaningSessionResult
         {
             sb.AppendLine("--- Skipped Plugins ---");
             foreach (var result in SkippedPlugins)
-            {
                 sb.AppendLine($"  {DiagnosticTextFormatter.SafePluginName(result.PluginName)}");
-            }
 
             sb.AppendLine();
         }
@@ -215,18 +215,12 @@ public sealed record CleaningSessionResult
         if (FailedPlugins.Any())
         {
             sb.AppendLine("--- Failed Plugins ---");
-            foreach (var result in FailedPlugins)
-            {
-                sb.AppendLine($"  {FormatFailedPluginReportLine(result)}");
-            }
+            foreach (var result in FailedPlugins) sb.AppendLine($"  {FormatFailedPluginReportLine(result)}");
 
             sb.AppendLine();
         }
 
-        if (WasCancelled)
-        {
-            sb.AppendLine("*** Session was cancelled by user ***");
-        }
+        if (WasCancelled) sb.AppendLine("*** Session was cancelled by user ***");
 
         if (BackupCleanup != null)
         {
@@ -242,7 +236,7 @@ public sealed record CleaningSessionResult
     }
 
     /// <summary>
-    /// Formats a failed report row with a defensive safe-summary fallback and avoids prefixing the plugin name twice.
+    ///     Formats a failed report row with a defensive safe-summary fallback and avoids prefixing the plugin name twice.
     /// </summary>
     /// <param name="result">The failed plugin result to render into the exported report.</param>
     /// <returns>A safe failed-plugin report row without raw diagnostic detail.</returns>

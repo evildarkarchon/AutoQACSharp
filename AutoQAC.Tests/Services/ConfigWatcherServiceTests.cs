@@ -21,7 +21,6 @@ public sealed class ConfigWatcherServiceTests : IDisposable
     public void Dispose()
     {
         if (Directory.Exists(_testDirectory))
-        {
             try
             {
                 Directory.Delete(_testDirectory, true);
@@ -30,7 +29,6 @@ public sealed class ConfigWatcherServiceTests : IDisposable
             {
                 // Ignore cleanup errors.
             }
-        }
     }
 
     [Fact]

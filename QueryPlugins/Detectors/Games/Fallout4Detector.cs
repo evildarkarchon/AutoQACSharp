@@ -6,8 +6,8 @@ using QueryPlugins.Models;
 namespace QueryPlugins.Detectors.Games;
 
 /// <summary>
-/// Game-specific detector for Fallout 4 and Fallout 4 VR.
-/// Detects deleted placed references and deleted navigation mesh records.
+///     Game-specific detector for Fallout 4 and Fallout 4 VR.
+///     Detects deleted placed references and deleted navigation mesh records.
 /// </summary>
 public sealed class Fallout4Detector : IGameSpecificDetector
 {
@@ -15,7 +15,7 @@ public sealed class Fallout4Detector : IGameSpecificDetector
     public IReadOnlySet<GameRelease> SupportedReleases { get; } = new HashSet<GameRelease>
     {
         GameRelease.Fallout4,
-        GameRelease.Fallout4VR,
+        GameRelease.Fallout4VR
     };
 
     /// <inheritdoc />
@@ -27,7 +27,11 @@ public sealed class Fallout4Detector : IGameSpecificDetector
                 nameof(plugin));
 
         return fo4Mod.EnumerateMajorRecords<IPlacedGetter>()
-            .Where(placed => { ct.ThrowIfCancellationRequested(); return placed.IsDeleted; })
+            .Where(placed =>
+            {
+                ct.ThrowIfCancellationRequested();
+                return placed.IsDeleted;
+            })
             .Select(placed => new PluginIssue(
                 placed.FormKey,
                 placed.EditorID,
@@ -43,7 +47,11 @@ public sealed class Fallout4Detector : IGameSpecificDetector
                 nameof(plugin));
 
         return fo4Mod.EnumerateMajorRecords<INavigationMeshGetter>()
-            .Where(navm => { ct.ThrowIfCancellationRequested(); return navm.IsDeleted; })
+            .Where(navm =>
+            {
+                ct.ThrowIfCancellationRequested();
+                return navm.IsDeleted;
+            })
             .Select(navm => new PluginIssue(
                 navm.FormKey,
                 navm.EditorID,

@@ -22,33 +22,6 @@ public sealed partial class AboutViewModel : ViewModelBase
         HttpClient.Timeout = TimeSpan.FromSeconds(10);
     }
 
-    public string AppVersion { get; }
-    public string InformationalVersion { get; }
-    public string BuildDate { get; }
-    public string DotNetVersion { get; }
-    public string UiFrameworkDisplayName { get; }
-    public string UiFrameworkVersion { get; }
-    public string MvvmToolkitVersion { get; }
-
-    public string GitHubUrl => "https://github.com/evildarkarchon/AutoQACSharp";
-    public string GitHubIssuesUrl => "https://github.com/evildarkarchon/AutoQACSharp/issues";
-    public string XEditUrl => "https://github.com/TES5Edit/TES5Edit";
-
-    [ObservableProperty]
-    public partial string UpdateStatusText { get; set; } = string.Empty;
-
-    [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(CheckForUpdateCommand))]
-    public partial bool IsCheckingUpdate { get; set; }
-
-    [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(OpenLatestReleaseCommand))]
-    public partial bool UpdateAvailable { get; set; }
-
-    [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(OpenLatestReleaseCommand))]
-    public partial string? LatestVersionUrl { get; set; }
-
     public AboutViewModel(IUiFrameworkVersionProvider uiFrameworkVersionProvider)
     {
         var assembly = Assembly.GetEntryAssembly();
@@ -69,10 +42,40 @@ public sealed partial class AboutViewModel : ViewModelBase
 
         var toolkitAssembly = typeof(ObservableObject).Assembly;
         var toolkitVer = toolkitAssembly.GetName().Version;
-        MvvmToolkitVersion = toolkitVer != null ? $"{toolkitVer.Major}.{toolkitVer.Minor}.{toolkitVer.Build}" : "Unknown";
+        MvvmToolkitVersion =
+            toolkitVer != null ? $"{toolkitVer.Major}.{toolkitVer.Minor}.{toolkitVer.Build}" : "Unknown";
     }
 
-    private bool CanCheckForUpdate() => !IsCheckingUpdate;
+    public string AppVersion { get; }
+    public string InformationalVersion { get; }
+    public string BuildDate { get; }
+    public string DotNetVersion { get; }
+    public string UiFrameworkDisplayName { get; }
+    public string UiFrameworkVersion { get; }
+    public string MvvmToolkitVersion { get; }
+
+    public string GitHubUrl => "https://github.com/evildarkarchon/AutoQACSharp";
+    public string GitHubIssuesUrl => "https://github.com/evildarkarchon/AutoQACSharp/issues";
+    public string XEditUrl => "https://github.com/TES5Edit/TES5Edit";
+
+    [ObservableProperty] public partial string UpdateStatusText { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(CheckForUpdateCommand))]
+    public partial bool IsCheckingUpdate { get; set; }
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(OpenLatestReleaseCommand))]
+    public partial bool UpdateAvailable { get; set; }
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(OpenLatestReleaseCommand))]
+    public partial string? LatestVersionUrl { get; set; }
+
+    private bool CanCheckForUpdate()
+    {
+        return !IsCheckingUpdate;
+    }
 
     [RelayCommand(CanExecute = nameof(CanCheckForUpdate))]
     private async Task CheckForUpdateAsync()
@@ -138,18 +141,33 @@ public sealed partial class AboutViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private void OpenGitHub() => OpenUrl(GitHubUrl);
+    private void OpenGitHub()
+    {
+        OpenUrl(GitHubUrl);
+    }
 
     [RelayCommand]
-    private void OpenIssues() => OpenUrl(GitHubIssuesUrl);
+    private void OpenIssues()
+    {
+        OpenUrl(GitHubIssuesUrl);
+    }
 
     [RelayCommand]
-    private void OpenXEdit() => OpenUrl(XEditUrl);
+    private void OpenXEdit()
+    {
+        OpenUrl(XEditUrl);
+    }
 
-    private bool CanOpenLatestRelease() => UpdateAvailable && !string.IsNullOrEmpty(LatestVersionUrl);
+    private bool CanOpenLatestRelease()
+    {
+        return UpdateAvailable && !string.IsNullOrEmpty(LatestVersionUrl);
+    }
 
     [RelayCommand(CanExecute = nameof(CanOpenLatestRelease))]
-    private void OpenLatestRelease() => OpenUrl(LatestVersionUrl!);
+    private void OpenLatestRelease()
+    {
+        OpenUrl(LatestVersionUrl!);
+    }
 
     private static void OpenUrl(string url)
     {

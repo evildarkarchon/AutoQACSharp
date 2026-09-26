@@ -13,18 +13,6 @@ public interface IXEditOutputParser
 
 public sealed partial class XEditOutputParser : IXEditOutputParser
 {
-    [GeneratedRegex(@"Undeleting:\s*(.*)")]
-    private static partial Regex UndeletedPattern();
-
-    [GeneratedRegex(@"Removing:\s*(.*)")]
-    private static partial Regex RemovedPattern();
-
-    [GeneratedRegex(@"Skipping:\s*(.*)")]
-    private static partial Regex SkippedPattern();
-
-    [GeneratedRegex(@"Making Partial Form:\s*(.*)")]
-    private static partial Regex PartialFormsPattern();
-
     public CleaningStatistics ParseOutput(List<string> outputLines)
     {
         var undeleted = 0;
@@ -33,12 +21,10 @@ public sealed partial class XEditOutputParser : IXEditOutputParser
         var partialForms = 0;
 
         foreach (var line in outputLines.Where(line => !string.IsNullOrWhiteSpace(line)))
-        {
             if (UndeletedPattern().IsMatch(line)) undeleted++;
             else if (RemovedPattern().IsMatch(line)) removed++;
             else if (SkippedPattern().IsMatch(line)) skipped++;
             else if (PartialFormsPattern().IsMatch(line)) partialForms++;
-        }
 
         return new CleaningStatistics
         {
@@ -54,4 +40,16 @@ public sealed partial class XEditOutputParser : IXEditOutputParser
         return line.Contains("Done.") ||
                line.Contains("Cleaning completed");
     }
+
+    [GeneratedRegex(@"Undeleting:\s*(.*)")]
+    private static partial Regex UndeletedPattern();
+
+    [GeneratedRegex(@"Removing:\s*(.*)")]
+    private static partial Regex RemovedPattern();
+
+    [GeneratedRegex(@"Skipping:\s*(.*)")]
+    private static partial Regex SkippedPattern();
+
+    [GeneratedRegex(@"Making Partial Form:\s*(.*)")]
+    private static partial Regex PartialFormsPattern();
 }

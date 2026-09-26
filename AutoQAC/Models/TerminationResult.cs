@@ -1,8 +1,8 @@
 namespace AutoQAC.Models;
 
 /// <summary>
-/// Result of a process termination attempt, distinguishing between
-/// graceful exit, force killed, grace period expiry, and already exited.
+///     Result of a process termination attempt, distinguishing between
+///     graceful exit, force killed, grace period expiry, and already exited.
 /// </summary>
 public enum TerminationResult
 {

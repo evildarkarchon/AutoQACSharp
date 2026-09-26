@@ -18,10 +18,7 @@ public sealed class FileDialogService(
     {
         return InvokeOnUiThreadAsync(async () =>
         {
-            if (!windowContextProvider.TryGetContext(out var windowId, out _))
-            {
-                return null;
-            }
+            if (!windowContextProvider.TryGetContext(out var windowId, out _)) return null;
 
             var picker = new FileOpenPicker(windowId)
             {
@@ -31,9 +28,7 @@ public sealed class FileDialogService(
             SetSuggestedStartFolder(picker, initialDirectory);
 
             foreach (var choice in FileDialogFilterMapper.BuildFileTypeChoices(filter))
-            {
                 picker.FileTypeChoices.Add(choice.Key, choice.Value.ToList());
-            }
 
             var result = await picker.PickSingleFileAsync();
             return result?.Path;
@@ -48,10 +43,7 @@ public sealed class FileDialogService(
     {
         return InvokeOnUiThreadAsync(async () =>
         {
-            if (!windowContextProvider.TryGetContext(out var windowId, out _))
-            {
-                return null;
-            }
+            if (!windowContextProvider.TryGetContext(out var windowId, out _)) return null;
 
             var picker = new FileSavePicker(windowId)
             {
@@ -62,16 +54,11 @@ public sealed class FileDialogService(
             SetSuggestedStartFolder(picker, initialDirectory);
 
             foreach (var choice in FileDialogFilterMapper.BuildFileTypeChoices(filter))
-            {
                 picker.FileTypeChoices.Add(choice.Key, choice.Value.ToList());
-            }
 
             var defaultExtension = FileDialogFilterMapper.BuildExtensionList(filter)
                 .FirstOrDefault(extension => extension != "*");
-            if (!string.IsNullOrWhiteSpace(defaultExtension))
-            {
-                picker.DefaultFileExtension = defaultExtension;
-            }
+            if (!string.IsNullOrWhiteSpace(defaultExtension)) picker.DefaultFileExtension = defaultExtension;
 
             var result = await picker.PickSaveFileAsync();
             return result?.Path;
@@ -84,10 +71,7 @@ public sealed class FileDialogService(
     {
         return InvokeOnUiThreadAsync(async () =>
         {
-            if (!windowContextProvider.TryGetContext(out var windowId, out _))
-            {
-                return null;
-            }
+            if (!windowContextProvider.TryGetContext(out var windowId, out _)) return null;
 
             var picker = new FolderPicker(windowId)
             {
@@ -111,41 +95,26 @@ public sealed class FileDialogService(
     private static void SetSuggestedStartFolder(FileOpenPicker picker, string? initialDirectory)
     {
         var directory = GetExistingDirectory(initialDirectory);
-        if (directory is not null)
-        {
-            picker.SuggestedStartFolder = directory;
-        }
+        if (directory is not null) picker.SuggestedStartFolder = directory;
     }
 
     private static void SetSuggestedStartFolder(FileSavePicker picker, string? initialDirectory)
     {
         var directory = GetExistingDirectory(initialDirectory);
-        if (directory is not null)
-        {
-            picker.SuggestedStartFolder = directory;
-        }
+        if (directory is not null) picker.SuggestedStartFolder = directory;
     }
 
     private static void SetSuggestedStartFolder(FolderPicker picker, string? initialDirectory)
     {
         var directory = GetExistingDirectory(initialDirectory);
-        if (directory is not null)
-        {
-            picker.SuggestedStartFolder = directory;
-        }
+        if (directory is not null) picker.SuggestedStartFolder = directory;
     }
 
     private static string? GetExistingDirectory(string? path)
     {
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            return null;
-        }
+        if (string.IsNullOrWhiteSpace(path)) return null;
 
-        if (Directory.Exists(path))
-        {
-            return path;
-        }
+        if (Directory.Exists(path)) return path;
 
         var parentDirectory = Path.GetDirectoryName(path);
         return !string.IsNullOrWhiteSpace(parentDirectory) && Directory.Exists(parentDirectory)

@@ -9,8 +9,14 @@ public sealed partial class PartialFormsWarningViewModel : ViewModelBase
     public event Action<bool>? CloseRequested;
 
     [RelayCommand]
-    private void Enable() => CloseRequested?.Invoke(true);
+    private void Enable()
+    {
+        CloseRequested?.Invoke(true);
+    }
 
     [RelayCommand]
-    private void Cancel() => CloseRequested?.Invoke(false);
+    private void Cancel()
+    {
+        CloseRequested?.Invoke(false);
+    }
 }

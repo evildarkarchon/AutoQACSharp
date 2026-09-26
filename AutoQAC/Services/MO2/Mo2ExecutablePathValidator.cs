@@ -7,9 +7,13 @@ internal static class Mo2ExecutablePathValidator
 {
     private const string ExpectedFileName = "ModOrganizer.exe";
 
-    internal static bool IsValidExecutablePath(string? path) =>
-        File.Exists(path) && IsModOrganizerExecutableName(path);
+    internal static bool IsValidExecutablePath(string? path)
+    {
+        return File.Exists(path) && IsModOrganizerExecutableName(path);
+    }
 
-    private static bool IsModOrganizerExecutableName(string? path) =>
-        string.Equals(Path.GetFileName(path), ExpectedFileName, StringComparison.OrdinalIgnoreCase);
+    private static bool IsModOrganizerExecutableName(string? path)
+    {
+        return string.Equals(Path.GetFileName(path), ExpectedFileName, StringComparison.OrdinalIgnoreCase);
+    }
 }

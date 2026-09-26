@@ -1,11 +1,11 @@
-using System.Collections.Generic;
 using System;
+using System.Collections.Generic;
 using AutoQAC.Models;
 
 namespace AutoQAC.Services.Cleaning;
 
 /// <summary>
-/// Immutable result of the shared cleaning preflight pipeline.
+///     Immutable result of the shared cleaning preflight pipeline.
 /// </summary>
 public sealed record CleaningPreflightPlan
 {
@@ -40,19 +40,19 @@ public sealed record CleaningPreflightPlan
     public required int BackupMaxSessions { get; init; }
 
     /// <summary>
-    /// xEdit install directory computed once during preflight; the runner captures log offsets
-    /// and the finalizer reads logs from this single source of truth (R-08).
+    ///     xEdit install directory computed once during preflight; the runner captures log offsets
+    ///     and the finalizer reads logs from this single source of truth (R-08).
     /// </summary>
     public required string XEditDirectory { get; init; }
 }
 
 /// <summary>
-/// One plugin's preflight decision and optional skip reason.
+///     One plugin's preflight decision and optional skip reason.
 /// </summary>
 public sealed record PreflightPluginRow(PluginInfo Plugin, PreflightDecision Decision, PreflightSkipReason? SkipReason);
 
 /// <summary>
-/// Describes whether preflight selected a plugin for cleaning or skipped it.
+///     Describes whether preflight selected a plugin for cleaning or skipped it.
 /// </summary>
 public enum PreflightDecision
 {
@@ -64,7 +64,7 @@ public enum PreflightDecision
 }
 
 /// <summary>
-/// Stable skip reason vocabulary shared by dry-run and real-run preflight selection.
+///     Stable skip reason vocabulary shared by dry-run and real-run preflight selection.
 /// </summary>
 public enum PreflightSkipReason
 {
@@ -91,17 +91,12 @@ public enum PreflightSkipReason
 }
 
 /// <summary>
-/// Exception thrown when Cleaning session preflight blocks Start or Preview with a user-safe typed failure.
+///     Exception thrown when Cleaning session preflight blocks Start or Preview with a user-safe typed failure.
 /// </summary>
 public sealed class CleaningPreflightException : InvalidOperationException
 {
     /// <summary>
-    /// Gets the typed user-safe failure payload.
-    /// </summary>
-    public CleaningPreflightFailure Failure { get; }
-
-    /// <summary>
-    /// Creates a preflight exception from a typed failure payload.
+    ///     Creates a preflight exception from a typed failure payload.
     /// </summary>
     /// <param name="failure">Failure payload to project at callers.</param>
     /// <param name="innerException">Optional lower-level exception whose raw message is not shown to users.</param>
@@ -112,10 +107,15 @@ public sealed class CleaningPreflightException : InvalidOperationException
     {
         Failure = failure;
     }
+
+    /// <summary>
+    ///     Gets the typed user-safe failure payload.
+    /// </summary>
+    public CleaningPreflightFailure Failure { get; }
 }
 
 /// <summary>
-/// User-safe Cleaning session preflight failure payload.
+///     User-safe Cleaning session preflight failure payload.
 /// </summary>
 /// <param name="Kind">Stable failure kind for ViewModel projection.</param>
 /// <param name="SafeMessage">Safe message that must not include raw exception details.</param>
@@ -126,7 +126,7 @@ public sealed record CleaningPreflightFailure(
     string? ActionHint = null);
 
 /// <summary>
-/// Stable failure vocabulary for Cleaning session preflight.
+///     Stable failure vocabulary for Cleaning session preflight.
 /// </summary>
 public enum CleaningPreflightFailureKind
 {

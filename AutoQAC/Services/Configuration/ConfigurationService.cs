@@ -16,28 +16,21 @@ namespace AutoQAC.Services.Configuration;
 
 public sealed class ConfigurationService : IConfigurationService, IDisposable, IAsyncDisposable
 {
-    private readonly ILoggingService _logger;
-    private readonly IConfigPersistenceCoordinator _coordinator;
-    private readonly Task _consumerTask;
-    private readonly SemaphoreSlim _fileLock = new(1, 1);
-    private readonly Lock _stateLock = new();
-    private readonly Subject<GameType> _skipListChanges = new();
-    private readonly string _configDirectory;
-    private readonly IDeserializer _deserializer;
-
-    private MainConfiguration? _mainConfigCache;
-    private bool _loadedUserConfigFromDisk;
-    private bool _hasPendingUserSave;
-    private int _disposeState;
-
     private const string MainConfigFile = "AutoQAC Main.yaml";
     private const string UserConfigFile = "AutoQAC Settings.yaml";
+    private readonly string _configDirectory;
+    private readonly Task _consumerTask;
+    private readonly IConfigPersistenceCoordinator _coordinator;
+    private readonly IDeserializer _deserializer;
+    private readonly SemaphoreSlim _fileLock = new(1, 1);
+    private readonly ILoggingService _logger;
+    private readonly Subject<GameType> _skipListChanges = new();
+    private readonly Lock _stateLock = new();
+    private int _disposeState;
+    private bool _hasPendingUserSave;
+    private bool _loadedUserConfigFromDisk;
 
-    public IObservable<UserConfiguration> UserConfigurationChanged => _coordinator.ConfigurationAccepted;
-    public IObservable<GameType> SkipListChanged => _skipListChanges;
-    public IObservable<ConfigPersistenceFailure> Failures => _coordinator.Failures;
-    public IObservable<ConfigPersistenceResult> PersistenceResults => _coordinator.PersistenceResults;
-    public ConfigPersistenceFailure? LastFailure => _coordinator.LastFailure;
+    private MainConfiguration? _mainConfigCache;
 
     internal ConfigurationService(
         IConfigPersistenceCoordinator coordinator,
@@ -52,10 +45,7 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
             .IgnoreUnmatchedProperties()
             .Build();
 
-        if (!Directory.Exists(_configDirectory))
-        {
-            Directory.CreateDirectory(_configDirectory);
-        }
+        if (!Directory.Exists(_configDirectory)) Directory.CreateDirectory(_configDirectory);
 
         _consumerTask = _coordinator.StartAsync(CancellationToken.None);
         _ = _consumerTask.ContinueWith(
@@ -70,36 +60,31 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
     {
     }
 
-    private static IConfigPersistenceCoordinator CreateDefaultCoordinator(
-        ILoggingService logger,
-        string? configDirectory)
+    public async ValueTask DisposeAsync()
     {
-        var stateService = new StateService();
-        var fileStore = new UserConfigFileStore(logger, configDirectory);
-        return new ConfigPersistenceCoordinator(fileStore, stateService, logger);
-    }
+        if (Interlocked.CompareExchange(ref _disposeState, 1, 0) != 0) return;
 
-    private string ResolveConfigDirectory(ILoggingService logger)
-    {
-        var baseDir = AppContext.BaseDirectory;
-
-#if DEBUG
-        var current = new DirectoryInfo(baseDir);
-        for (var i = 0; i < 6 && current != null; i++)
+        try
         {
-            var candidate = Path.Combine(current.FullName, "AutoQAC Data");
-            if (Directory.Exists(candidate))
-            {
-                logger.Information("[Debug] Resolved configuration directory to source: {Candidate}", candidate);
-                return candidate;
-            }
-
-            current = current.Parent;
+            await _coordinator.StopAsync(CancellationToken.None)
+                .WaitAsync(TimeSpan.FromSeconds(5))
+                .ConfigureAwait(false);
         }
-#endif
+        catch (Exception ex)
+        {
+            _logger.Warning("[Config] Coordinator stop during disposal failed: {Message}", ex.Message);
+        }
 
-        return Path.Combine(baseDir, "AutoQAC Data");
+        _fileLock.Dispose();
+        _skipListChanges.Dispose();
+        Volatile.Write(ref _disposeState, 2);
     }
+
+    public IObservable<UserConfiguration> UserConfigurationChanged => _coordinator.ConfigurationAccepted;
+    public IObservable<GameType> SkipListChanged => _skipListChanges;
+    public IObservable<ConfigPersistenceFailure> Failures => _coordinator.Failures;
+    public IObservable<ConfigPersistenceResult> PersistenceResults => _coordinator.PersistenceResults;
+    public ConfigPersistenceFailure? LastFailure => _coordinator.LastFailure;
 
     public async Task<MainConfiguration> LoadMainConfigAsync(CancellationToken ct = default)
     {
@@ -107,10 +92,7 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
 
         lock (_stateLock)
         {
-            if (_mainConfigCache != null)
-            {
-                return _mainConfigCache;
-            }
+            if (_mainConfigCache != null) return _mainConfigCache;
         }
 
         var path = Path.Combine(_configDirectory, MainConfigFile);
@@ -130,18 +112,12 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
         {
             lock (_stateLock)
             {
-                if (_mainConfigCache != null)
-                {
-                    return _mainConfigCache;
-                }
+                if (_mainConfigCache != null) return _mainConfigCache;
             }
 
             var content = await File.ReadAllTextAsync(path, ct).ConfigureAwait(false);
             var loaded = _deserializer.Deserialize<MainConfiguration>(content);
-            if (loaded == null)
-            {
-                throw new InvalidOperationException("Main configuration deserialized to null.");
-            }
+            if (loaded == null) throw new InvalidOperationException("Main configuration deserialized to null.");
 
             lock (_stateLock)
             {
@@ -167,10 +143,7 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
         await _consumerTask.ConfigureAwait(false);
 
         var (hasPending, loadedFromDisk) = GetUserConfigStateFlags();
-        if (hasPending)
-        {
-            return await _coordinator.LoadCurrentAsync(ct).ConfigureAwait(false);
-        }
+        if (hasPending) return await _coordinator.LoadCurrentAsync(ct).ConfigureAwait(false);
 
         var path = Path.Combine(_configDirectory, UserConfigFile);
         if (!File.Exists(path))
@@ -184,10 +157,8 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
         if (loadedFromDisk || hasPending) return await _coordinator.LoadCurrentAsync(ct).ConfigureAwait(false);
         var result = await _coordinator.ReloadFromDiskAsync(ct).ConfigureAwait(false);
         if (result.Status == ConfigPersistenceStatusKind.Failed)
-        {
             _logger.Warning("[Config] Initial user configuration reload failed: {Summary}",
                 result.Failure?.SafeSummary ?? "unknown");
-        }
 
         lock (_stateLock)
         {
@@ -219,12 +190,10 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
         // facade pending-save marker does not prove the coordinator queue is already drained.
         var result = await _coordinator.FlushPendingSavesAsync(ct).ConfigureAwait(false);
         if (result.Status is ConfigPersistenceStatusKind.Success or ConfigPersistenceStatusKind.NoOp)
-        {
             lock (_stateLock)
             {
                 _hasPendingUserSave = false;
             }
-        }
 
         return result;
     }
@@ -243,13 +212,11 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
         }
 
         foreach (var (gameKey, loadOrderPath) in config.LoadOrderFileOverrides)
-        {
             if (!string.IsNullOrWhiteSpace(loadOrderPath) && !File.Exists(loadOrderPath))
             {
                 _logger.Warning("Load Order file not found for {GameKey}: {Path}", gameKey, loadOrderPath);
                 isValid = false;
             }
-        }
 
         if (!string.IsNullOrEmpty(config.XEdit.Binary) && !File.Exists(config.XEdit.Binary))
         {
@@ -280,34 +247,19 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
         var result = new List<string>();
         var key = variant == GameVariant.Enderal ? "Enderal" : GetGameKey(gameType);
 
-        if (userConfig.SkipLists.TryGetValue(key, out var userList))
-        {
-            result.AddRange(userList);
-        }
+        if (userConfig.SkipLists.TryGetValue(key, out var userList)) result.AddRange(userList);
 
-        if (mainConfig.Data.SkipLists.TryGetValue(key, out var mainGameList))
-        {
-            result.AddRange(mainGameList);
-        }
+        if (mainConfig.Data.SkipLists.TryGetValue(key, out var mainGameList)) result.AddRange(mainGameList);
 
         if (variant == GameVariant.Ttw)
         {
             var fo3Key = GetGameKey(GameType.Fallout3);
-            if (userConfig.SkipLists.TryGetValue(fo3Key, out var userFo3List))
-            {
-                result.AddRange(userFo3List);
-            }
+            if (userConfig.SkipLists.TryGetValue(fo3Key, out var userFo3List)) result.AddRange(userFo3List);
 
-            if (mainConfig.Data.SkipLists.TryGetValue(fo3Key, out var mainFo3List))
-            {
-                result.AddRange(mainFo3List);
-            }
+            if (mainConfig.Data.SkipLists.TryGetValue(fo3Key, out var mainFo3List)) result.AddRange(mainFo3List);
         }
 
-        if (mainConfig.Data.SkipLists.TryGetValue("Universal", out var universalList))
-        {
-            result.AddRange(universalList);
-        }
+        if (mainConfig.Data.SkipLists.TryGetValue("Universal", out var universalList)) result.AddRange(universalList);
 
         return result.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     }
@@ -320,15 +272,9 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
         var result = new List<string>();
         var key = GetGameKey(gameType);
 
-        if (mainConfig.Data.SkipLists.TryGetValue(key, out var mainGameList))
-        {
-            result.AddRange(mainGameList);
-        }
+        if (mainConfig.Data.SkipLists.TryGetValue(key, out var mainGameList)) result.AddRange(mainGameList);
 
-        if (mainConfig.Data.SkipLists.TryGetValue("Universal", out var universalList))
-        {
-            result.AddRange(universalList);
-        }
+        if (mainConfig.Data.SkipLists.TryGetValue("Universal", out var universalList)) result.AddRange(universalList);
 
         return result.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     }
@@ -339,10 +285,7 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
         var mainConfig = await LoadMainConfigAsync(ct).ConfigureAwait(false);
         var key = GetGameKey(gameType);
 
-        if (mainConfig.Data.XEditLists.TryGetValue(key, out var list))
-        {
-            return list;
-        }
+        if (mainConfig.Data.XEditLists.TryGetValue(key, out var list)) return list;
 
         return mainConfig.Data.XEditLists.TryGetValue("Universal", out var universalList) ? universalList : [];
     }
@@ -353,10 +296,7 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
         var userConfig = await LoadUserConfigAsync(ct).ConfigureAwait(false);
         var key = GetGameKey(gameType);
 
-        if (userConfig.SkipLists.TryGetValue(key, out var list))
-        {
-            return list.ToList();
-        }
+        if (userConfig.SkipLists.TryGetValue(key, out var list)) return list.ToList();
 
         return [];
     }
@@ -378,9 +318,7 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
         ThrowIfDisposed();
 
         if (string.IsNullOrWhiteSpace(pluginName))
-        {
             throw new ArgumentException("Plugin name cannot be empty", nameof(pluginName));
-        }
 
         var currentList = await GetGameSpecificSkipListAsync(gameType, ct).ConfigureAwait(false);
         if (currentList.Any(p => string.Equals(p, pluginName, StringComparison.OrdinalIgnoreCase)))
@@ -397,10 +335,7 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
     {
         ThrowIfDisposed();
 
-        if (string.IsNullOrWhiteSpace(pluginName))
-        {
-            return;
-        }
+        if (string.IsNullOrWhiteSpace(pluginName)) return;
 
         var currentList = await GetGameSpecificSkipListAsync(gameType, ct).ConfigureAwait(false);
         var toRemove =
@@ -448,9 +383,7 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
             var key = GetGameKey(gameType);
             if (config.LoadOrderFileOverrides.TryGetValue(key, out var loadOrderPath) &&
                 !string.IsNullOrWhiteSpace(loadOrderPath))
-            {
                 return loadOrderPath;
-            }
         }
 
         return config.LoadOrder.File;
@@ -612,7 +545,6 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
         await _consumerTask.ConfigureAwait(false);
         var result = await _coordinator.ReloadFromDiskAsync(ct).ConfigureAwait(false);
         if (result.Status is ConfigPersistenceStatusKind.Success)
-        {
             // Only a successful coordinator reload means pending facade edits were persisted
             // and accepted back from disk. Failed/rejected reloads must leave the pending
             // indicator intact so a later flush still protects the user's edits.
@@ -621,35 +553,10 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
                 _loadedUserConfigFromDisk = true;
                 _hasPendingUserSave = false;
             }
-        }
 
         lock (_stateLock)
         {
             _mainConfigCache = null;
-        }
-    }
-
-    private static string GetGameKey(GameType gameType) => gameType switch
-    {
-        GameType.Fallout3 => "FO3",
-        GameType.FalloutNewVegas => "FNV",
-        GameType.Fallout4 => "FO4",
-        GameType.SkyrimLe => "Skyrim",
-        GameType.SkyrimSe => "SSE",
-        GameType.Fallout4Vr => "FO4VR",
-        GameType.SkyrimVr => "SkyrimVR",
-        GameType.Oblivion => "Oblivion",
-        _ => "Unknown"
-    };
-
-    /// <summary>
-    /// Returns a consistent snapshot of facade user-config bookkeeping flags.
-    /// </summary>
-    private (bool HasPendingUserSave, bool LoadedUserConfigFromDisk) GetUserConfigStateFlags()
-    {
-        lock (_stateLock)
-        {
-            return (_hasPendingUserSave, _loadedUserConfigFromDisk);
         }
     }
 
@@ -658,27 +565,62 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
         DisposeAsync().AsTask().GetAwaiter().GetResult();
     }
 
-    public async ValueTask DisposeAsync()
+    private static IConfigPersistenceCoordinator CreateDefaultCoordinator(
+        ILoggingService logger,
+        string? configDirectory)
     {
-        if (Interlocked.CompareExchange(ref _disposeState, 1, 0) != 0)
-        {
-            return;
-        }
+        var stateService = new StateService();
+        var fileStore = new UserConfigFileStore(logger, configDirectory);
+        return new ConfigPersistenceCoordinator(fileStore, stateService, logger);
+    }
 
-        try
-        {
-            await _coordinator.StopAsync(CancellationToken.None)
-                .WaitAsync(TimeSpan.FromSeconds(5))
-                .ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _logger.Warning("[Config] Coordinator stop during disposal failed: {Message}", ex.Message);
-        }
+    private string ResolveConfigDirectory(ILoggingService logger)
+    {
+        var baseDir = AppContext.BaseDirectory;
 
-        _fileLock.Dispose();
-        _skipListChanges.Dispose();
-        Volatile.Write(ref _disposeState, 2);
+#if DEBUG
+        var current = new DirectoryInfo(baseDir);
+        for (var i = 0; i < 6 && current != null; i++)
+        {
+            var candidate = Path.Combine(current.FullName, "AutoQAC Data");
+            if (Directory.Exists(candidate))
+            {
+                logger.Information("[Debug] Resolved configuration directory to source: {Candidate}", candidate);
+                return candidate;
+            }
+
+            current = current.Parent;
+        }
+#endif
+
+        return Path.Combine(baseDir, "AutoQAC Data");
+    }
+
+    internal static string GetGameKey(GameType gameType)
+    {
+        return gameType switch
+        {
+            GameType.Fallout3 => "FO3",
+            GameType.FalloutNewVegas => "FNV",
+            GameType.Fallout4 => "FO4",
+            GameType.SkyrimLe => "Skyrim",
+            GameType.SkyrimSe => "SSE",
+            GameType.Fallout4Vr => "FO4VR",
+            GameType.SkyrimVr => "SkyrimVR",
+            GameType.Oblivion => "Oblivion",
+            _ => "Unknown"
+        };
+    }
+
+    /// <summary>
+    ///     Returns a consistent snapshot of facade user-config bookkeeping flags.
+    /// </summary>
+    private (bool HasPendingUserSave, bool LoadedUserConfigFromDisk) GetUserConfigStateFlags()
+    {
+        lock (_stateLock)
+        {
+            return (_hasPendingUserSave, _loadedUserConfigFromDisk);
+        }
     }
 
     private void ThrowIfDisposed()

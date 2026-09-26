@@ -16,22 +16,14 @@ using Noggog;
 namespace AutoQAC.Services.Plugin;
 
 /// <summary>
-/// Service for loading plugins from various sources.
-/// Uses Mutagen for supported games, falls back to file-based loading.
+///     Service for loading plugins from various sources.
+///     Uses Mutagen for supported games, falls back to file-based loading.
 /// </summary>
 public sealed class PluginLoadingService : IPluginLoadingService
 {
-    private readonly IPluginValidationService _pluginValidation;
-    private readonly ILoggingService _logger;
-    private readonly Func<GameType, string?> _registryDataFolderResolver;
-
-    private readonly Func<GameType, string?, CancellationToken, (string? DataFolder, IReadOnlyList<string>
-            PluginFileNames)>
-        _mutagenListingProvider;
-
     /// <summary>
-    /// Maps GameType to My Games folder names for non-Mutagen games.
-    /// These games require file-based load order detection.
+    ///     Maps GameType to My Games folder names for non-Mutagen games.
+    ///     These games require file-based load order detection.
     /// </summary>
     private static readonly Dictionary<GameType, string> MyGamesFolderNames = new()
     {
@@ -45,6 +37,15 @@ public sealed class PluginLoadingService : IPluginLoadingService
 
     private static readonly string[] RegistryInstallPathValueNames =
         ["Installed Path", "Install Path", "InstallLocation", "Path"];
+
+    private readonly ILoggingService _logger;
+
+    private readonly Func<GameType, string?, CancellationToken, (string? DataFolder, IReadOnlyList<string>
+            PluginFileNames)>
+        _mutagenListingProvider;
+
+    private readonly IPluginValidationService _pluginValidation;
+    private readonly Func<GameType, string?> _registryDataFolderResolver;
 
     public PluginLoadingService(
         IPluginValidationService pluginValidation,
@@ -162,27 +163,19 @@ public sealed class PluginLoadingService : IPluginLoadingService
     public string? GetGameDataFolder(GameType gameType, string? customDataFolderOverride = null)
     {
         // Return override if provided
-        if (!string.IsNullOrEmpty(customDataFolderOverride))
-        {
-            return customDataFolderOverride;
-        }
+        if (!string.IsNullOrEmpty(customDataFolderOverride)) return customDataFolderOverride;
 
         if (GameCapabilityCatalog.Get(gameType).SupportsAutomaticPluginDiscovery)
-        {
             try
             {
                 var release = MapToGameRelease(gameType);
-                if (GameLocations.TryGetDataFolder(release, out var detectedDataFolder))
-                {
-                    return detectedDataFolder.Path;
-                }
+                if (GameLocations.TryGetDataFolder(release, out var detectedDataFolder)) return detectedDataFolder.Path;
             }
             catch (Exception ex)
             {
                 _logger.Debug("Could not detect data folder via Mutagen for {GameType}: {Message}", gameType,
                     ex.Message);
             }
-        }
 
         var registryPath = _registryDataFolderResolver(gameType);
         if (string.IsNullOrWhiteSpace(registryPath)) return null;
@@ -194,10 +187,7 @@ public sealed class PluginLoadingService : IPluginLoadingService
     /// <inheritdoc />
     public string? GetDefaultLoadOrderPath(GameType gameType)
     {
-        if (!MyGamesFolderNames.TryGetValue(gameType, out var folderName))
-        {
-            return null;
-        }
+        if (!MyGamesFolderNames.TryGetValue(gameType, out var folderName)) return null;
 
         var documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
         var path = Path.Combine(documents, "My Games", folderName, "plugins.txt");
@@ -239,23 +229,17 @@ public sealed class PluginLoadingService : IPluginLoadingService
 
         if (string.IsNullOrWhiteSpace(dataFolder))
         {
-            if (!GameLocations.TryGetDataFolder(release, out var detectedDataFolder))
-            {
-                return (null, []);
-            }
+            if (!GameLocations.TryGetDataFolder(release, out var detectedDataFolder)) return (null, []);
 
             dataFolder = detectedDataFolder.Path;
         }
 
-        if (string.IsNullOrWhiteSpace(dataFolder))
-        {
-            return (null, []);
-        }
+        if (string.IsNullOrWhiteSpace(dataFolder)) return (null, []);
 
         var listings = LoadOrder.GetLoadOrderListings(
             release,
             new DirectoryPath(dataFolder),
-            throwOnMissingMods: false);
+            false);
 
         var pluginFileNames = new List<string>();
         foreach (var listing in listings)
@@ -268,113 +252,95 @@ public sealed class PluginLoadingService : IPluginLoadingService
     }
 
     /// <summary>
-    /// Maps GameType to Mutagen's GameRelease.
+    ///     Maps GameType to Mutagen's GameRelease.
     /// </summary>
-    private static GameRelease MapToGameRelease(GameType gameType) => gameType switch
+    private static GameRelease MapToGameRelease(GameType gameType)
     {
-        GameType.SkyrimLe => GameRelease.SkyrimLE,
-        GameType.SkyrimSe => GameRelease.SkyrimSE,
-        GameType.SkyrimVr => GameRelease.SkyrimVR,
-        GameType.Fallout4 => GameRelease.Fallout4,
-        GameType.Fallout4Vr => GameRelease.Fallout4VR,
-        _ => throw new ArgumentException($"Game {gameType} is not supported by Mutagen")
-    };
+        return gameType switch
+        {
+            GameType.SkyrimLe => GameRelease.SkyrimLE,
+            GameType.SkyrimSe => GameRelease.SkyrimSE,
+            GameType.SkyrimVr => GameRelease.SkyrimVR,
+            GameType.Fallout4 => GameRelease.Fallout4,
+            GameType.Fallout4Vr => GameRelease.Fallout4VR,
+            _ => throw new ArgumentException($"Game {gameType} is not supported by Mutagen")
+        };
+    }
 
-    private static Dictionary<GameType, string[]> CreateRegistryInstallPathKeys() => new()
+    private static Dictionary<GameType, string[]> CreateRegistryInstallPathKeys()
     {
-        { GameType.Oblivion, CreateBethesdaRegistryKeyCandidates("Oblivion", "22330") },
-        { GameType.Fallout3, CreateBethesdaRegistryKeyCandidates("Fallout3", "22300") },
-        { GameType.FalloutNewVegas, CreateBethesdaRegistryKeyCandidates("FalloutNV", "22380") },
-        { GameType.SkyrimLe, CreateBethesdaRegistryKeyCandidates("Skyrim", "72850") },
-        { GameType.SkyrimSe, CreateBethesdaRegistryKeyCandidates("Skyrim Special Edition", "489830") },
-        { GameType.SkyrimVr, CreateBethesdaRegistryKeyCandidates("Skyrim VR", "611670") },
-        { GameType.Fallout4, CreateBethesdaRegistryKeyCandidates("Fallout4", "377160") },
-        { GameType.Fallout4Vr, CreateBethesdaRegistryKeyCandidates("Fallout 4 VR", "611660") }
-    };
+        return new Dictionary<GameType, string[]>
+        {
+            { GameType.Oblivion, CreateBethesdaRegistryKeyCandidates("Oblivion", "22330") },
+            { GameType.Fallout3, CreateBethesdaRegistryKeyCandidates("Fallout3", "22300") },
+            { GameType.FalloutNewVegas, CreateBethesdaRegistryKeyCandidates("FalloutNV", "22380") },
+            { GameType.SkyrimLe, CreateBethesdaRegistryKeyCandidates("Skyrim", "72850") },
+            { GameType.SkyrimSe, CreateBethesdaRegistryKeyCandidates("Skyrim Special Edition", "489830") },
+            { GameType.SkyrimVr, CreateBethesdaRegistryKeyCandidates("Skyrim VR", "611670") },
+            { GameType.Fallout4, CreateBethesdaRegistryKeyCandidates("Fallout4", "377160") },
+            { GameType.Fallout4Vr, CreateBethesdaRegistryKeyCandidates("Fallout 4 VR", "611660") }
+        };
+    }
 
-    private static string[] CreateBethesdaRegistryKeyCandidates(string bethesdaSubKey, string steamAppId) =>
-    [
-        $@"SOFTWARE\WOW6432Node\Bethesda Softworks\{bethesdaSubKey}",
-        $@"SOFTWARE\Bethesda Softworks\{bethesdaSubKey}",
-        $@"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App {steamAppId}"
-    ];
+    private static string[] CreateBethesdaRegistryKeyCandidates(string bethesdaSubKey, string steamAppId)
+    {
+        return
+        [
+            $@"SOFTWARE\WOW6432Node\Bethesda Softworks\{bethesdaSubKey}",
+            $@"SOFTWARE\Bethesda Softworks\{bethesdaSubKey}",
+            $@"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App {steamAppId}"
+        ];
+    }
 
     private string? ResolveDataFolderFromRegistry(GameType gameType)
     {
-        if (!OperatingSystem.IsWindows())
-        {
-            return null;
-        }
+        if (!OperatingSystem.IsWindows()) return null;
 
-        if (!RegistryInstallPathKeys.TryGetValue(gameType, out var subKeys))
-        {
-            return null;
-        }
+        if (!RegistryInstallPathKeys.TryGetValue(gameType, out var subKeys)) return null;
 
         foreach (var hive in new[] { RegistryHive.LocalMachine, RegistryHive.CurrentUser })
-        {
-            foreach (var view in new[] { RegistryView.Registry64, RegistryView.Registry32 })
+        foreach (var view in new[] { RegistryView.Registry64, RegistryView.Registry32 })
+        foreach (var subKeyPath in subKeys)
+            try
             {
-                foreach (var subKeyPath in subKeys)
+                using var baseKey = RegistryKey.OpenBaseKey(hive, view);
+                using var key = baseKey.OpenSubKey(subKeyPath);
+
+                if (key == null) continue;
+
+                foreach (var valueName in RegistryInstallPathValueNames)
                 {
-                    try
-                    {
-                        using var baseKey = RegistryKey.OpenBaseKey(hive, view);
-                        using var key = baseKey.OpenSubKey(subKeyPath);
-
-                        if (key == null)
-                        {
-                            continue;
-                        }
-
-                        foreach (var valueName in RegistryInstallPathValueNames)
-                        {
-                            if (key.GetValue(valueName) is not string rawPath) continue;
-                            var normalized = NormalizeDataFolderPath(rawPath);
-                            if (!string.IsNullOrWhiteSpace(normalized))
-                            {
-                                return normalized;
-                            }
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.Debug(
-                            "Registry probe failed for {GameType} key {SubKey} ({Hive}/{View}): {Message}",
-                            gameType,
-                            subKeyPath,
-                            hive,
-                            view,
-                            ex.Message);
-                    }
+                    if (key.GetValue(valueName) is not string rawPath) continue;
+                    var normalized = NormalizeDataFolderPath(rawPath);
+                    if (!string.IsNullOrWhiteSpace(normalized)) return normalized;
                 }
             }
-        }
+            catch (Exception ex)
+            {
+                _logger.Debug(
+                    "Registry probe failed for {GameType} key {SubKey} ({Hive}/{View}): {Message}",
+                    gameType,
+                    subKeyPath,
+                    hive,
+                    view,
+                    ex.Message);
+            }
 
         return null;
     }
 
     private static string? NormalizeDataFolderPath(string rawPath)
     {
-        if (string.IsNullOrWhiteSpace(rawPath))
-        {
-            return null;
-        }
+        if (string.IsNullOrWhiteSpace(rawPath)) return null;
 
         var trimmed = rawPath.Trim().Trim('"');
-        if (!Path.IsPathRooted(trimmed))
-        {
-            return null;
-        }
+        if (!Path.IsPathRooted(trimmed)) return null;
 
         if (Directory.Exists(trimmed))
         {
             var dirName =
                 Path.GetFileName(trimmed.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-            if (string.Equals(dirName, "Data", StringComparison.OrdinalIgnoreCase))
-            {
-                return trimmed;
-            }
+            if (string.Equals(dirName, "Data", StringComparison.OrdinalIgnoreCase)) return trimmed;
         }
 
         var dataFolder = Path.Combine(trimmed, "Data");

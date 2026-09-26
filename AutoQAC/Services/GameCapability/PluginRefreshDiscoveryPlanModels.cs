@@ -5,7 +5,7 @@ using AutoQAC.Services.Plugin;
 namespace AutoQAC.Services.GameCapability;
 
 /// <summary>
-/// Selected game context requested by Plugin refresh discovery planning.
+///     Selected game context requested by Plugin refresh discovery planning.
 /// </summary>
 /// <param name="GameType">Game to refresh.</param>
 /// <param name="SelectedLoadOrderPath">Optional load-order path selected during this refresh intent.</param>
@@ -14,7 +14,7 @@ public sealed record PluginRefreshDiscoveryPlanRequest(
     string? SelectedLoadOrderPath);
 
 /// <summary>
-/// Structured outcome from creating a Plugin refresh discovery plan.
+///     Structured outcome from creating a Plugin refresh discovery plan.
 /// </summary>
 /// <param name="Status">Planning outcome kind.</param>
 /// <param name="Plan">Ready plan when <paramref name="Status" /> is <see cref="PluginRefreshDiscoveryPlanStatus.Ready" />.</param>
@@ -25,13 +25,13 @@ public sealed record PluginRefreshDiscoveryPlanResult(
     PluginRefreshConfigurationProjection Configuration)
 {
     /// <summary>
-    /// Gets whether the planner produced a loadable plan.
+    ///     Gets whether the planner produced a loadable plan.
     /// </summary>
     public bool IsReady => Status == PluginRefreshDiscoveryPlanStatus.Ready && Plan is not null;
 }
 
 /// <summary>
-/// Resolved plan for loading plugin rows and later refreshing issue approximations in the same game context.
+///     Resolved plan for loading plugin rows and later refreshing issue approximations in the same game context.
 /// </summary>
 /// <param name="GameType">Game to refresh.</param>
 /// <param name="Mode">Discovery source to use.</param>
@@ -56,7 +56,7 @@ public sealed record PluginRefreshDiscoveryPlan(
     string? Mo2BaseDataFolder);
 
 /// <summary>
-/// Plugin rows loaded from a ready discovery plan.
+///     Plugin rows loaded from a ready discovery plan.
 /// </summary>
 /// <param name="Plan">Discovery plan used for loading.</param>
 /// <param name="Plugins">Loaded plugin rows.</param>
@@ -67,7 +67,7 @@ public sealed record PluginRefreshDiscoveredPlugins(
     PluginLoadingStatus? LoadingStatus);
 
 /// <summary>
-/// Main-window affordances derived from Game capability and current MO2 mode.
+///     Main-window affordances derived from Game capability and current MO2 mode.
 /// </summary>
 /// <param name="GameType">Selected game.</param>
 /// <param name="IsMutagenSupported">Whether automatic Mutagen-backed discovery is available.</param>
@@ -80,7 +80,7 @@ public sealed record PluginRefreshGameAffordance(
     bool CanAttemptIssueApproximation);
 
 /// <summary>
-/// Outcome kinds returned while resolving a Plugin refresh discovery plan.
+///     Outcome kinds returned while resolving a Plugin refresh discovery plan.
 /// </summary>
 public enum PluginRefreshDiscoveryPlanStatus
 {
@@ -94,7 +94,7 @@ public enum PluginRefreshDiscoveryPlanStatus
 }
 
 /// <summary>
-/// Concrete plugin row discovery source chosen by a ready Plugin refresh discovery plan.
+///     Concrete plugin row discovery source chosen by a ready Plugin refresh discovery plan.
 /// </summary>
 public enum PluginRefreshDiscoveryMode
 {

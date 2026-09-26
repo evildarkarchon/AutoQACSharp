@@ -8,11 +8,11 @@ namespace AutoQAC.Services.Cleaning;
 public interface IPluginCleaningRunner
 {
     /// <summary>
-    /// Runs xEdit for one plugin with attempt/retry, log-offset capture before each attempt,
-    /// and process-attach delegated to the termination coordinator. Per D-20: log offset capture
-    /// occurs inside the retry loop, before each xEdit launch — this ordering is protected behavior.
-    /// detachProcess is called exactly once per plugin in a finally block after the retry loop
-    /// (matches CleaningSession once-per-plugin semantics; per R-02 do not detach per attempt).
+    ///     Runs xEdit for one plugin with attempt/retry, log-offset capture before each attempt,
+    ///     and process-attach delegated to the termination coordinator. Per D-20: log offset capture
+    ///     occurs inside the retry loop, before each xEdit launch — this ordering is protected behavior.
+    ///     detachProcess is called exactly once per plugin in a finally block after the retry loop
+    ///     (matches CleaningSession once-per-plugin semantics; per R-02 do not detach per attempt).
     /// </summary>
     /// <param name="plugin">Plugin to clean.</param>
     /// <param name="gameType">Detected game type used for xEdit log names.</param>

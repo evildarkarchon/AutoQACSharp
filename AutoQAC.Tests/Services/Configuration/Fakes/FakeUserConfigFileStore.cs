@@ -36,15 +36,9 @@ internal sealed class FakeUserConfigFileStore : IUserConfigFileStore
     {
         ct.ThrowIfCancellationRequested();
         CallLog.Add("Read");
-        if (ReadFailure != null)
-        {
-            throw ReadFailure;
-        }
+        if (ReadFailure != null) throw ReadFailure;
 
-        if (FileMissing)
-        {
-            return Task.FromResult(new UserConfigReadResult(false, null, null));
-        }
+        if (FileMissing) return Task.FromResult(new UserConfigReadResult(false, null, null));
 
         var content = CurrentContent ?? _serializer.Serialize(new UserConfiguration());
         var hash = CurrentHash ?? ComputeHash(content);
@@ -55,10 +49,7 @@ internal sealed class FakeUserConfigFileStore : IUserConfigFileStore
     {
         ct.ThrowIfCancellationRequested();
         CallLog.Add("Write");
-        if (WriteFailure != null)
-        {
-            throw WriteFailure;
-        }
+        if (WriteFailure != null) throw WriteFailure;
 
         CurrentContent = _serializer.Serialize(config);
         CurrentHash = ComputeHash(CurrentContent);
@@ -69,16 +60,15 @@ internal sealed class FakeUserConfigFileStore : IUserConfigFileStore
     {
         ct.ThrowIfCancellationRequested();
         CallLog.Add("Hash");
-        if (HashFailure != null)
-        {
-            throw HashFailure;
-        }
+        if (HashFailure != null) throw HashFailure;
 
         return Task.FromResult(FileMissing
             ? null
             : CurrentHash ?? (CurrentContent == null ? null : ComputeHash(CurrentContent)));
     }
 
-    public static string ComputeHash(string content) =>
-        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content)));
+    public static string ComputeHash(string content)
+    {
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content)));
+    }
 }

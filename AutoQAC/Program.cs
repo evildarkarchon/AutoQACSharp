@@ -6,48 +6,44 @@ using Microsoft.Windows.AppLifecycle;
 using WinRT;
 using WinUIApplication = Microsoft.UI.Xaml.Application;
 
-namespace AutoQAC
+namespace AutoQAC;
+
+internal sealed class Program
 {
-    internal sealed class Program
+    private const string InstanceKey = "AutoQAC";
+    private static App? _app;
+
+    [STAThread]
+    public static void Main(string[] args)
     {
-        private const string InstanceKey = "AutoQAC";
-        private static App? _app;
+        ComWrappersSupport.InitializeComWrappers();
 
-        [STAThread]
-        public static void Main(string[] args)
+        var instance = AppInstance.FindOrRegisterForKey(InstanceKey);
+        if (!instance.IsCurrent)
         {
-            ComWrappersSupport.InitializeComWrappers();
-
-            var instance = AppInstance.FindOrRegisterForKey(InstanceKey);
-            if (!instance.IsCurrent)
-            {
-                RedirectActivationToAsync(instance).GetAwaiter().GetResult();
-                return;
-            }
-
-            instance.Activated += OnActivated;
-            WinUIApplication.Start(_ =>
-            {
-                var context = new DispatcherQueueSynchronizationContext(DispatcherQueue.GetForCurrentThread());
-                SynchronizationContext.SetSynchronizationContext(context);
-                _app = new App();
-            });
+            RedirectActivationToAsync(instance).GetAwaiter().GetResult();
+            return;
         }
 
-        private static async Task RedirectActivationToAsync(AppInstance instance)
+        instance.Activated += OnActivated;
+        WinUIApplication.Start(_ =>
         {
-            var activatedEventArgs = AppInstance.GetCurrent().GetActivatedEventArgs();
-            await instance.RedirectActivationToAsync(activatedEventArgs);
-        }
+            var context = new DispatcherQueueSynchronizationContext(DispatcherQueue.GetForCurrentThread());
+            SynchronizationContext.SetSynchronizationContext(context);
+            _app = new App();
+        });
+    }
 
-        private static void OnActivated(object? sender, AppActivationArguments args)
-        {
-            if (_app == null)
-            {
-                return;
-            }
+    private static async Task RedirectActivationToAsync(AppInstance instance)
+    {
+        var activatedEventArgs = AppInstance.GetCurrent().GetActivatedEventArgs();
+        await instance.RedirectActivationToAsync(activatedEventArgs);
+    }
 
-            App.ActivateMainWindow();
-        }
+    private static void OnActivated(object? sender, AppActivationArguments args)
+    {
+        if (_app == null) return;
+
+        App.ActivateMainWindow();
     }
 }

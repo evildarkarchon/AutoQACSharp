@@ -16,7 +16,7 @@ public sealed class CleaningCommandReadinessTests
         var xEditPath = await CreateTempFileAsync();
         try
         {
-            var stateService = CreateState(xEditPath: xEditPath);
+            var stateService = CreateState(xEditPath);
             using var refresh = new RecordingPluginRefreshModule();
             refresh.CurrentPublication = RecordingPluginRefreshModule.CreateFreshPublication(
                 rows: [RecordingPluginRefreshModule.CreatePublishedRow(CreatePlugin("NeedsCleaning.esp"))]);
@@ -39,7 +39,7 @@ public sealed class CleaningCommandReadinessTests
         var xEditPath = await CreateTempFileAsync();
         try
         {
-            var stateService = CreateState(xEditPath: xEditPath);
+            var stateService = CreateState(xEditPath);
             using var refresh = new RecordingPluginRefreshModule(
                 RecordingPluginRefreshModule.CreateSnapshot(GameType.SkyrimSe));
             var sut = new CleaningCommandReadiness(refresh, stateService);
@@ -61,7 +61,7 @@ public sealed class CleaningCommandReadinessTests
         var xEditPath = await CreateTempFileAsync();
         try
         {
-            var stateService = CreateState(xEditPath: xEditPath);
+            var stateService = CreateState(xEditPath);
             using var refresh = new RecordingPluginRefreshModule();
             var fresh = RecordingPluginRefreshModule.CreateFreshPublication();
             refresh.CurrentPublication = fresh with
@@ -87,7 +87,7 @@ public sealed class CleaningCommandReadinessTests
         var xEditPath = await CreateTempFileAsync();
         try
         {
-            var stateService = CreateState(xEditPath: xEditPath);
+            var stateService = CreateState(xEditPath);
             using var refresh = new RecordingPluginRefreshModule();
             var skipped = CreatePlugin("Skipped.esp") with { IsInSkipList = true };
             refresh.CurrentPublication = RecordingPluginRefreshModule.CreateFreshPublication(
@@ -98,9 +98,9 @@ public sealed class CleaningCommandReadinessTests
                         isSelected: false),
                     RecordingPluginRefreshModule.CreatePublishedRow(
                         skipped,
-                        isVisible: false,
-                        isSelected: true,
-                        isSkippedByPolicy: true)
+                        false,
+                        true,
+                        true)
                 ]);
             var sut = new CleaningCommandReadiness(refresh, stateService);
 
@@ -118,7 +118,7 @@ public sealed class CleaningCommandReadinessTests
     [Fact]
     public async Task EvaluateAsync_MissingXEditPath_ReturnsXEditNotConfiguredFailure()
     {
-        using var stateService = CreateState(xEditPath: null);
+        using var stateService = CreateState(null);
         using var refresh = new RecordingPluginRefreshModule();
         refresh.CurrentPublication = RecordingPluginRefreshModule.CreateFreshPublication();
         var sut = new CleaningCommandReadiness(refresh, stateService);
@@ -132,7 +132,7 @@ public sealed class CleaningCommandReadinessTests
     [Fact]
     public async Task EvaluateAsync_MissingXEditFile_ReturnsXEditNotFoundFailure()
     {
-        using var stateService = CreateState(xEditPath: @"C:\Missing\SSEEdit.exe");
+        using var stateService = CreateState(@"C:\Missing\SSEEdit.exe");
         using var refresh = new RecordingPluginRefreshModule();
         refresh.CurrentPublication = RecordingPluginRefreshModule.CreateFreshPublication();
         var sut = new CleaningCommandReadiness(refresh, stateService);
@@ -154,7 +154,7 @@ public sealed class CleaningCommandReadinessTests
                 mode: PluginRefreshDiscoveryMode.DirectLoadOrderFile,
                 configuration: configuration,
                 loadOrderPath: null);
-            var stateService = CreateState(xEditPath: xEditPath);
+            var stateService = CreateState(xEditPath);
             using var refresh = new RecordingPluginRefreshModule();
             refresh.CurrentPublication = RecordingPluginRefreshModule.CreateFreshPublication(
                 discoveryPlan: plan,
@@ -180,13 +180,13 @@ public sealed class CleaningCommandReadinessTests
         {
             var loadOrderPath = @"C:\Missing\plugins.txt";
             var configuration = RecordingPluginRefreshModule.CreateConfiguration(
-                loadOrderPath: loadOrderPath,
-                xEditPath: xEditPath);
+                loadOrderPath,
+                xEditPath);
             var plan = RecordingPluginRefreshModule.CreateDiscoveryPlan(
                 mode: PluginRefreshDiscoveryMode.DirectLoadOrderFile,
                 configuration: configuration,
                 loadOrderPath: loadOrderPath);
-            var stateService = CreateState(xEditPath: xEditPath, loadOrderPath: loadOrderPath);
+            var stateService = CreateState(xEditPath, loadOrderPath: loadOrderPath);
             using var refresh = new RecordingPluginRefreshModule();
             refresh.CurrentPublication = RecordingPluginRefreshModule.CreateFreshPublication(
                 discoveryPlan: plan,
@@ -224,10 +224,10 @@ public sealed class CleaningCommandReadinessTests
                 configuration: configuration,
                 mo2LoadOrderPath: loadOrderPath);
             var stateService = CreateState(
-                xEditPath: xEditPath,
-                mo2Mode: true,
-                mo2Path: mo2Path,
-                mo2Profile: "Default");
+                xEditPath,
+                true,
+                mo2Path,
+                "Default");
             using var refresh = new RecordingPluginRefreshModule();
             refresh.CurrentPublication = RecordingPluginRefreshModule.CreateFreshPublication(
                 discoveryPlan: plan,
@@ -244,7 +244,7 @@ public sealed class CleaningCommandReadinessTests
             File.Delete(xEditPath);
             DeleteTempMo2Executable(mo2Path);
             File.Delete(loadOrderPath);
-            instanceDirectory.Delete(recursive: true);
+            instanceDirectory.Delete(true);
         }
     }
 
@@ -271,10 +271,10 @@ public sealed class CleaningCommandReadinessTests
                 configuration: configuration,
                 mo2LoadOrderPath: loadOrderPath);
             var stateService = CreateState(
-                xEditPath: xEditPath,
-                mo2Mode: true,
-                mo2Path: mo2Path,
-                mo2Profile: "Default");
+                xEditPath,
+                true,
+                mo2Path,
+                "Default");
             using var refresh = new RecordingPluginRefreshModule();
             refresh.CurrentPublication = RecordingPluginRefreshModule.CreateFreshPublication(
                 discoveryPlan: plan,
@@ -290,7 +290,7 @@ public sealed class CleaningCommandReadinessTests
         {
             File.Delete(xEditPath);
             File.Delete(loadOrderPath);
-            instanceDirectory.Delete(recursive: true);
+            instanceDirectory.Delete(true);
         }
     }
 
@@ -314,10 +314,10 @@ public sealed class CleaningCommandReadinessTests
                 configuration: configuration,
                 mo2LoadOrderPath: loadOrderPath);
             var stateService = CreateState(
-                xEditPath: xEditPath,
-                mo2Mode: true,
-                mo2Path: mo2Path,
-                mo2Profile: "Default");
+                xEditPath,
+                true,
+                mo2Path,
+                "Default");
             using var refresh = new RecordingPluginRefreshModule();
             refresh.CurrentPublication = RecordingPluginRefreshModule.CreateFreshPublication(
                 discoveryPlan: plan,
@@ -335,7 +335,7 @@ public sealed class CleaningCommandReadinessTests
             File.Delete(xEditPath);
             File.Delete(mo2Path);
             File.Delete(loadOrderPath);
-            instanceDirectory.Delete(recursive: true);
+            instanceDirectory.Delete(true);
         }
     }
 
@@ -359,10 +359,10 @@ public sealed class CleaningCommandReadinessTests
                 configuration: configuration,
                 mo2LoadOrderPath: loadOrderPath);
             var stateService = CreateState(
-                xEditPath: xEditPath,
-                mo2Mode: true,
-                mo2Path: mo2Path,
-                mo2Profile: null);
+                xEditPath,
+                true,
+                mo2Path,
+                null);
             using var refresh = new RecordingPluginRefreshModule();
             refresh.CurrentPublication = RecordingPluginRefreshModule.CreateFreshPublication(
                 discoveryPlan: plan,
@@ -379,7 +379,7 @@ public sealed class CleaningCommandReadinessTests
             File.Delete(xEditPath);
             DeleteTempMo2Executable(mo2Path);
             File.Delete(loadOrderPath);
-            instanceDirectory.Delete(recursive: true);
+            instanceDirectory.Delete(true);
         }
     }
 
@@ -402,10 +402,10 @@ public sealed class CleaningCommandReadinessTests
                 configuration: configuration,
                 mo2LoadOrderPath: @"C:\Missing\loadorder.txt");
             var stateService = CreateState(
-                xEditPath: xEditPath,
-                mo2Mode: true,
-                mo2Path: mo2Path,
-                mo2Profile: "Default");
+                xEditPath,
+                true,
+                mo2Path,
+                "Default");
             using var refresh = new RecordingPluginRefreshModule();
             refresh.CurrentPublication = RecordingPluginRefreshModule.CreateFreshPublication(
                 discoveryPlan: plan,
@@ -421,7 +421,7 @@ public sealed class CleaningCommandReadinessTests
         {
             File.Delete(xEditPath);
             DeleteTempMo2Executable(mo2Path);
-            instanceDirectory.Delete(recursive: true);
+            instanceDirectory.Delete(true);
         }
     }
 
@@ -445,13 +445,15 @@ public sealed class CleaningCommandReadinessTests
         return stateService;
     }
 
-    private static PluginInfo CreatePlugin(string fileName) =>
-        new()
+    private static PluginInfo CreatePlugin(string fileName)
+    {
+        return new PluginInfo
         {
             FileName = fileName,
             FullPath = $@"C:\Game\Data\{fileName}",
             DetectedGameType = GameType.SkyrimSe
         };
+    }
 
     private static async Task<string> CreateTempFileAsync()
     {
@@ -472,9 +474,6 @@ public sealed class CleaningCommandReadinessTests
     {
         File.Delete(path);
         var directory = Path.GetDirectoryName(path);
-        if (!string.IsNullOrWhiteSpace(directory) && Directory.Exists(directory))
-        {
-            Directory.Delete(directory, recursive: true);
-        }
+        if (!string.IsNullOrWhiteSpace(directory) && Directory.Exists(directory)) Directory.Delete(directory, true);
     }
 }

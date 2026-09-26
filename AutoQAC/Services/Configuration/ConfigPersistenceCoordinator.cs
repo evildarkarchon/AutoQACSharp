@@ -14,16 +14,12 @@ namespace AutoQAC.Services.Configuration;
 
 internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinator
 {
-    private readonly IUserConfigFileStore _fileStore;
-    private readonly IStateService _stateService;
-    private readonly ILoggingService _logger;
-    private readonly IDeserializer _yamlValidator;
     private readonly TimeSpan _autoFlushDelay;
     private readonly bool _autoFlushEnabled;
-    private readonly Lock _snapshotLock = new();
-    private readonly Subject<ConfigPersistenceFailure> _failures = new();
-    private readonly Subject<ConfigPersistenceResult> _persistenceResults = new();
     private readonly Subject<UserConfiguration> _configurationAccepted = new();
+    private readonly Subject<ConfigPersistenceFailure> _failures = new();
+    private readonly IUserConfigFileStore _fileStore;
+    private readonly ILoggingService _logger;
 
     private readonly Channel<ConfigPersistenceOperation> _operations =
         Channel.CreateUnbounded<ConfigPersistenceOperation>(new UnboundedChannelOptions
@@ -33,29 +29,37 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
             AllowSynchronousContinuations = false
         });
 
+    private readonly Subject<ConfigPersistenceResult> _persistenceResults = new();
+    private readonly Lock _snapshotLock = new();
+    private readonly IStateService _stateService;
+    private readonly DiscoverySettingsAdmission? _admission;
+    private readonly IDeserializer _yamlValidator;
+
     private UserConfiguration _activeConfig = new();
-    private UserConfiguration _lastKnownGood = new();
-    private UserConfiguration? _pendingApp;
-    private UserConfigReadResult? _deferredCandidate;
-    private IDisposable? _cleaningSubscription;
-    private CancellationTokenSource? _autoFlushCts;
-    private CancellationTokenSource? _consumerCts;
-    private Task? _consumerTask;
-    private ConfigPersistenceFailure? _lastFailure;
-    private string? _lastWrittenHash;
-    private string? _lastKnownExternalHash;
     private long _appGeneration;
     private long _appGenerationProducer;
-    private int _started;
+    private CancellationTokenSource? _autoFlushCts;
+    private IDisposable? _cleaningSubscription;
+    private CancellationTokenSource? _consumerCts;
+    private Task? _consumerTask;
+    private UserConfigReadResult? _deferredCandidate;
     private int _disposed;
+    private ConfigPersistenceFailure? _lastFailure;
+    private string? _lastKnownExternalHash;
+    private UserConfiguration _lastKnownGood = new();
+    private string? _lastWrittenHash;
+    private UserConfiguration? _pendingApp;
+    private int _started;
 
     public ConfigPersistenceCoordinator(
         IUserConfigFileStore fileStore,
         IStateService stateService,
         ILoggingService logger,
-        TimeSpan? autoFlushDelay = null)
+        TimeSpan? autoFlushDelay = null,
+        DiscoverySettingsAdmission? admission = null)
     {
         _fileStore = fileStore;
+        _admission = admission;
         _stateService = stateService;
         _logger = logger;
         _autoFlushDelay = autoFlushDelay ?? TimeSpan.FromMilliseconds(500);
@@ -75,18 +79,16 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
     public ConfigPersistenceFailure? LastFailure => Volatile.Read(ref _lastFailure);
 
     /// <summary>
-    /// Starts the single-reader coordinator loop and the cleaning transition subscription.
+    ///     Starts the single-reader coordinator loop and the cleaning transition subscription.
     /// </summary>
     public Task StartAsync(CancellationToken ct = default)
     {
         ThrowIfDisposed();
         ct.ThrowIfCancellationRequested();
-        if (Interlocked.Exchange(ref _started, 1) == 1)
-        {
-            return Task.CompletedTask;
-        }
+        if (Interlocked.Exchange(ref _started, 1) == 1) return Task.CompletedTask;
 
         _consumerCts = new CancellationTokenSource();
+        if (_admission is not null) _admission.AvailabilityChanged += OnAdmissionAvailable;
         _cleaningSubscription = _stateService.StateChanged
             .Select(state => state.IsCleaning)
             .DistinctUntilChanged()
@@ -98,20 +100,16 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
     }
 
     /// <summary>
-    /// Attempts one final bounded flush, then completes the operation channel and waits for drain.
+    ///     Attempts one final bounded flush, then completes the operation channel and waits for drain.
     /// </summary>
     public async Task StopAsync(CancellationToken ct = default)
     {
-        if (Interlocked.Exchange(ref _disposed, 1) == 1)
-        {
-            return;
-        }
+        if (Interlocked.Exchange(ref _disposed, 1) == 1) return;
 
-        if (_autoFlushCts != null)
-        {
-            await _autoFlushCts.CancelAsync().ConfigureAwait(false);
-        }
+        if (_autoFlushCts != null) await _autoFlushCts.CancelAsync().ConfigureAwait(false);
+
         _cleaningSubscription?.Dispose();
+        if (_admission is not null) _admission.AvailabilityChanged -= OnAdmissionAvailable;
 
         if (_consumerTask == null)
         {
@@ -122,7 +120,6 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
 
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         if (_operations.Writer.TryWrite(new ShutdownOperation(completion)))
-        {
             try
             {
                 await completion.Task.WaitAsync(TimeSpan.FromSeconds(5), ct).ConfigureAwait(false);
@@ -131,7 +128,6 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
             {
                 _logger.Warning("[ConfigPersistence] Shutdown flush did not complete within the bounded wait");
             }
-        }
 
         _operations.Writer.TryComplete();
         try
@@ -140,10 +136,8 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
         }
         catch (TimeoutException)
         {
-            if (_consumerCts != null)
-            {
-                await _consumerCts.CancelAsync().ConfigureAwait(false);
-            }
+            if (_consumerCts != null) await _consumerCts.CancelAsync().ConfigureAwait(false);
+
             _logger.Warning("[ConfigPersistence] Coordinator consumer did not drain before shutdown timeout");
         }
 
@@ -151,7 +145,7 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
     }
 
     /// <summary>
-    /// Returns a deep snapshot of the currently active configuration without blocking the consumer loop.
+    ///     Returns a deep snapshot of the currently active configuration without blocking the consumer loop.
     /// </summary>
     public Task<UserConfiguration> LoadCurrentAsync(CancellationToken ct = default)
     {
@@ -164,7 +158,7 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
     }
 
     /// <summary>
-    /// Queues an optimistic app-save intent. Intermediate pending saves coalesce in the consumer.
+    ///     Queues an optimistic app-save intent. Intermediate pending saves coalesce in the consumer.
     /// </summary>
     public async Task SaveUserConfigAsync(UserConfiguration config, CancellationToken ct = default)
     {
@@ -177,7 +171,7 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
     }
 
     /// <summary>
-    /// Queues a flush barrier and returns the typed persistence result after the consumer drains it.
+    ///     Queues a flush barrier and returns the typed persistence result after the consumer drains it.
     /// </summary>
     public async Task<ConfigPersistenceResult> FlushPendingSavesAsync(CancellationToken ct = default)
     {
@@ -188,7 +182,7 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
     }
 
     /// <summary>
-    /// Queues a reload barrier that validates disk YAML before mutating active state.
+    ///     Queues a reload barrier that validates disk YAML before mutating active state.
     /// </summary>
     public async Task<ConfigPersistenceResult> ReloadFromDiskAsync(CancellationToken ct = default)
     {
@@ -199,7 +193,7 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
     }
 
     /// <summary>
-    /// Submits a watcher signal; current file content remains the authority when the consumer runs.
+    ///     Submits a watcher signal; current file content remains the authority when the consumer runs.
     /// </summary>
     public void NotifySettingsFileChanged(ConfigFileSignalKind kind)
     {
@@ -210,7 +204,6 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
     private async Task RunAsync(CancellationToken ct)
     {
         await foreach (var op in _operations.Reader.ReadAllAsync(ct).ConfigureAwait(false))
-        {
             try
             {
                 await ApplyOperationAsync(op, ct).ConfigureAwait(false);
@@ -223,25 +216,26 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
             {
                 _logger.Error(ex, "[ConfigPersistence] Operation handler threw");
             }
-        }
     }
 
-    private Task ApplyOperationAsync(ConfigPersistenceOperation operation, CancellationToken ct) => operation switch
+    private Task ApplyOperationAsync(ConfigPersistenceOperation operation, CancellationToken ct)
     {
-        SaveIntent save => ApplySaveAsync(save),
-        FlushBarrier flush => ApplyFlushAsync(flush, ct),
-        WatcherObserved watcher => ApplyWatcherAsync(watcher, ct),
-        CleaningStateChanged cleaning => ApplyCleaningStateAsync(cleaning),
-        ReloadRequest reload => ApplyReloadRequestAsync(reload, ct),
-        ShutdownOperation shutdown => ApplyShutdownAsync(shutdown, ct),
-        _ => Task.CompletedTask
-    };
+        return operation switch
+        {
+            SaveIntent save => ApplySaveAsync(save),
+            FlushBarrier flush => ApplyFlushAsync(flush, ct),
+            WatcherObserved watcher => ApplyWatcherAsync(watcher, ct),
+            CleaningStateChanged cleaning => ApplyCleaningStateAsync(cleaning),
+            ReloadRequest reload => ApplyReloadRequestAsync(reload, ct),
+            ShutdownOperation shutdown => ApplyShutdownAsync(shutdown, ct),
+            _ => Task.CompletedTask
+        };
+    }
 
     private Task ApplySaveAsync(SaveIntent intent)
     {
         _appGeneration = Math.Max(_appGeneration, intent.Generation);
         _pendingApp = intent.Config.Copy();
-        _deferredCandidate = null;
         SetActive(intent.Config);
         SafePublishAccepted(intent.Config.Copy());
         ScheduleAutoFlush();
@@ -259,10 +253,8 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
     private async Task<ConfigPersistenceResult> FlushPendingInsideConsumerAsync(CancellationToken ct)
     {
         if (_pendingApp == null)
-        {
             return new ConfigPersistenceResult(ConfigPersistenceStatusKind.NoOp, ConfigPersistenceOperationKind.Flush,
                 _appGeneration, null);
-        }
 
         try
         {
@@ -273,6 +265,8 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
             _lastWrittenHash = hash;
             _lastKnownExternalHash = hash;
             _pendingApp = null;
+            // The durable app write has now replaced any external content captured while admission was busy.
+            _deferredCandidate = null;
             _lastFailure = null;
             return new ConfigPersistenceResult(ConfigPersistenceStatusKind.Success,
                 ConfigPersistenceOperationKind.Flush, _appGeneration, null);
@@ -295,6 +289,7 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
         }
     }
 
+    /// <summary>Reads a distinct watcher candidate and applies it only when settings admission is available.</summary>
     private async Task ApplyWatcherAsync(WatcherObserved op, CancellationToken ct)
     {
         if (op.Kind == ConfigFileSignalKind.Error)
@@ -360,7 +355,8 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
             return;
         }
 
-        if (_stateService.CurrentState.IsCleaning)
+        using var externalLease = _admission?.TryEnterExternalSettings();
+        if (IsCleaning || (_admission is not null && externalLease is null))
         {
             _deferredCandidate = read.ReadResult;
             _lastKnownExternalHash = read.ReadResult.Hash ?? currentHash;
@@ -372,12 +368,17 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
         ApplyCandidate(read.ReadResult, ConfigPersistenceOperationKind.Watcher);
     }
 
+    private bool IsCleaning => (_admission?.IsCleaning ?? false) || _stateService.CurrentState.IsCleaning;
+
+    /// <summary>Queues a retry after settings mutation or cleaning releases its admission lease.</summary>
+    private void OnAdmissionAvailable(object? sender, EventArgs e) => TryWrite(new CleaningStateChanged(false));
+
+    /// <summary>Applies the latest deferred candidate once cleaning and admitted settings writes have finished.</summary>
     private Task ApplyCleaningStateAsync(CleaningStateChanged cleaning)
     {
-        if (cleaning.IsCleaning || _deferredCandidate == null)
-        {
-            return Task.CompletedTask;
-        }
+        if (cleaning.IsCleaning || IsCleaning || _deferredCandidate == null) return Task.CompletedTask;
+        using var externalLease = _admission?.TryEnterExternalSettings();
+        if (_admission is not null && externalLease is null) return Task.CompletedTask;
 
         var candidate = _deferredCandidate;
         _deferredCandidate = null;
@@ -386,6 +387,7 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
         return Task.CompletedTask;
     }
 
+    /// <summary>Flushes queued app writes before reading disk; returns NoOp when application is deferred by admission.</summary>
     private async Task ApplyReloadRequestAsync(ReloadRequest reload, CancellationToken ct)
     {
         if (_pendingApp != null)
@@ -405,7 +407,19 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
         }
 
         var read = await ReadForReloadAsync(ConfigPersistenceOperationKind.Reload, ct).ConfigureAwait(false);
-        var result = read.Result ?? ValidateAndApply(read.ReadResult, ConfigPersistenceOperationKind.Reload);
+        using var externalLease = _admission?.TryEnterExternalSettings();
+        ConfigPersistenceResult result;
+        if (read.Result is not null)
+            result = read.Result;
+        else if (IsCleaning || (_admission is not null && externalLease is null))
+        {
+            // Never await admission inside the consumer: the admitted settings caller may be awaiting our flush.
+            _deferredCandidate = read.ReadResult;
+            result = new ConfigPersistenceResult(ConfigPersistenceStatusKind.NoOp,
+                ConfigPersistenceOperationKind.Reload, _appGeneration, null);
+        }
+        else
+            result = ValidateAndApply(read.ReadResult, ConfigPersistenceOperationKind.Reload);
         SafePublishResult(result);
         reload.Completion.TrySetResult(result);
     }
@@ -418,10 +432,8 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
             var result = await FlushPendingInsideConsumerAsync(linked.Token).ConfigureAwait(false);
             if (result.Status == ConfigPersistenceStatusKind.Failed)
-            {
                 _logger.Warning("[ConfigPersistence] Final shutdown flush failed: {SafeSummary}",
                     result.Failure?.SafeSummary ?? "unknown");
-            }
         }
         catch (Exception ex) when (ex is OperationCanceledException or TimeoutException)
         {
@@ -483,10 +495,7 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
         try
         {
             var candidate = _yamlValidator.Deserialize<UserConfiguration>(readResult.Content);
-            if (candidate == null)
-            {
-                throw new InvalidOperationException("YAML deserialized to null");
-            }
+            if (candidate == null) throw new InvalidOperationException("YAML deserialized to null");
 
             var copy = candidate.Copy();
             SetActive(copy);
@@ -520,7 +529,8 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
     }
 
     /// <summary>
-    /// Publishes to the configuration-accepted subject without letting observer exceptions escape into the single-reader operation loop.
+    ///     Publishes to the configuration-accepted subject without letting observer exceptions escape into the single-reader
+    ///     operation loop.
     /// </summary>
     /// <param name="config">The accepted configuration snapshot to publish to observers.</param>
     private void SafePublishAccepted(UserConfiguration config)
@@ -536,7 +546,8 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
     }
 
     /// <summary>
-    /// Publishes to the persistence-results subject without letting observer exceptions escape into the single-reader operation loop.
+    ///     Publishes to the persistence-results subject without letting observer exceptions escape into the single-reader
+    ///     operation loop.
     /// </summary>
     /// <param name="result">The typed persistence result to publish to observers.</param>
     private void SafePublishResult(ConfigPersistenceResult result)
@@ -552,7 +563,7 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
     }
 
     /// <summary>
-    /// Records and publishes a failure without letting observer exceptions escape into the single-reader operation loop.
+    ///     Records and publishes a failure without letting observer exceptions escape into the single-reader operation loop.
     /// </summary>
     /// <param name="failure">The safe typed persistence failure to record and publish.</param>
     private void SafePublishFailure(ConfigPersistenceFailure failure)
@@ -571,17 +582,19 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
     private ConfigPersistenceFailure CreateFailure(
         ConfigPersistenceOperationKind operation,
         ConfigPersistenceFailureKind kind,
-        string safeSummary) => new(operation, kind, safeSummary, null, _appGeneration);
+        string safeSummary)
+    {
+        return new ConfigPersistenceFailure(operation, kind, safeSummary, null, _appGeneration);
+    }
 
-    private static TaskCompletionSource<ConfigPersistenceResult> CreateResultCompletion() =>
-        new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private static TaskCompletionSource<ConfigPersistenceResult> CreateResultCompletion()
+    {
+        return new TaskCompletionSource<ConfigPersistenceResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
 
     private void ScheduleAutoFlush()
     {
-        if (!_autoFlushEnabled)
-        {
-            return;
-        }
+        if (!_autoFlushEnabled) return;
 
         _autoFlushCts?.Cancel();
         _autoFlushCts?.Dispose();
@@ -605,17 +618,12 @@ internal sealed class ConfigPersistenceCoordinator : IConfigPersistenceCoordinat
     private void TryWrite(ConfigPersistenceOperation operation)
     {
         if (!_operations.Writer.TryWrite(operation) && Volatile.Read(ref _disposed) == 0)
-        {
             ObjectDisposedException.ThrowIf(true, this);
-        }
     }
 
     private void ThrowIfDisposed()
     {
-        if (Volatile.Read(ref _disposed) != 0)
-        {
-            ObjectDisposedException.ThrowIf(true, this);
-        }
+        if (Volatile.Read(ref _disposed) != 0) ObjectDisposedException.ThrowIf(true, this);
     }
 
     private void DisposeSubjects()

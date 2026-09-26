@@ -16,19 +16,21 @@ using Microsoft.UI.Xaml;
 
 namespace AutoQAC.Views;
 
-public sealed partial class MainWindow : Window
+public sealed partial class MainWindow
 {
+    private readonly IBackupService? _backupService;
+    private readonly ICleaningSession? _cleaningSession;
+    private readonly IConfigurationService? _configService;
+    private readonly IDiscoverySettingsModule? _discoverySettingsModule;
+    private readonly DiscoverySettingsAdmission? _discoverySettingsAdmission;
+    private readonly IFileDialogService? _fileDialog;
     private readonly List<IDisposable> _interactionRegistrations = [];
-    private ILoggingService? _logger;
-    private IFileDialogService? _fileDialog;
-    private IConfigurationService? _configService;
-    private IStateService? _stateService;
-    private ICleaningSession? _cleaningSession;
-    private IBackupService? _backupService;
-    private IMessageDialogService? _messageDialog;
-    private IUiDispatcher? _uiDispatcher;
-    private IUiFrameworkVersionProvider? _uiFrameworkVersionProvider;
-    private IWindowContextProvider? _windowContextProvider;
+    private readonly ILoggingService? _logger;
+    private readonly IMessageDialogService? _messageDialog;
+    private readonly IStateService? _stateService;
+    private readonly IUiDispatcher? _uiDispatcher;
+    private readonly IUiFrameworkVersionProvider? _uiFrameworkVersionProvider;
+    private readonly IWindowContextProvider? _windowContextProvider;
 
     public MainWindow()
     {
@@ -48,12 +50,16 @@ public sealed partial class MainWindow : Window
         IMessageDialogService messageDialog,
         IUiDispatcher uiDispatcher,
         IUiFrameworkVersionProvider uiFrameworkVersionProvider,
-        IWindowContextProvider windowContextProvider) : this()
+        IWindowContextProvider windowContextProvider,
+        IDiscoverySettingsModule discoverySettingsModule,
+        DiscoverySettingsAdmission discoverySettingsAdmission) : this()
     {
         _windowContextProvider = windowContextProvider;
         _logger = logger;
         _fileDialog = fileDialog;
         _configService = configService;
+        _discoverySettingsModule = discoverySettingsModule;
+        _discoverySettingsAdmission = discoverySettingsAdmission;
         _stateService = stateService;
         _cleaningSession = cleaningSession;
         _backupService = backupService;
@@ -76,14 +82,14 @@ public sealed partial class MainWindow : Window
         _interactionRegistrations.Add(viewModel.ShowAboutInteraction.RegisterHandler(ShowAboutAsync));
     }
 
-    private void OnRootLoaded(object sender, RoutedEventArgs e) => RegisterWindowContext();
+    private void OnRootLoaded(object sender, RoutedEventArgs e)
+    {
+        RegisterWindowContext();
+    }
 
     private void OnClosed(object sender, WindowEventArgs e)
     {
-        foreach (var registration in _interactionRegistrations)
-        {
-            registration.Dispose();
-        }
+        foreach (var registration in _interactionRegistrations) registration.Dispose();
 
         _interactionRegistrations.Clear();
         Root.Loaded -= OnRootLoaded;
@@ -93,10 +99,7 @@ public sealed partial class MainWindow : Window
     private void RegisterWindowContext()
     {
         var xamlRoot = Root.XamlRoot;
-        if (_windowContextProvider is null || xamlRoot is null)
-        {
-            return;
-        }
+        if (_windowContextProvider is null || xamlRoot is null) return;
 
         _windowContextProvider.SetContext(AppWindow.Id, xamlRoot);
     }
@@ -104,18 +107,12 @@ public sealed partial class MainWindow : Window
     private void SetWindowIcon()
     {
         var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "AutoQAC.ico");
-        if (File.Exists(iconPath))
-        {
-            AppWindow.SetIcon(iconPath);
-        }
+        if (File.Exists(iconPath)) AppWindow.SetIcon(iconPath);
     }
 
     private async Task<Unit> ShowCleaningResultsAsync(CleaningSessionResult input)
     {
-        if (_logger is null || _fileDialog is null)
-        {
-            return Unit.Default;
-        }
+        if (_logger is null || _fileDialog is null) return Unit.Default;
 
         var resultsViewModel = new CleaningResultsViewModel(input, _logger, _fileDialog);
         var resultsWindow = new CleaningResultsWindow(resultsViewModel);
@@ -125,12 +122,11 @@ public sealed partial class MainWindow : Window
 
     private async Task<bool> ShowSettingsAsync(Unit input)
     {
-        if (_logger is null || _configService is null || _uiDispatcher is null || _windowContextProvider is null)
-        {
-            return false;
-        }
+        if (_logger is null || _configService is null || _uiDispatcher is null ||
+            _windowContextProvider is null) return false;
 
-        var settingsViewModel = new SettingsViewModel(_configService, _logger, _uiDispatcher, _fileDialog);
+        var settingsViewModel = new SettingsViewModel(_configService, _logger, _uiDispatcher, _fileDialog,
+            _discoverySettingsModule, _discoverySettingsAdmission);
         await settingsViewModel.LoadSettingsAsync();
 
         try
@@ -146,12 +142,11 @@ public sealed partial class MainWindow : Window
 
     private async Task<bool> ShowSkipListAsync(Unit input)
     {
-        if (_logger is null || _configService is null || _stateService is null || _windowContextProvider is null)
-        {
-            return false;
-        }
+        if (_logger is null || _configService is null || _stateService is null ||
+            _windowContextProvider is null) return false;
 
-        var skipListViewModel = new SkipListViewModel(_configService, _stateService, _logger);
+        var skipListViewModel = new SkipListViewModel(_configService, _stateService, _logger,
+            _discoverySettingsModule, _discoverySettingsAdmission, _uiDispatcher);
         await skipListViewModel.LoadSkipListAsync();
 
         try
@@ -169,9 +164,7 @@ public sealed partial class MainWindow : Window
     {
         if (_stateService is null || _messageDialog is null || _logger is null ||
             _uiDispatcher is null)
-        {
             return Task.FromResult(Unit.Default);
-        }
 
         var progressViewModel =
             new ProgressViewModel(_stateService, input, _messageDialog, _logger, _uiDispatcher);
@@ -189,10 +182,7 @@ public sealed partial class MainWindow : Window
 
         void DisposeProgressViewModel()
         {
-            if (progressDisposed)
-            {
-                return;
-            }
+            if (progressDisposed) return;
 
             progressDisposed = true;
             progressViewModel.Dispose();
@@ -203,9 +193,7 @@ public sealed partial class MainWindow : Window
     {
         if (_stateService is null || _cleaningSession is null || _messageDialog is null || _logger is null ||
             _uiDispatcher is null)
-        {
             return Task.FromResult(Unit.Default);
-        }
 
         var progressViewModel =
             new ProgressViewModel(_stateService, _cleaningSession, _messageDialog, _logger, _uiDispatcher);
@@ -225,9 +213,7 @@ public sealed partial class MainWindow : Window
     private async Task<Unit> ShowRestoreAsync(Unit input)
     {
         if (_backupService is null || _messageDialog is null || _logger is null || _uiDispatcher is null)
-        {
             return Unit.Default;
-        }
 
         var vm = Root.DataContext as MainWindowViewModel;
         var dataFolderPath = vm?.Configuration.GameDataFolder;
@@ -250,10 +236,7 @@ public sealed partial class MainWindow : Window
 
     private async Task<Unit> ShowAboutAsync(Unit input)
     {
-        if (_uiFrameworkVersionProvider is null || _windowContextProvider is null)
-        {
-            return Unit.Default;
-        }
+        if (_uiFrameworkVersionProvider is null || _windowContextProvider is null) return Unit.Default;
 
         var aboutViewModel = new AboutViewModel(_uiFrameworkVersionProvider);
         var aboutWindow = new AboutWindow(_windowContextProvider, aboutViewModel);

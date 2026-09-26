@@ -27,15 +27,21 @@ public sealed class BackupSessionCoordinatorTests : IDisposable
     public void Dispose()
     {
         if (!Directory.Exists(_testRoot)) return;
-        try { Directory.Delete(_testRoot, recursive: true); }
-        catch { /* Best-effort cleanup */ }
+        try
+        {
+            Directory.Delete(_testRoot, true);
+        }
+        catch
+        {
+            /* Best-effort cleanup */
+        }
     }
 
     [Fact]
     public async Task BeginSessionAsync_NonMo2Mode_BackupEnabled_CreatesSessionDirectory_ReturnsPath()
     {
         // Arrange
-        var plan = CreatePlan(backupEnabled: true, isMo2Mode: false);
+        var plan = CreatePlan(true, false);
         var backupRoot = Path.Combine(_testRoot, "AutoQAC Backups");
         var sessionDir = Path.Combine(backupRoot, "session");
         _backupMock.GetBackupRoot(Arg.Any<string>()).Returns(backupRoot);
@@ -54,7 +60,7 @@ public sealed class BackupSessionCoordinatorTests : IDisposable
     public async Task BeginSessionAsync_Mo2Mode_ReturnsNull_AndDoesNotCreateDirectory()
     {
         // Arrange
-        var plan = CreatePlan(backupEnabled: true, isMo2Mode: true);
+        var plan = CreatePlan(true, true);
 
         // Act
         var result = await _sut.BeginSessionAsync(plan, CancellationToken.None);
@@ -69,11 +75,14 @@ public sealed class BackupSessionCoordinatorTests : IDisposable
     {
         // Arrange
         var plugin = CreatePlugin("Canceled.esp");
-        _backupMock.BackupPluginAsync(plugin, Arg.Any<string>(), Arg.Any<IProgress<BackupCopyProgress>?>(), Arg.Any<CancellationToken>())
-            .Returns(new BackupCreateResult(BackupOperationStatus.Canceled, plugin.FileName, 10, 100, BackupFailureReason.Canceled));
+        _backupMock.BackupPluginAsync(plugin, Arg.Any<string>(), Arg.Any<IProgress<BackupCopyProgress>?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new BackupCreateResult(BackupOperationStatus.Canceled, plugin.FileName, 10, 100,
+                BackupFailureReason.Canceled));
 
         // Act
-        var outcome = await _sut.RunPluginBackupAsync(plugin, _testRoot, CreateDecisionAdapter(), CancellationToken.None);
+        var outcome =
+            await _sut.RunPluginBackupAsync(plugin, _testRoot, CreateDecisionAdapter(), CancellationToken.None);
 
         // Assert
         outcome.Kind.Should().Be(PluginBackupOutcomeKind.Canceled);
@@ -87,8 +96,10 @@ public sealed class BackupSessionCoordinatorTests : IDisposable
     {
         // Arrange
         var plugin = CreatePlugin("Skip.esp");
-        _backupMock.BackupPluginAsync(plugin, Arg.Any<string>(), Arg.Any<IProgress<BackupCopyProgress>?>(), Arg.Any<CancellationToken>())
-            .Returns(new BackupCreateResult(BackupOperationStatus.Failed, plugin.FileName, 0, null, BackupFailureReason.TargetWriteFailed));
+        _backupMock.BackupPluginAsync(plugin, Arg.Any<string>(), Arg.Any<IProgress<BackupCopyProgress>?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new BackupCreateResult(BackupOperationStatus.Failed, plugin.FileName, 0, null,
+                BackupFailureReason.TargetWriteFailed));
 
         // Act
         var outcome = await _sut.RunPluginBackupAsync(plugin, _testRoot,
@@ -106,8 +117,10 @@ public sealed class BackupSessionCoordinatorTests : IDisposable
     {
         // Arrange
         var plugin = CreatePlugin("Abort.esp");
-        _backupMock.BackupPluginAsync(plugin, Arg.Any<string>(), Arg.Any<IProgress<BackupCopyProgress>?>(), Arg.Any<CancellationToken>())
-            .Returns(new BackupCreateResult(BackupOperationStatus.Failed, plugin.FileName, 0, null, BackupFailureReason.AccessDenied));
+        _backupMock.BackupPluginAsync(plugin, Arg.Any<string>(), Arg.Any<IProgress<BackupCopyProgress>?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new BackupCreateResult(BackupOperationStatus.Failed, plugin.FileName, 0, null,
+                BackupFailureReason.AccessDenied));
 
         // Act
         var outcome = await _sut.RunPluginBackupAsync(plugin, _testRoot,
@@ -123,8 +136,10 @@ public sealed class BackupSessionCoordinatorTests : IDisposable
     {
         // Arrange
         var plugin = CreatePlugin("Continue.esp");
-        _backupMock.BackupPluginAsync(plugin, Arg.Any<string>(), Arg.Any<IProgress<BackupCopyProgress>?>(), Arg.Any<CancellationToken>())
-            .Returns(new BackupCreateResult(BackupOperationStatus.Failed, plugin.FileName, 0, null, BackupFailureReason.AccessDenied));
+        _backupMock.BackupPluginAsync(plugin, Arg.Any<string>(), Arg.Any<IProgress<BackupCopyProgress>?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new BackupCreateResult(BackupOperationStatus.Failed, plugin.FileName, 0, null,
+                BackupFailureReason.AccessDenied));
 
         // Act
         var outcome = await _sut.RunPluginBackupAsync(plugin, _testRoot,
@@ -141,7 +156,8 @@ public sealed class BackupSessionCoordinatorTests : IDisposable
         // Arrange
         var entries = new[] { CreateEntry("Warn.esp") };
         var retentionResult = new BackupRetentionCleanupResult(BackupOperationStatus.Warning, []);
-        _backupMock.CleanupOldSessionsAsync(Arg.Any<string>(), 3, _testRoot, Arg.Any<IProgress<BackupCopyProgress>?>(), Arg.Any<CancellationToken>())
+        _backupMock.CleanupOldSessionsAsync(Arg.Any<string>(), 3, _testRoot, Arg.Any<IProgress<BackupCopyProgress>?>(),
+                Arg.Any<CancellationToken>())
             .Returns(retentionResult);
 
         // Act
@@ -151,7 +167,8 @@ public sealed class BackupSessionCoordinatorTests : IDisposable
         result.Should().Be(retentionResult);
         await _backupMock.Received(1).WriteSessionMetadataAsync(
             _testRoot,
-            Arg.Is<BackupSession>(session => session.Plugins.Count == 1 && session.GameType == nameof(GameType.SkyrimSe)),
+            Arg.Is<BackupSession>(session =>
+                session.Plugins.Count == 1 && session.GameType == nameof(GameType.SkyrimSe)),
             Arg.Any<CancellationToken>());
     }
 
@@ -160,11 +177,13 @@ public sealed class BackupSessionCoordinatorTests : IDisposable
     {
         // Arrange
         var plugin = CreatePlugin("State.esp");
-        _backupMock.BackupPluginAsync(plugin, Arg.Any<string>(), Arg.Any<IProgress<BackupCopyProgress>?>(), Arg.Any<CancellationToken>())
+        _backupMock.BackupPluginAsync(plugin, Arg.Any<string>(), Arg.Any<IProgress<BackupCopyProgress>?>(),
+                Arg.Any<CancellationToken>())
             .Returns(new BackupCreateResult(BackupOperationStatus.Complete, plugin.FileName, 100, 100, null));
 
         // Act
-        var outcome = await _sut.RunPluginBackupAsync(plugin, _testRoot, CreateDecisionAdapter(), CancellationToken.None);
+        var outcome =
+            await _sut.RunPluginBackupAsync(plugin, _testRoot, CreateDecisionAdapter(), CancellationToken.None);
 
         // Assert
         outcome.Kind.Should().Be(PluginBackupOutcomeKind.Succeeded);
@@ -176,33 +195,42 @@ public sealed class BackupSessionCoordinatorTests : IDisposable
         _stateMock.Received(1).ClearBackupOperation();
     }
 
-    private CleaningPreflightPlan CreatePlan(bool backupEnabled, bool isMo2Mode) => new()
+    private CleaningPreflightPlan CreatePlan(bool backupEnabled, bool isMo2Mode)
     {
-        DetectedGameType = GameType.SkyrimSe,
-        DetectedGameVariant = GameVariant.None,
-        PluginRows = [new PreflightPluginRow(CreatePlugin("Plugin.esp"), PreflightDecision.Clean, SkipReason: null)],
-        IsMo2ModeActive = isMo2Mode,
-        BackupSkippedByPolicy = isMo2Mode,
-        FileValidationSkippedByPolicy = false,
-        LaunchModeLabel = "Direct",
-        CleaningTimeoutSeconds = 300,
-        BackupEnabled = backupEnabled,
-        BackupMaxSessions = 3,
-        XEditDirectory = _testRoot
-    };
+        return new CleaningPreflightPlan
+        {
+            DetectedGameType = GameType.SkyrimSe,
+            DetectedGameVariant = GameVariant.None,
+            PluginRows = [new PreflightPluginRow(CreatePlugin("Plugin.esp"), PreflightDecision.Clean, null)],
+            IsMo2ModeActive = isMo2Mode,
+            BackupSkippedByPolicy = isMo2Mode,
+            FileValidationSkippedByPolicy = false,
+            LaunchModeLabel = "Direct",
+            CleaningTimeoutSeconds = 300,
+            BackupEnabled = backupEnabled,
+            BackupMaxSessions = 3,
+            XEditDirectory = _testRoot
+        };
+    }
 
-    private PluginInfo CreatePlugin(string fileName) => new()
+    private PluginInfo CreatePlugin(string fileName)
     {
-        FileName = fileName,
-        FullPath = Path.Combine(_testRoot, "Data", fileName)
-    };
+        return new PluginInfo
+        {
+            FileName = fileName,
+            FullPath = Path.Combine(_testRoot, "Data", fileName)
+        };
+    }
 
-    private static BackupPluginEntry CreateEntry(string fileName) => new()
+    private static BackupPluginEntry CreateEntry(string fileName)
     {
-        FileName = fileName,
-        OriginalPath = $@"C:\Games\Data\{fileName}",
-        FileSizeBytes = 42
-    };
+        return new BackupPluginEntry
+        {
+            FileName = fileName,
+            OriginalPath = $@"C:\Games\Data\{fileName}",
+            FileSizeBytes = 42
+        };
+    }
 
     private static ICleaningSessionDecisionAdapter CreateDecisionAdapter(
         BackupFailureChoice choice = BackupFailureChoice.ContinueWithoutBackup)

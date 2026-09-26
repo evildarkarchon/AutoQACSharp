@@ -3,9 +3,9 @@ using System;
 namespace AutoQAC.Models;
 
 /// <summary>
-/// Record for PID file entries stored in autoqac-pids.json.
-/// Used for orphan detection: on startup or before a cleaning run,
-/// we check if any tracked processes are still running and kill them.
+///     Record for PID file entries stored in autoqac-pids.json.
+///     Used for orphan detection: on startup or before a cleaning run,
+///     we check if any tracked processes are still running and kill them.
 /// </summary>
 public sealed record TrackedProcess
 {

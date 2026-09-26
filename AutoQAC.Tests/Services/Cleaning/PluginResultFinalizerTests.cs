@@ -29,7 +29,7 @@ public sealed class PluginResultFinalizerTests
         // Arrange
         var plugin = CreatePlugin("StillRunning.esp");
         var runnerOutput = CreateRunnerOutput();
-        var terminationContext = new TerminationFinalizeContext(ProcessMayStillBeRunning: true, StopWasRequested: false);
+        var terminationContext = new TerminationFinalizeContext(true, false);
 
         // Act
         var result = await _sut.FinalizeAsync(
@@ -73,7 +73,7 @@ public sealed class PluginResultFinalizerTests
             GameType.SkyrimSe,
             "xedit",
             runnerOutput,
-            new TerminationFinalizeContext(ProcessMayStillBeRunning: false, StopWasRequested: false),
+            new TerminationFinalizeContext(false, false),
             CancellationToken.None);
 
         // Assert
@@ -86,7 +86,7 @@ public sealed class PluginResultFinalizerTests
         // Arrange
         var plugin = CreatePlugin("Stopped.esp");
         var runnerOutput = CreateRunnerOutput();
-        var terminationContext = new TerminationFinalizeContext(ProcessMayStillBeRunning: false, StopWasRequested: true);
+        var terminationContext = new TerminationFinalizeContext(false, true);
 
         // Act
         var result = await _sut.FinalizeAsync(
@@ -145,7 +145,7 @@ public sealed class PluginResultFinalizerTests
             GameType.SkyrimSe,
             "xedit",
             failedRunnerOutput,
-            new TerminationFinalizeContext(ProcessMayStillBeRunning: false, StopWasRequested: false),
+            new TerminationFinalizeContext(false, false),
             CancellationToken.None);
 
         // Assert: failed runner outcomes MUST NOT be reclassified as AlreadyClean,
@@ -180,7 +180,7 @@ public sealed class PluginResultFinalizerTests
             GameType.SkyrimSe,
             "xedit",
             runnerOutput,
-            new TerminationFinalizeContext(ProcessMayStillBeRunning: false, StopWasRequested: false),
+            new TerminationFinalizeContext(false, false),
             CancellationToken.None);
 
         // Assert
@@ -226,7 +226,7 @@ public sealed class PluginResultFinalizerTests
             GameType.SkyrimSe,
             "xedit",
             runnerOutput,
-            new TerminationFinalizeContext(ProcessMayStillBeRunning: false, StopWasRequested: false),
+            new TerminationFinalizeContext(false, false),
             CancellationToken.None);
 
         // Assert
@@ -259,7 +259,7 @@ public sealed class PluginResultFinalizerTests
             GameType.SkyrimSe,
             "xedit",
             runnerOutput,
-            new TerminationFinalizeContext(ProcessMayStillBeRunning: false, StopWasRequested: false),
+            new TerminationFinalizeContext(false, false),
             CancellationToken.None);
 
         // Assert
@@ -309,7 +309,7 @@ public sealed class PluginResultFinalizerTests
             GameType.SkyrimSe,
             "xedit",
             runnerOutput,
-            new TerminationFinalizeContext(ProcessMayStillBeRunning: false, StopWasRequested: false),
+            new TerminationFinalizeContext(false, false),
             CancellationToken.None);
         var session = new CleaningSessionResult
         {
@@ -358,7 +358,7 @@ public sealed class PluginResultFinalizerTests
             GameType.SkyrimSe,
             "xedit",
             skippedRunnerOutput,
-            new TerminationFinalizeContext(ProcessMayStillBeRunning: false, StopWasRequested: false),
+            new TerminationFinalizeContext(false, false),
             CancellationToken.None);
 
         // Assert
@@ -377,7 +377,8 @@ public sealed class PluginResultFinalizerTests
     /// Verifies that service-shaped sanitized failure messages remain safe through finalizer, summary, and report output.
     /// </summary>
     [Fact]
-    public async Task FinalizeAsync_FailedRunnerResultFromCleaningServiceUnsafePluginMessage_ShouldKeepSummaryAndReportSafe()
+    public async Task
+        FinalizeAsync_FailedRunnerResultFromCleaningServiceUnsafePluginMessage_ShouldKeepSummaryAndReportSafe()
     {
         // Arrange
         var unsafePluginName = "Unsafe\"Plugin\t|-QAC-autoload.esp";
@@ -388,7 +389,8 @@ public sealed class PluginResultFinalizerTests
             {
                 Success = false,
                 Status = CleaningStatus.Failed,
-                Message = $"Could not build direct xEdit launch command for {DiagnosticTextFormatter.SafePluginName(unsafePluginName)}. No process was started. See the latest AutoQAC log."
+                Message =
+                    $"Could not build direct xEdit launch command for {DiagnosticTextFormatter.SafePluginName(unsafePluginName)}. No process was started. See the latest AutoQAC log."
             },
             AttemptCount = 1,
             MainLogOffset = 11,
@@ -411,7 +413,7 @@ public sealed class PluginResultFinalizerTests
             GameType.SkyrimSe,
             "xedit",
             runnerOutput,
-            new TerminationFinalizeContext(ProcessMayStillBeRunning: false, StopWasRequested: false),
+            new TerminationFinalizeContext(false, false),
             CancellationToken.None);
         var session = new CleaningSessionResult
         {
@@ -434,27 +436,33 @@ public sealed class PluginResultFinalizerTests
         AssertUnsafeServiceFailureFragmentsExcluded(report);
     }
 
-    private static PluginInfo CreatePlugin(string fileName) => new()
+    private static PluginInfo CreatePlugin(string fileName)
     {
-        FileName = fileName,
-        FullPath = fileName,
-        DetectedGameType = GameType.SkyrimSe
-    };
-
-    private static PluginRunnerOutput CreateRunnerOutput() => new()
-    {
-        LastAttemptResult = new CleaningResult
+        return new PluginInfo
         {
-            Success = true,
-            Status = CleaningStatus.Cleaned,
-            Message = "Cleaning completed successfully."
-        },
-        AttemptCount = 1,
-        MainLogOffset = 11,
-        ExceptionLogOffset = 22,
-        Duration = TimeSpan.FromSeconds(1),
-        ReachedMaxRetryAttempts = false
-    };
+            FileName = fileName,
+            FullPath = fileName,
+            DetectedGameType = GameType.SkyrimSe
+        };
+    }
+
+    private static PluginRunnerOutput CreateRunnerOutput()
+    {
+        return new PluginRunnerOutput
+        {
+            LastAttemptResult = new CleaningResult
+            {
+                Success = true,
+                Status = CleaningStatus.Cleaned,
+                Message = "Cleaning completed successfully."
+            },
+            AttemptCount = 1,
+            MainLogOffset = 11,
+            ExceptionLogOffset = 22,
+            Duration = TimeSpan.FromSeconds(1),
+            ReachedMaxRetryAttempts = false
+        };
+    }
 
     private static void AssertSafeResultBoundary(string? text)
     {
@@ -486,9 +494,6 @@ public sealed class PluginResultFinalizerTests
     private static void AssertSharedUnsafeSentinelsExcluded(string? text)
     {
         text.Should().NotBeNull();
-        foreach (var sentinel in DiagnosticSentinels.UnsafeDiagnosticSentinels)
-        {
-            text.Should().NotContain(sentinel);
-        }
+        foreach (var sentinel in DiagnosticSentinels.UnsafeDiagnosticSentinels) text.Should().NotContain(sentinel);
     }
 }

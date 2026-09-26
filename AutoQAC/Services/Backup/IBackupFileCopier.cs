@@ -6,12 +6,12 @@ using AutoQAC.Models;
 namespace AutoQAC.Services.Backup;
 
 /// <summary>
-/// Performs cancellable file copies for backup and restore paths while reporting byte progress.
+///     Performs cancellable file copies for backup and restore paths while reporting byte progress.
 /// </summary>
 public interface IBackupFileCopier
 {
     /// <summary>
-    /// Copies a file asynchronously with caller-selected destination overwrite semantics.
+    ///     Copies a file asynchronously with caller-selected destination overwrite semantics.
     /// </summary>
     /// <param name="sourcePath">Absolute source file path to copy from.</param>
     /// <param name="destinationPath">Absolute destination file path to create or replace.</param>

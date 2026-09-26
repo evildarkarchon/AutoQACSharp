@@ -7,9 +7,9 @@ namespace AutoQAC.Tests.Services;
 /// Unit tests for <see cref="Mo2ValidationService"/> covering MO2 process detection,
 /// executable validation, and warning message generation.
 ///
-    /// NOTE: The IsMo2Running test is difficult to unit test reliably since it depends
-    /// on actual running processes. Tests focus on the validation logic which is more
-    /// testable.
+/// NOTE: The IsMo2Running test is difficult to unit test reliably since it depends
+/// on actual running processes. Tests focus on the validation logic which is more
+/// testable.
 /// </summary>
 public sealed class MO2ValidationServiceTests : IDisposable
 {
@@ -30,7 +30,6 @@ public sealed class MO2ValidationServiceTests : IDisposable
     {
         // Clean up test directory
         if (Directory.Exists(_testDirectory))
-        {
             try
             {
                 Directory.Delete(_testDirectory, true);
@@ -39,7 +38,6 @@ public sealed class MO2ValidationServiceTests : IDisposable
             {
                 // Ignore cleanup errors in tests
             }
-        }
     }
 
     #region ValidateMo2ExecutableAsync Tests
@@ -195,10 +193,7 @@ public sealed class MO2ValidationServiceTests : IDisposable
     {
         // Arrange & Act
         // Call multiple times to verify no resource leaks
-        for (int i = 0; i < 100; i++)
-        {
-            _ = _sut.IsMo2Running();
-        }
+        for (var i = 0; i < 100; i++) _ = _sut.IsMo2Running();
 
         // Assert
         // If we get here without exception or resource exhaustion, we're good

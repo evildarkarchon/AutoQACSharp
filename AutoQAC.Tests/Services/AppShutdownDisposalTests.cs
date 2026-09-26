@@ -20,7 +20,6 @@ public sealed class AppShutdownDisposalTests : IDisposable
     public void Dispose()
     {
         if (Directory.Exists(_testDirectory))
-        {
             try
             {
                 Directory.Delete(_testDirectory, true);
@@ -29,7 +28,6 @@ public sealed class AppShutdownDisposalTests : IDisposable
             {
                 // Ignore cleanup failures.
             }
-        }
     }
 
     [Fact]

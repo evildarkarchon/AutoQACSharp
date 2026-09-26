@@ -1,6 +1,7 @@
-using Serilog;
 using System;
 using System.IO;
+using Serilog;
+using Serilog.Events;
 
 namespace AutoQAC.Infrastructure.Logging;
 
@@ -20,14 +21,19 @@ public sealed class LoggingService : ILoggingService, IDisposable
 
         _logger = new LoggerConfiguration()
             .MinimumLevel.Debug()
-            .WriteTo.Console(restrictedToMinimumLevel: Serilog.Events.LogEventLevel.Warning)
+            .WriteTo.Console(LogEventLevel.Warning)
             .WriteTo.File(
-                path: Path.Combine(logDirectory, LogFilePaths.RollingLogFileName),
+                Path.Combine(logDirectory, LogFilePaths.RollingLogFileName),
                 rollingInterval: RollingInterval.Day,
                 fileSizeLimitBytes: 5 * 1024 * 1024,
                 retainedFileCountLimit: 5,
                 outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj}{NewLine}{Exception}")
             .CreateLogger();
+    }
+
+    public void Dispose()
+    {
+        if (_logger is IDisposable disposable) disposable.Dispose();
     }
 
     public void Debug(string message, params object[] args)
@@ -48,13 +54,5 @@ public sealed class LoggingService : ILoggingService, IDisposable
     public void Error(Exception? ex, string message, params object[] args)
     {
         _logger.Error(ex, message, args);
-    }
-
-    public void Dispose()
-    {
-        if (_logger is IDisposable disposable)
-        {
-            disposable.Dispose();
-        }
     }
 }

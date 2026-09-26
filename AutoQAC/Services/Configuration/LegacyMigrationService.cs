@@ -10,23 +10,32 @@ using YamlDotNet.Serialization.NamingConventions;
 namespace AutoQAC.Services.Configuration;
 
 /// <summary>
-/// Migrates legacy Python-era configuration files with proper backup-then-delete order.
-/// Migration only runs when no C# config exists (one-time bootstrap, not a merge).
+///     Migrates legacy Python-era configuration files with proper backup-then-delete order.
+///     Migration only runs when no C# config exists (one-time bootstrap, not a merge).
 /// </summary>
 public sealed class LegacyMigrationService : ILegacyMigrationService
 {
-    private readonly ILoggingService _logger;
-    private readonly string _configDirectory;
     private const string LegacyConfigFile = "AutoQAC Config.yaml";
     private const string CurrentConfigFile = "AutoQAC Settings.yaml";
     private const string BackupSubdirectory = "migration_backup";
-    private const string ParseFailureWarning = "Legacy config could not be migrated because it could not be parsed. See the latest AutoQAC log for technical details.";
-    private const string WriteFailureWarning = "Legacy config could not be migrated because the new settings file could not be written. See the latest AutoQAC log for technical details.";
-    private const string BackupFailureWarning = "Legacy config was migrated, but AutoQAC could not back up the original file. Original file was kept for safety. See the latest AutoQAC log for technical details.";
-    private const string DeleteFailureWarning = "Legacy config was migrated, but AutoQAC could not remove the original legacy file. See the latest AutoQAC log for technical details.";
+
+    private const string ParseFailureWarning =
+        "Legacy config could not be migrated because it could not be parsed. See the latest AutoQAC log for technical details.";
+
+    private const string WriteFailureWarning =
+        "Legacy config could not be migrated because the new settings file could not be written. See the latest AutoQAC log for technical details.";
+
+    private const string BackupFailureWarning =
+        "Legacy config was migrated, but AutoQAC could not back up the original file. Original file was kept for safety. See the latest AutoQAC log for technical details.";
+
+    private const string DeleteFailureWarning =
+        "Legacy config was migrated, but AutoQAC could not remove the original legacy file. See the latest AutoQAC log for technical details.";
+
+    private readonly string _configDirectory;
+    private readonly IDeserializer _deserializer;
+    private readonly ILoggingService _logger;
 
     private readonly ISerializer _serializer;
-    private readonly IDeserializer _deserializer;
 
     public LegacyMigrationService(ILoggingService logger, string? configDirectory = null)
     {
@@ -40,24 +49,6 @@ public sealed class LegacyMigrationService : ILegacyMigrationService
             .WithNamingConvention(NullNamingConvention.Instance)
             .IgnoreUnmatchedProperties()
             .Build();
-    }
-
-    private string ResolveConfigDirectory()
-    {
-        var baseDir = AppContext.BaseDirectory;
-
-#if DEBUG
-        var current = new DirectoryInfo(baseDir);
-        for (int i = 0; i < 6 && current != null; i++)
-        {
-            var candidate = Path.Combine(current.FullName, "AutoQAC Data");
-            if (Directory.Exists(candidate))
-                return candidate;
-            current = current.Parent;
-        }
-#endif
-
-        return Path.Combine(baseDir, "AutoQAC Data");
     }
 
     public async Task<MigrationResult> MigrateIfNeededAsync(CancellationToken ct = default)
@@ -75,7 +66,9 @@ public sealed class LegacyMigrationService : ILegacyMigrationService
         // Step 2: Check if C# config already exists -- skip migration (one-time bootstrap, not merge)
         if (File.Exists(currentPath))
         {
-            _logger.Information("[Migration] C# config already exists at {Path}, skipping migration (bootstrap only, no merge)", currentPath);
+            _logger.Information(
+                "[Migration] C# config already exists at {Path}, skipping migration (bootstrap only, no merge)",
+                currentPath);
             return MigrationResult.NotNeeded();
         }
 
@@ -88,13 +81,11 @@ public sealed class LegacyMigrationService : ILegacyMigrationService
             var legacyContent = await File.ReadAllTextAsync(legacyPath, ct).ConfigureAwait(false);
             var deserializedConfig = _deserializer.Deserialize<UserConfiguration?>(legacyContent);
             if (deserializedConfig is null)
-            {
                 return new MigrationResult(
-                    Attempted: true,
-                    Success: false,
-                    WarningMessage: ParseFailureWarning,
+                    true,
+                    false,
+                    ParseFailureWarning,
                     FailedFiles: [LegacyConfigFile]);
-            }
 
             migratedConfig = deserializedConfig;
         }
@@ -102,9 +93,9 @@ public sealed class LegacyMigrationService : ILegacyMigrationService
         {
             _logger.Error(ex, "[Migration] Failed to parse legacy config file");
             return new MigrationResult(
-                Attempted: true,
-                Success: false,
-                WarningMessage: ParseFailureWarning,
+                true,
+                false,
+                ParseFailureWarning,
                 FailedFiles: [LegacyConfigFile]);
         }
 
@@ -119,9 +110,9 @@ public sealed class LegacyMigrationService : ILegacyMigrationService
         {
             _logger.Error(ex, "[Migration] Failed to write migrated config");
             return new MigrationResult(
-                Attempted: true,
-                Success: false,
-                WarningMessage: WriteFailureWarning,
+                true,
+                false,
+                WriteFailureWarning,
                 FailedFiles: [LegacyConfigFile]);
         }
 
@@ -133,18 +124,19 @@ public sealed class LegacyMigrationService : ILegacyMigrationService
             var timestamp = DateTime.Now.ToString("yyyy-MM-dd_HHmmss");
             var backupFileName = $"{timestamp}_{LegacyConfigFile}";
             var backupPath = Path.Combine(backupDir, backupFileName);
-            File.Copy(legacyPath, backupPath, overwrite: true);
+            File.Copy(legacyPath, backupPath, true);
             _logger.Information("[Migration] Backed up legacy config to {BackupPath}", backupPath);
         }
         catch (Exception ex)
         {
-            _logger.Warning("[Migration] Failed to create backup of legacy config: {Message}. Keeping original file.", ex.Message);
+            _logger.Warning("[Migration] Failed to create backup of legacy config: {Message}. Keeping original file.",
+                ex.Message);
             // Do NOT delete the original if backup failed
             return new MigrationResult(
-                Attempted: true,
-                Success: false,
-                WarningMessage: BackupFailureWarning,
-                MigratedFiles: [LegacyConfigFile]);
+                true,
+                false,
+                BackupFailureWarning,
+                [LegacyConfigFile]);
         }
 
         // Step 6: Delete legacy file (only after successful backup)
@@ -158,16 +150,34 @@ public sealed class LegacyMigrationService : ILegacyMigrationService
             _logger.Warning("[Migration] Failed to delete legacy config after backup: {Message}", ex.Message);
             // Migration succeeded even if deletion fails -- the backup exists, new config exists
             return new MigrationResult(
-                Attempted: true,
-                Success: true,
-                WarningMessage: DeleteFailureWarning,
-                MigratedFiles: [LegacyConfigFile]);
+                true,
+                true,
+                DeleteFailureWarning,
+                [LegacyConfigFile]);
         }
 
         _logger.Information("[Migration] Migration completed successfully");
         return new MigrationResult(
-            Attempted: true,
-            Success: true,
+            true,
+            true,
             MigratedFiles: [LegacyConfigFile]);
+    }
+
+    private string ResolveConfigDirectory()
+    {
+        var baseDir = AppContext.BaseDirectory;
+
+#if DEBUG
+        var current = new DirectoryInfo(baseDir);
+        for (var i = 0; i < 6 && current != null; i++)
+        {
+            var candidate = Path.Combine(current.FullName, "AutoQAC Data");
+            if (Directory.Exists(candidate))
+                return candidate;
+            current = current.Parent;
+        }
+#endif
+
+        return Path.Combine(baseDir, "AutoQAC Data");
     }
 }

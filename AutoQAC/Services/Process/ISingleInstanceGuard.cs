@@ -3,7 +3,7 @@ using System;
 namespace AutoQAC.Services.Process;
 
 /// <summary>
-/// Represents ownership of the application-wide single-instance lock.
+///     Represents ownership of the application-wide single-instance lock.
 /// </summary>
 public interface ISingleInstanceGuard : IDisposable
 {

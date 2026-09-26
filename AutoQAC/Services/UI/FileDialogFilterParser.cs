@@ -14,10 +14,7 @@ public static class FileDialogFilterParser
 
         for (var i = 0; i < parts.Length; i += 2)
         {
-            if (i + 1 >= parts.Length)
-            {
-                break;
-            }
+            if (i + 1 >= parts.Length) break;
 
             var name = parts[i];
             var patterns = parts[i + 1].Split(';').ToList();

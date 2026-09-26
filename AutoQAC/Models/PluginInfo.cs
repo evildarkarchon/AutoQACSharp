@@ -1,7 +1,7 @@
 namespace AutoQAC.Models;
 
 /// <summary>
-/// Describes the result of validating a plugin file on disk.
+///     Describes the result of validating a plugin file on disk.
 /// </summary>
 public enum PluginWarningKind
 {
@@ -22,7 +22,7 @@ public sealed record PluginInfo
     public PluginIssueApproximation Approximation { get; init; } = PluginIssueApproximation.Unavailable;
 
     /// <summary>
-    /// Optional validation result from ValidatePluginFile.
+    ///     Optional validation result from ValidatePluginFile.
     /// </summary>
     public PluginWarningKind Warning { get; init; } = PluginWarningKind.None;
 

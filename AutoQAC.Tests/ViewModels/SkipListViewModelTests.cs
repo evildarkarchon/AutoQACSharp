@@ -13,6 +13,7 @@ namespace AutoQAC.Tests.ViewModels;
 public sealed class SkipListViewModelTests
 {
     private readonly IConfigurationService _configServiceMock;
+    private readonly IDiscoverySettingsModule _settings = Substitute.For<IDiscoverySettingsModule>();
     private readonly IStateService _stateServiceMock;
     private readonly ILoggingService _loggerMock;
     private readonly BehaviorSubject<AppState> _stateSubject;
@@ -20,6 +21,8 @@ public sealed class SkipListViewModelTests
     public SkipListViewModelTests()
     {
         _configServiceMock = Substitute.For<IConfigurationService>();
+        _settings.ExecuteAsync(Arg.Any<DiscoverySettingsIntent>(), Arg.Any<CancellationToken>()).Returns(
+            DiscoverySettingsChangeResult.Accepted(AutoQAC.Tests.TestInfrastructure.RecordingPluginRefreshModule.CreateSnapshot()));
         _stateServiceMock = Substitute.For<IStateService>();
         _loggerMock = Substitute.For<ILoggingService>();
         _stateSubject = new BehaviorSubject<AppState>(new AppState { CurrentGameType = GameType.SkyrimSe });
@@ -47,7 +50,59 @@ public sealed class SkipListViewModelTests
         return new SkipListViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _loggerMock);
+            _loggerMock, _settings);
+    }
+
+    /// <summary>A dialog opened before cleaning cannot persist changes after startup reserves settings.</summary>
+    [Fact]
+    public async Task SaveWhileCleaning_DoesNotWriteOrCloseDialog()
+    {
+        var admission = new DiscoverySettingsAdmission();
+        using var vm = new SkipListViewModel(_configServiceMock, _stateServiceMock, _loggerMock,
+            Substitute.For<IDiscoverySettingsModule>(), admission);
+        bool? closed = null;
+        vm.CloseRequested += result => closed = result;
+        using var cleaning = await admission.EnterCleaningAsync();
+        await vm.SaveCommand.ExecuteAsync(null);
+        await _configServiceMock.DidNotReceive().UpdateSkipListAsync(Arg.Any<GameType>(),
+            Arg.Any<List<string>>(), Arg.Any<CancellationToken>());
+        closed.Should().BeNull();
+    }
+
+    /// <summary>A superseded edit stays open quietly and does not claim that its draft was accepted.</summary>
+    [Fact]
+    public async Task SupersededSave_DoesNotCloseOrDisplayFailure()
+    {
+        _settings.ExecuteAsync(Arg.Any<DiscoverySettingsIntent>(), Arg.Any<CancellationToken>()).Returns(
+            new DiscoverySettingsChangeResult(DiscoverySettingsChangeStatus.Superseded, null, null));
+        using var vm = CreateViewModel();
+        bool? closed = null;
+        vm.CloseRequested += result => closed = result;
+        vm.SkipListEntries.Add("Draft.esp");
+        await vm.SaveCommand.ExecuteAsync(null);
+        closed.Should().BeNull();
+        vm.HasUnsavedChanges.Should().BeTrue();
+        vm.SaveError.Should().BeNull();
+    }
+
+    /// <summary>Cancel and disposal must suppress a late successful completion from an uncooperative adapter.</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PendingSave_AfterCancelOrDispose_DoesNotCloseAsAccepted(bool dispose)
+    {
+        var completion = new TaskCompletionSource<DiscoverySettingsChangeResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _settings.ExecuteAsync(Arg.Any<DiscoverySettingsIntent>(), Arg.Any<CancellationToken>()).Returns(completion.Task);
+        using var vm = CreateViewModel();
+        var closeResults = new List<bool>();
+        vm.CloseRequested += closeResults.Add;
+        var saving = vm.SaveCommand.ExecuteAsync(null);
+        if (dispose) vm.Dispose();
+        else vm.CancelCommand.Execute(null);
+        completion.SetResult(DiscoverySettingsChangeResult.Accepted(
+            AutoQAC.Tests.TestInfrastructure.RecordingPluginRefreshModule.CreateSnapshot()));
+        await saving.WaitAsync(TimeSpan.FromSeconds(2));
+        closeResults.Should().NotContain(true);
     }
 
     #region LoadSkipListAsync Tests
@@ -431,7 +486,7 @@ public sealed class SkipListViewModelTests
     #region SaveCommand Tests
 
     [Fact]
-    public async Task SaveCommand_ShouldCallUpdateSkipListAsync()
+    public async Task SaveCommand_ShouldSubmitSelectedGameAndEntriesForAcceptance()
     {
         // Arrange
         _configServiceMock.GetGameSpecificSkipListAsync(GameType.SkyrimSe, Arg.Any<CancellationToken>())
@@ -447,10 +502,9 @@ public sealed class SkipListViewModelTests
         await vm.SaveCommand.ExecuteAsync(null);
 
         // Assert
-        await _configServiceMock.Received(1).UpdateSkipListAsync(
-            GameType.SkyrimSe,
-            Arg.Is<List<string>>(l => l.Contains("NewPlugin.esp")),
-            Arg.Any<CancellationToken>());
+        await _settings.Received(1).ExecuteAsync(
+            Arg.Is<DiscoverySettingsIntent.SetSkipList>(intent => intent.GameType == GameType.SkyrimSe &&
+                intent.Plugins.Contains("NewPlugin.esp")), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -526,13 +580,9 @@ public sealed class SkipListViewModelTests
 
         // Assert
         if (expectedErrorContains == null)
-        {
             vm.ManualEntryError.Should().BeNull();
-        }
         else
-        {
             vm.ManualEntryError.Should().Contain(expectedErrorContains);
-        }
     }
 
     #endregion
@@ -560,15 +610,16 @@ public sealed class SkipListViewModelTests
         // Arrange - simulate user skip list is empty, but default skip list has base game ESMs
         var loadedPlugins = new List<PluginInfo>
         {
-            new() { FileName = "Skyrim.esm", FullPath = "Skyrim.esm" },  // In default skip list
-            new() { FileName = "Update.esm", FullPath = "Update.esm" },  // In default skip list
-            new() { FileName = "Dawnguard.esm", FullPath = "Dawnguard.esm" },  // In default skip list
-            new() { FileName = "UserMod.esp", FullPath = "UserMod.esp" },  // NOT in skip list
-            new() { FileName = "AnotherMod.esp", FullPath = "AnotherMod.esp" }  // NOT in skip list
+            new() { FileName = "Skyrim.esm", FullPath = "Skyrim.esm" }, // In default skip list
+            new() { FileName = "Update.esm", FullPath = "Update.esm" }, // In default skip list
+            new() { FileName = "Dawnguard.esm", FullPath = "Dawnguard.esm" }, // In default skip list
+            new() { FileName = "UserMod.esp", FullPath = "UserMod.esp" }, // NOT in skip list
+            new() { FileName = "AnotherMod.esp", FullPath = "AnotherMod.esp" } // NOT in skip list
         };
 
         var userSkipList = new List<string>(); // User hasn't added any custom entries
-        var mergedSkipList = new List<string> { "Skyrim.esm", "Update.esm", "Dawnguard.esm" }; // Defaults from AutoQAC Main.yaml
+        var mergedSkipList = new List<string>
+            { "Skyrim.esm", "Update.esm", "Dawnguard.esm" }; // Defaults from AutoQAC Main.yaml
 
         _stateSubject.OnNext(new AppState
         {
@@ -610,9 +661,9 @@ public sealed class SkipListViewModelTests
         // Arrange - user has some entries, default list has base game entries
         var loadedPlugins = new List<PluginInfo>
         {
-            new() { FileName = "Skyrim.esm", FullPath = "Skyrim.esm" },  // In default skip list
-            new() { FileName = "UserSkipped.esp", FullPath = "UserSkipped.esp" },  // In user skip list
-            new() { FileName = "CleanablePlugin.esp", FullPath = "CleanablePlugin.esp" }  // NOT in any skip list
+            new() { FileName = "Skyrim.esm", FullPath = "Skyrim.esm" }, // In default skip list
+            new() { FileName = "UserSkipped.esp", FullPath = "UserSkipped.esp" }, // In user skip list
+            new() { FileName = "CleanablePlugin.esp", FullPath = "CleanablePlugin.esp" } // NOT in any skip list
         };
 
         var userSkipList = new List<string> { "UserSkipped.esp" };

@@ -22,24 +22,36 @@ public sealed class RestoreViewModelTests
     private readonly ILoggingService _logger = Substitute.For<ILoggingService>();
     private readonly IUiDispatcher _uiDispatcher = new SynchronousUiDispatcher();
 
-    private RestoreViewModel CreateViewModel() => new(_backupService, _messageDialog, _logger, _uiDispatcher);
-
-    private RestoreViewModel CreateViewModel(IUiDispatcher uiDispatcher) => new(_backupService, _messageDialog, _logger, uiDispatcher);
-
-    private static BackupSession CreateSession(params BackupPluginEntry[] plugins) => new()
+    private RestoreViewModel CreateViewModel()
     {
-        Timestamp = new DateTime(2026, 4, 29, 7, 30, 0),
-        GameType = "Skyrim Special Edition",
-        SessionDirectory = @"C:\Backups\2026-04-29_07-30-00",
-        Plugins = plugins.ToList()
-    };
+        return new RestoreViewModel(_backupService, _messageDialog, _logger, _uiDispatcher);
+    }
 
-    private static BackupPluginEntry CreatePlugin(string fileName = "Update.esm", long fileSizeBytes = 1024) => new()
+    private RestoreViewModel CreateViewModel(IUiDispatcher uiDispatcher)
     {
-        FileName = fileName,
-        OriginalPath = $@"C:\Games\Skyrim Special Edition\Data\{fileName}",
-        FileSizeBytes = fileSizeBytes
-    };
+        return new RestoreViewModel(_backupService, _messageDialog, _logger, uiDispatcher);
+    }
+
+    private static BackupSession CreateSession(params BackupPluginEntry[] plugins)
+    {
+        return new BackupSession
+        {
+            Timestamp = new DateTime(2026, 4, 29, 7, 30, 0),
+            GameType = "Skyrim Special Edition",
+            SessionDirectory = @"C:\Backups\2026-04-29_07-30-00",
+            Plugins = plugins.ToList()
+        };
+    }
+
+    private static BackupPluginEntry CreatePlugin(string fileName = "Update.esm", long fileSizeBytes = 1024)
+    {
+        return new BackupPluginEntry
+        {
+            FileName = fileName,
+            OriginalPath = $@"C:\Games\Skyrim Special Edition\Data\{fileName}",
+            FileSizeBytes = fileSizeBytes
+        };
+    }
 
     [Fact]
     public async Task LoadSessionsAsync_WhenBackupSessionsThrow_ShouldShowSafeLatestLogStatus()
@@ -54,7 +66,8 @@ public sealed class RestoreViewModelTests
 
         await vm.LoadSessionsAsync(dataFolderPath);
 
-        vm.StatusText.Should().Be("Backup sessions could not be loaded. See the latest AutoQAC log for technical details.");
+        vm.StatusText.Should()
+            .Be("Backup sessions could not be loaded. See the latest AutoQAC log for technical details.");
         vm.StatusText.Should().NotContain(@"C:\Users\Alice");
         vm.StatusText.Should().NotContain("Access denied reading");
     }
@@ -90,7 +103,8 @@ public sealed class RestoreViewModelTests
     /// Verifies Restore Selected projects untrusted backup metadata through safe D-07/D-09 display copy without altering service input.
     /// </summary>
     [Fact]
-    public async Task RestorePluginCommand_WhenBackupMetadataFileNameContainsUnsafeDetails_ShouldShowSanitizedDisplayCopy()
+    public async Task
+        RestorePluginCommand_WhenBackupMetadataFileNameContainsUnsafeDetails_ShouldShowSanitizedDisplayCopy()
     {
         var plugin = CreatePlugin("C:\\Users\\Alice\\Backups\\Bad\t\"` -autoload.esp");
         var session = CreateSession(plugin);
@@ -141,9 +155,7 @@ public sealed class RestoreViewModelTests
         }
 
         foreach (var sentinel in DiagnosticSentinels.UnsafeDiagnosticSentinels)
-        {
             allDialogAndStatusText.Should().NotContain(text => text.Contains(sentinel, StringComparison.Ordinal));
-        }
     }
 
     [Fact]
@@ -167,14 +179,24 @@ public sealed class RestoreViewModelTests
     [InlineData(BackupOperationStatus.Partial, "Restore Partial")]
     [InlineData(BackupOperationStatus.Failed, "Restore Failed")]
     [InlineData(BackupOperationStatus.Canceled, "Restore Canceled")]
-    public async Task RestoreAllCommand_ShouldMapStructuredResultStatusToExactTitle(BackupOperationStatus status, string expectedTitle)
+    public async Task RestoreAllCommand_ShouldMapStructuredResultStatusToExactTitle(BackupOperationStatus status,
+        string expectedTitle)
     {
         var session = CreateSession(CreatePlugin("Update.esm"));
         var rows = status switch
         {
-            BackupOperationStatus.Complete => new[] { new BackupRestoreRowResult("Update.esm", BackupRestoreRowStatus.Restored, null, 1024, 1024) },
-            BackupOperationStatus.Canceled => new[] { new BackupRestoreRowResult("Update.esm", BackupRestoreRowStatus.Canceled, BackupFailureReason.Canceled, 128, 1024) },
-            _ => new[] { new BackupRestoreRowResult("Update.esm", BackupRestoreRowStatus.Failed, BackupFailureReason.MissingBackupFile, 0, 1024) }
+            BackupOperationStatus.Complete => new[]
+                { new BackupRestoreRowResult("Update.esm", BackupRestoreRowStatus.Restored, null, 1024, 1024) },
+            BackupOperationStatus.Canceled => new[]
+            {
+                new BackupRestoreRowResult("Update.esm", BackupRestoreRowStatus.Canceled, BackupFailureReason.Canceled,
+                    128, 1024)
+            },
+            _ => new[]
+            {
+                new BackupRestoreRowResult("Update.esm", BackupRestoreRowStatus.Failed,
+                    BackupFailureReason.MissingBackupFile, 0, 1024)
+            }
         };
         _messageDialog.ShowConfirmAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         _backupService.RestoreSessionAsync(
@@ -207,7 +229,8 @@ public sealed class RestoreViewModelTests
                 BackupOperationStatus.Partial,
                 [
                     new BackupRestoreRowResult("Update.esm", BackupRestoreRowStatus.Restored, null, 2048, 2048),
-                    new BackupRestoreRowResult("Missing.esp", BackupRestoreRowStatus.Failed, BackupFailureReason.MissingBackupFile, 0, 4096)
+                    new BackupRestoreRowResult("Missing.esp", BackupRestoreRowStatus.Failed,
+                        BackupFailureReason.MissingBackupFile, 0, 4096)
                 ]));
 
         var vm = CreateViewModel();
@@ -235,8 +258,10 @@ public sealed class RestoreViewModelTests
             .Returns(new BackupRestoreResult(
                 BackupOperationStatus.Canceled,
                 [
-                    new BackupRestoreRowResult("Failed.esp", BackupRestoreRowStatus.Failed, BackupFailureReason.TargetWriteFailed, 0, 1024),
-                    new BackupRestoreRowResult("Canceled.esp", BackupRestoreRowStatus.Canceled, BackupFailureReason.Canceled, 0, 1024)
+                    new BackupRestoreRowResult("Failed.esp", BackupRestoreRowStatus.Failed,
+                        BackupFailureReason.TargetWriteFailed, 0, 1024),
+                    new BackupRestoreRowResult("Canceled.esp", BackupRestoreRowStatus.Canceled,
+                        BackupFailureReason.Canceled, 0, 1024)
                 ]));
 
         var vm = CreateViewModel();
@@ -262,7 +287,10 @@ public sealed class RestoreViewModelTests
                 Arg.Any<CancellationToken>())
             .Returns(new BackupRestoreResult(
                 BackupOperationStatus.Failed,
-                [new BackupRestoreRowResult("Missing.esp", BackupRestoreRowStatus.Failed, BackupFailureReason.MissingBackupFile, 0, 1024)]));
+                [
+                    new BackupRestoreRowResult("Missing.esp", BackupRestoreRowStatus.Failed,
+                        BackupFailureReason.MissingBackupFile, 0, 1024)
+                ]));
 
         var vm = CreateViewModel();
         vm.SelectedSession = session;
@@ -309,8 +337,10 @@ public sealed class RestoreViewModelTests
     public async Task CancelRestoreCommand_ShouldCancelActiveRestoreToken()
     {
         var session = CreateSession(CreatePlugin("Large.esp", 120_000_000));
-        var restoreStarted = new TaskCompletionSource<CancellationToken>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var allowRestoreToComplete = new TaskCompletionSource<BackupRestoreResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var restoreStarted =
+            new TaskCompletionSource<CancellationToken>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var allowRestoreToComplete =
+            new TaskCompletionSource<BackupRestoreResult>(TaskCreationOptions.RunContinuationsAsynchronously);
         _messageDialog.ShowConfirmAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         _backupService.RestoreSessionAsync(
                 session,
@@ -334,7 +364,10 @@ public sealed class RestoreViewModelTests
         vm.StatusText.Should().Contain("Cancel restore", "the UI should communicate cancel semantics");
         allowRestoreToComplete.SetResult(new BackupRestoreResult(
             BackupOperationStatus.Canceled,
-            [new BackupRestoreRowResult("Large.esp", BackupRestoreRowStatus.Canceled, BackupFailureReason.Canceled, 0, 120_000_000)]));
+            [
+                new BackupRestoreRowResult("Large.esp", BackupRestoreRowStatus.Canceled, BackupFailureReason.Canceled,
+                    0, 120_000_000)
+            ]));
         await restoreTask;
     }
 
@@ -344,7 +377,8 @@ public sealed class RestoreViewModelTests
         var plugin = CreatePlugin("Update.esm");
         var session = CreateSession(plugin);
         var restoreStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var allowRestoreToComplete = new TaskCompletionSource<BackupRestoreResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var allowRestoreToComplete =
+            new TaskCompletionSource<BackupRestoreResult>(TaskCreationOptions.RunContinuationsAsynchronously);
         _messageDialog.ShowConfirmAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         _backupService.RestoreSessionAsync(
                 session,
@@ -376,7 +410,8 @@ public sealed class RestoreViewModelTests
     {
         var session = CreateSession(CreatePlugin("Update.esm"));
         var restoreStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var allowRestoreToComplete = new TaskCompletionSource<BackupRestoreResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var allowRestoreToComplete =
+            new TaskCompletionSource<BackupRestoreResult>(TaskCreationOptions.RunContinuationsAsynchronously);
         _messageDialog.ShowConfirmAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         _backupService.RestoreSessionAsync(
                 session,
@@ -416,7 +451,10 @@ public sealed class RestoreViewModelTests
                 progress?.Report(new BackupCopyProgress("Large.esp", 38_400_000, 120_000_000));
                 return Task.FromResult(new BackupRestoreResult(
                     BackupOperationStatus.Complete,
-                    [new BackupRestoreRowResult("Large.esp", BackupRestoreRowStatus.Restored,  null, 120_000_000, 120_000_000)]));
+                    [
+                        new BackupRestoreRowResult("Large.esp", BackupRestoreRowStatus.Restored, null, 120_000_000,
+                            120_000_000)
+                    ]));
             });
 
         var vm = CreateViewModel();
@@ -445,14 +483,18 @@ public sealed class RestoreViewModelTests
                 await dispatcher.Posted.Task.WaitAsync(TimeSpan.FromSeconds(2));
                 return new BackupRestoreResult(
                     BackupOperationStatus.Complete,
-                    [new BackupRestoreRowResult("Large.esp", BackupRestoreRowStatus.Restored, null, 120_000_000, 120_000_000)]);
+                    [
+                        new BackupRestoreRowResult("Large.esp", BackupRestoreRowStatus.Restored, null, 120_000_000,
+                            120_000_000)
+                    ]);
             });
 
         var vm = CreateViewModel(dispatcher);
         vm.SelectedSession = session;
 
         await vm.RestoreAllCommand.ExecuteAsync(null);
-        vm.RestoreProgressText.Should().Be("Restoring 0 / 1 plugins", "worker-thread progress must not mutate UI-bound state before dispatcher execution");
+        vm.RestoreProgressText.Should().Be("Restoring 0 / 1 plugins",
+            "worker-thread progress must not mutate UI-bound state before dispatcher execution");
 
         dispatcher.Drain();
 
@@ -463,8 +505,10 @@ public sealed class RestoreViewModelTests
     public async Task DisposeClearsRestoreCancellationSource_ShouldCancelActiveRestoreToken()
     {
         var session = CreateSession(CreatePlugin("Large.esp", 120_000_000));
-        var restoreStarted = new TaskCompletionSource<CancellationToken>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var allowRestoreToComplete = new TaskCompletionSource<BackupRestoreResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var restoreStarted =
+            new TaskCompletionSource<CancellationToken>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var allowRestoreToComplete =
+            new TaskCompletionSource<BackupRestoreResult>(TaskCreationOptions.RunContinuationsAsynchronously);
         _messageDialog.ShowConfirmAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         _backupService.RestoreSessionAsync(
                 session,
@@ -484,7 +528,8 @@ public sealed class RestoreViewModelTests
 
         vm.Dispose();
 
-        token.IsCancellationRequested.Should().BeTrue("disposing the ViewModel should clear the active restore cancellation source");
+        token.IsCancellationRequested.Should()
+            .BeTrue("disposing the ViewModel should clear the active restore cancellation source");
         allowRestoreToComplete.SetResult(new BackupRestoreResult(BackupOperationStatus.Canceled, []));
         await restoreTask;
     }
@@ -588,7 +633,8 @@ public sealed class RestoreViewModelTests
     /// then loads the ViewModel and selects the session. Used by the Plan 07-13 Delete Session
     /// containment tests so they share a single setup pattern instead of duplicating arrange logic.
     /// </summary>
-    private async Task<RestoreViewModel> CreateLoadedViewModelAsync(string dataFolderPath, string backupRoot, BackupSession session)
+    private async Task<RestoreViewModel> CreateLoadedViewModelAsync(string dataFolderPath, string backupRoot,
+        BackupSession session)
     {
         _backupService.GetBackupRoot(dataFolderPath).Returns(backupRoot);
         _backupService.GetBackupSessionsAsync(backupRoot, Arg.Any<CancellationToken>()).Returns([session]);
@@ -618,7 +664,8 @@ public sealed class RestoreViewModelTests
         var vm = await CreateLoadedViewModelAsync(dataFolder, backupRoot, session);
         _messageDialog.ShowConfirmAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         _backupService.DeleteSessionAsync(session, backupRoot, Arg.Any<CancellationToken>())
-            .Returns(new BackupSessionDeleteResult(BackupSessionDeleteStatus.RejectedOutsideBackupRoot, session.SessionDirectory));
+            .Returns(new BackupSessionDeleteResult(BackupSessionDeleteStatus.RejectedOutsideBackupRoot,
+                session.SessionDirectory));
 
         await vm.DeleteSessionCommand.ExecuteAsync(null);
 
@@ -650,7 +697,8 @@ public sealed class RestoreViewModelTests
         var vm = await CreateLoadedViewModelAsync(dataFolder, backupRoot, session);
         _messageDialog.ShowConfirmAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         _backupService.DeleteSessionAsync(session, backupRoot, Arg.Any<CancellationToken>())
-            .Returns(new BackupSessionDeleteResult(BackupSessionDeleteStatus.RejectedOutsideBackupRoot, session.SessionDirectory));
+            .Returns(new BackupSessionDeleteResult(BackupSessionDeleteStatus.RejectedOutsideBackupRoot,
+                session.SessionDirectory));
 
         await vm.DeleteSessionCommand.ExecuteAsync(null);
 
@@ -680,7 +728,8 @@ public sealed class RestoreViewModelTests
         var vm = await CreateLoadedViewModelAsync(dataFolder, backupRoot, session);
         _messageDialog.ShowConfirmAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         _backupService.DeleteSessionAsync(session, backupRoot, Arg.Any<CancellationToken>())
-            .Returns(new BackupSessionDeleteResult(BackupSessionDeleteStatus.RejectedOutsideBackupRoot, session.SessionDirectory));
+            .Returns(new BackupSessionDeleteResult(BackupSessionDeleteStatus.RejectedOutsideBackupRoot,
+                session.SessionDirectory));
 
         await vm.DeleteSessionCommand.ExecuteAsync(null);
 
@@ -791,17 +840,17 @@ public sealed class RestoreViewModelTests
         }
 
         /// <inheritdoc />
-        public Task InvokeAsync(Func<Task> action) => action();
+        public Task InvokeAsync(Func<Task> action)
+        {
+            return action();
+        }
 
         /// <summary>
         /// Executes all queued UI callbacks in FIFO order to simulate the UI thread draining work.
         /// </summary>
         public void Drain()
         {
-            while (_actions.TryDequeue(out var action))
-            {
-                action();
-            }
+            while (_actions.TryDequeue(out var action)) action();
         }
     }
 }

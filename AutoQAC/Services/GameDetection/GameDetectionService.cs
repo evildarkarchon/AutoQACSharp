@@ -48,7 +48,7 @@ public sealed class GameDetectionService(ILoggingService logger) : IGameDetectio
         { "Fallout3.esm", GameType.Fallout3 },
         { "FalloutNV.esm", GameType.FalloutNewVegas },
         { "Fallout4.esm", GameType.Fallout4 },
-        { "Fallout4_VR.esm", GameType.Fallout4Vr },
+        { "Fallout4_VR.esm", GameType.Fallout4Vr }
     };
 
     public GameType DetectFromExecutable(string executablePath)
@@ -61,29 +61,19 @@ public sealed class GameDetectionService(ILoggingService logger) : IGameDetectio
         // but the patterns usually match the filename directly.
 
         // Try exact match first
-        if (ExecutablePatterns.TryGetValue(fileName, out var gameType))
-        {
-            return gameType;
-        }
+        if (ExecutablePatterns.TryGetValue(fileName, out var gameType)) return gameType;
 
         // Try partial match (e.g. "SSEEdit 4.0.4" -> "SSEEdit")
         foreach (var kvp in ExecutablePatterns)
-        {
             if (fileName.StartsWith(kvp.Key, StringComparison.OrdinalIgnoreCase))
-            {
                 return kvp.Value;
-            }
-        }
 
         return GameType.Unknown;
     }
 
     public async Task<GameType> DetectFromLoadOrderAsync(string loadOrderPath, CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(loadOrderPath) || !File.Exists(loadOrderPath))
-        {
-            return GameType.Unknown;
-        }
+        if (string.IsNullOrWhiteSpace(loadOrderPath) || !File.Exists(loadOrderPath)) return GameType.Unknown;
 
         try
         {
@@ -96,16 +86,10 @@ public sealed class GameDetectionService(ILoggingService logger) : IGameDetectio
                 // Clean up the line to get the plugin name
                 // Remove leading * (enabled flag in plugins.txt)
                 var pluginName = line.Trim();
-                if (pluginName.StartsWith('*'))
-                {
-                    pluginName = pluginName[1..];
-                }
+                if (pluginName.StartsWith('*')) pluginName = pluginName[1..];
 
                 // Check if this plugin is a known master
-                if (MasterFilePatterns.TryGetValue(pluginName, out var gameType))
-                {
-                    return gameType;
-                }
+                if (MasterFilePatterns.TryGetValue(pluginName, out var gameType)) return gameType;
             }
         }
         catch (Exception ex)
@@ -122,13 +106,11 @@ public sealed class GameDetectionService(ILoggingService logger) : IGameDetectio
             return GameVariant.None;
 
         if (baseGame == GameType.FalloutNewVegas)
-        {
             if (pluginNames.Any(p => p.Equals("TaleOfTwoWastelands.esm", StringComparison.OrdinalIgnoreCase)))
             {
                 logger.Information("Detected TTW (Tale of Two Wastelands) variant");
                 return GameVariant.Ttw;
             }
-        }
 
         if (baseGame != GameType.SkyrimSe) return GameVariant.None;
         {
@@ -146,18 +128,21 @@ public sealed class GameDetectionService(ILoggingService logger) : IGameDetectio
         return gameType != GameType.Unknown;
     }
 
-    public string GetGameDisplayName(GameType gameType) => gameType switch
+    public string GetGameDisplayName(GameType gameType)
     {
-        GameType.Oblivion => "The Elder Scrolls IV: Oblivion",
-        GameType.SkyrimLe => "Skyrim (Legendary Edition)",
-        GameType.SkyrimSe => "Skyrim Special Edition",
-        GameType.SkyrimVr => "Skyrim VR",
-        GameType.Fallout3 => "Fallout 3",
-        GameType.FalloutNewVegas => "Fallout: New Vegas",
-        GameType.Fallout4 => "Fallout 4",
-        GameType.Fallout4Vr => "Fallout 4 VR",
-        _ => "Unknown"
-    };
+        return gameType switch
+        {
+            GameType.Oblivion => "The Elder Scrolls IV: Oblivion",
+            GameType.SkyrimLe => "Skyrim (Legendary Edition)",
+            GameType.SkyrimSe => "Skyrim Special Edition",
+            GameType.SkyrimVr => "Skyrim VR",
+            GameType.Fallout3 => "Fallout 3",
+            GameType.FalloutNewVegas => "Fallout: New Vegas",
+            GameType.Fallout4 => "Fallout 4",
+            GameType.Fallout4Vr => "Fallout 4 VR",
+            _ => "Unknown"
+        };
+    }
 
     public string GetDefaultLoadOrderFileName(GameType gameType)
     {

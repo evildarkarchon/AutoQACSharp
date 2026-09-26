@@ -65,7 +65,8 @@ public sealed class ProgressViewModelTests
     /// </summary>
     private ProgressViewModel CreateViewModel()
     {
-        return new ProgressViewModel(_stateServiceMock, _cleaningSessionMock, _messageDialogMock, _loggerMock, _uiDispatcher);
+        return new ProgressViewModel(_stateServiceMock, _cleaningSessionMock, _messageDialogMock, _loggerMock,
+            _uiDispatcher);
     }
 
     [Fact]
@@ -296,14 +297,11 @@ public sealed class ProgressViewModelTests
         // Track progress changes via INotifyPropertyChanged.
         vm.PropertyChanged += (_, e) =>
         {
-            if (e.PropertyName == nameof(ProgressViewModel.Progress))
-            {
-                updates.Add(vm.Progress);
-            }
+            if (e.PropertyName == nameof(ProgressViewModel.Progress)) updates.Add(vm.Progress);
         };
 
         // Act - Simulate rapid state updates
-        for (int i = 0; i <= 100; i++)
+        for (var i = 0; i <= 100; i++)
         {
             var state = new AppState
             {
@@ -506,10 +504,7 @@ public sealed class ProgressViewModelTests
 
         vm.PropertyChanged += (_, e) =>
         {
-            if (e.PropertyName == nameof(ProgressViewModel.ProgressText))
-            {
-                progressTextChanges.Add(vm.ProgressText);
-            }
+            if (e.PropertyName == nameof(ProgressViewModel.ProgressText)) progressTextChanges.Add(vm.ProgressText);
         };
 
         // Act
@@ -693,13 +688,15 @@ public sealed class ProgressViewModelTests
         vm.IsResultsSummaryVisible.Should().BeTrue("completed cleaning results should show the summary panel");
 
         vm.IsPreviewMode = true;
-        vm.IsResultsSummaryVisible.Should().BeFalse("dry-run preview owns the preview panel instead of the cleaning summary");
+        vm.IsResultsSummaryVisible.Should()
+            .BeFalse("dry-run preview owns the preview panel instead of the cleaning summary");
 
         vm.IsShowingResults = false;
         vm.IsResultsSummaryVisible.Should().BeFalse("active cleaning should never leave the summary overlay visible");
 
         vm.IsPreviewMode = false;
-        vm.IsResultsSummaryVisible.Should().BeFalse("not showing results keeps the summary hidden even outside preview");
+        vm.IsResultsSummaryVisible.Should()
+            .BeFalse("not showing results keeps the summary hidden even outside preview");
     }
 
     [Fact]
@@ -718,7 +715,8 @@ public sealed class ProgressViewModelTests
         notifications.Should().Contain(nameof(ProgressViewModel.IsResultsSummaryVisible),
             "IsShowingResults changes affect the summary panel visibility");
         notifications.Count(n => n == nameof(ProgressViewModel.IsResultsSummaryVisible))
-            .Should().BeGreaterThanOrEqualTo(2, "both IsShowingResults and IsPreviewMode changes should notify the dependent property");
+            .Should().BeGreaterThanOrEqualTo(2,
+                "both IsShowingResults and IsPreviewMode changes should notify the dependent property");
     }
 
     #endregion
@@ -1103,7 +1101,8 @@ public sealed class ProgressViewModelTests
         _stateServiceMock.StateChanged.Returns(stateSubject);
 
         // Act
-        var vm = new ProgressViewModel(_stateServiceMock, _cleaningSessionMock, _messageDialogMock, _loggerMock, _uiDispatcher);
+        var vm = new ProgressViewModel(_stateServiceMock, _cleaningSessionMock, _messageDialogMock, _loggerMock,
+            _uiDispatcher);
 
         // Assert
         vm.Progress.Should().Be(3);
