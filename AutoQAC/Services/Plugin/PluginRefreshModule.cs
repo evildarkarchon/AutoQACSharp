@@ -103,7 +103,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             // Fence without a successor: a failed settings save or an external change may never launch a replacement
             // refresh, so the superseded operation's estimates are finalized here rather than by a successor.
             var superseded = _admission.SupersedeRefresh();
-            if (superseded is not null) FinalizeSuperseded(superseded, CanceledStatusText);
+            if (superseded is not null) FinalizeSuperseded(superseded, Supersession.ByFence);
             _publicationStore.InvalidatePublication();
         }
     }
@@ -666,13 +666,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
 
             if (cause == RefreshCancellationCause.Disposed) return _publicationStore.GetCurrentSnapshot();
 
-            return _publicationStore.PublishCurrentPublication(
-                null,
-                snapshot.GameType,
-                snapshot.Configuration,
-                IdleActivity,
-                statusText,
-                GetAffordance(snapshot));
+            return PublishIdleStatus(snapshot, statusText);
         }
     }
 
@@ -684,7 +678,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         lock (_supersessionSync)
         {
             var operation = _admission.TryBeginRefresh(cancellationToken, out var superseded);
-            if (superseded is not null) FinalizeSuperseded(superseded, null);
+            if (superseded is not null) FinalizeSuperseded(superseded, Supersession.BySuccessor);
             return operation;
         }
     }
@@ -695,31 +689,40 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
     ///     Unavailable. The superseded operation never commits again, so nothing else would end its estimates.
     /// </summary>
     /// <param name="superseded">Operation just marked superseded by admission. Caller holds the supersession lock.</param>
-    /// <param name="fenceStatusText">
-    ///     Status for a fence with no successor, which must also end any visible activity the superseded operation
-    ///     left behind; null when a successor keeps the visible status until it publishes its own.
+    /// <param name="supersession">
+    ///     Whether a successor will publish its own status, or a fence must end the superseded operation's visible
+    ///     activity itself with a canceled status.
     /// </param>
-    private void FinalizeSuperseded(RefreshOperation superseded, string? fenceStatusText)
+    private void FinalizeSuperseded(RefreshOperation superseded, Supersession supersession)
     {
         var snapshot = _publicationStore.GetCurrentSnapshot();
+        var statusText = supersession == Supersession.ByFence ? CanceledStatusText : snapshot.StatusText;
         if (_publicationStore.TryFinalizeSupersededOperation(
                 superseded,
-                fenceStatusText ?? snapshot.StatusText,
+                statusText,
                 GetAffordance(snapshot),
                 out _))
             return;
 
         // A fenced discovery may have left a loading snapshot that no successor will replace. An operation that
         // already published its terminal status keeps it: nothing visible was canceled.
-        if (fenceStatusText is not null &&
+        if (supersession == Supersession.ByFence &&
             (snapshot.Activity.IsPluginRefreshRunning || snapshot.Activity.IsIssueApproximationRefreshRunning))
-            _publicationStore.PublishCurrentPublication(
-                null,
-                snapshot.GameType,
-                snapshot.Configuration,
-                IdleActivity,
-                fenceStatusText,
-                GetAffordance(snapshot));
+            PublishIdleStatus(snapshot, statusText);
+    }
+
+    /// <summary>Republishes the visible game context as idle with a terminal status when no operation is publishing.</summary>
+    /// <param name="snapshot">Snapshot whose game context and configuration stay visible.</param>
+    /// <param name="statusText">Terminal status replacing the stopped activity's status.</param>
+    /// <returns>The committed snapshot.</returns>
+    private PluginRefreshSnapshot PublishIdleStatus(PluginRefreshSnapshot snapshot, string statusText)
+    {
+        return _publicationStore.RepublishCurrentPublication(
+            snapshot.GameType,
+            snapshot.Configuration,
+            IdleActivity,
+            statusText,
+            GetAffordance(snapshot));
     }
 
     /// <summary>Publishes the empty state only while the no-game refresh operation is still current.</summary>
@@ -1017,6 +1020,16 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         return plan.Mode == PluginRefreshDiscoveryMode.DirectAutomatic
             ? $"No plugins discovered via Mutagen for {plan.GameType}."
             : "No plugins found in the selected load order.";
+    }
+
+    /// <summary>How an operation was superseded, which decides who ends its visible activity.</summary>
+    private enum Supersession
+    {
+        /// <summary>A newer operation began and will publish its own status.</summary>
+        BySuccessor,
+
+        /// <summary>A settings fence superseded it with no successor, so finalization must end visible activity.</summary>
+        ByFence
     }
 
     /// <summary>Why the module is canceling its active refresh; Cleaning cancellation is never a caller intent.</summary>

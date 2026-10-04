@@ -262,9 +262,7 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
     /// <summary>
     ///     Publishes a visible snapshot projected from the AppState compatibility rows, without an accepted publication.
     /// </summary>
-    /// <param name="operation">
-    ///     Operation that must still be current to commit, or null to republish under the visible snapshot's generation.
-    /// </param>
+    /// <param name="operation">Operation that must still be current to commit.</param>
     /// <param name="gameType">Game context for the snapshot.</param>
     /// <param name="configuration">Resolved configuration projection.</param>
     /// <param name="activity">Current refresh activity.</param>
@@ -272,7 +270,29 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
     /// <param name="affordance">Game affordance facts for the snapshot.</param>
     /// <returns>The committed snapshot, or the current one when <paramref name="operation" /> is no longer current.</returns>
     internal PluginRefreshSnapshot PublishSnapshotFromState(
-        RefreshOperation? operation,
+        RefreshOperation operation,
+        GameType gameType,
+        PluginRefreshConfigurationProjection configuration,
+        PluginRefreshActivity activity,
+        string statusText,
+        PluginRefreshGameAffordance affordance)
+    {
+        return CommitSnapshotFromState(operation, gameType, configuration, activity, statusText, affordance);
+    }
+
+    /// <summary>Commits a snapshot projected from AppState rows for an operation, or for no operation.</summary>
+    /// <param name="owner">
+    ///     Operation that must still be current, or null when no operation is publishing; the snapshot then keeps the
+    ///     visible snapshot's generation.
+    /// </param>
+    /// <param name="gameType">Game context for the snapshot.</param>
+    /// <param name="configuration">Resolved configuration projection.</param>
+    /// <param name="activity">Current refresh activity.</param>
+    /// <param name="statusText">User-facing status text.</param>
+    /// <param name="affordance">Game affordance facts for the snapshot.</param>
+    /// <returns>The committed snapshot, or the current one when <paramref name="owner" /> is no longer current.</returns>
+    private PluginRefreshSnapshot CommitSnapshotFromState(
+        RefreshOperation? owner,
         GameType gameType,
         PluginRefreshConfigurationProjection configuration,
         PluginRefreshActivity activity,
@@ -286,10 +306,10 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
         PluginRefreshSnapshot next;
         lock (_snapshotLock)
         {
-            if (operation is { IsCurrent: false }) return _currentSnapshot;
+            if (owner is { IsCurrent: false }) return _currentSnapshot;
             next = WithCommandAvailability(
                 new PluginRefreshSnapshot(
-                    operation?.Id ?? _currentSnapshot.Generation,
+                    owner?.Id ?? _currentSnapshot.Generation,
                     gameType,
                     rows,
                     configuration,
@@ -383,12 +403,10 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
     }
 
     /// <summary>
-    ///     Publishes the current accepted publication with updated activity, configuration, and status.
+    ///     Publishes the current accepted publication with updated activity, configuration, and status, as an
+    ///     operation that takes ownership of the publication.
     /// </summary>
-    /// <param name="operation">
-    ///     Operation that must still be current and takes ownership of the publication, or null to republish without
-    ///     changing ownership, under the visible snapshot's generation.
-    /// </param>
+    /// <param name="operation">Operation that must still be current; it owns the publication once committed.</param>
     /// <param name="gameType">Game context for the update.</param>
     /// <param name="configuration">Resolved configuration projection.</param>
     /// <param name="activity">Current refresh activity.</param>
@@ -396,7 +414,50 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
     /// <param name="affordance">Game affordance facts for the publication.</param>
     /// <returns>The committed visible snapshot.</returns>
     internal PluginRefreshSnapshot PublishCurrentPublication(
-        RefreshOperation? operation,
+        RefreshOperation operation,
+        GameType gameType,
+        PluginRefreshConfigurationProjection configuration,
+        PluginRefreshActivity activity,
+        string statusText,
+        PluginRefreshGameAffordance affordance)
+    {
+        return CommitCurrentPublication(operation, gameType, configuration, activity, statusText, affordance);
+    }
+
+    /// <summary>
+    ///     Republishes the current accepted publication with updated activity, configuration, and status when no
+    ///     operation is publishing, such as after cancellation or a fallback selection change. Ownership and the
+    ///     visible snapshot's generation are unchanged.
+    /// </summary>
+    /// <param name="gameType">Game context for the update.</param>
+    /// <param name="configuration">Resolved configuration projection.</param>
+    /// <param name="activity">Current refresh activity.</param>
+    /// <param name="statusText">User-facing status text.</param>
+    /// <param name="affordance">Game affordance facts for the publication.</param>
+    /// <returns>The committed visible snapshot.</returns>
+    internal PluginRefreshSnapshot RepublishCurrentPublication(
+        GameType gameType,
+        PluginRefreshConfigurationProjection configuration,
+        PluginRefreshActivity activity,
+        string statusText,
+        PluginRefreshGameAffordance affordance)
+    {
+        return CommitCurrentPublication(null, gameType, configuration, activity, statusText, affordance);
+    }
+
+    /// <summary>Commits the current publication with updated activity and status for an operation, or for none.</summary>
+    /// <param name="owner">
+    ///     Operation that must still be current and takes ownership, or null to keep ownership and the visible
+    ///     snapshot's generation.
+    /// </param>
+    /// <param name="gameType">Game context for the update.</param>
+    /// <param name="configuration">Resolved configuration projection.</param>
+    /// <param name="activity">Current refresh activity.</param>
+    /// <param name="statusText">User-facing status text.</param>
+    /// <param name="affordance">Game affordance facts for the publication.</param>
+    /// <returns>The committed visible snapshot.</returns>
+    private PluginRefreshSnapshot CommitCurrentPublication(
+        RefreshOperation? owner,
         GameType gameType,
         PluginRefreshConfigurationProjection configuration,
         PluginRefreshActivity activity,
@@ -410,13 +471,13 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
         {
             publication = _currentPublication;
             freshnessToken = _currentPublicationFreshnessToken;
-            snapshotGeneration = operation?.Id ?? _currentSnapshot.Generation;
+            snapshotGeneration = owner?.Id ?? _currentSnapshot.Generation;
         }
 
         if (publication.DiscoveryPlan is null ||
             freshnessToken is null ||
             publication.DiscoveryPlan.GameType != gameType)
-            return PublishSnapshotFromState(operation, gameType, configuration, activity, statusText, affordance);
+            return CommitSnapshotFromState(owner, gameType, configuration, activity, statusText, affordance);
 
         var nextPublication = publication with
         {
@@ -427,7 +488,7 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
             Activity = activity,
             StatusText = statusText
         };
-        return PublishPublication(operation, nextPublication, freshnessToken, affordance);
+        return PublishPublication(owner, nextPublication, freshnessToken, affordance);
     }
 
     /// <summary>
@@ -740,6 +801,32 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
         var rowCommit = rowUpdate.Matched
             ? rowUpdate.Commit
             : PluginRefreshPublicationRows.Commit(_currentPublication.Rows);
+        _activeSelectedIssueApproximation = null;
+        return CommitTerminalRows(rowCommit, statusText, affordance);
+    }
+
+    /// <summary>Commits the initial tail's Unavailable rows and idle activity; caller holds the lock.</summary>
+    private PluginRefreshSnapshot CommitInitialFinalization(
+        string statusText,
+        PluginRefreshGameAffordance affordance)
+    {
+        var rowUpdate = PluginRefreshPublicationRows.ApplyUnavailableToPendingRows(
+            _currentPublication.Rows);
+        return CommitTerminalRows(rowUpdate.Commit, statusText, affordance);
+    }
+
+    /// <summary>
+    ///     Commits finalized rows with idle activity and a terminal status, then mirrors them; caller holds the lock.
+    /// </summary>
+    /// <param name="rowCommit">Rows whose unfinished estimates are already terminal.</param>
+    /// <param name="statusText">Terminal user-facing status.</param>
+    /// <param name="affordance">Game affordance facts for command projection.</param>
+    /// <returns>The committed snapshot, for the caller to emit after releasing the lock.</returns>
+    private PluginRefreshSnapshot CommitTerminalRows(
+        PluginRefreshPublicationRowsCommit rowCommit,
+        string statusText,
+        PluginRefreshGameAffordance affordance)
+    {
         var nextPublication = _currentPublication with
         {
             Rows = rowCommit.Rows,
@@ -755,37 +842,9 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
             affordance);
         _currentPublication = nextPublication with { Commands = commands };
         _currentSnapshot = ToSnapshot(_currentPublication);
-        _activeSelectedIssueApproximation = null;
-        // Terminal rows, idle activity, and the compatibility mirror must become visible together.
-        _appStateMirror.MirrorRows(rowCommit.Mirror);
-        return _currentSnapshot;
-    }
-
-    /// <summary>Commits the initial tail's Unavailable rows and idle activity; caller holds the lock.</summary>
-    private PluginRefreshSnapshot CommitInitialFinalization(
-        string statusText,
-        PluginRefreshGameAffordance affordance)
-    {
-        var rowUpdate = PluginRefreshPublicationRows.ApplyUnavailableToPendingRows(
-            _currentPublication.Rows);
-        var nextPublication = _currentPublication with
-        {
-            Rows = rowUpdate.Commit.Rows,
-            VisibleRows = rowUpdate.Commit.VisibleRows,
-            Activity = new PluginRefreshActivity(false, false),
-            StatusText = statusText
-        };
-        var commands = CreateCommandAvailability(
-            nextPublication.GameType,
-            nextPublication.VisibleRows,
-            nextPublication.Activity,
-            nextPublication.Configuration,
-            affordance);
-        _currentPublication = nextPublication with { Commands = commands };
-        _currentSnapshot = ToSnapshot(_currentPublication);
-        // Cancellation/failure terminalization and its compatibility mirror must remain one
+        // Terminal rows, idle activity, and the compatibility mirror must become visible together as one
         // operation-owned commit; otherwise a replacement refresh can be clobbered afterward.
-        _appStateMirror.MirrorRows(rowUpdate.Commit.Mirror);
+        _appStateMirror.MirrorRows(rowCommit.Mirror);
         return _currentSnapshot;
     }
 
@@ -948,8 +1007,7 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
         var targetFound = _appStateMirror.ApplyStateSelectionChange(visibleRows, change);
         if (!targetFound) return snapshot;
 
-        return PublishCurrentPublication(
-            null,
+        return RepublishCurrentPublication(
             snapshot.GameType,
             snapshot.Configuration,
             snapshot.Activity,

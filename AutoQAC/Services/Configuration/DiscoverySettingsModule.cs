@@ -121,8 +121,8 @@ public sealed class DiscoverySettingsModule : IDiscoverySettingsModule, IDisposa
                             Complete(operation, DiscoverySettingsChangeStatus.SaveFailed, new DiscoverySettingsChangeFailure(
                                 DiscoverySettingsChangeFailureKind.PersistenceFailed,
                                 persistence.Failure?.SafeSummary ?? "Could not save settings.", "Check the settings file and try again."));
-                            if (requiresPublication) FailRemaining();
                             _expectedConfiguration = DiscoverySettingsChanges.Fingerprint(active);
+                            if (requiresPublication) RepublishRemaining(active);
                         }
                     }
                     else
@@ -162,6 +162,18 @@ public sealed class DiscoverySettingsModule : IDiscoverySettingsModule, IDisposa
                 catch (Exception ex)
                 {
                     _logger?.Error(ex, "Failed to persist a Discovery settings change");
+                    // Older saved changes may still need a publication of whatever settings remain durable.
+                    UserConfiguration? durable = null;
+                    if (requiresPublication)
+                        try
+                        {
+                            durable = await _configuration.LoadUserConfigAsync(CancellationToken.None).ConfigureAwait(false);
+                        }
+                        catch (Exception loadException)
+                        {
+                            _logger?.Error(loadException, "Failed to reload settings after a failed Discovery settings save");
+                        }
+
                     lock (_sync)
                     {
                         operation.Mutating = false;
@@ -170,7 +182,12 @@ public sealed class DiscoverySettingsModule : IDiscoverySettingsModule, IDisposa
                         Complete(operation, DiscoverySettingsChangeStatus.SaveFailed,
                             new DiscoverySettingsChangeFailure(DiscoverySettingsChangeFailureKind.PersistenceFailed,
                                 message, "Check the latest configuration save error and try again."));
-                        if (requiresPublication) FailRemaining();
+                        if (requiresPublication)
+                        {
+                            // Without the durable settings no replacement refresh can be attempted.
+                            if (durable is null) FailRemaining();
+                            else RepublishRemaining(durable);
+                        }
                     }
                 }
                 finally
@@ -302,6 +319,22 @@ public sealed class DiscoverySettingsModule : IDiscoverySettingsModule, IDisposa
         _pending.Remove(operation);
         operation.Completion.TrySetResult(new DiscoverySettingsChangeResult(status, snapshot, failure)
         { SettingsSaved = operation.Saved });
+    }
+
+    /// <summary>
+    ///     After a newer change's save fails, gives saved changes still awaiting a publication one for the durable settings.
+    /// </summary>
+    /// <param name="durable">Settings that remain on disk after the failed save, including the older saved choices.</param>
+    /// <remarks>
+    ///     Admitting the newer change advanced the revision, so the older changes' own publication can no longer
+    ///     accept them, even though their choices are still durable and their refresh keeps running until superseded.
+    ///     Failing them would report "could not be refreshed" while fresh rows appear. Callers hold the ownership
+    ///     lock and the settings lease, so the replacement refresh begins in order like any other settings refresh.
+    /// </remarks>
+    private void RepublishRemaining(UserConfiguration durable)
+    {
+        if (_disposed || !_pending.Any(p => p.Saved && !p.Mutating && p.RequiresPublication)) return;
+        _ = PublishAsync(_revision, durable.Copy());
     }
 
     /// <summary>Fails saved choices when their shared discovery attempt cannot produce a publication.</summary>

@@ -356,6 +356,66 @@ public sealed class DiscoverySettingsPublicationIntegrationTests
         operation.Unwound.IsCompleted.Should().BeTrue();
     }
 
+    /// <summary>
+    ///     A newer change whose save fails must not report an older saved change as unrefreshable: the older choice is
+    ///     still durable, so it is accepted from a publication of the durable settings.
+    /// </summary>
+    [Fact]
+    public async Task NewerSaveFailure_AcceptsOlderSavedChangeFromDurableSettings()
+    {
+        using var fixture = new Fixture();
+        var loadingEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finishFirstLoad = new TaskCompletionSource<PluginLoadingResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var loads = 0;
+        fixture.Loading.TryGetPluginsAsync(GameType.SkyrimSe, Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                if (Interlocked.Increment(ref loads) == 1)
+                {
+                    // Hold the older change's discovery so the newer change is admitted while it is in flight.
+                    loadingEntered.TrySetResult();
+                    return finishFirstLoad.Task;
+                }
+
+                return Task.FromResult(new PluginLoadingResult
+                {
+                    Status = PluginLoadingStatus.Success,
+                    DataFolder = call.ArgAt<string?>(1),
+                    Plugins = [new PluginInfo { FileName = "Chosen.esp", FullPath = Path.Combine(Path.GetTempPath(), "Chosen.esp"), DetectedGameType = GameType.SkyrimSe }]
+                });
+            });
+        var older = fixture.Settings.ExecuteAsync(new DiscoverySettingsIntent.SetDisableSkipLists(true));
+        await loadingEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var durable = fixture.Saved.Copy();
+        fixture.Config.FlushPendingSavesAsync(Arg.Any<CancellationToken>()).Returns(_ =>
+        {
+            fixture.RestoreConfiguration(durable);
+            return Task.FromResult(new ConfigPersistenceResult(ConfigPersistenceStatusKind.Failed,
+                ConfigPersistenceOperationKind.Flush, 2,
+                new ConfigPersistenceFailure(ConfigPersistenceOperationKind.Flush,
+                    ConfigPersistenceFailureKind.WriteFailed, "Could not save settings.", null, 2)));
+        });
+
+        try
+        {
+            var newer = await fixture.Settings.ExecuteAsync(new DiscoverySettingsIntent.SetMo2Mode(true))
+                .WaitAsync(TimeSpan.FromSeconds(5));
+            var olderResult = await older.WaitAsync(TimeSpan.FromSeconds(5));
+            var publication = await fixture.Refresh.GetCurrentPublicationAsync();
+
+            newer.Status.Should().Be(DiscoverySettingsChangeStatus.SaveFailed);
+            olderResult.Status.Should().Be(DiscoverySettingsChangeStatus.Accepted);
+            olderResult.SettingsSaved.Should().BeTrue();
+            publication.Freshness.IsFresh.Should().BeTrue();
+            publication.DiscoveryPlan!.DisableSkipLists.Should().BeTrue();
+            publication.Configuration.Mo2ModeEnabled.Should().BeFalse("the newer choice was never saved");
+        }
+        finally
+        {
+            finishFirstLoad.TrySetResult(new PluginLoadingResult { Status = PluginLoadingStatus.Success, Plugins = [] });
+        }
+    }
+
     /// <summary>A loader failure preserves the saved choice but cannot establish accepted empty rows.</summary>
     [Fact]
     public async Task DiscoveryFailure_PreservesSavedChoiceAndLeavesCleaningUnavailable()
