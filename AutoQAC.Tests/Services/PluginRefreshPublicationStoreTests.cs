@@ -15,12 +15,13 @@ public sealed class PluginRefreshPublicationStoreTests
     public void PublishMissingPublicationFromState_WhenCurrent_ShouldClearCompatibilityRows()
     {
         var stateService = new StateService();
-        using var sut = CreateStore(stateService);
+        var admission = new CleaningAdmission();
+        using var sut = CreateStore(stateService, admission: admission);
         var plan = CreatePlan();
-        sut.PublishAcceptedPublication(1, GameType.SkyrimSe, plan, CreateFreshnessToken(),
+        sut.PublishAcceptedPublication(Begin(admission), GameType.SkyrimSe, plan, CreateFreshnessToken(),
             plan.Configuration, [Published("Old.esp", isSelected: false)], new(false, false), "Old", Affordance());
 
-        var result = sut.PublishMissingPublicationFromState(2, GameType.SkyrimSe,
+        var result = sut.PublishMissingPublicationFromState(Begin(admission), GameType.SkyrimSe,
             plan.Configuration, new(false, false), "Discovery failed", Affordance());
 
         result.Rows.Should().BeEmpty();
@@ -34,23 +35,26 @@ public sealed class PluginRefreshPublicationStoreTests
     public void PublishMissingPublicationFromState_WhenSupersededDuringClear_ShouldPreserveWinningPublication()
     {
         var stateService = new StateService();
-        using var sut = CreateStore(stateService);
+        var admission = new CleaningAdmission();
+        using var sut = CreateStore(stateService, admission: admission);
         var plan = CreatePlan();
-        sut.PublishAcceptedPublication(1, GameType.SkyrimSe, plan, CreateFreshnessToken(),
+        sut.PublishAcceptedPublication(Begin(admission), GameType.SkyrimSe, plan, CreateFreshnessToken(),
             plan.Configuration, [Published("Old.esp")], new(false, false), "Old", Affordance());
-        var supersede = true;
+        var failing = Begin(admission);
+        RefreshOperation? winner = null;
         using var subscription = stateService.StateChanged.Subscribe(state =>
         {
-            if (!supersede || state.PluginsToClean.Count != 0) return;
-            supersede = false;
-            sut.PublishAcceptedPublication(3, GameType.SkyrimSe, plan, CreateFreshnessToken(),
+            if (winner is not null || state.PluginsToClean.Count != 0) return;
+            winner = Begin(admission);
+            sut.PublishAcceptedPublication(winner, GameType.SkyrimSe, plan, CreateFreshnessToken(),
                 plan.Configuration, [Published("Winner.esp", isSelected: false)], new(false, false), "Winner", Affordance());
         });
 
-        var result = sut.PublishMissingPublicationFromState(2, GameType.SkyrimSe,
+        var result = sut.PublishMissingPublicationFromState(failing, GameType.SkyrimSe,
             plan.Configuration, new(false, false), "Discovery failed", Affordance());
 
-        result.Generation.Should().Be(3);
+        winner.Should().NotBeNull();
+        result.Generation.Should().Be(winner!.Id);
         result.Rows.Should().ContainSingle(row => row.FileName == "Winner.esp");
         stateService.CurrentState.PluginsToClean.Should().ContainSingle(row => row.FileName == "Winner.esp");
         stateService.CurrentState.ExcludedPluginPaths.Should().Equal(@"C:\Data\Winner.esp");
@@ -64,17 +68,20 @@ public sealed class PluginRefreshPublicationStoreTests
     public void PublishMissingPublicationFromState_WhenSuperseded_ShouldPreserveCurrentPublication(bool invalidate)
     {
         var stateService = new StateService();
-        using var sut = CreateStore(stateService);
+        var admission = new CleaningAdmission();
+        using var sut = CreateStore(stateService, admission: admission);
         var plan = CreatePlan();
-        sut.PublishAcceptedPublication(2, GameType.SkyrimSe, plan, CreateFreshnessToken(),
+        var obsolete = Begin(admission);
+        var winner = Begin(admission);
+        sut.PublishAcceptedPublication(winner, GameType.SkyrimSe, plan, CreateFreshnessToken(),
             plan.Configuration, [Published("Winner.esp", isSelected: false)], new(false, false), "Winner", Affordance());
-        if (invalidate) sut.InvalidatePublication(3);
+        if (invalidate) Fence(admission, sut);
         var before = sut.GetFreshnessInspection();
         var snapshot = sut.GetCurrentSnapshot();
         var notifications = new List<PluginRefreshSnapshot>();
         using var subscription = sut.Snapshots.Subscribe(notifications.Add);
 
-        var result = sut.PublishMissingPublicationFromState(invalidate ? 2 : 1, GameType.SkyrimSe,
+        var result = sut.PublishMissingPublicationFromState(invalidate ? winner : obsolete, GameType.SkyrimSe,
             plan.Configuration, new(false, false), "Obsolete failure", Affordance());
 
         result.Should().BeSameAs(snapshot);
@@ -92,18 +99,130 @@ public sealed class PluginRefreshPublicationStoreTests
     public void PublishAcceptedPublication_WhenSuperseded_ShouldPreserveCompatibilityRows(bool invalidate)
     {
         var stateService = new StateService();
-        using var sut = CreateStore(stateService);
+        var admission = new CleaningAdmission();
+        using var sut = CreateStore(stateService, admission: admission);
         var plan = CreatePlan();
-        var snapshot = sut.PublishAcceptedPublication(2, GameType.SkyrimSe, plan, CreateFreshnessToken(),
+        var obsolete = Begin(admission);
+        var winner = Begin(admission);
+        var snapshot = sut.PublishAcceptedPublication(winner, GameType.SkyrimSe, plan, CreateFreshnessToken(),
             plan.Configuration, [Published("Winner.esp", isSelected: false)], new(false, false), "Winner", Affordance());
-        if (invalidate) sut.InvalidatePublication(3);
+        if (invalidate) Fence(admission, sut);
 
-        var result = sut.PublishAcceptedPublication(invalidate ? 2 : 1, GameType.SkyrimSe, plan, CreateFreshnessToken(),
-            plan.Configuration, [Published("Obsolete.esp")], new(false, false), "Obsolete", Affordance());
+        var result = sut.PublishAcceptedPublication(invalidate ? winner : obsolete, GameType.SkyrimSe, plan,
+            CreateFreshnessToken(), plan.Configuration, [Published("Obsolete.esp")], new(false, false), "Obsolete",
+            Affordance());
 
         result.Should().BeSameAs(snapshot);
+        sut.GetFreshnessInspection().Publication.Freshness.IsFresh.Should().Be(!invalidate,
+            "a fenced operation cannot restore the revoked freshness lease");
         stateService.CurrentState.PluginsToClean.Should().ContainSingle(row => row.FileName == "Winner.esp");
         stateService.CurrentState.ExcludedPluginPaths.Should().Equal(@"C:\Data\Winner.esp");
+    }
+
+    /// <summary>
+    ///     Once supersession finalizes an operation's initial tail, nothing that operation still has in flight can
+    ///     commit: not a late result, not its own cancellation cleanup, and not a delayed publication.
+    /// </summary>
+    [Fact]
+    public void SupersededOperation_AfterFinalization_CannotCommit()
+    {
+        var stateService = new StateService();
+        var admission = new CleaningAdmission();
+        using var sut = CreateStore(stateService, admission: admission);
+        var plan = CreatePlan();
+        var superseded = Begin(admission);
+        sut.PublishAcceptedPublication(superseded, GameType.SkyrimSe, plan, CreateFreshnessToken(),
+            plan.Configuration,
+            [
+                Published("Done.esp", approximation: PluginIssueApproximation.Available(1, 1, 1)),
+                Published("Pending.esp", approximation: PluginIssueApproximation.Pending)
+            ],
+            new(true, true), "Analyzing 1 of 2 plugins.", Affordance());
+        var pendingKey = new PluginRefreshRowKey("Pending.esp", @"C:\Data\Pending.esp");
+        var successor = admission.TryBeginRefresh(CancellationToken.None, out var replaced);
+        successor.Should().NotBeNull();
+        replaced.Should().BeSameAs(superseded);
+
+        sut.TryFinalizeSupersededOperation(superseded, "Superseded", Affordance(), out var finalized)
+            .Should().BeTrue();
+        var notifications = new List<PluginRefreshSnapshot>();
+        using var subscription = sut.Snapshots.Subscribe(notifications.Add);
+
+        sut.TryPublishInitialApproximationResult(superseded,
+                PluginRefreshPublicationRows.CreateTargetLookup([pendingKey]),
+                new(pendingKey, PluginIssueApproximation.Available(9, 9, 9)), "Late", Affordance())
+            .Should().BeFalse();
+        sut.TryFinalizeInitialApproximation(superseded, "Own cleanup", Affordance(), out _).Should().BeFalse();
+        sut.TryFinalizeSupersededOperation(superseded, "Again", Affordance(), out _).Should().BeFalse();
+        sut.PublishAcceptedPublication(superseded, GameType.SkyrimSe, plan, CreateFreshnessToken(),
+            plan.Configuration, [Published("Late.esp")], new(false, false), "Late", Affordance());
+
+        finalized.Activity.Should().Be(new PluginRefreshActivity(false, false));
+        sut.GetCurrentSnapshot().Should().BeSameAs(finalized);
+        notifications.Should().ContainSingle("only the subscription replay is observed after finalization");
+        sut.GetFreshnessInspection().Publication.Rows.Select(row => row.Plugin.Approximation).Should().Equal(
+            PluginIssueApproximation.Available(1, 1, 1), PluginIssueApproximation.Unavailable);
+        stateService.CurrentState.PluginsToClean.Select(plugin => plugin.Approximation).Should().Equal(
+            PluginIssueApproximation.Available(1, 1, 1), PluginIssueApproximation.Unavailable);
+    }
+
+    /// <summary>A settings fence leaves no current operation and still finalizes the fenced operation's Pending rows.</summary>
+    [Fact]
+    public void Fence_WithNoSuccessor_FinalizesPendingRows()
+    {
+        var stateService = new StateService();
+        var admission = new CleaningAdmission();
+        using var sut = CreateStore(stateService, admission: admission);
+        var plan = CreatePlan();
+        var fenced = Begin(admission);
+        sut.PublishAcceptedPublication(fenced, GameType.SkyrimSe, plan, CreateFreshnessToken(),
+            plan.Configuration, [Published("Pending.esp", approximation: PluginIssueApproximation.Pending)],
+            new(true, true), "Analyzing 0 of 1 plugins.", Affordance());
+
+        admission.SupersedeRefresh().Should().BeSameAs(fenced);
+        var finalizedRows = sut.TryFinalizeSupersededOperation(fenced, "Approximation refresh canceled.",
+            Affordance(), out var finalized);
+
+        admission.CurrentRefresh.Should().BeNull("a fence has no successor");
+        fenced.IsCurrent.Should().BeFalse();
+        fenced.Token.IsCancellationRequested.Should().BeTrue();
+        finalizedRows.Should().BeTrue();
+        finalized.StatusText.Should().Be("Approximation refresh canceled.");
+        finalized.Activity.Should().Be(new PluginRefreshActivity(false, false));
+        sut.GetFreshnessInspection().Publication.Rows.Should().ContainSingle()
+            .Which.Plugin.Approximation.Should().Be(PluginIssueApproximation.Unavailable);
+        stateService.CurrentState.PluginsToClean.Should().ContainSingle()
+            .Which.Approximation.Should().Be(PluginIssueApproximation.Unavailable);
+    }
+
+    /// <summary>
+    ///     A canceled operation that was not superseded can no longer commit results, but its own cancellation
+    ///     cleanup may still finalize the estimates it owns.
+    /// </summary>
+    [Fact]
+    public void CanceledOperation_CannotCommitResultsButCanFinalizeItsTail()
+    {
+        var stateService = new StateService();
+        var admission = new CleaningAdmission();
+        using var sut = CreateStore(stateService, admission: admission);
+        var plan = CreatePlan();
+        using var caller = new CancellationTokenSource();
+        var operation = admission.TryBeginRefresh(caller.Token, out _)!;
+        var key = new PluginRefreshRowKey("Pending.esp", @"C:\Data\Pending.esp");
+        sut.PublishAcceptedPublication(operation, GameType.SkyrimSe, plan, CreateFreshnessToken(),
+            plan.Configuration, [Published("Pending.esp", approximation: PluginIssueApproximation.Pending)],
+            new(true, true), "Analyzing 0 of 1 plugins.", Affordance());
+
+        caller.Cancel();
+
+        operation.IsCurrent.Should().BeFalse();
+        operation.IsSuperseded.Should().BeFalse();
+        sut.TryPublishInitialApproximationResult(operation, PluginRefreshPublicationRows.CreateTargetLookup([key]),
+                new(key, PluginIssueApproximation.Available(9, 9, 9)), "Late", Affordance())
+            .Should().BeFalse();
+        sut.TryFinalizeInitialApproximation(operation, "Canceled", Affordance(), out _).Should().BeTrue();
+        sut.GetFreshnessInspection().Publication.Rows.Should().ContainSingle()
+            .Which.Plugin.Approximation.Should().Be(PluginIssueApproximation.Unavailable);
     }
 
     /// <summary>An approximation result and the concurrent user selection must both survive publication.</summary>
@@ -117,20 +236,22 @@ public sealed class PluginRefreshPublicationStoreTests
             .Do(call => backingState.SetPluginsToClean(call.Arg<List<PluginInfo>>()!));
         stateService.When(service => service.UpdateExcludedPlugins(Arg.Any<Func<IReadOnlySet<string>, IReadOnlySet<string>>>()))
             .Do(call => backingState.UpdateExcludedPlugins(call.Arg<Func<IReadOnlySet<string>, IReadOnlySet<string>>>()!));
+        var admission = new CleaningAdmission();
         using var sut = new PluginRefreshPublicationStore(new PluginRefreshAppStateMirror(stateService),
-            new PluginRefreshCommandAvailabilityPolicy(new CleaningAdmission()), Affordance());
+            new PluginRefreshCommandAvailabilityPolicy(admission), Affordance());
         var plan = CreatePlan();
         var target = new PluginRefreshRowKey("Target.esp", @"C:\Data\Target.esp");
-        sut.PublishAcceptedPublication(1, GameType.SkyrimSe, plan, CreateFreshnessToken(),
+        var operation = Begin(admission);
+        sut.PublishAcceptedPublication(operation, GameType.SkyrimSe, plan, CreateFreshnessToken(),
             plan.Configuration, [Published("Target.esp", approximation: PluginIssueApproximation.Pending)],
             new(true, true), "Analyzing", Affordance());
         // Land the approximation commit once, between the selection's read and its compare-and-swap.
         sut.BeforeSelectionCommit = () =>
         {
             sut.BeforeSelectionCommit = null;
-            sut.TryPublishInitialApproximationResult(1,
+            sut.TryPublishInitialApproximationResult(operation,
                 PluginRefreshPublicationRows.CreateTargetLookup([target]),
-                new(target, PluginIssueApproximation.Available(3, 2, 1)), "Result arrived", Affordance(), () => true);
+                new(target, PluginIssueApproximation.Available(3, 2, 1)), "Result arrived", Affordance());
         };
 
         sut.ApplySelectionChange(new PluginSelectionChange.SetOne(target, false), Affordance());
@@ -148,12 +269,13 @@ public sealed class PluginRefreshPublicationStoreTests
     public void PublishAcceptedPublication_ShouldMirrorFullRowsAndPublishVisibleSnapshot()
     {
         var stateService = new StateService();
-        using var sut = CreateStore(stateService);
+        var admission = new CleaningAdmission();
+        using var sut = CreateStore(stateService, admission: admission);
         var plan = CreatePlan();
         var token = CreateFreshnessToken();
 
         var snapshot = sut.PublishAcceptedPublication(
-            1,
+            Begin(admission),
             GameType.SkyrimSe,
             plan,
             token,
@@ -179,11 +301,12 @@ public sealed class PluginRefreshPublicationStoreTests
     {
         var stateService = new StateService();
         stateService.StartCleaning([Plugin("Cleaning.esp")]);
-        using var sut = CreateStore(stateService);
+        var admission = new CleaningAdmission();
+        using var sut = CreateStore(stateService, admission: admission);
         var plan = CreatePlan();
 
         sut.PublishAcceptedPublication(
-            1,
+            Begin(admission),
             GameType.SkyrimSe,
             plan,
             CreateFreshnessToken(),
@@ -202,10 +325,11 @@ public sealed class PluginRefreshPublicationStoreTests
     public void ApplySelectionChange_WithAcceptedPublication_ShouldUpdateSnapshotPublicationAndMirror()
     {
         var stateService = new StateService();
-        using var sut = CreateStore(stateService);
+        var admission = new CleaningAdmission();
+        using var sut = CreateStore(stateService, admission: admission);
         var plan = CreatePlan();
         sut.PublishAcceptedPublication(
-            1,
+            Begin(admission),
             GameType.SkyrimSe,
             plan,
             CreateFreshnessToken(),
@@ -244,11 +368,12 @@ public sealed class PluginRefreshPublicationStoreTests
     public void PublishFreshnessIfCurrent_ShouldEmitOnlyWhenCurrentPublicationFreshnessChanges()
     {
         var stateService = new StateService();
-        using var sut = CreateStore(stateService);
+        var admission = new CleaningAdmission();
+        using var sut = CreateStore(stateService, admission: admission);
         var plan = CreatePlan();
         var token = CreateFreshnessToken();
         sut.PublishAcceptedPublication(
-            1,
+            Begin(admission),
             GameType.SkyrimSe,
             plan,
             token,
@@ -276,6 +401,29 @@ public sealed class PluginRefreshPublicationStoreTests
             .Should().Be(PluginRefreshStalenessReason.LoadOrderPathChanged);
     }
 
+    /// <summary>A freshness verdict observed before a newer settings change cannot replace the publication's freshness.</summary>
+    [Fact]
+    public void PublishFreshnessIfCurrent_WhenSettingsObservationAdvanced_ShouldRejectVerdict()
+    {
+        var stateService = new StateService();
+        var admission = new CleaningAdmission();
+        using var sut = CreateStore(stateService, admission: admission);
+        var plan = CreatePlan();
+        var token = CreateFreshnessToken();
+        sut.PublishAcceptedPublication(Begin(admission), GameType.SkyrimSe, plan, token, plan.Configuration,
+            [Published("Selected.esp")], new(false, false), "Loaded", Affordance());
+        var version = new PluginRefreshFreshnessVersion();
+        var observation = version.Observe();
+        version.Advance();
+
+        var accepted = sut.PublishFreshnessIfCurrent(sut.GetFreshnessInspection().Publication, token,
+            new PluginRefreshFreshness(false, PluginRefreshStalenessReason.LoadOrderPathChanged), observation);
+
+        accepted.Should().BeFalse();
+        observation.IsCurrent.Should().BeFalse();
+        sut.GetFreshnessInspection().Publication.Freshness.Should().Be(PluginRefreshFreshness.Fresh);
+    }
+
     /// <summary>A Cleaning admission reservation disables row commands and is reported in the snapshot.</summary>
     [Fact]
     public async Task PublishCommandAvailabilityIfChanged_WhenCleaningReserved_ShouldDisableCommandsWithoutReplacingRows()
@@ -284,8 +432,9 @@ public sealed class PluginRefreshPublicationStoreTests
         var admission = new CleaningAdmission();
         using var sut = CreateStore(stateService, admission: admission);
         var plan = CreatePlan(true);
+        var operation = Begin(admission);
         sut.PublishAcceptedPublication(
-            1,
+            operation,
             GameType.SkyrimSe,
             plan,
             CreateFreshnessToken(),
@@ -294,6 +443,8 @@ public sealed class PluginRefreshPublicationStoreTests
             new PluginRefreshActivity(false, false),
             "Loaded",
             Affordance());
+        // The publishing operation has unwound; otherwise Cleaning admission would wait to drain it.
+        operation.Dispose();
         var before = sut.GetCurrentSnapshot();
 
         before.Commands.CanSelectAll.Should().BeTrue();
@@ -321,10 +472,12 @@ public sealed class PluginRefreshPublicationStoreTests
     public void InitialApproximationPublication_ShouldMirrorExactResultsAndFinalizeUnfinishedTargets()
     {
         var stateService = new StateService();
-        using var sut = CreateStore(stateService);
+        var admission = new CleaningAdmission();
+        using var sut = CreateStore(stateService, admission: admission);
         var plan = CreatePlan();
+        var operation = Begin(admission);
         sut.PublishAcceptedPublication(
-            1,
+            operation,
             GameType.SkyrimSe,
             plan,
             CreateFreshnessToken(),
@@ -340,30 +493,31 @@ public sealed class PluginRefreshPublicationStoreTests
         sut.ApplySelectionChange(
             new PluginSelectionChange.SetOne(new PluginRefreshRowKey("Other.esp", @"C:\Data\Other.esp"), false),
             Affordance());
-        var targets = sut.GetSelectedIssueApproximationTargets();
-        var targetLookup = PluginRefreshPublicationRows.CreateTargetLookup(targets.Targets);
+        var targets = sut.GetCurrentSnapshot().Rows
+            .Where(row => row.IsSelected)
+            .Select(row => row.Key)
+            .ToList();
+        var targetLookup = PluginRefreshPublicationRows.CreateTargetLookup(targets);
 
-        var target = targets.Targets.Single(key => key.FileName == "Target.esp");
+        var target = targets.Single(key => key.FileName == "Target.esp");
         var matched = sut.TryPublishInitialApproximationResult(
-            1,
+            operation,
             targetLookup,
             new PluginIssueApproximationModuleResult(
                 target,
                 PluginIssueApproximation.Available(3, 2, 1)),
             "Analyzing 1 of 2 plugins.",
-            Affordance(),
-            () => true);
+            Affordance());
         var nonTargetMatched = sut.TryPublishInitialApproximationResult(
-            1,
+            operation,
             targetLookup,
             new PluginIssueApproximationModuleResult(
                 new PluginRefreshRowKey("Other.esp", @"C:\Data\Other.esp"),
                 PluginIssueApproximation.Available(9, 9, 9)),
             "Analyzing 2 of 2 plugins.",
-            Affordance(),
-            () => true);
+            Affordance());
 
-        targets.Targets.Select(target => target.FileName).Should().Equal("Target.esp", "PendingOnly.esp");
+        targets.Select(key => key.FileName).Should().Equal("Target.esp", "PendingOnly.esp");
         matched.Should().BeTrue();
         nonTargetMatched.Should().BeFalse();
         sut.GetFreshnessInspection().Publication.Rows.Should().Contain(row =>
@@ -375,10 +529,9 @@ public sealed class PluginRefreshPublicationStoreTests
             plugin.Approximation.Status == PluginIssueApproximationStatus.Available);
 
         sut.TryFinalizeInitialApproximation(
-            1,
+            operation,
             "Refreshed 1 plugin approximations.",
             Affordance(),
-            () => true,
             out _).Should().BeTrue();
 
         sut.GetFreshnessInspection().Publication.Rows.Should().Contain(row =>
@@ -394,6 +547,20 @@ public sealed class PluginRefreshPublicationStoreTests
         stateService.CurrentState.PluginsToClean.Should().Contain(plugin =>
             plugin.FileName == "PendingOnly.esp" &&
             plugin.Approximation.Status == PluginIssueApproximationStatus.Unavailable);
+    }
+
+    /// <summary>Begins an operation that supersedes whichever operation the admission currently has.</summary>
+    private static RefreshOperation Begin(CleaningAdmission admission)
+    {
+        return admission.TryBeginRefresh(CancellationToken.None, out _)
+               ?? throw new InvalidOperationException("Cleaning unexpectedly reserved admission.");
+    }
+
+    /// <summary>Fences refresh work the way a Discovery settings change does: supersede, then revoke freshness.</summary>
+    private static void Fence(CleaningAdmission admission, PluginRefreshPublicationStore store)
+    {
+        admission.SupersedeRefresh();
+        store.InvalidatePublication();
     }
 
     private static PluginRefreshPublicationStore CreateStore(

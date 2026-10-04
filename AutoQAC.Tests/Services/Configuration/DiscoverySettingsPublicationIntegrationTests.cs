@@ -269,6 +269,93 @@ public sealed class DiscoverySettingsPublicationIntegrationTests
         (await fixture.Refresh.GetCurrentPublicationAsync()).Freshness.IsFresh.Should().BeFalse();
     }
 
+    /// <summary>
+    ///     A Cleaning reservation that drains an admitted save rejects the follow-up refresh operation, so no
+    ///     discovery runs and the saved change completes as canceled.
+    /// </summary>
+    [Fact]
+    public async Task CleaningReservedDuringSave_RejectsRefreshOperationAndCancelsChange()
+    {
+        using var fixture = new Fixture();
+        var saveStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var continueSave = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        fixture.Config.SaveUserConfigAsync(Arg.Any<UserConfiguration>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                saveStarted.TrySetResult();
+                await continueSave.Task;
+                fixture.CompleteSave(call.Arg<UserConfiguration>()!);
+            });
+        var change = fixture.Settings.ExecuteAsync(new DiscoverySettingsIntent.SetDisableSkipLists(true));
+        await saveStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var cleaning = fixture.Admission.EnterCleaningAsync();
+        cleaning.IsCompleted.Should().BeFalse("the admitted save still holds the settings lease");
+
+        continueSave.TrySetResult();
+        using var cleaningLease = await cleaning.WaitAsync(TimeSpan.FromSeconds(5));
+        var result = await change.WaitAsync(TimeSpan.FromSeconds(5));
+
+        result.Status.Should().Be(DiscoverySettingsChangeStatus.Canceled);
+        result.SettingsSaved.Should().BeTrue();
+        fixture.Admission.CurrentRefresh.Should().BeNull("admission rejected the refresh operation");
+        await fixture.Loading.DidNotReceiveWithAnyArgs().TryGetPluginsAsync(default, default, default);
+    }
+
+    /// <summary>Cleaning admission waits for a settings refresh it canceled to finish unwinding its discovery.</summary>
+    [Fact]
+    public async Task CleaningReservedDuringSettingsRefresh_WaitsForCanceledOperationToUnwind()
+    {
+        using var fixture = new Fixture();
+        var loadingEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cancellationObserved = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var allowUnwind = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        fixture.Loading.TryGetPluginsAsync(GameType.SkyrimSe, Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                var token = call.Arg<CancellationToken>();
+                loadingEntered.TrySetResult();
+                try
+                {
+                    await Task.Delay(Timeout.InfiniteTimeSpan, token);
+                }
+                catch (OperationCanceledException) when (token.IsCancellationRequested)
+                {
+                    cancellationObserved.TrySetResult();
+                }
+
+                // Model an importer that keeps unwinding after it observes cancellation.
+                await allowUnwind.Task;
+                return new PluginLoadingResult { Status = PluginLoadingStatus.Success, Plugins = [] };
+            });
+        var change = fixture.Settings.ExecuteAsync(new DiscoverySettingsIntent.SetDisableSkipLists(true));
+        await loadingEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var operation = fixture.Admission.CurrentRefresh!;
+        Task<IDisposable>? cleaning = null;
+
+        try
+        {
+            cleaning = fixture.Admission.EnterCleaningAsync();
+            await cancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+            // The importer cannot unwind until released, so the operation cannot be disposed and the drain cannot end.
+            operation.IsCurrent.Should().BeFalse();
+            operation.Unwound.IsCompleted.Should().BeFalse();
+            cleaning.IsCompleted.Should().BeFalse(
+                "Cleaning admission must not complete while the canceled settings refresh is still unwinding");
+        }
+        finally
+        {
+            allowUnwind.TrySetResult();
+            if (cleaning is not null)
+            {
+                using var cleaningLease = await cleaning.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+        }
+
+        (await change.WaitAsync(TimeSpan.FromSeconds(5))).Status.Should().Be(DiscoverySettingsChangeStatus.Canceled);
+        operation.Unwound.IsCompleted.Should().BeTrue();
+    }
+
     /// <summary>A loader failure preserves the saved choice but cannot establish accepted empty rows.</summary>
     [Fact]
     public async Task DiscoveryFailure_PreservesSavedChoiceAndLeavesCleaningUnavailable()
@@ -300,6 +387,12 @@ public sealed class DiscoverySettingsPublicationIntegrationTests
         {
             Saved = configuration.Copy();
             ConfigurationChanged.OnNext(Saved.Copy());
+        }
+
+        /// <summary>Records a durable write; the coordinator reports it through the save result, not a change notification.</summary>
+        public void CompleteSave(UserConfiguration configuration)
+        {
+            Saved = configuration.Copy();
         }
 
         /// <summary>Only filesystem discovery, persistence, and estimation are controlled; both coordinating modules are real.</summary>

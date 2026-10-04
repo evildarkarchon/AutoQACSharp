@@ -29,7 +29,6 @@ public sealed class DiscoverySettingsModule : IDiscoverySettingsModule, IDisposa
     private readonly Dictionary<string, long> _latestChoices = new(StringComparer.Ordinal);
     private readonly IDisposable _configurationSubscription;
     private readonly IDisposable _skipListSubscription;
-    private CancellationTokenSource? _refreshCancellation;
     private string? _expectedConfiguration;
     private string? _rollbackConfiguration;
     private long _revision;
@@ -94,11 +93,9 @@ public sealed class DiscoverySettingsModule : IDiscoverySettingsModule, IDisposa
                             Complete(prior, DiscoverySettingsChangeStatus.Superseded);
                     operation = new PendingChange(keys, requiresPublication);
                     _pending.Add(operation);
-                    if (requiresPublication)
-                    {
-                        _revision++;
-                        CancelRefresh();
-                    }
+                    // The older publication keeps running until this save succeeds and fences it; the revision
+                    // already stops its completion from accepting anything for this change.
+                    if (requiresPublication) _revision++;
                     // Own-save notifications must not be confused with an external settings replacement.
                     _expectedConfiguration = DiscoverySettingsChanges.Fingerprint(requested);
                     _rollbackConfiguration = DiscoverySettingsChanges.Fingerprint(current);
@@ -154,22 +151,10 @@ public sealed class DiscoverySettingsModule : IDiscoverySettingsModule, IDisposa
                                     Complete(operation, DiscoverySettingsChangeStatus.Canceled);
                                 else if (!requiresPublication)
                                     Complete(operation, DiscoverySettingsChangeStatus.Accepted);
-                                if (requiresPublication)
-                                {
-                                    if (_admission.IsCleaning)
-                                    {
-                                        CancelRemainingForCleaning();
-                                    }
-                                    else
-                                    {
-                                        var cancellation = new CancellationTokenSource();
-                                        _refreshCancellation = cancellation;
-                                        var publicationTask = PublishAsync(_revision, active.Copy(), cancellation);
-                                        // Register before releasing the settings lease so Cleaning cancellation and
-                                        // publication unwind remain on the same admission side of the handoff.
-                                        _admission.TrackSettingsPublication(publicationTask, cancellation);
-                                    }
-                                }
+                                // The refresh begins its operation before PublishAsync first awaits, while this
+                                // settings lease is held, so Cleaning admission either rejects it (completing the
+                                // saved changes as canceled) or cancels and drains it like any other refresh.
+                                if (requiresPublication) _ = PublishAsync(_revision, active.Copy());
                             }
                         }
                     }
@@ -206,21 +191,22 @@ public sealed class DiscoverySettingsModule : IDiscoverySettingsModule, IDisposa
     }
 
     /// <summary>Resolves pending choices from an exact publication, independently of later approximation work.</summary>
-    private async Task PublishAsync(long revision, UserConfiguration requested, CancellationTokenSource cancellation)
+    /// <param name="revision">Settings revision this publication answers; a newer revision owns the pending changes.</param>
+    /// <param name="requested">Durable settings the refresh must publish.</param>
+    /// <remarks>
+    ///     The Plugin refresh module owns the refresh's only cancellation: a newer settings change supersedes it and
+    ///     Cleaning admission cancels it, each surfacing here as the completion status.
+    /// </remarks>
+    private async Task PublishAsync(long revision, UserConfiguration requested)
     {
         try
         {
             var game = Enum.TryParse<GameType>(requested.SelectedGame, ignoreCase: true, out var selected) ? selected : GameType.Unknown;
-            var completion = await _refresh.RefreshForSettingsAsync(game, cancellation.Token).ConfigureAwait(false);
-            var active = await _configuration.LoadUserConfigAsync(cancellation.Token).ConfigureAwait(false);
+            var completion = await _refresh.RefreshForSettingsAsync(game).ConfigureAwait(false);
+            var active = await _configuration.LoadUserConfigAsync(CancellationToken.None).ConfigureAwait(false);
             lock (_sync)
             {
                 if (_disposed || revision != _revision) return;
-                if (cancellation.IsCancellationRequested)
-                {
-                    if (_admission.IsCleaning) CancelRemainingForCleaning();
-                    return;
-                }
                 if (DiscoverySettingsChanges.Fingerprint(active) != DiscoverySettingsChanges.Fingerprint(requested))
                 {
                     InvalidateExternalChange();
@@ -240,24 +226,11 @@ public sealed class DiscoverySettingsModule : IDiscoverySettingsModule, IDisposa
                 }
             }
         }
-        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
-        {
-            // Newer mutations and callers own their cancellations; Cleaning owns every saved change
-            // whose tracked publication it canceled while taking admission.
-            lock (_sync)
-                if (_admission.IsCleaning) CancelRemainingForCleaning();
-        }
         catch (Exception ex)
         {
             _logger?.Error(ex, "Failed to publish a Discovery settings change");
             lock (_sync)
                 if (revision == _revision) FailRemaining();
-        }
-        finally
-        {
-            lock (_sync)
-                if (ReferenceEquals(_refreshCancellation, cancellation)) _refreshCancellation = null;
-            cancellation.Dispose();
         }
     }
 
@@ -301,7 +274,6 @@ public sealed class DiscoverySettingsModule : IDiscoverySettingsModule, IDisposa
         {
             if (_disposed) return;
             _revision++;
-            CancelRefresh();
             foreach (var pending in _pending.ToArray())
             {
                 // A persistence failure publishes the last good configuration during the write barrier.
@@ -339,13 +311,6 @@ public sealed class DiscoverySettingsModule : IDiscoverySettingsModule, IDisposa
             Complete(operation, DiscoverySettingsChangeStatus.RefreshFailed, RefreshFailure());
     }
 
-    /// <summary>Cancels saved changes whose required publication cannot start after Cleaning reserves admission.</summary>
-    private void CancelRemainingForCleaning()
-    {
-        foreach (var operation in _pending.Where(p => p.Saved && !p.Mutating && p.RequiresPublication).ToArray())
-            Complete(operation, DiscoverySettingsChangeStatus.Canceled);
-    }
-
     private static DiscoverySettingsChangeFailure RefreshFailure() => new(
         DiscoverySettingsChangeFailureKind.PublicationFailed,
         "Settings were saved, but plugins could not be refreshed.", "Refresh plugins before starting cleaning.");
@@ -354,21 +319,14 @@ public sealed class DiscoverySettingsModule : IDiscoverySettingsModule, IDisposa
         DiscoverySettingsChangeFailureKind.CleaningActive,
         "Settings cannot change while a Cleaning session is starting or active.", "Wait for cleaning to finish."));
 
-    /// <summary>Requests asynchronous cancellation without running dependency callbacks under the ownership lock.</summary>
-    private void CancelRefresh()
-    {
-        if (_refreshCancellation is { } cancellation) _ = cancellation.CancelAsync();
-        _refreshCancellation = null;
-    }
-
     /// <summary>Stops pending work and removes external notifications. In-flight writes still settle their disk barrier.</summary>
+    /// <remarks>An in-flight refresh belongs to the Plugin refresh module, which cancels it on its own disposal.</remarks>
     public void Dispose()
     {
         lock (_sync)
         {
             if (_disposed) return;
             _disposed = true;
-            CancelRefresh();
             foreach (var operation in _pending.ToArray()) Complete(operation, DiscoverySettingsChangeStatus.Canceled);
         }
         _configurationSubscription.Dispose();
