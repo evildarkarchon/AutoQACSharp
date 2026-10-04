@@ -16,9 +16,11 @@ public sealed class CleaningAdmission
     private readonly Lock _sync = new();
     private readonly Lock _publishSync = new();
     private readonly SemaphoreSlim _mutation = new(1, 1);
-    private readonly HashSet<RefreshRegistration> _refreshes = [];
+    private readonly HashSet<RefreshOperation> _refreshes = [];
     private readonly BehaviorSubject<bool> _cleaningState = new(false);
     private CancellationTokenSource? _activePreviewCancellation;
+    private RefreshOperation? _currentRefresh;
+    private long _nextRefreshId;
     private bool _isCleaning;
 
     /// <summary>Whether cleaning has reserved admission, including while already-admitted writes drain.</summary>
@@ -96,54 +98,82 @@ public sealed class CleaningAdmission
             return !_isCleaning && _mutation.Wait(0) ? new Lease(ReleaseMutation) : null;
     }
 
-    /// <summary>
-    ///     Tracks publication work launched by the current settings mutation so Cleaning can cancel and drain it
-    ///     across the mutation-lease handoff.
-    /// </summary>
-    /// <param name="publication">Publication task that completes after cancellation cleanup has fully unwound.</param>
-    /// <param name="cancellation">Cancellation source owned by the publication task.</param>
-    internal void TrackSettingsPublication(Task publication, CancellationTokenSource cancellation)
+    /// <summary>The operation the next refresh or fence would supersede: begun, not superseded, not yet unwound.</summary>
+    internal RefreshOperation? CurrentRefresh
     {
-        TrackRefresh(publication, cancellation, rejectWhenCleaning: false);
+        get
+        {
+            lock (_sync) return _currentRefresh;
+        }
     }
 
     /// <summary>
-    ///     Registers a manually started Plugin refresh before it can begin, so Cleaning drains its import.
+    ///     Begins a Plugin refresh operation that Cleaning will cancel and drain, superseding the current operation.
     /// </summary>
-    /// <param name="refresh">Task completed after the Plugin refresh has fully unwound.</param>
-    /// <param name="cancellation">Cancellation source owned by the refresh caller.</param>
-    /// <returns>False when Cleaning has already reserved admission and the caller must not start the refresh.</returns>
-    internal bool TryTrackManualRefresh(Task refresh, CancellationTokenSource cancellation)
+    /// <param name="ct">Caller cancellation linked into the operation's only cancellation token.</param>
+    /// <param name="superseded">
+    ///     The operation this one replaced, already marked superseded and canceled. The caller must finalize its
+    ///     estimates before the new operation publishes anything.
+    /// </param>
+    /// <returns>
+    ///     The new current operation, or null when Cleaning has reserved admission. A failing cancellation callback on
+    ///     the superseded operation is recorded for <see cref="RefreshOperation.TakeCancellationFailure" />, not thrown.
+    /// </returns>
+    internal RefreshOperation? TryBeginRefresh(CancellationToken ct, out RefreshOperation? superseded)
     {
-        return TrackRefresh(refresh, cancellation, rejectWhenCleaning: true);
-    }
-
-    /// <summary>Registers a refresh lifetime atomically with the Cleaning reservation boundary.</summary>
-    /// <param name="refresh">Task representing all remaining work in this refresh.</param>
-    /// <param name="cancellation">Source to cancel if Cleaning reserves admission.</param>
-    /// <param name="rejectWhenCleaning">Whether a new manual refresh must be rejected after reservation.</param>
-    /// <returns>Whether the refresh was registered for cancellation and draining.</returns>
-    private bool TrackRefresh(Task refresh, CancellationTokenSource cancellation, bool rejectWhenCleaning)
-    {
-        ArgumentNullException.ThrowIfNull(refresh);
-        ArgumentNullException.ThrowIfNull(cancellation);
-
-        var registration = new RefreshRegistration(refresh, cancellation);
-        bool cancelForCleaning;
+        var cancellation = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        RefreshOperation operation;
         lock (_sync)
         {
-            if (rejectWhenCleaning && _isCleaning) return false;
-            _refreshes.Add(registration);
-            cancelForCleaning = _isCleaning;
+            superseded = null;
+            if (_isCleaning)
+            {
+                cancellation.Dispose();
+                return null;
+            }
+
+            operation = new RefreshOperation(this, ++_nextRefreshId, cancellation);
+            // Mark before installing the successor so the old operation stops being current atomically with it.
+            superseded = _currentRefresh;
+            superseded?.MarkSuperseded();
+            _currentRefresh = operation;
+            _refreshes.Add(operation);
         }
 
-        _ = refresh.ContinueWith(
-            _ => RemoveRefresh(registration),
-            CancellationToken.None,
-            TaskContinuationOptions.ExecuteSynchronously,
-            TaskScheduler.Default);
-        if (cancelForCleaning) RequestRefreshCancellation(cancellation);
-        return true;
+        // Cancel outside the lock: token callbacks and inline continuations must not run under admission. Cancel
+        // never throws, so the successor always reaches its caller, which alone can dispose it once it unwinds.
+        superseded?.Cancel();
+        return operation;
+    }
+
+    /// <summary>
+    ///     Supersedes the current operation without a successor, leaving no current operation. A Discovery settings
+    ///     change fences refresh work this way because a replacement refresh may never follow it.
+    /// </summary>
+    /// <returns>The superseded operation for the caller to finalize, or null when nothing was current.</returns>
+    internal RefreshOperation? SupersedeRefresh()
+    {
+        RefreshOperation? superseded;
+        lock (_sync)
+        {
+            superseded = _currentRefresh;
+            superseded?.MarkSuperseded();
+            _currentRefresh = null;
+        }
+
+        superseded?.Cancel();
+        return superseded;
+    }
+
+    /// <summary>Removes a fully unwound operation from the drain set and from currency.</summary>
+    /// <param name="operation">Operation being disposed; called once, from <see cref="RefreshOperation.Dispose" />.</param>
+    internal void CompleteRefresh(RefreshOperation operation)
+    {
+        lock (_sync)
+        {
+            _refreshes.Remove(operation);
+            if (ReferenceEquals(_currentRefresh, operation)) _currentRefresh = null;
+        }
     }
 
     /// <summary>Reserves cleaning before draining earlier settings writes, previews, and refresh work.</summary>
@@ -152,18 +182,20 @@ public sealed class CleaningAdmission
     public async Task<IDisposable> EnterCleaningAsync(CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        List<RefreshRegistration> refreshesToCancel;
+        List<RefreshOperation> refreshesToCancel;
         CancellationTokenSource? previewToCancel;
         lock (_sync)
         {
             if (_isCleaning) throw new InvalidOperationException("A cleaning session is already in progress.");
             _isCleaning = true;
             refreshesToCancel = [.. _refreshes];
+            // Operations stop being current with the reservation, before their token cancellation is requested.
+            foreach (var refresh in refreshesToCancel) refresh.MarkCanceledForCleaning();
             previewToCancel = _activePreviewCancellation;
         }
-        if (previewToCancel is not null) RequestRefreshCancellation(previewToCancel);
+        if (previewToCancel is not null) RequestPreviewCancellation(previewToCancel);
         foreach (var refresh in refreshesToCancel)
-            RequestRefreshCancellation(refresh.Cancellation);
+            refresh.CancelForCleaning();
 
         var mutationAcquired = false;
         try
@@ -179,20 +211,11 @@ public sealed class CleaningAdmission
                 refreshesToDrain = new Task[_refreshes.Count];
                 var index = 0;
                 foreach (var refresh in _refreshes)
-                    refreshesToDrain[index++] = refresh.Refresh;
+                    refreshesToDrain[index++] = refresh.Unwound;
             }
+            // Unwound only completes successfully, so a refresh canceled for Cleaning still lets startup continue.
             if (refreshesToDrain.Length > 0)
-            {
-                var drain = Task.WhenAll(refreshesToDrain);
-                try
-                {
-                    await drain.WaitAsync(ct).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (drain.IsCanceled && !ct.IsCancellationRequested)
-                {
-                    // Cleaning requested this cancellation; the refresh has finished unwinding.
-                }
-            }
+                await Task.WhenAll(refreshesToDrain).WaitAsync(ct).ConfigureAwait(false);
 
             _mutation.Release();
             mutationAcquired = false;
@@ -206,14 +229,8 @@ public sealed class CleaningAdmission
         }
     }
 
-    /// <summary>Removes refresh work after its complete success, failure, or cancellation unwind.</summary>
-    private void RemoveRefresh(RefreshRegistration registration)
-    {
-        lock (_sync) _refreshes.Remove(registration);
-    }
-
-    /// <summary>Requests cancellation without allowing a concurrently completed refresh to break admission.</summary>
-    private static void RequestRefreshCancellation(CancellationTokenSource cancellation)
+    /// <summary>Requests cancellation without allowing a concurrently completed preview to break admission.</summary>
+    private static void RequestPreviewCancellation(CancellationTokenSource cancellation)
     {
         try
         {
@@ -221,7 +238,7 @@ public sealed class CleaningAdmission
         }
         catch (ObjectDisposedException)
         {
-            // Completion may dispose the source between the tracked-task snapshot and this cancellation request.
+            // Completion may dispose the source between the preview snapshot and this cancellation request.
         }
     }
 
@@ -270,8 +287,4 @@ public sealed class CleaningAdmission
         /// <summary>Releases this lease once, including when cleanup and cancellation both dispose it.</summary>
         public void Dispose() => Interlocked.Exchange(ref _release, null)?.Invoke();
     }
-
-    private sealed record RefreshRegistration(
-        Task Refresh,
-        CancellationTokenSource Cancellation);
 }

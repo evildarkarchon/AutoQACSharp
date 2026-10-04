@@ -31,7 +31,7 @@ public abstract record PluginRefreshIntent
     /// <summary>
     ///     Cancels active Plugin refresh work.
     /// </summary>
-    /// <param name="Reason">Reason the active generation is being canceled.</param>
+    /// <param name="Reason">Reason the current refresh operation is being canceled.</param>
     public sealed record Cancel(
         PluginRefreshCancelReason Reason) : PluginRefreshIntent;
 }

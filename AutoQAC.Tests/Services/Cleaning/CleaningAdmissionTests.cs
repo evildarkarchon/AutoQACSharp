@@ -57,13 +57,13 @@ public sealed class CleaningAdmissionTests
         var admission = new CleaningAdmission();
         var cleaningLease = await admission.EnterCleaningAsync().WaitAsync(Timeout);
         using var previewCancellation = new CancellationTokenSource();
-        using var refreshCancellation = new CancellationTokenSource();
 
         (await admission.TryEnterSettingsAsync()).Should().BeNull();
         (await admission.TryEnterPluginMutationAsync()).Should().BeNull();
         (await admission.TryEnterPreviewAsync(previewCancellation)).Should().BeNull();
         admission.TryEnterExternalSettings().Should().BeNull();
-        admission.TryTrackManualRefresh(Task.CompletedTask, refreshCancellation).Should().BeFalse();
+        admission.TryBeginRefresh(CancellationToken.None, out var superseded).Should().BeNull();
+        superseded.Should().BeNull();
         await FluentActions.Awaiting(() => admission.EnterCleaningAsync())
             .Should().ThrowAsync<InvalidOperationException>();
 
@@ -126,76 +126,70 @@ public sealed class CleaningAdmissionTests
         secondLease.Should().NotBeNull();
     }
 
-    /// <summary>Cleaning cancels and drains a settings publication registered before its mutation lease is released.</summary>
+    /// <summary>
+    ///     Cleaning cancels a refresh operation begun before its mutation lease is released, and keeps admission
+    ///     until the operation is disposed, meaning the refresh has fully unwound.
+    /// </summary>
     [Fact]
-    public async Task CleaningReservation_WaitsForTrackedSettingsPublicationToUnwind()
+    public async Task CleaningReservation_WaitsForRefreshOperationToUnwind()
     {
         var admission = new CleaningAdmission();
         using var mutation = await admission.TryEnterSettingsAsync();
-        using var publicationCancellation = new CancellationTokenSource();
-        var publication = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var cancellationObserved = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        using var registration = publicationCancellation.Token.Register(cancellationObserved.SetResult);
-        admission.TrackSettingsPublication(publication.Task, publicationCancellation);
+        var operation = admission.TryBeginRefresh(CancellationToken.None, out _)!;
 
         var cleaning = admission.EnterCleaningAsync();
-        await cancellationObserved.Task.WaitAsync(Timeout);
-        mutation!.Dispose();
 
-        try
-        {
-            var firstCompletion = await Task.WhenAny(cleaning, Task.Delay(TimeSpan.FromSeconds(1)));
-            firstCompletion.Should().NotBeSameAs(cleaning,
-                "Cleaning must retain admission until the canceled settings publication has fully unwound");
-        }
-        finally
-        {
-            publication.TrySetResult();
-            using var cleaningLease = await cleaning.WaitAsync(Timeout);
-        }
+        operation.IsCurrent.Should().BeFalse("the operation stops being current with the reservation");
+        operation.IsSuperseded.Should().BeFalse("Cleaning cancels operations; it does not supersede them");
+        operation.Token.IsCancellationRequested.Should().BeTrue();
+        mutation!.Dispose();
+        // Startup can only finish by awaiting Unwound, which nothing completes until the operation is disposed.
+        operation.Unwound.IsCompleted.Should().BeFalse();
+        cleaning.IsCompleted.Should().BeFalse(
+            "Cleaning must retain admission until the canceled refresh has fully unwound");
+
+        operation.Dispose();
+        using var cleaningLease = await cleaning.WaitAsync(Timeout);
+        admission.IsCleaning.Should().BeTrue();
+        admission.CurrentRefresh.Should().BeNull();
     }
 
     /// <summary>
-    ///     Reservation cancels a tracked manual refresh and an active preview, then completes once both have
-    ///     unwound — including a refresh that unwinds as canceled.
+    ///     Reservation cancels a refresh operation and an active preview, then completes once both have unwound.
     /// </summary>
     [Fact]
     public async Task EnterCleaning_CancelsThenDrainsRefreshAndPreview()
     {
         var admission = new CleaningAdmission();
-        using var refreshCancellation = new CancellationTokenSource();
-        var refresh = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        admission.TryTrackManualRefresh(refresh.Task, refreshCancellation).Should().BeTrue();
+        var operation = admission.TryBeginRefresh(CancellationToken.None, out _)!;
         using var previewCancellation = new CancellationTokenSource();
         var preview = await admission.TryEnterPreviewAsync(previewCancellation);
         preview.Should().NotBeNull();
 
         var cleaning = admission.EnterCleaningAsync();
 
-        refreshCancellation.IsCancellationRequested.Should().BeTrue();
+        operation.Token.IsCancellationRequested.Should().BeTrue();
         previewCancellation.IsCancellationRequested.Should().BeTrue();
         cleaning.IsCompleted.Should().BeFalse("the preview still holds the mutation lane");
 
         preview!.Dispose();
-        await Task.Delay(50);
+        operation.Unwound.IsCompleted.Should().BeFalse();
         cleaning.IsCompleted.Should().BeFalse("the canceled refresh has not unwound yet");
 
-        refresh.SetCanceled(refreshCancellation.Token);
+        operation.Dispose();
         using var cleaningLease = await cleaning.WaitAsync(Timeout);
         admission.IsCleaning.Should().BeTrue();
     }
 
-    /// <summary>A tracked refresh canceled for Cleaning must drain without canceling the Cleaning reservation.</summary>
+    /// <summary>A refresh canceled for Cleaning must drain without canceling the Cleaning reservation.</summary>
     [Fact]
-    public async Task CleaningReservation_CanceledTrackedRefreshStillAdmitsCleaning()
+    public async Task CleaningReservation_RefreshCanceledForCleaningStillAdmitsCleaning()
     {
         var admission = new CleaningAdmission();
         using var mutation = await admission.TryEnterSettingsAsync();
-        using var refreshCancellation = new CancellationTokenSource();
-        var refresh = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var operation = admission.TryBeginRefresh(CancellationToken.None, out _)!;
         var cancellationObserved = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        using var registration = refreshCancellation.Token.Register(cancellationObserved.SetResult);
-        admission.TrackSettingsPublication(refresh.Task, refreshCancellation);
+        using var registration = operation.Token.Register(cancellationObserved.SetResult);
         using var subscription = admission.CleaningState.Subscribe(new CallbackObserver<bool>(reserved =>
         {
             if (reserved) mutation!.Dispose();
@@ -203,11 +197,108 @@ public sealed class CleaningAdmissionTests
 
         var cleaning = admission.EnterCleaningAsync();
         await cancellationObserved.Task.WaitAsync(Timeout);
-        cleaning.IsCompleted.Should().BeFalse("Cleaning must wait for the tracked refresh to unwind");
+        cleaning.IsCompleted.Should().BeFalse("Cleaning must wait for the canceled refresh to unwind");
 
-        refresh.SetCanceled(refreshCancellation.Token);
+        // The refresh unwinds through its own cancellation; disposal is still a normal completion for the drain.
+        operation.Dispose();
         using var cleaningLease = await cleaning.WaitAsync(Timeout);
         admission.IsCleaning.Should().BeTrue();
+    }
+
+    /// <summary>Beginning an operation supersedes the current one before the successor becomes current.</summary>
+    [Fact]
+    public void TryBeginRefresh_SupersedesCurrentOperation()
+    {
+        var admission = new CleaningAdmission();
+        var first = admission.TryBeginRefresh(CancellationToken.None, out var none)!;
+        none.Should().BeNull();
+
+        var second = admission.TryBeginRefresh(CancellationToken.None, out var superseded);
+
+        superseded.Should().BeSameAs(first);
+        first.IsSuperseded.Should().BeTrue();
+        first.IsCurrent.Should().BeFalse();
+        first.Token.IsCancellationRequested.Should().BeTrue();
+        second.Should().NotBeNull();
+        second!.IsCurrent.Should().BeTrue();
+        admission.CurrentRefresh.Should().BeSameAs(second);
+    }
+
+    /// <summary>
+    ///     A superseded operation's throwing cancellation callback cannot abort supersession: the successor still
+    ///     reaches its caller (the only one who can dispose it), and the failure waits to be reported once.
+    /// </summary>
+    [Fact]
+    public async Task TryBeginRefresh_WhenSupersededCancellationCallbackThrows_StillHandsOffSuccessor()
+    {
+        var admission = new CleaningAdmission();
+        var first = admission.TryBeginRefresh(CancellationToken.None, out _)!;
+        using var registration = first.Token.Register(() => throw new InvalidOperationException("Adapter callback failed."));
+
+        var second = admission.TryBeginRefresh(CancellationToken.None, out var superseded);
+
+        second.Should().NotBeNull();
+        superseded.Should().BeSameAs(first);
+        first.IsSuperseded.Should().BeTrue();
+        first.Token.IsCancellationRequested.Should().BeTrue();
+        admission.CurrentRefresh.Should().BeSameAs(second);
+        first.TakeCancellationFailure().Should().NotBeNull()
+            .And.Subject.As<AggregateException>().InnerExceptions.Should().ContainSingle()
+            .Which.Should().BeOfType<InvalidOperationException>();
+        first.TakeCancellationFailure().Should().BeNull("a recorded failure is reported once");
+
+        first.Dispose();
+        second!.Dispose();
+        using var cleaningLease = await admission.EnterCleaningAsync().WaitAsync(Timeout);
+    }
+
+    /// <summary>A fence supersedes the current operation without a successor and leaves no current operation.</summary>
+    [Fact]
+    public void SupersedeRefresh_LeavesNoCurrentOperation()
+    {
+        var admission = new CleaningAdmission();
+        admission.SupersedeRefresh().Should().BeNull("nothing is current before any refresh begins");
+        var operation = admission.TryBeginRefresh(CancellationToken.None, out _)!;
+
+        var superseded = admission.SupersedeRefresh();
+
+        superseded.Should().BeSameAs(operation);
+        operation.IsSuperseded.Should().BeTrue();
+        operation.Token.IsCancellationRequested.Should().BeTrue();
+        admission.CurrentRefresh.Should().BeNull();
+        admission.SupersedeRefresh().Should().BeNull("a fence supersedes only once");
+    }
+
+    /// <summary>Disposal means fully unwound: the operation leaves currency and the drain set.</summary>
+    [Fact]
+    public async Task Dispose_RemovesOperationFromCurrencyAndDrain()
+    {
+        var admission = new CleaningAdmission();
+        var operation = admission.TryBeginRefresh(CancellationToken.None, out _)!;
+
+        operation.Dispose();
+        operation.Dispose();
+
+        operation.Unwound.IsCompleted.Should().BeTrue();
+        admission.CurrentRefresh.Should().BeNull();
+        admission.SupersedeRefresh().Should().BeNull("a completed refresh has nothing left to fence");
+        using var cleaningLease = await admission.EnterCleaningAsync().WaitAsync(Timeout);
+    }
+
+    /// <summary>The operation's one token is linked to its caller's cancellation.</summary>
+    [Fact]
+    public void TryBeginRefresh_LinksCallerCancellation()
+    {
+        var admission = new CleaningAdmission();
+        using var caller = new CancellationTokenSource();
+        var operation = admission.TryBeginRefresh(caller.Token, out _)!;
+
+        caller.Cancel();
+
+        operation.Token.IsCancellationRequested.Should().BeTrue();
+        operation.IsCurrent.Should().BeFalse();
+        operation.IsSuperseded.Should().BeFalse();
+        admission.CurrentRefresh.Should().BeSameAs(operation, "a canceled operation stays current until it unwinds");
     }
 
     /// <summary>Late subscribers receive the current reservation immediately, then each transition.</summary>

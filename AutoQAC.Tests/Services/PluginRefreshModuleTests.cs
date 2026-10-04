@@ -1,5 +1,6 @@
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
+using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Models.Configuration;
 using AutoQAC.Services.Cleaning;
@@ -161,12 +162,15 @@ public sealed class PluginRefreshModuleTests
             await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
             var selectedRefresh = sut.ExecuteAsync(new PluginRefreshIntent.RefreshSelectedIssueApproximations());
             await approximationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            var operation = admission.CurrentRefresh!;
 
             cleaning = admission.EnterCleaningAsync();
             await cancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
-            var firstCompletion = await Task.WhenAny(cleaning, Task.Delay(TimeSpan.FromSeconds(1)));
-            firstCompletion.Should().NotBeSameAs(cleaning,
+            // The importer cannot unwind until released, so the operation cannot be disposed and the drain cannot end.
+            operation.IsCurrent.Should().BeFalse();
+            operation.Unwound.IsCompleted.Should().BeFalse();
+            cleaning.IsCompleted.Should().BeFalse(
                 "Cleaning admission must drain the active selected approximation before xEdit can launch");
 
             allowApproximationToUnwind.TrySetResult();
@@ -216,18 +220,22 @@ public sealed class PluginRefreshModuleTests
         {
             await approximationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
             (await sut.GetCurrentPublicationAsync()).Rows.Should().NotBeEmpty();
+            var operation = admission.CurrentRefresh!;
 
             if (cancelBeforeAdmission)
             {
                 await sut.ExecuteAsync(new PluginRefreshIntent.Cancel(PluginRefreshCancelReason.Manual));
                 await cancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                admission.CurrentRefresh.Should().BeSameAs(operation, "a canceled refresh stays current until it unwinds");
             }
 
             cleaning = admission.EnterCleaningAsync();
             await cancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
-            var firstCompletion = await Task.WhenAny(cleaning, Task.Delay(TimeSpan.FromMilliseconds(250)));
-            firstCompletion.Should().NotBeSameAs(cleaning,
+            // The importer cannot unwind until released, so the operation cannot be disposed and the drain cannot end.
+            operation.IsCurrent.Should().BeFalse();
+            operation.Unwound.IsCompleted.Should().BeFalse();
+            cleaning.IsCompleted.Should().BeFalse(
                 "Cleaning admission must drain the full Plugin refresh before xEdit can launch");
         }
         finally
@@ -472,6 +480,342 @@ public sealed class PluginRefreshModuleTests
         }
     }
 
+    /// <summary>
+    ///     Reserving Cleaning admission cancels a full refresh's initial approximation tail and turns its Pending rows
+    ///     Unavailable at the reservation, even while the importer ignores cancellation.
+    /// </summary>
+    [Fact]
+    public async Task CleaningReservation_CancelsInitialTailAndFinalizesPendingRowsUnavailable()
+    {
+        using var state = new StateService();
+        var admission = new CleaningAdmission();
+        var analysisStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseAnalysis = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Action<PluginIssueApproximationModuleResult>? lateCallback = null;
+        PluginIssueApproximationModuleRequest? activeRequest = null;
+        var approximation = new ResultPluginIssueApproximationModule(async (request, onResult, _) =>
+        {
+            activeRequest = request;
+            lateCallback = onResult;
+            onResult(new PluginIssueApproximationModuleResult(request.Targets[0], PluginIssueApproximation.Available(4, 4, 4)));
+            analysisStarted.SetResult();
+            // Ignore cancellation so the reservation itself must terminalize the rows.
+            await releaseAnalysis.Task;
+        });
+        using var sut = CreateModule(state, approximationModule: approximation, admission: admission);
+        var refresh = sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+        await analysisStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var operation = admission.CurrentRefresh!;
+        Task<IDisposable>? cleaning = null;
+
+        try
+        {
+            cleaning = admission.EnterCleaningAsync();
+            lateCallback!(new PluginIssueApproximationModuleResult(
+                activeRequest!.Targets[1], PluginIssueApproximation.Available(99, 99, 99)));
+
+            operation.Token.IsCancellationRequested.Should().BeTrue();
+            operation.IsSuperseded.Should().BeFalse("Cleaning cancels the operation rather than superseding it");
+            state.CurrentState.PluginsToClean.Select(plugin => plugin.Approximation).Should().Equal(
+                PluginIssueApproximation.Available(4, 4, 4),
+                PluginIssueApproximation.Unavailable,
+                PluginIssueApproximation.Unavailable);
+            var reserved = await sut.Snapshots.FirstAsync();
+            reserved.Activity.Should().Be(new PluginRefreshActivity(false, false));
+            reserved.StatusText.Should().NotBe("Approximation refresh canceled.");
+            cleaning.IsCompleted.Should().BeFalse("the importer has not unwound yet");
+        }
+        finally
+        {
+            releaseAnalysis.TrySetResult();
+            await refresh.WaitAsync(TimeSpan.FromSeconds(5));
+            if (cleaning is not null)
+            {
+                using var cleaningLease = await cleaning.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+        }
+    }
+
+    /// <summary>
+    ///     A manual refresh superseding selected reanalysis restores the targets' prior estimates at supersession,
+    ///     keeps results already published, and rejects the superseded operation's late results.
+    /// </summary>
+    [Fact]
+    public async Task RefreshSelectedIssueApproximations_SupersededByManualRefresh_RestoresPriorEstimates()
+    {
+        using var state = new StateService();
+        var admission = new CleaningAdmission();
+        var selectedStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseSelected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Action<PluginIssueApproximationModuleResult>? staleCallback = null;
+        PluginIssueApproximationModuleRequest? staleRequest = null;
+        var invocation = 0;
+        var approximation = new ResultPluginIssueApproximationModule(async (request, onResult, _) =>
+        {
+            var call = Interlocked.Increment(ref invocation);
+            if (call == 2)
+            {
+                staleRequest = request;
+                staleCallback = onResult;
+                onResult(new PluginIssueApproximationModuleResult(request.Targets[0], PluginIssueApproximation.Available(5, 5, 5)));
+                selectedStarted.SetResult();
+                // Ignore cancellation so supersession itself must restore the unfinished targets.
+                await releaseSelected.Task;
+                return;
+            }
+
+            foreach (var target in request.Targets)
+                onResult(new PluginIssueApproximationModuleResult(target, PluginIssueApproximation.Available(call, call, call)));
+        });
+        using var sut = CreateModule(state, approximationModule: approximation, admission: admission);
+        await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+        var selectedRefresh = sut.ExecuteAsync(new PluginRefreshIntent.RefreshSelectedIssueApproximations());
+        await selectedStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var selectedOperation = admission.CurrentRefresh!;
+        var snapshots = new List<PluginRefreshSnapshot>();
+        using var subscription = sut.Snapshots.Skip(1).Subscribe(snapshots.Add);
+
+        try
+        {
+            var manual = await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe))
+                .WaitAsync(TimeSpan.FromSeconds(5));
+            staleCallback!(new PluginIssueApproximationModuleResult(
+                staleRequest!.Targets[1], PluginIssueApproximation.Available(99, 99, 99)));
+
+            selectedOperation.IsSuperseded.Should().BeTrue();
+            var supersession = snapshots.First();
+            supersession.Activity.Should().Be(new PluginRefreshActivity(false, false));
+            supersession.Rows.Select(row => row.Approximation).Should().Equal(
+                PluginIssueApproximation.Available(5, 5, 5),
+                PluginIssueApproximation.Available(1, 1, 1),
+                PluginIssueApproximation.Available(1, 1, 1));
+            manual.Rows.Should().OnlyContain(row => row.Approximation == PluginIssueApproximation.Available(3, 3, 3));
+            state.CurrentState.PluginsToClean.Should().OnlyContain(plugin =>
+                plugin.Approximation == PluginIssueApproximation.Available(3, 3, 3));
+        }
+        finally
+        {
+            releaseSelected.TrySetResult();
+            await selectedRefresh.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+
+        state.CurrentState.PluginsToClean.Should().OnlyContain(plugin =>
+            plugin.Approximation == PluginIssueApproximation.Available(3, 3, 3));
+    }
+
+    /// <summary>
+    ///     A superseded importer's throwing cancellation callback is logged without aborting supersession: its
+    ///     Pending rows are still finalized and the successor refresh runs to completion.
+    /// </summary>
+    [Fact]
+    public async Task RefreshGame_WhenSupersededCancellationCallbackThrows_StillFinalizesAndRefreshes()
+    {
+        using var state = new StateService();
+        var admission = new CleaningAdmission();
+        var logger = Substitute.For<ILoggingService>();
+        var analysisStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseAnalysis = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var invocation = 0;
+        var approximation = new ResultPluginIssueApproximationModule(async (request, onResult, ct) =>
+        {
+            if (Interlocked.Increment(ref invocation) > 1)
+            {
+                foreach (var target in request.Targets)
+                    onResult(new PluginIssueApproximationModuleResult(target, PluginIssueApproximation.Available(2, 2, 2)));
+                return;
+            }
+
+            ct.Register(() => throw new InvalidOperationException("Importer cancellation callback failed."));
+            analysisStarted.TrySetResult();
+            await releaseAnalysis.Task;
+        });
+        using var sut = CreateModule(state, approximationModule: approximation, admission: admission, logger: logger);
+        var first = sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+        await analysisStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var supersession = new List<PluginRefreshSnapshot>();
+        using var subscription = sut.Snapshots.Skip(1).Take(1).Subscribe(supersession.Add);
+
+        try
+        {
+            var second = await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe))
+                .WaitAsync(TimeSpan.FromSeconds(5));
+
+            supersession.Should().ContainSingle().Which.Rows.Should().NotContain(row =>
+                row.Approximation.Status == PluginIssueApproximationStatus.Pending);
+            second.Rows.Should().OnlyContain(row => row.Approximation == PluginIssueApproximation.Available(2, 2, 2));
+            logger.Received(1).Error(Arg.Any<AggregateException>(), "A Plugin refresh cancellation callback failed",
+                Arg.Any<object[]>());
+        }
+        finally
+        {
+            releaseAnalysis.TrySetResult();
+            await first.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+
+        admission.CurrentRefresh.Should().BeNull();
+        using var cleaning = await admission.EnterCleaningAsync().WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    /// <summary>
+    ///     A snapshot observer throwing during supersession faults the new refresh without orphaning its operation,
+    ///     so Cleaning admission can still drain, and the superseded rows were already finalized.
+    /// </summary>
+    [Fact]
+    public async Task RefreshGame_WhenSupersessionObserverThrows_FaultsWithoutBlockingCleaningAdmission()
+    {
+        using var state = new StateService();
+        var admission = new CleaningAdmission();
+        var analysisStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseAnalysis = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var approximation = new ResultPluginIssueApproximationModule(async (_, _, _) =>
+        {
+            analysisStarted.TrySetResult();
+            await releaseAnalysis.Task;
+        });
+        using var sut = CreateModule(state, approximationModule: approximation, admission: admission);
+        var first = sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+        await analysisStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var throwOnNext = true;
+        using var subscription = sut.Snapshots.Skip(1).Subscribe(_ =>
+        {
+            if (!throwOnNext) return;
+            throwOnNext = false;
+            throw new InvalidOperationException("Snapshot observer failed.");
+        });
+
+        try
+        {
+            var second = sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+
+            await FluentActions.Awaiting(() => second).Should().ThrowAsync<InvalidOperationException>();
+            admission.CurrentRefresh.Should().BeNull("the failed refresh's operation was disposed, not orphaned");
+            state.CurrentState.PluginsToClean.Should().NotContain(plugin =>
+                plugin.Approximation.Status == PluginIssueApproximationStatus.Pending);
+        }
+        finally
+        {
+            releaseAnalysis.TrySetResult();
+            await first.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+
+        using var cleaning = await admission.EnterCleaningAsync().WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    /// <summary>
+    ///     A settings fence completes when canceling the fenced importer throws: the failure is logged, Pending rows
+    ///     are finalized, and the old freshness lease is still revoked.
+    /// </summary>
+    [Fact]
+    public async Task InvalidateForSettings_WhenCancellationCallbackThrows_StillFinalizesAndRevokesFreshness()
+    {
+        var admission = new CleaningAdmission();
+        var logger = Substitute.For<ILoggingService>();
+        var analysisStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseAnalysis = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var approximation = new ResultPluginIssueApproximationModule(async (_, _, ct) =>
+        {
+            ct.Register(() => throw new InvalidOperationException("Importer cancellation callback failed."));
+            analysisStarted.TrySetResult();
+            await releaseAnalysis.Task;
+        });
+        using var state = new StateService();
+        using var sut = CreateModule(state, approximationModule: approximation, admission: admission, logger: logger);
+        var refresh = sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+        await analysisStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        try
+        {
+            sut.Invoking(module => module.InvalidateForSettings()).Should().NotThrow();
+
+            (await sut.GetCurrentPublicationAsync()).Freshness.IsFresh.Should().BeFalse(
+                "a settings change must revoke the old freshness lease even when cancellation fails");
+            state.CurrentState.PluginsToClean.Should().NotContain(plugin =>
+                plugin.Approximation.Status == PluginIssueApproximationStatus.Pending);
+            logger.Received(1).Error(Arg.Any<AggregateException>(), "A Plugin refresh cancellation callback failed",
+                Arg.Any<object[]>());
+        }
+        finally
+        {
+            releaseAnalysis.TrySetResult();
+            await refresh.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+    }
+
+    /// <summary>A settings fence with nothing running revokes freshness without claiming it canceled anything.</summary>
+    [Fact]
+    public async Task InvalidateForSettings_WhenNothingRunning_DoesNotPublishCanceledStatus()
+    {
+        var admission = new CleaningAdmission();
+        using var sut = CreateModule(new StateService(), admission: admission);
+        var loaded = await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+        admission.CurrentRefresh.Should().BeNull("the completed refresh has unwound");
+        var snapshots = new List<PluginRefreshSnapshot>();
+        using var subscription = sut.Snapshots.Skip(1).Subscribe(snapshots.Add);
+
+        sut.InvalidateForSettings();
+
+        snapshots.Should().NotBeEmpty("revoking freshness still re-emits so readiness re-evaluates");
+        snapshots.Should().OnlyContain(snapshot => snapshot.StatusText == loaded.StatusText);
+        (await sut.GetCurrentPublicationAsync()).Freshness.IsFresh.Should().BeFalse();
+    }
+
+    /// <summary>A settings fence that supersedes running discovery ends its loading state with a canceled status.</summary>
+    [Fact]
+    public async Task InvalidateForSettings_DuringDiscovery_PublishesCanceledIdleSnapshot()
+    {
+        var admission = new CleaningAdmission();
+        var loadingService = new DelayedPluginLoadingService();
+        using var sut = CreateModule(new StateService(), pluginLoadingService: loadingService, admission: admission);
+        var refresh = sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+        await loadingService.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var operation = admission.CurrentRefresh!;
+
+        sut.InvalidateForSettings();
+        await refresh.WaitAsync(TimeSpan.FromSeconds(5));
+
+        operation.IsSuperseded.Should().BeTrue();
+        admission.CurrentRefresh.Should().BeNull("a fence leaves no current operation");
+        var snapshot = await sut.Snapshots.FirstAsync();
+        snapshot.StatusText.Should().Be("Approximation refresh canceled.");
+        snapshot.Activity.Should().Be(new PluginRefreshActivity(false, false));
+    }
+
+    /// <summary>A settings refresh and its Issue approximation tail run under one operation and its one token.</summary>
+    [Fact]
+    public async Task RefreshForSettings_ApproximationTailRunsUnderTheSameOperation()
+    {
+        var admission = new CleaningAdmission();
+        var entered = new TaskCompletionSource<CancellationToken>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var approximation = new ResultPluginIssueApproximationModule(async (_, _, ct) =>
+        {
+            entered.TrySetResult(ct);
+            await release.Task;
+        });
+        using var sut = CreateModule(new StateService(), approximationModule: approximation, admission: admission);
+
+        try
+        {
+            var completion = await sut.RefreshForSettingsAsync(GameType.SkyrimSe).WaitAsync(TimeSpan.FromSeconds(5));
+            var analysisToken = await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+            completion.Status.Should().Be(PluginRefreshCompletionStatus.Published);
+            var operation = admission.CurrentRefresh;
+            operation.Should().NotBeNull("the operation outlives the settings caller's wait");
+            completion.Snapshot!.Generation.Should().Be(operation!.Id);
+            analysisToken.Should().Be(operation.Token);
+            operation.Unwound.IsCompleted.Should().BeFalse();
+
+            release.TrySetResult();
+            await operation.Unwound.WaitAsync(TimeSpan.FromSeconds(5));
+            admission.CurrentRefresh.Should().BeNull();
+        }
+        finally
+        {
+            release.TrySetResult();
+        }
+    }
+
     /// <summary>A Reset re-entering compatibility projection must not be undone by the former game's remaining writes.</summary>
     [Fact]
     public async Task RefreshForSettings_ResetDuringConfigurationProjection_RemainsNoGame()
@@ -603,12 +947,15 @@ public sealed class PluginRefreshModuleTests
                 .WaitAsync(TimeSpan.FromSeconds(5));
             await approximationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
             publication.Status.Should().Be(PluginRefreshCompletionStatus.Published);
+            var operation = admission.CurrentRefresh!;
 
             cleaning = admission.EnterCleaningAsync();
             await cancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
-            var firstCompletion = await Task.WhenAny(cleaning, Task.Delay(TimeSpan.FromSeconds(1)));
-            firstCompletion.Should().NotBeSameAs(cleaning,
+            // The importer cannot unwind until released, so the operation cannot be disposed and the drain cannot end.
+            operation.IsCurrent.Should().BeFalse();
+            operation.Unwound.IsCompleted.Should().BeFalse();
+            cleaning.IsCompleted.Should().BeFalse(
                 "Cleaning admission must drain approximation work retained after settings publication");
         }
         finally
@@ -1913,6 +2260,67 @@ public sealed class PluginRefreshModuleTests
         snapshots.Should().NotContain(snapshot => snapshot.StatusText == "Approximation refresh canceled.");
     }
 
+    /// <summary>
+    ///     Characterizes the untracked freshness check (#13): a stale verdict published while Cleaning admission is
+    ///     reserved flips the publication, but the running Cleaning session keeps the preflight plan it already read.
+    /// </summary>
+    [Fact]
+    public async Task FreshnessVerdictPublishedMidSession_DoesNotChangeRunningSessionPreflightPlan()
+    {
+        var xEditPath = Path.Combine(Path.GetTempPath(), $"AutoQAC-{Guid.NewGuid():N}.tmp");
+        await File.WriteAllTextAsync(xEditPath, string.Empty);
+        try
+        {
+            using var state = new StateService();
+            var admission = new CleaningAdmission();
+            // Automatic discovery needs no load order file on disk for launch readiness.
+            var plan = CreateWiringPlan() with { Mode = PluginRefreshDiscoveryMode.DirectAutomatic };
+            var planner = CreateReadyDiscoveryPlanner(plan, [Plugin("First.esp"), Plugin("Second.esp")]);
+            using var store = new PluginRefreshPublicationStore(
+                new PluginRefreshAppStateMirror(state),
+                new PluginRefreshCommandAvailabilityPolicy(admission),
+                planner.GetAffordance(GameType.Unknown, false));
+            using var sut = CreateModule(state, discoveryPlanner: planner, admission: admission, publicationStore: store);
+            await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+            state.UpdateState(current => current with { XEditExecutablePath = xEditPath });
+            var configuration = Substitute.For<IConfigurationService>();
+            configuration.FlushPendingSavesAsync(Arg.Any<CancellationToken>()).Returns(new ConfigPersistenceResult(
+                ConfigPersistenceStatusKind.NoOp, ConfigPersistenceOperationKind.Flush, 1, null));
+            configuration.LoadUserConfigAsync(Arg.Any<CancellationToken>()).Returns(new UserConfiguration());
+            var validation = Substitute.For<IPluginValidationService>();
+            validation.ValidatePluginFile(Arg.Any<PluginInfo>()).Returns(PluginWarningKind.None);
+            var preflight = new CleaningPreflight(configuration, validation, sut,
+                Substitute.For<IMo2ValidationService>(), state, Substitute.For<ILoggingService>());
+
+            // A Cleaning session reserves admission first, then reads the publication once in preflight.
+            using var cleaning = await admission.EnterCleaningAsync().WaitAsync(TimeSpan.FromSeconds(5));
+            var sessionPlan = await preflight.PrepareAsync();
+            var preparedRows = sessionPlan.PluginRows.ToList();
+            preparedRows.Should().HaveCount(2).And.OnlyContain(row => row.Decision == PreflightDecision.Clean);
+
+            // A discovery-affecting AppState change starts the fire-and-forget check, which admission does not drain.
+            planner.CheckFreshnessAsync(
+                    Arg.Any<PluginRefreshDiscoveryFreshnessToken>(),
+                    Arg.Any<PluginRefreshDiscoveryFreshnessContext>(),
+                    Arg.Any<CancellationToken>())
+                .Returns(new PluginRefreshFreshness(false, PluginRefreshStalenessReason.LoadOrderPathChanged));
+            state.UpdateState(current => current with { LoadOrderPath = @"C:\Changed\plugins.txt" });
+
+            store.GetFreshnessInspection().Publication.Freshness.IsFresh.Should().BeFalse(
+                "the verdict is published while Cleaning admission is reserved");
+            sessionPlan.PluginRows.Should().Equal(preparedRows);
+            sessionPlan.DetectedGameType.Should().Be(GameType.SkyrimSe);
+            var nextPreflight = () => preflight.PrepareAsync();
+            (await nextPreflight.Should().ThrowAsync<CleaningPreflightException>())
+                .Which.Failure.Kind.Should().Be(CleaningPreflightFailureKind.StalePluginRefreshPublication,
+                    "only a later preflight observes the verdict");
+        }
+        finally
+        {
+            File.Delete(xEditPath);
+        }
+    }
+
     [Fact]
     public async Task SupersededRefresh_CannotPublishStaleRows()
     {
@@ -2027,7 +2435,8 @@ public sealed class PluginRefreshModuleTests
         IGameDetectionService? gameDetectionService = null,
         IPluginRefreshDiscoveryPlanner? discoveryPlanner = null,
         CleaningAdmission? admission = null,
-        PluginRefreshPublicationStore? publicationStore = null)
+        PluginRefreshPublicationStore? publicationStore = null,
+        ILoggingService? logger = null)
     {
         // Every module under test coordinates through a real admission; callers pass one to drive Cleaning.
         admission ??= new CleaningAdmission();
@@ -2052,7 +2461,8 @@ public sealed class PluginRefreshModuleTests
             new SkipListPolicy(configurationService, gameDetectionService),
             publicationStore,
             admission,
-            configurationService: configurationService);
+            logger,
+            configurationService);
     }
 
     private static StateService CreateStateWithRows(params PluginInfo[] rows)
