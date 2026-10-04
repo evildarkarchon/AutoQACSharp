@@ -488,7 +488,7 @@ public sealed class ProcessExecutionServiceTests : IDisposable
             new StateServiceCleaningSessionStatePublisher(stateServiceMock),
             decisionsMock,
             loggerMock,
-            processServiceMock);
+            processServiceMock, new CleaningAdmission());
 
         return (session, processServiceMock);
     }
@@ -692,7 +692,7 @@ public sealed class ProcessExecutionServiceTests : IDisposable
             new StateServiceCleaningSessionStatePublisher(stateServiceMock),
             decisionsMock,
             sessionLogger,
-            processServiceMock);
+            processServiceMock, new CleaningAdmission());
 
         // Act
         var cleaningTask = session.StartAsync();

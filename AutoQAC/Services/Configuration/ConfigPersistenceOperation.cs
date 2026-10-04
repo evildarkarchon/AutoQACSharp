@@ -14,7 +14,8 @@ internal sealed record FlushBarrier(TaskCompletionSource<ConfigPersistenceResult
 internal sealed record WatcherObserved(string? CurrentHash, long ObservedAtGeneration, ConfigFileSignalKind Kind)
     : ConfigPersistenceOperation;
 
-internal sealed record CleaningStateChanged(bool IsCleaning) : ConfigPersistenceOperation;
+/// <summary>Cleaning admission reopened; retry the latest deferred external candidate.</summary>
+internal sealed record AdmissionAvailable : ConfigPersistenceOperation;
 
 internal sealed record ReloadRequest(TaskCompletionSource<ConfigPersistenceResult> Completion)
     : ConfigPersistenceOperation;

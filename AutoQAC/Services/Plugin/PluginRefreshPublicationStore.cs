@@ -13,7 +13,7 @@ namespace AutoQAC.Services.Plugin;
 /// </summary>
 internal sealed class PluginRefreshPublicationStore : IDisposable
 {
-    internal static readonly PluginRefreshCommandAvailability EmptyCommands = new(false, false, false, false);
+    internal static readonly PluginRefreshCommandAvailability EmptyCommands = new(false, false, false, false, false);
 
     private readonly PluginRefreshAppStateMirror _appStateMirror;
     private readonly PluginRefreshCommandAvailabilityPolicy _commandPolicy;
@@ -61,6 +61,13 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
         _disposed = true;
         _snapshots.Dispose();
     }
+
+    /// <summary>
+    ///     Test seam invoked after a selection candidate is computed and before its compare-and-swap commit. Tests use
+    ///     it to land an approximation commit deterministically inside that window and prove the selection rebases
+    ///     onto the newer rows. Always null in production.
+    /// </summary>
+    internal Action? BeforeSelectionCommit { get; set; }
 
     /// <summary>
     ///     Gets the current visible snapshot.
@@ -139,7 +146,7 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
                 generation, gameType, keepRows ? accepted.Rows : [], accepted.Configuration,
                 new PluginRefreshActivity(true, false), EmptyCommands,
                 gameType == GameType.Unknown ? "No game selected" : $"Loading plugins for {gameType}..."),
-                _appStateMirror.CurrentState, affordance);
+                affordance);
             _snapshots.OnNext(_currentSnapshot);
             return true;
         }
@@ -231,7 +238,6 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
                 nextPublication.VisibleRows,
                 nextPublication.Activity,
                 nextPublication.Configuration,
-                _appStateMirror.CurrentState.IsCleaning,
                 affordance);
             _currentPublication = nextPublication with { Commands = commands };
             _currentSnapshot = ToSnapshot(_currentPublication);
@@ -256,7 +262,18 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
         PluginRefreshSnapshot snapshot,
         PluginRefreshGameAffordance affordance)
     {
-        return PublishSnapshot(snapshot, _appStateMirror.CurrentState, affordance);
+        if (_disposed) return GetCurrentSnapshot();
+
+        var next = WithCommandAvailability(snapshot, affordance);
+        lock (_snapshotLock)
+        {
+            if (snapshot.Generation < _minimumPublicationGeneration || snapshot.Generation < _currentSnapshot.Generation)
+                return _currentSnapshot;
+            _currentSnapshot = next;
+        }
+
+        _snapshots.OnNext(next);
+        return next;
     }
 
     /// <summary>
@@ -288,7 +305,6 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
                 activity,
                 EmptyCommands,
                 statusText),
-            state,
             affordance);
     }
 
@@ -324,7 +340,7 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
             var state = _appStateMirror.CurrentState;
             var snapshot = WithCommandAvailability(new PluginRefreshSnapshot(
                 generation, gameType, PluginRefreshAppStateMirror.ProjectVisibleRows(state),
-                configuration, activity, EmptyCommands, statusText), state, affordance);
+                configuration, activity, EmptyCommands, statusText), affordance);
             _currentSnapshot = snapshot;
             _currentPublication = CreateMissingPublication(snapshot);
             _currentPublicationFreshnessToken = null;
@@ -412,7 +428,7 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
             Activity = activity,
             StatusText = statusText
         };
-        return PublishPublication(nextPublication, freshnessToken, _appStateMirror.CurrentState, affordance);
+        return PublishPublication(nextPublication, freshnessToken, affordance);
     }
 
     /// <summary>
@@ -450,7 +466,6 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
                 nextPublication.VisibleRows,
                 nextPublication.Activity,
                 nextPublication.Configuration,
-                _appStateMirror.CurrentState.IsCleaning,
                 affordance);
             _currentPublication = nextPublication with { Commands = commands };
             _currentSnapshot = ToSnapshot(_currentPublication);
@@ -522,7 +537,6 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
                 nextPublication.VisibleRows,
                 nextPublication.Activity,
                 nextPublication.Configuration,
-                _appStateMirror.CurrentState.IsCleaning,
                 affordance);
             _currentPublication = nextPublication with { Commands = commands };
             _currentSnapshot = ToSnapshot(_currentPublication);
@@ -585,7 +599,6 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
                 nextPublication.VisibleRows,
                 nextPublication.Activity,
                 nextPublication.Configuration,
-                _appStateMirror.CurrentState.IsCleaning,
                 affordance);
             _currentPublication = nextPublication with { Commands = commands };
             _currentSnapshot = ToSnapshot(_currentPublication);
@@ -651,7 +664,6 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
                 nextPublication.VisibleRows,
                 nextPublication.Activity,
                 nextPublication.Configuration,
-                _appStateMirror.CurrentState.IsCleaning,
                 affordance);
             _currentPublication = nextPublication with { Commands = commands };
             _currentSnapshot = ToSnapshot(_currentPublication);
@@ -707,7 +719,6 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
                 nextPublication.VisibleRows,
                 nextPublication.Activity,
                 nextPublication.Configuration,
-                _appStateMirror.CurrentState.IsCleaning,
                 affordance);
             _currentPublication = nextPublication with { Commands = commands };
             _currentSnapshot = ToSnapshot(_currentPublication);
@@ -750,15 +761,13 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
     }
 
     /// <summary>
-    ///     Updates command availability after AppState cleaning state changes.
+    ///     Updates command availability after a Cleaning admission transition.
     /// </summary>
-    /// <param name="state">Current AppState.</param>
     /// <param name="inspection">Publication and snapshot facts observed before affordance lookup.</param>
     /// <param name="publicationAffordance">Game affordance facts for the observed publication.</param>
     /// <param name="snapshotAffordance">Game affordance facts for the observed snapshot.</param>
     /// <returns>True when the inspected publication is still current; false when the caller must inspect again.</returns>
     internal bool PublishCommandAvailabilityIfChanged(
-        AppState state,
         PluginRefreshCommandAvailabilityInspection inspection,
         PluginRefreshGameAffordance publicationAffordance,
         PluginRefreshGameAffordance snapshotAffordance)
@@ -776,14 +785,12 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
                 _currentPublication.VisibleRows,
                 _currentPublication.Activity,
                 _currentPublication.Configuration,
-                state.IsCleaning,
                 publicationAffordance);
             var snapshotCommands = CreateCommandAvailability(
                 _currentSnapshot.GameType,
                 _currentSnapshot.Rows,
                 _currentSnapshot.Activity,
                 _currentSnapshot.Configuration,
-                state.IsCleaning,
                 snapshotAffordance);
 
             if (publicationCommands == _currentPublication.Commands &&
@@ -924,7 +931,7 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
         PluginRefreshPublicationRowsMirror mirror,
         PluginRefreshGameAffordance affordance)
     {
-        return PublishPublication(publication, freshnessToken, _appStateMirror.CurrentState, affordance, mirror);
+        return PublishPublication(publication, freshnessToken, affordance, mirror);
     }
 
     /// <summary>Commits selection only if its source rows are unchanged, preserving streamed approximation results.</summary>
@@ -942,13 +949,12 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
             return false;
         }
 
-        var state = _appStateMirror.CurrentState;
+        BeforeSelectionCommit?.Invoke();
         var commands = CreateCommandAvailability(
             nextPublication.GameType,
             nextPublication.VisibleRows,
             nextPublication.Activity,
             nextPublication.Configuration,
-            state.IsCleaning,
             affordance);
         var committedPublication = nextPublication with { Commands = commands };
 
@@ -976,30 +982,10 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
         return true;
     }
 
-    private PluginRefreshSnapshot PublishSnapshot(
-        PluginRefreshSnapshot snapshot,
-        AppState state,
-        PluginRefreshGameAffordance affordance)
-    {
-        if (_disposed) return GetCurrentSnapshot();
-
-        var next = WithCommandAvailability(snapshot, state, affordance);
-        lock (_snapshotLock)
-        {
-            if (snapshot.Generation < _minimumPublicationGeneration || snapshot.Generation < _currentSnapshot.Generation)
-                return _currentSnapshot;
-            _currentSnapshot = next;
-        }
-
-        _snapshots.OnNext(next);
-        return next;
-    }
-
     /// <summary>Commits a winning publication and optional compatibility rows under one generation guard.</summary>
     private PluginRefreshSnapshot PublishPublication(
         PluginRefreshPublication publication,
         PluginRefreshDiscoveryFreshnessToken freshnessToken,
-        AppState state,
         PluginRefreshGameAffordance affordance,
         PluginRefreshPublicationRowsMirror? mirror = null)
     {
@@ -1010,7 +996,6 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
             publication.VisibleRows,
             publication.Activity,
             publication.Configuration,
-            state.IsCleaning,
             affordance);
         var nextPublication = publication with { Commands = commands };
         var snapshot = ToSnapshot(nextPublication);
@@ -1038,7 +1023,7 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
                     Rows = rowCommit.Rows,
                     VisibleRows = rowCommit.VisibleRows,
                     Commands = CreateCommandAvailability(publication.GameType, rowCommit.VisibleRows,
-                        publication.Activity, publication.Configuration, _appStateMirror.CurrentState.IsCleaning, affordance)
+                        publication.Activity, publication.Configuration, affordance)
                 };
                 snapshot = ToSnapshot(nextPublication);
                 mirror = rowCommit.Mirror;
@@ -1057,7 +1042,6 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
 
     private PluginRefreshSnapshot WithCommandAvailability(
         PluginRefreshSnapshot snapshot,
-        AppState state,
         PluginRefreshGameAffordance affordance)
     {
         return snapshot with
@@ -1067,7 +1051,6 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
                 snapshot.Rows,
                 snapshot.Activity,
                 snapshot.Configuration,
-                state.IsCleaning,
                 affordance)
         };
     }
@@ -1077,10 +1060,9 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
         IReadOnlyList<PluginRefreshRow> rows,
         PluginRefreshActivity activity,
         PluginRefreshConfigurationProjection configuration,
-        bool isCleaning,
         PluginRefreshGameAffordance affordance)
     {
-        return _commandPolicy.Create(gameType, rows, activity, configuration, isCleaning, affordance);
+        return _commandPolicy.Create(gameType, rows, activity, configuration, affordance);
     }
 
     private PluginRefreshSnapshot CreateInitialSnapshot(
@@ -1100,7 +1082,6 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
                 rows,
                 new PluginRefreshActivity(false, false),
                 configuration,
-                state.IsCleaning,
                 initialAffordance),
             "Ready");
     }

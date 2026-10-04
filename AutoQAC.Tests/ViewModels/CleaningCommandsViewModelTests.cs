@@ -18,25 +18,21 @@ namespace AutoQAC.Tests.ViewModels;
 /// </summary>
 public sealed class CleaningCommandsViewModelTests
 {
-    /// <summary>Start and Preview disable immediately when a Cleaning session reserves admission.</summary>
+    /// <summary>Start and Preview disable when a snapshot reports reserved admission and re-enable after release.</summary>
     [Fact]
-    public void OnCleaningAdmissionChanged_ShouldUpdateStartAndPreviewAvailability()
+    public void OnPluginRefreshSnapshot_WhenAdmissionReservedThenReleased_ShouldUpdateStartAndPreviewAvailability()
     {
-        using var refreshModule = new RecordingPluginRefreshModule();
         var readiness = Substitute.For<ICleaningCommandReadiness>();
         readiness.EvaluateAsync(Arg.Any<CancellationToken>())
             .Returns(CleaningCommandReadinessResult.Ready);
-        using var viewModel = CreateViewModel(
-            Substitute.For<ICleaningSession>(),
-            readiness,
-            refreshModule);
+        using var viewModel = CreateViewModel(Substitute.For<ICleaningSession>(), readiness);
         viewModel.CanStartCleaning = true;
         var startNotifications = 0;
         var previewNotifications = 0;
         viewModel.StartCleaningCommand.CanExecuteChanged += (_, _) => startNotifications++;
         viewModel.PreviewCommand.CanExecuteChanged += (_, _) => previewNotifications++;
 
-        viewModel.OnCleaningAdmissionChanged(true);
+        viewModel.OnPluginRefreshSnapshot(AdmissionSnapshot(reserved: true));
 
         viewModel.CanStartCleaning.Should().BeFalse();
         viewModel.StartCleaningCommand.CanExecute(null).Should().BeFalse();
@@ -44,7 +40,7 @@ public sealed class CleaningCommandsViewModelTests
         startNotifications.Should().Be(1);
         previewNotifications.Should().Be(1);
 
-        viewModel.OnCleaningAdmissionChanged(false);
+        viewModel.OnPluginRefreshSnapshot(AdmissionSnapshot(reserved: false));
 
         viewModel.CanStartCleaning.Should().BeTrue();
         viewModel.StartCleaningCommand.CanExecute(null).Should().BeTrue();
@@ -53,18 +49,44 @@ public sealed class CleaningCommandsViewModelTests
         previewNotifications.Should().Be(2);
     }
 
+    /// <summary>Settings, Skip list, and Restore lock for the whole reservation, not just while AppState is cleaning.</summary>
+    [Fact]
+    public void OnPluginRefreshSnapshot_WhenAdmissionReservedThenReleased_ShouldLockMutationDialogs()
+    {
+        var readiness = Substitute.For<ICleaningCommandReadiness>();
+        readiness.EvaluateAsync(Arg.Any<CancellationToken>())
+            .Returns(CleaningCommandReadinessResult.Ready);
+        using var viewModel = CreateViewModel(Substitute.For<ICleaningSession>(), readiness);
+        var settingsNotifications = 0;
+        viewModel.ShowSettingsCommand.CanExecuteChanged += (_, _) => settingsNotifications++;
+
+        viewModel.OnPluginRefreshSnapshot(AdmissionSnapshot(reserved: true));
+
+        viewModel.IsCleaning.Should().BeFalse("AppState has not yet published active cleaning");
+        viewModel.ShowSettingsCommand.CanExecute(null).Should().BeFalse();
+        viewModel.ShowSkipListCommand.CanExecute(null).Should().BeFalse();
+        viewModel.RestoreBackupsCommand.CanExecute(null).Should().BeFalse();
+        settingsNotifications.Should().Be(1);
+
+        viewModel.OnPluginRefreshSnapshot(AdmissionSnapshot(reserved: false));
+
+        viewModel.ShowSettingsCommand.CanExecute(null).Should().BeTrue();
+        viewModel.ShowSkipListCommand.CanExecute(null).Should().BeTrue();
+        viewModel.RestoreBackupsCommand.CanExecute(null).Should().BeTrue();
+        settingsNotifications.Should().Be(2);
+    }
+
     /// <summary>A direct preview invocation must not validate plugins after admission is reserved.</summary>
     [Fact]
     public async Task PreviewCommand_WhenAdmissionAlreadyReserved_ShouldNotRunSessionPreview()
     {
-        using var refreshModule = new RecordingPluginRefreshModule();
         var cleaningSession = Substitute.For<ICleaningSession>();
         var readiness = Substitute.For<ICleaningCommandReadiness>();
         readiness.EvaluateAsync(Arg.Any<CancellationToken>())
             .Returns(CleaningCommandReadinessResult.Ready);
-        using var viewModel = CreateViewModel(cleaningSession, readiness, refreshModule);
+        using var viewModel = CreateViewModel(cleaningSession, readiness);
         viewModel.CanStartCleaning = true;
-        viewModel.OnCleaningAdmissionChanged(true);
+        viewModel.OnPluginRefreshSnapshot(AdmissionSnapshot(reserved: true));
 
         await viewModel.PreviewCommand.ExecuteAsync(null);
 
@@ -76,23 +98,26 @@ public sealed class CleaningCommandsViewModelTests
     [Fact]
     public async Task PreviewCommand_WhenAdmissionReservedDuringReadiness_ShouldNotRunSessionPreview()
     {
-        using var refreshModule = new RecordingPluginRefreshModule();
         var cleaningSession = Substitute.For<ICleaningSession>();
         var readiness = Substitute.For<ICleaningCommandReadiness>();
         var evaluationStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var completeReadiness = new TaskCompletionSource<CleaningCommandReadinessResult>(
             TaskCreationOptions.RunContinuationsAsynchronously);
+        var evaluations = 0;
         readiness.EvaluateAsync(Arg.Any<CancellationToken>()).Returns(_ =>
         {
+            // Only the command's own readiness check blocks; snapshot-triggered refreshes complete immediately.
+            if (Interlocked.Increment(ref evaluations) != 1)
+                return Task.FromResult(CleaningCommandReadinessResult.Ready);
             evaluationStarted.TrySetResult();
             return completeReadiness.Task;
         });
-        using var viewModel = CreateViewModel(cleaningSession, readiness, refreshModule);
+        using var viewModel = CreateViewModel(cleaningSession, readiness);
         viewModel.CanStartCleaning = true;
 
         var previewTask = viewModel.PreviewCommand.ExecuteAsync(null);
         await evaluationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        viewModel.OnCleaningAdmissionChanged(true);
+        viewModel.OnPluginRefreshSnapshot(AdmissionSnapshot(reserved: true));
         completeReadiness.SetResult(CleaningCommandReadinessResult.Ready);
         await previewTask.WaitAsync(TimeSpan.FromSeconds(5));
 
@@ -100,87 +125,13 @@ public sealed class CleaningCommandsViewModelTests
         viewModel.StatusText.Should().Be("Ready");
     }
 
-    /// <summary>A stale preview readiness failure cannot replace status after an intervening Cleaning session.</summary>
-    [Fact]
-    public async Task PreviewCommand_WhenAdmissionReservesAndReleasesDuringReadiness_ShouldNotProjectStaleFailure()
-    {
-        using var refreshModule = new RecordingPluginRefreshModule();
-        var readiness = Substitute.For<ICleaningCommandReadiness>();
-        var firstEvaluationStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var completeFirstEvaluation = new TaskCompletionSource<CleaningCommandReadinessResult>(
-            TaskCreationOptions.RunContinuationsAsynchronously);
-        var evaluations = 0;
-        readiness.EvaluateAsync(Arg.Any<CancellationToken>()).Returns(_ =>
-        {
-            if (Interlocked.Increment(ref evaluations) != 1)
-                return Task.FromResult(CleaningCommandReadinessResult.Ready);
-            firstEvaluationStarted.TrySetResult();
-            return completeFirstEvaluation.Task;
-        });
-        var cleaningSession = Substitute.For<ICleaningSession>();
-        using var viewModel = CreateViewModel(cleaningSession, readiness, refreshModule);
-        viewModel.CanStartCleaning = true;
-
-        var previewTask = viewModel.PreviewCommand.ExecuteAsync(null);
-        await firstEvaluationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        viewModel.OnCleaningAdmissionChanged(true);
-        viewModel.OnCleaningAdmissionChanged(false);
-        viewModel.StatusText = "Cleaning completed.";
-        completeFirstEvaluation.SetResult(CleaningCommandReadinessResult.Blocked(
-            new CleaningPreflightFailure(CleaningPreflightFailureKind.NoGameSelected, "No game selected")));
-        await previewTask.WaitAsync(TimeSpan.FromSeconds(5));
-
-        viewModel.StatusText.Should().Be("Cleaning completed.");
-        viewModel.HasValidationErrors.Should().BeFalse();
-        await cleaningSession.DidNotReceive().PreviewAsync(Arg.Any<CancellationToken>());
-    }
-
-    /// <summary>An older Start command cannot proceed after another Cleaning admission crossed its readiness await.</summary>
-    [Fact]
-    public async Task StartCommand_WhenAdmissionReservesAndReleasesDuringReadiness_ShouldNotStartSession()
-    {
-        using var refreshModule = new RecordingPluginRefreshModule();
-        var readiness = Substitute.For<ICleaningCommandReadiness>();
-        var firstEvaluationStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var completeFirstEvaluation = new TaskCompletionSource<CleaningCommandReadinessResult>(
-            TaskCreationOptions.RunContinuationsAsynchronously);
-        var evaluations = 0;
-        readiness.EvaluateAsync(Arg.Any<CancellationToken>()).Returns(_ =>
-        {
-            if (Interlocked.Increment(ref evaluations) != 1)
-                return Task.FromResult(CleaningCommandReadinessResult.Ready);
-            firstEvaluationStarted.TrySetResult();
-            return completeFirstEvaluation.Task;
-        });
-        var cleaningSession = Substitute.For<ICleaningSession>();
-        var progressInteraction = new Interaction<ICleaningSession, Unit>();
-        using var progressRegistration = progressInteraction.RegisterHandler(_ => Task.FromResult(Unit.Default));
-        using var viewModel = CreateViewModel(
-            cleaningSession, readiness, refreshModule, progressInteraction: progressInteraction);
-        viewModel.CanStartCleaning = true;
-
-        var startTask = viewModel.StartCleaningCommand.ExecuteAsync(null);
-        await firstEvaluationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        viewModel.OnCleaningAdmissionChanged(true);
-        viewModel.OnCleaningAdmissionChanged(false);
-        completeFirstEvaluation.SetResult(CleaningCommandReadinessResult.Ready);
-        await startTask.WaitAsync(TimeSpan.FromSeconds(5));
-
-        await cleaningSession.DidNotReceive().StartAsync(Arg.Any<CancellationToken>());
-        refreshModule.Intents.Should().BeEmpty();
-    }
-
-    /// <summary>A preview that finishes after admission is reserved must not replace Cleaning session status.</summary>
+    /// <summary>A preview that finishes while admission is reserved must not replace Cleaning session status.</summary>
     [Theory]
-    [InlineData(false, false)]
-    [InlineData(true, false)]
-    [InlineData(false, true)]
-    [InlineData(true, true)]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task PreviewCommand_WhenAdmissionReservedDuringSessionPreview_ShouldPreserveCleaningStatus(
-        bool previewFails,
-        bool releaseAdmissionBeforeCompletion)
+        bool previewFails)
     {
-        using var refreshModule = new RecordingPluginRefreshModule();
         var cleaningSession = Substitute.For<ICleaningSession>();
         var readiness = Substitute.For<ICleaningCommandReadiness>();
         readiness.EvaluateAsync(Arg.Any<CancellationToken>())
@@ -200,14 +151,13 @@ public sealed class CleaningCommandsViewModelTests
             previewShown = true;
             return Task.FromResult(Unit.Default);
         });
-        using var viewModel = CreateViewModel(cleaningSession, readiness, refreshModule, previewInteraction);
+        using var viewModel = CreateViewModel(cleaningSession, readiness, previewInteraction);
         viewModel.CanStartCleaning = true;
 
         var previewTask = viewModel.PreviewCommand.ExecuteAsync(null);
         await previewStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        viewModel.OnCleaningAdmissionChanged(true);
+        viewModel.OnPluginRefreshSnapshot(AdmissionSnapshot(reserved: true));
         viewModel.StatusText = "Cleaning: NeedsCleaning.esp (1/1)";
-        if (releaseAdmissionBeforeCompletion) viewModel.OnCleaningAdmissionChanged(false);
         if (previewFails)
             completePreview.SetException(new IOException("Preview failed after admission"));
         else
@@ -222,7 +172,6 @@ public sealed class CleaningCommandsViewModelTests
     [Fact]
     public async Task PreviewCommand_WhenAdmissionReservedDuringPreviewInteraction_ShouldPreserveCleaningStatus()
     {
-        using var refreshModule = new RecordingPluginRefreshModule();
         var cleaningSession = Substitute.For<ICleaningSession>();
         cleaningSession.PreviewAsync(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IReadOnlyList<DryRunResult>>([]));
@@ -237,12 +186,12 @@ public sealed class CleaningCommandsViewModelTests
             interactionStarted.TrySetResult();
             return completeInteraction.Task;
         });
-        using var viewModel = CreateViewModel(cleaningSession, readiness, refreshModule, previewInteraction);
+        using var viewModel = CreateViewModel(cleaningSession, readiness, previewInteraction);
         viewModel.CanStartCleaning = true;
 
         var previewTask = viewModel.PreviewCommand.ExecuteAsync(null);
         await interactionStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        viewModel.OnCleaningAdmissionChanged(true);
+        viewModel.OnPluginRefreshSnapshot(AdmissionSnapshot(reserved: true));
         viewModel.StatusText = "Cleaning: NeedsCleaning.esp (1/1)";
         completeInteraction.SetResult(Unit.Default);
         await previewTask.WaitAsync(TimeSpan.FromSeconds(5));
@@ -251,10 +200,11 @@ public sealed class CleaningCommandsViewModelTests
     }
 
     /// <summary>
-    /// Ensures approximation refresh cancellation happens before progress display and before xEdit cleaning starts.
+    /// Start shows progress and then starts the session; reserving Cleaning admission inside the session cancels
+    /// Plugin refresh work, so the command issues no refresh intent of its own.
     /// </summary>
     [Fact]
-    public async Task StartCommand_ShouldCancelActiveRefreshBeforeProgressAndSessionStart()
+    public async Task StartCommand_ShouldShowProgressThenStartSessionWithoutRefreshIntent()
     {
         var tempXEditPath = Path.Combine(Path.GetTempPath(), $"AutoQAC-{Guid.NewGuid():N}.exe");
         await File.WriteAllTextAsync(tempXEditPath, string.Empty);
@@ -271,13 +221,6 @@ public sealed class CleaningCommandsViewModelTests
                 callOrder.Add("session");
                 return Task.CompletedTask;
             });
-        refreshModule.ExecuteHandler = (intent, _) =>
-        {
-            if (intent is PluginRefreshIntent.Cancel { Reason: PluginRefreshCancelReason.CleaningStarted })
-                callOrder.Add("cancel");
-
-            return Task.FromResult(refreshModule.CurrentSnapshot);
-        };
 
         var progressInteraction = new Interaction<ICleaningSession, Unit>();
         using var progressRegistration = progressInteraction.RegisterHandler(_ =>
@@ -288,8 +231,7 @@ public sealed class CleaningCommandsViewModelTests
 
         var viewModel = new CleaningCommandsViewModel(
             cleaningSession,
-            new CleaningCommandReadiness(refreshModule, stateService),
-            refreshModule,
+            new CleaningCommandReadiness(refreshModule, stateService, new CleaningAdmission()),
             Substitute.For<ILoggingService>(),
             Substitute.For<IMessageDialogService>(),
             Substitute.For<IAppLifetime>(),
@@ -307,9 +249,8 @@ public sealed class CleaningCommandsViewModelTests
 
             await viewModel.StartCleaningCommand.ExecuteAsync(null);
 
-            callOrder.Should().Equal("cancel", "progress", "session");
-            refreshModule.Intents.OfType<PluginRefreshIntent.Cancel>()
-                .Should().ContainSingle(cancel => cancel.Reason == PluginRefreshCancelReason.CleaningStarted);
+            callOrder.Should().Equal("progress", "session");
+            refreshModule.Intents.Should().BeEmpty();
         }
         finally
         {
@@ -343,8 +284,7 @@ public sealed class CleaningCommandsViewModelTests
 
         var viewModel = new CleaningCommandsViewModel(
             cleaningSession,
-            new CleaningCommandReadiness(refreshModule, stateService),
-            refreshModule,
+            new CleaningCommandReadiness(refreshModule, stateService, new CleaningAdmission()),
             Substitute.For<ILoggingService>(),
             Substitute.For<IMessageDialogService>(),
             Substitute.For<IAppLifetime>(),
@@ -401,8 +341,7 @@ public sealed class CleaningCommandsViewModelTests
 
         var viewModel = new CleaningCommandsViewModel(
             cleaningSession,
-            new CleaningCommandReadiness(refreshModule, stateService),
-            refreshModule,
+            new CleaningCommandReadiness(refreshModule, stateService, new CleaningAdmission()),
             Substitute.For<ILoggingService>(),
             Substitute.For<IMessageDialogService>(),
             Substitute.For<IAppLifetime>(),
@@ -440,8 +379,7 @@ public sealed class CleaningCommandsViewModelTests
         using var refreshModule = new RecordingPluginRefreshModule();
         var viewModel = new CleaningCommandsViewModel(
             Substitute.For<ICleaningSession>(),
-            new CleaningCommandReadiness(refreshModule, stateService),
-            refreshModule,
+            new CleaningCommandReadiness(refreshModule, stateService, new CleaningAdmission()),
             Substitute.For<ILoggingService>(),
             Substitute.For<IMessageDialogService>(),
             Substitute.For<IAppLifetime>(),
@@ -475,7 +413,6 @@ public sealed class CleaningCommandsViewModelTests
         var viewModel = new CleaningCommandsViewModel(
             Substitute.For<ICleaningSession>(),
             Substitute.For<ICleaningCommandReadiness>(),
-            new RecordingPluginRefreshModule(),
             Substitute.For<ILoggingService>(),
             Substitute.For<IMessageDialogService>(),
             appLifetime,
@@ -491,18 +428,24 @@ public sealed class CleaningCommandsViewModelTests
         appLifetime.Received(1).Shutdown();
     }
 
+    /// <summary>Creates a snapshot whose commands were computed under the given Cleaning admission state.</summary>
+    private static PluginRefreshSnapshot AdmissionSnapshot(bool reserved)
+    {
+        return RecordingPluginRefreshModule.CreateSnapshot(
+            GameType.SkyrimSe,
+            commands: new PluginRefreshCommandAvailability(!reserved, !reserved, false, false, reserved));
+    }
+
     /// <summary>Creates the command view model with only the session and readiness seams under test.</summary>
     private static CleaningCommandsViewModel CreateViewModel(
         ICleaningSession cleaningSession,
         ICleaningCommandReadiness readiness,
-        IPluginRefreshModule refreshModule,
         Interaction<List<DryRunResult>, Unit>? previewInteraction = null,
         Interaction<ICleaningSession, Unit>? progressInteraction = null)
     {
         return new CleaningCommandsViewModel(
             cleaningSession,
             readiness,
-            refreshModule,
             Substitute.For<ILoggingService>(),
             Substitute.For<IMessageDialogService>(),
             Substitute.For<IAppLifetime>(),

@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models.Configuration;
+using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
 using AutoQAC.Services.UI;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -20,8 +21,7 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
 
     private readonly IConfigurationService? _configService;
     private readonly IDiscoverySettingsModule? _discoverySettingsModule;
-    private readonly DiscoverySettingsAdmission? _admission;
-    private readonly IUiDispatcher? _dispatcher;
+    private readonly IDisposable? _admissionSubscription;
     private readonly CancellationTokenSource _lifetime = new();
     private UserConfiguration? _baseline;
     private bool _disposed;
@@ -68,29 +68,28 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>Creates an editor whose saves cross the shared settings seam; notifications are marshaled to its UI dispatcher.</summary>
+    /// <param name="admission">Shared Cleaning admission; the editor locks while it is reserved.</param>
     public SettingsViewModel(
         IConfigurationService configService,
         ILoggingService logger,
         IUiDispatcher uiDispatcher,
+        CleaningAdmission admission,
         IFileDialogService? fileDialog = null,
-        IDiscoverySettingsModule? discoverySettingsModule = null,
-        DiscoverySettingsAdmission? admission = null)
+        IDiscoverySettingsModule? discoverySettingsModule = null)
     {
         ArgumentNullException.ThrowIfNull(configService);
         ArgumentNullException.ThrowIfNull(logger);
         ArgumentNullException.ThrowIfNull(uiDispatcher);
+        ArgumentNullException.ThrowIfNull(admission);
 
         _configService = configService;
         _logger = logger;
         _fileDialog = fileDialog;
         _discoverySettingsModule = discoverySettingsModule;
-        _admission = admission;
-        _dispatcher = uiDispatcher;
-        if (admission is not null)
-        {
-            admission.CleaningChanged += OnCleaningAdmissionChanged;
-            IsCleaning = admission.IsCleaning;
-        }
+        // Seed synchronously so a dialog opened mid-session starts locked; the replayed value then arrives posted.
+        IsCleaning = admission.IsCleaning;
+        _admissionSubscription = admission.CleaningState.Subscribe(new CallbackObserver<bool>(reserved =>
+            uiDispatcher.Post(() => { if (!_disposed) IsCleaning = reserved; })));
 
         _xEditValidate = new DebouncedAction(uiDispatcher, TimeSpan.FromMilliseconds(400));
         _mo2Validate = new DebouncedAction(uiDispatcher, TimeSpan.FromMilliseconds(400));
@@ -219,7 +218,7 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
         _disposed = true;
         _lifetime.Cancel();
         _lifetime.Dispose();
-        if (_admission is not null) _admission.CleaningChanged -= OnCleaningAdmissionChanged;
+        _admissionSubscription?.Dispose();
         _failuresSubscription?.Dispose();
         _resultsSubscription?.Dispose();
         _configChangedClearSubscription?.Dispose();
@@ -235,12 +234,6 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
 
     /// <summary>Whether the editor may change settings while the Cleaning session owns admission.</summary>
     public bool CanEditSettings => !IsCleaning;
-
-    /// <summary>Marshals startup and finalization transitions to the editor's UI thread.</summary>
-    private void OnCleaningAdmissionChanged(object? sender, EventArgs args)
-    {
-        _dispatcher?.Post(() => { if (!_disposed) IsCleaning = _admission?.IsCleaning == true; });
-    }
 
     /// <summary>Raised when the user picks Save or Cancel. The view closes the dialog with this value.</summary>
     public event Action<bool>? CloseRequested;

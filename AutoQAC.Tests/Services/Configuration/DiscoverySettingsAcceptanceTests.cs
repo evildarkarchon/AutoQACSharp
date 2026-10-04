@@ -1,5 +1,6 @@
 using AutoQAC.Models;
 using AutoQAC.Models.Configuration;
+using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Services.State;
@@ -302,7 +303,7 @@ public sealed class DiscoverySettingsAcceptanceTests
                 .Returns(_ => { Saved = new UserConfiguration(); return Task.CompletedTask; });
             Config.FlushPendingSavesAsync(Arg.Any<CancellationToken>()).Returns(Flushed);
             Refresh.RefreshForSettingsAsync(Arg.Any<GameType>(), Arg.Any<CancellationToken>()).Returns(NoGame);
-            Module = new DiscoverySettingsModule(Config, State, Refresh);
+            Module = new DiscoverySettingsModule(Config, State, Refresh, new CleaningAdmission());
         }
 
         public void Dispose()

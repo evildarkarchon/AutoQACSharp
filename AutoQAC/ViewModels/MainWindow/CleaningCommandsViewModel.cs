@@ -25,7 +25,6 @@ namespace AutoQAC.ViewModels.MainWindow;
 public sealed partial class CleaningCommandsViewModel(
     ICleaningSession cleaningSession,
     ICleaningCommandReadiness cleaningCommandReadiness,
-    IPluginRefreshModule pluginRefreshModule,
     ILoggingService logger,
     IMessageDialogService messageDialog,
     IAppLifetime appLifetime,
@@ -37,12 +36,10 @@ public sealed partial class CleaningCommandsViewModel(
     Interaction<Unit, Unit> showAboutInteraction)
     : ViewModelBase, IDisposable
 {
-    private readonly IPluginRefreshModule _pluginRefreshModule = pluginRefreshModule;
     private CleaningPreflightFailureKind? _currentReadinessFailureKind;
     private CancellationTokenSource? _readinessCts;
     private int _readinessRequestId;
-    private bool _cleaningReserved;
-    private int _cleaningAdmissionGeneration;
+    private PluginRefreshCommandAvailability? _publishedCommands;
 
     [ObservableProperty] public partial string StatusText { get; set; } = "Ready";
 
@@ -81,59 +78,60 @@ public sealed partial class CleaningCommandsViewModel(
     }
 
     /// <summary>
-    ///     Re-evaluates command readiness when Plugin refresh publication facts may have changed.
+    ///     Projects the snapshot's Cleaning admission state and re-evaluates command readiness, since Plugin refresh
+    ///     publication facts may have changed. Start, Preview, and mutation dialogs stay disabled while Cleaning
+    ///     admission is reserved; the snapshot carries that state with the rows it was computed for.
     /// </summary>
     public void OnPluginRefreshSnapshot(PluginRefreshSnapshot snapshot)
     {
-        _ = snapshot;
-        ScheduleReadinessRefresh(true);
-    }
-
-    /// <summary>Disables Start, Preview, and mutation dialogs throughout cleaning admission.</summary>
-    public void OnCleaningAdmissionChanged(bool reserved)
-    {
-        _cleaningReserved = reserved;
-        if (reserved)
+        var wasReserved = IsCleaningReserved;
+        _publishedCommands = snapshot.Commands;
+        if (IsCleaningReserved != wasReserved)
         {
-            Interlocked.Increment(ref _cleaningAdmissionGeneration);
-            CanStartCleaning = false;
-        }
-        else
-            ScheduleReadinessRefresh(true);
+            // Start and Preview follow CanStartCleaning: it is cleared here and stays false while reserved, so
+            // its own change notification covers both commands until readiness re-enables it after release.
+            if (IsCleaningReserved) CanStartCleaning = false;
 
-        ShowSettingsCommand.NotifyCanExecuteChanged();
-        ShowSkipListCommand.NotifyCanExecuteChanged();
-        RestoreBackupsCommand.NotifyCanExecuteChanged();
+            ShowSettingsCommand.NotifyCanExecuteChanged();
+            ShowSkipListCommand.NotifyCanExecuteChanged();
+            RestoreBackupsCommand.NotifyCanExecuteChanged();
+        }
+
+        ScheduleReadinessRefresh(true);
     }
 
     private void ApplyState(AppState state)
     {
+        // AppState cleaning is a display fact (Stop button, progress text); Start and Preview gate on admission.
         IsCleaning = state.IsCleaning;
-        if (state.IsCleaning) CanStartCleaning = false;
 
         if (state.IsCleaning) StatusText = $"Cleaning: {state.CurrentPlugin} ({state.Progress}/{state.TotalPlugins})";
     }
 
+    /// <summary>Whether the latest applied Plugin refresh snapshot was computed under reserved Cleaning admission.</summary>
+    private bool IsCleaningReserved => _publishedCommands?.IsCleaningReserved == true;
+
     private bool CanStart()
     {
-        return CanStartCleaning && !_cleaningReserved;
+        return CanStartCleaning && !IsCleaningReserved;
     }
 
+    /// <summary>
+    ///     Starts a Cleaning session. Reserving Cleaning admission inside the session cancels and drains Plugin
+    ///     refresh work, so this command does not cancel refreshes itself.
+    /// </summary>
     [RelayCommand(CanExecute = nameof(CanStart))]
     private async Task StartCleaningAsync()
     {
-        var admissionGeneration = Volatile.Read(ref _cleaningAdmissionGeneration);
-        if (IsCleaningAdmissionSuperseded(admissionGeneration)) return;
+        if (IsCleaningReserved) return;
 
         ValidationErrors.Clear();
         HasValidationErrors = false;
 
-        if (!await ValidatePreCleanAsync(admissionGeneration).ConfigureAwait(true)) return;
+        if (!await ValidatePreCleanAsync().ConfigureAwait(true)) return;
 
         try
         {
-            await _pluginRefreshModule.ExecuteAsync(
-                new PluginRefreshIntent.Cancel(PluginRefreshCancelReason.CleaningStarted));
             await showProgressInteraction.Handle(cleaningSession);
 
             StatusText = "Cleaning started...";
@@ -178,40 +176,41 @@ public sealed partial class CleaningCommandsViewModel(
     [RelayCommand(CanExecute = nameof(CanStart))]
     private async Task PreviewAsync()
     {
-        var admissionGeneration = Volatile.Read(ref _cleaningAdmissionGeneration);
-        if (IsCleaningAdmissionSuperseded(admissionGeneration)) return;
+        if (IsCleaningReserved) return;
 
         ValidationErrors.Clear();
         HasValidationErrors = false;
 
-        if (!await ValidatePreCleanAsync(admissionGeneration).ConfigureAwait(true)) return;
+        if (!await ValidatePreCleanAsync().ConfigureAwait(true)) return;
 
         try
         {
             StatusText = "Running preview...";
             var results = await cleaningSession.PreviewAsync();
-            if (IsCleaningAdmissionSuperseded(admissionGeneration)) return;
+            // A Cleaning reservation cancels and drains an in-flight preview before the session proceeds; while
+            // it is still held, never show results from that canceled read or overwrite the session's status.
+            if (IsCleaningReserved) return;
 
             await showPreviewInteraction.Handle(results.ToList());
-            if (IsCleaningAdmissionSuperseded(admissionGeneration)) return;
+            if (IsCleaningReserved) return;
 
             StatusText = "Preview complete";
         }
         catch (CleaningPreflightException ex)
         {
-            if (IsCleaningAdmissionSuperseded(admissionGeneration)) return;
+            if (IsCleaningReserved) return;
             logger.Error(ex, "Cleaning preflight failed before preview");
             ProjectPreflightFailure(ex.Failure);
         }
         catch (ConfigPersistenceFailureException ex)
         {
-            if (IsCleaningAdmissionSuperseded(admissionGeneration)) return;
+            if (IsCleaningReserved) return;
             logger.Error(ex, "Configuration persistence failed before preview");
             ProjectPreflightFailure(ToPreflightFailure(ex));
         }
         catch (InvalidOperationException ex)
         {
-            if (IsCleaningAdmissionSuperseded(admissionGeneration)) return;
+            if (IsCleaningReserved) return;
             logger.Error(ex, "Configuration validation failed before preview");
             var message = DiagnosticTextFormatter.OperationFailed("Configuration validation");
             ValidationErrors.Clear();
@@ -224,7 +223,7 @@ public sealed partial class CleaningCommandsViewModel(
         }
         catch (Exception ex)
         {
-            if (IsCleaningAdmissionSuperseded(admissionGeneration)) return;
+            if (IsCleaningReserved) return;
             logger.Error(ex, "RunPreviewAsync failed");
             var message = DiagnosticTextFormatter.OperationFailed("Preview");
             StatusText = message;
@@ -233,16 +232,6 @@ public sealed partial class CleaningCommandsViewModel(
                 message,
                 DiagnosticTextFormatter.LatestLogDetails);
         }
-    }
-
-    /// <summary>
-    ///     Detects a Cleaning session that superseded a pending command, including one that has released admission.
-    /// </summary>
-    /// <param name="admissionGeneration">Admission generation captured before command validation started.</param>
-    /// <returns>True when the pending command must stop before further work or UI projection.</returns>
-    private bool IsCleaningAdmissionSuperseded(int admissionGeneration)
-    {
-        return _cleaningReserved || IsCleaning || admissionGeneration != Volatile.Read(ref _cleaningAdmissionGeneration);
     }
 
     private bool CanStop()
@@ -362,7 +351,7 @@ public sealed partial class CleaningCommandsViewModel(
 
     private bool CanShowSkipList()
     {
-        return !IsCleaning && !_cleaningReserved;
+        return !IsCleaningReserved;
     }
 
     [RelayCommand(CanExecute = nameof(CanShowSkipList))]
@@ -387,7 +376,7 @@ public sealed partial class CleaningCommandsViewModel(
 
     private bool CanRestoreBackups()
     {
-        return !IsCleaning && !_cleaningReserved;
+        return !IsCleaningReserved;
     }
 
     [RelayCommand(CanExecute = nameof(CanRestoreBackups))]
@@ -411,16 +400,15 @@ public sealed partial class CleaningCommandsViewModel(
         HasValidationErrors = false;
     }
 
-    /// <summary>Checks launch readiness while the caller's Cleaning admission generation remains current.</summary>
-    /// <param name="admissionGeneration">Admission generation captured before the command began.</param>
-    /// <returns>True when the latest readiness facts permit Start or Preview without an intervening Cleaning session.</returns>
-    private async Task<bool> ValidatePreCleanAsync(int admissionGeneration)
+    /// <summary>Checks launch readiness while Cleaning admission remains unreserved.</summary>
+    /// <returns>True when the latest readiness facts permit Start or Preview and Cleaning has not reserved admission.</returns>
+    private async Task<bool> ValidatePreCleanAsync()
     {
-        if (IsCleaningAdmissionSuperseded(admissionGeneration)) return false;
+        if (IsCleaningReserved) return false;
 
         var readiness = await cleaningCommandReadiness.EvaluateAsync().ConfigureAwait(true);
         // Admission can be reserved while readiness awaits publication; plugin reads must not start afterward.
-        if (IsCleaningAdmissionSuperseded(admissionGeneration)) return false;
+        if (IsCleaningReserved) return false;
 
         ApplyReadiness(readiness, true);
         return readiness.CanStartOrPreview;
@@ -461,14 +449,14 @@ public sealed partial class CleaningCommandsViewModel(
 
     private void ApplyReadiness(CleaningCommandReadinessResult readiness, bool projectFailure)
     {
-        CanStartCleaning = readiness.CanStartOrPreview && !_cleaningReserved;
+        CanStartCleaning = readiness.CanStartOrPreview && !IsCleaningReserved;
         if (readiness.CanStartOrPreview)
         {
             ClearReadinessValidationIfCurrent();
             return;
         }
 
-        if (projectFailure && readiness.Failure is not null && !IsCleaning && !_cleaningReserved)
+        if (projectFailure && readiness.Failure is not null && !IsCleaningReserved)
             ProjectReadinessFailure(readiness.Failure);
     }
 

@@ -40,6 +40,10 @@ _Avoid_: Excluded plugin paths, row checkbox state
 A user-visible assessment of whether Start and Preview can be offered before a Cleaning session, based on the current Plugin refresh publication, Plugin selection, and cheap launch-readiness checks.
 _Avoid_: Button enabled state, pre-clean validation, row count check
 
+**Cleaning admission**:
+The reservation that admits one Cleaning session and excludes Discovery settings changes, Plugin selection commits, previews, and Plugin refreshes from the start of Cleaning session startup through its finalization. Reserving it cancels in-flight Plugin refresh work and waits for that work to finish before readiness checks read the Plugin refresh publication. It is the only answer to "is cleaning underway?" for anything deciding whether it may proceed.
+_Avoid_: Is cleaning flag, cleaning reserved, session active
+
 **Skip list**:
 A game-specific set of plugin names that AutoQAC should not select for cleaning by default.
 

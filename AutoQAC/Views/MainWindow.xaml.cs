@@ -22,7 +22,7 @@ public sealed partial class MainWindow
     private readonly ICleaningSession? _cleaningSession;
     private readonly IConfigurationService? _configService;
     private readonly IDiscoverySettingsModule? _discoverySettingsModule;
-    private readonly DiscoverySettingsAdmission? _discoverySettingsAdmission;
+    private readonly CleaningAdmission? _cleaningAdmission;
     private readonly IFileDialogService? _fileDialog;
     private readonly List<IDisposable> _interactionRegistrations = [];
     private readonly ILoggingService? _logger;
@@ -52,14 +52,14 @@ public sealed partial class MainWindow
         IUiFrameworkVersionProvider uiFrameworkVersionProvider,
         IWindowContextProvider windowContextProvider,
         IDiscoverySettingsModule discoverySettingsModule,
-        DiscoverySettingsAdmission discoverySettingsAdmission) : this()
+        CleaningAdmission cleaningAdmission) : this()
     {
         _windowContextProvider = windowContextProvider;
         _logger = logger;
         _fileDialog = fileDialog;
         _configService = configService;
         _discoverySettingsModule = discoverySettingsModule;
-        _discoverySettingsAdmission = discoverySettingsAdmission;
+        _cleaningAdmission = cleaningAdmission;
         _stateService = stateService;
         _cleaningSession = cleaningSession;
         _backupService = backupService;
@@ -123,10 +123,10 @@ public sealed partial class MainWindow
     private async Task<bool> ShowSettingsAsync(Unit input)
     {
         if (_logger is null || _configService is null || _uiDispatcher is null ||
-            _windowContextProvider is null) return false;
+            _cleaningAdmission is null || _windowContextProvider is null) return false;
 
-        var settingsViewModel = new SettingsViewModel(_configService, _logger, _uiDispatcher, _fileDialog,
-            _discoverySettingsModule, _discoverySettingsAdmission);
+        var settingsViewModel = new SettingsViewModel(_configService, _logger, _uiDispatcher, _cleaningAdmission,
+            _fileDialog, _discoverySettingsModule);
         await settingsViewModel.LoadSettingsAsync();
 
         try
@@ -143,10 +143,10 @@ public sealed partial class MainWindow
     private async Task<bool> ShowSkipListAsync(Unit input)
     {
         if (_logger is null || _configService is null || _stateService is null ||
-            _windowContextProvider is null) return false;
+            _cleaningAdmission is null || _uiDispatcher is null || _windowContextProvider is null) return false;
 
         var skipListViewModel = new SkipListViewModel(_configService, _stateService, _logger,
-            _discoverySettingsModule, _discoverySettingsAdmission, _uiDispatcher);
+            _cleaningAdmission, _uiDispatcher, _discoverySettingsModule);
         await skipListViewModel.LoadSkipListAsync();
 
         try

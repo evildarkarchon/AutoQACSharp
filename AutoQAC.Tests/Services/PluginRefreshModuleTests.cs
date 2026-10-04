@@ -2,6 +2,7 @@ using System.Reactive.Linq;
 using System.Reactive.Subjects;
 using AutoQAC.Models;
 using AutoQAC.Models.Configuration;
+using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
 using AutoQAC.Services.GameCapability;
 using AutoQAC.Services.GameDetection;
@@ -17,23 +18,24 @@ public sealed class PluginRefreshModuleTests
 {
     /// <summary>A freshness update between command inspection and projection must not lose Cleaning's command gate.</summary>
     [Fact]
-    public async Task CleaningStateChanged_WhenFreshnessReplacesInspectedPublication_ReprojectsCommands()
+    public async Task CleaningAdmissionReserved_WhenFreshnessReplacesInspectedPublication_ReprojectsCommands()
     {
         using var state = new StateService();
+        var admission = new CleaningAdmission();
         var plan = CreateWiringPlan();
         var planner = CreateReadyDiscoveryPlanner(plan, [Plugin("Selected.esp")]);
         var store = new PluginRefreshPublicationStore(
             new PluginRefreshAppStateMirror(state),
-            new PluginRefreshCommandAvailabilityPolicy(),
+            new PluginRefreshCommandAvailabilityPolicy(admission),
             new PluginRefreshGameAffordance(GameType.Unknown, false, false, false));
-        using var sut = CreateModule(state, discoveryPlanner: planner, publicationStore: store);
+        using var sut = CreateModule(state, discoveryPlanner: planner, admission: admission, publicationStore: store);
         await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
         store.GetCurrentSnapshot().Commands.CanSelectAll.Should().BeTrue();
 
         var replacedDuringAffordanceLookup = false;
         planner.GetAffordance(Arg.Any<GameType>(), Arg.Any<bool>()).Returns(call =>
         {
-            if (state.CurrentState.IsCleaning && !replacedDuringAffordanceLookup)
+            if (admission.IsCleaning && !replacedDuringAffordanceLookup)
             {
                 replacedDuringAffordanceLookup = true;
                 var inspection = store.GetFreshnessInspection();
@@ -46,10 +48,11 @@ public sealed class PluginRefreshModuleTests
             return new PluginRefreshGameAffordance(call.ArgAt<GameType>(0), true, false, true);
         });
 
-        state.StartCleaning([Plugin("Selected.esp")]);
+        using var cleaning = await admission.EnterCleaningAsync();
 
         replacedDuringAffordanceLookup.Should().BeTrue();
         var duringCleaning = store.GetCurrentSnapshot();
+        duringCleaning.Commands.IsCleaningReserved.Should().BeTrue();
         duringCleaning.Commands.CanSelectAll.Should().BeFalse();
         duringCleaning.Commands.CanDeselectAll.Should().BeFalse();
         duringCleaning.Commands.CanRefreshSelectedIssueApproximations.Should().BeFalse();
@@ -60,7 +63,7 @@ public sealed class PluginRefreshModuleTests
     public async Task CleaningReservation_CancelsAnalysisAndRejectsPluginMutationsUntilReleased()
     {
         using var state = new StateService();
-        var admission = new DiscoverySettingsAdmission();
+        var admission = new CleaningAdmission();
         var selectedAnalysisStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var invocation = 0;
         var approximation = new ResultPluginIssueApproximationModule(async (request, onResult, ct) =>
@@ -148,7 +151,7 @@ public sealed class PluginRefreshModuleTests
 
             await allowApproximationToUnwind.Task;
         });
-        var admission = new DiscoverySettingsAdmission();
+        var admission = new CleaningAdmission();
         using var state = new StateService();
         using var sut = CreateModule(state, approximationModule: approximation, admission: admission);
         Task<IDisposable>? cleaning = null;
@@ -179,7 +182,7 @@ public sealed class PluginRefreshModuleTests
         }
     }
 
-    /// <summary>Cleaning admission drains a full refresh when it or Start cancels a published-row approximation.</summary>
+    /// <summary>Cleaning admission drains a full refresh whether it cancels the approximation itself or a manual cancel already did.</summary>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -203,7 +206,7 @@ public sealed class PluginRefreshModuleTests
 
             await allowApproximationToUnwind.Task;
         });
-        var admission = new DiscoverySettingsAdmission();
+        var admission = new CleaningAdmission();
         using var state = new StateService();
         using var sut = CreateModule(state, approximationModule: approximation, admission: admission);
         var refresh = sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
@@ -216,7 +219,7 @@ public sealed class PluginRefreshModuleTests
 
             if (cancelBeforeAdmission)
             {
-                await sut.ExecuteAsync(new PluginRefreshIntent.Cancel(PluginRefreshCancelReason.CleaningStarted));
+                await sut.ExecuteAsync(new PluginRefreshIntent.Cancel(PluginRefreshCancelReason.Manual));
                 await cancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
             }
 
@@ -242,7 +245,7 @@ public sealed class PluginRefreshModuleTests
     [Fact]
     public async Task RefreshGame_CleaningReservation_RejectsNewRefresh()
     {
-        var admission = new DiscoverySettingsAdmission();
+        var admission = new CleaningAdmission();
         using var state = new StateService();
         using var sut = CreateModule(state, admission: admission);
         await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
@@ -261,7 +264,7 @@ public sealed class PluginRefreshModuleTests
     public async Task CleaningReservation_RejectsSelectionQueuedBeforeReservationBoundary()
     {
         using var state = new StateService();
-        var admission = new DiscoverySettingsAdmission();
+        var admission = new CleaningAdmission();
         using var sut = CreateModule(state, admission: admission);
         var loaded = await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
         using var heldMutation = await admission.TryEnterPluginMutationAsync();
@@ -286,7 +289,7 @@ public sealed class PluginRefreshModuleTests
     public async Task CleaningReservation_WhenSnapshotObserverThrows_DoesNotAbortAdmission()
     {
         using var state = new StateService();
-        var admission = new DiscoverySettingsAdmission();
+        var admission = new CleaningAdmission();
         using var sut = CreateModule(state, admission: admission);
         await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
         var notificationCount = 0;
@@ -589,7 +592,7 @@ public sealed class PluginRefreshModuleTests
 
             await allowApproximationToUnwind.Task;
         });
-        var admission = new DiscoverySettingsAdmission();
+        var admission = new CleaningAdmission();
         using var state = new StateService();
         using var sut = CreateModule(state, approximationModule: approximation, admission: admission);
         Task<IDisposable>? cleaning = null;
@@ -1437,10 +1440,12 @@ public sealed class PluginRefreshModuleTests
         configuration.UserConfigurationChanged.Returns(notifications);
         var plan = CreateWiringPlan();
         var planner = CreateReadyDiscoveryPlanner(plan, [Plugin("Selected.esp")]);
+        var admission = new CleaningAdmission();
         using var store = new PluginRefreshPublicationStore(new PluginRefreshAppStateMirror(stateService),
-            new PluginRefreshCommandAvailabilityPolicy(), planner.GetAffordance(plan.GameType, false));
+            new PluginRefreshCommandAvailabilityPolicy(admission), planner.GetAffordance(plan.GameType, false));
         using var sut = new PluginRefreshModule(planner, new ResultPluginIssueApproximationModule(), stateService,
-            new SkipListPolicy(configuration, CreateDefaultGameDetectionService()), store, configurationService: configuration);
+            new SkipListPolicy(configuration, CreateDefaultGameDetectionService()), store, admission,
+            configurationService: configuration);
         await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
         // Inline continuations make releasing the older check a deterministic completion barrier.
         var older = new TaskCompletionSource<PluginRefreshFreshness>();
@@ -1888,19 +1893,21 @@ public sealed class PluginRefreshModuleTests
         replacement.StatusText.Should().Be("Updated 3 selected plugin approximations.");
     }
 
+    /// <summary>Reserving Cleaning admission cancels active work internally, without the manual canceled status.</summary>
     [Fact]
-    public async Task CleaningStartedCancellation_StopsActiveWorkWithoutCanceledStatusText()
+    public async Task CleaningReservationCancellation_StopsActiveWorkWithoutCanceledStatusText()
     {
         var stateService = new StateService();
+        var admission = new CleaningAdmission();
         var loadingService = new DelayedPluginLoadingService();
-        using var sut = CreateModule(stateService, pluginLoadingService: loadingService);
+        using var sut = CreateModule(stateService, pluginLoadingService: loadingService, admission: admission);
         var snapshots = new List<PluginRefreshSnapshot>();
         using var subscription = sut.Snapshots.Subscribe(snapshots.Add);
 
         var refresh = sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
         await loadingService.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
-        await sut.ExecuteAsync(new PluginRefreshIntent.Cancel(PluginRefreshCancelReason.CleaningStarted));
+        using var cleaning = await admission.EnterCleaningAsync().WaitAsync(TimeSpan.FromSeconds(5));
         await refresh.WaitAsync(TimeSpan.FromSeconds(5));
 
         snapshots.Should().NotContain(snapshot => snapshot.StatusText == "Approximation refresh canceled.");
@@ -2019,9 +2026,11 @@ public sealed class PluginRefreshModuleTests
         IPluginIssueApproximationModule? approximationModule = null,
         IGameDetectionService? gameDetectionService = null,
         IPluginRefreshDiscoveryPlanner? discoveryPlanner = null,
-        DiscoverySettingsAdmission? admission = null,
+        CleaningAdmission? admission = null,
         PluginRefreshPublicationStore? publicationStore = null)
     {
+        // Every module under test coordinates through a real admission; callers pass one to drive Cleaning.
+        admission ??= new CleaningAdmission();
         configurationService ??= CreateConfigurationService();
         pluginLoadingService ??= new TestPluginLoadingService();
         gameDetectionService ??= CreateDefaultGameDetectionService();
@@ -2042,8 +2051,8 @@ public sealed class PluginRefreshModuleTests
             stateService,
             new SkipListPolicy(configurationService, gameDetectionService),
             publicationStore,
-            configurationService: configurationService,
-            admission: admission);
+            admission,
+            configurationService: configurationService);
     }
 
     private static StateService CreateStateWithRows(params PluginInfo[] rows)

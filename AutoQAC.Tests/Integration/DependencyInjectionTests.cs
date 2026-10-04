@@ -102,8 +102,20 @@ public sealed class DependencyInjectionTests
             .Should().BeSameAs(provider.GetRequiredService<IDiscoverySettingsModule>());
         GetPrivateField<IPluginRefreshModule>(vm1.PluginList, "_pluginRefreshModule")
             .Should().BeSameAs(sharedRefreshModule);
-        GetPrivateField<IPluginRefreshModule>(vm1.Commands, "_pluginRefreshModule")
-            .Should().BeSameAs(sharedRefreshModule);
+
+        // Cleaning admission only excludes work if every consumer coordinates through the same instance.
+        var sharedAdmission = provider.GetRequiredService<CleaningAdmission>();
+        GetPrivateField<CleaningAdmission>(provider.GetRequiredService<ICleaningSession>(), "_admission")
+            .Should().BeSameAs(sharedAdmission);
+        GetPrivateField<CleaningAdmission>(sharedRefreshModule, "_admission")
+            .Should().BeSameAs(sharedAdmission);
+        GetPrivateField<CleaningAdmission>(provider.GetRequiredService<PluginRefreshCommandAvailabilityPolicy>(),
+                "_admission")
+            .Should().BeSameAs(sharedAdmission);
+        GetPrivateField<CleaningAdmission>(provider.GetRequiredService<IDiscoverySettingsModule>(), "_admission")
+            .Should().BeSameAs(sharedAdmission);
+        GetPrivateField<CleaningAdmission>(provider.GetRequiredService<ConfigPersistenceCoordinator>(), "_admission")
+            .Should().BeSameAs(sharedAdmission);
     }
 
     /// <summary>

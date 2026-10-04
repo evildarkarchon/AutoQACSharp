@@ -90,12 +90,12 @@ public sealed class ErrorDialogTests
 
     private ICleaningCommandReadiness CreateReadiness(IPluginRefreshModule refreshModule)
     {
-        return new CleaningCommandReadiness(refreshModule, _stateServiceMock);
+        return new CleaningCommandReadiness(refreshModule, _stateServiceMock, new CleaningAdmission());
     }
 
     private IDiscoverySettingsModule CreateDiscoverySettingsModule(IPluginRefreshModule refreshModule)
     {
-        return new DiscoverySettingsModule(_configServiceMock, _stateServiceMock, refreshModule);
+        return new DiscoverySettingsModule(_configServiceMock, _stateServiceMock, refreshModule, new CleaningAdmission());
     }
 
     private static PluginRefreshPublication CreatePublicationFromState(AppState state)

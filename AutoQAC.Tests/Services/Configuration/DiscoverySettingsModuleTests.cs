@@ -1,5 +1,6 @@
 using AutoQAC.Models;
 using AutoQAC.Models.Configuration;
+using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Services.State;
@@ -23,7 +24,7 @@ public sealed class DiscoverySettingsModuleTests
                 ConfigPersistenceFailureKind.WriteFailed, "Could not save settings.", null, 1)));
         using var state = new StateService();
         using var refresh = new RecordingPluginRefreshModule();
-        using var sut = new DiscoverySettingsModule(config, state, refresh);
+        using var sut = new DiscoverySettingsModule(config, state, refresh, new CleaningAdmission());
 
         var result = await sut.ExecuteAsync(new DiscoverySettingsIntent.SetMo2Mode(true));
 
@@ -38,9 +39,10 @@ public sealed class DiscoverySettingsModuleTests
         var config = CreateConfiguration();
         config.LoadUserConfigAsync(Arg.Any<CancellationToken>()).Returns(new UserConfiguration());
         using var state = new StateService();
-        state.UpdateState(s => s with { IsCleaning = true });
+        var admission = new CleaningAdmission();
+        using var cleaning = await admission.EnterCleaningAsync();
         using var refresh = new RecordingPluginRefreshModule();
-        using var sut = new DiscoverySettingsModule(config, state, refresh);
+        using var sut = new DiscoverySettingsModule(config, state, refresh, admission);
 
         var result = await sut.ExecuteAsync(new DiscoverySettingsIntent.SetMo2Mode(true));
 
@@ -80,7 +82,7 @@ public sealed class DiscoverySettingsModuleTests
                 return new PluginRefreshCompletion(PluginRefreshCompletionStatus.Canceled);
             }
         };
-        var admission = new DiscoverySettingsAdmission();
+        var admission = new CleaningAdmission();
         using var sut = new DiscoverySettingsModule(config, state, refresh, admission);
         using var changeCancellation = new CancellationTokenSource();
         var change = sut.ExecuteAsync(new DiscoverySettingsIntent.SetMo2Mode(true), changeCancellation.Token);
@@ -118,7 +120,7 @@ public sealed class DiscoverySettingsModuleTests
             });
         using var state = new StateService();
         using var refresh = new RecordingPluginRefreshModule();
-        var admission = new DiscoverySettingsAdmission();
+        var admission = new CleaningAdmission();
         var refreshLaunched = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var cancellationObserved = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var allowRefreshToUnwind = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -172,7 +174,7 @@ public sealed class DiscoverySettingsModuleTests
             GameType.SkyrimSe,
             statusText: "Loaded SkyrimSe");
         refresh.ExecuteHandler = (_, _) => Task.FromResult(expectedSnapshot);
-        using var sut = new DiscoverySettingsModule(config, state, refresh);
+        using var sut = new DiscoverySettingsModule(config, state, refresh, new CleaningAdmission());
 
         var result = await sut.ExecuteAsync(new DiscoverySettingsIntent.SelectGame(GameType.SkyrimSe));
 
@@ -195,7 +197,7 @@ public sealed class DiscoverySettingsModuleTests
         await config.SaveUserConfigAsync(userConfig);
         config.When(c => c.SaveUserConfigAsync(Arg.Any<UserConfiguration>(), Arg.Any<CancellationToken>()))
             .Do(call => savedConfig = call.Arg<UserConfiguration>().Copy());
-        using var sut = new DiscoverySettingsModule(config, state, refresh);
+        using var sut = new DiscoverySettingsModule(config, state, refresh, new CleaningAdmission());
 
         var result = await sut.ExecuteAsync(new DiscoverySettingsIntent.SetMo2Mode(true));
 
@@ -228,7 +230,7 @@ public sealed class DiscoverySettingsModuleTests
                 order.Add("persist");
                 return Task.FromResult(new ConfigPersistenceResult(ConfigPersistenceStatusKind.Success, ConfigPersistenceOperationKind.Flush, 1, null));
             });
-        using var sut = new DiscoverySettingsModule(config, state, refresh);
+        using var sut = new DiscoverySettingsModule(config, state, refresh, new CleaningAdmission());
 
         try
         {
@@ -251,7 +253,7 @@ public sealed class DiscoverySettingsModuleTests
         var config = CreateConfiguration();
         using var state = new StateService();
         using var refresh = new RecordingPluginRefreshModule();
-        using var sut = new DiscoverySettingsModule(config, state, refresh);
+        using var sut = new DiscoverySettingsModule(config, state, refresh, new CleaningAdmission());
 
         var result = await sut.ExecuteAsync(
             new DiscoverySettingsIntent.SetLoadOrderPath(GameType.FalloutNewVegas, missingPath));
@@ -291,7 +293,7 @@ public sealed class DiscoverySettingsModuleTests
             ]
         });
         using var refresh = new RecordingPluginRefreshModule();
-        using var sut = new DiscoverySettingsModule(config, state, refresh);
+        using var sut = new DiscoverySettingsModule(config, state, refresh, new CleaningAdmission());
 
         var result = await sut.ExecuteAsync(new DiscoverySettingsIntent.Reset());
 

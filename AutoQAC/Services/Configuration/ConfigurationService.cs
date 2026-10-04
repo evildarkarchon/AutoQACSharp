@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Models.Configuration;
-using AutoQAC.Services.State;
+using AutoQAC.Services.Cleaning;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
@@ -569,9 +569,9 @@ public sealed class ConfigurationService : IConfigurationService, IDisposable, I
         ILoggingService logger,
         string? configDirectory)
     {
-        var stateService = new StateService();
         var fileStore = new UserConfigFileStore(logger, configDirectory);
-        return new ConfigPersistenceCoordinator(fileStore, stateService, logger);
+        // This standalone composition has no Cleaning session, so it owns a private admission that never reserves.
+        return new ConfigPersistenceCoordinator(fileStore, logger, new CleaningAdmission());
     }
 
     private string ResolveConfigDirectory(ILoggingService logger)

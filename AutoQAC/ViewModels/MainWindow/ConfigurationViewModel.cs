@@ -35,8 +35,6 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
 
     private bool _initialized;
     private bool _suppressMo2ModeChanged;
-    private bool _cleaningReserved;
-    private bool _isCleaning;
     private bool _suppressDisableSkipListsChanged;
     private bool _suppressSelectedGameChanged;
     private bool _suppressSelectedProfileChanged;
@@ -78,13 +76,6 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
     [NotifyCanExecuteChangedFor(nameof(ResetMo2InstanceCommand))]
     [NotifyCanExecuteChangedFor(nameof(ResetSettingsCommand))]
     public partial bool CanChangeSettings { get; private set; } = true;
-
-    /// <summary>Includes startup reservation in settings command availability.</summary>
-    public void OnCleaningAdmissionChanged(bool reserved)
-    {
-        _cleaningReserved = reserved;
-        CanChangeSettings = !_cleaningReserved && !_isCleaning;
-    }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsLoadOrderConfigured))]
@@ -575,8 +566,6 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
         LoadOrderPath = state.LoadOrderPath;
         XEditPath = state.XEditExecutablePath;
         Mo2Path = state.Mo2ExecutablePath;
-        _isCleaning = state.IsCleaning;
-        CanChangeSettings = !_cleaningReserved && !_isCleaning;
         SetMo2ModeWithoutPersistence(state.Mo2ModeEnabled);
         SetSelectedGameWithoutPersistence(state.CurrentGameType);
         PartialFormsEnabled = state.PartialFormsEnabled;
@@ -584,11 +573,13 @@ public sealed partial class ConfigurationViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>
-    ///     Applies visible configuration and status fields published by the Plugin refresh module.
+    ///     Applies visible configuration and status fields published by the Plugin refresh module, and locks settings
+    ///     commands while the snapshot reports Cleaning admission as reserved.
     /// </summary>
     /// <param name="snapshot">Whole Plugin refresh publication snapshot.</param>
     public void OnPluginRefreshSnapshot(PluginRefreshSnapshot snapshot)
     {
+        CanChangeSettings = !snapshot.Commands.IsCleaningReserved;
         ApplyRefreshConfiguration(snapshot.Configuration);
         StatusText = snapshot.StatusText;
     }
