@@ -6,7 +6,7 @@ namespace AutoQAC.Services.Plugin;
 /// <summary>
 ///     Whole visible Plugin refresh publication snapshot ready for ViewModel binding.
 /// </summary>
-/// <param name="Generation">Active long-running refresh generation that produced the snapshot.</param>
+/// <param name="Generation">Admission order of the refresh operation that produced the snapshot; diagnostic only, never compared for currency.</param>
 /// <param name="GameType">Game associated with the snapshot.</param>
 /// <param name="Rows">Visible plugin rows, excluding Skip list rows.</param>
 /// <param name="Configuration">Resolved configuration display fields.</param>

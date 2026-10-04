@@ -42,6 +42,7 @@ internal sealed class FreshnessObservation
     private readonly PluginRefreshFreshnessVersion _version;
 
     /// <summary>Creates an observation; only <see cref="PluginRefreshFreshnessVersion" /> issues them.</summary>
+    /// <param name="version">Counter whose current observation decides whether this one is still current.</param>
     internal FreshnessObservation(PluginRefreshFreshnessVersion version)
     {
         _version = version;

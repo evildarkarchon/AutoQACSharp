@@ -141,7 +141,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         {
             _logger?.Error(ex, "Failed to refresh plugins for Discovery settings");
             completion.TrySetResult(new PluginRefreshCompletion(
-                operation.Token.IsCancellationRequested
+                operation.IsCanceled
                     ? PluginRefreshCompletionStatus.Canceled
                     : PluginRefreshCompletionStatus.Failed));
         }
@@ -162,7 +162,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         if (!operation.IsCurrent || !observation.IsCurrent || !_publicationStore.IsPublishedBy(operation))
         {
             completion.TrySetResult(new PluginRefreshCompletion(
-                !operation.IsSuperseded && operation.Token.IsCancellationRequested
+                !operation.IsSuperseded && operation.IsCanceled
                     ? PluginRefreshCompletionStatus.Canceled : PluginRefreshCompletionStatus.Superseded));
             return;
         }
@@ -456,7 +456,7 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         {
             completion?.TrySetResult(new PluginRefreshCompletion(
                 operation.IsSuperseded ? PluginRefreshCompletionStatus.Superseded :
-                token.IsCancellationRequested ? PluginRefreshCompletionStatus.Canceled : PluginRefreshCompletionStatus.Failed));
+                operation.IsCanceled ? PluginRefreshCompletionStatus.Canceled : PluginRefreshCompletionStatus.Failed));
         }
 
         return _publicationStore.GetCurrentSnapshot();
@@ -709,8 +709,10 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                 out _))
             return;
 
-        // A fenced discovery may have left a loading snapshot that no successor will replace.
-        if (fenceStatusText is not null)
+        // A fenced discovery may have left a loading snapshot that no successor will replace. An operation that
+        // already published its terminal status keeps it: nothing visible was canceled.
+        if (fenceStatusText is not null &&
+            (snapshot.Activity.IsPluginRefreshRunning || snapshot.Activity.IsIssueApproximationRefreshRunning))
             _publicationStore.PublishCurrentPublication(
                 null,
                 snapshot.GameType,

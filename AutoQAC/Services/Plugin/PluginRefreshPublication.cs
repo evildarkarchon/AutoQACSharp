@@ -7,7 +7,7 @@ namespace AutoQAC.Services.Plugin;
 /// <summary>
 ///     Authoritative Plugin refresh publication consumed by later Cleaning session preflight.
 /// </summary>
-/// <param name="Generation">Plugin refresh generation that accepted this publication.</param>
+/// <param name="Generation">Admission order of the refresh operation that accepted this publication; diagnostic only, never compared for currency.</param>
 /// <param name="GameType">Selected game context for this publication.</param>
 /// <param name="DiscoveryPlan">Accepted discovery plan, when plugin discovery reached a ready plan.</param>
 /// <param name="Configuration">Configuration facts resolved by Plugin refresh discovery planning.</param>

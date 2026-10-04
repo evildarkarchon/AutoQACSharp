@@ -47,6 +47,12 @@ internal sealed class RefreshOperation : IDisposable
     internal bool IsCurrent => !_isSuperseded && !_isCanceledForCleaning && !Token.IsCancellationRequested;
 
     /// <summary>
+    ///     Whether the operation was canceled, including by a Cleaning reservation whose token cancellation has not
+    ///     been requested yet. Use this, not the token, to classify an outcome as canceled rather than failed.
+    /// </summary>
+    internal bool IsCanceled => _isCanceledForCleaning || Token.IsCancellationRequested;
+
+    /// <summary>
     ///     Whether a newer operation or a settings fence replaced this one. Supersession finalizes the operation's
     ///     estimates synchronously, so a superseded operation may not even run its own cancellation cleanup.
     /// </summary>

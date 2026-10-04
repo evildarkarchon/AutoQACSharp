@@ -162,6 +162,7 @@ public sealed class CleaningAdmission
     }
 
     /// <summary>Removes a fully unwound operation from the drain set and from currency.</summary>
+    /// <param name="operation">Operation being disposed; called once, from <see cref="RefreshOperation.Dispose" />.</param>
     internal void CompleteRefresh(RefreshOperation operation)
     {
         lock (_sync)

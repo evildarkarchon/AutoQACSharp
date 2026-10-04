@@ -187,7 +187,7 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
         FreshnessObservation freshness)
     {
         PluginRefreshSnapshot? snapshot = null;
-        PluginRefreshSelectedIssueApproximationOperation? operation = null;
+        PluginRefreshSelectedIssueApproximationOperation? selected = null;
         lock (_snapshotLock)
         {
             if (_disposed ||
@@ -222,12 +222,12 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
                 _currentPublication.Rows,
                 targetLookup,
                 PluginIssueApproximation.Pending);
-            operation = new PluginRefreshSelectedIssueApproximationOperation(
+            selected = new PluginRefreshSelectedIssueApproximationOperation(
                 refresh,
                 _currentPublication.DiscoveryPlan,
                 _currentPublication.Rows.Select(row => row.Key).ToList(),
                 targets);
-            _activeSelectedIssueApproximation = new ActiveSelectedIssueApproximation(operation);
+            _activeSelectedIssueApproximation = new ActiveSelectedIssueApproximation(selected);
             _publicationOperation = refresh;
 
             var nextPublication = _currentPublication with
@@ -256,7 +256,7 @@ internal sealed class PluginRefreshPublicationStore : IDisposable
         _snapshots.OnNext(snapshot!);
         return new PluginRefreshSelectedIssueApproximationStartResult(
             PluginRefreshSelectedIssueApproximationStartStatus.Started,
-            operation);
+            selected);
     }
 
     /// <summary>

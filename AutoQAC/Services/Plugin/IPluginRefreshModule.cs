@@ -15,10 +15,20 @@ public interface IPluginRefreshModule
     /// </summary>
     IObservable<PluginRefreshSnapshot> Snapshots { get; }
 
-    /// <summary>Synchronously fences previous discovery work and invalidates its publication after settings persist or are externally replaced.</summary>
+    /// <summary>
+    ///     Synchronously fences previous discovery work and invalidates its publication after settings persist or are
+    ///     externally replaced. Work the fence supersedes has its unfinished estimates finalized before this returns;
+    ///     a canceled status is published only when visible refresh activity was actually stopped.
+    /// </summary>
     void InvalidateForSettings();
 
     /// <summary>Refreshes settings and completes when this operation publishes authoritative rows, before approximation finishes.</summary>
+    /// <remarks>
+    ///     The refresh operation begins synchronously, before this method first awaits, so a caller holding a settings
+    ///     lease orders it against later changes. When Cleaning admission is reserved, nothing starts and the result is
+    ///     <see cref="PluginRefreshCompletionStatus.Canceled" />. The operation outlives the returned task while its
+    ///     Issue approximation tail runs.
+    /// </remarks>
     Task<PluginRefreshCompletion> RefreshForSettingsAsync(GameType gameType, CancellationToken cancellationToken = default);
 
     /// <summary>
