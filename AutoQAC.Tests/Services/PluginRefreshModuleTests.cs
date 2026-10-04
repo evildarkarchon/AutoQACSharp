@@ -1,5 +1,6 @@
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
+using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Models.Configuration;
 using AutoQAC.Services.Cleaning;
@@ -1911,6 +1912,67 @@ public sealed class PluginRefreshModuleTests
         await refresh.WaitAsync(TimeSpan.FromSeconds(5));
 
         snapshots.Should().NotContain(snapshot => snapshot.StatusText == "Approximation refresh canceled.");
+    }
+
+    /// <summary>
+    ///     Characterizes the untracked freshness check (#13): a stale verdict published while Cleaning admission is
+    ///     reserved flips the publication, but the running Cleaning session keeps the preflight plan it already read.
+    /// </summary>
+    [Fact]
+    public async Task FreshnessVerdictPublishedMidSession_DoesNotChangeRunningSessionPreflightPlan()
+    {
+        var xEditPath = Path.Combine(Path.GetTempPath(), $"AutoQAC-{Guid.NewGuid():N}.tmp");
+        await File.WriteAllTextAsync(xEditPath, string.Empty);
+        try
+        {
+            using var state = new StateService();
+            var admission = new CleaningAdmission();
+            // Automatic discovery needs no load order file on disk for launch readiness.
+            var plan = CreateWiringPlan() with { Mode = PluginRefreshDiscoveryMode.DirectAutomatic };
+            var planner = CreateReadyDiscoveryPlanner(plan, [Plugin("First.esp"), Plugin("Second.esp")]);
+            using var store = new PluginRefreshPublicationStore(
+                new PluginRefreshAppStateMirror(state),
+                new PluginRefreshCommandAvailabilityPolicy(admission),
+                planner.GetAffordance(GameType.Unknown, false));
+            using var sut = CreateModule(state, discoveryPlanner: planner, admission: admission, publicationStore: store);
+            await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+            state.UpdateState(current => current with { XEditExecutablePath = xEditPath });
+            var configuration = Substitute.For<IConfigurationService>();
+            configuration.FlushPendingSavesAsync(Arg.Any<CancellationToken>()).Returns(new ConfigPersistenceResult(
+                ConfigPersistenceStatusKind.NoOp, ConfigPersistenceOperationKind.Flush, 1, null));
+            configuration.LoadUserConfigAsync(Arg.Any<CancellationToken>()).Returns(new UserConfiguration());
+            var validation = Substitute.For<IPluginValidationService>();
+            validation.ValidatePluginFile(Arg.Any<PluginInfo>()).Returns(PluginWarningKind.None);
+            var preflight = new CleaningPreflight(configuration, validation, sut,
+                Substitute.For<IMo2ValidationService>(), state, Substitute.For<ILoggingService>());
+
+            // A Cleaning session reserves admission first, then reads the publication once in preflight.
+            using var cleaning = await admission.EnterCleaningAsync().WaitAsync(TimeSpan.FromSeconds(5));
+            var sessionPlan = await preflight.PrepareAsync();
+            var preparedRows = sessionPlan.PluginRows.ToList();
+            preparedRows.Should().HaveCount(2).And.OnlyContain(row => row.Decision == PreflightDecision.Clean);
+
+            // A discovery-affecting AppState change starts the fire-and-forget check, which admission does not drain.
+            planner.CheckFreshnessAsync(
+                    Arg.Any<PluginRefreshDiscoveryFreshnessToken>(),
+                    Arg.Any<PluginRefreshDiscoveryFreshnessContext>(),
+                    Arg.Any<CancellationToken>())
+                .Returns(new PluginRefreshFreshness(false, PluginRefreshStalenessReason.LoadOrderPathChanged));
+            state.UpdateState(current => current with { LoadOrderPath = @"C:\Changed\plugins.txt" });
+
+            store.GetFreshnessInspection().Publication.Freshness.IsFresh.Should().BeFalse(
+                "the verdict is published while Cleaning admission is reserved");
+            sessionPlan.PluginRows.Should().Equal(preparedRows);
+            sessionPlan.DetectedGameType.Should().Be(GameType.SkyrimSe);
+            var nextPreflight = () => preflight.PrepareAsync();
+            (await nextPreflight.Should().ThrowAsync<CleaningPreflightException>())
+                .Which.Failure.Kind.Should().Be(CleaningPreflightFailureKind.StalePluginRefreshPublication,
+                    "only a later preflight observes the verdict");
+        }
+        finally
+        {
+            File.Delete(xEditPath);
+        }
     }
 
     [Fact]
