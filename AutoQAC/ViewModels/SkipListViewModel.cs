@@ -7,8 +7,10 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
+using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
 using AutoQAC.Services.State;
+using AutoQAC.Services.UI;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -21,30 +23,33 @@ public sealed partial class SkipListViewModel : ViewModelBase, IDisposable
     private readonly ILoggingService _logger;
     private readonly IStateService _stateService;
     private readonly IDiscoverySettingsModule? _discoverySettingsModule;
-    private readonly DiscoverySettingsAdmission? _admission;
-    private readonly AutoQAC.Services.UI.IUiDispatcher? _uiDispatcher;
+    private readonly IDisposable _admissionSubscription;
 
     private List<string> _originalSkipList = [];
     private readonly CancellationTokenSource _lifetime = new();
     private bool _closed;
     private bool _disposed;
+    private bool _isCleaningReserved;
 
     /// <summary>Edits a local Skip list draft and submits saves through shared settings admission.</summary>
+    /// <param name="admission">Shared Cleaning admission; Save is unavailable while it is reserved.</param>
+    /// <param name="uiDispatcher">Marshals admission transitions onto the dialog's UI thread.</param>
     public SkipListViewModel(
         IConfigurationService configService,
         IStateService stateService,
         ILoggingService logger,
-        IDiscoverySettingsModule? discoverySettingsModule = null,
-        DiscoverySettingsAdmission? admission = null,
-        AutoQAC.Services.UI.IUiDispatcher? uiDispatcher = null)
+        CleaningAdmission admission,
+        IUiDispatcher uiDispatcher,
+        IDiscoverySettingsModule? discoverySettingsModule = null)
     {
         _configService = configService;
         _stateService = stateService;
         _logger = logger;
         _discoverySettingsModule = discoverySettingsModule;
-        _admission = admission;
-        _uiDispatcher = uiDispatcher;
-        if (_admission is not null) _admission.CleaningChanged += OnCleaningChanged;
+        // Seed synchronously so a dialog opened mid-session starts with Save disabled.
+        _isCleaningReserved = admission.IsCleaning;
+        _admissionSubscription = admission.CleaningState.Subscribe(new CallbackObserver<bool>(reserved =>
+            uiDispatcher.Post(() => OnCleaningAdmissionChanged(reserved))));
 
         AvailableGames = Enum.GetValues<GameType>()
             .Where(g => g != GameType.Unknown)
@@ -93,7 +98,7 @@ public sealed partial class SkipListViewModel : ViewModelBase, IDisposable
         _lifetime.Cancel();
         _lifetime.Dispose();
         SkipListEntries.CollectionChanged -= OnSkipListEntriesChanged;
-        if (_admission is not null) _admission.CleaningChanged -= OnCleaningChanged;
+        _admissionSubscription.Dispose();
     }
 
     /// <summary>Raised when the user picks Save or Cancel. The view closes the dialog with this value.</summary>
@@ -273,13 +278,15 @@ public sealed partial class SkipListViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>Refreshes Save availability on the UI thread when cleaning reserves or releases settings.</summary>
-    private void OnCleaningChanged(object? sender, EventArgs e)
+    /// <param name="reserved">Cleaning admission reservation state, already marshaled to the UI thread.</param>
+    private void OnCleaningAdmissionChanged(bool reserved)
     {
-        if (_uiDispatcher is not null) _uiDispatcher.Post(SaveCommand.NotifyCanExecuteChanged);
-        else SaveCommand.NotifyCanExecuteChanged();
+        if (_disposed) return;
+        _isCleaningReserved = reserved;
+        SaveCommand.NotifyCanExecuteChanged();
     }
 
-    private bool CanSave() => !_closed && !(_admission?.IsCleaning ?? false) && !_stateService.CurrentState.IsCleaning;
+    private bool CanSave() => !_closed && !_isCleaningReserved;
 
     /// <summary>Submits the edited Skip list through durable settings acceptance; failed saves keep the dialog open.</summary>
     [RelayCommand(CanExecute = nameof(CanSave))]

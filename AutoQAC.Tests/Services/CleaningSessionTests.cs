@@ -42,7 +42,7 @@ public sealed partial class CleaningSessionTests : IDisposable
     private readonly string _loadOrderCompatibilityPath;
     private readonly RecordingPluginRefreshModule _pluginRefreshModule;
     private readonly CleaningSession _cleaningSession;
-    private readonly DiscoverySettingsAdmission _admission = new();
+    private readonly CleaningAdmission _admission = new();
 
     public CleaningSessionTests()
     {
@@ -1014,7 +1014,7 @@ public sealed partial class CleaningSessionTests : IDisposable
             new StateServiceCleaningSessionStatePublisher(_stateServiceMock),
             _decisionsMock,
             _loggerMock,
-            _processServiceMock);
+            _processServiceMock, new CleaningAdmission());
 
         var startTask = orchestrator.StartAsync(CancellationToken.None);
         try
@@ -1074,7 +1074,7 @@ public sealed partial class CleaningSessionTests : IDisposable
             new StateServiceCleaningSessionStatePublisher(_stateServiceMock),
             _decisionsMock,
             _loggerMock,
-            _processServiceMock);
+            _processServiceMock, new CleaningAdmission());
 
         var startTask = orchestrator.StartAsync(CancellationToken.None);
         try
@@ -3318,7 +3318,7 @@ public sealed partial class CleaningSessionTests : IDisposable
             new StateServiceCleaningSessionStatePublisher(_stateServiceMock),
             _decisionsMock,
             _loggerMock,
-            _processServiceMock);
+            _processServiceMock, new CleaningAdmission());
 
         // Act & Assert
         // Should not throw

@@ -89,11 +89,16 @@ public sealed record PluginRefreshActivity(
 /// <param name="CanDeselectAll">Whether all visible rows can be deselected.</param>
 /// <param name="CanRefreshSelectedIssueApproximations">Whether selected issue approximations can be refreshed.</param>
 /// <param name="CanCancelRefresh">Whether active Plugin refresh work can be canceled.</param>
+/// <param name="IsCleaningReserved">
+///     Whether Cleaning admission was reserved when these commands were computed. Main-window ViewModels lock
+///     Start, Preview, settings, and Plugin mutations from this fact so rows and admission state arrive together.
+/// </param>
 public sealed record PluginRefreshCommandAvailability(
     bool CanSelectAll,
     bool CanDeselectAll,
     bool CanRefreshSelectedIssueApproximations,
-    bool CanCancelRefresh);
+    bool CanCancelRefresh,
+    bool IsCleaningReserved);
 
 /// <summary>
 ///     Configuration display fields resolved during Plugin refresh context assembly.

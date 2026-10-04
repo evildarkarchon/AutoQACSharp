@@ -2,8 +2,10 @@ using System.Reactive.Linq;
 using System.Reactive.Subjects;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
+using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
 using AutoQAC.Services.State;
+using AutoQAC.Tests.TestInfrastructure;
 using AutoQAC.ViewModels;
 using FluentAssertions;
 using NSubstitute;
@@ -17,6 +19,7 @@ public sealed class SkipListViewModelTests
     private readonly IStateService _stateServiceMock;
     private readonly ILoggingService _loggerMock;
     private readonly BehaviorSubject<AppState> _stateSubject;
+    private readonly CleaningAdmission _admission = new();
 
     public SkipListViewModelTests()
     {
@@ -50,23 +53,56 @@ public sealed class SkipListViewModelTests
         return new SkipListViewModel(
             _configServiceMock,
             _stateServiceMock,
-            _loggerMock, _settings);
+            _loggerMock,
+            _admission,
+            new SynchronousUiDispatcher(),
+            _settings);
     }
 
     /// <summary>A dialog opened before cleaning cannot persist changes after startup reserves settings.</summary>
     [Fact]
     public async Task SaveWhileCleaning_DoesNotWriteOrCloseDialog()
     {
-        var admission = new DiscoverySettingsAdmission();
-        using var vm = new SkipListViewModel(_configServiceMock, _stateServiceMock, _loggerMock,
-            Substitute.For<IDiscoverySettingsModule>(), admission);
+        using var vm = CreateViewModel();
         bool? closed = null;
         vm.CloseRequested += result => closed = result;
-        using var cleaning = await admission.EnterCleaningAsync();
+        using var cleaning = await _admission.EnterCleaningAsync();
         await vm.SaveCommand.ExecuteAsync(null);
+        await _settings.DidNotReceive().ExecuteAsync(Arg.Any<DiscoverySettingsIntent>(), Arg.Any<CancellationToken>());
         await _configServiceMock.DidNotReceive().UpdateSkipListAsync(Arg.Any<GameType>(),
             Arg.Any<List<string>>(), Arg.Any<CancellationToken>());
         closed.Should().BeNull();
+    }
+
+    /// <summary>Save availability follows the admission observable: disabled while reserved, restored on release.</summary>
+    [Fact]
+    public async Task SaveCommand_TracksCleaningAdmissionReservation()
+    {
+        using var vm = CreateViewModel();
+        var notifications = 0;
+        vm.SaveCommand.CanExecuteChanged += (_, _) => notifications++;
+        vm.SaveCommand.CanExecute(null).Should().BeTrue();
+
+        var cleaning = await _admission.EnterCleaningAsync();
+
+        vm.SaveCommand.CanExecute(null).Should().BeFalse();
+        notifications.Should().Be(1);
+
+        cleaning.Dispose();
+
+        vm.SaveCommand.CanExecute(null).Should().BeTrue();
+        notifications.Should().Be(2);
+    }
+
+    /// <summary>A dialog opened during a Cleaning session starts with Save disabled.</summary>
+    [Fact]
+    public async Task SaveCommand_WhenOpenedWhileReserved_StartsDisabled()
+    {
+        using var cleaning = await _admission.EnterCleaningAsync();
+
+        using var vm = CreateViewModel();
+
+        vm.SaveCommand.CanExecute(null).Should().BeFalse();
     }
 
     /// <summary>A superseded edit stays open quietly and does not claim that its draft was accepted.</summary>

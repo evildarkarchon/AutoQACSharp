@@ -6,7 +6,6 @@ using System.Threading.Tasks;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models;
 using AutoQAC.Services.Process;
-using AutoQAC.Services.Configuration;
 
 namespace AutoQAC.Services.Cleaning;
 
@@ -23,11 +22,11 @@ public sealed class CleaningSession(
     ICleaningSessionDecisionAdapter decisions,
     ILoggingService logger,
     IProcessExecutionService processService,
-    DiscoverySettingsAdmission? admission = null)
+    CleaningAdmission admission)
     : ICleaningSession, IDisposable
 {
     private readonly Lock _ctsLock = new();
-    private readonly DiscoverySettingsAdmission _admission = admission ?? new();
+    private readonly CleaningAdmission _admission = admission;
     private CancellationTokenSource? _cleaningCts;
     private int _sessionActive;
 

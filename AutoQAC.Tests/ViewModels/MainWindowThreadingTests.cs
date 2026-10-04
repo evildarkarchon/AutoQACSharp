@@ -64,8 +64,8 @@ public sealed class MainWindowThreadingTests
             captureDispatcher,
             refreshModule,
             discoveryPlanner,
-            new DiscoverySettingsModule(configService, stateService, refreshModule),
-            new CleaningCommandReadiness(refreshModule, stateService));
+            new DiscoverySettingsModule(configService, stateService, refreshModule, new CleaningAdmission()),
+            new CleaningCommandReadiness(refreshModule, stateService, new CleaningAdmission()));
 
         try
         {
@@ -105,7 +105,6 @@ public sealed class MainWindowThreadingTests
         var viewModel = new CleaningCommandsViewModel(
             Substitute.For<ICleaningSession>(),
             readiness,
-            new RecordingPluginRefreshModule(),
             Substitute.For<ILoggingService>(),
             Substitute.For<IMessageDialogService>(),
             Substitute.For<IAppLifetime>(),
@@ -148,14 +147,14 @@ public sealed class MainWindowThreadingTests
             viewModel.OnPluginRefreshSnapshot(RecordingPluginRefreshModule.CreateSnapshot(
                 GameType.SkyrimSe,
                 [CreateRow("Test.esp")],
-                commands: new PluginRefreshCommandAvailability(true, true, true, false)));
+                commands: new PluginRefreshCommandAvailability(true, true, true, false, false)));
 
             viewModel.SelectAllCommand.CanExecute(null).Should().BeTrue();
 
             viewModel.OnPluginRefreshSnapshot(RecordingPluginRefreshModule.CreateSnapshot(
                 GameType.SkyrimSe,
                 [CreateRow("Test.esp")],
-                commands: new PluginRefreshCommandAvailability(false, false, false, false)));
+                commands: new PluginRefreshCommandAvailability(false, false, false, false, false)));
 
             viewModel.SelectAllCommand.CanExecute(null).Should().BeFalse(
                 "command availability comes from the Plugin refresh snapshot");
@@ -204,8 +203,8 @@ public sealed class MainWindowThreadingTests
             captureDispatcher,
             refreshModule,
             discoveryPlanner,
-            new DiscoverySettingsModule(configService, stateService, refreshModule),
-            new CleaningCommandReadiness(refreshModule, stateService));
+            new DiscoverySettingsModule(configService, stateService, refreshModule, new CleaningAdmission()),
+            new CleaningCommandReadiness(refreshModule, stateService, new CleaningAdmission()));
 
         try
         {
@@ -215,7 +214,7 @@ public sealed class MainWindowThreadingTests
                 GameType.SkyrimSe,
                 [CreateRow("A.esp")],
                 activity: new PluginRefreshActivity(false, true),
-                commands: new PluginRefreshCommandAvailability(false, false, false, true),
+                commands: new PluginRefreshCommandAvailability(false, false, false, true, false),
                 statusText: "Analyzing 1 of 2 selected plugins.")));
             await captureDispatcher.WaitForNextPostAsync();
 

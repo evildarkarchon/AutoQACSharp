@@ -21,6 +21,7 @@ public sealed class PluginListViewModelTests
                     true,
                     true,
                     true,
+                    false,
                     false)));
 
             vm.PluginsToClean.Should().ContainSingle(item =>
@@ -49,7 +50,7 @@ public sealed class PluginListViewModelTests
                 new PluginRefreshActivity(
                     false,
                     true),
-                new PluginRefreshCommandAvailability(false, false, false, true)));
+                new PluginRefreshCommandAvailability(false, false, false, true, false)));
 
             vm.IsApproximationRefreshRunning.Should().BeTrue();
             vm.CancelApproximationRefreshCommand.CanExecute(null).Should().BeTrue();
@@ -57,7 +58,7 @@ public sealed class PluginListViewModelTests
             vm.OnPluginRefreshSnapshot(Snapshot(
                 [Row("A.esp")],
                 new PluginRefreshActivity(false, false),
-                new PluginRefreshCommandAvailability(true, true, true, false)));
+                new PluginRefreshCommandAvailability(true, true, true, false, false)));
 
             vm.IsApproximationRefreshRunning.Should().BeFalse();
             vm.CancelApproximationRefreshCommand.CanExecute(null).Should().BeFalse();
@@ -78,7 +79,7 @@ public sealed class PluginListViewModelTests
         {
             vm.OnPluginRefreshSnapshot(Snapshot(
                 [Row("A.esp")],
-                commands: new PluginRefreshCommandAvailability(true, true, false, false)));
+                commands: new PluginRefreshCommandAvailability(true, true, false, false, false)));
 
             await vm.SelectAllCommand.ExecuteAsync(null);
             await vm.DeselectAllCommand.ExecuteAsync(null);
@@ -132,7 +133,7 @@ public sealed class PluginListViewModelTests
         {
             vm.OnPluginRefreshSnapshot(Snapshot(
                 [Row("A.esp")],
-                commands: new PluginRefreshCommandAvailability(false, false, true, false)));
+                commands: new PluginRefreshCommandAvailability(false, false, true, false, false)));
 
             await vm.RefreshSelectedApproximationsCommand.ExecuteAsync(null);
 
@@ -155,7 +156,7 @@ public sealed class PluginListViewModelTests
         {
             vm.OnPluginRefreshSnapshot(Snapshot(
                 [Row("A.esp")],
-                commands: new PluginRefreshCommandAvailability(false, false, false, true)));
+                commands: new PluginRefreshCommandAvailability(false, false, false, true, false)));
 
             await vm.CancelApproximationRefreshCommand.ExecuteAsync(null);
 
@@ -218,7 +219,7 @@ public sealed class PluginListViewModelTests
                 null,
                 300),
             activity ?? new PluginRefreshActivity(false, false),
-            commands ?? new PluginRefreshCommandAvailability(true, true, true, false),
+            commands ?? new PluginRefreshCommandAvailability(true, true, true, false, false),
             statusText);
     }
 

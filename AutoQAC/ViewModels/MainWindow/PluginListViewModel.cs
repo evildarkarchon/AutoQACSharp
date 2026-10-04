@@ -17,8 +17,7 @@ public sealed partial class PluginListViewModel(IPluginRefreshModule pluginRefre
 {
     private readonly IPluginRefreshModule _pluginRefreshModule = pluginRefreshModule;
     private PluginRefreshCommandAvailability _publishedCommands =
-        new(false, false, false, false);
-    private bool _cleaningReserved;
+        new(false, false, false, false, false);
 
     public ObservableCollection<PluginListItem> PluginsToClean { get; } = [];
 
@@ -75,13 +74,6 @@ public sealed partial class PluginListViewModel(IPluginRefreshModule pluginRefre
     public void Dispose()
     {
         foreach (var item in PluginsToClean) DetachItem(item);
-    }
-
-    /// <summary>Projects cleaning startup admission immediately, before AppState publishes active cleaning.</summary>
-    public void OnCleaningAdmissionChanged(bool reserved)
-    {
-        _cleaningReserved = reserved;
-        ApplyCommandAvailability();
     }
 
     private bool CanSelectAll()
@@ -157,11 +149,12 @@ public sealed partial class PluginListViewModel(IPluginRefreshModule pluginRefre
 
     private void ApplyCommandAvailability()
     {
-        IsCleaning = _cleaningReserved || (!_publishedCommands.CanSelectAll && HasPlugins);
-        CanSelectAllPlugins = !_cleaningReserved && _publishedCommands.CanSelectAll;
-        CanDeselectAllPlugins = !_cleaningReserved && _publishedCommands.CanDeselectAll;
-        CanRefreshSelectedIssueApproximations =
-            !_cleaningReserved && _publishedCommands.CanRefreshSelectedIssueApproximations;
+        // The policy already withholds row commands while Cleaning admission is reserved; the snapshot carries that
+        // reservation with the rows, so selection locks exactly when the reserved publication is applied.
+        IsCleaning = _publishedCommands.IsCleaningReserved || (!_publishedCommands.CanSelectAll && HasPlugins);
+        CanSelectAllPlugins = _publishedCommands.CanSelectAll;
+        CanDeselectAllPlugins = _publishedCommands.CanDeselectAll;
+        CanRefreshSelectedIssueApproximations = _publishedCommands.CanRefreshSelectedIssueApproximations;
         CanCancelRefresh = _publishedCommands.CanCancelRefresh;
     }
 

@@ -1,24 +1,35 @@
 using System;
 using System.Collections.Generic;
+using System.Reactive.Subjects;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace AutoQAC.Services.Configuration;
+namespace AutoQAC.Services.Cleaning;
 
-/// <summary>Coordinates discovery mutations, previews, and refresh work with the complete Cleaning session lifetime.</summary>
-public sealed class DiscoverySettingsAdmission
+/// <summary>
+///     Cleaning admission: the reservation that admits one Cleaning session and excludes Discovery settings changes,
+///     Plugin selection commits, previews, and Plugin refreshes from Cleaning session startup through finalization.
+///     It is the only answer to "is cleaning underway?" for anything deciding whether it may proceed.
+/// </summary>
+public sealed class CleaningAdmission
 {
     private readonly Lock _sync = new();
+    private readonly Lock _publishSync = new();
     private readonly SemaphoreSlim _mutation = new(1, 1);
     private readonly HashSet<RefreshRegistration> _refreshes = [];
+    private readonly BehaviorSubject<bool> _cleaningState = new(false);
     private CancellationTokenSource? _activePreviewCancellation;
     private bool _isCleaning;
 
     /// <summary>Whether cleaning has reserved admission, including while already-admitted writes drain.</summary>
     public bool IsCleaning { get { lock (_sync) return _isCleaning; } }
 
-    /// <summary>Signals a cleaning reservation transition. Handlers must not throw.</summary>
-    public event EventHandler? CleaningChanged;
+    /// <summary>
+    ///     Replays the current reservation state to each subscriber, then emits every reservation transition.
+    ///     The reservation is published synchronously before startup drains earlier work, and its release only
+    ///     after the Cleaning lease is disposed. Observers run on the transitioning thread and must not throw.
+    /// </summary>
+    public IObservable<bool> CleaningState => _cleaningState;
 
     /// <summary>Signals when deferred external changes may retry. Handlers must not throw.</summary>
     public event EventHandler? AvailabilityChanged;
@@ -157,7 +168,7 @@ public sealed class DiscoverySettingsAdmission
         var mutationAcquired = false;
         try
         {
-            CleaningChanged?.Invoke(this, EventArgs.Empty);
+            PublishCleaningState();
             // Reserve before draining: queued settings callers cannot slip in ahead of startup.
             await _mutation.WaitAsync(ct).ConfigureAwait(false);
             mutationAcquired = true;
@@ -233,8 +244,23 @@ public sealed class DiscoverySettingsAdmission
     private void ReleaseCleaning()
     {
         lock (_sync) _isCleaning = false;
-        CleaningChanged?.Invoke(this, EventArgs.Empty);
+        PublishCleaningState();
         AvailabilityChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>Publishes the reservation as it is now, suppressing repeats of the last published value.</summary>
+    /// <remarks>
+    ///     A release and the next reservation can race on different threads. Reading the state inside the publish
+    ///     lock, rather than passing the transition's own value, guarantees the last value observers receive is the
+    ///     current reservation even if the two transitions publish out of order.
+    /// </remarks>
+    private void PublishCleaningState()
+    {
+        lock (_publishSync)
+        {
+            var isCleaning = IsCleaning;
+            if (_cleaningState.Value != isCleaning) _cleaningState.OnNext(isCleaning);
+        }
     }
 
     private sealed class Lease(Action release) : IDisposable

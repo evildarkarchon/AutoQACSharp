@@ -1,6 +1,7 @@
 using System.Reactive.Subjects;
 using AutoQAC.Infrastructure.Logging;
 using AutoQAC.Models.Configuration;
+using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Configuration;
 using AutoQAC.Tests.TestInfrastructure;
 using AutoQAC.Services.UI;
@@ -28,7 +29,7 @@ public sealed class SettingsViewModelTests
                     "Settings were saved, but plugins could not be refreshed."))
             { SettingsSaved = true });
         using var vm = new SettingsViewModel(fixture.ConfigService, fixture.Logger, fixture.Dispatcher,
-            discoverySettingsModule: changes);
+            fixture.Admission, discoverySettingsModule: changes);
         await vm.LoadSettingsAsync();
         ApplyValidEditableValues(vm);
         vm.Mo2Mode = true;
@@ -269,6 +270,25 @@ public sealed class SettingsViewModelTests
         fixture.RecordingUserConfigurationChanged!.DisposeCount.Should().Be(1);
     }
 
+    /// <summary>The editor locks while Cleaning admission is reserved and unlocks when the reservation is released.</summary>
+    [Fact]
+    public async Task IsCleaning_TracksCleaningAdmissionReservation()
+    {
+        var fixture = CreateFixture();
+        using var vm = fixture.CreateViewModel();
+        vm.IsCleaning.Should().BeFalse();
+
+        var cleaning = await fixture.Admission.EnterCleaningAsync();
+
+        vm.IsCleaning.Should().BeTrue();
+        vm.CanEditSettings.Should().BeFalse();
+
+        cleaning.Dispose();
+
+        vm.IsCleaning.Should().BeFalse();
+        vm.CanEditSettings.Should().BeTrue();
+    }
+
     [Fact]
     public void DesignTimeConstructor_UsesValidDefaultsAndDisablesSave()
     {
@@ -413,6 +433,8 @@ public sealed class SettingsViewModelTests
     {
         public IDiscoverySettingsModule Discovery { get; } = CreateDiscovery();
 
+        public CleaningAdmission Admission { get; } = new();
+
         /// <summary>The editor tests project operation outcomes; persistence is exercised through module tests.</summary>
         private static IDiscoverySettingsModule CreateDiscovery()
         {
@@ -424,7 +446,8 @@ public sealed class SettingsViewModelTests
 
         public SettingsViewModel CreateViewModel()
         {
-            return new SettingsViewModel(ConfigService, Logger, Dispatcher, discoverySettingsModule: Discovery);
+            return new SettingsViewModel(ConfigService, Logger, Dispatcher, Admission,
+                discoverySettingsModule: Discovery);
         }
     }
 

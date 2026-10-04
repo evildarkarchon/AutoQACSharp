@@ -39,16 +39,14 @@ public abstract record PluginRefreshIntent
 /// <summary>
 ///     Explains why active Plugin refresh work was canceled.
 /// </summary>
+/// <remarks>
+///     Cancellation for a starting Cleaning session is not a caller intent: reserving Cleaning admission cancels and
+///     drains Plugin refresh work itself.
+/// </remarks>
 public enum PluginRefreshCancelReason
 {
     /// <summary>User explicitly canceled the visible refresh.</summary>
     Manual,
-
-    /// <summary>A Cleaning session is starting and must own the xEdit-facing workflow.</summary>
-    CleaningStarted,
-
-    /// <summary>Settings reset is replacing refresh state.</summary>
-    Reset,
 
     /// <summary>The owning ViewModel or service is being disposed.</summary>
     Disposed

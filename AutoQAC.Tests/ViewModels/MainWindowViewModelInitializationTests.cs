@@ -102,8 +102,8 @@ public sealed class MainWindowViewModelInitializationTests
             _uiDispatcher,
             refreshModule,
             discoveryPlanner,
-            new DiscoverySettingsModule(_configServiceMock, _stateServiceMock, refreshModule),
-            new CleaningCommandReadiness(refreshModule, _stateServiceMock));
+            new DiscoverySettingsModule(_configServiceMock, _stateServiceMock, refreshModule, new CleaningAdmission()),
+            new CleaningCommandReadiness(refreshModule, _stateServiceMock, new CleaningAdmission()));
 
         await WaitForSignalAsync(initializationApplied);
 

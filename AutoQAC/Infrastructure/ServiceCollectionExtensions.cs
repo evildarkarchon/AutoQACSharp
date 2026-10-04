@@ -30,8 +30,9 @@ public static class ServiceCollectionExtensions
 
         public IServiceCollection AddConfiguration()
         {
-            // One admission instance fences settings writes against Cleaning session startup and execution.
-            services.AddSingleton<DiscoverySettingsAdmission>();
+            // One Cleaning admission instance fences settings writes, Plugin selection commits, previews, and Plugin
+            // refreshes against Cleaning session startup and execution. Every consumer must share this instance.
+            services.AddSingleton<CleaningAdmission>();
             // Persistence coordinator + file store registered first; ConfigurationService and ConfigWatcherService both depend on the coordinator (Phase 10 D-08, D-15).
             services.AddSingleton<IUserConfigFileStore, UserConfigFileStore>();
             services.AddSingleton<ConfigPersistenceCoordinator>();
@@ -64,7 +65,7 @@ public static class ServiceCollectionExtensions
             services.AddSingleton(sp => new PluginRefreshAppStateMirror(
                 sp.GetRequiredService<IStateService>()));
             services.AddSingleton(sp => new PluginRefreshCommandAvailabilityPolicy(
-                sp.GetRequiredService<DiscoverySettingsAdmission>()));
+                sp.GetRequiredService<CleaningAdmission>()));
             services.AddSingleton<PluginRefreshPublicationStore>(sp =>
             {
                 var state = sp.GetRequiredService<IStateService>().CurrentState;
@@ -82,9 +83,9 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<IStateService>(),
                 sp.GetRequiredService<ISkipListPolicy>(),
                 sp.GetRequiredService<PluginRefreshPublicationStore>(),
+                sp.GetRequiredService<CleaningAdmission>(),
                 sp.GetRequiredService<ILoggingService>(),
-                sp.GetRequiredService<IConfigurationService>(),
-                sp.GetRequiredService<DiscoverySettingsAdmission>()));
+                sp.GetRequiredService<IConfigurationService>()));
             services.AddSingleton<IDiscoverySettingsModule, DiscoverySettingsModule>();
             services.AddSingleton<IPidStorePathProvider, DefaultPidStorePathProvider>();
             services.AddSingleton<IProcessSessionIdProvider, ProcessSessionIdProvider>();
@@ -99,7 +100,8 @@ public static class ServiceCollectionExtensions
             services.AddSingleton<ICleaningService, CleaningService>();
             services.AddSingleton<ICleaningCommandReadiness>(sp => new CleaningCommandReadiness(
                 sp.GetRequiredService<IPluginRefreshModule>(),
-                sp.GetRequiredService<IStateService>()));
+                sp.GetRequiredService<IStateService>(),
+                sp.GetRequiredService<CleaningAdmission>()));
             services.AddSingleton<IBackupFileCopier, BackupFileCopier>();
             services.AddSingleton<IBackupSessionDeleter, DirectoryBackupSessionDeleter>();
             services.AddSingleton<IBackupService, BackupService>();

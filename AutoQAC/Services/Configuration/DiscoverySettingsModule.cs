@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using AutoQAC.Models;
 using AutoQAC.Models.Configuration;
 using AutoQAC.Infrastructure.Logging;
+using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Services.State;
 
@@ -21,7 +22,7 @@ public sealed class DiscoverySettingsModule : IDiscoverySettingsModule, IDisposa
     private readonly IConfigurationService _configuration;
     private readonly IStateService _state;
     private readonly IPluginRefreshModule _refresh;
-    private readonly DiscoverySettingsAdmission _admission;
+    private readonly CleaningAdmission _admission;
     private readonly ILoggingService? _logger;
     private readonly Lock _sync = new();
     private readonly List<PendingChange> _pending = [];
@@ -36,14 +37,14 @@ public sealed class DiscoverySettingsModule : IDiscoverySettingsModule, IDisposa
     private long _resetFence;
     private bool _disposed;
 
-    /// <summary>Uses shared admission in production; optional admission supports isolated module tests.</summary>
+    /// <summary>Accepts Discovery settings changes through the shared Cleaning admission.</summary>
     public DiscoverySettingsModule(IConfigurationService configurationService, IStateService stateService,
-        IPluginRefreshModule pluginRefreshModule, DiscoverySettingsAdmission? admission = null, ILoggingService? logger = null)
+        IPluginRefreshModule pluginRefreshModule, CleaningAdmission admission, ILoggingService? logger = null)
     {
         _configuration = configurationService;
         _state = stateService;
         _refresh = pluginRefreshModule;
-        _admission = admission ?? new DiscoverySettingsAdmission();
+        _admission = admission;
         _logger = logger;
         _configurationSubscription = configurationService.UserConfigurationChanged.Subscribe(OnConfigurationChanged);
         _skipListSubscription = configurationService.SkipListChanged.Subscribe(_ => InvalidateExternalChange());
@@ -60,7 +61,7 @@ public sealed class DiscoverySettingsModule : IDiscoverySettingsModule, IDisposa
             intent = new DiscoverySettingsIntent.SetSkipList(skipList.GameType, skipList.Plugins.ToArray());
         var validation = DiscoverySettingsChanges.Validate(intent);
         if (validation is not null) return DiscoverySettingsChangeResult.Rejected(validation);
-        if (_state.CurrentState.IsCleaning || _admission.IsCleaning) return CleaningRejected();
+        if (_admission.IsCleaning) return CleaningRejected();
         var intentOrder = Interlocked.Increment(ref _nextIntent);
 
         PendingChange? operation = null;
@@ -72,7 +73,7 @@ public sealed class DiscoverySettingsModule : IDiscoverySettingsModule, IDisposa
             await _configuration.LoadUserConfigAsync(ct).ConfigureAwait(false);
             using (var lease = await _admission.TryEnterSettingsAsync(ct).ConfigureAwait(false))
             {
-                if (lease is null || _state.CurrentState.IsCleaning) return CleaningRejected();
+                if (lease is null) return CleaningRejected();
                 ct.ThrowIfCancellationRequested();
                 var current = await _configuration.LoadUserConfigAsync(ct).ConfigureAwait(false);
                 var requested = current.Copy();

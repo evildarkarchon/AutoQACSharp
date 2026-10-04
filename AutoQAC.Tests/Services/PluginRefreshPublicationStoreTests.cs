@@ -1,4 +1,5 @@
 using AutoQAC.Models;
+using AutoQAC.Services.Cleaning;
 using AutoQAC.Services.GameCapability;
 using AutoQAC.Services.Plugin;
 using AutoQAC.Services.State;
@@ -111,28 +112,26 @@ public sealed class PluginRefreshPublicationStoreTests
     {
         var stateService = Substitute.For<IStateService>();
         var backingState = new StateService();
-        Action? beforeStateRead = null;
-        stateService.CurrentState.Returns(_ =>
-        {
-            var callback = beforeStateRead;
-            beforeStateRead = null;
-            callback?.Invoke();
-            return backingState.CurrentState;
-        });
+        stateService.CurrentState.Returns(_ => backingState.CurrentState);
         stateService.When(service => service.SetPluginsToClean(Arg.Any<List<PluginInfo>>()))
             .Do(call => backingState.SetPluginsToClean(call.Arg<List<PluginInfo>>()!));
         stateService.When(service => service.UpdateExcludedPlugins(Arg.Any<Func<IReadOnlySet<string>, IReadOnlySet<string>>>()))
             .Do(call => backingState.UpdateExcludedPlugins(call.Arg<Func<IReadOnlySet<string>, IReadOnlySet<string>>>()!));
         using var sut = new PluginRefreshPublicationStore(new PluginRefreshAppStateMirror(stateService),
-            new PluginRefreshCommandAvailabilityPolicy(), Affordance());
+            new PluginRefreshCommandAvailabilityPolicy(new CleaningAdmission()), Affordance());
         var plan = CreatePlan();
         var target = new PluginRefreshRowKey("Target.esp", @"C:\Data\Target.esp");
         sut.PublishAcceptedPublication(1, GameType.SkyrimSe, plan, CreateFreshnessToken(),
             plan.Configuration, [Published("Target.esp", approximation: PluginIssueApproximation.Pending)],
             new(true, true), "Analyzing", Affordance());
-        beforeStateRead = () => sut.TryPublishInitialApproximationResult(1,
-            PluginRefreshPublicationRows.CreateTargetLookup([target]),
-            new(target, PluginIssueApproximation.Available(3, 2, 1)), "Result arrived", Affordance(), () => true);
+        // Land the approximation commit once, between the selection's read and its compare-and-swap.
+        sut.BeforeSelectionCommit = () =>
+        {
+            sut.BeforeSelectionCommit = null;
+            sut.TryPublishInitialApproximationResult(1,
+                PluginRefreshPublicationRows.CreateTargetLookup([target]),
+                new(target, PluginIssueApproximation.Available(3, 2, 1)), "Result arrived", Affordance(), () => true);
+        };
 
         sut.ApplySelectionChange(new PluginSelectionChange.SetOne(target, false), Affordance());
 
@@ -277,11 +276,13 @@ public sealed class PluginRefreshPublicationStoreTests
             .Should().Be(PluginRefreshStalenessReason.LoadOrderPathChanged);
     }
 
+    /// <summary>A Cleaning admission reservation disables row commands and is reported in the snapshot.</summary>
     [Fact]
-    public void PublishCommandAvailabilityIfChanged_WhenCleaning_ShouldDisableCommandsWithoutReplacingRows()
+    public async Task PublishCommandAvailabilityIfChanged_WhenCleaningReserved_ShouldDisableCommandsWithoutReplacingRows()
     {
         var stateService = new StateService();
-        using var sut = CreateStore(stateService);
+        var admission = new CleaningAdmission();
+        using var sut = CreateStore(stateService, admission: admission);
         var plan = CreatePlan(true);
         sut.PublishAcceptedPublication(
             1,
@@ -297,15 +298,16 @@ public sealed class PluginRefreshPublicationStoreTests
 
         before.Commands.CanSelectAll.Should().BeTrue();
         before.Commands.CanRefreshSelectedIssueApproximations.Should().BeTrue();
-        stateService.StartCleaning([Plugin("Cleaning.esp")]);
+        before.Commands.IsCleaningReserved.Should().BeFalse();
+        using var cleaning = await admission.EnterCleaningAsync();
         var commandInspection = sut.GetCommandAvailabilityInspection();
         sut.PublishCommandAvailabilityIfChanged(
-            stateService.CurrentState,
             commandInspection,
             Affordance(),
             Affordance());
         var during = sut.GetCurrentSnapshot();
 
+        during.Commands.IsCleaningReserved.Should().BeTrue();
         during.Commands.CanSelectAll.Should().BeFalse();
         during.Commands.CanDeselectAll.Should().BeFalse();
         during.Commands.CanRefreshSelectedIssueApproximations.Should().BeFalse();
@@ -396,11 +398,12 @@ public sealed class PluginRefreshPublicationStoreTests
 
     private static PluginRefreshPublicationStore CreateStore(
         StateService stateService,
-        bool canAttemptIssueApproximation = true)
+        bool canAttemptIssueApproximation = true,
+        CleaningAdmission? admission = null)
     {
         return new PluginRefreshPublicationStore(
             new PluginRefreshAppStateMirror(stateService),
-            new PluginRefreshCommandAvailabilityPolicy(),
+            new PluginRefreshCommandAvailabilityPolicy(admission ?? new CleaningAdmission()),
             new PluginRefreshGameAffordance(
                 stateService.CurrentState.CurrentGameType,
                 true,

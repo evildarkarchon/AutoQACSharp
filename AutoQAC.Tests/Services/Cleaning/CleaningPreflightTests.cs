@@ -284,7 +284,7 @@ public sealed class CleaningPreflightTests
         var state = CreateState(@"C:\Users\Alice\Tools\SSEEdit.exe");
         var stateService = Substitute.For<IStateService>();
         stateService.CurrentState.Returns(state);
-        var readiness = new CleaningCommandReadiness(refresh, stateService);
+        var readiness = new CleaningCommandReadiness(refresh, stateService, new CleaningAdmission());
         var preflight = CreateSut(state, refresh, stateService: stateService);
 
         var readinessResult = await readiness.EvaluateAsync(CancellationToken.None);

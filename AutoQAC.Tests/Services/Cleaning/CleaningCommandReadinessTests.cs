@@ -20,12 +20,44 @@ public sealed class CleaningCommandReadinessTests
             using var refresh = new RecordingPluginRefreshModule();
             refresh.CurrentPublication = RecordingPluginRefreshModule.CreateFreshPublication(
                 rows: [RecordingPluginRefreshModule.CreatePublishedRow(CreatePlugin("NeedsCleaning.esp"))]);
-            var sut = new CleaningCommandReadiness(refresh, stateService);
+            var sut = new CleaningCommandReadiness(refresh, stateService, new CleaningAdmission());
 
             var result = await sut.EvaluateAsync();
 
             result.CanStartOrPreview.Should().BeTrue();
             result.Failure.Should().BeNull();
+        }
+        finally
+        {
+            File.Delete(xEditPath);
+        }
+    }
+
+    /// <summary>
+    ///     Readiness reports Busy for the whole Cleaning admission reservation, including startup before AppState
+    ///     publishes active cleaning, even when the publication would otherwise be ready.
+    /// </summary>
+    [Fact]
+    public async Task EvaluateAsync_WhileCleaningAdmissionReserved_IsBusy()
+    {
+        var xEditPath = await CreateTempFileAsync();
+        try
+        {
+            var stateService = CreateState(xEditPath);
+            using var refresh = new RecordingPluginRefreshModule();
+            refresh.CurrentPublication = RecordingPluginRefreshModule.CreateFreshPublication(
+                rows: [RecordingPluginRefreshModule.CreatePublishedRow(CreatePlugin("NeedsCleaning.esp"))]);
+            var admission = new CleaningAdmission();
+            var sut = new CleaningCommandReadiness(refresh, stateService, admission);
+            var cleaning = await admission.EnterCleaningAsync();
+
+            var reserved = await sut.EvaluateAsync();
+
+            stateService.CurrentState.IsCleaning.Should().BeFalse();
+            reserved.Should().BeSameAs(CleaningCommandReadinessResult.Busy);
+
+            cleaning.Dispose();
+            (await sut.EvaluateAsync()).CanStartOrPreview.Should().BeTrue();
         }
         finally
         {
@@ -42,7 +74,7 @@ public sealed class CleaningCommandReadinessTests
             var stateService = CreateState(xEditPath);
             using var refresh = new RecordingPluginRefreshModule(
                 RecordingPluginRefreshModule.CreateSnapshot(GameType.SkyrimSe));
-            var sut = new CleaningCommandReadiness(refresh, stateService);
+            var sut = new CleaningCommandReadiness(refresh, stateService, new CleaningAdmission());
 
             var result = await sut.EvaluateAsync();
 
@@ -68,7 +100,7 @@ public sealed class CleaningCommandReadinessTests
             {
                 Freshness = new PluginRefreshFreshness(false, PluginRefreshStalenessReason.SelectedGameChanged)
             };
-            var sut = new CleaningCommandReadiness(refresh, stateService);
+            var sut = new CleaningCommandReadiness(refresh, stateService, new CleaningAdmission());
 
             var result = await sut.EvaluateAsync();
 
@@ -102,7 +134,7 @@ public sealed class CleaningCommandReadinessTests
                         true,
                         true)
                 ]);
-            var sut = new CleaningCommandReadiness(refresh, stateService);
+            var sut = new CleaningCommandReadiness(refresh, stateService, new CleaningAdmission());
 
             var result = await sut.EvaluateAsync();
 
@@ -121,7 +153,7 @@ public sealed class CleaningCommandReadinessTests
         using var stateService = CreateState(null);
         using var refresh = new RecordingPluginRefreshModule();
         refresh.CurrentPublication = RecordingPluginRefreshModule.CreateFreshPublication();
-        var sut = new CleaningCommandReadiness(refresh, stateService);
+        var sut = new CleaningCommandReadiness(refresh, stateService, new CleaningAdmission());
 
         var result = await sut.EvaluateAsync();
 
@@ -135,7 +167,7 @@ public sealed class CleaningCommandReadinessTests
         using var stateService = CreateState(@"C:\Missing\SSEEdit.exe");
         using var refresh = new RecordingPluginRefreshModule();
         refresh.CurrentPublication = RecordingPluginRefreshModule.CreateFreshPublication();
-        var sut = new CleaningCommandReadiness(refresh, stateService);
+        var sut = new CleaningCommandReadiness(refresh, stateService, new CleaningAdmission());
 
         var result = await sut.EvaluateAsync();
 
@@ -159,7 +191,7 @@ public sealed class CleaningCommandReadinessTests
             refresh.CurrentPublication = RecordingPluginRefreshModule.CreateFreshPublication(
                 discoveryPlan: plan,
                 configuration: configuration);
-            var sut = new CleaningCommandReadiness(refresh, stateService);
+            var sut = new CleaningCommandReadiness(refresh, stateService, new CleaningAdmission());
 
             var result = await sut.EvaluateAsync();
 
@@ -191,7 +223,7 @@ public sealed class CleaningCommandReadinessTests
             refresh.CurrentPublication = RecordingPluginRefreshModule.CreateFreshPublication(
                 discoveryPlan: plan,
                 configuration: configuration);
-            var sut = new CleaningCommandReadiness(refresh, stateService);
+            var sut = new CleaningCommandReadiness(refresh, stateService, new CleaningAdmission());
 
             var result = await sut.EvaluateAsync();
 
@@ -232,7 +264,7 @@ public sealed class CleaningCommandReadinessTests
             refresh.CurrentPublication = RecordingPluginRefreshModule.CreateFreshPublication(
                 discoveryPlan: plan,
                 configuration: configuration);
-            var sut = new CleaningCommandReadiness(refresh, stateService);
+            var sut = new CleaningCommandReadiness(refresh, stateService, new CleaningAdmission());
 
             var result = await sut.EvaluateAsync();
 
@@ -279,7 +311,7 @@ public sealed class CleaningCommandReadinessTests
             refresh.CurrentPublication = RecordingPluginRefreshModule.CreateFreshPublication(
                 discoveryPlan: plan,
                 configuration: configuration);
-            var sut = new CleaningCommandReadiness(refresh, stateService);
+            var sut = new CleaningCommandReadiness(refresh, stateService, new CleaningAdmission());
 
             var result = await sut.EvaluateAsync();
 
@@ -322,7 +354,7 @@ public sealed class CleaningCommandReadinessTests
             refresh.CurrentPublication = RecordingPluginRefreshModule.CreateFreshPublication(
                 discoveryPlan: plan,
                 configuration: configuration);
-            var sut = new CleaningCommandReadiness(refresh, stateService);
+            var sut = new CleaningCommandReadiness(refresh, stateService, new CleaningAdmission());
 
             var result = await sut.EvaluateAsync();
 
@@ -367,7 +399,7 @@ public sealed class CleaningCommandReadinessTests
             refresh.CurrentPublication = RecordingPluginRefreshModule.CreateFreshPublication(
                 discoveryPlan: plan,
                 configuration: configuration);
-            var sut = new CleaningCommandReadiness(refresh, stateService);
+            var sut = new CleaningCommandReadiness(refresh, stateService, new CleaningAdmission());
 
             var result = await sut.EvaluateAsync();
 
@@ -410,7 +442,7 @@ public sealed class CleaningCommandReadinessTests
             refresh.CurrentPublication = RecordingPluginRefreshModule.CreateFreshPublication(
                 discoveryPlan: plan,
                 configuration: configuration);
-            var sut = new CleaningCommandReadiness(refresh, stateService);
+            var sut = new CleaningCommandReadiness(refresh, stateService, new CleaningAdmission());
 
             var result = await sut.EvaluateAsync();
 

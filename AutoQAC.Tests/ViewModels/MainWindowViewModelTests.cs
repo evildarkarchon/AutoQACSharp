@@ -34,6 +34,9 @@ public sealed class MainWindowViewModelTests
     private readonly IPluginRefreshDiscoveryPlanner _discoveryPlanner;
     private readonly ICleaningCommandReadiness _cleaningCommandReadiness;
 
+    // Real refresh and settings modules built by this fixture share one admission, as production does.
+    private readonly CleaningAdmission _admission = new();
+
     public MainWindowViewModelTests()
     {
         _configServiceMock = Substitute.For<IConfigurationService>();
@@ -62,7 +65,7 @@ public sealed class MainWindowViewModelTests
         _pluginRefreshModule = new RecordingPluginRefreshModule();
         _pluginRefreshModule.PublicationHandler =
             _ => Task.FromResult(CreatePublicationFromState(_stateServiceMock.CurrentState));
-        _cleaningCommandReadiness = new CleaningCommandReadiness(_pluginRefreshModule, _stateServiceMock);
+        _cleaningCommandReadiness = new CleaningCommandReadiness(_pluginRefreshModule, _stateServiceMock, new CleaningAdmission());
 
         // Default setup for CleaningCompleted observable
         _stateServiceMock.CleaningCompleted
@@ -75,28 +78,36 @@ public sealed class MainWindowViewModelTests
 
     /// <summary>Cleaning startup disables settings and Plugin mutations before AppState announces active cleaning.</summary>
     [Fact]
-    public async Task CleaningAdmission_DisablesSettingsAndPluginMutationsUntilReleased()
+    public void CleaningAdmission_DisablesSettingsAndPluginMutationsUntilReleased()
     {
         EnableSelectedGameSideEffects();
         using var state = new StateService();
-        var admission = new DiscoverySettingsAdmission();
         using var vm = new MainWindowViewModel(_configServiceMock, state, _cleaningSessionMock,
             _loggerMock, _fileDialogMock, _messageDialogMock, _pluginServiceMock, _pluginLoadingServiceMock,
             _uiDispatcher, _pluginRefreshModule, _discoveryPlanner, Substitute.For<IDiscoverySettingsModule>(),
-            _cleaningCommandReadiness, admission: admission);
-        _pluginRefreshModule.Publish(RecordingPluginRefreshModule.CreateSnapshot(
-            GameType.SkyrimSe,
-            [new PluginRefreshRow(
+            _cleaningCommandReadiness);
+        IReadOnlyList<PluginRefreshRow> rows =
+        [
+            new PluginRefreshRow(
                 "Selected.esp",
                 @"C:\Game\Data\Selected.esp",
                 GameType.SkyrimSe,
                 true,
                 false,
-                PluginIssueApproximation.Unavailable)],
-            commands: new PluginRefreshCommandAvailability(true, true, true, false)));
+                PluginIssueApproximation.Unavailable)
+        ];
+        _pluginRefreshModule.Publish(RecordingPluginRefreshModule.CreateSnapshot(
+            GameType.SkyrimSe,
+            rows,
+            commands: new PluginRefreshCommandAvailability(true, true, true, false, false)));
         _pluginRefreshModule.Intents.Clear();
 
-        using var cleaning = await admission.EnterCleaningAsync();
+        // The command policy publishes the reservation inside the snapshot, alongside the rows it applies to.
+        _pluginRefreshModule.Publish(RecordingPluginRefreshModule.CreateSnapshot(
+            GameType.SkyrimSe,
+            rows,
+            commands: new PluginRefreshCommandAvailability(false, false, false, false, true)));
+        state.CurrentState.IsCleaning.Should().BeFalse("startup has reserved admission but not published cleaning");
 
         vm.Configuration.ConfigureXEditCommand.CanExecute(null).Should().BeFalse();
         vm.Configuration.ResetSettingsCommand.CanExecute(null).Should().BeFalse();
@@ -111,7 +122,10 @@ public sealed class MainWindowViewModelTests
             "the authoritative Plugin selection remains frozen throughout cleaning startup");
         _pluginRefreshModule.Intents.OfType<PluginRefreshIntent.ChangeSelection>().Should().BeEmpty();
 
-        cleaning.Dispose();
+        _pluginRefreshModule.Publish(RecordingPluginRefreshModule.CreateSnapshot(
+            GameType.SkyrimSe,
+            rows,
+            commands: new PluginRefreshCommandAvailability(true, true, true, false, false)));
 
         vm.Configuration.ConfigureXEditCommand.CanExecute(null).Should().BeTrue();
         vm.Commands.ShowSettingsCommand.CanExecute(null).Should().BeTrue();
@@ -228,7 +242,7 @@ public sealed class MainWindowViewModelTests
             effectiveStateService.CurrentState);
         var publicationStore = new PluginRefreshPublicationStore(
             new PluginRefreshAppStateMirror(effectiveStateService),
-            new PluginRefreshCommandAvailabilityPolicy(),
+            new PluginRefreshCommandAvailabilityPolicy(_admission),
             discoveryPlanner.GetAffordance(
                 effectiveStateService.CurrentState.CurrentGameType,
                 initialConfiguration.Mo2ModeEnabled));
@@ -238,6 +252,7 @@ public sealed class MainWindowViewModelTests
             effectiveStateService,
             new SkipListPolicy(_configServiceMock, gameDetectionService),
             publicationStore,
+            _admission,
             _loggerMock);
     }
 
@@ -249,7 +264,7 @@ public sealed class MainWindowViewModelTests
         return new DiscoverySettingsModule(
             configService ?? _configServiceMock,
             stateService ?? _stateServiceMock,
-            pluginRefreshModule ?? _pluginRefreshModule);
+            pluginRefreshModule ?? _pluginRefreshModule, _admission);
     }
 
     private static Task WaitForSignalAsync(TaskCompletionSource<bool> signal)
@@ -1644,7 +1659,7 @@ public sealed class MainWindowViewModelTests
             refreshModule,
             _discoveryPlanner,
             CreateDiscoverySettingsModule(pluginRefreshModule: refreshModule),
-            new CleaningCommandReadiness(refreshModule, _stateServiceMock));
+            new CleaningCommandReadiness(refreshModule, _stateServiceMock, new CleaningAdmission()));
 
         // Act
         vm.Configuration.SelectedGame = GameType.SkyrimSe;
@@ -1743,7 +1758,7 @@ public sealed class MainWindowViewModelTests
             refreshModule,
             _discoveryPlanner,
             CreateDiscoverySettingsModule(stateService: stateService, pluginRefreshModule: refreshModule),
-            new CleaningCommandReadiness(refreshModule, stateService));
+            new CleaningCommandReadiness(refreshModule, stateService, new CleaningAdmission()));
 
         vm.Configuration.SelectedGame = GameType.SkyrimSe;
         await WaitForSignalAsync(pendingPluginsPublished);
@@ -1828,7 +1843,7 @@ public sealed class MainWindowViewModelTests
             refreshModule,
             _discoveryPlanner,
             CreateDiscoverySettingsModule(stateService: stateService, pluginRefreshModule: refreshModule),
-            new CleaningCommandReadiness(refreshModule, stateService));
+            new CleaningCommandReadiness(refreshModule, stateService, new CleaningAdmission()));
 
         vm.Configuration.SelectedGame = GameType.SkyrimSe;
         await WaitForSignalAsync(pluginsLoaded);
@@ -1915,7 +1930,7 @@ public sealed class MainWindowViewModelTests
             refreshModule,
             _discoveryPlanner,
             CreateDiscoverySettingsModule(pluginRefreshModule: refreshModule),
-            new CleaningCommandReadiness(refreshModule, _stateServiceMock));
+            new CleaningCommandReadiness(refreshModule, _stateServiceMock, new CleaningAdmission()));
 
         vm.Configuration.SelectedGame = GameType.SkyrimSe;
         await WaitForSignalAsync(firstLoadStarted);
@@ -2256,7 +2271,7 @@ public sealed class MainWindowViewModelTests
         });
         config.FlushPendingSavesAsync(Arg.Any<CancellationToken>()).Returns(
             new ConfigPersistenceResult(ConfigPersistenceStatusKind.Success, ConfigPersistenceOperationKind.Flush, 1, null));
-        using var module = new DiscoverySettingsModule(config, state, refresh);
+        using var module = new DiscoverySettingsModule(config, state, refresh, new CleaningAdmission());
         using var vm = new MainWindowViewModel(config, state, _cleaningSessionMock, _loggerMock,
             _fileDialogMock, _messageDialogMock, _pluginServiceMock, _pluginLoadingServiceMock, _uiDispatcher,
             refresh, _discoveryPlanner, module, _cleaningCommandReadiness);
@@ -2312,7 +2327,7 @@ public sealed class MainWindowViewModelTests
             refreshModule,
             _discoveryPlanner,
             CreateDiscoverySettingsModule(pluginRefreshModule: refreshModule),
-            new CleaningCommandReadiness(refreshModule, _stateServiceMock));
+            new CleaningCommandReadiness(refreshModule, _stateServiceMock, new CleaningAdmission()));
 
         // Act
         vm.Configuration.SelectedGame = GameType.SkyrimSe;

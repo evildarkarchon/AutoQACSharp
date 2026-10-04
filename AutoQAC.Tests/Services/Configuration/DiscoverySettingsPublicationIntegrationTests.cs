@@ -1,6 +1,7 @@
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
 using AutoQAC.Infrastructure.Logging;
+using AutoQAC.Services.Cleaning;
 using AutoQAC.Tests.TestInfrastructure;
 using YamlDotNet.Serialization;
 using AutoQAC.Models;
@@ -166,8 +167,8 @@ public sealed class DiscoverySettingsPublicationIntegrationTests
             existing.XEdit.Binary = @"C:\Tools\ExistingXEdit.exe";
             await store.WriteAsync(existing, CancellationToken.None);
             using var state = new StateService();
-            var admission = new DiscoverySettingsAdmission();
-            var coordinator = new ConfigPersistenceCoordinator(store, state, logger, TimeSpan.Zero, admission);
+            var admission = new CleaningAdmission();
+            var coordinator = new ConfigPersistenceCoordinator(store, logger, admission, TimeSpan.Zero);
             await using var configuration = new ConfigurationService(coordinator, logger, directory);
             using var refresh = new RecordingPluginRefreshModule();
             using var settings = new DiscoverySettingsModule(configuration, state, refresh, admission);
@@ -287,6 +288,7 @@ public sealed class DiscoverySettingsPublicationIntegrationTests
         public IPluginLoadingService Loading { get; } = Substitute.For<IPluginLoadingService>();
         public Subject<UserConfiguration> ConfigurationChanged { get; } = new();
         public StateService State { get; } = new();
+        public CleaningAdmission Admission { get; } = new();
         public UserConfiguration Saved { get; private set; } = new() { SelectedGame = "SkyrimSe" };
         public TaskCompletionSource ApproximationStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private TaskCompletionSource ReleaseApproximation { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -333,11 +335,13 @@ public sealed class DiscoverySettingsPublicationIntegrationTests
                     ApproximationStarted.TrySetResult();
                     await ReleaseApproximation.Task.WaitAsync(call.Arg<CancellationToken>());
                 });
+            // Settings and Refresh share one admission, as production wiring does.
             var store = new PluginRefreshPublicationStore(new PluginRefreshAppStateMirror(State),
-                new PluginRefreshCommandAvailabilityPolicy(), planner.GetAffordance(GameType.SkyrimSe, false));
+                new PluginRefreshCommandAvailabilityPolicy(Admission), planner.GetAffordance(GameType.SkyrimSe, false));
             Refresh = new PluginRefreshModule(planner, approximation, State,
-                new SkipListPolicy(Config, Substitute.For<IGameDetectionService>()), store, configurationService: Config);
-            Settings = new DiscoverySettingsModule(Config, State, Refresh);
+                new SkipListPolicy(Config, Substitute.For<IGameDetectionService>()), store, Admission,
+                configurationService: Config);
+            Settings = new DiscoverySettingsModule(Config, State, Refresh, Admission);
         }
 
         /// <summary>Cancels module-owned approximation and releases fixture resources.</summary>

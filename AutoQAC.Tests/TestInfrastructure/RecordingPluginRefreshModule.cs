@@ -97,7 +97,7 @@ public sealed class RecordingPluginRefreshModule : IPluginRefreshModule, IDispos
                 null,
                 300),
             activity ?? new PluginRefreshActivity(false, false),
-            commands ?? new PluginRefreshCommandAvailability(false, false, false, false),
+            commands ?? new PluginRefreshCommandAvailability(false, false, false, false, false),
             statusText);
     }
 
