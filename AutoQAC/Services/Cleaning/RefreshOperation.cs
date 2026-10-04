@@ -17,6 +17,7 @@ internal sealed class RefreshOperation : IDisposable
     private readonly TaskCompletionSource _unwound = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private volatile bool _isSuperseded;
     private volatile bool _isCanceledForCleaning;
+    private AggregateException? _cancellationFailure;
     private int _disposed;
 
     /// <summary>Creates an operation; only <see cref="CleaningAdmission.TryBeginRefresh" /> issues them.</summary>
@@ -70,16 +71,35 @@ internal sealed class RefreshOperation : IDisposable
         _unwound.TrySetResult();
     }
 
-    /// <summary>Cancels the operation's token synchronously; safe after disposal.</summary>
+    /// <summary>
+    ///     Returns and clears failures thrown by this operation's token callbacks during <see cref="Cancel" />. A
+    ///     callback belongs to an adapter running under the operation; its failure must not abort supersession or
+    ///     cancellation cleanup, so it is reported afterward, once.
+    /// </summary>
+    /// <returns>The recorded callback failures, or null when none are waiting to be reported.</returns>
+    internal AggregateException? TakeCancellationFailure()
+    {
+        return Interlocked.Exchange(ref _cancellationFailure, null);
+    }
+
+    /// <summary>
+    ///     Cancels the operation's token synchronously; safe after disposal. Never throws: callback failures are kept
+    ///     for <see cref="TakeCancellationFailure" /> so the caller can finish finalizing estimates and then report them.
+    /// </summary>
     internal void Cancel()
     {
         try
         {
-            _cancellation.Cancel();
+            // All callbacks still run when one throws; the failures arrive together afterward.
+            _cancellation.Cancel(throwOnFirstException: false);
         }
         catch (ObjectDisposedException)
         {
             // The operation can finish unwinding between being observed and being canceled.
+        }
+        catch (AggregateException failure)
+        {
+            Volatile.Write(ref _cancellationFailure, failure);
         }
     }
 

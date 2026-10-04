@@ -100,11 +100,19 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         {
             // A same-value retry must still require its own successful publication, so earlier freshness work is stale.
             _freshnessVersion.Advance();
-            // Fence without a successor: a failed settings save or an external change may never launch a replacement
-            // refresh, so the superseded operation's estimates are finalized here rather than by a successor.
-            var superseded = _admission.SupersedeRefresh();
-            if (superseded is not null) FinalizeSuperseded(superseded, Supersession.ByFence);
-            _publicationStore.InvalidatePublication();
+            try
+            {
+                // Fence without a successor: a failed settings save or an external change may never launch a
+                // replacement refresh, so the superseded operation's estimates are finalized here, not by a successor.
+                var superseded = _admission.SupersedeRefresh();
+                if (superseded is not null) FinalizeSuperseded(superseded, Supersession.ByFence);
+            }
+            finally
+            {
+                // The fence already holds even if a cancellation callback or observer threw; the old freshness
+                // lease must still be revoked, or Cleaning could start against the replaced settings.
+                _publicationStore.InvalidatePublication();
+            }
         }
     }
 
@@ -117,7 +125,17 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
             return Task.FromResult(new PluginRefreshCompletion(PluginRefreshCompletionStatus.Failed));
         // Begin before the first await: the Discovery settings module's settings lease must still order this
         // operation against later settings changes and Cleaning admission.
-        var operation = BeginOperation(cancellationToken);
+        RefreshOperation? operation;
+        try
+        {
+            operation = BeginOperation(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger?.Error(ex, "Failed to begin a Plugin refresh for Discovery settings");
+            return Task.FromResult(new PluginRefreshCompletion(PluginRefreshCompletionStatus.Failed));
+        }
+
         if (operation is null)
             return Task.FromResult(new PluginRefreshCompletion(PluginRefreshCompletionStatus.Canceled));
         var completion = new TaskCompletionSource<PluginRefreshCompletion>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -471,7 +489,17 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         CancellationToken cancellationToken)
     {
         // Begin before starting discovery or analysis: Cleaning must drain work after rows become usable.
-        var operation = BeginOperation(cancellationToken);
+        RefreshOperation? operation;
+        try
+        {
+            operation = BeginOperation(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            // Report the failed start through the returned task, as an async refresh would, not synchronously.
+            return Task.FromException<PluginRefreshSnapshot>(ex);
+        }
+
         if (operation is null) return Task.FromResult(_publicationStore.GetCurrentSnapshot());
 
         return ObserveManualRefreshAsync(operation, refresh);
@@ -640,7 +668,11 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
         lock (_supersessionSync)
         {
             var operation = _admission.CurrentRefresh;
-            operation?.Cancel();
+            if (operation is not null)
+            {
+                operation.Cancel();
+                ReportCancellationFailure(operation);
+            }
 
             var snapshot = _publicationStore.GetCurrentSnapshot();
             var statusText = cause == RefreshCancellationCause.Manual
@@ -673,12 +705,28 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
     /// <summary>Begins a Plugin refresh operation and finalizes the operation it supersedes.</summary>
     /// <param name="cancellationToken">Caller cancellation linked into the operation's token.</param>
     /// <returns>The new operation, or null when Cleaning has reserved admission.</returns>
+    /// <exception cref="Exception">
+    ///     A snapshot observer threw while the superseded operation was finalized. No operation is returned, and none
+    ///     is left behind.
+    /// </exception>
     private RefreshOperation? BeginOperation(CancellationToken cancellationToken)
     {
         lock (_supersessionSync)
         {
             var operation = _admission.TryBeginRefresh(cancellationToken, out var superseded);
-            if (superseded is not null) FinalizeSuperseded(superseded, Supersession.BySuccessor);
+            if (superseded is null) return operation;
+            try
+            {
+                FinalizeSuperseded(superseded, Supersession.BySuccessor);
+            }
+            catch
+            {
+                // A snapshot observer threw after finalization committed. The caller never receives the operation,
+                // so dispose it here or every later Cleaning reservation would wait on it forever.
+                operation?.Dispose();
+                throw;
+            }
+
             return operation;
         }
     }
@@ -695,20 +743,37 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
     /// </param>
     private void FinalizeSuperseded(RefreshOperation superseded, Supersession supersession)
     {
-        var snapshot = _publicationStore.GetCurrentSnapshot();
-        var statusText = supersession == Supersession.ByFence ? CanceledStatusText : snapshot.StatusText;
-        if (_publicationStore.TryFinalizeSupersededOperation(
-                superseded,
-                statusText,
-                GetAffordance(snapshot),
-                out _))
-            return;
+        try
+        {
+            var snapshot = _publicationStore.GetCurrentSnapshot();
+            var statusText = supersession == Supersession.ByFence ? CanceledStatusText : snapshot.StatusText;
+            if (_publicationStore.TryFinalizeSupersededOperation(
+                    superseded,
+                    statusText,
+                    GetAffordance(snapshot),
+                    out _))
+                return;
 
-        // A fenced discovery may have left a loading snapshot that no successor will replace. An operation that
-        // already published its terminal status keeps it: nothing visible was canceled.
-        if (supersession == Supersession.ByFence &&
-            (snapshot.Activity.IsPluginRefreshRunning || snapshot.Activity.IsIssueApproximationRefreshRunning))
-            PublishIdleStatus(snapshot, statusText);
+            // A fenced discovery may have left a loading snapshot that no successor will replace. An operation that
+            // already published its terminal status keeps it: nothing visible was canceled.
+            if (supersession == Supersession.ByFence &&
+                (snapshot.Activity.IsPluginRefreshRunning || snapshot.Activity.IsIssueApproximationRefreshRunning))
+                PublishIdleStatus(snapshot, statusText);
+        }
+        finally
+        {
+            // Admission canceled the superseded operation before this finalization; report any adapter failure
+            // only now, so it could not skip finalizing the estimates.
+            ReportCancellationFailure(superseded);
+        }
+    }
+
+    /// <summary>Logs adapter callback failures recorded while canceling an operation, which still completed.</summary>
+    /// <param name="operation">Operation whose cancellation may have recorded callback failures.</param>
+    private void ReportCancellationFailure(RefreshOperation operation)
+    {
+        if (operation.TakeCancellationFailure() is { } failure)
+            _logger?.Error(failure, "A Plugin refresh cancellation callback failed");
     }
 
     /// <summary>Republishes the visible game context as idle with a terminal status when no operation is publishing.</summary>
@@ -951,7 +1016,10 @@ public sealed class PluginRefreshModule : IPluginRefreshModule, IDisposable
                     "Run a full Plugin refresh before refreshing selected approximations.",
                     GetAffordance(snapshot),
                     out _))
+            {
                 operation.Cancel();
+                ReportCancellationFailure(operation);
+            }
         }
     }
 

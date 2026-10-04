@@ -115,7 +115,10 @@ public sealed class CleaningAdmission
     ///     The operation this one replaced, already marked superseded and canceled. The caller must finalize its
     ///     estimates before the new operation publishes anything.
     /// </param>
-    /// <returns>The new current operation, or null when Cleaning has reserved admission.</returns>
+    /// <returns>
+    ///     The new current operation, or null when Cleaning has reserved admission. A failing cancellation callback on
+    ///     the superseded operation is recorded for <see cref="RefreshOperation.TakeCancellationFailure" />, not thrown.
+    /// </returns>
     internal RefreshOperation? TryBeginRefresh(CancellationToken ct, out RefreshOperation? superseded)
     {
         var cancellation = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -137,7 +140,8 @@ public sealed class CleaningAdmission
             _refreshes.Add(operation);
         }
 
-        // Cancel outside the lock: token callbacks and inline continuations must not run under admission.
+        // Cancel outside the lock: token callbacks and inline continuations must not run under admission. Cancel
+        // never throws, so the successor always reaches its caller, which alone can dispose it once it unwinds.
         superseded?.Cancel();
         return operation;
     }

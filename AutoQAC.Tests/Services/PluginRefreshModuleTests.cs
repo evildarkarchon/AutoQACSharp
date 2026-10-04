@@ -603,6 +603,144 @@ public sealed class PluginRefreshModuleTests
             plugin.Approximation == PluginIssueApproximation.Available(3, 3, 3));
     }
 
+    /// <summary>
+    ///     A superseded importer's throwing cancellation callback is logged without aborting supersession: its
+    ///     Pending rows are still finalized and the successor refresh runs to completion.
+    /// </summary>
+    [Fact]
+    public async Task RefreshGame_WhenSupersededCancellationCallbackThrows_StillFinalizesAndRefreshes()
+    {
+        using var state = new StateService();
+        var admission = new CleaningAdmission();
+        var logger = Substitute.For<ILoggingService>();
+        var analysisStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseAnalysis = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var invocation = 0;
+        var approximation = new ResultPluginIssueApproximationModule(async (request, onResult, ct) =>
+        {
+            if (Interlocked.Increment(ref invocation) > 1)
+            {
+                foreach (var target in request.Targets)
+                    onResult(new PluginIssueApproximationModuleResult(target, PluginIssueApproximation.Available(2, 2, 2)));
+                return;
+            }
+
+            ct.Register(() => throw new InvalidOperationException("Importer cancellation callback failed."));
+            analysisStarted.TrySetResult();
+            await releaseAnalysis.Task;
+        });
+        using var sut = CreateModule(state, approximationModule: approximation, admission: admission, logger: logger);
+        var first = sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+        await analysisStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var supersession = new List<PluginRefreshSnapshot>();
+        using var subscription = sut.Snapshots.Skip(1).Take(1).Subscribe(supersession.Add);
+
+        try
+        {
+            var second = await sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe))
+                .WaitAsync(TimeSpan.FromSeconds(5));
+
+            supersession.Should().ContainSingle().Which.Rows.Should().NotContain(row =>
+                row.Approximation.Status == PluginIssueApproximationStatus.Pending);
+            second.Rows.Should().OnlyContain(row => row.Approximation == PluginIssueApproximation.Available(2, 2, 2));
+            logger.Received(1).Error(Arg.Any<AggregateException>(), "A Plugin refresh cancellation callback failed",
+                Arg.Any<object[]>());
+        }
+        finally
+        {
+            releaseAnalysis.TrySetResult();
+            await first.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+
+        admission.CurrentRefresh.Should().BeNull();
+        using var cleaning = await admission.EnterCleaningAsync().WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    /// <summary>
+    ///     A snapshot observer throwing during supersession faults the new refresh without orphaning its operation,
+    ///     so Cleaning admission can still drain, and the superseded rows were already finalized.
+    /// </summary>
+    [Fact]
+    public async Task RefreshGame_WhenSupersessionObserverThrows_FaultsWithoutBlockingCleaningAdmission()
+    {
+        using var state = new StateService();
+        var admission = new CleaningAdmission();
+        var analysisStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseAnalysis = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var approximation = new ResultPluginIssueApproximationModule(async (_, _, _) =>
+        {
+            analysisStarted.TrySetResult();
+            await releaseAnalysis.Task;
+        });
+        using var sut = CreateModule(state, approximationModule: approximation, admission: admission);
+        var first = sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+        await analysisStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var throwOnNext = true;
+        using var subscription = sut.Snapshots.Skip(1).Subscribe(_ =>
+        {
+            if (!throwOnNext) return;
+            throwOnNext = false;
+            throw new InvalidOperationException("Snapshot observer failed.");
+        });
+
+        try
+        {
+            var second = sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+
+            await FluentActions.Awaiting(() => second).Should().ThrowAsync<InvalidOperationException>();
+            admission.CurrentRefresh.Should().BeNull("the failed refresh's operation was disposed, not orphaned");
+            state.CurrentState.PluginsToClean.Should().NotContain(plugin =>
+                plugin.Approximation.Status == PluginIssueApproximationStatus.Pending);
+        }
+        finally
+        {
+            releaseAnalysis.TrySetResult();
+            await first.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+
+        using var cleaning = await admission.EnterCleaningAsync().WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    /// <summary>
+    ///     A settings fence completes when canceling the fenced importer throws: the failure is logged, Pending rows
+    ///     are finalized, and the old freshness lease is still revoked.
+    /// </summary>
+    [Fact]
+    public async Task InvalidateForSettings_WhenCancellationCallbackThrows_StillFinalizesAndRevokesFreshness()
+    {
+        var admission = new CleaningAdmission();
+        var logger = Substitute.For<ILoggingService>();
+        var analysisStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseAnalysis = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var approximation = new ResultPluginIssueApproximationModule(async (_, _, ct) =>
+        {
+            ct.Register(() => throw new InvalidOperationException("Importer cancellation callback failed."));
+            analysisStarted.TrySetResult();
+            await releaseAnalysis.Task;
+        });
+        using var state = new StateService();
+        using var sut = CreateModule(state, approximationModule: approximation, admission: admission, logger: logger);
+        var refresh = sut.ExecuteAsync(new PluginRefreshIntent.RefreshGame(GameType.SkyrimSe));
+        await analysisStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        try
+        {
+            sut.Invoking(module => module.InvalidateForSettings()).Should().NotThrow();
+
+            (await sut.GetCurrentPublicationAsync()).Freshness.IsFresh.Should().BeFalse(
+                "a settings change must revoke the old freshness lease even when cancellation fails");
+            state.CurrentState.PluginsToClean.Should().NotContain(plugin =>
+                plugin.Approximation.Status == PluginIssueApproximationStatus.Pending);
+            logger.Received(1).Error(Arg.Any<AggregateException>(), "A Plugin refresh cancellation callback failed",
+                Arg.Any<object[]>());
+        }
+        finally
+        {
+            releaseAnalysis.TrySetResult();
+            await refresh.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+    }
+
     /// <summary>A settings fence with nothing running revokes freshness without claiming it canceled anything.</summary>
     [Fact]
     public async Task InvalidateForSettings_WhenNothingRunning_DoesNotPublishCanceledStatus()
@@ -2297,7 +2435,8 @@ public sealed class PluginRefreshModuleTests
         IGameDetectionService? gameDetectionService = null,
         IPluginRefreshDiscoveryPlanner? discoveryPlanner = null,
         CleaningAdmission? admission = null,
-        PluginRefreshPublicationStore? publicationStore = null)
+        PluginRefreshPublicationStore? publicationStore = null,
+        ILoggingService? logger = null)
     {
         // Every module under test coordinates through a real admission; callers pass one to drive Cleaning.
         admission ??= new CleaningAdmission();
@@ -2322,7 +2461,8 @@ public sealed class PluginRefreshModuleTests
             new SkipListPolicy(configurationService, gameDetectionService),
             publicationStore,
             admission,
-            configurationService: configurationService);
+            logger,
+            configurationService);
     }
 
     private static StateService CreateStateWithRows(params PluginInfo[] rows)

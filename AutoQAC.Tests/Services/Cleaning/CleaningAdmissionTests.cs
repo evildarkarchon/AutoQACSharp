@@ -224,6 +224,34 @@ public sealed class CleaningAdmissionTests
         admission.CurrentRefresh.Should().BeSameAs(second);
     }
 
+    /// <summary>
+    ///     A superseded operation's throwing cancellation callback cannot abort supersession: the successor still
+    ///     reaches its caller (the only one who can dispose it), and the failure waits to be reported once.
+    /// </summary>
+    [Fact]
+    public async Task TryBeginRefresh_WhenSupersededCancellationCallbackThrows_StillHandsOffSuccessor()
+    {
+        var admission = new CleaningAdmission();
+        var first = admission.TryBeginRefresh(CancellationToken.None, out _)!;
+        using var registration = first.Token.Register(() => throw new InvalidOperationException("Adapter callback failed."));
+
+        var second = admission.TryBeginRefresh(CancellationToken.None, out var superseded);
+
+        second.Should().NotBeNull();
+        superseded.Should().BeSameAs(first);
+        first.IsSuperseded.Should().BeTrue();
+        first.Token.IsCancellationRequested.Should().BeTrue();
+        admission.CurrentRefresh.Should().BeSameAs(second);
+        first.TakeCancellationFailure().Should().NotBeNull()
+            .And.Subject.As<AggregateException>().InnerExceptions.Should().ContainSingle()
+            .Which.Should().BeOfType<InvalidOperationException>();
+        first.TakeCancellationFailure().Should().BeNull("a recorded failure is reported once");
+
+        first.Dispose();
+        second!.Dispose();
+        using var cleaningLease = await admission.EnterCleaningAsync().WaitAsync(Timeout);
+    }
+
     /// <summary>A fence supersedes the current operation without a successor and leaves no current operation.</summary>
     [Fact]
     public void SupersedeRefresh_LeavesNoCurrentOperation()
