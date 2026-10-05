@@ -106,5 +106,5 @@ Use the five default triage roles. Before triaging tickets, read
 
 ### Domain docs
 
-Use the single-context layout: root `CONTEXT.md` and `docs/adr/`.
+Use the single-context layout: root `GLOSSARY.md` and `docs/adr/`.
 Before exploring domain concepts, read `docs/agents/domain.md`.
