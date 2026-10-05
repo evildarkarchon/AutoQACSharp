@@ -4,7 +4,7 @@ This plan implements ADR-0002: deepen Game capability with a Plugin refresh disc
 
 The fresh agent should read these first:
 
-- `CONTEXT.md`
+- `GLOSSARY.md`
 - `docs/adr/0001-replace-cleaning-orchestrator-seam.md`
 - `docs/adr/0002-plugin-refresh-discovery-plan-seam.md`
 - `AGENTS.md`
